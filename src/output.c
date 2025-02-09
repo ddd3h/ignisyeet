@@ -73,11 +73,11 @@ void save_to_csv(OutputFormat format, double time, double x, double y, double z,
     }
 
     if (format == FORMAT_ECEF) {
-        fprintf(file, "%.2f,%.2f,%.2f,%.2f,%.2f\n", time, x, y, z, vz);
+        fprintf(file, "%.15e,%.15e,%.15e,%.15e,%.15e\n", time, x, y, z, vz);
     } else {
         double lat, lon, altitude;
         ecef_to_latlon(x, y, z, &lat, &lon, &altitude);
-        fprintf(file, "%.2f,%.6f,%.6f,%.2f,%.2f\n", time, lat, lon, z, vz);  // `z` を海抜高度として出力
+        fprintf(file, "%.15e,%.15e,%.15e,%.15e,%.15e\n", time, lat, lon, z, vz);  // `z` を海抜高度として出力
     }
 
     fclose(file);

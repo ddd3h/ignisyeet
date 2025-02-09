@@ -1,6 +1,9 @@
 # 🚀 IgnisYeet - 6-DOF Rocket Simulation with ECEF & Latitude-Longitude Output
 
+<img src="./doc/IgnisYeet-logo.webp" style="zoom:25%;" />
+
 ## **Overview**
+
 **IgnisYeet** is a **6-degree-of-freedom (6-DOF) rocket simulation** that models both translational and rotational motion. This simulation supports **ECEF (Earth-Centered, Earth-Fixed) coordinates** and **latitude-longitude-altitude representation**, configurable via a parameter file.
 
 ## **Features**
@@ -60,6 +63,7 @@
 ## **Configuration (`parameter.txt`)
 Modify `parameter.txt` to adjust simulation settings.
 Example:
+
 ```
 # Initial Conditions
 initial_x 0.0

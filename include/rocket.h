@@ -7,6 +7,8 @@ typedef struct {
     double Ve[3];  // 速度 (m/s)
     double Xe[3];  // 位置 (m)
     double acc[3]; // 加速度 (m/s^2)
+    double omg[3]; // 角速度 (rad/s) (Roll, Pitch, Yaw)
+    double q[4];   // クォータニオン（回転姿勢）
     double mass;   // 質量 (kg)
     double thrust; // 推力 (N)
     double thrust_duration; // 推力の持続時間 (秒)

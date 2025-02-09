@@ -1,0 +1,23 @@
+# Rocket parameters
+initial_x 0.0
+initial_y 0.0
+initial_z 1000.0
+initial_vx 0.0
+initial_vy 0.0
+initial_vz 50.0
+mass 100.0
+thrust 500.0
+thrust_duration 3.0
+
+# Environment parameters
+wind_x 0.0
+wind_y 0.0
+wind_z 0.0
+air_density 1.23
+gravity 9.81
+drag_coef 0.5
+area 0.1
+time_step 0.01
+
+# Output format (ECEF or LATLON)
+output_format LATLON

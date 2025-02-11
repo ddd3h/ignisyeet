@@ -1,6 +1,6 @@
 # 🚀 IgnisYeet - 6-DOF Rocket Simulation with ECEF & Latitude-Longitude Output
 
-<img src="./doc/IgnisYeet-logo.webp" style="zoom:25%;" />
+<img src="./doc/IgnisYeet-logo.webp" style="width: 50%;" />
 
 ## **Overview**
 

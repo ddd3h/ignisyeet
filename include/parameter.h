@@ -7,6 +7,6 @@
 
 #define PARAM_FILE "parameter.txt"
 
-int read_parameters(Rocket *r, Environment *env, OutputFormat *format);
+int read_parameters(Rocket *r, Environment *env, OutputFormat *format, const char *filename);
 
 #endif

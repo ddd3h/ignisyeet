@@ -2,6 +2,7 @@
 #include "parameter.h"
 #include "output.h"
 #include <stdio.h>
+#include <stdlib.h>
 
 // プログレスバーを表示する関数
 void print_progress(double progress) {
@@ -18,12 +19,23 @@ void print_progress(double progress) {
     fflush(stdout);
 }
 
-int main() {
+int main(int argc, char *argv[]) {
+
+    if (argc < 2) {
+        printf("Usage: %s <parameter file>\n", argv[0]);
+        return 1;
+    }
+
+    const char *param_file = argv[1];  // コマンドライン引数からパラメータファイル名を取得
+
     Rocket rocket;
     Environment env;
     OutputFormat format;
 
-    if (!read_parameters(&rocket, &env, &format)) return 1;
+    if (!read_parameters(&rocket, &env, &format, param_file)) {
+        printf("Error: Failed to read parameters from %s\n", param_file);
+        return 1;
+    }
 
     printf("\n🚀 Rocket Simulation Started 🚀\n");
     printf("Initial Conditions:\n");

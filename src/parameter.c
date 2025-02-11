@@ -3,10 +3,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-int read_parameters(Rocket *r, Environment *env, OutputFormat *format) {
-    FILE *file = fopen(PARAM_FILE, "r");
-    if (file == NULL) {
-        printf("Error: Cannot open parameter file.\n");
+int read_parameters(Rocket *r, Environment *env, OutputFormat *format, const char *filename) {
+    FILE *file = fopen(filename, "r");
+
+    if (!file) {
+        printf("Error: Cannot open parameter file: %s\n", filename);
         return 0;
     }
 

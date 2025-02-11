@@ -60,7 +60,7 @@
 ```
 
 ---
-## **Configuration (`parameter.txt`)
+## **Configuration (`parameter.txt`)**
 Modify `parameter.txt` to adjust simulation settings.
 Example:
 

@@ -1,17 +1,17 @@
-CC = gcc
-CFLAGS = -Wall -Iinclude
+CXX = g++
+CXXFLAGS = -Wall -std=c++17 -Iinclude
 LDFLAGS = -lm
-SRCS = src/main.c src/rocket.c src/parameter.c src/output.c
-OBJS = $(SRCS:.c=.o)
+SRCS = src/main.cpp src/rocket.cpp src/parameter.cpp src/output.cpp
+OBJS = $(SRCS:.cpp=.o)
 TARGET = ignisyeet
 
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS) $(LDFLAGS)
+	$(CXX) $(CXXFLAGS) -o $(TARGET) $(OBJS) $(LDFLAGS)
 
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
 	rm -f src/*.o $(TARGET) output.csv

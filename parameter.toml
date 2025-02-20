@@ -1,0 +1,57 @@
+# =====================
+# 🚀 IgnisYeet パラメータ設定
+# =====================
+
+# 射点（発射位置）
+[launch]
+latitude = 35.6895    # 緯度 [deg]
+longitude = 139.6917  # 経度 [deg]
+altitude = 100.0      # 高度 [m]
+launcher_azimuth = 90.0  # ランチャー方角（東向き）[deg]
+launcher_elevation = 85.0  # 射角（仰角）[deg]
+
+# 機体特性（PDF参考）
+[rocket]
+length = 2.0      # 全長 [m]
+diameter = 0.15   # 直径 [m]
+mass_initial = 10.0  # 離陸時機体質量 [kg]
+mass_final = 7.0  # 燃焼終了時機体質量 [kg]
+
+# 重心位置（OR または CAD で取得）
+center_of_gravity_initial = 1.0  # 離陸時重心位置 [m]
+center_of_gravity_final = 0.8  # 燃焼終了時重心位置 [m]
+center_of_gravity_propellant = 0.5  # 推進剤重心位置 [m]
+
+# 慣性モーメント
+moment_of_inertia_initial = 0.02  # 離陸時慣性モーメント [kg・m²]
+moment_of_inertia_final = 0.015  # 燃焼終了時慣性モーメント [kg・m²]
+
+# 空力特性
+pressure_center = 1.1  # 圧力中心位置 [m]
+drag_coefficient = 0.5  # 抗力係数 [-]
+lift_slope = 3.5  # 揚力傾斜 [1/rad]
+damping_moment_coefficient = -0.02  # 減衰モーメント係数 [1/rad]
+
+# 降下速度（パラシュートなしの場合、V1=V2）
+descent_velocity_stage1 = 15.0  # 1段目降下速度 [m/s]
+descent_velocity_stage2 = 15.0  # 2段目降下速度 [m/s]
+
+# エンジン特性
+[engine]
+thrust_profile = "thrust_data.csv"  # 推力履歴（CSVファイル）
+isp = 250.0  # 比推力 [s]
+burn_time = 3.0  # 燃焼時間 [s]
+throat_diameter = 0.03  # ノズルスロート径 [m]
+nozzle_expansion_ratio = 6.0  # ノズル拡大比 [-]
+nozzle_exhaust_pressure = 101325.0  # 排気圧力 [Pa]
+
+# 風の影響
+[wind]
+ground_speed = 5.0  # 地上風速 [m/s]
+ground_direction = 270.0  # 地上風向 [deg]（西風）
+model = "logarithmic"  # 風速モデル（"logarithmic" or "constant"）
+
+# 出力設定
+[output]
+file_name = "simulation_output.csv"
+

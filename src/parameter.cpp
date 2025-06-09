@@ -125,6 +125,13 @@ bool Parameter::loadAerodynamicsConfig(const toml::table& config) {
     if (auto aero = config["aerodynamics"].as_table()) {
         aerodynamics.model_level = aero->at("model_level").value_or(2);
         
+        // Reference geometry
+        aerodynamics.reference_area = aero->at("reference_area").value_or(0.0177);
+        aerodynamics.reference_length = aero->at("reference_length").value_or(1.0);
+        aerodynamics.center_of_pressure = aero->at("center_of_pressure").value_or(0.6);
+        aerodynamics.nose_cone_angle = aero->at("nose_cone_angle").value_or(0.2);
+        aerodynamics.fin_area = aero->at("fin_area").value_or(0.05);
+        
         // Basic drag
         aerodynamics.cd_constant = aero->at("cd_constant").value_or(0.5);
         aerodynamics.cd_mach_dependent = aero->at("cd_mach_dependent").value_or(true);

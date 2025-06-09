@@ -66,6 +66,13 @@ struct RocketConfig {
 struct AerodynamicsConfig {
     int model_level;  // 1: basic drag, 2: full 6DOF, 3: CFD-enhanced
     
+    // Reference geometry
+    double reference_area;
+    double reference_length;
+    double center_of_pressure;
+    double nose_cone_angle;
+    double fin_area;
+    
     // Basic drag
     double cd_constant;
     bool cd_mach_dependent;

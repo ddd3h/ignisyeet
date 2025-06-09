@@ -4,6 +4,7 @@
 #include "../physics/state.hpp"
 #include "../physics/vector3d.hpp"
 #include "../physics/quaternion.hpp"
+#include "../physics/aerodynamics.hpp"
 #include "../parameter.hpp"
 #include <memory>
 #include <vector>
@@ -104,17 +105,11 @@ private:
     // Components
     std::unique_ptr<PropulsionSystem> propulsion_;
     std::unique_ptr<RecoverySystem> recovery_;
+    std::unique_ptr<ignis::physics::AerodynamicsModel> aerodynamics_;
     
     // Properties
     MassProperties mass_props_;
     Geometry geometry_;
-    
-    // Aerodynamic coefficients
-    double cd_power_off_;      // Drag coefficient (power off)
-    double cd_power_on_;       // Drag coefficient (power on)
-    double cl_alpha_;          // Lift curve slope
-    double cn_alpha_;          // Normal force curve slope
-    double cm_alpha_;          // Pitching moment curve slope
     
     // Launch conditions
     Physics::Vector3D launch_position_;
@@ -147,6 +142,9 @@ public:
     Physics::ForcesMoments aerodynamic_forces(
         const Physics::RigidBodyState& state,
         const Physics::EnvironmentState& env) const;
+    
+    // Get aerodynamics model
+    const ignis::physics::AerodynamicsModel& aerodynamics() const { return *aerodynamics_; }
     
     // Recovery
     void update_recovery(const Physics::RigidBodyState& state);

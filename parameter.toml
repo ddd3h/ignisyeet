@@ -62,28 +62,40 @@ auto_calculate_cg = false
 # AERODYNAMICS CONFIGURATION
 # ============================================================================
 [aerodynamics]
-model_level = 2                     # 1: basic drag, 2: full 6DOF, 3: CFD-enhanced
+# Aerodynamics model level (1-3)
+# Level 1: Basic drag only (constant coefficient)
+# Level 2: Mach-dependent drag + basic lift
+# Level 3: Full aerodynamics with compressibility, Reynolds effects
+model_level = 2
 
-# Basic drag model
-cd_constant = 0.5                   # Constant drag coefficient
-cd_mach_dependent = true            # Use Mach-dependent drag
-cd_table_file = "drag_curve.csv"    # Optional drag vs Mach table
+# Reference geometry
+reference_area = 0.0177             # Reference area [m²]
+reference_length = 1.0              # Reference length [m]
+center_of_pressure = 0.6            # Center of pressure from nose [m]
+nose_cone_angle = 0.2               # Nose cone angle [rad]
+fin_area = 0.05                     # Total fin area [m²]
+fin_aspect_ratio = 2.0              # Fin aspect ratio
 
-# Lift and lateral forces (level 2+)
-enable_lift = true
-enable_lateral = true
-cl_alpha = 3.5                      # Lift slope [1/rad]
-cy_beta = -2.0                      # Side force slope [1/rad]
+# Level 1: Basic coefficients
+cd_constant = 0.3                   # Zero angle-of-attack drag coefficient
+cd_mach_dependent = true            # Enable Mach-dependent drag
+cd_table_file = ""                  # Table file for drag coefficients
 
-# Moment coefficients (level 2+)
+# Lift and lateral forces
+enable_lift = true                  # Enable lift calculation
+enable_lateral = true               # Enable lateral force calculation
+cl_alpha = 4.0                      # Lift slope [1/rad]
+cy_beta = 2.0                       # Side force slope [1/rad]
+
+# Moment coefficients
 cm_alpha = -0.02                    # Pitching moment slope [1/rad]
 cn_beta = 0.15                      # Yawing moment slope [1/rad]
 cl_p = -0.5                         # Rolling moment damping [1/rad]
 
 # Pressure center
-cp_position = 1.1                   # Pressure center from nose [m]
+cp_position = 0.6                   # Center of pressure position [m]
 
-# Compressibility effects (level 2+)
+# Compressibility effects (Level 2+)
 enable_compressibility = true
 mach_critical = 0.8                 # Critical Mach number
 mach_drag_rise = 1.2               # Drag rise Mach number

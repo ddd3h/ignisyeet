@@ -5,25 +5,25 @@ Task 2 (Project Structure Refactoring) has been successfully completed. The proj
 
 ## New Architecture Components
 
-### 1. Physics Core (`include/physics/`)
-- **Vector3D** (`vector3d.hpp`) - 3D vector operations with comprehensive mathematical functions
-- **Quaternion** (`quaternion.hpp`) - Quaternion class for 3D rotations with conversion utilities  
-- **State** (`state.hpp`) - Rigid body state, environment state, and forces/moments structures
+### 1. Physics Core (include/physics/)
+- **Vector3D** (vector3d.hpp) - 3D vector operations with comprehensive mathematical functions
+- **Quaternion** (quaternion.hpp) - Quaternion class for 3D rotations with conversion utilities  
+- **State** (state.hpp) - Rigid body state, environment state, and forces/moments structures
 
-### 2. Rocket System (`include/rocket/`)
-- **Vehicle** (`vehicle.hpp`) - Complete rocket vehicle modeling with mass properties, geometry, propulsion, and recovery systems
+### 2. Rocket System (include/rocket/)
+- **Vehicle** (vehicle.hpp) - Complete rocket vehicle modeling with mass properties, geometry, propulsion, and recovery systems
 
-### 3. Environment System (`include/environment/`)
-- **Atmosphere** (`atmosphere.hpp`) - Atmosphere models (exponential, standard atmosphere), wind models, and gravity models
+### 3. Environment System (include/environment/)
+- **Atmosphere** (atmosphere.hpp) - Atmosphere models (exponential, standard atmosphere), wind models, and gravity models
 
-### 4. Simulation Engine (`include/simulation/`)
-- **Integrator** (`integrator.hpp`) - Numerical integration methods (Euler, Leapfrog, RK4, Adaptive RK45)
-- **Engine** (`engine.hpp`) - Main simulation engine with Monte Carlo capabilities
+### 4. Simulation Engine (include/simulation/)
+- **Integrator** (integrator.hpp) - Numerical integration methods (Euler, Leapfrog, RK4, Adaptive RK45)
+- **Engine** (engine.hpp) - Main simulation engine with Monte Carlo capabilities
 
-### 5. Output System (`include/output/`)
-- **Manager** (`manager.hpp`) - Multi-format output management (CSV, JSON, Binary) with buffering and statistics
+### 5. Output System (include/output/)
+- **Manager** (manager.hpp) - Multi-format output management (CSV, JSON, Binary) with buffering and statistics
 
-### 6. Main Header (`include/ignisyeet.hpp`)
+### 6. Main Header (include/ignisyeet.hpp)
 - Unified access to all components
 - Version information
 - Utility functions and constants
@@ -31,7 +31,7 @@ Task 2 (Project Structure Refactoring) has been successfully completed. The proj
 
 ## Namespace Organization
 
-```cpp
+cpp
 IgnisYeet::
 ├── Physics::           // Core mathematical and physical types
 ├── Rocket::           // Rocket vehicle components
@@ -40,7 +40,8 @@ IgnisYeet::
 ├── Output::           // Output management
 ├── PhysicalConstants:: // Physical and mathematical constants
 └── Utils::            // Utility functions
-```
+
+
 
 ## Key Design Features
 
@@ -82,7 +83,7 @@ IgnisYeet::
 
 ## Testing
 
-### Architecture Test (`test_architecture.cpp`)
+### Architecture Test (test_architecture.cpp)
 - Validates core physics components
 - Tests Vector3D operations (arithmetic, cross/dot products, normalization)
 - Tests Quaternion operations (rotation, conversion, interpolation)
@@ -90,13 +91,14 @@ IgnisYeet::
 - Verifies mathematical correctness
 
 ### Test Results
-```
+
 ✅ Vector3D operations: PASSED
 ✅ Quaternion rotations: PASSED  
 ✅ State management: PASSED
 ✅ Environment modeling: PASSED
 ✅ Mathematical constants: PASSED
-```
+
+
 
 ## Integration Status
 
@@ -136,7 +138,8 @@ include/
 │   └── engine.hpp            # Simulation engine
 └── output/
     └── manager.hpp           # Output management
-
+```
+```
 src/
 ├── physics/
 │   ├── vector3d.cpp          # Vector3D implementation
@@ -147,9 +150,10 @@ src/
 └── output/                   # (Future implementations)
 ```
 
+
 ## Backward Compatibility
 
-The new architecture maintains backward compatibility with the existing parameter system and main application. Legacy headers (`rocket.hpp`, `environment.hpp`, `output.hpp`) remain functional while new components are developed.
+The new architecture maintains backward compatibility with the existing parameter system and main application. Legacy headers (rocket.hpp, environment.hpp, output.hpp) remain functional while new components are developed.
 
 ## Next Development Phase
 

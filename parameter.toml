@@ -1,57 +1,220 @@
-# =====================
-# 🚀 IgnisYeet パラメータ設定
-# =====================
+# ============================================================================
+# 🚀 IgnisYeet - 6DOF Rocket Simulation Configuration
+# ============================================================================
+# Version: 2.0.0
+# Date: 2025-06-09
+# Description: Comprehensive rocket simulation parameter file
 
-# 射点（発射位置）
-[launch]
-latitude = 35.6895    # 緯度 [deg]
-longitude = 139.6917  # 経度 [deg]
-altitude = 100.0      # 高度 [m]
-launcher_azimuth = 90.0  # ランチャー方角（東向き）[deg]
-launcher_elevation = 85.0  # 射角（仰角）[deg]
+# ============================================================================
+# SIMULATION CONTROL
+# ============================================================================
+[simulation]
+name = "experimental_rocket_001"
+description = "Small experimental rocket simulation"
+max_time = 300.0                    # Maximum simulation time [s]
+time_step = 0.01                    # Base time step [s]
+adaptive_step = true                # Use adaptive time stepping
+tolerance = 1e-6                    # Numerical tolerance
+output_interval = 0.1               # Output data interval [s]
 
-# 機体特性（PDF参考）
+# Termination conditions
+terminate_on_ground = true          # Stop when altitude <= 0
+terminate_on_max_time = true        # Stop at max_time
+terminate_on_apogee_descent = false # Stop after apogee descent phase
+
+# Integration method: "euler", "leapfrog", "rk4", "rk45"
+integration_method = "rk4"
+
+# ============================================================================
+# ROCKET CONFIGURATION
+# ============================================================================
 [rocket]
-length = 2.0      # 全長 [m]
-diameter = 0.15   # 直径 [m]
-mass_initial = 10.0  # 離陸時機体質量 [kg]
-mass_final = 7.0  # 燃焼終了時機体質量 [kg]
+name = "ExpRocket-X1"
+configuration_type = "single_stage"  # "single_stage", "multi_stage"
 
-# 重心位置（OR または CAD で取得）
-center_of_gravity_initial = 1.0  # 離陸時重心位置 [m]
-center_of_gravity_final = 0.8  # 燃焼終了時重心位置 [m]
-center_of_gravity_propellant = 0.5  # 推進剤重心位置 [m]
+# Basic geometry
+length = 2.0                        # Total length [m]
+diameter = 0.15                     # Body diameter [m]
+reference_area = 0.0177             # Reference area [m²] (π*d²/4)
 
-# 慣性モーメント
-moment_of_inertia_initial = 0.02  # 離陸時慣性モーメント [kg・m²]
-moment_of_inertia_final = 0.015  # 燃焼終了時慣性モーメント [kg・m²]
+# Mass properties
+mass_dry = 7.0                      # Dry mass (without propellant) [kg]
+mass_propellant = 3.0               # Propellant mass [kg]
+mass_total = 10.0                   # Total initial mass [kg]
 
-# 空力特性
-pressure_center = 1.1  # 圧力中心位置 [m]
-drag_coefficient = 0.5  # 抗力係数 [-]
-lift_slope = 3.5  # 揚力傾斜 [1/rad]
-damping_moment_coefficient = -0.02  # 減衰モーメント係数 [1/rad]
+# Center of gravity (from nose tip)
+cg_initial = 1.0                    # Initial CG position [m]
+cg_final = 0.8                      # Final CG position [m]
+cg_propellant = 0.5                 # Propellant CG position [m]
 
-# 降下速度（パラシュートなしの場合、V1=V2）
-descent_velocity_stage1 = 15.0  # 1段目降下速度 [m/s]
-descent_velocity_stage2 = 15.0  # 2段目降下速度 [m/s]
+# Moments of inertia about CG [kg⋅m²]
+inertia_initial = [0.02, 0.02, 0.001]   # [Ixx, Iyy, Izz] initial
+inertia_final = [0.015, 0.015, 0.001]   # [Ixx, Iyy, Izz] final
 
-# エンジン特性
-[engine]
-thrust_profile = "thrust_data.csv"  # 推力履歴（CSVファイル）
-isp = 250.0  # 比推力 [s]
-burn_time = 3.0  # 燃焼時間 [s]
-throat_diameter = 0.03  # ノズルスロート径 [m]
-nozzle_expansion_ratio = 6.0  # ノズル拡大比 [-]
-nozzle_exhaust_pressure = 101325.0  # 排気圧力 [Pa]
+# Optional CAD data integration
+[rocket.cad]
+enable = false
+stl_file = "rocket_model.stl"
+auto_calculate_inertia = false
+auto_calculate_cg = false
 
-# 風の影響
-[wind]
-ground_speed = 5.0  # 地上風速 [m/s]
-ground_direction = 270.0  # 地上風向 [deg]（西風）
-model = "logarithmic"  # 風速モデル（"logarithmic" or "constant"）
+# ============================================================================
+# AERODYNAMICS CONFIGURATION
+# ============================================================================
+[aerodynamics]
+model_level = 2                     # 1: basic drag, 2: full 6DOF, 3: CFD-enhanced
 
-# 出力設定
+# Basic drag model
+cd_constant = 0.5                   # Constant drag coefficient
+cd_mach_dependent = true            # Use Mach-dependent drag
+cd_table_file = "drag_curve.csv"    # Optional drag vs Mach table
+
+# Lift and lateral forces (level 2+)
+enable_lift = true
+enable_lateral = true
+cl_alpha = 3.5                      # Lift slope [1/rad]
+cy_beta = -2.0                      # Side force slope [1/rad]
+
+# Moment coefficients (level 2+)
+cm_alpha = -0.02                    # Pitching moment slope [1/rad]
+cn_beta = 0.15                      # Yawing moment slope [1/rad]
+cl_p = -0.5                         # Rolling moment damping [1/rad]
+
+# Pressure center
+cp_position = 1.1                   # Pressure center from nose [m]
+
+# Compressibility effects (level 2+)
+enable_compressibility = true
+mach_critical = 0.8                 # Critical Mach number
+mach_drag_rise = 1.2               # Drag rise Mach number
+
+# ============================================================================
+# PROPULSION SYSTEM
+# ============================================================================
+[propulsion]
+engine_type = "solid"               # "solid", "liquid", "hybrid"
+
+# Thrust characteristics
+thrust_profile_type = "file"        # "constant", "table", "file"
+thrust_profile_file = "thrust_curve.csv"  # CSV file with time,thrust data
+thrust_constant = 500.0             # For constant thrust [N]
+burn_time = 3.0                     # Burn duration [s]
+
+# Performance parameters
+isp_vacuum = 250.0                  # Specific impulse in vacuum [s]
+isp_sea_level = 220.0               # Specific impulse at sea level [s]
+throat_area = 0.0007                # Nozzle throat area [m²]
+exit_area = 0.0042                  # Nozzle exit area [m²]
+expansion_ratio = 6.0               # Nozzle expansion ratio
+
+# Combustion chamber
+chamber_pressure = 2.0e6            # Chamber pressure [Pa]
+exit_pressure = 1.0e5               # Nozzle exit pressure [Pa]
+
+# ============================================================================
+# LAUNCH CONFIGURATION
+# ============================================================================
+[launch]
+# Launch site coordinates
+latitude = 35.6895                  # Latitude [deg]
+longitude = 139.6917                # Longitude [deg]
+altitude = 100.0                    # Launch altitude [m MSL]
+
+# Launch conditions
+azimuth = 90.0                      # Launch azimuth (0=North, 90=East) [deg]
+elevation = 85.0                    # Launch elevation angle [deg]
+rail_length = 3.0                   # Launch rail length [m]
+rail_exit_velocity = 10.0           # Minimum velocity to leave rail [m/s]
+
+# Initial conditions (usually zero for ground launch)
+initial_velocity = [0.0, 0.0, 0.0]  # Initial velocity [m/s] in ENU
+initial_angular_velocity = [0.0, 0.0, 0.0]  # Initial angular velocity [rad/s]
+
+# ============================================================================
+# ENVIRONMENT MODELS
+# ============================================================================
+[environment]
+
+# Gravity model level: 1=uniform, 2=altitude_dependent, 3=rotating_earth
+[environment.gravity]
+level = 1                           # Gravity model level (1-3)
+g0 = 9.80665                        # Standard gravity acceleration [m/s²]
+earth_radius = 6371000.0            # Earth radius [m] (for level 2+)
+earth_rotation_rate = 7.2921159e-5  # Earth rotation rate [rad/s] (for level 3)
+enable_coriolis = false             # Include Coriolis effect (level 3 only)
+enable_centrifugal = false          # Include centrifugal effect (level 3 only)
+
+# Atmosphere model level: 1=simple, 2=standard_ISA, 3=dynamic
+[environment.atmosphere]
+level = 2                           # Atmosphere model level (1-3)
+
+# Level 1: Simple atmosphere settings
+[environment.atmosphere.simple]
+density = 1.225                     # Constant air density [kg/m³]
+temperature = 288.15                # Constant air temperature [K]
+pressure = 101325.0                 # Constant air pressure [Pa]
+
+# Level 2+: Wind settings
+[environment.atmosphere.wind]
+velocity = [5.0, 0.0, 0.0]          # Constant wind velocity [m/s] (East, North, Up)
+
+# Level 3: Dynamic atmosphere settings
+[environment.atmosphere.gust]
+intensity = 5.0                     # Gust intensity [m/s]
+frequency = 0.1                     # Gust frequency [Hz]
+turbulence_scale = [100.0, 100.0, 50.0]  # Turbulence length scales [m]
+
+# ============================================================================
+# RECOVERY SYSTEM
+# ============================================================================
+[recovery]
+enable_parachute = true
+deployment_altitude = 500.0         # Parachute deployment altitude [m]
+deployment_time = -1.0              # Deployment time [s] (-1 = altitude based)
+drag_coefficient_chute = 1.3        # Parachute drag coefficient
+chute_area = 2.0                    # Parachute area [m²]
+descent_rate_target = 5.0           # Target descent rate [m/s]
+
+# ============================================================================
+# OUTPUT CONFIGURATION
+# ============================================================================
 [output]
-file_name = "simulation_output.csv"
+# Output format: "csv", "feather", "hdf5"
+primary_format = "csv"
+secondary_formats = ["feather"]     # Additional output formats
+
+# Output file naming
+output_directory = "./results"
+filename_prefix = "simulation"
+include_timestamp = true
+include_config_hash = false
+
+# Coordinate system for output: "ecef", "enu", "latlon"
+coordinate_system = "latlon"
+
+# Data fields to output
+[output.fields]
+time = true
+position = true                     # Position coordinates
+velocity = true                     # Velocity components
+acceleration = true                 # Acceleration components
+attitude = true                     # Euler angles or quaternions
+angular_velocity = true             # Angular velocity components
+forces = true                       # Force components
+moments = true                      # Moment components
+environment = true                  # Environmental data (wind, atmosphere)
+propulsion = true                   # Thrust, mass flow, etc.
+
+# ============================================================================
+# MONTE CARLO CONFIGURATION (Future)
+# ============================================================================
+[monte_carlo]
+enable = false
+num_runs = 1000
+random_seed = 42
+
+# Parameter variations (future implementation)
+[monte_carlo.variations]
+# Example: mass_total = {type = "normal", mean = 10.0, std = 0.1}
+# Example: wind_speed = {type = "uniform", min = 0.0, max = 10.0}
 

@@ -126,8 +126,8 @@ Rocket::PropulsionConfig create_propulsion_config(const Parameter& param) {
     return config;
 }
 
-Environment::AtmosphereConfig create_atmosphere_config(const Parameter& param) {
-    Environment::AtmosphereConfig config;
+AtmosphereConfig create_atmosphere_config(const Parameter& param) {
+    AtmosphereConfig config;
     config.model_type = param.environment_config.atmosphere_model;
     config.sea_level_pressure = 101325.0;
     config.sea_level_temperature = 288.15;
@@ -138,8 +138,8 @@ Environment::AtmosphereConfig create_atmosphere_config(const Parameter& param) {
     return config;
 }
 
-Environment::GravityConfig create_gravity_config(const Parameter& param) {
-    Environment::GravityConfig config;
+GravityConfig create_gravity_config(const Parameter& param) {
+    GravityConfig config;
     config.model_type = param.environment_config.gravity_model;
     config.surface_gravity = 9.81;
     config.earth_radius = 6371000.0;
@@ -147,8 +147,8 @@ Environment::GravityConfig create_gravity_config(const Parameter& param) {
     return config;
 }
 
-Environment::WindConfig create_wind_config(const Parameter& param) {
-    Environment::WindConfig config;
+WindConfig create_wind_config(const Parameter& param) {
+    WindConfig config;
     config.model_type = param.environment_config.wind_model;
     config.ground_speed = param.environment_config.wind.ground_speed;
     config.ground_direction = param.environment_config.wind.ground_direction;
@@ -158,8 +158,8 @@ Environment::WindConfig create_wind_config(const Parameter& param) {
     return config;
 }
 
-Output::OutputConfig create_output_config(const Parameter& param) {
-    Output::OutputConfig config;
+OutputConfig create_output_config(const Parameter& param) {
+    OutputConfig config;
     config.format = param.output_config.format;
     config.directory = param.output_config.output_directory;
     config.filename_prefix = param.simulation.name;
@@ -285,7 +285,7 @@ int main(int argc, char* argv[]) {
         print_progress("Initializing components", 0.6);
         
         // Create environment
-        auto atmosphere = std::make_shared<Environment::AtmosphereModel>(atmosphere_config);
+        auto atmosphere = std::make_shared<Environment::StandardAtmosphereModel>(atmosphere_config);
         
         print_progress("Initializing components", 0.8);
         

@@ -8,11 +8,53 @@
 namespace IgnisYeet::Environment {
 
 /**
+ * @brief Atmospheric state at a given position
+ */
+struct AtmosphericState {
+    double density;      // kg/m³
+    double pressure;     // Pa
+    double temperature;  // K
+    double sound_speed;  // m/s
+    
+    AtmosphericState() 
+        : density(1.225)
+        , pressure(101325.0)
+        , temperature(288.15)
+        , sound_speed(343.0)
+    {}
+    
+    AtmosphericState(double d, double p, double t, double s)
+        : density(d), pressure(p), temperature(t), sound_speed(s)
+    {}
+};
+
+/**
  * @brief Base class for atmosphere models
  */
 class AtmosphereModel {
+private:
+    // Missing member variables for atmosphere.cpp compatibility
+    int physics_level_;
+    double sea_level_pressure_;
+    double sea_level_temperature_;
+    double sea_level_density_;
+    double temperature_lapse_rate_;
+    double gas_constant_;
+    double gamma_;
+    double scale_height_;
+    enum class AtmosphereModelType { EXPONENTIAL, ISA };
+    AtmosphereModelType model_type_;
+    
 public:
     virtual ~AtmosphereModel() = default;
+    
+    // Missing methods for atmosphere.cpp compatibility
+    void initialize_from_parameters(const Parameter& params);
+    bool initialize();
+    void reset();
+    AtmosphericState get_atmospheric_state(double altitude) const;
+    AtmosphericState compute_exponential_atmosphere(double altitude) const;
+    AtmosphericState compute_isa_atmosphere(double altitude) const;
     
     // Get atmospheric properties at given altitude
     virtual double density(double altitude) const = 0;
@@ -178,6 +220,7 @@ private:
     
 public:
     Environment(const EnvironmentConfig& config);
+    Environment(const Parameter& params);  // Add Parameter constructor
     ~Environment() = default;
     
     // Non-copyable but movable
@@ -186,14 +229,48 @@ public:
     Environment(Environment&&) = default;
     Environment& operator=(Environment&&) = default;
     
+    // Initialization and reset
+    bool initialize();
+    void reset();
+    void initialize_from_parameters(const Parameter& params);
+    
     // Get complete environment state
     Physics::EnvironmentState state_at(
         const Physics::Vector3D& position, double time) const;
+    Physics::EnvironmentState get_state(
+        const Physics::Vector3D& position, double time) const;  // Alternative interface
+        
+    // Gravity force computation
+    Physics::Vector3D compute_gravity_force(
+        const Physics::Vector3D& position, double mass) const;
     
     // Individual components
     const AtmosphereModel& atmosphere() const { return *atmosphere_; }
     const WindModel& wind() const { return *wind_; }
     const GravityModel& gravity() const { return *gravity_; }
+};
+
+/**
+ * @brief Standard atmosphere model implementation 
+ */
+class StandardAtmosphereModel : public AtmosphereModel {
+private:
+    double sea_level_density_;
+    double sea_level_pressure_;
+    double sea_level_temperature_;
+    double scale_height_;
+    
+public:
+    StandardAtmosphereModel();
+    StandardAtmosphereModel(const AtmosphereConfig& config);
+    ~StandardAtmosphereModel() = default;
+    
+    // Implement pure virtual methods
+    double density(double altitude) const override;
+    double pressure(double altitude) const override;
+    double temperature(double altitude) const override;
+    double sound_speed(double altitude) const override;
+    Physics::EnvironmentState environment_at(const Physics::Vector3D& position) const override;
 };
 
 } // namespace IgnisYeet::Environment

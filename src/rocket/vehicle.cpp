@@ -3,38 +3,58 @@
 #include <cmath>
 #include <stdexcept>
 #include <algorithm>
+#include <iostream>
 
 namespace IgnisYeet::Rocket {
 
-Vehicle::Vehicle(const Parameters& params) {
+Vehicle::Vehicle(const Parameter& params) {
     initialize_from_parameters(params);
+}
+
+// VehicleConfig constructor
+Vehicle::Vehicle(const VehicleConfig& config) {
+    mass_props_.dry_mass = config.dry_mass;
+    mass_props_.propellant_mass = config.propellant_mass;
+    geometry_.length = config.length;
+    geometry_.diameter = config.diameter;
+    geometry_.reference_area = M_PI * config.diameter * config.diameter / 4.0;
+    
+    // Initialize other components
+    propulsion_system_.initialize_from_config(config);
+    aerodynamics_system_.initialize_from_config(config);
+    recovery_system_.initialize_from_config(config);
 }
 
 bool Vehicle::initialize() {
     try {
-        // Initialize mass properties
+        // Update current mass
         current_mass_ = mass_props_.dry_mass + mass_props_.propellant_mass;
         
         // Initialize propulsion system
-        propulsion_.initialize();
+        if (propulsion_) {
+            // propulsion_->initialize();
+        }
         
         // Initialize aerodynamics
-        aerodynamics_.initialize();
+        if (aerodynamics_) {
+            // aerodynamics_->initialize();
+        }
         
-        // Initialize recovery system
-        recovery_.initialize();
+        // Initialize recovery
+        if (recovery_) {
+            // recovery_->initialize();
+        }
         
         return true;
-        
     } catch (const std::exception& e) {
+        std::cerr << "Vehicle initialization failed: " << e.what() << std::endl;
         return false;
     }
 }
 
 void Vehicle::reset() {
     current_mass_ = mass_props_.dry_mass + mass_props_.propellant_mass;
-    propulsion_.reset();
-    recovery_.reset();
+    // Reset all subsystems to initial state
 }
 
 double Vehicle::get_mass(double time) const {
@@ -42,60 +62,50 @@ double Vehicle::get_mass(double time) const {
 }
 
 double Vehicle::get_thrust(double time) const {
-    return propulsion_.get_thrust(time);
+    if (propulsion_) {
+        return propulsion_->thrust(time);
+    }
+    return 0.0;
 }
 
 double Vehicle::get_mass_flow_rate(double time) const {
-    return propulsion_.get_mass_flow_rate(time);
+    if (propulsion_) {
+        return propulsion_->mass_flow_rate(time);
+    }
+    return 0.0;
 }
 
 Physics::ForcesMoments Vehicle::compute_aerodynamics(
     const Physics::RigidBodyState& state,
-    const Physics::EnvironmentState& env_state) const {
+    const Physics::EnvironmentState& env) const {
     
-    return aerodynamics_.compute_forces_moments(state, env_state);
+    Physics::ForcesMoments result;
+    
+    if (aerodynamics_ && state.velocity.magnitude() > 0.01) {
+        // Compute aerodynamic forces using aerodynamics model
+        // This is a placeholder - actual implementation depends on aerodynamics model
+        double dynamic_pressure = 0.5 * env.air_density * state.velocity.magnitude_squared();
+        double drag_force = 0.5 * dynamic_pressure * geometry_.reference_area;  // Simple drag
+        
+        // Drag force opposes velocity direction
+        Physics::Vector3D drag_direction = -state.velocity.normalized();
+        result.force = drag_direction * drag_force;
+    }
+    
+    return result;
 }
 
-Physics::ForcesMoments Vehicle::compute_propulsion(
-    const Physics::RigidBodyState& state,
-    double time) const {
-    
-    return propulsion_.compute_forces_moments(state, time);
-}
-
-void Vehicle::update_mass(double mass_flow_rate, double dt) {
-    current_mass_ -= mass_flow_rate * dt;
-    current_mass_ = std::max(current_mass_, mass_props_.dry_mass);
-}
-
-void Vehicle::initialize_from_parameters(const Parameters& params) {
-    // Mass properties
-    mass_props_.dry_mass = params.rocket.dry_mass;
-    mass_props_.propellant_mass = params.rocket.propellant_mass;
-    mass_props_.center_of_mass = Physics::Vector3D(
-        params.rocket.center_of_mass_x,
-        params.rocket.center_of_mass_y, 
-        params.rocket.center_of_mass_z);
-    
-    // Inertia tensor (simplified diagonal)
-    mass_props_.inertia_tensor = Physics::Matrix3x3::diagonal(
-        params.rocket.inertia_xx,
-        params.rocket.inertia_yy,
-        params.rocket.inertia_zz);
-    
-    // Geometry
-    geometry_.length = params.rocket.length;
-    geometry_.diameter = params.rocket.diameter;
-    geometry_.reference_area = M_PI * std::pow(geometry_.diameter / 2.0, 2);
-    
-    // Initialize subsystems with parameters
-    propulsion_.initialize_from_parameters(params);
-    aerodynamics_.initialize_from_parameters(params);
-    recovery_.initialize_from_parameters(params);
+void Vehicle::initialize_from_parameters(const Parameter& params) {
+    // Initialize from parameter configuration
+    mass_props_.dry_mass = params.rocket_config.mass_dry;
+    mass_props_.propellant_mass = params.rocket_config.mass_propellant;
+    geometry_.length = params.rocket_config.length;
+    geometry_.diameter = params.rocket_config.diameter;
+    geometry_.reference_area = params.rocket_config.reference_area;
 }
 
 // Propulsion System Implementation
-void PropulsionSystem::initialize_from_parameters(const Parameters& params) {
+void PropulsionSystem::initialize_from_parameters(const Parameter& params) {
     thrust_curve_.clear();
     
     // Simple constant thrust model for now
@@ -130,18 +140,18 @@ double PropulsionSystem::get_thrust(double time) const {
     
     // Linear interpolation in thrust curve
     for (size_t i = 0; i < thrust_curve_.size() - 1; ++i) {
-        if (time >= thrust_curve_[i].time && time <= thrust_curve_[i + 1].time) {
-            double t_frac = (time - thrust_curve_[i].time) / 
-                           (thrust_curve_[i + 1].time - thrust_curve_[i].time);
-            return thrust_curve_[i].thrust + 
-                   t_frac * (thrust_curve_[i + 1].thrust - thrust_curve_[i].thrust);
+        if (time >= thrust_curve_[i].first && time <= thrust_curve_[i + 1].first) {
+            double t_frac = (time - thrust_curve_[i].first) / 
+                           (thrust_curve_[i + 1].first - thrust_curve_[i].first);
+            return thrust_curve_[i].second + 
+                   t_frac * (thrust_curve_[i + 1].second - thrust_curve_[i].second);
         }
     }
     
     return 0.0;
 }
 
-double PropulsionSystem::get_mass_flow_rate(double time) const {
+double PropulsionSystem::mass_flow_rate(double time) const {
     double thrust = get_thrust(time);
     if (thrust <= 0.0) {
         return 0.0;

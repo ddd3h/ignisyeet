@@ -12,6 +12,26 @@
 namespace IgnisYeet::Output {
 
 /**
+ * @brief Output record for simulation data
+ */
+struct OutputRecord {
+    double time;
+    Physics::RigidBodyState state;
+    Physics::EnvironmentState environment;
+    double mass;
+    double thrust;
+    
+    // Missing fields for manager.cpp compatibility
+    double altitude;
+    double velocity_magnitude;
+    double mach_number;
+    Physics::Vector3D position;
+    Physics::Vector3D velocity;
+    
+    OutputRecord() : time(0.0), mass(0.0), thrust(0.0), altitude(0.0), velocity_magnitude(0.0), mach_number(0.0) {}
+};
+
+/**
  * @brief Output data record for a single time step
  */
 struct DataRecord {
@@ -73,6 +93,9 @@ public:
     
     // Finalize and close output
     virtual bool finalize() = 0;
+    
+    // Close output (alias for finalize)
+    virtual bool close() { return finalize(); }
     
     // Get file extension
     virtual std::string extension() const = 0;
@@ -164,8 +187,30 @@ private:
     std::string base_filename_;
     std::unordered_map<std::string, std::string> metadata_;
     
+    // Missing member variables for manager.cpp compatibility
+    OutputConfig config_;
+    std::vector<OutputRecord> output_buffer_;
+    size_t records_written_;
+    
+    struct OutputStatistics {
+        size_t total_records;
+        double max_altitude;
+        double max_velocity;
+        double max_mach;
+        double simulation_start_time;
+        double simulation_end_time;
+        Physics::Vector3D final_position;
+        Physics::Vector3D final_velocity;
+        double final_mass;
+        
+        OutputStatistics() : total_records(0), max_altitude(0.0), max_velocity(0.0), max_mach(0.0),
+                            simulation_start_time(0.0), simulation_end_time(0.0), final_mass(0.0) {}
+    };
+    OutputStatistics statistics_;
+    
 public:
     OutputManager(const OutputConfig& config);
+    OutputManager(const Parameter& params);  // Add Parameter constructor
     ~OutputManager();
     
     // Non-copyable but movable
@@ -176,6 +221,8 @@ public:
     
     // Initialize all writers
     bool initialize();
+    void reset();  // Add reset method
+    void initialize_from_parameters(const Parameter& params);  // Add parameter initialization
     
     // Add metadata
     void add_metadata(const std::string& key, const std::string& value);
@@ -183,6 +230,7 @@ public:
     
     // Write data
     bool write_record(const DataRecord& record);
+    bool write_record(const OutputRecord& record);  // Add OutputRecord version
     bool write_records(const std::vector<DataRecord>& records);
     
     // Flush buffer to files
@@ -190,6 +238,11 @@ public:
     
     // Finalize all outputs
     bool finalize();
+    
+    // Missing methods for manager.cpp compatibility  
+    void update_statistics(const OutputRecord& record);
+    bool flush_buffer();
+    void write_statistics_file();
     
     // Buffer management
     void set_buffer_size(size_t size) { buffer_size_ = size; }
@@ -207,10 +260,28 @@ public:
         double max_velocity;
         double max_acceleration;
         double max_mach;
+        double flight_time;
+        double burnout_time;
+        double apogee_time;
+        size_t integration_steps;
+        double average_step_size;
+        bool recovery_deployed;
+        double recovery_deployment_time;
+        double recovery_deployment_altitude;
+        double simulation_start_time;
+        double simulation_end_time;
+        Physics::Vector3D final_position;
+        Physics::Vector3D final_velocity;
+        double final_mass;
         
         Statistics() : total_records(0), simulation_time(0.0), 
                       max_altitude(0.0), max_velocity(0.0), 
-                      max_acceleration(0.0), max_mach(0.0) {}
+                      max_acceleration(0.0), max_mach(0.0),
+                      flight_time(0.0), burnout_time(0.0), apogee_time(0.0),
+                      integration_steps(0), average_step_size(0.0),
+                      recovery_deployed(false), recovery_deployment_time(0.0),
+                      recovery_deployment_altitude(0.0), simulation_start_time(0.0),
+                      simulation_end_time(0.0), final_mass(0.0) {}
     };
     
     Statistics compute_statistics() const;

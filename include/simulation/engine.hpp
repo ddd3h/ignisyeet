@@ -17,10 +17,10 @@
 
 namespace IgnisYeet::Simulation {
 
-// Forward declarations
-struct Parameters;
-struct SimulationConfig;
-struct MonteCarloConfig;
+// Use actual parameter types instead of forward declarations
+using Parameters = ::Parameter;  // Use the global Parameter class
+using SimulationConfig = ::SimulationConfig;
+using MonteCarloConfig = ::MonteCarloConfig;
 
 /**
  * @brief Simulation results and statistics
@@ -61,6 +61,36 @@ struct SimulationResults {
         , landing_velocity(Physics::Vector3D::zero())
         , total_simulation_time(0.0)
         , total_steps(0)
+    {}
+};
+
+/**
+ * @brief Engine configuration structure
+ */
+struct EngineConfig {
+    // Simulation parameters
+    double max_time;                      // Maximum simulation time [s]
+    double dt;                           // Time step [s]
+    std::string integrator_type;         // Integrator type
+    int physics_level;                   // Physics complexity level
+    double output_interval;              // Output interval [s]
+    
+    // Termination conditions
+    bool terminate_on_ground;            // Terminate on ground impact
+    bool terminate_on_max_time;          // Terminate on max time
+    bool terminate_on_max_altitude;      // Terminate on max altitude
+    double max_altitude_limit;           // Max altitude limit [m]
+    
+    EngineConfig() 
+        : max_time(1000.0)
+        , dt(0.01)
+        , integrator_type("euler")
+        , physics_level(1)
+        , output_interval(0.1)
+        , terminate_on_ground(true)
+        , terminate_on_max_time(true)
+        , terminate_on_max_altitude(false)
+        , max_altitude_limit(100000.0) 
     {}
 };
 
@@ -112,7 +142,11 @@ private:
         const Physics::RigidBodyState& state, double time);
     
 public:
-    Engine(const Parameters& params);
+    Engine(const Parameter& params);
+    Engine(const SimulationConfig& config, 
+           std::shared_ptr<Rocket::Vehicle> vehicle,
+           std::shared_ptr<Environment::AtmosphereModel> atmosphere,
+           std::shared_ptr<Output::OutputManager> output_manager);
     ~Engine() = default;
     
     // Non-copyable but movable
@@ -152,6 +186,12 @@ public:
     const ignis::AtmosphereModel& atmosphere_model() const { return *atmosphere_model_; } // Atmosphere model accessor
     const Integrator& integrator() const { return *integrator_; }
     const Output::OutputManager& output_manager() const { return *output_manager_; }
+    
+    // Set initial state
+    void set_initial_state(const Physics::RigidBodyState& state);
+    
+    // Get statistics  
+    Output::OutputManager::Statistics get_statistics() const;
     
 private:
     void initialize_components(const Parameters& params);

@@ -30,8 +30,8 @@ TEST_TARGETS = test_minimal test_gravity test_gravity_simple test_atmosphere tes
 $(MAIN_V3_TARGET): src/main_v3.cpp $(ALL_SRCS)
 	$(CXX) $(CXXFLAGS) -o $@ src/main_v3.cpp $(ALL_SRCS) $(LDFLAGS)
 
-$(SIMPLE_TARGET): src/main_v3_simple.cpp $(PHYSICS_SRCS) $(PARAMETER_SRCS) src/rocket.cpp src/output.cpp
-	$(CXX) $(CXXFLAGS) -o $@ src/main_v3_simple.cpp $(PHYSICS_SRCS) $(PARAMETER_SRCS) src/rocket.cpp src/output.cpp $(LDFLAGS)
+$(SIMPLE_TARGET): src/main_v3_simple.cpp $(PHYSICS_SRCS) $(PARAMETER_SRCS) archive/src/rocket.cpp archive/src/output.cpp
+	$(CXX) $(CXXFLAGS) -o $@ src/main_v3_simple.cpp $(PHYSICS_SRCS) $(PARAMETER_SRCS) archive/src/rocket.cpp archive/src/output.cpp $(LDFLAGS)
 
 # Test executables (in test directory)
 $(TEST_DIR)/test_minimal: $(TEST_DIR)/test_minimal.cpp src/physics/vector3d.cpp
@@ -155,11 +155,11 @@ build-all: $(MAIN_V3_TARGET) $(SIMPLE_TARGET) $(addprefix $(TEST_DIR)/,$(TEST_TA
 # Clean targets
 clean:
 	rm -f $(MAIN_V3_TARGET) $(SIMPLE_TARGET)
-	rm -f $(TEST_DIR)/test_* $(TEST_DIR)/*.o
+	rm -f $(TEST_DIR)/*.o
 	rm -f src/**/*.o src/*.o *.o
 
 clean-test:
-	rm -f $(TEST_DIR)/test_* $(TEST_DIR)/*.o
+	rm -f $(TEST_DIR)/*.o
 
 # Documentation targets
 doc: doc-doxygen doc-sphinx

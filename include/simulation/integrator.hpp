@@ -49,11 +49,35 @@ using DerivativeFunction = std::function<StateDerivative(
     const Physics::RigidBodyState&, double)>;
 
 /**
+ * @brief Integration statistics
+ */
+struct IntegrationStatistics {
+    size_t total_steps;
+    double total_time;
+    double average_step_size;
+    
+    IntegrationStatistics() : total_steps(0), total_time(0.0), average_step_size(0.0) {}
+};
+
+/**
  * @brief Base class for numerical integrators
  */
 class Integrator {
+protected:
+    std::string name_;
+    double tolerance_;
+    size_t step_count_;
+    double total_time_;
+    
 public:
+    Integrator(const std::string& name, double tolerance);
     virtual ~Integrator() = default;
+    
+    // Reset statistics
+    void reset();
+    
+    // Get statistics
+    IntegrationStatistics get_statistics() const;
     
     // Integrate one time step
     virtual Physics::RigidBodyState step(
@@ -73,6 +97,13 @@ public:
  */
 class EulerIntegrator : public Integrator {
 public:
+    EulerIntegrator();
+    
+    Physics::RigidBodyState integrate(
+        const Physics::RigidBodyState& current_state,
+        double dt,
+        const DerivativeFunction& derivative_func);
+        
     Physics::RigidBodyState step(
         const Physics::RigidBodyState& current_state,
         double dt,
@@ -91,7 +122,7 @@ private:
     Physics::Vector3D prev_acceleration_;
     
 public:
-    LeapfrogIntegrator() : first_step_(true), prev_acceleration_(Physics::Vector3D::zero()) {}
+    LeapfrogIntegrator() : Integrator("Leapfrog", 1e-8), first_step_(true), prev_acceleration_(Physics::Vector3D::zero()) {}
     
     Physics::RigidBodyState step(
         const Physics::RigidBodyState& current_state,

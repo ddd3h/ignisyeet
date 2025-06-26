@@ -62,8 +62,6 @@ double EulerIntegrator::estimate_error(
 }
 
 // Leapfrog Integrator Implementation
-LeapfrogIntegrator::LeapfrogIntegrator() : Integrator("Leapfrog", 1e-8) {}
-
 Physics::RigidBodyState LeapfrogIntegrator::integrate(
     const Physics::RigidBodyState& current_state,
     const StateDerivative& derivatives,

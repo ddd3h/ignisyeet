@@ -12,6 +12,66 @@
 namespace IgnisYeet::Rocket {
 
 /**
+ * @brief Vehicle configuration structure
+ */
+struct VehicleConfig {
+    // Mass properties
+    double mass_dry;                     // Dry mass [kg]
+    double mass_propellant;              // Propellant mass [kg]
+    
+    // Geometry
+    double length;                       // Total length [m]
+    double diameter;                     // Diameter [m]
+    double reference_area;               // Reference area [m²]
+    
+    // Aerodynamics
+    double normal_force_coefficient;     // Normal force coefficient
+    double drag_coefficient;             // Drag coefficient
+    double lift_coefficient;             // Lift coefficient
+    
+    // Inertia
+    double inertia_xx;                   // Moment of inertia around x-axis [kg·m²]
+    double inertia_yy;                   // Moment of inertia around y-axis [kg·m²]
+    double inertia_zz;                   // Moment of inertia around z-axis [kg·m²]
+    
+    VehicleConfig() 
+        : mass_dry(5.0)
+        , mass_propellant(2.0)
+        , length(1.0)
+        , diameter(0.1)
+        , reference_area(0.00785)
+        , normal_force_coefficient(0.1)
+        , drag_coefficient(0.5)
+        , lift_coefficient(0.2)
+        , inertia_xx(0.1)
+        , inertia_yy(0.1)
+        , inertia_zz(0.01)
+    {}
+};
+
+/**
+ * @brief Propulsion configuration structure  
+ */
+struct PropulsionConfig {
+    std::string engine_type;
+    std::vector<std::pair<double, double>> thrust_curve;  // time-thrust pairs
+    double isp;            // Specific impulse [s]
+    double burn_time;
+    double thrust;         // Maximum thrust [N]
+    double specific_impulse; // Specific impulse [s] (alias for isp)
+    double propellant_mass;  // Propellant mass [kg]
+    
+    PropulsionConfig() 
+        : engine_type("solid")
+        , isp(200.0)
+        , burn_time(5.0)
+        , thrust(100.0)
+        , specific_impulse(200.0)
+        , propellant_mass(2.0)
+    {}
+};
+
+/**
  * @brief Rocket mass properties
  */
 struct MassProperties {
@@ -50,8 +110,25 @@ private:
     double mass_flow_rate_;
     std::vector<std::pair<double, double>> thrust_curve_; // (time, thrust)
     
+    // Missing member variables
+    double max_thrust_;
+    double specific_impulse_;
+    bool is_burning_;
+    double total_impulse_delivered_;
+    Physics::Vector3D thrust_direction_;
+    
 public:
     PropulsionSystem(const PropulsionConfig& config);
+    
+    // Configuration
+    void configure(const PropulsionConfig& config);
+    void initialize_from_config(const VehicleConfig& config);
+    
+    // Missing methods
+    void initialize_from_parameters(const Parameter& params);
+    bool initialize();
+    void reset();
+    double get_thrust(double time) const;
     
     // Get thrust at given time
     double thrust(double time) const;
@@ -85,6 +162,9 @@ private:
 public:
     RecoverySystem(const RecoveryConfig& config);
     
+    // Configuration
+    void initialize_from_config(const VehicleConfig& config);
+    
     // Update deployment status based on flight conditions
     void update(const Physics::RigidBodyState& state);
     
@@ -110,13 +190,19 @@ private:
     // Properties
     MassProperties mass_props_;
     Geometry geometry_;
+    double current_mass_;  // Current total mass [kg]
     
     // Launch conditions
     Physics::Vector3D launch_position_;
     Physics::Quaternion launch_orientation_;
     
+    // Missing member variables for vehicle.cpp compatibility
+    VehicleConfig config_;
+    
 public:
     Vehicle(const RocketConfig& config);
+    Vehicle(const VehicleConfig& config);  // Add VehicleConfig constructor
+    Vehicle(const Parameter& params);  // Add Parameter constructor
     ~Vehicle() = default;
     
     // Non-copyable but movable
@@ -124,6 +210,11 @@ public:
     Vehicle& operator=(const Vehicle&) = delete;
     Vehicle(Vehicle&&) = default;
     Vehicle& operator=(Vehicle&&) = default;
+    
+    // Initialization and reset
+    bool initialize();
+    void reset();
+    void initialize_from_parameters(const Parameter& params);
     
     // State initialization
     Physics::RigidBodyState initial_state() const;
@@ -133,8 +224,11 @@ public:
     
     // Get current mass
     double mass(double time) const;
+    double get_mass(double time) const;  // Alternative interface
     
     // Propulsion
+    double get_thrust(double time) const;
+    double get_mass_flow_rate(double time) const;
     double thrust(double time) const;
     Physics::Vector3D thrust_vector(double time, const Physics::Quaternion& orientation) const;
     
@@ -151,6 +245,11 @@ public:
     Physics::Vector3D recovery_drag(
         const Physics::RigidBodyState& state,
         const Physics::EnvironmentState& env) const;
+        
+    // Aerodynamics
+    Physics::ForcesMoments compute_aerodynamics(
+        const Physics::RigidBodyState& state,
+        const Physics::EnvironmentState& env) const;
     
     // Accessors
     const MassProperties& mass_properties() const { return mass_props_; }
@@ -161,6 +260,10 @@ public:
     // Launch conditions
     const Physics::Vector3D& launch_position() const { return launch_position_; }
     const Physics::Quaternion& launch_orientation() const { return launch_orientation_; }
+    
+    // Component access
+    PropulsionSystem& get_propulsion_system() { return propulsion_system_; }
+    const PropulsionSystem& get_propulsion_system() const { return propulsion_system_; }
     
     // Flight phase detection
     enum class FlightPhase {

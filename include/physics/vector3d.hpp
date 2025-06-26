@@ -44,6 +44,11 @@ public:
                        data_[2] - other.data_[2]);
     }
     
+    // Unary minus operator  
+    Vector3D operator-() const {
+        return Vector3D(-data_[0], -data_[1], -data_[2]);
+    }
+    
     Vector3D operator*(double scalar) const {
         return Vector3D(data_[0] * scalar, 
                        data_[1] * scalar, 

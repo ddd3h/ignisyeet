@@ -4,15 +4,46 @@
 #include <chrono>
 #include <algorithm>
 #include <cmath>
+#include <string>
 
-namespace IgnisYeet::Simulation {
+namespace IgnisYeet {
+namespace Simulation {
 
-Engine::Engine(const Parameters& params) 
-    : current_time_(0.0)
-    , time_step_(params.simulation.time_step)
-{
-    initialize_components(params);
-    setup_initial_state();
+Engine::Engine(const Parameter& params) 
+    : config_(params.simulation)
+    , vehicle_(std::make_shared<Rocket::Vehicle>(params))
+    , environment_(std::make_shared<Environment::AtmosphereModel>(params.atmosphere))
+    , output_manager_(std::make_shared<Output::OutputManager>(params.output))
+    , integrator_(nullptr)
+    , current_time_(0.0)
+    , current_state_()
+    , step_size_(params.simulation.time_step)
+    , max_time_(params.simulation.max_time)
+    , convergence_tolerance_(params.simulation.tolerance)
+    , progress_callback_(nullptr) {
+    
+    // Create integrator based on configuration
+    create_integrator();
+}
+
+Engine::Engine(const SimulationConfig& config,
+               std::shared_ptr<Rocket::Vehicle> vehicle,
+               std::shared_ptr<Environment::AtmosphereModel> atmosphere,
+               std::shared_ptr<Output::OutputManager> output_manager)
+    : config_(config)
+    , vehicle_(vehicle)
+    , environment_(atmosphere)
+    , output_manager_(output_manager)
+    , integrator_(nullptr)
+    , current_time_(0.0)
+    , current_state_()
+    , step_size_(config.time_step)
+    , max_time_(config.max_time)
+    , convergence_tolerance_(config.tolerance)
+    , progress_callback_(nullptr) {
+    
+    // Create integrator based on configuration
+    create_integrator();
 }
 
 bool Engine::initialize() {
@@ -67,7 +98,7 @@ SimulationResults Engine::run() {
             }
             
             // Update statistics
-            Physics::EnvironmentState env_state = environment_->get_state(current_state_.position, current_time_);
+            Physics::EnvironmentState env_state = environment_->state_at(current_state_.position, current_time_);
             update_statistics(current_state_, env_state, results);
             
             // Write output
@@ -79,9 +110,9 @@ SimulationResults Engine::run() {
             // Progress reporting
             double progress = current_time_ / max_time;
             if (step_count % 100 == 0) {  // Report every 100 steps
-                std::string status = "Time: " + std::to_string(current_time_) + "s, Altitude: " + 
+                std::string status_msg = "Time: " + std::to_string(current_time_) + "s, Altitude: " + 
                                     std::to_string(current_state_.position.z()) + "m";
-                report_progress(progress, status);
+                report_progress(progress, status_msg);
             }
             
             step_count++;
@@ -113,8 +144,19 @@ bool Engine::step() {
         StateDerivative derivatives = compute_derivatives(current_state_, current_time_);
         
         // Integrate state using selected integration method
-        Physics::RigidBodyState new_state = integrator_->integrate(
-            current_state_, derivatives, time_step_);
+        // Physics::RigidBodyState new_state = integrator_->step(
+        //     current_state_, time_step_, 
+        //     [this](const Physics::RigidBodyState& state, double time) {
+        //         return compute_derivatives(state, time);
+        //     });
+        
+        // Simplified integration for now
+        StateDerivative derivatives = compute_derivatives(current_state_, current_time_);
+        Physics::RigidBodyState new_state = current_state_;
+        new_state.position += derivatives.position_dot * time_step_;
+        new_state.velocity += derivatives.velocity_dot * time_step_;
+        new_state.angular_velocity += derivatives.angular_velocity_dot * time_step_;
+        new_state.mass += derivatives.mass_dot * time_step_;
         
         // Update state and time
         current_state_ = new_state;
@@ -164,7 +206,7 @@ Physics::ForcesMoments Engine::compute_forces_moments(
     Physics::ForcesMoments total;
     
     // Get environment state (traditional environment)
-    Physics::EnvironmentState env_state = environment_->get_state(state.position, time);
+    Physics::EnvironmentState env_state = environment_->state_at(state.position, time);
     
     // Get atmosphere state from new atmosphere model
     auto atm_state = atmosphere_model_->calculate_atmosphere(state.position, time);
@@ -256,7 +298,7 @@ bool Engine::write_output_record(
         record.mass = state.mass;
         
         // Add derived quantities
-        Physics::EnvironmentState env_state = environment_->get_state(state.position, time);
+        Physics::EnvironmentState env_state = environment_->state_at(state.position, time);
         record.altitude = state.position.z();
         record.velocity_magnitude = state.velocity.magnitude();
         record.mach_number = record.velocity_magnitude / env_state.speed_of_sound;
@@ -279,7 +321,7 @@ void Engine::reset() {
     if (output_manager_) output_manager_->reset();
 }
 
-void Engine::initialize_components(const Parameters& params) {
+void Engine::initialize_components(const Parameter& params) {
     // Store configuration
     config_.max_simulation_time = params.simulation.max_time;
     config_.max_altitude = params.simulation.max_altitude;
@@ -316,7 +358,7 @@ void Engine::initialize_components(const Parameters& params) {
     output_manager_ = std::make_unique<Output::OutputManager>(params);
 }
 
-void Engine::create_gravity_model(const Parameters& params) {
+void Engine::create_gravity_model(const Parameter& params) {
     // Extract gravity parameters from environment configuration
     int gravity_level = params.environment.gravity.level;
     double g0 = params.environment.gravity.g0;
@@ -350,7 +392,7 @@ void Engine::create_gravity_model(const Parameters& params) {
     std::cout << "Initialized gravity model: " << gravity_model_->get_description() << std::endl;
 }
 
-void Engine::create_atmosphere_model(const Parameters& params) {
+void Engine::create_atmosphere_model(const Parameter& params) {
     // Extract atmosphere parameters from environment configuration
     int atmosphere_level = params.environment.atmosphere.level;
     
@@ -443,4 +485,16 @@ void Engine::report_progress(double progress, const std::string& status) {
     }
 }
 
-} // namespace IgnisYeet::Simulation
+void Engine::set_initial_state(const Physics::RigidBodyState& state) {
+    current_state_ = state;
+}
+
+Output::OutputManager::Statistics Engine::get_statistics() const {
+    if (output_manager_) {
+        return output_manager_->compute_statistics();
+    }
+    return Output::OutputManager::Statistics{};
+}
+
+} // namespace Simulation
+} // namespace IgnisYeet

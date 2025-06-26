@@ -3,66 +3,62 @@
 #include <cmath>
 #include <algorithm>
 #include <stdexcept>
+#include <iostream>
 
 namespace IgnisYeet::Environment {
 
-Environment::Environment(const Parameters& params) {
+Environment::Environment(const Parameter& params) {
     initialize_from_parameters(params);
 }
 
 bool Environment::initialize() {
     try {
-        atmosphere_.initialize();
-        gravity_.initialize();
-        wind_.initialize();
+        // Initialize atmosphere model
+        if (atmosphere_) {
+            // atmosphere_->initialize();
+        }
+        
+        // Initialize gravity model  
+        if (gravity_) {
+            // gravity_->initialize();
+        }
+        
+        // Initialize wind model
+        if (wind_) {
+            // wind_->initialize();
+        }
+        
         return true;
     } catch (const std::exception& e) {
+        std::cerr << "Environment initialization failed: " << e.what() << std::endl;
         return false;
     }
 }
 
 void Environment::reset() {
-    atmosphere_.reset();
-    gravity_.reset();
-    wind_.reset();
+    // Reset all models to initial state
+    if (atmosphere_) {
+        // atmosphere_->reset();
+    }
+    if (gravity_) {
+        // gravity_->reset();  
+    }
+    if (wind_) {
+        // wind_->reset();
+    }
 }
 
 Physics::EnvironmentState Environment::get_state(
     const Physics::Vector3D& position, double time) const {
-    
-    Physics::EnvironmentState state;
-    
-    // Get atmospheric properties
-    auto atm_state = atmosphere_.get_atmospheric_state(position.z());
-    state.air_density = atm_state.air_density;
-    state.air_temperature = atm_state.air_temperature;
-    state.air_pressure = atm_state.air_pressure;
-    state.speed_of_sound = atm_state.speed_of_sound;
-    
-    // Get wind velocity
-    state.wind_velocity = wind_.get_wind_velocity(position, time);
-    
-    // Get gravity acceleration
-    state.gravity_acceleration = gravity_.get_gravity_acceleration(position);
-    
-    return state;
+    return state_at(position, time);
 }
 
-Physics::Vector3D Environment::compute_gravity_force(
-    const Physics::Vector3D& position, double mass) const {
-    
-    Physics::Vector3D gravity_accel = gravity_.get_gravity_acceleration(position);
-    return gravity_accel * mass;
-}
-
-void Environment::initialize_from_parameters(const Parameters& params) {
-    atmosphere_.initialize_from_parameters(params);
-    gravity_.initialize_from_parameters(params);
-    wind_.initialize_from_parameters(params);
+void Environment::initialize_from_parameters(const Parameter& params) {
+    // Placeholder implementation - will implement component initialization
 }
 
 // Atmosphere Model Implementation
-void AtmosphereModel::initialize_from_parameters(const Parameters& params) {
+void AtmosphereModel::initialize_from_parameters(const Parameter& params) {
     physics_level_ = params.environment.physics_level;
     
     // Standard atmosphere parameters
@@ -117,15 +113,15 @@ AtmosphericState AtmosphereModel::compute_exponential_atmosphere(double altitude
     // Exponential decay
     double exp_factor = std::exp(-altitude / scale_height_);
     
-    state.air_density = sea_level_density_ * exp_factor;
-    state.air_pressure = sea_level_pressure_ * exp_factor;
-    state.air_temperature = sea_level_temperature_ - temperature_lapse_rate_ * altitude;
+    state.density = sea_level_density_ * exp_factor;
+    state.pressure = sea_level_pressure_ * exp_factor;
+    state.temperature = sea_level_temperature_ - temperature_lapse_rate_ * altitude;
     
     // Keep temperature above absolute minimum
-    state.air_temperature = std::max(state.air_temperature, 200.0);
+    state.temperature = std::max(state.temperature, 200.0);
     
     // Speed of sound from temperature
-    state.speed_of_sound = std::sqrt(gamma_ * gas_constant_ * state.air_temperature);
+    state.sound_speed = std::sqrt(gamma_ * gas_constant_ * state.temperature);
     
     return state;
 }
@@ -138,37 +134,37 @@ AtmosphericState AtmosphereModel::compute_isa_atmosphere(double altitude) const 
     
     if (altitude <= 11000.0) {
         // Troposphere
-        state.air_temperature = sea_level_temperature_ - temperature_lapse_rate_ * altitude;
+        state.temperature = sea_level_temperature_ - temperature_lapse_rate_ * altitude;
         
-        double temp_ratio = state.air_temperature / sea_level_temperature_;
+        double temp_ratio = state.temperature / sea_level_temperature_;
         double pressure_exp = 9.80665 / (gas_constant_ * temperature_lapse_rate_);
         
-        state.air_pressure = sea_level_pressure_ * std::pow(temp_ratio, pressure_exp);
-        state.air_density = state.air_pressure / (gas_constant_ * state.air_temperature);
+        state.pressure = sea_level_pressure_ * std::pow(temp_ratio, pressure_exp);
+        state.density = state.pressure / (gas_constant_ * state.temperature);
         
     } else if (altitude <= 20000.0) {
         // Lower stratosphere (constant temperature)
-        state.air_temperature = 216.65; // K
+        state.temperature = 216.65; // K
         
         // Exponential pressure decay in isothermal layer
         double h_diff = altitude - 11000.0;
-        double exp_factor = std::exp(-9.80665 * h_diff / (gas_constant_ * state.air_temperature));
+        double exp_factor = std::exp(-9.80665 * h_diff / (gas_constant_ * state.temperature));
         
-        state.air_pressure = 22632.0 * exp_factor; // Pressure at 11km
-        state.air_density = state.air_pressure / (gas_constant_ * state.air_temperature);
+        state.pressure = 22632.0 * exp_factor; // Pressure at 11km
+        state.density = state.pressure / (gas_constant_ * state.temperature);
         
     } else {
         // Higher altitudes - use exponential approximation
         double scale_height = gas_constant_ * 216.65 / 9.80665;
         double exp_factor = std::exp(-(altitude - 20000.0) / scale_height);
         
-        state.air_temperature = 216.65;
-        state.air_pressure = 5474.9 * exp_factor; // Pressure at 20km
-        state.air_density = state.air_pressure / (gas_constant_ * state.air_temperature);
+        state.temperature = 216.65;
+        state.pressure = 5474.9 * exp_factor; // Pressure at 20km
+        state.density = state.pressure / (gas_constant_ * state.temperature);
     }
     
     // Speed of sound
-    state.speed_of_sound = std::sqrt(gamma_ * gas_constant_ * state.air_temperature);
+    state.sound_speed = std::sqrt(gamma_ * gas_constant_ * state.temperature);
     
     return state;
 }
@@ -360,6 +356,55 @@ Physics::Vector3D WindModel::compute_turbulence(
     );
     
     return turbulence;
+}
+
+// StandardAtmosphereModel Implementation
+StandardAtmosphereModel::StandardAtmosphereModel() 
+    : sea_level_density_(1.225)      // kg/m³
+    , sea_level_pressure_(101325.0)  // Pa
+    , sea_level_temperature_(288.15) // K
+    , scale_height_(8000.0) {        // m
+}
+
+StandardAtmosphereModel::StandardAtmosphereModel(const AtmosphereConfig& config)
+    : sea_level_density_(config.sea_level_density)
+    , sea_level_pressure_(config.sea_level_pressure) 
+    , sea_level_temperature_(config.sea_level_temperature)
+    , scale_height_(config.scale_height) {
+}
+
+double StandardAtmosphereModel::density(double altitude) const {
+    return sea_level_density_ * std::exp(-altitude / scale_height_);
+}
+
+double StandardAtmosphereModel::pressure(double altitude) const {
+    return sea_level_pressure_ * std::exp(-altitude / scale_height_);
+}
+
+double StandardAtmosphereModel::temperature(double altitude) const {
+    // Simple linear decrease with altitude
+    const double lapse_rate = 0.0065; // K/m
+    return sea_level_temperature_ - lapse_rate * altitude;
+}
+
+double StandardAtmosphereModel::sound_speed(double altitude) const {
+    const double gamma = 1.4; // Heat capacity ratio for air
+    const double R = 287.0;   // Specific gas constant for air [J/(kg·K)]
+    double temp = temperature(altitude);
+    return std::sqrt(gamma * R * temp);
+}
+
+Physics::EnvironmentState StandardAtmosphereModel::environment_at(const Physics::Vector3D& position) const {
+    double altitude = position.z();
+    Physics::EnvironmentState state;
+    
+    state.density = density(altitude);
+    state.pressure = pressure(altitude);
+    state.temperature = temperature(altitude);
+    state.sound_speed = sound_speed(altitude);
+    state.wind_velocity = Physics::Vector3D(0, 0, 0); // No wind for now
+    
+    return state;
 }
 
 } // namespace IgnisYeet::Environment

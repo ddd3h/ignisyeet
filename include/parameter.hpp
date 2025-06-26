@@ -22,13 +22,23 @@ struct SimulationConfig {
     double tolerance;
     double output_interval;
     
+    // Physics level (1: basic, 2: intermediate, 3: full)
+    int physics_level;
+    
     // Termination conditions
     bool terminate_on_ground;
     bool terminate_on_max_time;
     bool terminate_on_apogee_descent;
+    bool terminate_on_max_altitude;
+    double max_altitude_limit;
     
     // Integration method
     std::string integration_method;  // "euler", "leapfrog", "rk4", "rk45"
+    
+    // Additional engine configuration fields
+    double max_simulation_time;   // Alias for max_time
+    double max_altitude;         // Maximum altitude for termination
+    double max_velocity;         // Maximum velocity for safety check
 };
 
 struct RocketConfig {
@@ -83,6 +93,7 @@ struct AerodynamicsConfig {
     bool enable_lateral;
     double cl_alpha;
     double cy_beta;
+    double cn_alpha;  // Normal force coefficient
     
     // Moment coefficients
     double cm_alpha;
@@ -104,10 +115,12 @@ struct PropulsionConfig {
     // Thrust characteristics
     std::string thrust_profile_type;
     std::string thrust_profile_file;
+    std::vector<std::pair<double, double>> thrust_curve;  // time-thrust pairs
     double thrust_constant;
     double burn_time;
     
     // Performance parameters
+    double isp;            // Specific impulse [s]
     double isp_vacuum;
     double isp_sea_level;
     double throat_area;
@@ -143,10 +156,22 @@ struct GravityConfig {
     double earth_rotation_rate;  // Earth rotation rate [rad/s] (for level 3)
     bool enable_coriolis;        // Include Coriolis effect (level 3 only)
     bool enable_centrifugal;     // Include centrifugal effect (level 3 only)
+    
+    // Missing fields for main_v3.cpp compatibility
+    int model_type;
+    double surface_gravity;
 };
 
 struct AtmosphereConfig {
     int level;  // 1: simple, 2: standard_ISA, 3: dynamic
+    
+    // Missing fields for main_v3.cpp compatibility
+    int model_type;
+    double sea_level_pressure;
+    double sea_level_temperature;
+    double sea_level_density;
+    double scale_height;
+    double temperature_lapse_rate;
     
     // Level 1: Simple atmosphere
     struct {
@@ -168,9 +193,41 @@ struct AtmosphereConfig {
     } gust;
 };
 
+struct WindConfig {
+    int model_type;
+    double ground_speed;
+    double ground_direction;
+    double altitude_coefficient;
+    double turbulence_intensity;
+    
+    WindConfig() 
+        : model_type(1)
+        , ground_speed(0.0)
+        , ground_direction(0.0)
+        , altitude_coefficient(0.0)
+        , turbulence_intensity(0.0)
+    {}
+};
+
 struct EnvironmentConfig {
     GravityConfig gravity;
     AtmosphereConfig atmosphere;
+    
+    // Model selection
+    int atmosphere_model;  // 1: simple, 2: standard_ISA, 3: dynamic
+    int gravity_model;     // 1: uniform, 2: altitude_dependent, 3: rotating_earth
+    int wind_model;        // 1: none, 2: constant, 3: variable
+    
+    // Missing field for atmosphere.cpp compatibility
+    int physics_level;
+    
+    // Wind configuration
+    struct {
+        double ground_speed;
+        double ground_direction; 
+        double altitude_coefficient;
+        double turbulence_intensity;
+    } wind;
 };
 
 struct RecoveryConfig {
@@ -204,6 +261,21 @@ struct OutputConfig {
     bool include_config_hash;
     std::string coordinate_system;
     OutputFieldsConfig fields;
+    
+    // Missing fields for main_v3.cpp and manager.cpp compatibility
+    std::string format;
+    std::string directory;
+    std::string base_filename;
+    size_t buffer_size;
+    int precision;
+    bool write_statistics;
+    bool enable_buffering;
+    std::string filename;
+    std::vector<int> output_formats;  // For output format management
+    bool enable_csv;
+    bool enable_json;
+    bool enable_binary;
+    bool enable_hdf5;
 };
 
 struct MonteCarloConfig {
@@ -230,6 +302,9 @@ public:
     RecoveryConfig recovery;
     OutputConfig output_config;
     MonteCarloConfig monte_carlo;
+    
+    // Missing field for manager.cpp compatibility
+    OutputConfig output;
     
     // Legacy compatibility (will be phased out)
     Rocket rocket;

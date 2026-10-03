@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Panel-method aerodynamics for IgnisYeet.
 //!
 //! Builds a watertight panel mesh of the extracted rocket geometry and produces an

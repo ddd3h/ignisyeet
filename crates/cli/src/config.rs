@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! TOML configuration file. Relative paths are resolved against the config file directory.
 
 use anyhow::{bail, Context, Result};

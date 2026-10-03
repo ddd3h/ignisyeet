@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Landing dispersion studies: wind speed x direction grid and Monte Carlo.
 
 use crate::flight::{AeroScale, Descent, Simulation, Summary};

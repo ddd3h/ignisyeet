@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! The single KML (Google Earth) document `ignisyeet.kml`: launch site, flight trajectory and landing dispersion.
 //!
 //! Parts that a command did not just compute are read back from the CSV/JSON files in the output directory.

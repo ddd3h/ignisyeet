@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Thrust curve in RASP (.eng) format.
 
 use anyhow::{bail, Context, Result};

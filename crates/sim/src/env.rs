@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Environment models: wind, atmosphere, Earth/gravity and integrator selection.
 //! The `*Config` types are deserialized from TOML; the runtime types are built from them
 //! and return an error for variants that are not implemented yet.

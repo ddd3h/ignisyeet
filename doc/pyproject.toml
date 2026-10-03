@@ -3,6 +3,8 @@ name = "ignisyeet-doc"
 version = "0.2.0"
 description = "IgnisYeet documentation (Sphinx)"
 requires-python = ">=3.10"
+license = "GPL-3.0-or-later"
+authors = [{ name = "西濱大将 (NISHIHAMA Daisuke)", email = "daisukenishihama63@gmail.com" }]
 dependencies = ["sphinx>=7.2", "furo>=2024.1", "numpy>=1.26", "pandas>=2.1", "matplotlib>=3.8", "sphinxcontrib-bibtex>=2.6", "pyte>=0.8", "pillow>=10"]
 
 [tool.uv]

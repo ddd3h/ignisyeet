@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Terminal presentation: output mode detection, banner, boxed panels, spinners and progress bars.
 //!
 //! Three modes: `Rich` (stdout is a terminal: banner, panels, colours, progress on stderr),

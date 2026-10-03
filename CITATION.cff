@@ -1,0 +1,13 @@
+cff-version: 1.2.0
+message: "If you use IgnisYeet in your work, please cite it using the metadata in this file. IgnisYeet を使用した場合は、このファイルの情報を用いて引用してください。"
+type: software
+title: IgnisYeet
+abstract: "STL-based rocket aerodynamics, 6-DoF trajectory and landing dispersion simulator."
+authors:
+  - family-names: Nishihama
+    given-names: Daisuke
+    alias: "西濱大将"
+    email: daisukenishihama63@gmail.com
+version: 0.2.0
+license: GPL-3.0-or-later
+repository-code: "https://github.com/ddd3h/ignisyeet"

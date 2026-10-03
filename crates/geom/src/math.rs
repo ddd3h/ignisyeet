@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Minimal 3D vector / quaternion math shared by all crates.
 
 use std::ops::{Add, AddAssign, Div, Index, Mul, Neg, Sub};

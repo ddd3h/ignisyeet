@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Time integrators for the 13-component rigid-body state (position, velocity, attitude
 //! quaternion, body angular velocity): classical RK4 and Dormand-Prince 5(4) with step-size control.
 //!

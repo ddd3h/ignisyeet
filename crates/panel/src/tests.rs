@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 use super::*;
 use crate::mesh::Mesh;
 use crate::solver::{coefficients, solve_potential};

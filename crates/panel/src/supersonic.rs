@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Supersonic local-inclination methods.
 //!
 //! Each panel sees the freestream at the local inclination `delta` between its plane and the

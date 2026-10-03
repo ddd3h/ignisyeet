@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 """Compile every figures/tikz/*.tex body into SVG (HTML) and PDF (LaTeX) with lualatex + dvisvgm.
 
 Each source file contains only a tikzpicture; this script wraps it in a standalone

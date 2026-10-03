@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 """Generate the matplotlib figures of the documentation (SVG for HTML, PDF for LaTeX; no titles).
 
 Usage: python scripts/make_plots.py <ignisyeet out dir> <figure dir> [<monte carlo out dir> [<panel out dir>]]

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Morino low-order Dirichlet panel solver (constant source and doublet panels).
 //!
 //! With the interior perturbation potential set to zero, the exterior potential on the surface

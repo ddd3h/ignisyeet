@@ -1,0 +1,97 @@
+IgnisYeet
+Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+Contact: daisukenishihama63@gmail.com
+Repository: https://github.com/ddd3h/ignisyeet
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+このプログラムはフリーソフトウェアです。あなたは、フリーソフトウェア財団が
+公表した GNU 一般公衆利用許諾契約書（バージョン 3、または、あなたの選択に
+より、それ以降のいずれかのバージョン）の定める条件の下で、このプログラムを
+再配布または改変することができます。このプログラムは有用であることを期待して
+配布されていますが、商品性や特定目的への適合性についての暗黙の保証を含め、
+いかなる保証もありません。詳しくは GNU 一般公衆利用許諾契約書をご覧ください。
+（ライセンスの全文は LICENSE と <https://www.gnu.org/licenses/> にあります。
+法的効力を持つのは英語の原文です。）
+
+
+======================================================================
+Additional terms under GPLv3 section 7(b)
+GPLv3 第 7 条 (b) に基づく追加条件
+======================================================================
+
+Under section 7(b) of the GNU General Public License version 3, the following
+additional term applies to this program and to all works based on it:
+
+  1. The author attribution
+
+         IgnisYeet by 西濱大将 (NISHIHAMA Daisuke)
+
+     and the copyright notice
+
+         Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+
+     must be preserved in all copies and modified versions. This applies to:
+       - the source files (SPDX / copyright headers),
+       - the documentation, and
+       - the Appropriate Legal Notices and interactive output of the program
+         (the startup banner and the --version output).
+     Modifications may add further copyright lines but must not remove or
+     obscure these.
+
+  2. Modified versions must be marked in reasonable ways as different from the
+     original version (this is also required by GPLv3 section 5(a); it is
+     repeated here for clarity). A modified version must not be presented as
+     the original IgnisYeet.
+
+本プログラムおよびこれに基づくすべての著作物には、GPLv3 第 7 条 (b) に基づき
+次の追加条件が適用されます。
+
+  1. 著作者表示「IgnisYeet by 西濱大将 (NISHIHAMA Daisuke)」と著作権表示
+     「Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)」を、すべての複製物
+     および改変版で保持しなければなりません。対象は、ソースファイル、
+     ドキュメント、およびプログラムの適切な法的通知（Appropriate Legal
+     Notices）と対話的な出力（起動時のバナー、--version の出力）です。
+     著作権表示を追加することはできますが、これらを削除したり、
+     分かりにくくしたりしてはなりません。
+  2. 改変版は、原本と異なることが合理的な方法で明示されなければなりません
+     （GPLv3 第 5 条 (a) でも要求される事項で、念のため再掲しています）。
+     改変版を IgnisYeet の原本として示してはなりません。
+
+
+======================================================================
+Requests (not license conditions)
+お願い（ライセンスの条件ではありません）
+======================================================================
+
+The following are polite requests only. They are NOT conditions of the
+license, they do not restrict any right granted by the GNU General Public
+License, and ignoring them does not affect your rights under it. (Under GPLv3
+section 7, further restrictions of that kind could be removed by any recipient
+anyway.)
+
+  - Citation: if you use IgnisYeet or its results in publications, reports or
+    presentations, please cite it (see CITATION.cff).
+  - Notification: if you use IgnisYeet in a project, a publication or a derived
+    work, please let the author know by e-mail (daisukenishihama63@gmail.com)
+    or by opening a GitHub issue at https://github.com/ddd3h/ignisyeet .
+
+以下は、あくまでお願いです。ライセンスの条件ではなく、GPL が与えるいかなる権利も
+制限しません。お願いに応じなくても、GPL に基づくあなたの権利には影響しません。
+
+  - 引用: IgnisYeet またはその結果を、論文・報告書・発表などで使用する場合は、
+    CITATION.cff を参照して引用してください。
+  - 連絡: IgnisYeet をプロジェクト、論文、派生物などで使用する場合は、
+    メール（daisukenishihama63@gmail.com）または GitHub の issue
+    （https://github.com/ddd3h/ignisyeet）で作者にお知らせください。

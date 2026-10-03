@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! 6-DoF flight simulation. The integration frame is selected by the Earth model (see
 //! `frame.rs`): a flat local ENU frame (x east, y north, z up) or the rotating ECEF frame.
 //! Body frame: x forward along the axis towards the nose; the rocket is axisymmetric.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Component build-up aerodynamics (Barrowman with the supersonic and drag extensions
 //! described in S. Niskanen, "Development of an Open Source model rocket simulation
 //! software", 2009 — the basis of OpenRocket).

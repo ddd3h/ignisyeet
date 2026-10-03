@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Extraction of an axisymmetric body profile and a trapezoidal fin set from a rocket mesh.
 //!
 //! The mesh is sliced perpendicular to its principal (longest) axis. In each slice the body

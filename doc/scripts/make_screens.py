@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 """Run the ignisyeet binary in a pseudo terminal and render its screen as PNG (pyte + Pillow).
 
 Usage: python scripts/make_screens.py <repo root> <output dir>

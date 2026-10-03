@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Integration frames. The flight dynamics in `flight.rs` are written once; everything that
 //! depends on the Earth model lives here:
 //!

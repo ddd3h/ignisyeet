@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Procedural rocket mesh used for examples and tests.
 //! The generated mesh has the nose tip at the origin and the body axis along +x (metres).
 

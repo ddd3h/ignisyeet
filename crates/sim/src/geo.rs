@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! WGS84 conversions between geodetic, ECEF and local ENU coordinates.
 
 use geom::Vec3;

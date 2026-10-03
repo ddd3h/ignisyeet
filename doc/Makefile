@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 # Build the IgnisYeet documentation.
 #   make html      figures + HTML (doc/build/html/index.html)
 #   make pdf       figures + PDF (doc/build/latex/ignisyeet.pdf, upLaTeX)

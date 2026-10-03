@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Skin friction by surface integration and the empirical axial-force increments.
 //!
 //! Local friction coefficient of a flat plate at running length `x_s` (nose tip for the body,

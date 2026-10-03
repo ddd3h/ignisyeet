@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Atmosphere models: U.S. Standard Atmosphere 1976 (0 - 86 km), optionally with a temperature
 //! offset, and a constant-property atmosphere.
 

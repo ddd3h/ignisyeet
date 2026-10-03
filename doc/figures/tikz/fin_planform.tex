@@ -1,0 +1,27 @@
+\begin{tikzpicture}[font=\small, scale=1.6]
+  \def\a{4}\def\b{2}\def\s{2.5}\def\m{1.6}
+  \pgfmathsetmacro{\ymac}{\s*(\a+2*\b)/(3*(\a+\b))}
+  \pgfmathsetmacro{\xmac}{\m*(\a+2*\b)/(3*(\a+\b))}
+  \pgfmathsetmacro{\cmac}{2/3*(\a+\b-\a*\b/(\a+\b))}
+  \fill[cfillg] (-1.2,-0.6) rectangle (5.6,0);
+  \draw[cink2] (-1.2,0) -- (5.6,0);
+  \node[cink2, font=\footnotesize] at (-0.6,-0.3) {胴体};
+  \draw[cblue, very thick, fill=cfill] (0,0) -- (\m,\s) -- (\m+\b,\s) -- (\a,0) -- cycle;
+  \coordinate (MR) at (\a/2,0); \coordinate (MT) at (\m+\b/2,\s); \coordinate (MU) at (\a/2,1);
+  % mid-chord line
+  \draw[cink2, dashed] (\a/2,0) -- (\m+\b/2,\s);
+  \draw[cink2, dotted] (\a/2,0) -- (\a/2,\s);
+  \node[cink2, font=\footnotesize, align=left, anchor=west] at (5.75,1.55) {破線: 中央翼弦線\\（後退角 $\Gamma_c$）};
+  % MAC
+  \draw[corange, very thick] (\xmac,\ymac) -- ({\xmac+\cmac},\ymac);
+  \node[corange, above=2.5pt, fill=cfill, inner sep=1.5pt] at ({\xmac+\cmac/2},\ymac) {$\bar c$（平均空力翼弦）};
+  \fill[corange] ({\xmac+0.25*\cmac},\ymac) circle (1.6pt);
+  \draw[corange, ->] ({\xmac+0.25*\cmac},\ymac) .. controls +(-0.3,-0.4) .. (-0.3,0.55) node[left, font=\footnotesize, align=right] {フィン CP\\（亜音速: $\bar c/4$）};
+  % dimensions
+  \draw[|<->|, cink] (0,-0.85) -- (\a,-0.85) node[midway, below] {根元翼弦 $a$};
+  \draw[|<->|, cink] (\m,{\s+0.35}) -- ({\m+\b},{\s+0.35}) node[midway, above] {端翼弦 $b$};
+  \draw[|<->|, cink] (0,{\s+0.35}) -- (\m,{\s+0.35}) node[midway, above] {後退長 $m$};
+  \draw[|<->|, cink] (5.0,0) -- (5.0,\s) node[midway, right] {スパン $s$};
+  \draw[cink2, dotted] (\m+\b,\s) -- (5.1,\s);
+  \fill[cink] (0,0) circle (1.4pt) node[below left] {$x_{le}$};
+\end{tikzpicture}

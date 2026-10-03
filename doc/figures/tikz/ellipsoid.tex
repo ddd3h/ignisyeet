@@ -1,0 +1,23 @@
+\begin{tikzpicture}[font=\small, scale=1.0]
+  \def\a{4}\def\b{3.0}\def\phig{40}
+  % parametric point with geodetic latitude phi: normal angle
+  \pgfmathsetmacro{\eE}{1-(\b*\b)/(\a*\a)}
+  \pgfmathsetmacro{\Nn}{\a/sqrt(1-\eE*sin(\phig)^2)}
+  \pgfmathsetmacro{\px}{\Nn*cos(\phig)}
+  \pgfmathsetmacro{\pz}{\Nn*(1-\eE)*sin(\phig)}
+  \draw[cgrid, thick] (0,0) ellipse ({\a} and {\b});
+  \draw[->, cink] (-4.8,0) -- (5.6,0) node[right] {赤道面};
+  \draw[->, cink] (0,-3.6) -- (0,4.2) node[above] {$Z$（自転軸）};
+  \coordinate (P) at (\px,\pz);
+  \coordinate (Q) at (0,{-\Nn*\eE*sin(\phig)});
+  \coordinate (QX) at ($(Q)+(1,0)$);
+  \coordinate (H) at ($(Q)!1.32!(P)$);
+  \draw[cblue, thick] (Q) -- (P) node[pos=0.35, above left] {$N(\phi)$};
+  \draw[corange, very thick, ->] (P) -- (H) node[right] {$h$};
+  \draw[cink2, dashed] (Q) -- ($(Q)+(2.2,0)$);
+  \pic[draw, cink2, angle radius=10mm, "$\phi$", angle eccentricity=1.3] {angle = QX--Q--P};
+  \fill[cink] (P) circle (1.8pt) node[above left] {楕円体面上の点};
+  \fill[corange] (H) circle (1.8pt);
+  \draw[cink2, |<->|] (-0.5,0) -- (-0.5,\b) node[midway, left] {$b$（極半径）};
+  \draw[cink2, |<->|] (0,-3.3) -- (\a,-3.3) node[midway, below] {$a$（赤道半径）};
+\end{tikzpicture}

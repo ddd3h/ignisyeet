@@ -1,0 +1,4 @@
+/* Figures are drawn on white; keep them readable in dark mode. */
+figure img, .figure img { background: #ffffff; border-radius: 4px; padding: 4px; }
+.math { overflow-x: auto; }
+table.docutils td, table.docutils th { vertical-align: top; }

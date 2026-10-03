@@ -1,0 +1,42 @@
+\begin{tikzpicture}[
+  font=\small,
+  rust/.style={draw=cblue, fill=cfill, thick, rounded corners=3pt, minimum width=26mm, minimum height=10mm, align=center},
+  py/.style={draw=corange, fill=cfillo, thick, rounded corners=3pt, minimum width=26mm, minimum height=10mm, align=center},
+  file/.style={draw=cink2, fill=cfillg, minimum width=24mm, minimum height=8mm, align=center, font=\footnotesize\ttfamily},
+  arr/.style={->, thick, cink2}, bus/.style={thick, cink2}]
+  % columns x = 0, 3.4, 6.8, 12.4, 16.5 cm; rows y = 0, -2.6, -5.2 cm
+  \node[file] (stl) at (0,0) {rocket.stl};
+  \node[file] (cfg) at (0,-2.6) {config.toml};
+  \node[file] (eng) at (0,-4.2) {motor.eng};
+
+  \node[rust] (geom) at (3.5,0) {形状抽出\\{\footnotesize\ttfamily geom}};
+  \node[rust] (aero) at (7.0,0) {空力解析\\{\footnotesize\ttfamily aero}};
+  \node[file] (tab) at (7.0,-2.6) {aero\_table.csv\\（キャッシュ）};
+  \node[rust] (sim) at (12.6,0) {6自由度飛翔計算\\{\footnotesize\ttfamily sim}};
+  \node[rust] (disp) at (12.6,-5.2) {落下分散\\（風グリッド・並列）};
+  \node[file] (traj) at (16.8,0) {trajectory.csv\\summary.json};
+  \node[py] (plot) at (16.8,-2.6) {作図\\{\footnotesize\ttfamily python/plot.py}};
+  \node[file] (dcsv) at (16.8,-5.2) {dispersion.csv};
+
+  \draw[arr] (stl) -- (geom);
+  \draw[arr] (geom) -- node[above, font=\footnotesize]{形状} (aero);
+  \draw[arr] (aero) -- node[right, font=\footnotesize]{1回だけ計算} (tab);
+  \coordinate (jn) at (9.6,-2.6);
+  \draw[bus] (tab.east) -- (jn);
+  \fill[cink2] (jn) circle (1.6pt);
+  \draw[arr] (jn) -- (9.6,0) -- (sim.west);
+  \draw[arr] (jn) -- (9.6,-5.2) -- (disp.west);
+  \node[draw=cink2, dashed, rounded corners=3pt, fit=(cfg)(eng), inner sep=3mm, label={[font=\footnotesize, cink2, align=center, text width=44mm]below:全段で参照（機体諸元・射点・風・推力）}] {};
+  \node[font=\footnotesize, cink2, anchor=west] at (9.7,-1.3) {内挿・外挿};
+  \draw[arr] (sim) -- (traj);
+  \draw[arr] (traj) -- (plot);
+  \draw[arr] (disp) -- (dcsv);
+  \draw[arr] (dcsv) -- (plot);
+
+  \node[rust, minimum width=8mm, minimum height=4mm, anchor=west] (l1) at ([yshift=-17mm]eng.south west) {};
+  \node[right=1mm of l1, font=\footnotesize] {Rust（計算が重い部分）};
+  \node[py, minimum width=8mm, minimum height=4mm, right=44mm of l1] (l2) {};
+  \node[right=1mm of l2, font=\footnotesize] {Python（作図）};
+  \node[file, minimum width=8mm, minimum height=4mm, right=34mm of l2] (l3) {};
+  \node[right=1mm of l3, font=\footnotesize] {入出力ファイル};
+\end{tikzpicture}

@@ -1,0 +1,33 @@
+\begin{tikzpicture}[font=\small, scale=1.0]
+  \begin{scope}[rotate=18]
+    % body: tail at x=0, nose tip at x=9
+    \fill[cfill] (0,-0.55) -- (6.9,-0.55) .. controls (8.0,-0.55) and (8.7,-0.2) .. (9,0) .. controls (8.7,0.2) and (8.0,0.55) .. (6.9,0.55) -- (0,0.55) -- cycle;
+    \draw[cblue, thick] (0,-0.55) -- (6.9,-0.55) .. controls (8.0,-0.55) and (8.7,-0.2) .. (9,0) .. controls (8.7,0.2) and (8.0,0.55) .. (6.9,0.55) -- (0,0.55) -- cycle;
+    \draw[cblue, thick, fill=cfill] (0,0.55) -- (0,1.5) -- (0.5,1.5) -- (1.4,0.55);
+    \draw[cblue, thick, fill=cfill] (0,-0.55) -- (0,-1.5) -- (0.5,-1.5) -- (1.4,-0.55);
+    \draw[cink2, dash pattern=on 4pt off 2pt] (-1.2,0) -- (10.3,0);
+    % CG and CP
+    \coordinate (CG) at (4.6,0);
+    \coordinate (CP) at (3.0,0);
+    \coordinate (AX) at (6.0,0);
+    \fill[cink] (CG) circle (3pt); \fill[white] (CG) -- ++(3pt,0) arc (0:90:3pt) -- cycle; \fill[white] (CG) -- ++(-3pt,0) arc (180:270:3pt) -- cycle; \draw[cink] (CG) circle (3pt);
+    \node[anchor=north east, inner sep=4pt, cink] at (CG) {CG};
+    \draw[corange, very thick] (CP) circle (3pt); \fill[corange] (CP) circle (1.2pt);
+    \node[below=5pt, corange] at (CP) {CP};
+    % body axes
+    \draw[->, thick, cink] (CG) -- ++(2.2,0) node[above] {$x_b$};
+    \draw[->, thick, cink] (CG) -- ++(0,1.9) node[left] {$z_b$};
+    % velocity relative to air, angle of attack
+    \draw[->, very thick, caqua] (CG) -- ++(-14:3.4) coordinate (V) node[right] {$\bm{v}_a=\bm{v}-\bm{w}$};
+    \pic[draw, caqua, ->, angle radius=17mm, "$\alpha$", angle eccentricity=1.2] {angle = V--CG--AX};
+    % forces at CP
+    \draw[->, very thick, corange] (CP) -- ++(0,1.9) node[above] {$N=C_N\,q\,S$};
+    \draw[->, very thick, corange] (CP) -- ++(-1.9,0) node[pos=0.62, below=4pt, font=\footnotesize] {$A=C_A\,q\,S$};
+    % thrust
+    \draw[->, very thick, cblue] (-1.6,0) -- (-0.15,0) node[pos=0.0, below] {$T$};
+    % static margin
+    \draw[|<->|, cink2] (3.0,-1.25) -- (4.6,-1.25) node[pos=0, anchor=north east, align=right, inner sep=1pt, font=\footnotesize] {静安定余裕\\$x_{cp}-x_{cg}$};
+    \draw[cink2, |<->|] (9,1.25) -- (4.6,1.25) node[midway, above] {$x_{cg}$（先端から）};
+  \end{scope}
+  \draw[->, very thick, cink] (CG) -- ++(0,-1.9) node[below] {$m\bm{g}$};
+\end{tikzpicture}

@@ -1,0 +1,33 @@
+\begin{tikzpicture}[font=\small, scale=1.25]
+  \def\R{2.2}\def\ph{40}
+  \coordinate (C) at (0,0);
+  \coordinate (P) at ({\R*cos(\ph)},{\R*sin(\ph)});
+  % Earth (meridian plane through the launch site) and rotation axis
+  \draw[cgrid, fill=cfillg] (C) circle (\R);
+  \draw[cgrid] (-\R,0) -- (\R,0);
+  \draw[->, very thick, cblue] (0,-\R-0.5) -- (0,\R+0.9) node[above] {自転軸 $\bm{\Omega}$};
+  \node[cink2, anchor=north west] at (0.1,-0.1) {赤道面};
+  % radius vector and latitude
+  \draw[dashed, cink2] (C) -- (P);
+  \fill[cink] (C) circle (1.5pt);
+  \draw[->, cink2] (0.75,0) arc (0:\ph:0.75);
+  \node[cink2] at ({1.0*cos(\ph/2)},{1.0*sin(\ph/2)}) {$\phi$};
+  \node[cink2] at ({0.5*\R*cos(\ph)-0.15},{0.5*\R*sin(\ph)+0.2}) {$\bm{r}$};
+  % local axes at the site
+  \draw[->, thick, cink] (P) -- ++({1.2*cos(\ph)},{1.2*sin(\ph)}) node[right] {$\bm{e}_U$};
+  \draw[->, thick, cink] (P) -- ++({-1.0*sin(\ph)},{1.0*cos(\ph)}) node[above] {$\bm{e}_N$};
+  \fill[cink] (P) circle (2pt);
+  \node[cink, below right, align=left] at ($(P)+(0.05,-0.1)$) {射点};
+  % east axis points out of the page
+  \draw[cink, thick] ($(P)+(-0.6,-0.45)$) circle (0.11);
+  \fill[cink] ($(P)+(-0.6,-0.45)$) circle (0.025);
+  \node[cink, left] at ($(P)+(-0.82,-0.45)$) {$\bm{e}_E$（紙面手前）};
+  % centrifugal acceleration (horizontal, away from the axis)
+  \draw[->, very thick, corange] (P) -- ++(1.1,0) node[right] {遠心加速度};
+  % Coriolis of a rising rocket: into the page (west)
+  \coordinate (K) at ($(P)+(0.55,1.9)$);
+  \draw[corange, very thick] (K) circle (0.17);
+  \draw[corange, very thick] ($(K)+(-0.12,-0.12)$) -- ($(K)+(0.12,0.12)$);
+  \draw[corange, very thick] ($(K)+(-0.12,0.12)$) -- ($(K)+(0.12,-0.12)$);
+  \node[corange, right, align=left] at ($(K)+(0.25,0)$) {$-2\bm{\Omega}\times\bm{v}$\\（上昇中。西向き、紙面奥）};
+\end{tikzpicture}

@@ -1,0 +1,16 @@
+\begin{tikzpicture}[font=\small,
+  st/.style={draw=cblue, fill=cfill, thick, rounded corners=4pt, minimum width=32mm, minimum height=12mm, align=center},
+  en/.style={draw=cink, fill=cfillg, thick, rounded corners=6pt, minimum width=24mm, minimum height=10mm, align=center},
+  arr/.style={->, thick, cink2}, lab/.style={font=\footnotesize, align=center, cink2}]
+  \node[st] (rail) {ランチャ滑走\\{\footnotesize 1自由度拘束}};
+  \node[st, right=26mm of rail] (free) {自由飛行\\{\footnotesize 6自由度}};
+  \node[st, right=26mm of free] (para) {パラシュート降下\\{\footnotesize 質点（3自由度）}};
+  \node[en, below=16mm of free] (land1) {着地\\{\footnotesize 弾道落下}};
+  \node[en, below=16mm of para] (land2) {着地};
+  \draw[arr] (rail) -- node[above, lab] {$\bm{x}\cdot\bm{d}\ge L_{\mathrm{rail}}$} node[below, lab] {ランチャ離脱} (free);
+  \draw[arr] (free) -- node[above, lab] {$t\ge t_{\mathrm{apo}}+\Delta t$} node[below, lab] {開傘} (para);
+  \draw[arr] (free) -- node[left, lab] {$z\le 0$\\（弾道モード）} (land1);
+  \draw[arr] (para) -- node[right, lab] {$z\le 0$} (land2);
+  \node[above=3mm of free, lab, draw=cgrid, rounded corners=2pt, inner sep=3pt] {頂点の検出: $v_z$ の符号が正 $\to$ 負 になった時刻を $t_{\mathrm{apo}}$ とする};
+  \draw[arr] (-24mm,0) -- node[above, lab] {$t=0$} (rail);
+\end{tikzpicture}

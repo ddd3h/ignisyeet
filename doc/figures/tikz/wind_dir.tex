@@ -1,0 +1,13 @@
+\begin{tikzpicture}[font=\small, scale=1.1]
+  \def\wdir{225}\def\az{300}
+  \draw[cgrid] (0,0) circle (2.4);
+  \foreach \a/\t in {0/N, 90/E, 180/S, 270/W} \node at ({2.8*sin(\a)},{2.8*cos(\a)}) {\t};
+  \draw[cgrid] (-2.4,0) -- (2.4,0); \draw[cgrid] (0,-2.4) -- (0,2.4);
+  % wind blows FROM \wdir: arrow from that side through origin
+  \draw[->, very thick, caqua] ({2.2*sin(\wdir)},{2.2*cos(\wdir)}) -- ({0.9*sin(\wdir+180)},{0.9*cos(\wdir+180)}) node[right, align=left] {風ベクトル $\bm{w}$\\（南西から吹く）};
+  \draw[->, caqua] plot[domain=0:\wdir, samples=60] ({0.8*sin(\x)},{0.8*cos(\x)});
+  \node[caqua] at ({1.15*sin(110)},{1.15*cos(110)}) {$\psi_w$};
+  % launch azimuth
+  \draw[->, very thick, cblue] (0,0) -- ({2.0*sin(\az)},{2.0*cos(\az)}) node[above left] {射方位 $\psi$};
+  \node[align=left, font=\footnotesize, cink2, anchor=west] at (3.3,0.3) {$\psi_w$: 風が「吹いてくる」方位\\（北から時計回り, 例 $225^\circ$ = 南西の風）\\[2pt] $\bm{w}=-w(h)\,(\sin\psi_w,\ \cos\psi_w,\ 0)$};
+\end{tikzpicture}

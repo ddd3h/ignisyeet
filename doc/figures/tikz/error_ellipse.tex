@@ -1,0 +1,29 @@
+\begin{tikzpicture}[font=\small, scale=1.45]
+  \def\brg{125}  % major axis bearing, clockwise from north
+  \def\a{1.3}\def\b{0.6}
+  % axes
+  \draw[->, cink2] (-4.4,0) -- (4.6,0) node[right] {東 $x_E$};
+  \draw[->, cink2] (0,-3.2) -- (0,3.4) node[above] {北 $y_N$};
+  \begin{scope}[rotate=90-\brg]
+    % a fixed cloud of points (u along the major axis, v along the minor axis)
+    \foreach \u/\v in {-1.0/0.2, -0.5/-0.3, -0.3/0.5, 0.1/-0.1, 0.2/0.4, 0.5/-0.5, 0.7/0.1, 0.9/-0.2, -1.4/-0.1, 1.5/0.3, -0.7/0.1, 0.3/0.15, 0.0/0.3, -0.2/-0.4, 0.6/0.35, 2.1/-0.2, -2.0/0.3, 0.45/-0.1, -1.1/-0.45, 0.85/0.45, -0.1/0.0, 1.9/0.1, -2.4/-0.2, 0.4/0.6, -0.4/-0.65, 3.1/0.5, -3.3/-0.3} {
+      \fill[cblue, opacity=0.55] (\u,\v) circle (1.6pt);
+    }
+    \draw[corange, very thick] (0,0) ellipse ({\a} and {\b});
+    \draw[corange, thick, dashed] (0,0) ellipse ({3*\a} and {3*\b});
+    % semi-axes of the 1-sigma ellipse (labels placed beside the arrows)
+    \draw[->, thick, cink] (0,0) -- (\a,0);
+    \draw[->, thick, cink] (0,0) -- (0,\b);
+    \node[cink, anchor=north east, inner sep=1.5pt, fill=white, fill opacity=0.85, text opacity=1] at (\a*0.6,-0.03) {$\sqrt{\lambda_1}$};
+    \node[cink, anchor=east, inner sep=1.5pt, fill=white, fill opacity=0.85, text opacity=1] at (-0.04,\b*0.6) {$\sqrt{\lambda_2}$};
+    % 3-sigma semi-major axis
+    \draw[<->, cink2, dotted] (0,0) -- (3*\a,0);
+    \node[cink2, anchor=north east, inner sep=2pt] at (2.55*\a,-0.03) {$3\sqrt{\lambda_1}$};
+  \end{scope}
+  \fill[cink] (0,0) circle (2pt);
+  \node[cink, anchor=north east, inner sep=2pt, fill=white, fill opacity=0.85, text opacity=1] at (-0.08,-0.08) {平均};
+  % bearing: clockwise from north to the major axis
+  \draw[->, caqua, thick] plot[domain=90:{90-\brg}, samples=40] ({2.0*cos(\x)},{2.0*sin(\x)});
+  \node[caqua] at ({2.3*cos(90-\brg/2)},{2.3*sin(90-\brg/2)}) {$\beta$};
+  \node[corange, align=left, font=\footnotesize, anchor=north west] at (-4.4,3.2) {実線: $1\sigma$（$k=1$）\\破線: $3\sigma$（$k=3$）};
+\end{tikzpicture}

@@ -1,0 +1,97 @@
+% Side view of the panel model (body of revolution, one fin, tail fairing, fin wake). Not to scale in the axial direction.
+\begin{tikzpicture}[font=\small, x=0.72cm, y=0.72cm]
+  % ---- geometry (R = 1) -------------------------------------------------------------------
+  \def\xn{3.2}      % nose length
+  \def\xa{6.0}      % body break (cylinder shortened)
+  \def\xf{8.0}      % fin root leading edge
+  \def\xb{12.0}     % base (fin root trailing edge snapped to the base)
+  \def\xt{18.0}     % end of cylindrical fairing (6 base radii)
+  % body outline
+  \draw[cblue, very thick] (0,0) .. controls (0.9,0.55) and (2.1,0.95) .. (\xn,1)
+    -- (\xa-0.5,1);
+  \draw[cblue, very thick] (0,0) .. controls (0.9,-0.55) and (2.1,-0.95) .. (\xn,-1) -- (\xa-0.5,-1);
+  \draw[cblue, very thick] (\xa+0.5,1) -- (\xb,1);
+  \draw[cblue, very thick] (\xa+0.5,-1) -- (\xb,-1);
+  % break marks
+  \foreach \s in {-0.5,0.5}{
+    \draw[cink2] (\xa+\s,1.05) -- (\xa+\s+0.25,-1.05);
+  }
+  % cosine spaced stations (clipped to the body outline)
+  \begin{scope}
+    \clip (0,0) .. controls (0.9,0.55) and (2.1,0.95) .. (\xn,1) -- (\xa-0.5,1) -- (\xa-0.5,-1) -- (\xn,-1) .. controls (2.1,-0.95) and (0.9,-0.55) .. (0,0) -- cycle;
+    \foreach \i in {1,...,10}{
+      \pgfmathsetmacro{\xx}{0.5*\xn*(1-cos(180*\i/11))}
+      \draw[cgrid] (\xx,-1) -- (\xx,1);
+    }
+    \foreach \i in {0,...,8}{
+      \pgfmathsetmacro{\xx}{\xn+(\xa-0.5-\xn)*0.5*(1-cos(180*\i/8))}
+      \draw[cgrid] (\xx,-1) -- (\xx,1);
+    }
+  \end{scope}
+  \foreach \i in {0,...,6}{
+    \pgfmathsetmacro{\xx}{\xa+0.5+(\xf-\xa-0.5)*0.5*(1-cos(180*\i/6))}
+    \draw[cgrid] (\xx,-1) -- (\xx,1);
+  }
+  \foreach \i in {0,...,16}{
+    \pgfmathsetmacro{\xx}{\xf+(\xb-\xf)*0.5*(1-cos(180*\i/16))}
+    \draw[cblue!60, thin] (\xx,-1) -- (\xx,1);
+  }
+  % axis
+  \draw[cink2, dash pattern=on 6pt off 2pt on 1pt off 2pt] (-0.8,0) -- (\xt+2.6,0);
+  % ---- tail fairing --------------------------------------------------------------------
+  \fill[pattern=north east lines, pattern color=cink2!50] (\xb,-1) rectangle (\xt,1);
+  \fill[pattern=north east lines, pattern color=cink2!50] (\xt,0) arc (0:90:1) -- (\xt,0) -- cycle;
+  \fill[pattern=north east lines, pattern color=cink2!50] (\xt,0) arc (0:-90:1) -- (\xt,0) -- cycle;
+  \draw[cink2, thick] (\xb,1) -- (\xt,1) arc (90:-90:1) -- (\xb,-1);
+  \draw[cink2, thick] (\xb,-1) -- (\xb,1);
+  \foreach \i in {1,...,7}{
+    \pgfmathsetmacro{\xx}{\xb+(\xt-\xb)*0.5*(1-cos(180*\i/8))}
+    \draw[cink2!60, thin] (\xx,-1) -- (\xx,1);
+  }
+  % ---- fin (side view, projected on the plane through the axis) ---------------------------
+  \def\ft{4.0}   % tip radial (3 R)
+  \def\sw{1.6}   % sweep
+  \def\tc{2.0}   % tip chord
+  \draw[cblue, very thick, fill=cfill, fill opacity=0.9] (\xf,1) -- (\xf+\sw,\ft) -- (\xf+\sw+\tc,\ft) -- (\xb,1) -- cycle;
+  % fin grid: chordwise (cosine) and spanwise (sine-clustered to the tip)
+  \foreach \j in {1,...,9}{
+    \pgfmathsetmacro{\s}{sin(90*\j/10)}
+    \pgfmathsetmacro{\y}{1+(\ft-1)*\s}
+    \pgfmathsetmacro{\xl}{\xf+\sw*\s}
+    \pgfmathsetmacro{\xr}{\xb-(\xb-\xf-\sw-\tc)*\s}
+    \draw[cblue, thin] (\xl,\y) -- (\xr,\y);
+  }
+  \foreach \i in {1,...,15}{
+    \pgfmathsetmacro{\xi}{0.5*(1-cos(180*\i/16))}
+    \draw[cblue, thin] ({\xf+\xi*(\xb-\xf)},1) -- ({\xf+\sw+\xi*\tc},\ft);
+  }
+  \draw[cblue, very thick] (\xf,1) -- (\xf+\sw,\ft) -- (\xf+\sw+\tc,\ft) -- (\xb,1);
+  % ---- wake strips behind the fin trailing edge -------------------------------------------
+  \def\wa{3.0}\def\wb{5.4}
+  \foreach \xs/\xe in {0/\wa}{
+    \fill[cfillo, fill opacity=0.8] (\xb,1) -- (\xb+\xs,1) -- (\xb+\xs,\ft) -- (\xf+\sw+\tc,\ft) -- (\xb,1) -- cycle;
+  }
+  \fill[cfillo, fill opacity=0.8] (\xf+\sw+\tc,\ft) -- (\xb,1) -- (\xt+2.2,1) -- (\xt+2.2,\ft) -- cycle;
+  \draw[corange, thick, dashed] (\xb,1) -- (\xt+2.2,1);
+  \draw[corange, thick, dashed] (\xf+\sw+\tc,\ft) -- (\xt+2.2,\ft);
+  \foreach \xx in {\xt-1.5,\xt+0.1,\xt+2.2}{
+    \draw[corange, thin] (\xx,1) -- (\xx,\ft);
+  }
+  \draw[corange, thin] (\xb,1) -- (\xb,1);
+  \draw[corange, thin] (\xb+0.0,1) -- (\xf+\sw+\tc,\ft);
+  \draw[corange, thick, dotted] (\xt+2.2,1) -- (\xt+3.4,1);
+  \draw[corange, thick, dotted] (\xt+2.2,\ft) -- (\xt+3.4,\ft);
+  % ---- labels -------------------------------------------------------------------------------
+  \node[cink2, anchor=east] at (-0.2,0.9) {ノーズ先端};
+  \draw[cink2, ->] (-0.3,0.7) -- (0,0.05);
+  \node[cink2, align=center] at (4.2,-2.3) {胴体の軸方向分割\\{\footnotesize コサイン間隔（\texttt{body\_axial}）}};
+  \draw[cink2, ->] (4.2,-1.8) -- (4.2,-1.05);
+  \node[cblue, align=center] at (\xf+0.7,-2.3) {フィン根元の弦長を\\{\footnotesize \texttt{fin\_chord} 分割}};
+  \draw[cblue, ->] (\xf+2.0,-1.8) -- (\xf+2.4,-1.05);
+  \node[cblue, align=center, anchor=south] at (\xf+1.2,\ft+0.5) {フィン（片面 \texttt{fin\_chord}$\times$\texttt{fin\_span}）\\{\footnotesize スパン方向は翼端側が細かい}};
+  \node[cink2, align=center] at (\xb+5.0,-2.3) {尾部フェアリング（荷重に含めない）\\{\footnotesize 底面を塞ぐ円筒 + 半球}};
+  \draw[cink2, ->] (\xb+5.0,-1.8) -- (\xb+5.0,-0.7);
+  \node[corange, align=left, anchor=south west] at (\xb+1.8,\ft+0.5) {フィン後流（翼後縁から $+x$ 方向）\\{\footnotesize 4 枚、長さは等比数列で増加}};
+  \draw[|<->|, cink] (\xb,-3.5) -- (\xt,-3.5) node[midway, below, font=\footnotesize] {$\texttt{tail\_radii}\cdot r_b$};
+  \draw[cink, ->] (\xt+4.2,0) -- node[above] {$x$} (\xt+5.2,0);
+\end{tikzpicture}

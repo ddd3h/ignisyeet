@@ -1,0 +1,62 @@
+% (a) cross section through the fin region: nodes and fin footprints; (b) biconvex fin section along the chord.
+\begin{tikzpicture}[font=\small]
+  \def\R{2.0}
+  \def\dl{7}      % half angle of the (exaggerated) fin strip [deg]
+  \def\rt{3.6}    % fin tip radius
+  % (a) cross section
+  \begin{scope}
+    \draw[cink2, dash pattern=on 6pt off 2pt on 1pt off 2pt] (-\rt-0.4,0) -- (\rt+0.4,0);
+    \draw[cink2, dash pattern=on 6pt off 2pt on 1pt off 2pt] (0,-\rt-0.4) -- (0,\rt+0.4);
+    \fill[cfill] (0,0) circle (\R);
+    \foreach \k in {0,1,2,3}{
+      \pgfmathsetmacro{\ph}{90*\k+45}
+      \begin{scope}[rotate=\ph]
+        \fill[cfill, draw=cblue, very thick] ({sqrt(\R*\R-0.0)*cos(\dl)},{-\R*sin(\dl)}) -- (\rt,{-0.06}) -- (\rt,0.06) -- ({\R*cos(\dl)},{\R*sin(\dl)}) -- cycle;
+      \end{scope}
+      % body nodes between fins: 11 panels per sector
+      \foreach \q in {0,...,11}{
+        \pgfmathsetmacro{\th}{\ph+\dl+(90-2*\dl)*\q/11}
+        \draw[cblue, thin] ({\R*cos(\th)},{\R*sin(\th)}) -- ({(\R-0.28)*cos(\th)},{(\R-0.28)*sin(\th)});
+      }
+    }
+    \draw[cblue, very thick] (0,0) circle (\R);
+    % overpaint the removed strip (covered by the fin)
+    \foreach \k in {0,1,2,3}{
+      \pgfmathsetmacro{\ph}{90*\k+45}
+      \draw[cfill, line width=2.4pt] ({\R*cos(\ph-\dl+0.8)},{\R*sin(\ph-\dl+0.8)}) arc (\ph-\dl+0.8:\ph+\dl-0.8:\R);
+    }
+    \foreach \k in {0,1,2,3}{
+      \pgfmathsetmacro{\ph}{90*\k+45}
+      \begin{scope}[rotate=\ph]
+        \draw[cblue, very thick] ({\R*cos(\dl)},{-\R*sin(\dl)}) -- (\rt,{-0.06}) -- (\rt,0.06) -- ({\R*cos(\dl)},{\R*sin(\dl)});
+      \end{scope}
+    }
+    \node[cink] at (0,0) {胴体断面};
+    \node[corange, align=left, anchor=west] at (\rt+0.2,2.9) {フィンの根元は\\周方向の 2 節点\\$\theta=\varphi_k\pm\delta$};
+    \draw[corange, ->] ({\rt+0.2},2.5) to[bend left=10] ({\R*cos(45+\dl)+0.15},{\R*sin(45+\dl)+0.1});
+    \node[cink2, align=left, anchor=west] at (\rt+0.2,-1.6) {扇形ごとに\\周方向 $n_c/N$ 分割\\（$N$ 枚のフィン）};
+    \draw[cink2, ->] ({\rt+0.2},-1.6) to[bend right=10] ({\R*cos(-30)+0.05},{\R*sin(-30)});
+    \draw[cink2, thin, ->] (0.9,0) arc (0:45:0.9);
+    \node[cink2, font=\footnotesize] at (1.2,0.42) {$\varphi_k$};
+  \end{scope}
+  % (b) biconvex section
+  \begin{scope}[xshift=9.3cm, yshift=0.3cm]
+    \def\c{6.0}\def\th{0.55}
+    \fill[cfillg] (0,-0.7) rectangle (\c,-1.3);
+    \draw[cink2] (-0.5,-0.7) -- (\c+0.5,-0.7);
+    \node[cink2, font=\footnotesize] at (0.45,-1.0) {胴体};
+    \draw[cblue, very thick, fill=cfill] (0,0) .. controls (1.5,{\th*1.33}) and (4.5,{\th*1.33}) .. (\c,0)
+      .. controls (4.5,{-\th*1.33}) and (1.5,{-\th*1.33}) .. (0,0);
+    \draw[cink2, dashed] (0,0) -- (\c,0);
+    \draw[|<->|, cink] (\c/2,{-\th-0.0}) -- (\c/2,{\th}) ;
+    \node[cink, anchor=west] at (\c/2+0.15,0.3) {$t$};
+    \draw[|<->|, cink] (0,2.2) -- (\c,2.2) node[midway, above] {根元翼弦 $c_r$（\texttt{fin\_chord} 分割）};
+    \draw[cink2, dotted] (0,0) -- (0,2.2); \draw[cink2, dotted] (\c,0) -- (\c,2.2);
+    \node[cink2, align=center, font=\footnotesize] at (0,-2.1) {前縁（尖った端）};
+    \draw[cink2, ->] (0,-1.75) -- (0.02,-0.1);
+    \node[cink2, align=center, font=\footnotesize] at (\c,-2.1) {後縁（尖った端）\\Kutta 条件と後流};
+    \draw[cink2, ->] (\c,-1.55) -- (\c-0.02,-0.1);
+    \node[corange, font=\footnotesize, align=center] at (\c/2,1.3) {$h(\xi)=\dfrac{t}{2}\,4\xi(1-\xi)$};
+    \draw[corange, thin, ->] (\c/2,1.0) -- (\c/2-0.4,0.45);
+  \end{scope}
+\end{tikzpicture}

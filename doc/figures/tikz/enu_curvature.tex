@@ -1,0 +1,19 @@
+\begin{tikzpicture}[font=\small, scale=1.1]
+  \def\R{3.2}\def\th{38}
+  \coordinate (C) at (0,0);
+  \coordinate (O) at (0,\R);
+  \coordinate (P) at ({\R*sin(\th)},{\R*cos(\th)});
+  \coordinate (T) at ({\R*sin(\th)},\R);
+  \draw[cgrid] (C) circle (\R);
+  \draw[cblue, very thick] ({-\R*sin(25)},{\R*cos(25)}) arc (115:25:\R);
+  \draw[cink, thick] (-2.2,\R) -- (4.4,\R) node[right, align=left] {接平面\\（ENU の水平面）};
+  \draw[dashed, cink2] (C) -- (O);
+  \draw[dashed, cink2] (C) -- (P);
+  \fill[cink] (C) circle (1.5pt) node[below] {地球中心 $O_C$};
+  \fill[cink] (O) circle (1.8pt) node[above left] {基準点 $O$};
+  \fill[corange] (P) circle (1.8pt) node[below right] {$P$};
+  \draw[corange, thick, |<->|] (T) -- (P) node[midway, right] {$\Delta h$};
+  \draw[cink2, |<->|] ([yshift=4mm]O) -- ([yshift=4mm]T) node[midway, above] {$\approx d$};
+  \pic[draw, cink2, angle radius=7mm, "$\vartheta$", angle eccentricity=1.4] {angle = P--C--O};
+  \node[cink2, anchor=east, inner sep=2pt] at (0,1.9) {$R$};
+\end{tikzpicture}

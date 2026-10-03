@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/geom", "crates/aero", "crates/panel"]
+members = ["crates/geom", "crates/aero", "crates/sim", "crates/panel"]
 
 [workspace.package]
 version = "0.2.0"
@@ -10,10 +10,15 @@ edition = "2021"
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+toml = "0.8"
 rayon = "1"
 geom = { path = "crates/geom" }
 aero = { path = "crates/aero" }
+sim = { path = "crates/sim" }
 faer = { version = "0.24", default-features = false, features = ["std", "rayon"] }
+rand = "0.9"
+rand_chacha = "0.9"
+rand_distr = "0.5"
 
 [profile.release]
 opt-level = 3

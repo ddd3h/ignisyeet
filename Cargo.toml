@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/geom"]
+members = ["crates/geom", "crates/aero"]
 
 [workspace.package]
 version = "0.2.0"
@@ -9,6 +9,8 @@ edition = "2021"
 [workspace.dependencies]
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+geom = { path = "crates/geom" }
 
 [profile.release]
 opt-level = 3

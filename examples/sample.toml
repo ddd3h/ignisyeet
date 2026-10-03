@@ -1,0 +1,124 @@
+# IgnisYeet example configuration. Relative paths are resolved from this file's directory.
+
+[output]
+dir = "out"
+kml = true                 # also write ignisyeet.kml for Google Earth
+
+[rocket]
+stl = "sample_rocket.stl"
+stl_scale = 0.001          # STL is in millimetres
+nose_direction = "auto"    # or "+x", "-x", "+y", "-y", "+z", "-z"
+dry_mass = 8.0             # kg, including the empty motor casing
+cg_dry = 0.85              # m aft of the nose tip
+ixx_dry = 0.02             # kg m^2 (roll)
+iyy_dry = 1.5              # kg m^2 (pitch/yaw, about dry CG)
+roughness = 60e-6          # m, equivalent sand roughness
+fin_le = "rounded"         # "rounded" | "sharp"
+fin_te = "square"          # "square" | "tapered"
+extra_cd = 0.02            # launch lugs, buttons, ...
+
+# Uncomment to override automatically detected fins (metres).
+# [rocket.fin_override]
+# count = 4
+# root_chord = 0.20
+# tip_chord = 0.10
+# span = 0.10
+# sweep = 0.08
+# thickness = 0.004
+# x_le_root = 1.30
+
+[motor]
+eng = "sample_motor.eng"
+# aft_x = 1.5              # aft end of motor [m from nose]; default = body length
+nozzle_exit_diameter = 0.03
+
+[launch]
+latitude = 34.7347
+longitude = 139.4204
+altitude = 20.0            # m above sea level
+rail_length = 5.0
+elevation_deg = 85.0
+azimuth_deg = 270.0        # clockwise from north
+
+[recovery]
+enabled = true
+cd_s = 3.5                 # parachute Cd*S [m^2]
+delay = 1.0                # s after apogee
+
+[aero]
+method = "barrowman"       # "barrowman" | "panel" | "table"
+# table = "cfd_table.csv"  # method = "table": external coefficient table (same CSV format as out/aero_table.csv, with .json sidecar)
+mach_min = 0.0
+mach_max = 3.0
+mach_step = 0.02
+alpha_max_deg = 30.0
+alpha_step_deg = 1.0
+n_slices = 600
+fin_threshold = 0.05
+extrapolation = "linear"   # "linear" | "clamp"
+
+# Settings of the panel method (only used when method = "panel").
+[aero.panel]
+body_axial = 80
+body_circ = 48
+fin_chord = 16
+fin_span = 10
+wake_length = 20.0
+tail_radii = 6.0           # solid tail fairing behind the base [base radii]
+subsonic_machs = [0.0, 0.3, 0.5, 0.6, 0.7, 0.8]
+transonic = [0.8, 1.2]
+fin_section = "biconvex"
+
+[earth]
+model = "flat"             # "flat" | "ecef"
+gravity = "inverse_square" # "constant" | "inverse_square" | "j2"
+
+[atmosphere]
+model = "us1976"          # "us1976" | "constant"
+temperature_offset = 0.0   # K, us1976 only
+density = 1.225            # constant only [kg/m^3]
+sound_speed = 340.29       # constant only [m/s]
+viscosity = 1.789e-5       # constant only [Pa s]
+
+[wind]
+model = "power"            # "constant" | "power" | "log" | "profile"
+speed = 4.0                # m/s at reference height
+direction_deg = 0.0        # direction the wind blows FROM, clockwise from north
+ref_height = 2.0
+exponent = 6.0             # power law v = v_ref (h/h_ref)^(1/n)
+roughness_length = 0.03    # log model [m]
+# profile = "wind.csv"     # profile model: CSV with columns altitude_m,speed,direction_deg
+
+[sim]
+integrator = "rk4"         # "rk4" | "rk45"
+dt = 0.002
+rtol = 1e-7                # rk45 only
+atol = 1e-6                # rk45 only
+max_time = 1200.0
+output_interval = 0.05
+# descent = "parachute"    # default: parachute if recovery.enabled else ballistic
+
+[dispersion]
+mode = "wind_grid"         # "wind_grid" | "monte_carlo"
+wind_speeds = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+directions = 8
+
+# 1-sigma perturbations for mode = "monte_carlo"; each is an independent normal draw, 0 disables it.
+# "relative" = fraction of the nominal value (0.03 = 3 %; factor 1 + draw, at least 0.05),
+# "absolute" = added to the nominal value in the stated unit.
+# Sample i uses its own RNG seeded with seed + i; each sample is flown ballistic and, if
+# recovery is enabled, with parachute. Output: dispersion_mc.csv, dispersion_summary.json.
+[dispersion.monte_carlo]
+samples = 1000
+seed = 1
+thrust_scale = 0.03        # relative: thrust (total impulse scales, propellant mass does not)
+burn_time_scale = 0.02     # relative: burn time stretch at constant impulse
+dry_mass = 0.1             # relative: dry mass (inertia scales with it)
+cg = 0.01                  # absolute [m]: dry centre of gravity
+cn_scale = 0.10            # relative: normal force CN, CN_alpha and pitch damping
+ca_scale = 0.15            # relative: axial force / drag CA, power on and off
+elevation_deg = 0.5        # absolute [deg]: rail elevation
+azimuth_deg = 1.0          # absolute [deg]: rail azimuth
+wind_speed = 1.0           # absolute [m/s]: around [wind] speed (clamped at 0)
+wind_direction_deg = 15.0  # absolute [deg]: around [wind] direction_deg
+parachute_cd_s_scale = 0.1 # relative: parachute Cd*S

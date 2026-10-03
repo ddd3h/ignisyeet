@@ -42,7 +42,9 @@ def build(src: Path, dst: Path) -> None:
             log = (Path(tmp) / "fig.log").read_text(errors="replace")
             err = [l for l in log.splitlines() if l.startswith("!")]
             raise SystemExit(f"lualatex failed for {src.name}:\n" + "\n".join(err[:10] or log.splitlines()[-30:]))
-        subprocess.run(["dvisvgm", "--pdf", "--no-fonts", "--exact-bbox", "-o", str(dst.resolve()), "fig.pdf"], cwd=tmp, check=True, capture_output=True)
+        r = subprocess.run(["dvisvgm", "--pdf", "--no-fonts", "--exact-bbox", "-o", str(dst.resolve()), "fig.pdf"], cwd=tmp, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise SystemExit(f"dvisvgm failed for {src.name}:\n{r.stderr.strip()}")
         shutil.copyfile(Path(tmp) / "fig.pdf", dst.with_suffix(".pdf"))
 
 

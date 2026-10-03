@@ -1,0 +1,64 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+#
+# Build the HTML documentation (doc/) and publish it to GitHub Pages.
+# Repository settings: Pages -> Build and deployment -> Source = "GitHub Actions".
+
+name: docs
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # LuaLaTeX + luatexja and dvisvgm for the TikZ figures, Inkscape for the logo,
+      # IPAex / IPA / DejaVu fonts for the TikZ, matplotlib and terminal-screenshot figures.
+      - name: Install TeX, fonts and tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            texlive-luatex texlive-lang-japanese texlive-latex-extra texlive-pictures \
+            dvisvgm inkscape \
+            fonts-ipaexfont fonts-ipafont-gothic fonts-dejavu-core
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: astral-sh/setup-uv@v6
+
+      # Builds the release binary, regenerates the example results, figures and
+      # screenshots, and runs Sphinx with -W (any warning fails the job).
+      - name: Build HTML documentation
+        run: make -C doc html
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: doc/build/html
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

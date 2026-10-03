@@ -26,14 +26,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # LuaLaTeX + luatexja and dvisvgm for the TikZ figures, Inkscape for the logo,
+      # LuaLaTeX + luatexja and dvisvgm for the TikZ figures (dvisvgm needs mutool from
+      # mupdf-tools to read PDF with Ghostscript >= 10.01), Inkscape for the logo,
       # IPAex / IPA / DejaVu fonts for the TikZ, matplotlib and terminal-screenshot figures.
       - name: Install TeX, fonts and tools
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             texlive-luatex texlive-lang-japanese texlive-latex-extra texlive-pictures \
-            dvisvgm inkscape \
+            dvisvgm mupdf-tools inkscape \
             fonts-ipaexfont fonts-ipafont-gothic fonts-dejavu-core
 
       - uses: dtolnay/rust-toolchain@stable

@@ -874,7 +874,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
 
 各項目の意味と、パネル法が出力する ``panel_cp.csv`` は :doc:`panel` で説明する。
 
-``[aero.cfd]``\ （``method = "cfd"`` のときだけ使う。SU2、gmsh、Open MPI が必要で、設定と計算の流れは :doc:`cfd` で説明する）
+``[aero.cfd]``\ （``method = "cfd"`` のときだけ使う。SU2、gmsh、Open MPI が必要で、``surface = "stl"`` では manifold3d も要る。設定と計算の流れは :doc:`cfd` で説明する）
 
 .. list-table::
    :header-rows: 1
@@ -902,10 +902,36 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - 1/4 領域をメッシュにして :math:`z=0` で鏡映し、:math:`z` について厳密に対称な半モデルのメッシュにする。フィンの配置が :math:`z` について対称でないときは無視する
    * - ``symmetry``
      - ``true``
-     - ピッチ面（:math:`y=0`）で切った半モデル。``false`` は現状エラー
+     - ``surface = "panel_mesh"`` でピッチ面（:math:`y=0`）で切った半モデルを使ってよいか。半モデルは、フィンの配置が :math:`y=0` について対称で、``shape_symmetry`` に :math:`y=0` の鏡映が含まれ、``betas_deg = [0]`` で、ロール減衰のケースがないときだけ使う。
+       それ以外と ``false`` は全領域（フィンの配置が対称なら半球のメッシュを鏡映、そうでなければ箱）。``surface = "stl"`` は常に全領域
    * - ``surface``
      - ``"panel_mesh"``
-     - 壁面の形状。抽出した胴体とフィンを OpenCASCADE で再構成する。``"stl"`` はエラー
+     - 壁面の形状。``"panel_mesh"``\ （別名 ``"cad"``）は抽出した胴体とフィンを OpenCASCADE で再構成する。``"stl"`` は入力の STL をそのまま使い、重なった殻を manifold3d で和にする（全領域、:ref:`sec-cfd-stl`）
+   * - ``betas_deg``
+     - ``[0]``
+     - 解く横滑り角 [deg]（0 以上、昇順、0 で始まる）。0 だけでないと係数表は 6 成分の一般表になる。:ref:`sec-cfd-general`
+   * - ``shape_symmetry``
+     - ``"auto"``
+     - 鏡映像として得て解かない対称性。``"axisymmetric"``\ （:math:`y=0` と :math:`z=0`）、``"pitch_plane"``\ （:math:`y=0`）、``"none"``\ （使わない）、``"auto"``\ （``panel_mesh`` はフィンの配置から、``stl`` は ``"none"``。形状の鏡映は検査しない）。
+       ``"pitch_plane"`` と ``"none"`` は一般表になる
+   * - ``roll_damping``
+     - ``false``
+     - 各 Mach 数でロール減衰のケース（:math:`\alpha=\beta=0`、回転座標系、:math:`\hat p` が ``roll_rate_hat`` の正負、全領域）を解き、:math:`C_{lp}` を CFD の値にする。Euler だけ
+   * - ``roll_rate_hat``
+     - ``0.01``
+     - ロール減衰のケースの無次元ロール角速度 :math:`\hat p=pd/(2V)`\ （0 より大きく 0.05 以下）
+   * - ``base_treatment``
+     - なし
+     - ``surface = "stl"`` かつ Euler のとき **必須**\ 。``"fairing"`` は底面の後ろに円すいを足す（入力の STL を変更する）、``"flat"`` は平らな底面のままにする（Euler の解は収束しにくく、収束しないケースは失敗）
+   * - ``stl_remesh``
+     - ``"classify"``
+     - ``surface = "stl"`` の壁面の処理。``"classify"`` は gmsh で曲面を作り ``wall_size`` で作り直す、``"none"`` は STL の三角形をそのまま使う（フィンの解像が足りず法線力が低くなる）
+   * - ``max_geometry_error``
+     - ``wall_size``
+     - ``surface = "stl"`` で、CFD の壁面が入力の STL または和から離れてよい最大の距離 [m]。超えるとエラー、``wall_size`` の半分を超えると警告（:ref:`sec-cfd-fidelity`）
+   * - ``general_mach_step``
+     - ``0.1``
+     - 一般表の Mach 数の刻み。0 なら ``[aero]`` の ``mach_step``。一般表は 1 つの Mach 数あたり 61 × 43 点の（迎角 × 横滑り角）を持つ
    * - ``fin_roll_deg``
      - ``0``
      - フィンの組を機軸のまわりに回す角度 [deg]（0 でフィン 2 枚が :math:`y=0` 面に載る、45 で載らない）
@@ -914,7 +940,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - Euler のみ。平らな底面の後ろに置く円すい形の尾部フェアリングの長さ（底面半径の倍数）。0 なら平らな底面。RANS は常に平らな底面
    * - ``farfield``
      - ``20.0``
-     - 遠方境界の球の半径（全長の倍数、5 以上）
+     - 遠方境界の半径（全長の倍数、5 以上）。半球と球の半径、または箱の半辺
    * - ``wall_size``
      - ``0.002``
      - 壁面の要素の大きさ [m]。小さいほど細かく、セル数と時間が増える
@@ -952,7 +978,8 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - ``"cfd"``
      - ``output.dir`` の下の作業ディレクトリ（ケースごとのサブディレクトリとメッシュのキャッシュ）
 
-CFD の準備は ``ignisyeet cfd-check 設定ファイル [--mesh]`` で確かめる。結果は ``cfd_cases.csv`` と ``cfd_report.json`` に書かれる（後述）。
+CFD の準備は ``ignisyeet cfd-check 設定ファイル [--mesh]`` で確かめる。``surface = "stl"`` の ``--mesh`` は、形状の忠実度も表示する。
+結果は ``cfd_cases.csv`` と ``cfd_report.json`` に書かれる（後述）。
 
 ``[earth]``
 
@@ -1227,9 +1254,17 @@ CSV の 1 行目は次の見出しで、続く行は Mach 数が外側、迎角�
    * - ``aero_drag.csv``
      - Mach 数ごとの抗力の内訳、:math:`C_{N\alpha}`、:math:`x_{cp}`\ （``method = "panel"`` では内訳なしで合計の ``cd_off``, ``cd_on`` のみ）
    * - ``cfd_cases.csv``
-     - ``method = "cfd"``。ケースごとの状態（``converged``, ``accepted``, ``failed``）、反復数、残差、SU2 の生の係数、使う係数、計算時間、暖機起動の有無
+     - ``method = "cfd"``。ケースごとの状態（``converged``, ``accepted``, ``failed``）、反復数、残差、SU2 の生の係数、使う係数、計算時間、暖機起動の有無。
+       横滑り角 ``beta_deg``、ロール減衰のケースの ``roll_hat``、機体軸の 6 成分 ``cx``, ``cy``, ``cz``, ``cl``, ``cm``, ``cn_yaw``\ （:math:`C_n`）の列を含む
    * - ``cfd_report.json``
-     - ``method = "cfd"``。ケース数、失敗と未収束の一覧、メッシュの節点数とセル数、総計算時間、測定した :math:`\alpha=0` の非対称性、実行の並列度と 1 ケースのメモリの見積もり
+     - ``method = "cfd"``。ケース数、失敗と未収束の一覧、メッシュの節点数とセル数、総計算時間、測定した :math:`\alpha=0` の非対称性、実行の並列度と 1 ケースのメモリの見積もり。
+       係数表の種類 ``table_kind``、``shape_symmetry``、``domain``\ （``half`` または ``full``）、``betas_deg``、失敗したケースのディレクトリ ``failed_cases``、
+       一般表で CFD の値を使う範囲 ``cfd_region`` と ``model_outside_cfd_region``、ロール減衰の CFD とモデルの値と採用した側 ``clp`` と ``clp_source``（``cfd``, ``barrowman``, ``mixed``）、
+       零角度の傾き ``diagnostics``、``yaw_damping_from_pitch``、基準のカント ``fin_cant_ref_deg``、``base_treatment``、``warnings``、
+       STL の形状の忠実度 ``fidelity``\ （``fidelity``、``union``、``repair`` を含む）
+   * - ``<workdir>/mesh/``
+     - ``method = "cfd"`` のメッシュのキャッシュ（``mesh.su2`` など）。``surface = "stl"`` では、修復した成分（``component_0.stl`` など）、修復の報告 ``repair_report.json``、
+       和 ``union.stl`` と ``union_report.json``\ （体積、表面積、種数など）、形状の忠実度 ``stl_fidelity.json``\ （:ref:`sec-cfd-fidelity`）も入る
    * - ``panel_cp.csv``
      - ``method = "panel"``。表面パネルの位置・法線・面積・圧力係数 ``cp``\ （迎角 4°、最も低い亜音速 Mach 数）と部位（``body`` または ``fin``）。
        ``python/plot.py panel`` で作図する

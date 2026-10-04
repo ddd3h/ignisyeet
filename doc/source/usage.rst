@@ -1273,7 +1273,7 @@ CSV の 1 行目は次の見出しで、続く行は Mach 数が外側、迎角�
        係数表の種類 ``table_kind``、``shape_symmetry``、``domain``\ （``half`` または ``full``）、``betas_deg``、失敗したケースのディレクトリ ``failed_cases``、
        一般表で CFD の値を使う範囲 ``cfd_region`` と ``model_outside_cfd_region``、ロール減衰の CFD とモデルの値と採用した側 ``clp`` と ``clp_source``（``cfd``, ``barrowman``, ``mixed``）、
        零角度の傾き ``diagnostics``、``yaw_damping_from_pitch``、基準のカント ``fin_cant_ref_deg``、``base_treatment``、``warnings``、
-       STL の形状の忠実度 ``fidelity``\ （``fidelity``、``union``、``repair`` を含む）
+       STL の鏡映対称性の判定 ``symmetry_check``、STL の形状の忠実度 ``fidelity``\ （``fidelity``、``union``、``repair`` を含む）
    * - ``<workdir>/mesh/``
      - ``method = "cfd"`` のメッシュのキャッシュ（``mesh.su2`` など）。``surface = "stl"`` では、修復した成分（``component_0.stl`` など）、修復の報告 ``repair_report.json``、
        和 ``union.stl`` と ``union_report.json``\ （体積、表面積、種数など）、形状の忠実度 ``stl_fidelity.json``\ （:ref:`sec-cfd-fidelity`）も入る

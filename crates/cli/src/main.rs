@@ -546,7 +546,14 @@ fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
         println!("  warning: {w}");
     }
     if r.ready(opt) {
-        println!("CFD mode is ready ({} cases for model {:?}).", cfd::case::case_list(opt).len(), opt.model);
+        let n = cfd::case::case_list(opt).len();
+        if opt.surface == cfd::SurfaceKind::Stl && matches!(opt.shape_symmetry, None | Some(cfd::config::ShapeSymmetry::Auto)) {
+            // The mirror symmetry of an STL is only known after the union (`--mesh`); without it the count is the
+            // full-domain upper bound.
+            println!("CFD mode is ready (up to {n} cases for model {:?}; mirror symmetry of the STL reduces this, see --mesh).", opt.model);
+        } else {
+            println!("CFD mode is ready ({n} cases for model {:?}).", opt.model);
+        }
     } else {
         println!("CFD mode is not available: {}", cfd::not_installed_message(&r, opt).lines().next().unwrap_or(""));
         return Ok(());

@@ -297,6 +297,11 @@ impl Config {
         if self.wind.model == sim::WindModel::Log && !(self.wind.roughness_length > 0.0 && self.wind.roughness_length < self.wind.ref_height) {
             bail!("wind.roughness_length must be positive and smaller than wind.ref_height");
         }
+        if matches!(self.wind.model, sim::WindModel::Power | sim::WindModel::Log)
+            && !(self.wind.ground_blend_height > 0.0 && self.wind.ground_blend_height < self.wind.ref_height)
+        {
+            bail!("wind.ground_blend_height must be positive and smaller than wind.ref_height");
+        }
         if self.sim.dt <= 0.0 || self.sim.output_interval <= 0.0 {
             bail!("sim.dt and sim.output_interval must be positive");
         }

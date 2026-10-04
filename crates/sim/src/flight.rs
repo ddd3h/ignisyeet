@@ -860,6 +860,30 @@ mod tests {
         assert!(r.samples.len() > 100 && r.summary.landing_time.is_finite());
     }
 
+    /// Touchdown at rtol = atol = 1e-10 with a power-law wind must not stall the adaptive
+    /// integrators. Before the cubic ground blend the infinite derivative of the power law at
+    /// h = 0 shrank the step below 1e-6 s near touchdown and the run failed with a min-step error.
+    /// The motor starts and ends at zero thrust so the launch-rail start is not the limiting
+    /// discontinuity; the wind is the only non-smooth input near the ground.
+    #[test]
+    fn tight_tolerance_touchdown_with_wind_all_integrators() {
+        let (table, _) = sample_parts();
+        let motor = Motor::new("s".into(), 0.054, 0.5, 1.0, vec![(0.0, 0.0), (0.1, 800.0), (2.0, 800.0), (2.1, 0.0)]);
+        let base = sample_sim(&table, &motor, 4.0);
+        for descent in [Descent::Ballistic, Descent::Parachute] {
+            for i in [IntegratorKind::Rk45, IntegratorKind::Dop853] {
+                for at in [AttitudeKind::Normalize, AttitudeKind::LieGroup] {
+                    let mut b = base.clone();
+                    b.settings.rtol = 1e-10;
+                    b.settings.atol = 1e-10;
+                    let r = with(&b, i, at).run(descent, false).unwrap();
+                    assert!(r.summary.landing_time.is_finite(), "{descent:?} {i:?}/{at:?}");
+                    assert!(r.summary.landing_speed.is_finite(), "{descent:?} {i:?}/{at:?}");
+                }
+            }
+        }
+    }
+
     #[test]
     fn lie_group_keeps_unit_quaternion_without_normalisation() {
         let (table, motor) = sample_parts();

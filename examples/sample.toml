@@ -114,6 +114,7 @@ direction_deg = 0.0        # direction the wind blows FROM, clockwise from north
 ref_height = 2.0
 exponent = 6.0             # power law v = v_ref (h/h_ref)^(1/n)
 roughness_length = 0.03    # log model [m]
+# ground_blend_height = 1.0  # cubic Hermite blend height near the ground [m] (power/log; > 0 and < ref_height)
 # profile = "wind.csv"     # profile model: CSV with columns altitude_m,speed,direction_deg
 
 [sim]

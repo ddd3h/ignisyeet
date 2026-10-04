@@ -45,13 +45,22 @@ pub struct WindConfig {
     pub exponent: f64,
     /// Surface roughness length [m] (log model).
     pub roughness_length: f64,
+    /// Height below which the power/log speed profile is blended to zero with a cubic Hermite
+    /// polynomial [m]. Must be positive and smaller than `ref_height`.
+    ///
+    /// The blend removes the infinite (power) or discontinuous (log) derivative of the profile at
+    /// the ground, which would otherwise force the adaptive integrators to take vanishingly small
+    /// steps near touchdown. For the log model the value must also exceed the roughness length
+    /// `roughness_length` (`z0`) so that the analytic derivative at the blend height exists; a
+    /// configured value at or below `z0` is read as `max(value, 2 z0)`.
+    pub ground_blend_height: f64,
     /// CSV with columns altitude_m,speed,direction_deg (profile model).
     pub profile: Option<PathBuf>,
 }
 
 impl Default for WindConfig {
     fn default() -> Self {
-        Self { model: WindModel::Power, speed: 4.0, direction_deg: 0.0, ref_height: 2.0, exponent: 6.0, roughness_length: 0.03, profile: None }
+        Self { model: WindModel::Power, speed: 4.0, direction_deg: 0.0, ref_height: 2.0, exponent: 6.0, roughness_length: 0.03, ground_blend_height: 1.0, profile: None }
     }
 }
 
@@ -88,6 +97,9 @@ pub struct Wind {
     pub exponent: f64,
     /// Roughness length z0 of the logarithmic profile [m].
     pub roughness_length: f64,
+    /// Cubic Hermite ground blend height [m] (power and log models); effective log value is
+    /// `max(configured, 2 z0)`.
+    pub ground_blend_height: f64,
     profile: Vec<ProfilePoint>,
 }
 
@@ -137,6 +149,9 @@ impl Wind {
         if c.speed.is_nan() || c.speed < 0.0 {
             bail!("wind.speed must not be negative");
         }
+        if matches!(c.model, WindModel::Power | WindModel::Log) && !(is_pos(c.ground_blend_height) && c.ground_blend_height < c.ref_height) {
+            bail!("wind.ground_blend_height must be positive and smaller than wind.ref_height");
+        }
         match c.model {
             WindModel::Constant => {}
             WindModel::Power => {
@@ -167,6 +182,11 @@ impl Wind {
     }
 
     fn with_profile(c: &WindConfig, profile: Vec<ProfilePoint>) -> Self {
+        let ground_blend_height = if c.model == WindModel::Log && c.ground_blend_height <= c.roughness_length {
+            c.ground_blend_height.max(2.0 * c.roughness_length)
+        } else {
+            c.ground_blend_height
+        };
         Self {
             model: c.model,
             speed: c.speed,
@@ -174,6 +194,7 @@ impl Wind {
             ref_height: c.ref_height,
             exponent: c.exponent,
             roughness_length: c.roughness_length,
+            ground_blend_height,
             profile,
         }
     }
@@ -223,6 +244,40 @@ impl Wind {
         (ae + f * (be - ae), an + f * (bn - an))
     }
 
+    /// Unscaled power/log speed profile `w(h) / speed`. The `constant` and `profile` models do
+    /// not use it.
+    fn model_shape(&self, h: f64) -> f64 {
+        match self.model {
+            WindModel::Power => (h / self.ref_height).powf(1.0 / self.exponent),
+            WindModel::Log => {
+                let z0 = self.roughness_length;
+                (h / z0).ln() / (self.ref_height / z0).ln()
+            }
+            _ => 1.0,
+        }
+    }
+
+    /// Analytic `d/dh` of [`model_shape`](Self::model_shape).
+    fn model_shape_deriv(&self, h: f64) -> f64 {
+        match self.model {
+            WindModel::Power => (h / self.ref_height).powf(1.0 / self.exponent) / (self.exponent * h),
+            WindModel::Log => 1.0 / (h * (self.ref_height / self.roughness_length).ln()),
+            _ => 0.0,
+        }
+    }
+
+    /// Cubic Hermite blend of the power/log speed profile on `[0, ground_blend_height]`. The value
+    /// and slope match the model at the blend height `h_b`; at the ground the speed is zero with
+    /// bounded slope `w(h_b) / h_b`.
+    fn blend_shape(&self, h: f64) -> f64 {
+        let hb = self.ground_blend_height;
+        let wb = self.model_shape(hb);
+        let d1 = self.model_shape_deriv(hb);
+        let t = h / hb;
+        let (t2, t3) = (t * t, t * t * t);
+        wb * (-t3 + t2 + t) + hb * d1 * (t3 - t2)
+    }
+
     /// Wind velocity at height `h` above ground.
     pub fn at(&self, h: f64) -> Vec3 {
         if self.model == WindModel::Profile {
@@ -233,10 +288,22 @@ impl Wind {
             return Vec3::ZERO;
         }
         let v = match self.model {
-            WindModel::Power => self.speed * (h.max(0.0) / self.ref_height).powf(1.0 / self.exponent),
-            WindModel::Log => {
-                let z0 = self.roughness_length;
-                self.speed * (h.max(z0) / z0).ln() / (self.ref_height / z0).ln()
+            WindModel::Power | WindModel::Log => {
+                if h < 0.0 {
+                    0.0
+                } else if h < self.ground_blend_height {
+                    self.speed * self.blend_shape(h)
+                } else {
+                    // The model itself, evaluated exactly as before the blend was introduced.
+                    match self.model {
+                        WindModel::Power => self.speed * (h / self.ref_height).powf(1.0 / self.exponent),
+                        WindModel::Log => {
+                            let z0 = self.roughness_length;
+                            self.speed * (h / z0).ln() / (self.ref_height / z0).ln()
+                        }
+                        _ => unreachable!(),
+                    }
+                }
             }
             _ => self.speed,
         };
@@ -447,8 +514,10 @@ mod tests {
         c.roughness_length = 0.1;
         let w = Wind::from_config(&c).unwrap();
         assert!((w.at(10.0).x - 4.0).abs() < 1e-12);
-        assert_eq!(w.at(0.05).x, 0.0);
-        assert_eq!(w.at(0.1).x, 0.0);
+        // Below the blend height the profile is transitional, but it starts at zero and grows.
+        assert_eq!(w.at(0.0).x, 0.0);
+        assert!(w.at(0.05).x > 0.0 && w.at(0.1).x > 0.0);
+        assert!(w.at(0.05).x < w.at(1.0).x && w.at(0.1).x < w.at(1.0).x);
         let expect = 4.0 * (100.0f64).ln() / (100.0f64).ln();
         assert!((w.at(10.0).x - expect).abs() < 1e-12);
         // w(100) = 4 ln(1000)/ln(100) = 6
@@ -459,6 +528,104 @@ mod tests {
         assert!(Wind::from_config(&c).unwrap_err().to_string().contains("roughness_length"));
         c.ref_height = -1.0;
         assert!(Wind::from_config(&c).is_err());
+    }
+
+    /// Pre-blend power/log speed magnitude, used to check that `h >= h_b` is unchanged bit for bit.
+    fn legacy_speed(w: &Wind, h: f64) -> f64 {
+        match w.model {
+            WindModel::Power => w.speed * (h.max(0.0) / w.ref_height).powf(1.0 / w.exponent),
+            WindModel::Log => w.speed * (h.max(w.roughness_length) / w.roughness_length).ln() / (w.ref_height / w.roughness_length).ln(),
+            _ => w.speed,
+        }
+    }
+
+    fn blent(model: WindModel) -> Wind {
+        let mut c = cfg(model);
+        c.ref_height = 2.0;
+        c.roughness_length = 0.05;
+        c.ground_blend_height = 1.0;
+        Wind::from_config(&c).unwrap()
+    }
+
+    #[test]
+    fn ground_blend_is_continuous_and_has_continuous_slope() {
+        for model in [WindModel::Power, WindModel::Log] {
+            let w = blent(model);
+            let hb = w.ground_blend_height;
+            // Value continuity across the blend height.
+            let eps = 1e-10;
+            let (below, above) = (w.at(hb - eps).x, w.at(hb + eps).x);
+            assert!((below - above).abs() < 1e-9, "{model:?}: value jump {}", below - above);
+            // Slope continuity: one-sided finite differences agree to 1e-5 relative.
+            let d = 1e-7;
+            let dl = (w.at(hb).x - w.at(hb - d).x) / d;
+            let dr = (w.at(hb + d).x - w.at(hb).x) / d;
+            let rel = (dl - dr).abs() / dl.abs().max(dr.abs()).max(f64::MIN_POSITIVE);
+            assert!(rel < 1e-5, "{model:?}: slopes {dl} vs {dr} (rel {rel:e})");
+        }
+    }
+
+    #[test]
+    fn ground_blend_starts_at_zero_with_bounded_slope() {
+        for model in [WindModel::Power, WindModel::Log] {
+            let w = blent(model);
+            let hb = w.ground_blend_height;
+            assert_eq!(w.at(0.0), Vec3::ZERO, "{model:?}");
+            assert_eq!(w.at(-1.0), Vec3::ZERO, "{model:?}");
+            // The initial slope is w(h_b)/h_b, so the finite-difference derivative is finite.
+            let d = 1e-9;
+            let fd = (w.at(d).x - w.at(0.0).x) / d;
+            let expect = w.at(hb).x / hb;
+            assert!(fd.is_finite() && (fd / expect - 1.0).abs() < 1e-5, "{model:?}: {fd} vs {expect}");
+            assert!(w.at(0.5).x > 0.0 && w.at(0.5).x < w.at(hb).x, "{model:?}");
+        }
+    }
+
+    #[test]
+    fn ground_blend_leaves_profile_above_blend_height_unchanged() {
+        for model in [WindModel::Power, WindModel::Log] {
+            // Direction 0 so that `-at(h).y` is exactly the speed magnitude.
+            let mut c = cfg(model);
+            c.ref_height = 2.0;
+            c.roughness_length = 0.05;
+            c.ground_blend_height = 1.0;
+            c.direction_deg = 0.0;
+            let w = Wind::from_config(&c).unwrap();
+            for h in [w.ground_blend_height, 1.5, 2.0, 10.0, 1000.0] {
+                assert_eq!(-w.at(h).y, legacy_speed(&w, h), "{model:?} at {h}");
+            }
+            // with_speed_direction only scales the speed, so the blend scales with it.
+            let scaled = w.with_speed_direction(9.0, 0.0);
+            for h in [w.ground_blend_height, 1.5, 2.0, 10.0] {
+                assert_eq!(-scaled.at(h).y, legacy_speed(&scaled, h), "{model:?} scaled at {h}");
+            }
+            for h in [0.0, 0.25, 0.5, 1.0, 3.0] {
+                let (a, b) = (scaled.at(h).norm(), w.at(h).norm());
+                assert!((a - 2.25 * b).abs() <= 1e-12 * a.max(1.0), "{model:?} scale at {h}: {a} vs {b}");
+            }
+        }
+    }
+
+    #[test]
+    fn ground_blend_validation_and_log_clamp() {
+        let mut c = cfg(WindModel::Power);
+        c.ground_blend_height = 0.0;
+        assert!(Wind::from_config(&c).unwrap_err().to_string().contains("ground_blend_height"));
+        c.ground_blend_height = c.ref_height;
+        assert!(Wind::from_config(&c).is_err());
+        // The constant and profile models ignore the field, so any value is accepted.
+        c.model = WindModel::Constant;
+        c.ground_blend_height = -1.0;
+        assert!(Wind::from_config(&c).is_ok());
+        // Log: a value at or below z0 is raised to 2 z0 so the analytic slope exists.
+        let mut c = cfg(WindModel::Log);
+        c.ref_height = 10.0;
+        c.roughness_length = 0.2;
+        c.ground_blend_height = 0.1;
+        let w = Wind::from_config(&c).unwrap();
+        assert!((w.ground_blend_height - 0.4).abs() < 1e-12);
+        c.ground_blend_height = 0.5;
+        assert!((Wind::from_config(&c).unwrap().ground_blend_height - 0.5).abs() < 1e-12);
     }
 
     #[test]

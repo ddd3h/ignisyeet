@@ -158,3 +158,106 @@ fn stl_euler_case_and_roll_pair() {
     assert!(report.fidelity.is_some() && report.warnings.iter().any(|w| w.contains("MODIFIED")));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Cells of the volume mesh written by the STL mesher (`meshed domain (quarter|half|full): cells N` in `mesh.log`).
+fn meshed_cells(dir: &std::path::Path) -> (String, usize) {
+    let log = std::fs::read_to_string(dir.join("cfd/mesh/mesh.log")).unwrap();
+    let line = log.lines().find(|l| l.starts_with("meshed domain")).expect("meshed domain line");
+    let kind = line.split(['(', ')']).nth(1).unwrap().to_string();
+    let cells = line.split("cells ").nth(1).unwrap().split(',').next().unwrap().trim().parse().unwrap();
+    (kind, cells)
+}
+
+#[test]
+#[ignore = "needs gmsh and manifold3d (IGNISYEET_CFD_PREFIX)"]
+fn stl_symmetry_is_verified_and_the_domain_follows() {
+    let (raw, g) = sample_stl();
+    let aero = aero::AeroOptions::default();
+    let base = CfdOptions { roll_damping: false, symmetry: true, ..stl_options() };
+    let run = |name: &str, o: &CfdOptions| {
+        let dir = std::env::temp_dir().join(format!("ignisyeet_cfd_stl_sym_{name}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let m = cfd::mesh_only(&g, o, &aero, &dir, &ResourceBudget::default(), Some(&raw)).unwrap();
+        (m, dir)
+    };
+    // auto: the sample STL is mirror symmetric about both planes (the vertex sets exactly; the triangulation of the
+    // facets differs, so the check falls back to the surface itself).
+    let (half, d1) = run("half", &base);
+    let sym = &half.stl.as_ref().unwrap().symmetry;
+    assert_eq!((sym.chosen.as_str(), sym.meshed.as_str()), ("axisymmetric", "quarter"), "{sym:?}");
+    assert!(sym.y.symmetric && sym.z.symmetric && sym.y.max_mismatch < 1e-6 && sym.z.max_mismatch < 1e-6, "{sym:?}");
+    let (kind, quarter) = meshed_cells(&d1);
+    assert_eq!(kind, "quarter");
+    // Half kept (SU2 symmetry marker), the same quarter mirrored to the full domain, and the full domain meshed directly.
+    let (full_mirror, d2) = run("fullmirror", &CfdOptions { symmetry: false, ..base.clone() });
+    let (full, d3) = run("full", &CfdOptions { shape_symmetry: Some(cfd::ShapeSymmetry::None), ..base.clone() });
+    assert_eq!(meshed_cells(&d3).0, "full");
+    let (c_half, c_mirror, c_full) = (half.stats.cells as f64, full_mirror.stats.cells as f64, full.stats.cells as f64);
+    assert!((quarter as f64 / c_full - 0.25).abs() < 0.04, "quarter {quarter} vs full {c_full}");
+    assert!((c_half / c_full - 0.5).abs() < 0.06, "half {c_half} vs full {c_full}");
+    assert!((c_mirror / c_full - 1.0).abs() < 0.1, "mirrored full {c_mirror} vs full {c_full}");
+    assert!((c_mirror - 2.0 * c_half).abs() < 0.02 * c_mirror, "{c_mirror} {c_half}");
+    // The mirrored wall reproduces the union as well as the full-domain wall does.
+    let f = &full_mirror.stl.as_ref().unwrap().fidelity;
+    assert!((f.cfd.volume.unwrap() / f.union.volume.unwrap() - 1.0).abs() < 5e-3, "{f:?}");
+    for d in [d1, d2, d3] {
+        let _ = std::fs::remove_dir_all(&d);
+    }
+}
+
+#[test]
+#[ignore = "needs gmsh and manifold3d (IGNISYEET_CFD_PREFIX)"]
+fn explicit_symmetry_on_an_asymmetric_stl_is_an_error() {
+    let (raw, g) = sample_stl();
+    // One fin is skewed (its outer vertices move 2 mm along the axis): the shell stays closed, the union is one solid,
+    // and the surface is no longer mirror symmetric about either plane.
+    let skewed: Vec<Triangle> = raw.iter().map(|t| t.map(|v| if v.x > 0.055 && v.y > 0.055 { Vec3::new(v.x, v.y, v.z + 0.002) } else { v })).collect();
+    let dir = std::env::temp_dir().join(format!("ignisyeet_cfd_stl_asym_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let auto = cfd::stl_mesh::check_symmetry(&CfdOptions { roll_damping: false, ..stl_options() }, &g, &skewed, &dir).unwrap();
+    assert!(!auto.y.symmetric && !auto.z.symmetric && auto.y.max_mismatch > 1e-4, "{auto:?}");
+    assert_eq!((auto.chosen.as_str(), auto.meshed.as_str()), ("none", "full"));
+    let e = cfd::stl_mesh::check_symmetry(&CfdOptions { shape_symmetry: Some(cfd::ShapeSymmetry::Axisymmetric), ..stl_options() }, &g, &skewed, &dir).unwrap_err().to_string();
+    assert!(e.contains("axisymmetric") && e.contains("max mismatch") && e.contains("y = 0"), "{e}");
+    let e = cfd::stl_mesh::check_symmetry(&CfdOptions { shape_symmetry: Some(cfd::ShapeSymmetry::PitchPlane), ..stl_options() }, &g, &skewed, &dir).unwrap_err().to_string();
+    assert!(e.contains("pitch_plane"), "{e}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+#[ignore = "needs SU2, gmsh, manifold3d and MPI (IGNISYEET_CFD_PREFIX)"]
+fn stl_half_domain_matches_the_full_domain_in_cn() {
+    let (raw, g) = sample_stl();
+    let aero = aero::AeroOptions { mach_max: 1.0, mach_step: 0.5, ..Default::default() };
+    let base = CfdOptions { roll_damping: false, symmetry: true, ..stl_options() };
+    let solve = |dir: &std::path::Path, o: &CfdOptions| {
+        let (table, report) =
+            cfd::build_table_with_progress(&g, o, &aero, dir, "h".into(), aero::Extrapolation::Linear, &ResourceBudget::default(), Some(&raw), &|_| {}).unwrap();
+        assert!(report.failed.is_empty(), "{report:?}");
+        (table, report)
+    };
+    let a = 4f64.to_radians();
+    // Half domain (SU2 symmetry marker) and the same quarter mesh mirrored to the full domain, in one work directory
+    // so that both use the same union (manifold3d does not order its triangles reproducibly) and so the same mesh.
+    let dir = std::env::temp_dir().join(format!("ignisyeet_cfd_stl_cn_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let (half, rh) = solve(&dir, &base);
+    assert_eq!((rh.shape_symmetry.as_str(), rh.domain.as_str()), ("axisymmetric", "half"));
+    assert_eq!(rh.symmetry_check.as_ref().unwrap()["chosen"], "axisymmetric");
+    let (mirrored, rm) = solve(&dir, &CfdOptions { symmetry: false, ..base.clone() });
+    assert_eq!((rm.shape_symmetry.as_str(), rm.domain.as_str()), ("axisymmetric", "full"));
+    let (ch, cm) = (half.lookup6(0.8, a, 0.0), mirrored.lookup6(0.8, a, 0.0));
+    assert!((ch.cz / cm.cz - 1.0).abs() < 0.01, "CN half {} vs mirrored full {}", -ch.cz, -cm.cz);
+    // -alpha is the mirror image of +alpha in the exactly z-symmetric mesh.
+    assert!((half.lookup6(0.8, -a, 0.0).cz + ch.cz).abs() < 1e-3 * ch.cz.abs());
+    let _ = std::fs::remove_dir_all(&dir);
+    // The directly meshed full domain is a different mesh (and a different union); at 5 mm the normal force of two such
+    // meshes scatters by a few per cent, so this is a plausibility bound only.
+    let dir = std::env::temp_dir().join(format!("ignisyeet_cfd_stl_cn_full_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let (full, rf) = solve(&dir, &CfdOptions { shape_symmetry: Some(cfd::ShapeSymmetry::None), ..base });
+    assert_eq!((rf.shape_symmetry.as_str(), rf.domain.as_str()), ("none", "full"));
+    let cf = full.lookup6(0.8, a, 0.0);
+    assert!((ch.cz / cf.cz - 1.0).abs() < 0.06, "CN half {} vs full {}", -ch.cz, -cf.cz);
+    let _ = std::fs::remove_dir_all(&dir);
+}

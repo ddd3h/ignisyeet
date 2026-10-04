@@ -69,14 +69,16 @@ model = "euler"            # "euler" | "rans" (Spalart-Allmaras)
 machs = [0.3, 0.8, 1.2, 2.0]   # solved Mach numbers (increasing)
 alphas_deg = [0, 4, 8]         # solved angles of attack (must contain 0)
 surface = "cad"            # "cad" (alias "panel_mesh"): geometry rebuilt from the extracted profile + fins as one fused solid;
-                           # "stl": the STL itself (overlapping closed shells are united, full domain, needs base_treatment for Euler)
-symmetry = true            # cad: allow the half model about the pitch plane. It is used while the case matrix permits (shape symmetric
+                           # "stl": the STL itself (overlapping closed shells are united, needs base_treatment for Euler)
+symmetry = true            # allow the half model about the pitch plane. It is used while the case matrix permits (shape symmetric
                            # about y = 0, betas_deg = [0], no roll cases); otherwise the full domain is solved. false = always full domain.
 # betas_deg = [0, 4, 8]    # sideslip angles [deg] (increasing, start with 0); anything but [0] makes the table a six-component (general) table
 # roll_damping = true      # solve a roll pair per Mach number (rotating frame, alpha = beta = 0) and take Clp from CFD; full domain
 # roll_rate_hat = 0.01     # p d / (2 V) of the roll pair
 # shape_symmetry = "auto"  # "auto" | "axisymmetric" (mirror planes y = 0 and z = 0) | "pitch_plane" (y = 0 only) | "none": which mirror
-                           # images are not solved; auto = none for stl. "pitch_plane" / "none" give a general table.
+                           # images are not solved. stl: auto uses the planes that the mirror check of the united surface verifies (both:
+                           # quarter mesh, y = 0 only: half mesh, none: full domain); an explicit axisymmetric / pitch_plane that fails the
+                           # check is an error, "none" forces the full domain. "pitch_plane" / "none" give a general table.
 # base_treatment = "fairing"  # surface = "stl" + euler (required): "fairing" appends a cone behind the base (modifies the input STL),
                            # "flat" keeps the flat base (the Euler solution is likely not to converge)
 # stl_remesh = "classify" # stl: "classify" (gmsh remeshes the united surface at wall_size) | "none" (the STL triangles as they are: fins under-resolved)

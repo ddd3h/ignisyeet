@@ -83,7 +83,8 @@ pub struct MeshParams {
     pub symmetry: bool,
     /// Full domain of a y-symmetric layout: mesh the half and mirror it about y = 0 (no `symmetry` marker).
     pub y_mirror: bool,
-    /// `half`, `full_mirror` (half mesh mirrored about y = 0), `full_box` (box farfield) or `stl_box`:
+    /// `half`, `full_mirror` (half mesh mirrored about y = 0), `full_box` (box farfield), `stl_box`, `stl_half`,
+    /// `stl_half_full` (the STL's half mirrored to the full domain), `stl_quarter_half` or `stl_quarter_full`:
     /// part of the mesh hash.
     pub domain: String,
     /// `cad` (rebuilt geometry, `mesh_gmsh.py`) or `stl` (direct STL surface, `mesh_stl.py`).
@@ -449,6 +450,24 @@ mod tests {
         let mut s3 = s1.clone();
         s3.stl_remesh = "classify".into();
         assert!(mesh_hash(&s1) != mesh_hash(&a) && mesh_hash(&s1) != mesh_hash(&s2) && mesh_hash(&s1) != mesh_hash(&s3));
+        // The chosen STL symmetry (domain, mirror steps) is part of the hash.
+        let mut q1 = s1.clone();
+        q1.domain = "stl_quarter_half".into();
+        q1.symmetry = true;
+        q1.z_mirror = true;
+        let mut q2 = q1.clone();
+        q2.symmetry = false;
+        q2.y_mirror = true;
+        q2.domain = "stl_quarter_full".into();
+        let mut h1 = q1.clone();
+        h1.z_mirror = false;
+        h1.domain = "stl_half".into();
+        let hashes = [&s1, &q1, &q2, &h1].map(|p| mesh_hash(p));
+        for i in 0..4 {
+            for j in 0..i {
+                assert_ne!(hashes[i], hashes[j], "{i} {j}");
+            }
+        }
         let mut g2 = g.clone();
         g2.fins.as_mut().unwrap().span *= 1.1;
         assert_ne!(mesh_hash(&a), mesh_hash(&MeshParams::new(&o, &g2, Path::new("/a"), 4)));

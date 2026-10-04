@@ -1,6 +1,6 @@
 % SPDX-License-Identifier: GPL-3.0-or-later
 % Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
-% STL mode of the CFD chapter: transform, repair, base treatment, union, remesh and volume mesh, fidelity report.
+% STL mode of the CFD chapter: transform, repair, base treatment, union and mirror check, remesh and volume mesh, fidelity report.
 \begin{tikzpicture}[
   font=\footnotesize,
   rust/.style={draw=cblue, fill=cfill, thick, rounded corners=3pt, minimum width=29mm, minimum height=12mm, align=center},
@@ -13,10 +13,10 @@
   \node[rust] (frame) at (3.7,0) {1 座標の変換\\\scriptsize CFD 座標 $(-x_b,y_b,-z_b)$};
   \node[rust] (repair) at (7.4,0) {2 修復\\\scriptsize 溶接・向き・水密};
   \node[rust, opt] (base) at (11.1,0) {3 底面の処理\\\scriptsize Euler のとき\\\scriptsize fairing / flat};
-  \node[py] (union) at (14.8,0) {4 和\\\scriptsize manifold3d};
+  \node[py] (union) at (14.8,0) {4 和と鏡映の検査\\\scriptsize manifold3d、$y=0$・$z=0$};
   % row 2 (right to left)
   \node[py] (mesh) at (14.8,-3.2) {5 再メッシュと\\\scriptsize 体積メッシュ（gmsh）};
-  \node[file] (su2) at (11.1,-3.2) {mesh.su2\\\scriptsize wall, base, farfield};
+  \node[file] (su2) at (11.1,-3.2) {mesh.su2\\\scriptsize wall, base, farfield, symmetry};
   \node[rust] (fid) at (7.4,-3.2) {6 形状の忠実度\\\scriptsize 入力・和・壁面を比較};
   \node[file] (fj) at (3.7,-3.2) {stl\_fidelity.json};
   \draw[arr] (stl) -- (frame);

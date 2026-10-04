@@ -429,6 +429,112 @@ fn band(a: &[Vec3], ta: &[f64], b: &[Vec3], tb: &[f64], out: &mut Vec<Triangle>)
     }
 }
 
+/// A ring of vertices with the azimuth `atan2(z, y)` of each and the index of its mirror image about `y = 0`
+/// (`my`, azimuth `pi - a`) and `z = 0` (`mz`, azimuth `-a`).
+struct SymRing {
+    pts: Vec<Vec3>,
+    q: Vec<f64>,
+    my: Vec<usize>,
+    mz: Vec<usize>,
+}
+
+impl SymRing {
+    fn new(pts: &[Vec3], tol: f64) -> Option<Self> {
+        let find = |p: Vec3| pts.iter().position(|v| (*v - p).norm() <= tol);
+        let my = pts.iter().map(|v| find(Vec3::new(v.x, -v.y, v.z))).collect::<Option<Vec<_>>>()?;
+        let mz = pts.iter().map(|v| find(Vec3::new(v.x, v.y, -v.z))).collect::<Option<Vec<_>>>()?;
+        Some(Self { pts: pts.to_vec(), q: pts.iter().map(|v| v.z.atan2(v.y)).collect(), my, mz })
+    }
+
+    /// Vertices of the first quadrant (azimuth 0 to pi/2, both ends present) in ascending azimuth.
+    fn quadrant(&self) -> Option<Vec<usize>> {
+        let half_pi = std::f64::consts::FRAC_PI_2;
+        let mut v: Vec<usize> = (0..self.pts.len()).filter(|&i| self.q[i] >= -1e-9 && self.q[i] <= half_pi + 1e-9).collect();
+        v.sort_by(|&a, &b| self.q[a].partial_cmp(&self.q[b]).unwrap());
+        (v.len() >= 2 && self.q[v[0]].abs() < 1e-9 && (self.q[v[v.len() - 1]] - half_pi).abs() < 1e-9).then_some(v)
+    }
+}
+
+/// Band between two symmetric rings built in the first quadrant (merge of the ascending azimuths) and reflected
+/// into the other three, so that the triangulation is exactly mirror symmetric. `flip`: the winding of the rings is
+/// against increasing azimuth.
+fn symmetric_band(a: &SymRing, b: &SymRing, flip: bool, out: &mut Vec<Triangle>) -> Option<()> {
+    let (la, lb) = (a.quadrant()?, b.quadrant()?);
+    let mut tris: Vec<[(bool, usize); 3]> = Vec::new();
+    let (mut i, mut k) = (0, 0);
+    while i + 1 < la.len() || k + 1 < lb.len() {
+        let adv_a = if k + 1 >= lb.len() {
+            true
+        } else if i + 1 >= la.len() {
+            false
+        } else {
+            a.q[la[i + 1]] <= b.q[lb[k + 1]]
+        };
+        if adv_a {
+            tris.push([(false, la[i]), (false, la[i + 1]), (true, lb[k])]);
+            i += 1;
+        } else {
+            tris.push([(false, la[i]), (true, lb[k + 1]), (true, lb[k])]);
+            k += 1;
+        }
+    }
+    for map in 0..4u8 {
+        for tr in &tris {
+            let pt = |&(is_b, idx): &(bool, usize)| {
+                let r = if is_b { b } else { a };
+                let mut j = idx;
+                if map & 1 != 0 {
+                    j = r.my[j];
+                }
+                if map & 2 != 0 {
+                    j = r.mz[j];
+                }
+                r.pts[j]
+            };
+            let mut t = [pt(&tr[0]), pt(&tr[1]), pt(&tr[2])];
+            // A single reflection reverses the orientation.
+            if (map.count_ones() == 1) != flip {
+                t.swap(1, 2);
+            }
+            out.push(t);
+        }
+    }
+    Some(())
+}
+
+/// The cone surface of [`fairing_cone`] behind a base ring that is symmetric about both planes: rings of a multiple
+/// of four vertices at the azimuths `2 pi k / n`, bands built per quadrant ([`symmetric_band`]) and the apex fan.
+/// `None` when the base ring is not symmetric (the caller falls back to the plain construction).
+fn symmetric_tail(ring0: &[Vec3], flip: bool, x0: f64, r0: f64, tail_length: f64, f_end: f64, m: usize) -> Option<Vec<Triangle>> {
+    let tau = 2.0 * std::f64::consts::PI;
+    let mut prev = SymRing::new(ring0, 1e-4 * r0)?;
+    let n0 = ring0.len();
+    let mut out = Vec::new();
+    for j in 1..=m {
+        let f = f_end * j as f64 / m as f64;
+        let nj = (((n0 as f64 * (1.0 - f) / 4.0).round() as usize) * 4).max(8);
+        let pts: Vec<Vec3> = (0..nj)
+            .map(|k| {
+                let q = tau * k as f64 / nj as f64;
+                Vec3::new(x0 + f * tail_length, r0 * (1.0 - f) * q.cos(), r0 * (1.0 - f) * q.sin())
+            })
+            .collect();
+        let cur = SymRing::new(&pts, 1e-9 * r0)?;
+        symmetric_band(&prev, &cur, flip, &mut out)?;
+        prev = cur;
+    }
+    let apex = Vec3::new(x0 + f_end * tail_length, 0.0, 0.0);
+    let n = prev.pts.len();
+    for k in 0..n {
+        let mut tri = [prev.pts[k], prev.pts[(k + 1) % n], apex];
+        if flip {
+            tri.swap(1, 2);
+        }
+        out.push(tri);
+    }
+    Some(out)
+}
+
 /// Closed conical tail fairing behind the base plane `x = length`, `tail_length` long, to be united with the body.
 ///
 /// With the base `ring` of the body ([`base_ring`]) the cone starts at exactly that polygon (its front disc is
@@ -459,7 +565,7 @@ pub fn fairing_cone(length: f64, base_radius: f64, tail_length: f64, wall_size: 
         }
         None => {
             let rc = 0.98 * base_radius;
-            let n = ((tau * rc / (0.8 * wall_size)).ceil() as usize).clamp(24, 256);
+            let n = ((tau * rc / (0.8 * wall_size)).ceil() as usize).clamp(24, 256).div_ceil(4) * 4;
             let inside = (0.02 * length).max(2.0 * wall_size).min(0.1 * length);
             let poly = |x: f64| -> Vec<Vec3> { (0..n).map(|k| Vec3::new(x, rc * (tau * k as f64 / n as f64).cos(), rc * (tau * k as f64 / n as f64).sin())).collect() };
             let tt: Vec<f64> = (0..n).map(|k| tau * k as f64 / n as f64).collect();
@@ -506,12 +612,31 @@ pub fn fairing_cone(length: f64, base_radius: f64, tail_length: f64, wall_size: 
     // surface parametrisation of gmsh (`stl_remesh = "classify"`) fail.
     let f_end = 0.9;
     let m = ((f_end * tail_length / (2.0 * edge.max(1e-9))).ceil() as usize).clamp(4, 400);
+    // A base ring that is mirror symmetric about y = 0 and z = 0 (with vertices on the planes) gets a fairing that
+    // is exactly symmetric too: the union of a symmetric body with it stays symmetric (see `symmetry`).
+    if let Some(tail) = symmetric_tail(&ring0, dir < 0.0, x0, r0, tail_length, f_end, m) {
+        t.extend(tail);
+        if signed_volume(&t) < 0.0 {
+            for tri in &mut t {
+                tri.swap(1, 2);
+            }
+        }
+        return t;
+    }
     let mut prev = (ring0.clone(), ang0.clone());
     for j in 1..=m {
         let f = f_end * j as f64 / m as f64;
-        let nj = ((n0 as f64 * (1.0 - f)).round() as usize).max(8);
-        let tj: Vec<f64> = (0..nj).map(|k| tau * k as f64 / nj as f64).collect();
-        let pts: Vec<Vec3> = tj.iter().map(|&q| Vec3::new(x0 + f * tail_length, r0 * (1.0 - f) * (az0 + dir * q).cos(), r0 * (1.0 - f) * (az0 + dir * q).sin())).collect();
+        let nj = (((n0 as f64 * (1.0 - f) / 4.0).round() as usize) * 4).max(8);
+        // Vertices in the order of the angle measured from the first vertex of the base ring, in its winding direction.
+        let mut ring: Vec<(f64, Vec3)> = (0..nj)
+            .map(|k| {
+                let q = tau * k as f64 / nj as f64;
+                let rel = (dir * (q - az0)).rem_euclid(tau);
+                (rel, Vec3::new(x0 + f * tail_length, r0 * (1.0 - f) * q.cos(), r0 * (1.0 - f) * q.sin()))
+            })
+            .collect();
+        ring.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        let (tj, pts): (Vec<f64>, Vec<Vec3>) = ring.into_iter().unzip();
         band(&prev.0, &prev.1, &pts, &tj, &mut t);
         prev = (pts, tj);
     }
@@ -582,41 +707,55 @@ fn finish(tris: Vec<Triangle>, length: f64) -> Result<WallSurface> {
     Ok(s)
 }
 
-/// Clips triangles at the plane `y = 0`, keeping `y >= 0`. Vertices within `tol` of the plane are
-/// snapped onto it, triangles lying in the plane are dropped, and edge intersections are computed
-/// from a canonical vertex order so that neighbouring triangles obtain bit-identical points.
+fn comp(v: Vec3, axis: usize) -> f64 {
+    [v.x, v.y, v.z][axis]
+}
+
+fn with_comp(mut v: Vec3, axis: usize, c: f64) -> Vec3 {
+    match axis {
+        0 => v.x = c,
+        1 => v.y = c,
+        _ => v.z = c,
+    }
+    v
+}
+
+/// Clips triangles at the plane `y = 0`, keeping `y >= 0` (see [`clip_plane`]).
 pub fn clip_half(tris: &[Triangle], tol: f64) -> Vec<Triangle> {
-    let snap = |mut v: Vec3| {
-        if v.y.abs() < tol {
-            v.y = 0.0;
-        }
-        v
-    };
+    clip_plane(tris, 1, tol)
+}
+
+/// Clips triangles at the plane `x[axis] = 0` (`axis` 1: y, 2: z), keeping `x[axis] >= 0`. Vertices within `tol`
+/// of the plane are snapped onto it, triangles lying in the plane are dropped, and edge intersections are computed
+/// from a canonical vertex order so that neighbouring triangles obtain bit-identical points.
+pub fn clip_plane(tris: &[Triangle], axis: usize, tol: f64) -> Vec<Triangle> {
+    let snap = |v: Vec3| if comp(v, axis).abs() < tol { with_comp(v, axis, 0.0) } else { v };
     let cut = |a: Vec3, b: Vec3| {
         let (p, q) = if (a.x, a.y, a.z) <= (b.x, b.y, b.z) { (a, b) } else { (b, a) };
-        let t = (0.0 - p.y) / (q.y - p.y);
-        Vec3::new(p.x + t * (q.x - p.x), 0.0, p.z + t * (q.z - p.z))
+        let t = (0.0 - comp(p, axis)) / (comp(q, axis) - comp(p, axis));
+        with_comp(p + (q - p) * t, axis, 0.0)
     };
     let mut out = Vec::with_capacity(tris.len());
     for t in tris {
         let v = t.map(snap);
-        if v.iter().all(|p| p.y >= 0.0) {
-            if v.iter().any(|p| p.y > 0.0) {
+        if v.iter().all(|p| comp(*p, axis) >= 0.0) {
+            if v.iter().any(|p| comp(*p, axis) > 0.0) {
                 out.push(v);
             }
             continue;
         }
-        if v.iter().all(|p| p.y <= 0.0) {
+        if v.iter().all(|p| comp(*p, axis) <= 0.0) {
             continue;
         }
-        // Sutherland-Hodgman against y >= 0.
+        // Sutherland-Hodgman against x[axis] >= 0.
         let mut poly: Vec<Vec3> = Vec::with_capacity(4);
         for i in 0..3 {
             let (a, b) = (v[i], v[(i + 1) % 3]);
-            if a.y >= 0.0 {
+            let (ca, cb) = (comp(a, axis), comp(b, axis));
+            if ca >= 0.0 {
                 poly.push(a);
             }
-            if (a.y > 0.0 && b.y < 0.0) || (a.y < 0.0 && b.y > 0.0) {
+            if (ca > 0.0 && cb < 0.0) || (ca < 0.0 && cb > 0.0) {
                 poly.push(cut(a, b));
             }
         }
@@ -628,6 +767,22 @@ pub fn clip_half(tris: &[Triangle], tol: f64) -> Vec<Triangle> {
         }
     }
     out
+}
+
+/// Edge census of a surface clipped at the planes `y = 0` (`clip_y`) and/or `z = 0` (`clip_z`): the open edges
+/// must lie in those planes only, and no edge may belong to more than two triangles.
+pub fn check_clipped(tris: &[Triangle], clip_y: bool, clip_z: bool, length: f64) -> Result<Watertight> {
+    let (cnt, nv) = edge_counts(tris, 1e-8 * length);
+    let on_plane = |k: &(Key, Key), a: usize| {
+        let g = |p: &Key| [p.0, p.1, p.2][a];
+        g(&k.0) == 0 && g(&k.1) == 0
+    };
+    let stray = cnt.iter().filter(|(k, &c)| c == 1 && !((clip_y && on_plane(k, 1)) || (clip_z && on_plane(k, 2)))).count();
+    let over = cnt.values().filter(|&&c| c > 2).count();
+    if stray > 0 || over > 0 {
+        bail!("clipping at the symmetry plane left {stray} open edges off the plane and {over} non-manifold edges");
+    }
+    Ok(Watertight { triangles: tris.len(), vertices: nv, edges: cnt.len() })
 }
 
 /// The `y >= 0` half of a closed surface; its only open boundary lies in the plane `y = 0`.
@@ -765,6 +920,50 @@ mod tests {
         assert!(!open.is_empty() && open.iter().all(|(k, _)| k.0 .1 == 0 && k.1 .1 == 0));
         // Clipping twice changes nothing.
         assert_eq!(clip_half(&half.wall, 1e-7 * g.length).len(), half.wall.len());
+    }
+
+    #[test]
+    fn quarter_clip_has_open_edges_only_in_the_two_planes() {
+        let g = geom_of(&SampleRocket::default());
+        let full = panel_mesh_surface(&g, &CfdOptions::default()).unwrap().all();
+        let tol = 1e-7 * g.length;
+        let half = clip_plane(&full, 1, tol);
+        let quarter = clip_plane(&half, 2, tol);
+        check_clipped(&half, true, false, g.length).unwrap();
+        check_clipped(&quarter, true, true, g.length).unwrap();
+        // Closed surface: no open edge at all; the half has some, which a check that allows no plane rejects.
+        check_watertight(&full, 1e-8 * g.length).unwrap();
+        assert!(check_clipped(&half, false, false, g.length).is_err() && check_clipped(&quarter, true, false, g.length).is_err());
+        assert!(quarter.iter().flatten().all(|v| v.y >= 0.0 && v.z >= 0.0));
+        let (af, ah, aq) = (area(&full), area(&half), area(&quarter));
+        assert!((ah / af - 0.5).abs() < 5e-3 && (aq / af - 0.25).abs() < 5e-3, "{} {}", ah / af, aq / af);
+        // Every open edge of the quarter lies in y = 0 or z = 0, and both planes have some.
+        let (cnt, _) = edge_counts(&quarter, 1e-8 * g.length);
+        let open: Vec<_> = cnt.iter().filter(|(_, &c)| c == 1).collect();
+        assert!(open.iter().any(|(k, _)| k.0 .1 == 0 && k.1 .1 == 0) && open.iter().any(|(k, _)| k.0 .2 == 0 && k.1 .2 == 0));
+        assert!(open.iter().all(|(k, _)| (k.0 .1 == 0 && k.1 .1 == 0) || (k.0 .2 == 0 && k.1 .2 == 0)));
+        assert!(cnt.values().all(|&c| c <= 2));
+        // The z clip alone is the mirror image of the y clip about y = z.
+        let zonly = clip_plane(&full, 2, tol);
+        check_clipped(&zonly, false, true, g.length).unwrap();
+        assert_eq!(clip_plane(&quarter, 2, tol).len(), quarter.len());
+    }
+
+    #[test]
+    fn fairing_cone_behind_a_symmetric_ring_is_exactly_mirror_symmetric() {
+        let (raw, g) = sample_stl();
+        let r = repair(&to_cfd_frame(&raw, &g), 1e-6 * g.length).unwrap();
+        let ring = r.components.iter().filter_map(|c| base_ring(c, g.length, 1e-4 * g.length)).max_by_key(|r| r.len()).unwrap();
+        let cone = fairing_cone(g.length, g.base_radius, 0.3, 0.005, Some(&ring));
+        check_watertight(&cone, 1e-9).unwrap();
+        assert!(signed_volume(&cone) > 0.0);
+        for axis in [1, 2] {
+            let c = crate::symmetry::check_plane(&cone, axis, 1e-6 * g.length);
+            assert!(c.symmetric && c.triangulation_identical && c.max_mismatch < 1e-9, "{c:?}");
+        }
+        // Without a ring (cylinder fallback) it is symmetric too.
+        let plain = fairing_cone(1.5, 0.05, 0.3, 0.005, None);
+        assert!(crate::symmetry::check_plane(&plain, 1, 1e-6).symmetric && crate::symmetry::check_plane(&plain, 2, 1e-6).symmetric);
     }
 
     #[test]

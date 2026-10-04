@@ -899,21 +899,21 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
        ``"offset"`` は :math:`\alpha=0` の値を引く、``"single"`` は結果をそのまま使う
    * - ``z_mirror_mesh``
      - ``true``
-     - 1/4 領域をメッシュにして :math:`z=0` で鏡映し、:math:`z` について厳密に対称な半モデルのメッシュにする。フィンの配置が :math:`z` について対称でないときは無視する
+     - 1/4 領域をメッシュにして :math:`z=0` で鏡映し、:math:`z` について厳密に対称な半モデルのメッシュにする。``panel_mesh`` ではフィンの配置が :math:`z` について対称でないとき、``stl`` では和の表面が :math:`z=0` について鏡映対称と確かめられないとき（:ref:`sec-cfd-stl-symmetry`）は無視する
    * - ``symmetry``
      - ``true``
-     - ``surface = "panel_mesh"`` でピッチ面（:math:`y=0`）で切った半モデルを使ってよいか。半モデルは、フィンの配置が :math:`y=0` について対称で、``shape_symmetry`` に :math:`y=0` の鏡映が含まれ、``betas_deg = [0]`` で、ロール減衰のケースがないときだけ使う。
-       それ以外と ``false`` は全領域（フィンの配置が対称なら半球のメッシュを鏡映、そうでなければ箱）。``surface = "stl"`` は常に全領域
+     - ピッチ面（:math:`y=0`）で切った半モデルを使ってよいか。半モデルは、形状が :math:`y=0` について対称（``panel_mesh`` はフィンの配置、``stl`` は和の表面の検査）で、``shape_symmetry`` に :math:`y=0` の鏡映が含まれ、``betas_deg = [0]`` で、ロール減衰のケースがないときだけ使う。
+       それ以外と ``false`` は全領域（形状が対称なら半球または半領域のメッシュを鏡映、そうでなければ箱）
    * - ``surface``
      - ``"panel_mesh"``
-     - 壁面の形状。``"panel_mesh"``\ （別名 ``"cad"``）は抽出した胴体とフィンを OpenCASCADE で再構成する。``"stl"`` は入力の STL をそのまま使い、重なった殻を manifold3d で和にする（全領域、:ref:`sec-cfd-stl`）
+     - 壁面の形状。``"panel_mesh"``\ （別名 ``"cad"``）は抽出した胴体とフィンを OpenCASCADE で再構成する。``"stl"`` は入力の STL をそのまま使い、重なった殻を manifold3d で和にする（:ref:`sec-cfd-stl`）
    * - ``betas_deg``
      - ``[0]``
      - 解く横滑り角 [deg]（0 以上、昇順、0 で始まる）。0 だけでないと係数表は 6 成分の一般表になる。:ref:`sec-cfd-general`
    * - ``shape_symmetry``
      - ``"auto"``
-     - 鏡映像として得て解かない対称性。``"axisymmetric"``\ （:math:`y=0` と :math:`z=0`）、``"pitch_plane"``\ （:math:`y=0`）、``"none"``\ （使わない）、``"auto"``\ （``panel_mesh`` はフィンの配置から、``stl`` は ``"none"``。形状の鏡映は検査しない）。
-       ``"pitch_plane"`` と ``"none"`` は一般表になる
+     - 鏡映像として得て解かない対称性。``"axisymmetric"``\ （:math:`y=0` と :math:`z=0`）、``"pitch_plane"``\ （:math:`y=0`）、``"none"``\ （使わない。全領域）、``"auto"``\ （``panel_mesh`` はフィンの配置から、``stl`` は和の表面の鏡映検査で通った平面）。
+       ``stl`` で ``"axisymmetric"`` か ``"pitch_plane"`` を明示して検査に通らなければエラー（:ref:`sec-cfd-stl-symmetry`）。``"pitch_plane"`` と ``"none"`` は一般表になる
    * - ``roll_damping``
      - ``false``
      - 各 Mach 数でロール減衰のケース（:math:`\alpha=\beta=0`、回転座標系、:math:`\hat p` が ``roll_rate_hat`` の正負、全領域）を解き、:math:`C_{lp}` を CFD の値にする。Euler だけ
@@ -965,18 +965,18 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
    * - ``scheme``
      - ``"roe"``
      - 対流フラックス。``"roe"``\ （MUSCL と Venkatakrishnan の制限関数で 2 次精度）または ``"jst"``
-   * - ``prefix``
-     - ``""``
-     - CFD ツールの環境（``<prefix>/bin/SU2_CFD``、``mpirun``、gmsh を持つ ``python``）。空なら環境変数 ``IGNISYEET_CFD_PREFIX``、それも空なら ``PATH``。先頭の ``~`` は展開する
-   * - ``su2`` / ``mpi``
-     - ``"SU2_CFD"`` / ``"mpirun"``
-     - SU2 の実行ファイル名（またはパス）と MPI の起動コマンド（``ranks_per_case`` が 2 以上のときだけ使う）
    * - ``multigrid``
      - ``0``
      - 凝集型マルチグリッドの粗い格子の数（``MGLEVEL``、0 から 4）。壁面の三角形が多い四面体メッシュでは SU2 が粗い格子を作れず、効果がない（:ref:`sec-cfd-multigrid`）
    * - ``multigrid_cycle``
      - ``"w"``
      - マルチグリッドのサイクル。``"w"`` または ``"v"``
+   * - ``prefix``
+     - ``""``
+     - CFD ツールの環境（``<prefix>/bin/SU2_CFD``、``mpirun``、gmsh を持つ ``python``）。空なら環境変数 ``IGNISYEET_CFD_PREFIX``、それも空なら ``PATH``。先頭の ``~`` は展開する
+   * - ``su2`` / ``mpi``
+     - ``"SU2_CFD"`` / ``"mpirun"``
+     - SU2 の実行ファイル名（またはパス）と MPI の起動コマンド（``ranks_per_case`` が 2 以上のときだけ使う）
    * - ``ranks_per_case``
      - ``4``
      - 1 ケースの MPI ランク数。0 で自動（4 とスレッド数の小さいほう）

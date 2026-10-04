@@ -37,7 +37,8 @@ pub enum SurfaceKind {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ShapeSymmetry {
-    /// `cad`: from the fin layout (`axisymmetric` while the table stays axisymmetric); `stl`: `none`.
+    /// `cad`: from the fin layout (`axisymmetric` while the table stays axisymmetric); `stl`: the planes y = 0 and z = 0
+    /// that the mirror check of the united surface verifies are used (both: `axisymmetric`, y = 0 only: `pitch_plane`, else `none`).
     Auto,
     /// Mirror symmetric about y = 0 and z = 0 (e.g. 4 fins at 0 or 45 deg roll): only `alpha >= 0`, `beta >= 0` are solved.
     Axisymmetric,
@@ -177,7 +178,8 @@ pub struct CfdOptions {
     /// `surface = "cad"`: allow the half model about the pitch plane (y = 0, keeping y >= 0). The half
     /// model is used only while the case matrix permits it (shape symmetric about y = 0, `betas_deg = [0]`,
     /// no roll cases); otherwise the full domain is used (for a symmetric shape the half mesh is
-    /// mirrored). `false` forces the full domain. `surface = "stl"` always uses the full domain.
+    /// mirrored). `false` forces the full domain. `surface = "stl"`: the same rule, with the symmetry verified on the
+    /// united surface (see `shape_symmetry`).
     pub symmetry: bool,
     /// Solved sideslip angles [deg] (increasing, >= 0, starting with 0). For shapes with a y = 0 mirror
     /// symmetry only `beta >= 0` is solved (the negative side follows by reflection); `shape_symmetry = "none"`
@@ -448,9 +450,10 @@ impl CfdOptions {
             || self.betas_deg.iter().any(|&b| b != 0.0)
     }
 
-    /// The shape symmetry that determines the case matrix. `auto` is `none` for an STL surface and
-    /// `axisymmetric` for the rebuilt geometry (use [`crate::resolve_options`] to take the fin layout into
-    /// account when sideslip is solved).
+    /// The shape symmetry that determines the case matrix. `auto` is `axisymmetric` for the rebuilt geometry (use
+    /// [`crate::resolve_options`] to take the fin layout into account when sideslip is solved). For an STL surface it
+    /// is `none` until the united surface has been checked: [`crate::stl_mesh::ensure_mesh_stl`] returns the options
+    /// with the verified symmetry, and the case matrix must be made from those.
     pub fn shape(&self) -> ShapeSymmetry {
         match self.shape_symmetry {
             Some(s) if s != ShapeSymmetry::Auto => s,

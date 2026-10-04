@@ -22,6 +22,7 @@ pub mod runner;
 pub mod surface;
 pub mod stl_mesh;
 pub mod su2cfg;
+pub mod symmetry;
 pub mod table;
 pub mod tools;
 
@@ -96,6 +97,8 @@ pub struct CfdReport {
     pub warnings: Vec<String>,
     /// STL surface: geometry fidelity of the CFD wall (see [`fidelity`]).
     pub fidelity: Option<serde_json::Value>,
+    /// STL surface: mirror-symmetry check of the united surface and the domain chosen from it.
+    pub symmetry_check: Option<serde_json::Value>,
 }
 
 /// Message of the missing-tools error.
@@ -118,9 +121,11 @@ pub fn check_tools(opt: &CfdOptions) -> Result<tools::ToolReport> {
 /// * `shape_symmetry`: `auto` becomes `none` for an STL surface; for the rebuilt geometry it is
 ///   `axisymmetric` (the table is roll-averaged) unless sideslip is solved, where the fin layout decides
 ///   (`axisymmetric`: symmetric about y = 0 and z = 0, `pitch_plane`: about y = 0 only, else `none`).
-/// * `symmetry` (the SU2 half domain) is kept only for the rebuilt geometry with a layout symmetric about
-///   y = 0, a shape symmetry that includes y = 0, `betas_deg = [0]` and no roll cases; otherwise the full
-///   domain is solved (the mesher mirrors the half mesh when the layout is symmetric, else it uses a box farfield).
+///   For an STL surface it stays as configured: the symmetry is resolved from the united surface by
+///   [`stl_mesh::ensure_mesh_stl`] ([`symmetry::decide`]).
+/// * `symmetry` (the SU2 half domain) is kept only with a layout symmetric about y = 0 (rebuilt geometry), a shape
+///   symmetry that includes y = 0, `betas_deg = [0]` and no roll cases; otherwise the full domain is solved (the
+///   mesher mirrors the half mesh when the layout is symmetric, else it uses a box farfield).
 /// * `z_mirror_mesh` stays on only for layouts symmetric about both planes.
 pub fn resolve_options(geom: &Geometry, cfd: &CfdOptions) -> CfdOptions {
     let mut o = cfd.clone();
@@ -130,7 +135,6 @@ pub fn resolve_options(geom: &Geometry, cfd: &CfdOptions) -> CfdOptions {
     let sideslip = o.betas_deg.iter().any(|&b| b != 0.0);
     let shape = match o.shape_symmetry {
         Some(s) if s != ShapeSymmetry::Auto => s,
-        _ if stl => ShapeSymmetry::None,
         _ if sideslip => match (ysym, zsym) {
             (true, true) => ShapeSymmetry::Axisymmetric,
             (true, false) => ShapeSymmetry::PitchPlane,
@@ -138,9 +142,11 @@ pub fn resolve_options(geom: &Geometry, cfd: &CfdOptions) -> CfdOptions {
         },
         _ => ShapeSymmetry::Axisymmetric,
     };
-    o.shape_symmetry = Some(shape);
-    o.z_mirror_mesh = o.z_mirror_mesh && !stl && ysym && zsym;
-    o.symmetry = o.symmetry && !stl && ysym && shape != ShapeSymmetry::None && !sideslip && !o.roll_damping;
+    if !stl {
+        o.shape_symmetry = Some(shape);
+        o.z_mirror_mesh = o.z_mirror_mesh && ysym && zsym;
+        o.symmetry = o.symmetry && ysym && shape != ShapeSymmetry::None && !sideslip && !o.roll_damping;
+    }
     o
 }
 
@@ -244,11 +250,12 @@ pub fn prepare_surface(geom: &Geometry, cfd: &CfdOptions, raw: Option<&[geom::st
     }
 }
 
-/// Meshes the rebuilt geometry or the STL surface according to `cfd.surface` (`raw` in metres for the STL).
-fn ensure_mesh_any(cfd: &CfdOptions, geom: &Geometry, raw: Option<&[geom::stl::Triangle]>, work: &Path, threads: usize) -> Result<mesh::MeshResult> {
+/// Meshes the rebuilt geometry or the STL surface according to `cfd.surface` (`raw` in metres for the STL). Returns
+/// the mesh and the options to run with: for an STL surface the symmetry is resolved from the united surface.
+fn ensure_mesh_any(cfd: &CfdOptions, geom: &Geometry, raw: Option<&[geom::stl::Triangle]>, work: &Path, threads: usize) -> Result<(mesh::MeshResult, CfdOptions)> {
     match cfd.surface {
         SurfaceKind::Stl => stl_mesh::ensure_mesh_stl(cfd, geom, raw.ok_or_else(|| anyhow::anyhow!("surface = \"stl\" needs the STL triangles"))?, work, threads),
-        SurfaceKind::PanelMesh => mesh::ensure_mesh(cfd, geom, work, threads),
+        SurfaceKind::PanelMesh => Ok((mesh::ensure_mesh(cfd, geom, work, threads)?, cfd.clone())),
     }
 }
 
@@ -257,7 +264,7 @@ pub fn mesh_only(geom: &Geometry, cfd: &CfdOptions, _aero: &AeroOptions, out_dir
     cfd.validate()?;
     let cfd = &resolve_options(geom, cfd);
     check_tools(cfd)?;
-    ensure_mesh_any(cfd, geom, raw, &work_dir(cfd, out_dir), budget.threads)
+    Ok(ensure_mesh_any(cfd, geom, raw, &work_dir(cfd, out_dir), budget.threads)?.0)
 }
 
 /// Builds the aerodynamic table with SU2: surface, mesh, case runner, table fill.
@@ -282,7 +289,8 @@ pub fn build_table_with_progress(
     progress(CfdStage::Mesh);
     let atm = aero.atmosphere.at(aero.reference_altitude);
     let work = work_dir(cfd, out_dir);
-    let mesh = ensure_mesh_any(cfd, geom, raw, &work, budget.threads)?;
+    let (mesh, resolved) = ensure_mesh_any(cfd, geom, raw, &work, budget.threads)?;
+    let cfd = &resolved;
     let dims = ref_dims(geom);
     let plan = plan_resources(cfd, budget, mesh.stats.cells, case::case_list(cfd).len());
     for n in &plan.notes {
@@ -352,6 +360,7 @@ pub fn build_table_with_progress(
     if let Some(info) = &mesh.stl {
         report.base_treatment = Some(info.base_treatment.clone());
         report.warnings.extend(info.warnings.clone());
+        report.symmetry_check = serde_json::to_value(&info.symmetry).ok();
         report.fidelity = serde_json::to_value(serde_json::json!({
             "fidelity": info.fidelity,
             "union": info.union_report,
@@ -470,9 +479,10 @@ mod tests {
         let three = extract(&SampleRocket { fin_count: 3, ..Default::default() }.mesh(), &ExtractOptions::default()).unwrap();
         let r = resolve_options(&three, &CfdOptions { betas_deg: vec![0.0, 4.0], ..Default::default() });
         assert_eq!((r.shape(), r.z_mirror_mesh), (ShapeSymmetry::PitchPlane, false));
-        // An explicit choice wins; the STL surface is always the full domain without symmetry.
+        // An explicit choice wins; an STL surface keeps its options until the united surface has been checked
+        // (see `symmetry`), and `shape()` is `none` until then.
         let r = resolve_options(&g, &CfdOptions { surface: SurfaceKind::Stl, ..Default::default() });
-        assert_eq!((r.shape(), r.symmetry, r.z_mirror_mesh), (ShapeSymmetry::None, false, false));
+        assert_eq!((r.shape(), r.symmetry, r.z_mirror_mesh), (ShapeSymmetry::None, true, true));
         let r = resolve_options(&g, &CfdOptions { shape_symmetry: Some(ShapeSymmetry::PitchPlane), ..Default::default() });
         assert_eq!(r.shape(), ShapeSymmetry::PitchPlane);
     }

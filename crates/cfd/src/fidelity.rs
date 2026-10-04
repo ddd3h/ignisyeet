@@ -67,6 +67,9 @@ pub struct Fidelity {
     pub fail_above: f64,
     pub genus: Option<i64>,
     pub warnings: Vec<String>,
+    /// STL mirror-symmetry check and the domain chosen from it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub symmetry: Option<crate::symmetry::SymmetryDecision>,
 }
 
 impl Fidelity {
@@ -123,6 +126,9 @@ impl Fidelity {
             self.warn_above,
             self.fail_above
         );
+        if let Some(d) = &self.symmetry {
+            s += &format!("\n  {}", d.summary());
+        }
         for w in &self.warnings {
             s += &format!("\n  warning: {w}");
         }
@@ -322,6 +328,15 @@ impl<'a> TriGrid<'a> {
     }
 }
 
+/// Largest distance of `points` from the surface `tris` (exact nearest-triangle search) and the point where it occurs.
+pub fn max_distance_to_surface(points: &[Vec3], tris: &[Triangle]) -> (f64, Vec3) {
+    if tris.is_empty() {
+        return (f64::INFINITY, Vec3::ZERO);
+    }
+    let g = TriGrid::new(tris);
+    points.iter().map(|&p| (g.nearest(p).1, p)).fold((0.0, Vec3::ZERO), |a, b| if b.0 > a.0 { b } else { a })
+}
+
 struct Rng(u64);
 
 impl Rng {
@@ -378,6 +393,8 @@ pub struct FidelityInput<'a> {
     pub base: &'a [Triangle],
     pub wall_size: f64,
     pub max_error: f64,
+    /// The wall is clipped at a symmetry plane (half domain): the enclosed volume is not defined.
+    pub partial: bool,
 }
 
 /// Compares the three surfaces (see the module documentation).
@@ -396,7 +413,7 @@ pub fn compute(inp: &FidelityInput) -> Fidelity {
         Vec3::new(0.5 * (s.bbox_min[0] + s.bbox_max[0]), 0.5 * (s.bbox_min[1] + s.bbox_max[1]), 0.5 * (s.bbox_min[2] + s.bbox_max[2]))
     };
     let mut vol = 0.0;
-    for t in &all {
+    for t in all.iter().filter(|_| !inp.partial) {
         let (cn, _) = cross_area(t);
         let cen = (t[0] + t[1] + t[2]) / 3.0;
         let (i, _) = union_grid.nearest(cen);
@@ -405,8 +422,8 @@ pub fn compute(inp: &FidelityInput) -> Fidelity {
     }
     let mut f = Fidelity {
         input: stats(inp.input, None),
-        union: stats(inp.union, Some(inp.union_volume)),
-        cfd: stats(&all, Some(vol)),
+        union: stats(inp.union, (!inp.partial).then_some(inp.union_volume)),
+        cfd: stats(&all, (!inp.partial).then_some(vol)),
         cfd_wall_triangles: inp.wall.len(),
         cfd_base_triangles: inp.base.len(),
         cfd_vs_union: summarize(two),
@@ -416,6 +433,7 @@ pub fn compute(inp: &FidelityInput) -> Fidelity {
         fail_above: inp.max_error,
         genus: inp.genus,
         warnings: Vec::new(),
+        symmetry: None,
     };
     if f.max_error() > f.warn_above {
         f.warnings.push(format!("geometry error {:.3e} m exceeds half the wall size ({:.3e} m)", f.max_error(), f.warn_above));
@@ -449,7 +467,7 @@ mod tests {
     }
 
     fn input(wall: &[Triangle], union: &[Triangle], size: f64) -> Fidelity {
-        compute(&FidelityInput { input: union, union, union_volume: 0.0, genus: Some(0), wall, base: &[], wall_size: size, max_error: size })
+        compute(&FidelityInput { input: union, union, union_volume: 0.0, genus: Some(0), wall, base: &[], wall_size: size, max_error: size, partial: false })
     }
 
     #[test]
@@ -494,6 +512,24 @@ mod tests {
             let brute = s.iter().map(|t| dist2_point_triangle(p, t)).fold(f64::INFINITY, f64::min).sqrt();
             assert!((g.nearest(p).1 - brute).abs() < 1e-12, "{p:?}");
         }
+    }
+
+    #[test]
+    fn nearest_triangle_matches_brute_force_on_the_sample_stl() {
+        // Few huge facets next to many tiny ones: the grid search must stay exact.
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/sample_rocket.stl");
+        let tris: Vec<Triangle> = geom::stl::read_stl(&path).unwrap().into_iter().map(|t| t.map(|v| v * 0.001)).collect();
+        let g = TriGrid::new(&tris);
+        let mut rng = Rng(777);
+        let mut worst = 0.0f64;
+        for _ in 0..400 {
+            let t = &tris[(rng.next() * tris.len() as f64) as usize % tris.len()];
+            let mirrored = Vec3::new(-(t[0].x + t[1].x + t[2].x) / 3.0, (t[0].y + t[1].y + t[2].y) / 3.0, (t[0].z + t[1].z + t[2].z) / 3.0);
+            let p = if rng.next() < 0.5 { mirrored } else { Vec3::new((rng.next() - 0.5) * 0.4, (rng.next() - 0.5) * 0.4, -rng.next() * 1.6) };
+            let brute = tris.iter().map(|t| dist2_point_triangle(p, t)).fold(f64::INFINITY, f64::min).sqrt();
+            worst = worst.max((g.nearest(p).1 - brute).abs());
+        }
+        assert!(worst < 1e-12, "{worst}");
     }
 
     #[test]

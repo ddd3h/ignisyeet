@@ -64,6 +64,8 @@ enum Cmd {
     },
     /// Landing dispersion: wind speed x direction grid (dispersion.csv) or Monte Carlo (dispersion_mc.csv, dispersion_summary.json).
     Dispersion { config: PathBuf },
+    /// Check that the CFD tools (SU2, MPI, gmsh) are installed and report their versions.
+    CfdCheck { config: PathBuf },
     /// Write the built-in sample rocket as a binary STL in millimetres, nose towards +z.
     SampleStl { path: PathBuf },
 }
@@ -103,6 +105,11 @@ fn main() -> Result<()> {
             let cfg = Config::load(&config)?;
             begin(&cfg, &config, Sub::Dispersion);
             run_dispersion(&cfg)?
+        }
+        Cmd::CfdCheck { config } => {
+            let cfg = Config::load(&config)?;
+            cfd_check(&cfg, &config);
+            return Ok(());
         }
         Cmd::SampleStl { path } => {
             let tris: Vec<_> = geom::sample::SampleRocket::default()
@@ -280,7 +287,7 @@ fn aero_table_for(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
     let u = ui();
     let t_start = std::time::Instant::now();
     match cfg.aero.method {
-        config::AeroMethod::Barrowman | config::AeroMethod::Panel => {}
+        config::AeroMethod::Barrowman | config::AeroMethod::Panel | config::AeroMethod::Cfd => {}
         config::AeroMethod::Table => {
             let path = cfg.resolve(cfg.aero.table.as_deref().context("aero.table is required when aero.method = \"table\"")?);
             let t = AeroTable::load(&path).with_context(|| format!("cannot load aero table {}", path.display()))?;
@@ -306,6 +313,13 @@ fn aero_table_for(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
             }
         }
     }
+    if cfg.aero.method == config::AeroMethod::Cfd {
+        for w in cfg.aero.cfd.warnings() {
+            eprintln!("warning: {w}");
+        }
+        // Fail early (before the geometry step) when the tools are missing.
+        cfd::check_tools(&cfg.aero.cfd)?;
+    }
     let start = std::time::Instant::now();
     let step = u.step("Extracting geometry");
     let g = geometry(cfg)?;
@@ -314,6 +328,9 @@ fn aero_table_for(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
     show_geometry(&g, sub == Sub::Aero);
     if cfg.aero.method == config::AeroMethod::Panel {
         return panel_table(cfg, g, hash, &path, start, sub);
+    }
+    if cfg.aero.method == config::AeroMethod::Cfd {
+        return cfd_table(cfg, g, hash, &path, start, sub);
     }
     let model = AeroModel::new(g, aero_options(cfg));
     let n_rows = aero_grid_len(cfg);
@@ -354,6 +371,61 @@ fn show_table(t: &AeroTable, elapsed: Option<std::time::Duration>, sub: Sub) {
     if sub == Sub::Aero && ui().rich() {
         println!();
         ui().print_panel(&view::table_panel(t, elapsed));
+    }
+}
+
+/// Build the coefficient table with SU2.
+fn cfd_table(cfg: &Config, g: Geometry, hash: String, path: &Path, start: std::time::Instant, sub: Sub) -> Result<AeroTable> {
+    use cfd::CfdStage as St;
+    let u = ui();
+    let pb = u.bar(1, "CFD", BAR_T);
+    let progress = |st: St| match st {
+        St::Mesh => pb.set_message("surface and volume mesh"),
+        St::Case { index, total, mach, alpha, iter, residual } => {
+            pb.set_length(total as u64);
+            pb.set_message(format!("case {}/{total}: M={mach:.2} alpha={alpha:.1} deg, iter {iter}, log10 res {residual:.2}", index + 1));
+        }
+        St::CaseDone { index, total, .. } => {
+            pb.set_length(total as u64);
+            pb.set_position(index as u64 + 1);
+        }
+        St::Table => pb.set_message("filling the aero table"),
+        St::Done => {}
+    };
+    let out_dir = cfg.out_dir();
+    let built = cfd::build_table_with_progress(&g, &cfg.aero.cfd, &aero_options(cfg), &out_dir, hash, cfg.aero.extrapolation, &progress);
+    pb.finish_and_clear();
+    let (table, report) = built?;
+    table.save(path)?;
+    std::fs::write(out_path(cfg, "cfd_report.json")?, serde_json::to_string_pretty(&report)?)?;
+    u.done_line("CFD", &format!("{} cases, {} failed", report.cases, report.failed.len()), start.elapsed());
+    show_table(&table, Some(start.elapsed()), sub);
+    Ok(table)
+}
+
+/// `cfd-check`: report the CFD tools and their versions.
+fn cfd_check(cfg: &Config, config_path: &Path) {
+    let opt = &cfg.aero.cfd;
+    let roots = [cfg.base_dir.clone()];
+    let r = cfd::tools::check_tools(opt, &roots);
+    println!("CFD tools for {}", config_path.display());
+    match &r.prefix {
+        Some(p) => println!("  prefix      {}", p.display()),
+        None => println!("  prefix      (none; using PATH)"),
+    }
+    for t in [&r.su2, &r.mpi, &r.gmsh] {
+        match (&t.problem, &t.version) {
+            (None, v) => println!("  {:<15}ok       {}  [{}]", t.name, v.as_deref().unwrap_or(""), t.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default()),
+            (Some(p), _) => println!("  {:<15}MISSING  {p}", t.name),
+        }
+    }
+    for w in opt.warnings() {
+        println!("  warning: {w}");
+    }
+    if r.ready(opt) {
+        println!("CFD mode is ready ({} cases for model {:?}).", cfd::case::case_list(opt).len(), opt.model);
+    } else {
+        println!("CFD mode is not available: {}", cfd::not_installed_message(&r, opt).lines().next().unwrap_or(""));
     }
 }
 

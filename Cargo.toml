@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/geom", "crates/aero", "crates/sim", "crates/cli", "crates/panel"]
+members = ["crates/geom", "crates/aero", "crates/sim", "crates/cli", "crates/panel", "crates/cfd"]
 
 [workspace.package]
 version = "0.2.0"
@@ -21,6 +21,7 @@ aero = { path = "crates/aero" }
 sim = { path = "crates/sim" }
 faer = { version = "0.24", default-features = false, features = ["std", "rayon"] }
 panel = { path = "crates/panel" }
+cfd = { path = "crates/cfd" }
 indicatif = "0.17"
 console = "0.15"
 rand = "0.9"

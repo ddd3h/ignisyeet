@@ -105,6 +105,7 @@ pub enum AeroMethod {
     Barrowman,
     Panel,
     Table,
+    Cfd,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -114,6 +115,8 @@ pub struct AeroCfg {
     /// External coefficient table (CSV with JSON sidecar); required for method "table".
     pub table: Option<PathBuf>,
     pub panel: panel::PanelOptions,
+    /// Settings of the SU2 CFD method (only used when method = "cfd").
+    pub cfd: cfd::CfdOptions,
     pub mach_min: f64,
     pub mach_max: f64,
     pub mach_step: f64,
@@ -130,6 +133,7 @@ impl Default for AeroCfg {
             method: AeroMethod::Barrowman,
             table: None,
             panel: panel::PanelOptions::default(),
+            cfd: cfd::CfdOptions::default(),
             mach_min: 0.0,
             mach_max: 3.0,
             mach_step: 0.02,
@@ -219,6 +223,9 @@ impl Config {
         }
         if self.aero.method == AeroMethod::Table && self.aero.table.is_none() {
             bail!("aero.table is required when aero.method = \"table\"");
+        }
+        if self.aero.method == AeroMethod::Cfd {
+            self.aero.cfd.validate()?;
         }
         self.atmosphere.build()?;
         if self.earth.model == sim::EarthModel::Flat && self.earth.gravity == sim::GravityModel::J2 {
@@ -313,6 +320,18 @@ mod tests {
         assert!(e.contains("roughness_length"), "{e}");
         assert!(parse(&sample.replace("model = \"us1976\"", "model = \"constant\"")).is_ok());
         assert!(parse(&sample.replace("integrator = \"rk4\"", "integrator = \"rk45\"")).is_ok());
+    }
+
+    #[test]
+    fn cfd_method_and_options() {
+        let sample = include_str!("../../../examples/sample.toml");
+        let text = sample.replace("method = \"barrowman\"", "method = \"cfd\"") + "\n[aero.cfd]\nmodel = \"rans\"\nmachs = [0.5, 2.0]\nalphas_deg = [0, 4]\n";
+        let c = parse(&text).unwrap();
+        assert_eq!(c.aero.method, AeroMethod::Cfd);
+        assert_eq!(c.aero.cfd.model, cfd::FlowModel::Rans);
+        let bad = text.replace("alphas_deg = [0, 4]", "alphas_deg = [2, 4]");
+        assert!(parse(&bad).unwrap_err().to_string().contains("include 0"));
+        assert!(parse(&(text + "bogus = 1\n")).is_err());
     }
 
     #[test]

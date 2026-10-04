@@ -108,6 +108,15 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
                 p.row("grid", format!("Mach {} .. {} step {}{s}alpha 0 .. {} step {} deg", val(a.mach_min, ""), val(a.mach_max, ""), val(a.mach_step, ""), val(a.alpha_max_deg, ""), val(a.alpha_step_deg, "")));
             }
         }
+        if a.method == AeroMethod::Cfd {
+            let c = &a.cfd;
+            p.row("cfd", format!("{}{s}surface {}{s}{}", style(name(&c.model)).bold(), style(name(&c.surface)).bold(), if c.symmetry { "half model" } else { "full model" }));
+            let ms: Vec<String> = c.machs.iter().map(|m| format!("{m}")).collect();
+            let al: Vec<String> = c.alphas_deg.iter().map(|m| format!("{m}")).collect();
+            p.row("cfd cases", format!("Mach [{}]{s}alpha [{}] deg", ms.join(", "), al.join(", ")));
+            p.row("cfd mesh", format!("wall {}{s}farfield {} L{s}y+ {}", val(c.wall_size * 1e3, "mm"), val(c.farfield, ""), val(c.yplus, "")));
+            p.row("cfd solver", format!("{} iter{s}CFL {}{s}res {}{s}{} ranks x {} cases", val(c.iterations, ""), val(c.cfl, ""), val(c.convergence, ""), val(c.ranks_per_case, ""), val(c.parallel_cases, "")));
+        }
         if a.method == AeroMethod::Panel {
             let q = &a.panel;
             p.row("panel mesh", format!("{} x {} body{s}fin {} x {}{s}wake {} L", val(q.body_axial, ""), val(q.body_circ, ""), val(q.fin_chord, ""), val(q.fin_span, ""), val(q.wake_length, "")));

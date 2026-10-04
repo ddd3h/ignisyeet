@@ -142,6 +142,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cfd"
+version = "0.2.0"
+dependencies = [
+ "aero",
+ "anyhow",
+ "geom",
+ "panel",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -642,6 +654,7 @@ version = "0.2.0"
 dependencies = [
  "aero",
  "anyhow",
+ "cfd",
  "clap",
  "console",
  "geom",

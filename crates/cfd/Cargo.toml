@@ -1,26 +1,15 @@
 [package]
-name = "ignisyeet"
+name = "cfd"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
 
-[[bin]]
-name = "ignisyeet"
-path = "src/main.rs"
-
 [dependencies]
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-toml.workspace = true
-clap.workspace = true
-rayon.workspace = true
 geom.workspace = true
 aero.workspace = true
-sim.workspace = true
 panel.workspace = true
-cfd.workspace = true
-indicatif.workspace = true
-console.workspace = true

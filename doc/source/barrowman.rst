@@ -291,6 +291,77 @@ IgnisYeet では、抽出した半径分布を断面ごとの円錐台の連な�
 重心は燃焼とともに移動するので、表には :math:`x_{cg}` に依存しない :math:`S_0,S_1,S_2` を Mach 数ごとに保存し、
 飛翔計算のたびに\ :eq:`eq-damping` を組み立てる。括弧内が負になる場合（ボートテールの負の寄与が勝つ場合）は 0 とする。
 
+.. _sec-barrowman-roll:
+
+ロール（カントの強制と減衰）
+----------------------------
+
+フィンにカント（取付角）を付けると、機体は機軸まわりに回転する。
+回転が速くなると、フィンの各部に迎角の変化が生じて回転を妨げる。
+ロールのモーメント係数は :math:`C_l=M_x/(qSd)` で、強制項はカントについての傾き :math:`C_{l\delta}`\ [1/rad]、
+減衰項は無次元のロール角速度 :math:`\hat p=pd/(2V)`\ （:math:`p` はロール角速度）についての傾き :math:`C_{lp}` で表す（:ref:`sec-roll-moment`）。
+
+フィンの形状は :numref:`fig-fin-planform` の台形で、:math:`N` 枚のフィンは胴体半径 :math:`r` の位置から外側へ長さ :math:`s` だけ伸びる。
+胴体の中心からの距離を :math:`\xi`\ （:math:`r\le\xi\le r+s`）とし、その位置の翼弦長を線形に変わる :math:`c(\xi)=a+(b-a)(\xi-r)/s` とする。
+
+カントによる強制項
+~~~~~~~~~~~~~~~~~~
+
+カント :math:`\delta` を付けると、各フィンの迎角が :math:`\delta` になる。1 枚の法線力は :math:`qS\,C_{N\alpha,1}\delta` で、
+作用点のスパン方向の位置を平均空力翼弦の位置 :math:`y_{\mathrm{MAC}}=\dfrac{s}{3}\dfrac{a+2b}{a+b}` に置くと、機軸からの腕の長さは :math:`r+y_{\mathrm{MAC}}` である。
+:math:`N` 枚のモーメントを :math:`qSd` で割って
+
+.. math::
+   :label: eq-cl-delta
+
+   C_{l\delta}=\frac{N\,(r+y_{\mathrm{MAC}})\,C_{N\alpha,1}}{d}
+
+となる :cite:`niskanen`。:math:`C_{N\alpha,1}` は基準面積 :math:`S` で無次元化した 1 枚のフィンの法線力傾斜である。
+フィンの法線力と同じ式（亜音速の\ :eq:`eq-fin-sub`、超音速、遷音速の補間）から、干渉係数 :math:`K_{fb}` と枚数の係数 :math:`k_NN/2`\ （:eq:`eq-fin-total`）を除いた 1 枚分の値として求める。
+このため :math:`C_{l\delta}` も Mach 数の関数で、遷音速で連続につながる。
+
+ロール減衰
+~~~~~~~~~~
+
+機体がロール角速度 :math:`p` で回ると、位置 :math:`\xi` のフィンの断片には、迎角が :math:`\Delta\alpha=p\,\xi/V` だけ加わる（ピッチ減衰の :math:`\omega\,\xi_i/V` と同じ考え方、:ref:`sec-damping`）。
+断片の面積は :math:`c(\xi)\,\mathrm{d}\xi`、揚力傾斜を面積あたり :math:`a_f` とすると、揚力は :math:`qa_f\,\Delta\alpha\,c\,\mathrm{d}\xi`、機軸まわりのモーメントはその :math:`\xi` 倍である。
+:math:`N` 枚を足して :math:`qSd` で割り、:math:`p/V=2\hat p/d` を使うと
+
+.. math::
+   :label: eq-clp-strip
+
+   C_{lp}=-\frac{2\,a_f\,N}{S\,d^2}\int_r^{r+s}\xi^2\,c(\xi)\,\mathrm{d}\xi,\qquad
+   \int_r^{r+s}\xi^2\,c(\xi)\,\mathrm{d}\xi=\left[\frac{(a-kr)\,\xi^3}{3}+\frac{k\,\xi^4}{4}\right]_r^{r+s},\quad k=\frac{b-a}{s}
+
+となる（ストリップ理論）。符号は常に負で、回転を妨げる。フィンの枚数に比例する。
+
+面積あたりの揚力傾斜 :math:`a_f` には、フィンの 3 次元の傾きを使う。1 枚のフィンの法線力傾斜は基準面積 :math:`S` で無次元化した :math:`C_{N\alpha,1}` なので、
+フィン 1 枚の面積 :math:`A_f` あたりの傾きは
+
+.. math::
+   :label: eq-clp-slope
+
+   a_f=\frac{C_{N\alpha,1}\,S}{A_f}
+
+である。翼型の 2 次元の傾き（約 :math:`2\pi`）を使うと、アスペクト比の小さいフィンの端の揚力の低下（翼端損失）を無視するので、減衰を何倍も過大に見積もる。
+フィン全体の傾きは有限スパンの効果を含むので、これを面積で割った :math:`a_f` を断片に使うほうが、有限スパンのフィンの減衰に近い値になる。
+
+SU2 との相互比較
+~~~~~~~~~~~~~~~~
+
+CFD の回転座標系の計算（SU2 の ``GRID_MOVEMENT = ROTATING_FRAME``）と比べた。
+サンプル機体の :math:`M=0.8` で、ロール角速度 :math:`\hat p=\pm0.01` の Euler 計算から :math:`C_{lp}=-21.6` が得られた（:math:`\hat p=\pm0.005` でも同じ傾きで、ロール角速度に対して線形である。フィンのない胴体では :math:`C_{lp}\approx-0.001`）。
+同じ機体の :math:`M=0.8` で、2 次元の揚力傾斜を使った見積もりは :math:`-138` で、SU2 の値の 6 倍ほどになった。
+:eq:`eq-clp-slope` の 3 次元の傾きを使う現在の式は、``aero_table.csv`` で :math:`C_{lp}=-29.9` で、SU2 の値より 4 割ほど大きいが、桁は一致する。
+
+これは 2 通りの推算の **相互比較** であり、実機や風洞の実測との比較（検証）ではない。
+SU2 の値は非粘性の Euler 計算で、メッシュ依存性は確かめていない。
+部品積み上げ法のロール減衰は、フィンどうしの干渉と胴体の影響を含まない近似である（:doc:`limitations`）。
+
+カントを 1° としたサンプル機体の飛翔計算では、ロール角速度は燃焼終了の直前（:math:`t=2.95` s、Mach 1.54）に最大の約 88 rad/s になる。
+この時刻の表の値（:math:`C_{l\delta}=16.7`、:math:`C_{lp}=-34.4`）と対気速度 519 m/s から\ :eq:`eq-roll-steady` で見積もった値も約 88 rad/s で、一致する。
+ロール角速度の予測は :math:`C_{l\delta}` と :math:`C_{lp}` の不確かさに強く依存するので、モンテカルロ解析の ``cl_scale`` と ``clp_scale``\ （:doc:`dispersion`）で幅を見積もるとよい。
+
 抗力（軸力）
 ------------
 

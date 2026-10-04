@@ -63,7 +63,7 @@
 モンテカルロ解析は、これらを確率変数として多数回の飛翔計算を行い、着地点の分布を統計量で表す :cite:`metropolis`。
 サンプル数を :math:`N`\ （``samples``）として、サンプル :math:`i=0,\dots,N-1` ごとに次の手順を行う。
 
-1. 11 個のばらつきを乱数で引く。
+1. 20 個の標準正規乱数を引き、標準偏差を掛けてばらつきにする（:numref:`tbl-mc-perturb` の 17 項目、機体の非対称な量は 2 軸分を引く）。
 2. ばらつきを機体・推力・風・回収系に反映した飛翔計算を、弾道落下と（パラシュートが有効なら）パラシュート降下の両方について、**同じ乱数で** 行う。
 3. 着地点などの結果を記録する。
 
@@ -76,10 +76,13 @@
 したがって、サンプル :math:`i` の値はほかのサンプルの数や実行する順序、スレッド数に依存せず、同じ設定なら **毎回同じ結果** になる。
 種は ``seed + i`` だけで決まるので、``seed`` が :math:`s` のサンプル :math:`i` と、``seed`` が :math:`s-1` のサンプル :math:`i+1` は同じ値を引く。
 
-引く値は、次の 11 個の標準正規乱数 :math:`z_1,\dots,z_{11}`\ （:math:`z_k\sim N(0,1)`）に標準偏差 :math:`\sigma_k` を掛けたもの
+引く値は、次の 20 個の標準正規乱数 :math:`z_1,\dots,z_{20}`\ （:math:`z_k\sim N(0,1)`）に標準偏差 :math:`\sigma_k` を掛けたもの
 :math:`\epsilon_k=\sigma_kz_k` である。標準正規乱数は Ziggurat 法 :cite:`marsaglia` で生成する。引く順序は :numref:`tbl-mc-perturb` の上から下の順で、
-**標準偏差が 0 のものも含めて常に 11 個すべてを引く**。そのため、ある項目の標準偏差を 0 にしても（あるいは 0 でなくしても）、
+``thrust_misalignment_deg``, ``thrust_offset``, ``cg_lateral`` はそれぞれ 2 個（:math:`y_b` 方向と :math:`z_b` 方向の順）を引く。
+**標準偏差が 0 のものも含めて常に 20 個すべてを引く**。そのため、ある項目の標準偏差を 0 にしても（あるいは 0 でなくしても）、
 ほかの項目の値は変わらない。1 項目だけの影響を調べるときに、サンプルどうしを比較できる。
+表の上から 11 項目（``thrust_scale`` から ``parachute_cd_s_scale``）の乱数は先頭の 11 個で、
+ロールと非対称の 6 項目（9 個）はその後ろに引く。したがって、ロールと非対称の標準偏差を変えても、最初の 11 項目の値は変わらず、同じ ``seed`` で同じ値を引く。
 
 ばらつきの与え方
 ~~~~~~~~~~~~~~~~
@@ -115,7 +118,7 @@
    * - ``dry_mass``
      - 相対
      - 0.1
-     - 乾燥質量 :math:`m_d`、:math:`I_{xx}`、:math:`I_{yy}` に :math:`f(\epsilon)` を掛ける
+     - 乾燥質量 :math:`m_d` と乾燥時の慣性テンソル（:math:`I_{xx}`、:math:`I_{yy}`、:math:`I_{zz}` と慣性乗積）に :math:`f(\epsilon)` を掛ける
    * - ``cg``
      - 絶対 [m]
      - 0.01
@@ -123,7 +126,7 @@
    * - ``cn_scale``
      - 相対
      - 0.10
-     - 係数表の引き値 :math:`C_N`、:math:`C_{N\alpha}`、ピッチ減衰の和 :math:`S_0,S_1,S_2` に :math:`f(\epsilon)` を掛ける
+     - 係数表の引き値 :math:`C_N`、:math:`C_{N\alpha}`、ピッチ減衰の和 :math:`S_0,S_1,S_2` に :math:`f(\epsilon)` を掛ける（一般表では :math:`C_Y,C_Z,C_m,C_n` とピッチ・ヨーの和）
    * - ``ca_scale``
      - 相対
      - 0.15
@@ -148,6 +151,30 @@
      - 相対
      - 0.1
      - パラシュートの :math:`C_DS` に :math:`f(\epsilon)` を掛ける
+   * - ``thrust_misalignment_deg``
+     - 絶対 [deg]
+     - 0
+     - 推力の傾きのベクトルに、:math:`y_b` 方向と :math:`z_b` 方向の独立な 2 個の :math:`\epsilon` を足す（後述）
+   * - ``thrust_offset``
+     - 絶対 [m]
+     - 0
+     - ノズル出口の点 :math:`(o_y,o_z)` に、:math:`y_b` と :math:`z_b` の独立な :math:`\epsilon` を足す
+   * - ``fin_cant_deg``
+     - 絶対 [deg]
+     - 0
+     - 設定したフィンのカントに :math:`\epsilon` を足す（後述）
+   * - ``cg_lateral``
+     - 絶対 [m]
+     - 0
+     - 乾燥重心の横ずれ :math:`(y_d,z_d)` に、:math:`y_b` と :math:`z_b` の独立な :math:`\epsilon` を足す
+   * - ``cl_scale``
+     - 相対
+     - 0
+     - ロールのモーメント係数 :math:`C_l` とカントの傾き :math:`C_{l\delta}` に :math:`f(\epsilon)` を掛ける
+   * - ``clp_scale``
+     - 相対
+     - 0
+     - ロール減衰微係数 :math:`C_{lp}` に :math:`f(\epsilon)` を掛ける
 
 燃焼時間と推力
 ^^^^^^^^^^^^^^
@@ -177,6 +204,23 @@
 圧力中心 :math:`x_{cp}` は変わらず、復元モーメントとピッチ減衰がともに :math:`f_N` 倍になる。
 軸力は :math:`C_A^{\mathrm{on}}` と :math:`C_A^{\mathrm{off}}` の両方を :math:`f_A` 倍する。
 係数表そのものは全サンプルで共有するので、サンプルごとに作り直すことはない。
+``cl_scale`` は :math:`C_l` と :math:`C_{l\delta}` を、``clp_scale`` は :math:`C_{lp}` を同様に倍率で変える。
+ロールの係数の倍率は :math:`C_l^{\mathrm{tot}}`\ （:eq:`eq-cl-total`）の強制項と減衰項に別々に効くので、
+定常なロール角速度（:eq:`eq-roll-steady`）は :math:`f_{Cl}/f_{Clp}` 倍になる。
+
+ロールと非対称のばらつき
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+``thrust_misalignment_deg``、``thrust_offset``、``fin_cant_deg``、``cg_lateral``、``cl_scale``、``clp_scale`` の標準偏差の既定値は 0 で、
+指定したときだけ有効になる（0 のときは公称値のままである）。
+
+* **推力の傾き**：設定した傾き :math:`(\varepsilon,\phi)`\ （:eq:`eq-thrust-dir`）を、ベクトル :math:`(\varepsilon\cos\phi,\ \varepsilon\sin\phi)`\ [deg] で表し、
+  引いた 2 個の値を :math:`y_b` 成分と :math:`z_b` 成分に足す。新しい傾きの角度は足したベクトルの大きさ、方位は :math:`\operatorname{atan2}` で求める。
+  公称値が 0 でも、2 つの正規乱数から傾きの角度と方位が決まる。
+* **ノズルのオフセット**：設定したノズル出口の点に、軸ごとに足す。
+* **フィンのカント**：設定したカント :math:`\delta` に :math:`\epsilon` を足す。係数表の :math:`\delta_{\mathrm{ref}}` は変えないので、
+  差の項 :math:`C_{l\delta}(\delta-\delta_{\mathrm{ref}})`\ （:eq:`eq-cl-total`）の分だけロールの強制が変わる。カントが変えるのはロールのモーメントだけで、:math:`C_N` などは変わらない。
+* **乾燥重心の横ずれ**：設定した ``cg_dry`` の横ずれ ``cg_lateral_dry`` に、軸ごとに足す。0 でない横ずれがあると機体は軸対称でなくなり、慣性テンソルの行列を使って計算する（:ref:`sec-inertia-tensor`）。
 
 風
 ^^

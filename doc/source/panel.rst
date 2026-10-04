@@ -55,6 +55,9 @@
 
 ``method = "panel"`` のとき ``aero_drag.csv`` には合計の抗力（``cd_off``, ``cd_on``）、:math:`C_{N\alpha}`、:math:`x_{cp}` だけが書かれ、
 前章のような内訳の列はない（軸力が表面積分で得られるため）。
+係数表のロール項（カントあたりのロールモーメント :math:`C_{l\delta}` とロール減衰 :math:`C_{lp}`）は、パネルの解からは求めず、
+部品積み上げ法のモデル（:ref:`sec-barrowman-roll`）の値をそのまま書き込む。パネル法のメッシュはカントを反映しない。
+
 また ``panel_cp.csv`` に、最も低い亜音速 Mach 数（既定では :math:`M=0`）、迎角 :math:`4^\circ` での表面圧力係数を保存する（:numref:`fig-panel-cp`）。
 
 パネルの作り方

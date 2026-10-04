@@ -659,6 +659,8 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
 
 実際に使うスレッド数、メモリ予算、``nice`` は、起動時の設定パネルに表示する（プレーン表示では 1 行で示す）。
 
+.. _sec-config-rocket:
+
 ``[rocket]``
 
 .. list-table::
@@ -686,7 +688,20 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - 推進剤を除いたときの重心位置 [m]
    * - ``ixx_dry`` / ``iyy_dry``
      - 必須
-     - 推進剤を除いたときのロール / ピッチ・ヨー慣性モーメント [kg m\ :sup:`2`]（``iyy_dry`` は乾燥重心まわり）
+     - 推進剤を除いたときのロール / ピッチ慣性モーメント [kg m\ :sup:`2`]（乾燥重心まわり、機体座標）。``izz_dry`` を省略するとヨーも ``iyy_dry`` に等しい
+   * - ``izz_dry``
+     - ``iyy_dry``
+     - 推進剤を除いたときのヨー慣性モーメント [kg m\ :sup:`2`]
+   * - ``ixy_dry`` / ``ixz_dry`` / ``iyz_dry``
+     - ``0``
+     - 慣性テンソルの非対角要素 [kg m\ :sup:`2`]（乾燥重心まわり、機体座標）。**テンソルの行列要素** で、:math:`I_{xy}=-\int xy\,\mathrm{d}m`（:eq:`eq-inertia-tensor`）。
+       CAD の慣性乗積の表示は符号が逆のことが多いので、確認すること（下の注意）
+   * - ``cg_lateral_dry``
+     - ``[0, 0]``
+     - 乾燥重心の機軸からの横ずれ ``[y, z]`` [m]（機体座標）
+   * - ``fin_cant_deg``
+     - ``0``
+     - フィンのカント [deg]。正のカントは :math:`+x_b` まわりの正のロールモーメントを生む。``fin_override.cant_deg`` があればそちらを使う
    * - ``roughness``
      - ``60e-6``
      - 表面の等価砂粒粗さ [m]。一般的な塗装面で 60 µm 程度
@@ -701,7 +716,14 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - ランチャラグなどの付加的な抗力係数
    * - ``[rocket.fin_override]``
      - なし
-     - フィンの自動検出結果を上書きする。``count`` ``root_chord`` ``tip_chord`` ``span`` ``sweep`` ``thickness`` ``x_le_root`` を必要なものだけ書く
+     - フィンの自動検出結果を上書きする。``count`` ``root_chord`` ``tip_chord`` ``span`` ``sweep`` ``thickness`` ``x_le_root`` ``cant_deg`` を必要なものだけ書く
+
+.. note::
+
+   **機体座標と慣性乗積の符号。** 慣性テンソル、``cg_lateral_dry``、``misalignment_offset`` は、機体座標（:math:`x_b` はノーズ方向）の値で与える。
+   :math:`y_b`, :math:`z_b` の向きは STL の座標から決まり、``geometry.json`` の ``body_x`` ``body_y`` ``body_z``\ （STL 座標での単位ベクトル）で確認できる（:ref:`sec-body-basis`）。
+   CAD ソフトの多くは慣性乗積を :math:`+\int xy\,\mathrm{d}m` の符号で表示する。IgnisYeet に与えるのはテンソルの要素 :math:`-\int xy\,\mathrm{d}m` なので、
+   CAD の値の **符号を反転して** ``ixy_dry`` などに入れる。慣性テンソルが正定値でなければエラーになる。
 
 ``[motor]``
 
@@ -724,6 +746,15 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
    * - ``propellant_mass``
      - ``.eng`` の値
      - 推進剤質量 [kg] を上書きする
+   * - ``misalignment_deg``
+     - ``0``
+     - 推力の方向と機軸のなす角 :math:`\varepsilon` [deg]（:ref:`sec-thrust-line`）
+   * - ``misalignment_azimuth_deg``
+     - ``0``
+     - 推力の傾きの向き :math:`\phi` [deg]。:math:`+y_b` から :math:`+z_b` へ測る
+   * - ``misalignment_offset``
+     - ``[0, 0]``
+     - ノズル出口の点 ``[y, z]`` [m]（機体座標）。推力線はこの点を通る
 
 ``[launch]``
 
@@ -749,6 +780,9 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
    * - ``azimuth_deg``
      - 必須
      - 射方位（北から時計回り）[deg]
+   * - ``roll_deg``
+     - ``0``
+     - ランチャ上の機体のロール角 [deg]。機軸まわりに回す。0 では :math:`+y_b` が水平（:ref:`sec-initial-attitude`）
 
 ``[recovery]``
 
@@ -800,6 +834,12 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
    * - ``extrapolation``
      - ``"linear"``
      - 表の範囲外の扱い: ``"linear"`` （線形外挿）または ``"clamp"`` （端の値で一定）
+   * - ``table_kind``
+     - ``"axisymmetric"``
+     - 飛翔計算に使う係数表の種類。``"axisymmetric"`` （全迎角の軸対称表）または ``"general"`` （迎角と横滑り角の 6 成分の一般表。軸対称表から展開して作る。:ref:`sec-aero-table`）
+   * - ``general_mach_step``
+     - ``0.05``
+     - ``table_kind = "general"`` で ``method = "barrowman"`` のときの Mach 数の刻み（正）
 
 ``[aero.panel]``\ （``method = "panel"`` のときだけ使う）
 
@@ -1102,7 +1142,27 @@ CFD の準備は ``ignisyeet cfd-check 設定ファイル [--mesh]`` で確か�
    * - ``parachute_cd_s_scale``
      - ``0.1``
      - 相対。パラシュートの抗力面積 :math:`C_DS`
+   * - ``thrust_misalignment_deg``
+     - ``0``
+     - 絶対 [deg]。推力の傾き。:math:`y_b`, :math:`z_b` 方向の傾き成分に独立な正規乱数を足し、傾きの角度と方位を決める
+   * - ``thrust_offset``
+     - ``0``
+     - 絶対 [m]。ノズル出口の点。:math:`y_b`, :math:`z_b` 方向に独立な正規乱数を足す
+   * - ``fin_cant_deg``
+     - ``0``
+     - 絶対 [deg]。設定したフィンのカントに加える量
+   * - ``cg_lateral``
+     - ``0``
+     - 絶対 [m]。乾燥重心の横ずれ。:math:`y_b`, :math:`z_b` 方向に独立な正規乱数を足す
+   * - ``cl_scale``
+     - ``0``
+     - 相対。ロールのモーメント係数 :math:`C_l` とカントの傾き :math:`C_{l\delta}`
+   * - ``clp_scale``
+     - ``0``
+     - 相対。ロール減衰微係数 :math:`C_{lp}`
 
+最後の 6 項目（``thrust_misalignment_deg`` から ``clp_scale``）は既定で無効である。
+乱数はこれらを表の最後に引くので、最初の 11 項目の値はこの 6 項目の設定に依存しない。
 各項目の扱いの詳細は :ref:`sec-mc` で述べる。
 
 .. _sec-aero-table-format:
@@ -1118,14 +1178,32 @@ CSV の 1 行目は次の見出しで、続く行は Mach 数が外側、迎角�
 
 .. code-block:: text
 
-   mach,alpha_deg,cn,ca_on,ca_off,xcp,cna,damp_s0,damp_s1,damp_s2
+   mach,alpha_deg,cn,ca_on,ca_off,xcp,cna,damp_s0,damp_s1,damp_s2,cl_delta,clp
 
 各列は、法線力係数 :math:`C_N`、軸力係数（燃焼中・燃焼後）、圧力中心 :math:`x_{cp}` [m]（ノーズ先端から）、
-:math:`C_{N\alpha}` [1/rad]、ピッチ減衰の和 :math:`S_0, S_1, S_2`\ （:eq:`eq-moment-damp`）である。
+:math:`C_{N\alpha}` [1/rad]、ピッチ減衰の和 :math:`S_0, S_1, S_2`\ （:eq:`eq-moment-damp`）、
+カントあたりのロールモーメント係数 :math:`C_{l\delta}` [1/rad]、ロール減衰微係数 :math:`C_{lp}` である。
+最後の 2 列（ロール項）は省略できる。省略した 8 列の表（付随ファイルに ``format_version`` もない）はロール項が 0 の軸対称表として読み込み、
+ロール項がすべて 0 の表には、現在の STL のフィンから部品積み上げ法のロール項を補う（補ったことを端末に表示する。:ref:`sec-aero-table`）。
 
 付随の ``.json`` には、基準面積 ``ref_area`` [m\ :sup:`2`]、基準直径 ``ref_diameter`` [m]、全長 ``length`` [m]、
 格子 ``machs`` と ``alphas_deg``\ （各列の値）、``extrapolation``\ （``"linear"`` または ``"clamp"``）、``source_hash``\ （任意の文字列でよい）を書く。
-行数が ``machs`` と ``alphas_deg`` の積に一致しないとエラーになる。``motor.aft_x`` を省略したときのモータ後端位置は、この ``length`` になる。
+次の項目は省略できる。
+
+* ``format_version``：形式のバージョン。現在は 2 で、省略すると 1（ロール項なし）として読む。
+* ``kind``：``"axisymmetric"``\ （既定）または ``"general"``。
+* ``fin_cant_ref_deg``：表の :math:`C_l` に含まれるフィンのカント [deg]（既定は 0。:ref:`sec-aero-table`）。
+* ``betas_deg``：``kind = "general"`` のときの横滑り角の格子（:math:`-90^\circ` から :math:`90^\circ`）。
+* ``moment_ref``：モーメントの基準点。現在は ``"nose_tip"`` だけである。
+
+行数が ``machs`` と ``alphas_deg``\ （一般表では ``betas_deg`` も）の積に一致しないとエラーになる。``motor.aft_x`` を省略したときのモータ後端位置は、この ``length`` になる。
+
+``kind = "general"`` の表の CSV は、見出しが次のとおりで、Mach 数、迎角、横滑り角の順（横滑り角が最も内側）に全格子点を書く（各列の意味は :ref:`sec-aero-table`）。
+迎角と横滑り角の格子は不等間隔でもよい。
+
+.. code-block:: text
+
+   mach,alpha_deg,beta_deg,cx_on,cx_off,cy,cz,cl,cm,cn,cl_delta,clp,sq0,sq1,sq2,sr0,sr1,sr2
 
 設定ファイルの未知の項目は、綴りの誤りを見逃さないようにすべてエラーとして扱う。
 
@@ -1140,11 +1218,12 @@ CSV の 1 行目は次の見出しで、続く行は Mach 数が外側、迎角�
    * - ファイル
      - 内容
    * - ``geometry.json``
-     - 抽出した形状（全長、基準直径、ノーズ、ボートテール、フィン、断面ごとの半径など）
+     - 抽出した形状（全長、基準直径、ノーズ、ボートテール、フィン、断面ごとの半径など）。機体軸 :math:`x_b,y_b,z_b` を STL の座標で表した単位ベクトル ``body_x``, ``body_y``, ``body_z`` も含む（:ref:`sec-body-basis`）
    * - ``profile.csv``
      - 断面ごとの胴体半径 ``r`` とフィン高さ ``fin_span``
    * - ``aero_table.csv`` / ``.json``
-     - (Mach, 迎角) ごとの :math:`C_N`, :math:`C_A`\ （燃焼中・燃焼後）, :math:`x_{cp}`, :math:`C_{N\alpha}`、ピッチ減衰の和。``.json`` は格子・基準量・入力ハッシュ
+     - 軸対称表は (Mach, 迎角) ごとの :math:`C_N`, :math:`C_A`\ （燃焼中・燃焼後）, :math:`x_{cp}`, :math:`C_{N\alpha}`、ピッチ減衰の和、ロールの微係数 :math:`C_{l\delta}`, :math:`C_{lp}`。
+       ``table_kind = "general"`` では (Mach, 迎角, 横滑り角) ごとの 6 係数、ロールの微係数、ピッチとヨーの減衰の和。``.json`` は表の種類・格子・基準量・入力ハッシュ
    * - ``aero_drag.csv``
      - Mach 数ごとの抗力の内訳、:math:`C_{N\alpha}`、:math:`x_{cp}`\ （``method = "panel"`` では内訳なしで合計の ``cd_off``, ``cd_on`` のみ）
    * - ``cfd_cases.csv``
@@ -1155,7 +1234,10 @@ CSV の 1 行目は次の見出しで、続く行は Mach 数が外側、迎角�
      - ``method = "panel"``。表面パネルの位置・法線・面積・圧力係数 ``cp``\ （迎角 4°、最も低い亜音速 Mach 数）と部位（``body`` または ``fin``）。
        ``python/plot.py panel`` で作図する
    * - ``trajectory.csv``
-     - 時刻歴（位置、緯度経度、速度、Mach 数、迎角、推力、質量、重心、圧力中心、安定余裕、動圧、姿勢、角速度）
+     - 時刻歴（位置、緯度経度、速度、Mach 数、迎角、推力、質量、重心、圧力中心、安定余裕、動圧、姿勢、角速度）。
+       末尾の 4 列は ``beta_deg``\ （横滑り角 :math:`\beta` [deg]）、``roll_rate``\ （ロール角速度 :math:`\omega_x` [rad/s]）、
+       ``cl``\ （ロールの係数 :math:`C_l^{\mathrm{tot}}`、:eq:`eq-cl-total`）、``cy``\ （一般表の :math:`C_Y`。軸対称表では 0）。
+       ``alpha_deg`` は全迎角 :math:`\alpha_t`、``x_cp`` は一般表では等価な圧力中心（:eq:`eq-xcp-eff`）である
    * - ``summary.json``
      - ランチャ離脱速度、最大 Mach 数、最大動圧、頂点、最小安定余裕、着地点など
    * - ``ignisyeet.kml``
@@ -1166,7 +1248,9 @@ CSV の 1 行目は次の見出しで、続く行は Mach 数が外側、迎角�
      - ``mode = "monte_carlo"``。サンプルごと・降下モードごとの 1 行。サンプル番号、降下モード、``status``\ （``ok`` または ``failed``）、
        引いたばらつき（相対のものは割合、``wind_speed_delta`` と ``wind_direction_deg_delta`` は風速・風向のずれ）、
        そのサンプルの基準風速・風向、着地点（ENU と緯度経度）、着地距離、着地時刻、着地速度、頂点、頂点時刻、最大 Mach 数、
-       ランチャ離脱速度、最小静安定余裕。失敗した行は ``status`` 以降の結果が空欄になる
+       ランチャ離脱速度、最小静安定余裕。失敗した行は結果の列が空欄になる。
+       末尾に、ロールと非対称の引いた値 ``thrust_misalignment_y_deg``, ``thrust_misalignment_z_deg``, ``thrust_offset_y``, ``thrust_offset_z``, ``fin_cant_deg``,
+       ``cg_lateral_y``, ``cg_lateral_z``, ``cl_scale``, ``clp_scale`` の 9 列が続く
    * - ``dispersion_summary.json``
      - ``mode = "monte_carlo"``。降下モードごとの有効サンプル数 ``n``、失敗数 ``failed``、着地点の平均・共分散行列、
        :math:`1\sigma` と :math:`3\sigma` の誤差楕円（長半径・短半径・長軸の方位）、最大着地距離とそのサンプル番号、頂点高度の平均と標準偏差

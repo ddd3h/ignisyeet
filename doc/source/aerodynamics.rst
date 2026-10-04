@@ -3,11 +3,12 @@
 
 本章では、抽出した形状（:doc:`geometry`）から空力係数を求める方法の全体像を説明する。
 IgnisYeet は空力係数を三つの方法で推算でき、設定の ``aero.method`` で選ぶ。
-どの方法も、Mach 数 :math:`M` と迎角 :math:`\alpha` の格子上の **係数表** を同じ形式で作る。
+どの方法も、Mach 数 :math:`M` と迎角の格子上の **係数表** を同じ形式で作る。
+表には、全迎角 :math:`\alpha_t` の関数として軸対称な機体の係数を持つ **軸対称表** と、機体座標の 6 成分の係数を迎角 :math:`\alpha` と横滑り角 :math:`\beta` の関数として持つ **一般表** がある。
 飛翔計算はこの表を内挿して使うので、どの方法で作った表かを区別しない。
 
-本章ではまず係数の定義を述べ、三つの方法の考え方と違いを比べる。
-最後に、すべての方法に共通する係数表と内挿・外挿を説明する。
+本章ではまず係数の定義（軸対称な法線力・軸力と、機体座標の 6 成分）を述べ、三つの方法の考え方と違いを比べる。
+最後に、すべての方法に共通する係数表の形式と内挿・外挿を説明する。
 各方法の詳細は、部品積み上げ法を :doc:`barrowman`、パネル法を :doc:`panel`、CFD を :doc:`cfd` で述べる。
 
 空力係数の定義
@@ -42,6 +43,41 @@ IgnisYeet は空力係数を三つの方法で推算でき、設定の ``aero.me
    x_{cp} = \frac{\sum_i C_{N\alpha,i}\,x_i}{\sum_i C_{N\alpha,i}}
 
 で求まる。これが部品積み上げ法の考え方である :cite:`barrowman`。
+
+.. _sec-aero-coeff6:
+
+6 成分の係数
+~~~~~~~~~~~~
+
+機体が軸対称でないときは、法線力と軸力の 2 成分では力とモーメントを表せない。
+一般表は、機体座標 :math:`(x_b,y_b,z_b)`\ （:ref:`sec-body-basis`）の空気力 :math:`\bm{F}=(F_x,F_y,F_z)` と、
+ノーズ先端まわりの空力モーメント :math:`\bm{M}=(M_x,M_y,M_z)` を 6 個の無次元係数で表す。
+
+.. math::
+   :label: eq-coeff-6
+
+   \begin{aligned}
+   C_X&=\frac{F_x}{qS}, & C_Y&=\frac{F_y}{qS}, & C_Z&=\frac{F_z}{qS},\\
+   C_l&=\frac{M_x}{qSd}, & C_m&=\frac{M_y}{qSd}, & C_n&=\frac{M_z}{qSd}
+   \end{aligned}
+
+:math:`C_X,C_Y,C_Z` は機体座標の力の成分そのものである（抗力では :math:`C_X<0`）。
+:math:`C_l,C_m,C_n` は :math:`x_b,y_b,z_b` まわりのモーメントで、それぞれロール、ピッチ、ヨーのモーメントである。
+モーメントの基準点は、表の付随ファイルの ``moment_ref``\ （値は ``"nose_tip"``）が示すノーズ先端で、重心には依存しない。
+重心まわりのモーメントは、飛翔計算で重心の位置から求める（:eq:`eq-aero-moment6`）。
+
+軸対称な機体では、これらは法線力と軸力の係数から決まる。対気速度の横成分の向きの単位ベクトルを :math:`(0,e_y,e_z)=(0,u_y,u_z)/u_\perp` として
+
+.. math::
+   :label: eq-coeff-6-axisym
+
+   C_X=-C_A\,\sgn(u_x),\qquad (C_Y,C_Z)=-C_N\,(e_y,e_z),\qquad
+   C_m=\frac{x_{cp}\,C_Z}{d},\qquad C_n=-\frac{x_{cp}\,C_Y}{d}
+
+である。:math:`C_l` は、フィンにカントがあるときのロールのモーメントで、:ref:`sec-roll-moment` で扱う。
+ロールの微係数として、カントあたりのロールモーメント係数 :math:`C_{l\delta}`\ [1/rad] と、ロール減衰微係数 :math:`C_{lp}` を表に持つ。
+:math:`C_{lp}` は無次元のロール角速度 :math:`\hat p=pd/(2V)` についての微係数である。
+ピッチとヨーの減衰は、:eq:`eq-damping` の和 :math:`S_0,S_1,S_2` で表す。一般表ではピッチ用 :math:`S^q` とヨー用 :math:`S^r` を別々に持つ。
 
 .. _sec-aero-methods:
 
@@ -188,18 +224,75 @@ CFD は Euler 方程式で、:math:`M=0.3,0.8,1.2,2.0` と :math:`\alpha=0,2,4,8
 係数表と内挿・外挿
 ------------------
 
-格子と保存形式
-~~~~~~~~~~~~~~
+係数表には、軸対称表と一般表の 2 種類がある。設定の ``aero.table_kind``\ （既定は ``"axisymmetric"``）で選ぶ。
+どちらの表も CSV と、拡張子を ``.json`` に替えた同名の付随ファイルの組で、付随ファイルには形式のバージョン ``format_version``\ （現在は 2）と
+表の種類 ``kind``\ （``"axisymmetric"`` または ``"general"``）を書く。
+軸対称表の迎角 :math:`\alpha` は全迎角 :math:`\alpha_t` である。
+
+軸対称表
+~~~~~~~~
 
 既定では :math:`M=0,0.02,\dots,3.0`\ （151 点）、:math:`\alpha=0^\circ,1^\circ,\dots,30^\circ`\ （31 点）の格子で、
-各点の :math:`C_N`, :math:`C_A^{\mathrm{on}}`, :math:`C_A^{\mathrm{off}}`, :math:`x_{cp}`, :math:`C_{N\alpha}`, :math:`S_0`, :math:`S_1`, :math:`S_2`
-を ``aero_table.csv`` に保存する。基準量・格子・入力のハッシュ値は ``aero_table.json`` に保存する。
+各点の :math:`C_N`, :math:`C_A^{\mathrm{on}}`, :math:`C_A^{\mathrm{off}}`, :math:`x_{cp}`, :math:`C_{N\alpha}`, :math:`S_0`, :math:`S_1`, :math:`S_2`,
+ロールの微係数 :math:`C_{l\delta}`, :math:`C_{lp}` を ``aero_table.csv`` に保存する。列は次の順である。
+
+.. code-block:: text
+
+   mach,alpha_deg,cn,ca_on,ca_off,xcp,cna,damp_s0,damp_s1,damp_s2,cl_delta,clp
+
+基準量・格子・入力のハッシュ値は ``aero_table.json`` に保存する。
 CSV なので、風洞試験や CFD で得た係数に差し替えて使うこともできる。
+
+一般表
+~~~~~~
+
+一般表は :math:`(M,\alpha,\beta)` の格子上に :ref:`sec-aero-coeff6` の 6 係数と、ロールの微係数、ピッチとヨーの減衰の和を持つ。
+迎角は :math:`-180^\circ\le\alpha\le180^\circ`、横滑り角は :math:`-90^\circ\le\beta\le90^\circ` を覆う。
+両方の軸は不等間隔で、:math:`\pm30^\circ` の内側は 2° 刻み、外側は 10° 刻みである（:math:`\alpha` は 61 点、:math:`\beta` は 43 点）。
+Mach 数の刻みは、部品積み上げ法では ``aero.general_mach_step``\ （既定 0.05）、ほかの方法では軸対称表の刻みである。
+サンプルの機体の一般表は 61（Mach 数）× 61 × 43 = 160003 行になる。
+列は次の順で、Mach 数が最も外側、:math:`\beta` が最も内側である。
+
+.. code-block:: text
+
+   mach,alpha_deg,beta_deg,cx_on,cx_off,cy,cz,cl,cm,cn,cl_delta,clp,sq0,sq1,sq2,sr0,sr1,sr2
+
+``sq0``–``sq2`` はピッチの減衰の和 :math:`S_0^q,S_1^q,S_2^q`、``sr0``–``sr2`` はヨーの和 :math:`S_0^r,S_1^r,S_2^r` である。
+一般表では単一の圧力中心 :math:`x_{cp}` や :math:`C_{N\alpha}` を飛翔計算に使わない（非対称な機体では 1 点の圧力中心に意味がない）。
+
+部品積み上げ法とパネル法は軸対称な機体の係数を出すので、一般表は軸対称表を展開して作る。
+全迎角 :math:`\alpha_t` は :math:`\cos\alpha_t=\cos\alpha\cos\beta`\ （:ref:`sec-aero-angles`）から求め、
+:math:`\alpha_t'=\min(\alpha_t,\pi-\alpha_t)` で軸対称表を引いて、:eq:`eq-coeff-6-axisym` で 6 係数にする。
+:math:`C_l` は :math:`C_{l\delta}\,\delta_{\mathrm{ref}}\,\sgn(u_x)`、ピッチとヨーの和は軸対称表の :math:`S_0,S_1,S_2` を両方に入れる。
+したがって展開した表の飛翔は、軸対称表の飛翔とほぼ一致する。サンプルでは、頂点高度が軸対称表で 4440.7 m、一般表で 4440.8 m である。
+展開で作った一般表は、軸対称な機体以上の情報を含まない。非対称な形状の係数は、外部の表（:ref:`sec-aero-table-format`）や CFD の表から与える。
+
+カントの基準
+~~~~~~~~~~~~
+
+表の :math:`C_l` に含まれるフィンのカントを、付随ファイルの ``fin_cant_ref_deg``\ （:math:`\delta_{\mathrm{ref}}`、既定は 0）に書く。
+飛翔計算は、設定したカント :math:`\delta` が :math:`\delta_{\mathrm{ref}}` と違うときだけ、その差 :math:`C_{l\delta}(\delta-\delta_{\mathrm{ref}})` を足す（:eq:`eq-cl-total`）。
+部品積み上げ法とパネル法は設定したカントで表を作るので :math:`\delta_{\mathrm{ref}}=\delta` で、強制項を二重に数えることはない。
+
+外部の表の読み込み
+~~~~~~~~~~~~~~~~~~
+
+``method = "table"`` で読み込んだ表のロール項（:math:`C_{l\delta}` と :math:`C_{lp}`）がすべて 0 のときは、
+現在の STL から抽出したフィンの寸法で部品積み上げ法のロール項を求め、表に書き込む（:ref:`sec-barrowman-roll`）。
+このとき端末に注意書きを表示する。形状を抽出できなければ、注意書きを表示してロール項は 0 のままになり、機体はロールしない。
+フィンがなければ書き込む値も 0 である。ロール項を含む表は、そのまま使う。
+``method = "table"`` と ``table_kind = "general"`` を組み合わせると、軸対称な外部の表を展開して一般表にする。外部の表がすでに一般表のときはそのまま使う。
+
+バージョン 1 の表
+~~~~~~~~~~~~~~~~~
+
+付随ファイルに ``format_version`` がなく、CSV が 8 列（``cn`` から ``damp_s2``）の表は、ロール項を 0 とした軸対称表として読み込む。
+保存するときは常にバージョン 2 で書く。
 
 双線形内挿
 ~~~~~~~~~~
 
-飛翔中の :math:`(M,\alpha)` が格子の区間 :math:`[M_i,M_{i+1}]\times[\alpha_j,\alpha_{j+1}]` にあるとき（:numref:`fig-table-interp`）、
+軸対称表の飛翔中の :math:`(M,\alpha_t)` が格子の区間 :math:`[M_i,M_{i+1}]\times[\alpha_j,\alpha_{j+1}]` にあるとき（:numref:`fig-table-interp`）、
 
 .. math::
 
@@ -221,13 +314,23 @@ CSV なので、風洞試験や CFD で得た係数に差し替えて使うこ�
 
    係数表の双線形内挿と、範囲外での線形外挿。
 
+三線形内挿
+~~~~~~~~~~
+
+一般表は、:math:`(M,\alpha,\beta)` が入る格子の直方体の 8 隅の値から三線形内挿で求める。
+:math:`\beta` 方向の分率を :math:`t_\beta` として、\ :eq:`eq-bilinear` の :math:`c_{00},\dots,c_{11}` を :math:`\beta_k` と :math:`\beta_{k+1}` の値の線形内挿
+:math:`(1-t_\beta)c_{ij}^{(k)}+t_\beta c_{ij}^{(k+1)}` に置き換えればよい。
+区間は軸が不等間隔でも、軸の値の並びから探す。
+
 外挿
 ~~~~
 
 :math:`(M,\alpha)` が表の範囲外にあるときは、最も近い端の区間を使い、:math:`t_M` や :math:`t_\alpha` が :math:`[0,1]` を外れたまま
 :eq:`eq-bilinear` を評価する。これは端の区間の傾きをそのまま延長する **線形外挿** である（設定 ``extrapolation = "linear"``）。
 ``"clamp"`` を選ぶと :math:`t` を :math:`[0,1]` に制限し、端の値で一定とする。
-外挿で軸力係数が負にならないよう、:math:`C_A` は 0 以上に制限する。
+外挿で軸力係数が負にならないよう、軸対称表では :math:`C_A` を 0 以上に制限する。
+一般表も同じ規則で外挿するが、:math:`\alpha,\beta` の軸が全範囲を覆うので、飛翔中に外挿するのは Mach 数の方向だけである。
 
-迎角は :math:`0\le\alpha\le\pi` の全迎角で与えられる。機体が後ろ向きに飛ぶ（:math:`\alpha>90^\circ`）場合は、
-前向きの係数を :math:`\alpha'=\pi-\alpha` で引き、軸力の向きを反転させる（:ref:`sec-aero-forces`）。
+軸対称表の迎角は :math:`0\le\alpha_t\le\pi` の全迎角で与えられる。機体が後ろ向きに飛ぶ（:math:`\alpha_t>90^\circ`）場合は、
+前向きの係数を :math:`\alpha_t'=\pi-\alpha_t` で引き、軸力の向きを反転させる（:ref:`sec-aero-forces`）。
+一般表は後ろ向きの飛行も表の一部として持つので、この鏡像の操作を行わない。

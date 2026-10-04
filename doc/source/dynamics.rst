@@ -27,13 +27,14 @@ Coriolis 力と遠心力の項が加わる以外は同じ式を使う（:ref:`se
    \dot{\bm{x}} = \bm{v},\qquad
    \dot{\bm{v}} = \frac{1}{m(t)}\,R(\bm{q})\left(\bm{F}_T + \bm{F}_A\right)_b + \bm{g}(z_U)
 
-:math:`(\cdot)_b` は機体座標で表した量であることを示す。推力は機軸方向に働くとし、偏心やノズルの向きのずれは考えない。
+:math:`(\cdot)_b` は機体座標で表した量であることを示す。推力 :math:`\bm{F}_T` の向きと作用線は :ref:`sec-thrust-line` で述べる。
+ミスアライメントとノズルの偏心がなければ、推力は機軸方向で重心を通り、
 
 .. math::
 
    \bm{F}_{T,b} = \left(T(t),\,0,\,0\right)^\top
 
-推進剤の消費による質量の変化は :math:`m(t)` を通じて入る。:math:`\dot m\,\bm{v}` の項が現れないのは、推力 :math:`T` が実測値として
+である。推進剤の消費による質量の変化は :math:`m(t)` を通じて入る。:math:`\dot m\,\bm{v}` の項が現れないのは、推力 :math:`T` が実測値として
 噴出ガスの運動量変化をすでに含んでいるからである :cite:`sutton`。
 
 .. _sec-aero-forces:
@@ -41,17 +42,27 @@ Coriolis 力と遠心力の項が加わる以外は同じ式を使う（:ref:`se
 空気力
 ~~~~~~
 
+係数表には、軸対称な機体の係数を全迎角の関数として持つ **軸対称表** と、機体座標の 6 成分の係数を迎角と横滑り角の関数として持つ **一般表** がある
+（設定 ``aero.table_kind``、:ref:`sec-aero-table`）。
+部品積み上げ法とパネル法は軸対称表を作り、一般表にするときはその係数を展開して作る。
+飛翔計算は、表の種類に応じて次の二つの式で空気力と空力モーメントを求める。
+
 対気速度を機体座標で表したものを :math:`\bm{u}=R^\top(\bm{v}-\bm{w})=(u_x,u_y,u_z)` とし、
 
 .. math::
    :label: eq-alpha
 
    V=|\bm{u}|,\qquad u_\perp=\sqrt{u_y^2+u_z^2},\qquad
-   \alpha=\operatorname{atan2}(u_\perp,\,u_x),\qquad M=\frac{V}{a(h_0+z_U)}
+   \alpha_t=\operatorname{atan2}(u_\perp,\,u_x),\qquad M=\frac{V}{a(h_0+z_U)}
 
-とする。:math:`\alpha` はピッチとヨーを合わせた **全迎角**\ （:math:`0\le\alpha\le\pi`）である。
+とする。:math:`\alpha_t` はピッチとヨーを合わせた **全迎角**\ （:math:`0\le\alpha_t\le\pi`）である。
+機体座標での迎角 :math:`\alpha` と横滑り角 :math:`\beta` は :ref:`sec-aero-angles` で定義する。
+
+軸対称表
+^^^^^^^^
+
 機体は軸対称なので、法線力は迎角の面内（機軸と対気速度を含む面）にあり、横向きの対気速度 :math:`(u_y,u_z)` と逆向きに働く。
-係数表から :math:`(M,\alpha')`\ （:math:`\alpha'=\min(\alpha,\pi-\alpha)`）で係数を引き、:math:`q=\tfrac12\rho V^2` として
+係数表から :math:`(M,\alpha_t')`\ （:math:`\alpha_t'=\min(\alpha_t,\pi-\alpha_t)`）で係数を引き、:math:`q=\tfrac12\rho V^2` として
 
 .. math::
    :label: eq-aero-force
@@ -63,10 +74,52 @@ Coriolis 力と遠心力の項が加わる以外は同じ式を使う（:ref:`se
 とする。燃焼中（:math:`T>0`）は :math:`C_A^{\mathrm{on}}`、燃焼後は :math:`C_A^{\mathrm{off}}` を使う。
 :math:`\sgn(u_x)` により、機体が後ろ向きに飛ぶとき（:math:`u_x<0`）も軸力は常に対気速度に逆らう向きになる。
 
+.. _sec-aero-general:
+
+一般表
+^^^^^^
+
+一般表は、機体座標の力とモーメントの 6 成分を、Mach 数 :math:`M`、迎角 :math:`\alpha`、横滑り角 :math:`\beta` の関数として持つ。
+係数の定義は :ref:`sec-aero-coeff6` にある。
+飛翔中の :math:`(\alpha,\beta)` は :ref:`sec-aero-angles` の式で対気速度から求め、表を三線形内挿で引く。
+軸対称表と違って後ろ向きの飛行を鏡像にせず、:math:`\alpha=\pm180^\circ` 付近も表の一部として持つ。
+空気力は
+
+.. math::
+   :label: eq-aero-force6
+
+   \bm{F}_{A,b} = q\,S\begin{pmatrix}C_X\\C_Y\\C_Z\end{pmatrix}
+
+である。:math:`C_X` は燃焼中（:math:`T>0`）に :math:`C_X^{\mathrm{on}}`、燃焼後に :math:`C_X^{\mathrm{off}}` を使う。
+表のモーメント係数はノーズ先端まわりの値なので、重心まわりのモーメントには、ノーズ先端から重心へ移すことで生じる力のモーメントを足す。
+重心の機体座標は、ノーズ先端を基準にして :math:`(-x_{cg},\,y_{cg},\,z_{cg})` と書ける（:math:`y_{cg},z_{cg}` は重心の横方向のずれで、軸上なら 0）。
+したがって、重心から見たノーズ先端の位置は :math:`(x_{cg},\,-y_{cg},\,-z_{cg})` で、
+
+.. math::
+   :label: eq-aero-moment6
+
+   \bm{M}_{A,b} = q\,S\,d\begin{pmatrix}C_l^{\mathrm{tot}}\\C_m\\C_n\end{pmatrix}
+   + \begin{pmatrix}x_{cg}\\-y_{cg}\\-z_{cg}\end{pmatrix}\times\bm{F}_{A,b}
+
+とする。ロールの係数 :math:`C_l^{\mathrm{tot}}` は :ref:`sec-roll-moment` で述べる。
+軸対称な機体を一般表に展開すると、:math:`y_{cg}=z_{cg}=0` のとき\ :eq:`eq-aero-moment6` のピッチ成分は :math:`q\,S\,(x_{cp}-x_{cg})\,C_Z` になり、
+軸対称表の復元モーメント（:eq:`eq-moment-static`）に一致する。
+
+一般表では、法線力の作用点を 1 つの圧力中心では表せない。
+静安定余裕の表示（``trajectory.csv`` の ``x_cp``\ ）には、横方向の力 :math:`(C_Y,C_Z)` とそのモーメントから求めた **等価な圧力中心**
+
+.. math::
+   :label: eq-xcp-eff
+
+   x_{cp}=\frac{d\,(C_mC_Z-C_nC_Y)}{C_Y^2+C_Z^2}
+
+を使う。:math:`C_m=x_{cp}C_Z/d,\ C_n=-x_{cp}C_Y/d` から逆算した値で、横方向の力が 0 に近いときは迎角 :math:`0.5^\circ` の値で代える。
+
 回転運動
 --------
 
-機体座標での角速度の変化は Euler の運動方程式に従う :cite:`goldstein`。慣性テンソルを :math:`I=\operatorname{diag}(I_{xx},I_{yy},I_{yy})` として
+機体座標での角速度の変化は Euler の運動方程式に従う :cite:`goldstein`。
+慣性テンソル :math:`I` は、現在の重心まわりで機体座標に対して表した対称行列である。
 
 .. math::
    :label: eq-euler
@@ -74,12 +127,57 @@ Coriolis 力と遠心力の項が加わる以外は同じ式を使う（:ref:`se
    I\,\dot{\bm{\omega}} = \bm{M}_b - \bm{\omega}\times\left(I\bm{\omega}\right),\qquad
    \dot{\bm{q}} = \frac12\,\bm{q}\otimes(0,\bm{\omega})
 
-である。第 2 項はジャイロ効果を表す。
+である。第 2 項はジャイロ効果を表す。:math:`\bm{M}_b` は空力モーメントと推力のモーメント（:ref:`sec-thrust-line`）の和である。
+
+.. _sec-inertia-tensor:
+
+慣性テンソル
+~~~~~~~~~~~~
+
+慣性テンソルは **テンソルの行列要素** で与える。
+
+.. math::
+   :label: eq-inertia-tensor
+
+   I=\begin{pmatrix}I_{xx}&I_{xy}&I_{xz}\\I_{xy}&I_{yy}&I_{yz}\\I_{xz}&I_{yz}&I_{zz}\end{pmatrix},\qquad
+   \begin{aligned}
+   I_{xx}&=\int(y^2+z^2)\,\mathrm{d}m, & I_{xy}&=-\int xy\,\mathrm{d}m,\\
+   I_{yy}&=\int(z^2+x^2)\,\mathrm{d}m, & I_{xz}&=-\int xz\,\mathrm{d}m,\\
+   I_{zz}&=\int(x^2+y^2)\,\mathrm{d}m, & I_{yz}&=-\int yz\,\mathrm{d}m
+   \end{aligned}
+
+非対角要素は、慣性乗積 :math:`\int xy\,\mathrm{d}m` などに **負号を付けた値** である。
+CAD ソフトの多くは慣性乗積を :math:`+\int xy\,\mathrm{d}m` の符号で表示するので、その値の符号を反転して設定する（:ref:`設定ファイルの [rocket] <sec-config-rocket>`）。
+点質量 :math:`m` を :math:`(x,y,0)` に置くと :math:`I_{xy}=-mxy` になる。この符号は自動テストで確かめている（:doc:`verification`）。
+
+乾燥時の慣性テンソルは、乾燥重心まわりの値を設定で与える。
+推進剤を足した現在の慣性テンソルは、まず質量の中心を求め、各部分の慣性テンソルを平行軸の定理で現在の重心まわりに移して足す。
+
+.. math::
+   :label: eq-inertia-parallel
+
+   I = I_d + m_d\left(|\bm{r}_d|^2E-\bm{r}_d\bm{r}_d^\top\right)
+     + I_p + m_p\left(|\bm{r}_p|^2E-\bm{r}_p\bm{r}_p^\top\right)
+
+:math:`E` は単位行列、:math:`\bm{r}_d,\bm{r}_p` は現在の重心から乾燥部分の重心と推進剤の重心までの機体座標のベクトルである。
+推進剤は軸上にあるので、乾燥重心の横ずれを :math:`(y_d,z_d)` とすると、重心は :math:`y_{cg}=m_dy_d/m,\ z_{cg}=m_dz_d/m` にずれる。
+推進剤の円柱の慣性テンソルは、:math:`I_p=\operatorname{diag}\!\left(\tfrac12m_pr_m^2,\ m_p(3r_m^2+L_m^2)/12,\ m_p(3r_m^2+L_m^2)/12\right)` である（:doc:`propulsion`）。
+
+慣性乗積も重心の横ずれもなく :math:`I_{zz}=I_{yy}` のとき、慣性テンソルは :math:`\operatorname{diag}(I_{xx},I_{yy},I_{yy})` になり、
+:eq:`eq-euler` を成分ごとの式として解く。それ以外では、逆行列を使って
+
+.. math::
+   :label: eq-euler-tensor
+
+   \dot{\bm{\omega}} = I^{-1}\left(\bm{M}_b-\bm{\omega}\times(I\bm{\omega})\right)
+
+とする。設定を読むときに、:math:`I` が正定値でなければエラーにする。
+質量の時間変化による :math:`\dot I` の項は無視する（:doc:`limitations`）。
 
 空力モーメント
 ~~~~~~~~~~~~~~
 
-法線力は圧力中心 :math:`x_{cp}` に働く :cite:`barrowman`。圧力中心の機体座標は :math:`(x_{cg}-x_{cp},0,0)` なので、復元モーメントは
+**軸対称表** では、法線力は圧力中心 :math:`x_{cp}` に働く :cite:`barrowman`。圧力中心の機体座標は :math:`(x_{cg}-x_{cp},0,0)` なので、復元モーメントは
 
 .. math::
    :label: eq-moment-static
@@ -96,8 +194,90 @@ Coriolis 力と遠心力の項が加わる以外は同じ式を使う（:ref:`se
 
    \bm{M}_{\mathrm{damp},b} = -\frac{qS}{V}\,\max\!\left(0,\ S_2-2x_{cg}S_1+x_{cg}^2S_0\right)\begin{pmatrix}0\\ \omega_y\\ \omega_z\end{pmatrix}
 
-ロール方向のモーメントは 0 とする（フィンのカントやロール減衰は扱わない）。
-したがって :math:`\bm{M}_b=\bm{M}_{N,b}+\bm{M}_{\mathrm{damp},b}` である。
+重心が軸から :math:`(y_{cg},z_{cg})` だけずれているときは、軸上に働く空気力 :math:`\bm{F}_{A,b}` が作るモーメント
+:math:`(0,-y_{cg},-z_{cg})^\top\times\bm{F}_{A,b}` を加える。
+ロールのモーメントは :ref:`sec-roll-moment` の :math:`q\,S\,d\,C_l^{\mathrm{tot}}` である。
+
+**一般表** では、:eq:`eq-aero-moment6` が静的なモーメントとロールのモーメントを与える。
+ピッチとヨーの減衰は、ピッチ用の和 :math:`S_0^q,S_1^q,S_2^q` とヨー用の和 :math:`S_0^r,S_1^r,S_2^r` を別々に持ち、
+
+.. math::
+   :label: eq-moment-damp6
+
+   \bm{M}_{\mathrm{damp},b} = -\frac{qS}{V}\begin{pmatrix}0\\ K_q\,\omega_y\\ K_r\,\omega_z\end{pmatrix},\qquad
+   K_q=\max\!\left(0,\ S_2^q-2x_{cg}S_1^q+x_{cg}^2S_0^q\right)
+
+とする（:math:`K_r` は :math:`S^r` で同じ形）。部品積み上げ法とパネル法から展開した表では :math:`S^q=S^r` で、\ :eq:`eq-moment-damp` に一致する。
+減衰は、重心が横にずれていても軸上の重心を仮定した式で求める（:doc:`limitations`）。
+
+.. _sec-roll-moment:
+
+ロールのモーメント
+~~~~~~~~~~~~~~~~~~
+
+ロールのモーメントは、フィンのカントによる強制項と、ロール角速度による減衰項からなる。
+ロール角速度 :math:`\omega_x` を無次元化して :math:`\hat p=\omega_xd/(2V)` と書くと、ロールの係数は
+
+.. math::
+   :label: eq-cl-total
+
+   C_l^{\mathrm{tot}} = C_l + C_{l\delta}\,(\delta-\delta_{\mathrm{ref}}) + C_{lp}\,\hat p
+
+である（:math:`C_{l\delta}` はフィンのカント :math:`\delta`\ [rad] あたりのロールモーメント係数、:math:`C_{lp}<0` はロール減衰微係数）。
+:math:`\delta` は設定したカント（モンテカルロ解析ではばらつきを加えたもの）、:math:`\delta_{\mathrm{ref}}` は表の :math:`C_l` に **すでに含まれている** カントである。
+差だけを足すので、表を作ったカントで飛ぶときに強制項を二重に数えることはない。
+:eq:`eq-cl-total` は一般表の式である。軸対称表は :math:`C_l` の列を持たないので、
+
+.. math::
+   :label: eq-cl-axisym
+
+   C_l^{\mathrm{tot}} = C_{l\delta}\left(\delta_{\mathrm{ref}}\,\sgn(u_x)+(\delta-\delta_{\mathrm{ref}})\right) + C_{lp}\,\hat p
+
+とする。第 1 項が表に含まれるカントの強制項で、後ろ向きの飛行（:math:`u_x<0`）では向きが反転する。
+軸対称表から展開した一般表の :math:`C_l` も、同じ :math:`C_{l\delta}\,\delta_{\mathrm{ref}}\,\sgn(u_x)` である。
+
+部品積み上げ法とパネル法は、設定したカントで表を作る（:math:`\delta_{\mathrm{ref}}=\delta`）。
+このとき強制項は :math:`C_{l\delta}\,\delta` で、モンテカルロ解析のカントのばらつきだけが差の項になる。
+:math:`\delta=\delta_{\mathrm{ref}}` で、ロールの慣性が小さく角速度が準定常のとき、:math:`C_l^{\mathrm{tot}}=0` から定常なロール角速度が
+
+.. math::
+   :label: eq-roll-steady
+
+   \omega_x = -\frac{2V\,C_{l\delta}\,\delta}{C_{lp}\,d}
+
+と求まる（軸対称表、またはそれを展開した一般表の場合）。:math:`C_{l\delta}` と :math:`C_{lp}` は部品積み上げ法で求める（:ref:`sec-barrowman-roll`）。
+ロールのモーメントはピッチ・ヨーと連成しない。ロールとピッチ・ヨーの交差する微係数は扱わない（:doc:`limitations`）。
+
+.. _sec-thrust-line:
+
+推力線
+~~~~~~
+
+推力は、機軸に対して角度 :math:`\varepsilon`\ （``misalignment_deg``）だけ傾いた直線上に、ノズル出口の点 :math:`\bm{r}_n` を通って働く。
+傾きの向きは方位角 :math:`\phi`\ （``misalignment_azimuth_deg``）で表し、:math:`+y_b` から :math:`+z_b` へ測る。
+推力の方向とノズル出口の機体座標は
+
+.. math::
+   :label: eq-thrust-dir
+
+   \bm{e}_T=\begin{pmatrix}\cos\varepsilon\\ \sin\varepsilon\cos\phi\\ \sin\varepsilon\sin\phi\end{pmatrix},\qquad
+   \bm{r}_n=\begin{pmatrix}-x_{\mathrm{aft}}\\ o_y\\ o_z\end{pmatrix}
+
+で、:math:`(o_y,o_z)` は設定の ``misalignment_offset``、:math:`x_{\mathrm{aft}}` はモータ後端の位置である。
+推力の大きさは :math:`T` のままで、推力と、重心まわりのモーメントは
+
+.. math::
+   :label: eq-thrust-force
+
+   \bm{F}_{T,b}=T\,\bm{e}_T,\qquad
+   \bm{M}_{T,b}=(\bm{r}_n-\bm{r}_{cg})\times\bm{F}_{T,b},\qquad
+   \bm{r}_{cg}=\begin{pmatrix}-x_{cg}\\ y_{cg}\\ z_{cg}\end{pmatrix}
+
+である。ミスアライメントとノズルのオフセットがなく重心が軸上にあるとき、:math:`\bm{M}_{T,b}=0` である。
+ノズルは重心より後ろにあるので、:math:`+z_b` 向きの横推力は :math:`+y_b` まわりのモーメントを作り、機首を :math:`-z_b` 側へ向ける。
+角度の定義は :numref:`fig-body-axes` に示す。
+
+ランチャ上では、推力の軸方向成分 :math:`T\cos\varepsilon` だけが機体をレールに沿って押す（:eq:`eq-rail`）。
 
 飛翔の段階
 ----------
@@ -121,9 +301,12 @@ Coriolis 力と遠心力の項が加わる以外は同じ式を使う（:ref:`se
    :label: eq-rail
 
    \dot{\bm{v}} = a_\parallel\,\bm{d},\qquad
-   a_\parallel = \frac{T - C_A\,q\,S\,\sgn(v_\parallel)}{m} + \bm{g}\cdot\bm{d}
+   a_\parallel = \frac{T\cos\varepsilon - C_A\,q\,S\,\sgn(v_\parallel)}{m} + \bm{g}\cdot\bm{d}
 
-とし、:math:`v_\parallel\le0` かつ :math:`a_\parallel<0` のとき（推力が重力に負けて静止しているとき）は :math:`a_\parallel=0` とする。
+とする。:math:`\varepsilon` は推力のミスアライメント角（:ref:`sec-thrust-line`）で、:math:`C_A` は迎角 0 の値（一般表では :math:`-C_X`）である。
+機体はレールに拘束されているので、推力の横成分とそのモーメントは姿勢に影響しない。
+初期姿勢はレールの方向と ``launch.roll_deg`` で決まり（:ref:`sec-initial-attitude`）、ランチャ上ではこの姿勢のままである。
+:math:`v_\parallel\le0` かつ :math:`a_\parallel<0` のとき（推力が重力に負けて静止しているとき）は :math:`a_\parallel=0` とする。
 レールに沿った移動距離が :math:`\bm{x}\cdot\bm{d}\ge L_{\mathrm{rail}}` になった時刻にランチャを離れ、自由飛行に移る。
 このときの速さを **ランチャ離脱速度** として記録する。
 燃焼が終わってもランチャを離れない場合は、推力不足としてエラーにする。

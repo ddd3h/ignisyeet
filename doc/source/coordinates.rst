@@ -41,8 +41,10 @@ ECEF モードでも、位置・速度などの **出力** は常に射点の EN
 機体座標系
 ----------
 
-重心を原点とし、:math:`x_b` 軸を機軸に沿って **ノーズ方向**、:math:`y_b`, :math:`z_b` 軸をそれに直交するようにとる
-（:numref:`fig-body-frame`）。機体は軸対称と仮定するので、:math:`y_b`, :math:`z_b` 軸の向きは任意である。
+重心を原点とし、:math:`x_b` 軸を機軸に沿って **ノーズ方向**、:math:`y_b`, :math:`z_b` 軸をそれに直交する右手系にとる
+（:numref:`fig-body-frame`）。軸対称表と軸対称な質量特性だけを使うときは、:math:`y_b`, :math:`z_b` 軸の向きは結果に影響しない。
+一方、慣性乗積、重心の横ずれ、推力のミスアライメントとノズルのオフセット、一般表の :math:`C_Y`, :math:`C_Z` は、
+:math:`y_b`, :math:`z_b` の向きに意味がある。その向きは次の節で STL の座標から決める。
 
 一方、機体上の **位置** （重心 :math:`x_{cg}`、圧力中心 :math:`x_{cp}`、フィン位置など）は、
 直感的に分かりやすいように **ノーズ先端から後方へ測った距離** :math:`x` で表す。
@@ -54,6 +56,69 @@ ECEF モードでも、位置・速度などの **出力** は常に射点の EN
    :width: 85%
 
    機体座標系と機体に働く力。迎角 :math:`\alpha` は機軸と対気速度 :math:`\bm{v}_a` のなす角である。
+
+.. _sec-body-basis:
+
+STL から決める機体軸
+~~~~~~~~~~~~~~~~~~~~
+
+機体軸の向きは、STL の座標で次のように決める。
+STL でノーズからテールへ向かう単位ベクトルを :math:`\bm{a}`\ （形状抽出の結果で、``geometry.json`` の ``frame.aft_direction``）とし、
+
+.. math::
+   :label: eq-body-basis
+
+   \bm{e}_x=-\bm{a},\qquad
+   \bm{e}_y=\frac{\bm{a}\times\bm{h}}{|\bm{a}\times\bm{h}|},\qquad
+   \bm{e}_z=\bm{e}_x\times\bm{e}_y
+
+とする。:math:`\bm{h}` は補助のベクトルで、STL の :math:`x` 軸の単位ベクトルを使う。
+機体が :math:`x` 軸にほぼ沿っているとき（:math:`|a_x|\ge0.9`）は :math:`y` 軸の単位ベクトルを使う。
+:math:`(\bm{e}_x,\bm{e}_y,\bm{e}_z)` は右手系である。
+
+例えば、サンプルの STL はノーズが :math:`+z` を向いている（:math:`\bm{a}=(0,0,-1)`）ので、
+:math:`\bm{e}_x=(0,0,1)`、:math:`\bm{e}_y=(0,-1,0)`、:math:`\bm{e}_z=(1,0,0)` になる。
+この三つのベクトルは ``geometry.json`` の ``body_x``, ``body_y``, ``body_z`` に書き出される。
+慣性乗積、重心の横ずれ、推力のオフセットを設定するときは、この軸に対する値を与える（:doc:`usage`）。
+
+.. _sec-aero-angles:
+
+迎角と横滑り角
+~~~~~~~~~~~~~~
+
+対気速度を機体座標で表したものを :math:`\bm{u}=(u_x,u_y,u_z)`、その大きさを :math:`V` として、
+一般表の引数である **迎角** :math:`\alpha` と **横滑り角** :math:`\beta` を
+
+.. math::
+   :label: eq-alpha-beta
+
+   \alpha=\operatorname{atan2}(u_z,\,u_x)\ \in(-180^\circ,180^\circ],\qquad
+   \beta=\arcsin\frac{u_y}{V}\ \in[-90^\circ,90^\circ]
+
+で定義する。逆に、角度から対気速度の方向は
+
+.. math::
+
+   \frac{\bm{u}}{V}=\left(\cos\beta\cos\alpha,\ \sin\beta,\ \cos\beta\sin\alpha\right)^\top
+
+となる。機軸と対気速度のなす **全迎角** :math:`\alpha_t`\ （:eq:`eq-alpha`）との関係は
+
+.. math::
+
+   \cos\alpha_t=\cos\alpha\,\cos\beta
+
+である。:math:`\beta=0` ならば :math:`\alpha_t=|\alpha|`、:math:`\alpha=0` ならば :math:`\alpha_t=|\beta|` である。
+:math:`\alpha=\pm180^\circ` は機体が後ろ向きに飛ぶ状態で、一般表ではこの領域も表の一部である。
+軸対称表は全迎角だけを使い、:math:`\beta` は ``trajectory.csv`` に出力するだけである。
+これらの角度、推力の傾き :math:`\varepsilon`、その方位 :math:`\phi` を :numref:`fig-body-axes` に示す。
+
+.. _fig-body-axes:
+
+.. figure:: _generated/tikz/body_axes.*
+   :width: 85%
+
+   STL から決めた機体軸 :math:`(x_b,y_b,z_b)`、迎角 :math:`\alpha`、横滑り角 :math:`\beta`、
+   推力の傾き :math:`\varepsilon` とその方位 :math:`\phi`。
 
 姿勢の表現（クォータニオン）
 ----------------------------
@@ -91,6 +156,8 @@ ECEF モードでも、位置・速度などの **出力** は常に射点の EN
 である。オイラー角と違って特異点（ジンバルロック）がなく :cite:`shuster`、機体が真上を向く打上げ直後でも安定に計算できる。
 数値積分では :math:`|\bm{q}|=1` が少しずつ崩れるので、各ステップの後で正規化する。
 
+.. _sec-initial-attitude:
+
 初期姿勢
 ~~~~~~~~
 
@@ -103,6 +170,16 @@ ECEF モードでも、位置・速度などの **出力** は常に射点の EN
 
 である。機体軸を :math:`\bm{e}_{x_b}=\bm{d}`、:math:`\bm{e}_{y_b}=(\cos\psi,\,-\sin\psi,\,0)^\top`\ （水平で :math:`\bm{d}` に直交）、
 :math:`\bm{e}_{z_b}=\bm{e}_{x_b}\times\bm{e}_{y_b}` とし、これらを列に並べた回転行列からクォータニオンを求めて初期値とする。
+
+ランチャ上のロール角 :math:`\gamma`\ （``launch.roll_deg``、既定は 0）は、機軸まわりに :math:`\bm{e}_{y_b}` と :math:`\bm{e}_{z_b}` を回して与える。
+
+.. math::
+   :label: eq-launch-roll
+
+   \bm{e}_{y_b}'=\cos\gamma\,\bm{e}_{y_b}+\sin\gamma\,\bm{e}_{z_b},\qquad
+   \bm{e}_{z_b}'=\bm{e}_{x_b}\times\bm{e}_{y_b}'
+
+:math:`\gamma=0` では :math:`+y_b` が水平になる。:math:`\gamma=90^\circ` では :math:`+y_b` が元の :math:`+z_b` の向きになる。
 
 地球楕円体と測地座標
 --------------------

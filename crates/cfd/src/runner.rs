@@ -647,7 +647,11 @@ exit 0
     fn missing_history_is_a_failure() {
         let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         let mut e = env("nohist", "ok");
-        e.tools.su2.path = Some(PathBuf::from("/bin/true"));
+        // a solver that exits successfully without writing anything (/bin/true is not on macOS)
+        let quiet = e.dir.join("su2_quiet.sh");
+        std::fs::write(&quiet, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&quiet, std::fs::Permissions::from_mode(0o755)).unwrap();
+        e.tools.su2.path = Some(quiet);
         let out = run_all(&e.setup(), &|_| {}).unwrap();
         assert!(out.iter().all(|o| o.error.as_ref().is_some_and(|m| m.contains("no history"))));
         let _ = std::fs::remove_dir_all(&e.dir);

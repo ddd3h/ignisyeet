@@ -5,7 +5,7 @@
 # Trigger: push a tag `vX.Y.Z` that equals the workspace version in Cargo.toml,
 #          or run manually with the tag as input (the tag must already exist).
 #
-#   git tag v0.2.0 && git push origin v0.2.0
+#   git tag v0.3.0 && git push origin v0.3.0
 
 name: release
 

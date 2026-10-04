@@ -1,6 +1,6 @@
 [project]
 name = "ignisyeet-doc"
-version = "0.2.0"
+version = "0.3.0"
 description = "IgnisYeet documentation (Sphinx)"
 requires-python = ">=3.10"
 license = "GPL-3.0-or-later"

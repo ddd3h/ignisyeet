@@ -5,7 +5,7 @@
 project = "IgnisYeet"
 author = "西濱大将 (NISHIHAMA Daisuke)"
 copyright = "2025-2026, 西濱大将 (NISHIHAMA Daisuke)"
-release = "0.2.0"
+release = "0.3.0"
 language = "ja"
 
 extensions = ["sphinx.ext.mathjax", "sphinxcontrib.bibtex"]

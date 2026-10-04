@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "aero"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "geom",
@@ -143,7 +143,7 @@ dependencies = [
 
 [[package]]
 name = "cfd"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aero",
  "anyhow",
@@ -600,7 +600,7 @@ dependencies = [
 
 [[package]]
 name = "geom"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "serde",
@@ -651,7 +651,7 @@ checksum = "e17592d60ebacc7d5e169f4663c5f84f9161cc90328abcfe8456f41e4dfcb284"
 
 [[package]]
 name = "ignisyeet"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aero",
  "anyhow",
@@ -907,7 +907,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "panel"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aero",
  "anyhow",
@@ -1206,7 +1206,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "sim"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "aero",
  "anyhow",

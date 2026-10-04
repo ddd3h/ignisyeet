@@ -8,7 +8,7 @@
 [![Docs](https://github.com/ddd3h/ignisyeet/actions/workflows/docs.yml/badge.svg?branch=main)](https://github.com/ddd3h/ignisyeet/actions/workflows/docs.yml)
 [![Documentation](https://img.shields.io/badge/docs-www.ddd3h.com%2Fignisyeet-1f6feb?logo=readthedocs&logoColor=white)](https://www.ddd3h.com/ignisyeet/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0-informational)](CITATION.cff)
+[![Version](https://img.shields.io/badge/version-0.3.0-informational)](CITATION.cff)
 
 [![Rust](https://img.shields.io/badge/Rust-2021_edition-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
@@ -147,7 +147,7 @@ Every option also has an environment variable (`IGNISYEET_VERSION`, `IGNISYEET_P
 
 Releases are published on GitHub as `ignisyeet-<version>-<target>.tar.gz` with a `.sha256` file; the installer verifies the checksum before installing, and you can check it by hand with `sha256sum -c ignisyeet-<version>-<target>.tar.gz.sha256`. To read the script before running it, download it first: `curl -fsSLO https://raw.githubusercontent.com/ddd3h/ignisyeet/main/install.sh && bash install.sh`.
 
-A release is made by pushing a tag equal to the workspace version (`git tag v0.2.0 && git push origin v0.2.0`); the `release` workflow builds the four platform archives and creates the GitHub Release.
+A release is made by pushing a tag equal to the workspace version (`git tag v0.3.0 && git push origin v0.3.0`); the `release` workflow builds the four platform archives and creates the GitHub Release.
 
 ### Building from source
 

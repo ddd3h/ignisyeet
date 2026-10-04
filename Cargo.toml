@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/geom", "crates/aero", "crates/sim", "crates/cli", "crates/panel", "crates/cfd"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 authors = ["西濱大将 (NISHIHAMA Daisuke) <daisukenishihama63@gmail.com>"]

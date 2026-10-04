@@ -18,6 +18,13 @@ dry_mass = 8.0             # kg, including the empty motor casing
 cg_dry = 0.85              # m aft of the nose tip
 ixx_dry = 0.02             # kg m^2 (roll)
 iyy_dry = 1.5              # kg m^2 (pitch/yaw, about dry CG)
+# Optional asymmetry, in body axes (x forward, y/z from the body basis in out/geometry.json):
+# izz_dry = 1.5            # kg m^2, defaults to iyy_dry
+# ixy_dry = 0.0            # tensor matrix elements about the dry CG, Ixy = -integral(x y dm)
+# ixz_dry = 0.0
+# iyz_dry = 0.0
+# cg_lateral_dry = [0.0, 0.0]  # dry CG offset [y, z] from the axis [m]
+# fin_cant_deg = 0.0       # fin cant angle [deg]; rolls the rocket (fin_override.cant_deg takes precedence)
 roughness = 60e-6          # m, equivalent sand roughness
 fin_le = "rounded"         # "rounded" | "sharp"
 fin_te = "square"          # "square" | "tapered"
@@ -32,11 +39,15 @@ extra_cd = 0.02            # launch lugs, buttons, ...
 # sweep = 0.08
 # thickness = 0.004
 # x_le_root = 1.30
+# cant_deg = 0.0
 
 [motor]
 eng = "sample_motor.eng"
 # aft_x = 1.5              # aft end of motor [m from nose]; default = body length
 nozzle_exit_diameter = 0.03
+# misalignment_deg = 0.0           # thrust line angle to the body axis [deg]
+# misalignment_azimuth_deg = 0.0   # its direction, from +y_b towards +z_b [deg]
+# misalignment_offset = [0.0, 0.0] # nozzle-exit point [y, z] in body axes [m]
 
 [launch]
 latitude = 34.7347
@@ -45,6 +56,7 @@ altitude = 20.0            # m above sea level
 rail_length = 5.0
 elevation_deg = 85.0
 azimuth_deg = 270.0        # clockwise from north
+# roll_deg = 0.0           # body roll about the rail axis [deg]; 0 = +y_b horizontal
 
 [recovery]
 enabled = true
@@ -62,6 +74,8 @@ alpha_step_deg = 1.0
 n_slices = 600
 fin_threshold = 0.05
 extrapolation = "linear"   # "linear" | "clamp"
+# table_kind = "axisymmetric"  # "axisymmetric" | "general" (six body-axis coefficients of alpha and beta)
+# general_mach_step = 0.05     # Mach step of a general Barrowman table
 
 # Settings of the panel method (only used when method = "panel").
 [aero.panel]

@@ -247,11 +247,23 @@ fn geometry(cfg: &Config) -> Result<Geometry> {
             g.fins = None;
         }
     }
+    // The configured cant is part of the geometry the aero tables are built for.
+    if let Some(f) = g.fins.as_mut() {
+        f.cant_deg = cfg.rocket.cant_deg();
+    }
     Ok(g)
 }
 
 fn write_geometry(cfg: &Config, g: &Geometry) -> Result<()> {
-    std::fs::write(out_path(cfg, "geometry.json")?, serde_json::to_string_pretty(g)?)?;
+    // Body axes in STL coordinates, so inertia products, CG offsets and the thrust offset can be given in body axes.
+    let mut json = serde_json::to_value(g)?;
+    let [bx, by, bz] = g.frame.body_basis();
+    if let Some(o) = json.as_object_mut() {
+        for (k, v) in [("body_x", bx), ("body_y", by), ("body_z", bz)] {
+            o.insert(k.into(), serde_json::json!([v.x, v.y, v.z]));
+        }
+    }
+    std::fs::write(out_path(cfg, "geometry.json")?, serde_json::to_string_pretty(&json)?)?;
     let mut f = std::io::BufWriter::new(std::fs::File::create(out_path(cfg, "profile.csv")?)?);
     writeln!(f, "x,r,fin_span")?;
     for p in &g.profile {
@@ -289,7 +301,7 @@ fn aero_options(cfg: &Config) -> AeroOptions {
     AeroOptions {
         mach_min: a.mach_min,
         mach_max: a.mach_max,
-        mach_step: a.mach_step,
+        mach_step: if cfg.aero.table_kind == aero::table::TableKind::General && a.method == config::AeroMethod::Barrowman { a.general_mach_step } else { a.mach_step },
         alpha_max_deg: a.alpha_max_deg,
         alpha_step_deg: a.alpha_step_deg,
         reference_altitude: cfg.launch.altitude,
@@ -310,6 +322,7 @@ fn source_hash(cfg: &Config) -> Result<String> {
         scale: f64,
         nose: &'a str,
         fins: &'a Option<config::FinOverride>,
+        cant_deg: f64,
         aero: &'a config::AeroCfg,
         atmosphere: &'a sim::AtmosphereConfig,
         opt: AeroOptions,
@@ -319,6 +332,7 @@ fn source_hash(cfg: &Config) -> Result<String> {
         scale: cfg.rocket.stl_scale,
         nose: &cfg.rocket.nose_direction,
         fins: &cfg.rocket.fin_override,
+        cant_deg: cfg.rocket.cant_deg(),
         aero: &cfg.aero,
         atmosphere: &cfg.atmosphere,
         opt: aero_options(cfg),
@@ -335,7 +349,37 @@ fn aero_table(cfg: &Config, force: bool) -> Result<AeroTable> {
 
 const BAR_T: &str = "  {spinner:.cyan} {prefix:<12.bold} {bar} {pos}/{len} {percent:>3}%  {elapsed:.dim}  ETA {eta_precise:.yellow}\n      {msg:.dim}";
 
+/// Axis grids of the general tables expanded from axisymmetric ones.
+fn general_axes() -> (Vec<f64>, Vec<f64>) {
+    (aero::table::angle_axis(180.0, 30.0, 2.0, 10.0), aero::table::angle_axis(90.0, 30.0, 2.0, 10.0))
+}
+
 fn aero_table_for(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
+    let mut t = aero_table_inner(cfg, force, sub)?;
+    if cfg.aero.method == config::AeroMethod::Table && !t.has_roll_terms() {
+        // External table without roll data: use the Barrowman roll terms of the current geometry.
+        match geometry(cfg) {
+            Ok(g) => {
+                let model = AeroModel::new(g, aero_options(cfg));
+                if model.roll_terms(0.5) != (0.0, 0.0) {
+                    t.set_roll_terms(|m| model.roll_terms(m));
+                    eprintln!("note: the external aero table has no roll terms; cant forcing and roll damping were filled from Barrowman for the current fins");
+                }
+            }
+            Err(e) => eprintln!("note: the external aero table has no roll terms and the geometry is unavailable ({e:#}); the rocket will not roll"),
+        }
+    }
+    if cfg.aero.table_kind == aero::table::TableKind::General && t.kind() == aero::table::TableKind::Axisymmetric {
+        let (alphas, betas) = general_axes();
+        t = t.to_general(alphas, betas);
+        if cfg.aero.method != config::AeroMethod::Table {
+            t.save(&out_path(cfg, "aero_table.csv")?)?;
+        }
+    }
+    Ok(t)
+}
+
+fn aero_table_inner(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
     let u = ui();
     let t_start = std::time::Instant::now();
     match cfg.aero.method {
@@ -416,7 +460,7 @@ fn aero_table_for(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
 
 fn aero_grid_len(cfg: &Config) -> usize {
     let a = &cfg.aero;
-    ((a.mach_max - a.mach_min.max(0.0)) / a.mach_step).round().max(1.0) as usize + 1
+    ((a.mach_max - a.mach_min.max(0.0)) / aero_options(cfg).mach_step).round().max(1.0) as usize + 1
 }
 
 fn show_table(t: &AeroTable, elapsed: Option<std::time::Duration>, sub: Sub) {
@@ -594,7 +638,7 @@ fn simulation<'a>(cfg: &Config, p: &'a Prepared) -> Result<Simulation<'a>> {
     let r = &cfg.rocket;
     Ok(Simulation {
         table: &p.table,
-        mass: sim::MassProperties::axisymmetric(r.dry_mass, r.cg_dry, r.ixx_dry, r.iyy_dry),
+        mass: r.mass_properties(),
         motor: &p.motor,
         motor_aft_x: p.motor_aft_x,
         launch: cfg.launch.clone(),
@@ -612,8 +656,8 @@ fn simulation<'a>(cfg: &Config, p: &'a Prepared) -> Result<Simulation<'a>> {
             atol: cfg.sim.atol,
         },
         aero_scale: sim::AeroScale::default(),
-        thrust_line: sim::ThrustLine::default(),
-        fin_cant_deg: 0.0,
+        thrust_line: cfg.motor.thrust_line(),
+        fin_cant_deg: r.cant_deg(),
     })
 }
 
@@ -982,6 +1026,22 @@ mod tests {
     }
 
     #[test]
+    fn external_table_without_roll_terms_gets_barrowman_roll_terms() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+        let tmp = std::env::temp_dir().join(format!("ignisyeet_cli_legacy_{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let meta = aero::table::TableMeta { source_hash: "ext".into(), ref_area: 0.01, ref_diameter: 0.1, length: 1.0, machs: vec![0.0, 1.0], alphas_deg: vec![0.0, 10.0], ..Default::default() };
+        let csv = tmp.join("legacy.csv");
+        AeroTable::from_fn(meta, |_, a| aero::AeroCoeffs { cn: a, ca_off: 0.5, xcp: 0.6, ..Default::default() }).save(&csv).unwrap();
+        let text = include_str!("../../../examples/sample.toml").replace("method = \"barrowman\"", &format!("method = \"table\"\ntable = \"{}\"", csv.display()));
+        let cfg = Config::from_value(toml::from_str(&text).unwrap(), Some(&dir)).unwrap();
+        let t = aero_table(&cfg, false).unwrap();
+        let c = t.lookup(0.5, 0.0);
+        assert!(c.cl_delta > 0.0 && c.clp < 0.0, "{c:?}");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
     fn resources_do_not_change_the_hash() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
         let text = include_str!("../../../examples/sample.toml");
@@ -1014,6 +1074,32 @@ mod tests {
         let s = &r.summary;
         assert!((s.apogee - 4440.7).abs() < 0.05 && (s.apogee_time - 26.11).abs() < 0.005, "{} at {}", s.apogee, s.apogee_time);
         assert!((s.landing_east + 654.8).abs() < 0.05 && (s.landing_north + 7708.5).abs() < 0.05, "{} {}", s.landing_east, s.landing_north);
+        let _ = std::fs::remove_dir_all(&cfg.output.dir);
+    }
+
+    #[test]
+    fn general_table_sample_matches_axisymmetric_apogee() {
+        let mut cfg = sample_config("general");
+        cfg.aero.table_kind = aero::table::TableKind::General;
+        let p = prepare(&cfg).unwrap();
+        assert_eq!(p.table.kind(), aero::table::TableKind::General);
+        let (r, _) = fly_sample(&cfg, &p, Descent::Parachute);
+        assert!((r.summary.apogee - 4440.7).abs() < 0.5, "apogee {}", r.summary.apogee);
+        let _ = std::fs::remove_dir_all(&cfg.output.dir);
+    }
+
+    #[test]
+    fn fin_cant_rolls_the_sample_and_reaches_the_geometry() {
+        let mut cfg = sample_config("cant");
+        cfg.rocket.fin_cant_deg = 1.0;
+        assert_eq!(geometry(&cfg).unwrap().fins.unwrap().cant_deg, 1.0);
+        let p = prepare(&cfg).unwrap();
+        assert_eq!(p.table.meta.fin_cant_ref_deg, 1.0);
+        let sim = simulation(&cfg, &p).unwrap();
+        assert_eq!(sim.fin_cant_deg, 1.0);
+        let r = sim.run(Descent::Ballistic, true).unwrap();
+        let p_max = r.samples.iter().map(|s| s.roll_rate).fold(0.0f64, f64::max);
+        assert!(p_max > 1.0, "max roll rate {p_max}");
         let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 

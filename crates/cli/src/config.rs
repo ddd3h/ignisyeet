@@ -62,6 +62,23 @@ pub struct RocketCfg {
     pub cg_dry: f64,
     pub ixx_dry: f64,
     pub iyy_dry: f64,
+    /// Dry yaw inertia Izz [kg m^2]; defaults to `iyy_dry`.
+    #[serde(default)]
+    pub izz_dry: Option<f64>,
+    /// Products of the inertia tensor about the dry CG in body axes (x forward, y/z of the
+    /// geometry.json body basis). These are the tensor matrix elements, `Ixy = -∫ x y dm`.
+    #[serde(default)]
+    pub ixy_dry: f64,
+    #[serde(default)]
+    pub ixz_dry: f64,
+    #[serde(default)]
+    pub iyz_dry: f64,
+    /// Lateral offset (y, z) of the dry CG from the axis in body axes [m].
+    #[serde(default)]
+    pub cg_lateral_dry: [f64; 2],
+    /// Fin cant angle [deg]; rolls the rocket (positive = positive roll about +x_b). `fin_override.cant_deg` takes precedence.
+    #[serde(default)]
+    pub fin_cant_deg: f64,
     #[serde(default = "default_roughness")]
     pub roughness: f64,
     /// "rounded" or "sharp".
@@ -86,6 +103,29 @@ pub struct FinOverride {
     pub sweep: Option<f64>,
     pub thickness: Option<f64>,
     pub x_le_root: Option<f64>,
+    /// Fin cant [deg]; replaces `rocket.fin_cant_deg`.
+    pub cant_deg: Option<f64>,
+}
+
+impl RocketCfg {
+    /// Configured fin cant [deg].
+    pub fn cant_deg(&self) -> f64 {
+        self.fin_override.as_ref().and_then(|o| o.cant_deg).unwrap_or(self.fin_cant_deg)
+    }
+
+    pub fn mass_properties(&self) -> sim::MassProperties {
+        sim::MassProperties {
+            dry_mass: self.dry_mass,
+            cg_dry: self.cg_dry,
+            ixx_dry: self.ixx_dry,
+            iyy_dry: self.iyy_dry,
+            izz_dry: self.izz_dry,
+            ixy_dry: self.ixy_dry,
+            ixz_dry: self.ixz_dry,
+            iyz_dry: self.iyz_dry,
+            cg_lateral_dry: self.cg_lateral_dry,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,6 +138,21 @@ pub struct MotorCfg {
     pub nozzle_exit_diameter: f64,
     /// Overrides the propellant mass in the .eng header [kg].
     pub propellant_mass: Option<f64>,
+    /// Angle between the thrust line and the body axis [deg].
+    #[serde(default)]
+    pub misalignment_deg: f64,
+    /// Direction of the misalignment, measured from +y_b towards +z_b [deg].
+    #[serde(default)]
+    pub misalignment_azimuth_deg: f64,
+    /// Nozzle-exit point (y, z) of the thrust line in body axes [m].
+    #[serde(default)]
+    pub misalignment_offset: [f64; 2],
+}
+
+impl MotorCfg {
+    pub fn thrust_line(&self) -> sim::ThrustLine {
+        sim::ThrustLine { misalignment_deg: self.misalignment_deg, misalignment_azimuth_deg: self.misalignment_azimuth_deg, offset: self.misalignment_offset }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -127,6 +182,11 @@ pub struct AeroCfg {
     pub n_slices: usize,
     pub fin_threshold: f64,
     pub extrapolation: aero::Extrapolation,
+    /// "axisymmetric" (coefficients of the total angle of attack) or "general" (six body-axis
+    /// coefficients of alpha and beta, expanded from the axisymmetric table).
+    pub table_kind: aero::table::TableKind,
+    /// Mach step of a general Barrowman table.
+    pub general_mach_step: f64,
 }
 
 impl Default for AeroCfg {
@@ -144,6 +204,8 @@ impl Default for AeroCfg {
             n_slices: 600,
             fin_threshold: 0.05,
             extrapolation: aero::Extrapolation::Linear,
+            table_kind: aero::table::TableKind::Axisymmetric,
+            general_mach_step: 0.05,
         }
     }
 }
@@ -271,6 +333,20 @@ impl Config {
         }
         if self.rocket.dry_mass <= 0.0 || self.rocket.iyy_dry <= 0.0 || self.rocket.ixx_dry <= 0.0 {
             bail!("rocket mass and inertias must be positive");
+        }
+        let r = &self.rocket;
+        let izz = r.izz_dry.unwrap_or(r.iyy_dry);
+        let tensor = geom::Mat3([[r.ixx_dry, r.ixy_dry, r.ixz_dry], [r.ixy_dry, r.iyy_dry, r.iyz_dry], [r.ixz_dry, r.iyz_dry, izz]]);
+        let minors = [r.ixx_dry, r.ixx_dry * r.iyy_dry - r.ixy_dry * r.ixy_dry, tensor.det()];
+        if !(izz > 0.0 && minors.iter().all(|m| *m > 0.0)) {
+            bail!("the inertia tensor of the rocket (ixx_dry, iyy_dry, izz_dry and the products) must be positive definite");
+        }
+        let finite = [r.ixy_dry, r.ixz_dry, r.iyz_dry, r.cg_lateral_dry[0], r.cg_lateral_dry[1], r.fin_cant_deg, self.motor.misalignment_deg, self.motor.misalignment_azimuth_deg, self.motor.misalignment_offset[0], self.motor.misalignment_offset[1], self.launch.roll_deg];
+        if finite.iter().any(|v| !v.is_finite()) {
+            bail!("rocket inertia products, CG offset, fin cant, motor misalignment and launch.roll_deg must be finite numbers");
+        }
+        if self.aero.general_mach_step <= 0.0 {
+            bail!("aero.general_mach_step must be positive");
         }
         if self.aero.mach_step <= 0.0 || self.aero.alpha_step_deg <= 0.0 || self.aero.mach_max <= self.aero.mach_min {
             bail!("invalid aero grid");
@@ -438,6 +514,32 @@ mod tests {
         for bad in ["memory_gb = -1", "nice = 20", "nice = -1", "bogus = 1"] {
             assert!(parse(&format!("{sample}\n[resources]\n{bad}\n")).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn six_component_keys() {
+        let sample = include_str!("../../../examples/sample.toml");
+        let c = parse(sample).unwrap();
+        assert_eq!((c.rocket.cant_deg(), c.motor.misalignment_deg, c.launch.roll_deg), (0.0, 0.0, 0.0));
+        assert_eq!(c.aero.table_kind, aero::table::TableKind::Axisymmetric);
+        assert_eq!(c.aero.general_mach_step, 0.05);
+        assert!(c.rocket.mass_properties().is_axisymmetric());
+        let text = sample
+            .replace("iyy_dry = 1.5 ", "iyy_dry = 1.5\nizz_dry = 1.6\nixy_dry = 0.01\nixz_dry = -0.02\niyz_dry = 0.03\ncg_lateral_dry = [0.001, -0.002]\nfin_cant_deg = 0.5 #")
+            .replace("nozzle_exit_diameter = 0.03", "nozzle_exit_diameter = 0.03\nmisalignment_deg = 0.2\nmisalignment_azimuth_deg = 90\nmisalignment_offset = [0.001, 0.0]")
+            .replace("azimuth_deg = 270.0 ", "roll_deg = 30.0\nazimuth_deg = 270.0 ")
+            .replace("extrapolation = \"linear\" ", "table_kind = \"general\"\ngeneral_mach_step = 0.1\nextrapolation = \"linear\" ");
+        let c = parse(&text).unwrap();
+        assert_eq!((c.rocket.izz_dry, c.rocket.ixz_dry, c.rocket.cg_lateral_dry), (Some(1.6), -0.02, [0.001, -0.002]));
+        assert_eq!(c.rocket.cant_deg(), 0.5);
+        assert_eq!(c.motor.thrust_line(), sim::ThrustLine { misalignment_deg: 0.2, misalignment_azimuth_deg: 90.0, offset: [0.001, 0.0] });
+        assert_eq!((c.launch.roll_deg, c.aero.table_kind, c.aero.general_mach_step), (30.0, aero::table::TableKind::General, 0.1));
+        // A fin_override cant takes precedence.
+        let c = parse(&(text + "\n[rocket.fin_override]\ncant_deg = 2.0\n")).unwrap();
+        assert_eq!(c.rocket.cant_deg(), 2.0);
+        // Products too large for a positive definite tensor.
+        let bad = sample.replace("iyy_dry = 1.5 ", "iyy_dry = 1.5\nixy_dry = 1.6 #");
+        assert!(parse(&bad).unwrap_err().to_string().contains("positive definite"));
     }
 
     #[test]

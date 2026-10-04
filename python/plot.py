@@ -110,9 +110,16 @@ def plot_geometry(out):
     save(fig, out, "geometry.png")
 
 
+def axisymmetric_view(t):
+    """Rows of the beta = 0, alpha >= 0 plane of a general table with CN = -CZ (axisymmetric tables are returned unchanged)."""
+    if "beta_deg" not in t.columns:
+        return t
+    return t[(t.beta_deg == 0) & (t.alpha_deg >= 0)].assign(cn=lambda r: -r.cz)
+
+
 def plot_aero(out):
     d = pd.read_csv(out / "aero_drag.csv")
-    t = pd.read_csv(out / "aero_table.csv")
+    t = axisymmetric_view(pd.read_csv(out / "aero_table.csv"))
     fig, axs = plt.subplots(2, 2, figsize=(11, 7.5))
 
     ax = axs[0, 0]
@@ -242,7 +249,15 @@ def plot_trajectory(out):
         ("mass", "Mass [kg]", body),
         ("pitch_deg", "Pitch [deg]", free),
     ]
-    fig, axs = plt.subplots(3, 3, figsize=(12, 9), sharex=False)
+    # Sideslip and roll rate exist in trajectories of this version (absent in older files).
+    if "beta_deg" in tr.columns:
+        panels.append(("beta_deg", "Sideslip β [deg]", free))
+    if "roll_rate" in tr.columns:
+        panels.append(("roll_rate", "Roll rate [rad/s]", free))
+    nrows = -(-len(panels) // 3)
+    fig, axs = plt.subplots(nrows, 3, figsize=(12, 3 * nrows), sharex=False, squeeze=False)
+    for ax in axs.flat[len(panels):]:
+        ax.set_visible(False)
     for ax, (col, title, data) in zip(axs.flat, panels):
         ax.plot(data.t, data[col], color=SERIES[0])
         ax.set_title(title)
@@ -326,6 +341,8 @@ def plot_aero_compare(out, other):
     fig, axs = plt.subplots(1, 3, figsize=(13, 3.8))
     for path, color, ls in ((out, SERIES[0], "-"), (other, SERIES[1], "--")):
         t = pd.read_csv(path / "aero_table.csv")
+        if "beta_deg" in t.columns:
+            raise SystemExit(f"{path / 'aero_table.csv'} is a general (alpha, beta) table; --compare needs axisymmetric tables")
         t = t[t.alpha_deg == 0].sort_values("mach")
         r = path.resolve()
         label = f"{r.parent.name}/{r.name}" if out.resolve().name == other.resolve().name else r.name

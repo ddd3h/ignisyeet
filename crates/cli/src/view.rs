@@ -154,8 +154,9 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
 
         p.section("Integration");
         let c = &cfg.sim;
-        let tol = if c.integrator == sim::IntegratorKind::Rk45 { format!("{s}rtol {:e}{s}atol {:e}", c.rtol, c.atol) } else { String::new() };
-        p.row("integrator", format!("{}{s}dt {}{tol}", style(name(&c.integrator)).bold(), val(c.dt, "s")));
+        let tol = if c.integrator.is_adaptive() { format!("{s}rtol {:e}{s}atol {:e}", c.rtol, c.atol) } else { String::new() };
+        let dt = if c.integrator.is_adaptive() { String::new() } else { format!("{s}dt {}", val(c.dt, "s")) };
+        p.row("integrator", format!("{}{s}attitude {}{dt}{tol}", style(name(&c.integrator)).bold(), style(name(&c.attitude)).bold()));
         p.row("limits", format!("max time {}{s}output every {}", val(c.max_time, "s"), val(c.output_interval, "s")));
     }
 
@@ -334,3 +335,20 @@ pub fn monte_carlo_panel(sm: &McSummary, elapsed: Duration, n_rows: usize) -> Pa
     }
     p
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn config_panel_shows_integrator_and_attitude() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+        let text = include_str!("../../../examples/sample.toml").replace("integrator = \"rk4\"", "integrator = \"dop853\"\nattitude = \"lie_group\"");
+        let cfg = Config::from_value(toml::from_str(&text).unwrap(), Some(&dir)).unwrap();
+        let p = config_panel(&cfg, &dir.join("sample.toml"), Sub::Sim, None);
+        let lines = ui().render_panel(&p).join("\n");
+        let plain = console::strip_ansi_codes(&lines).to_string();
+        assert!(plain.contains("dop853") && plain.contains("attitude lie_group") && plain.contains("rtol"), "{plain}");
+    }
+}
+

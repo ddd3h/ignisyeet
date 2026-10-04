@@ -117,10 +117,11 @@ roughness_length = 0.03    # log model [m]
 # profile = "wind.csv"     # profile model: CSV with columns altitude_m,speed,direction_deg
 
 [sim]
-integrator = "rk4"         # "rk4" | "rk45"
-dt = 0.002
-rtol = 1e-7                # rk45 only
-atol = 1e-6                # rk45 only
+integrator = "rk4"         # "rk4" (fixed step dt) | "rk45" (adaptive 5th order) | "dop853" (adaptive 8th order)
+# attitude = "normalize"   # "normalize" (default: quaternion renormalised each step) | "lie_group" (RKMK on SO(3), exactly unit quaternion)
+dt = 0.002                 # rk4 only
+rtol = 1e-7                # rk45 / dop853 only
+atol = 1e-6                # rk45 / dop853 only
 max_time = 1200.0
 output_interval = 0.05
 # descent = "parachute"    # default: parachute if recovery.enabled else ballistic

@@ -606,6 +606,7 @@ fn simulation<'a>(cfg: &Config, p: &'a Prepared) -> Result<Simulation<'a>> {
             max_time: cfg.sim.max_time,
             output_interval: cfg.sim.output_interval,
             integrator: cfg.sim.integrator,
+            attitude: cfg.sim.attitude,
             rtol: cfg.sim.rtol,
             atol: cfg.sim.atol,
         },
@@ -985,5 +986,75 @@ mod tests {
         let b = load(&text.replace("threads = 0 ", "threads = 1 ").replace("memory_gb = 0 ", "memory_gb = 4 ").replace("nice = 0 ", "nice = 5 "));
         assert_eq!((b.resources.threads, b.resources.nice), (1, 5));
         assert_eq!(source_hash(&a).unwrap(), source_hash(&b).unwrap());
+    }
+
+    /// examples/sample.toml (barrowman aero), output in a private temp directory.
+    fn sample_config(tag: &str) -> Config {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+        let mut cfg = Config::from_value(toml::from_str(include_str!("../../../examples/sample.toml")).unwrap(), Some(&dir)).unwrap();
+        cfg.output.dir = std::env::temp_dir().join(format!("ignisyeet_cli_{tag}_{}", std::process::id()));
+        cfg
+    }
+
+    fn fly_sample(cfg: &Config, p: &Prepared, descent: Descent) -> (sim::SimResult, std::time::Duration) {
+        let t0 = std::time::Instant::now();
+        let r = simulation(cfg, p).unwrap().run(descent, false).unwrap();
+        (r, t0.elapsed())
+    }
+
+    #[test]
+    fn sample_default_results_are_unchanged() {
+        let cfg = sample_config("default");
+        let p = prepare(&cfg).unwrap();
+        let (r, _) = fly_sample(&cfg, &p, Descent::Parachute);
+        let s = &r.summary;
+        assert!((s.apogee - 4440.7).abs() < 0.05 && (s.apogee_time - 26.11).abs() < 0.005, "{} at {}", s.apogee, s.apogee_time);
+        assert!((s.landing_east + 654.8).abs() < 0.05 && (s.landing_north + 7708.5).abs() < 0.05, "{} {}", s.landing_east, s.landing_north);
+        let _ = std::fs::remove_dir_all(&cfg.output.dir);
+    }
+
+    /// Prints the integrator comparison table (run with `--ignored --nocapture`).
+    #[test]
+    #[ignore]
+    fn integrator_matrix_report() {
+        use sim::{AttitudeKind as A, IntegratorKind as I};
+        let mut cfg = sample_config("matrix");
+        let p = prepare(&cfg).unwrap();
+        for wind in [4.0, 0.0] {
+        println!("wind {wind} m/s");
+        cfg.wind.speed = wind;
+        cfg.sim.integrator = I::Rk4;
+        cfg.sim.attitude = A::Normalize;
+        cfg.sim.dt = 0.0005;
+        let refs: Vec<_> = [Descent::Parachute, Descent::Ballistic].iter().map(|&d| fly_sample(&cfg, &p, d)).collect();
+        cfg.sim.dt = 0.002;
+        println!("reference rk4 dt=0.5ms: parachute apogee {:.3} land ({:.2}, {:.2}); ballistic apogee {:.3} land ({:.2}, {:.2})", refs[0].0.summary.apogee, refs[0].0.summary.landing_east, refs[0].0.summary.landing_north, refs[1].0.summary.apogee, refs[1].0.summary.landing_east, refs[1].0.summary.landing_north);
+        for (rtol, atol) in [(1e-7, 1e-6), (1e-9, 1e-9), (1e-10, 1e-10)] {
+            cfg.sim.rtol = rtol;
+            cfg.sim.atol = atol;
+            for i in [I::Rk4, I::Rk45, I::Dop853] {
+                if i == I::Rk4 && rtol != 1e-7 {
+                    continue;
+                }
+                for a in [A::Normalize, A::LieGroup] {
+                    cfg.sim.integrator = i;
+                    cfg.sim.attitude = a;
+                    for (k, d) in [Descent::Parachute, Descent::Ballistic].into_iter().enumerate() {
+                        match simulation(&cfg, &p).unwrap().run(d, false) {
+                            Ok(r) => {
+                                let t0 = std::time::Instant::now();
+                                let _ = simulation(&cfg, &p).unwrap().run(d, false);
+                                let wall = t0.elapsed();
+                                let (s, rf) = (&r.summary, &refs[k].0.summary);
+                                println!("tol {rtol:e}/{atol:e} {i:?}/{a:?} {d:?}: apogee {:.3} ({:+.3}) land E {:.2} N {:.2} (d {:.3}) evals {} wall {:.1} ms qerr {:.1e}", s.apogee, s.apogee - rf.apogee, s.landing_east, s.landing_north, (s.landing_east - rf.landing_east).hypot(s.landing_north - rf.landing_north), r.evals, wall.as_secs_f64() * 1e3, r.max_quat_norm_error);
+                            }
+                            Err(e) => println!("tol {rtol:e}/{atol:e} {i:?}/{a:?} {d:?}: FAILED {e}"),
+                        }
+                    }
+                }
+            }
+        }
+        }
+        let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 }

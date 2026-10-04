@@ -4,9 +4,10 @@
 //! `frame.rs`): a flat local ENU frame (x east, y north, z up) or the rotating ECEF frame.
 //! Body frame: x forward along the axis towards the nose; the rocket is axisymmetric.
 
-use crate::env::{is_pos, AtmosphereModel, Earth, IntegratorKind, Wind};
+use crate::env::{is_pos, AtmosphereModel, AttitudeKind, Earth, IntegratorKind, Wind};
 use crate::frame::Frame;
 use crate::integrator::{self, State};
+use crate::stepper::Stepper;
 use crate::motor::Motor;
 use aero::{AeroCoeffs, AeroTable};
 use anyhow::{bail, Result};
@@ -53,6 +54,9 @@ pub struct Settings {
     pub max_time: f64,
     pub output_interval: f64,
     pub integrator: IntegratorKind,
+    /// Attitude update: quaternion renormalisation or Lie-group (RKMK) steps.
+    #[serde(default)]
+    pub attitude: AttitudeKind,
     /// Relative and absolute tolerances of the adaptive integrator.
     pub rtol: f64,
     pub atol: f64,
@@ -60,7 +64,7 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { dt: 0.002, max_time: 1200.0, output_interval: 0.05, integrator: IntegratorKind::Rk4, rtol: 1e-7, atol: 1e-6 }
+        Self { dt: 0.002, max_time: 1200.0, output_interval: 0.05, integrator: IntegratorKind::Rk4, attitude: AttitudeKind::Normalize, rtol: 1e-7, atol: 1e-6 }
     }
 }
 
@@ -174,6 +178,9 @@ pub struct SimResult {
     pub summary: Summary,
     /// Number of right-hand-side evaluations (cost of the integration).
     pub evals: u64,
+    /// Largest deviation of the attitude quaternion norm from 1 over all accepted steps
+    /// (measured on the state as stored, i.e. after any renormalisation the method applies).
+    pub max_quat_norm_error: f64,
 }
 
 struct Aux {
@@ -379,9 +386,10 @@ impl<'a> Simulation<'a> {
         if !is_pos(dt) {
             bail!("sim.dt must be positive");
         }
-        let adaptive = self.settings.integrator == IntegratorKind::Rk45;
+        let stepper = Stepper::new(self.settings.integrator, self.settings.attitude);
+        let adaptive = stepper.adaptive();
         if adaptive && !(is_pos(self.settings.rtol) && is_pos(self.settings.atol) && is_pos(self.settings.output_interval)) {
-            bail!("sim.rtol, sim.atol and sim.output_interval must be positive for the rk45 integrator");
+            bail!("sim.rtol, sim.atol and sim.output_interval must be positive for the adaptive integrators (rk45, dop853)");
         }
         let frame = Frame::new(&self.earth, &self.launch);
         let cx = Ctx { frame, rail: frame.from_launch_enu(self.rail_dir_enu()) };
@@ -420,6 +428,7 @@ impl<'a> Simulation<'a> {
         let mut past_apogee = false;
         let evals = std::cell::Cell::new(0u64);
         let mut h_ctrl = dt;
+        let mut max_qerr = 0.0f64;
         // Derivative at (t, s) carried over from the previous step (first-same-as-last).
         let mut fsal: Option<(State, Aux)> = None;
         let mut loc = frame.local(s.pos);
@@ -459,7 +468,7 @@ impl<'a> Simulation<'a> {
             let mut next_fsal = None;
             if !adaptive {
                 h = dt;
-                s = integrator::rk4_step(&mut f, t, &s, &k1, dt);
+                s = stepper.step(&mut f, t, &s, &k1, dt, 0.0, 0.0, phase == Phase::Free).y;
             } else {
                 // Largest allowed step: output interval, 0.05 s on the rail and during the burn,
                 // trimmed to thrust-curve knots and to the parachute deployment instant.
@@ -487,11 +496,11 @@ impl<'a> Simulation<'a> {
                 let mut hh = h_ctrl.min(hmax);
                 let mut rejected = false;
                 loop {
-                    let st = integrator::dopri5_step(&mut f, t, &s, &k1, hh, self.settings.rtol, self.settings.atol);
-                    let fac = integrator::step_factor(st.err);
+                    let st = stepper.step(&mut f, t, &s, &k1, hh, self.settings.rtol, self.settings.atol, phase == Phase::Free);
+                    let fac = stepper.factor(st.err);
                     if st.err <= 1.0 {
                         s = st.y;
-                        next_fsal = Some((st.k_end, st.aux_end));
+                        next_fsal = st.next;
                         // A step trimmed by a limit must not shrink the controller's step.
                         h_ctrl = if hh < h_ctrl && !rejected { h_ctrl.max(hh * fac) } else { hh * fac };
                         break;
@@ -502,6 +511,7 @@ impl<'a> Simulation<'a> {
                 }
                 h = hh;
             }
+            max_qerr = max_qerr.max((crate::lie::quat_norm(s.q) - 1.0).abs());
             t += h;
             let loc_prev = loc;
             loc = frame.local(s.pos);
@@ -566,7 +576,7 @@ impl<'a> Simulation<'a> {
         if !sum.min_stability_cal.is_finite() {
             sum.min_stability_cal = f64::NAN;
         }
-        Ok(SimResult { samples, summary: sum, evals: evals.get() })
+        Ok(SimResult { samples, summary: sum, evals: evals.get(), max_quat_norm_error: max_qerr })
     }
 }
 
@@ -770,6 +780,133 @@ mod tests {
             assert!((sa.rail_exit_time - sb.rail_exit_time).abs() < 2e-3 && (sa.rail_exit_speed - sb.rail_exit_speed).abs() < 0.2, "{name} rail exit");
             assert!(b.evals < a.evals, "{name}: rk45 {} evals vs rk4 {}", b.evals, a.evals);
             assert!(b.samples.windows(2).all(|w| w[1].t > w[0].t));
+        }
+    }
+
+    const COMBOS: [(IntegratorKind, AttitudeKind); 6] = [
+        (IntegratorKind::Rk4, AttitudeKind::Normalize),
+        (IntegratorKind::Rk4, AttitudeKind::LieGroup),
+        (IntegratorKind::Rk45, AttitudeKind::Normalize),
+        (IntegratorKind::Rk45, AttitudeKind::LieGroup),
+        (IntegratorKind::Dop853, AttitudeKind::Normalize),
+        (IntegratorKind::Dop853, AttitudeKind::LieGroup),
+    ];
+
+    fn with<'a>(base: &Simulation<'a>, i: IntegratorKind, a: AttitudeKind) -> Simulation<'a> {
+        let mut s = base.clone();
+        s.settings.integrator = i;
+        s.settings.attitude = a;
+        s
+    }
+
+    #[test]
+    fn default_settings_are_rk4_normalize() {
+        let d = Settings::default();
+        assert_eq!((d.integrator, d.attitude), (IntegratorKind::Rk4, AttitudeKind::Normalize));
+    }
+
+    #[test]
+    fn vacuum_analytic_all_combinations() {
+        let (table, motor) = vacuum_parts();
+        let base = vacuum_sim(&table, &motor);
+        let a = VAC_F / VAC_M - G0;
+        let v = a * VAC_BURN;
+        let apogee = 0.5 * a * VAC_BURN * VAC_BURN + v * v / (2.0 * G0);
+        for (i, at) in COMBOS {
+            let r = with(&base, i, at).run(Descent::Ballistic, false).unwrap();
+            assert!((r.summary.apogee - apogee).abs() / apogee < 2e-3, "{i:?} {at:?} apogee {} vs {apogee}", r.summary.apogee);
+            assert!(r.summary.landing_distance < 1e-6, "{i:?} {at:?}");
+        }
+    }
+
+    /// RK4 dt = 0.5 ms reference for a sample-like rocket.
+    fn reference(base: &Simulation<'_>, descent: Descent) -> Summary {
+        let mut r = base.clone();
+        r.settings.dt = 0.0005;
+        r.run(descent, false).unwrap().summary
+    }
+
+    fn agree(base: &Simulation<'_>, name: &str) {
+        // The fixed-step rails end at a step boundary, so rk4 needs dt = 1 ms to meet 0.5 m.
+        let mut base = base.clone();
+        base.settings.dt = 0.001;
+        let base = &base;
+        for descent in [Descent::Ballistic, Descent::Parachute] {
+            let refs = reference(base, descent);
+            for (i, at) in COMBOS {
+                let r = with(base, i, at).run(descent, false).unwrap();
+                let sm = &r.summary;
+                let d_land = (sm.landing_east - refs.landing_east).hypot(sm.landing_north - refs.landing_north);
+                println!("{name} {descent:?} {i:?}/{at:?}: apogee {:.3} ({:+.3}) landing ({:.2}, {:.2}) d {:.3} evals {}", sm.apogee, sm.apogee - refs.apogee, sm.landing_east, sm.landing_north, d_land, r.evals);
+                assert!((sm.apogee - refs.apogee).abs() < 0.5, "{name} {descent:?} {i:?}/{at:?} apogee {} vs {}", sm.apogee, refs.apogee);
+                assert!(d_land < 2.0, "{name} {descent:?} {i:?}/{at:?} landing off by {d_land}");
+            }
+        }
+    }
+
+    #[test]
+    fn all_combinations_agree_with_fine_rk4() {
+        let (table, motor) = sample_parts();
+        agree(&sample_sim(&table, &motor, 5.0), "flat");
+    }
+
+    #[test]
+    fn ecef_dop853_lie_group_runs_and_agrees() {
+        let (table, motor) = sample_parts();
+        let mut base = sample_sim(&table, &motor, 5.0);
+        base.earth = ecef(GravityModel::InverseSquare, crate::env::OMEGA_EARTH);
+        agree(&base, "ecef");
+        let r = with(&base, IntegratorKind::Dop853, AttitudeKind::LieGroup).run(Descent::Ballistic, true).unwrap();
+        assert!(r.samples.len() > 100 && r.summary.landing_time.is_finite());
+    }
+
+    #[test]
+    fn lie_group_keeps_unit_quaternion_without_normalisation() {
+        let (table, motor) = sample_parts();
+        let base = sample_sim(&table, &motor, 5.0);
+        let mut earths = vec![Earth::default()];
+        earths.push(ecef(GravityModel::InverseSquare, crate::env::OMEGA_EARTH));
+        for earth in earths {
+            let mut b = base.clone();
+            b.earth = earth;
+            for i in [IntegratorKind::Rk4, IntegratorKind::Rk45, IntegratorKind::Dop853] {
+                let r = with(&b, i, AttitudeKind::LieGroup).run(Descent::Parachute, false).unwrap();
+                assert!(r.max_quat_norm_error < 1e-12, "{i:?}: |q|-1 = {:e}", r.max_quat_norm_error);
+            }
+        }
+    }
+
+    #[test]
+    fn dop853_needs_far_fewer_evaluations_than_rk45() {
+        // A smooth model: coefficients that are constant in Mach and linear in alpha are
+        // reproduced exactly by the table's linear interpolation, there is no wind (the power-law
+        // profile is singular at the ground) and the thrust curve starts and ends at zero. The
+        // tabulated aerodynamics of a real rocket are only piecewise linear, which limits the
+        // step size of any high-order method independently of its order.
+        let meta = TableMeta {
+            source_hash: String::new(),
+            ref_area: 0.01,
+            ref_diameter: 0.1,
+            length: 1.0,
+            machs: vec![0.0, 5.0],
+            alphas_deg: vec![0.0, 90.0],
+            extrapolation: Extrapolation::Clamp,
+        };
+        let table = AeroTable::from_fn(meta, |_, a| AeroCoeffs { cn: 0.2 * a, cna: 11.0, ca_on: 0.5, ca_off: 0.5, xcp: 1.0, ..Default::default() });
+        let motor = Motor::new("s".into(), 0.054, 0.5, 1.0, vec![(0.0, 0.0), (0.1, 800.0), (2.0, 800.0), (2.1, 0.0)]);
+        let mut base = sample_sim(&table, &motor, 0.0);
+        base.settings.output_interval = 0.5;
+        // (tolerance, required ratio dop853/rk45 evaluations)
+        for (tol, ratio) in [(1e-9, 0.6), (1e-11, 0.4)] {
+            base.settings.rtol = tol;
+            base.settings.atol = tol;
+            for at in [AttitudeKind::Normalize, AttitudeKind::LieGroup] {
+                let a = with(&base, IntegratorKind::Rk45, at).run(Descent::Ballistic, false).unwrap();
+                let d = with(&base, IntegratorKind::Dop853, at).run(Descent::Ballistic, false).unwrap();
+                println!("tol {tol:e}, {at:?}: rk45 {} evals, dop853 {} evals", a.evals, d.evals);
+                assert!((d.evals as f64) < ratio * a.evals as f64, "{tol:e} {at:?}: dop853 {} vs rk45 {}", d.evals, a.evals);
+                assert!((a.summary.apogee - d.summary.apogee).abs() < 0.05);
+            }
         }
     }
 }

@@ -151,9 +151,14 @@ impl Default for AeroCfg {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct SimCfg {
+    /// "rk4" (fixed step `dt`), "rk45" (adaptive Dormand-Prince 5(4)) or "dop853" (adaptive 8th order).
     pub integrator: sim::IntegratorKind,
+    /// Attitude update: "normalize" (quaternion renormalised after each step) or "lie_group"
+    /// (Runge-Kutta-Munthe-Kaas steps on SO(3); the quaternion stays unit-norm by construction).
+    pub attitude: sim::AttitudeKind,
+    /// Step of the rk4 integrator.
     pub dt: f64,
-    /// Tolerances of the adaptive integrator.
+    /// Tolerances of the adaptive integrators (rk45, dop853).
     pub rtol: f64,
     pub atol: f64,
     pub max_time: f64,
@@ -164,7 +169,7 @@ pub struct SimCfg {
 
 impl Default for SimCfg {
     fn default() -> Self {
-        Self { integrator: sim::IntegratorKind::Rk4, dt: 0.002, rtol: 1e-7, atol: 1e-6, max_time: 1200.0, output_interval: 0.05, descent: None }
+        Self { integrator: sim::IntegratorKind::Rk4, attitude: sim::AttitudeKind::Normalize, dt: 0.002, rtol: 1e-7, atol: 1e-6, max_time: 1200.0, output_interval: 0.05, descent: None }
     }
 }
 
@@ -295,8 +300,8 @@ impl Config {
         if self.sim.dt <= 0.0 || self.sim.output_interval <= 0.0 {
             bail!("sim.dt and sim.output_interval must be positive");
         }
-        if self.sim.integrator == sim::IntegratorKind::Rk45 && !(self.sim.rtol > 0.0 && self.sim.atol > 0.0) {
-            bail!("sim.rtol and sim.atol must be positive for integrator = \"rk45\"");
+        if self.sim.integrator.is_adaptive() && !(self.sim.rtol > 0.0 && self.sim.atol > 0.0) {
+            bail!("sim.rtol and sim.atol must be positive for the adaptive integrators (rk45, dop853)");
         }
         self.resources.validate()?;
         self.nose_direction()?;
@@ -373,6 +378,25 @@ mod tests {
         assert!(e.contains("roughness_length"), "{e}");
         assert!(parse(&sample.replace("model = \"us1976\"", "model = \"constant\"")).is_ok());
         assert!(parse(&sample.replace("integrator = \"rk4\"", "integrator = \"rk45\"")).is_ok());
+    }
+
+    #[test]
+    fn integrator_and_attitude_keys() {
+        let sample = include_str!("../../../examples/sample.toml");
+        let c = parse(sample).unwrap();
+        assert_eq!((c.sim.integrator, c.sim.attitude), (sim::IntegratorKind::Rk4, sim::AttitudeKind::Normalize));
+        let with = |i: &str, a: &str| sample.replace("integrator = \"rk4\"", &format!("integrator = \"{i}\"\nattitude = \"{a}\""));
+        let c = parse(&with("dop853", "lie_group")).unwrap();
+        assert_eq!((c.sim.integrator, c.sim.attitude), (sim::IntegratorKind::Dop853, sim::AttitudeKind::LieGroup));
+        for i in ["rk4", "rk45", "dop853"] {
+            for a in ["normalize", "lie_group"] {
+                assert!(parse(&with(i, a)).is_ok(), "{i} {a}");
+            }
+        }
+        assert!(parse(&with("rk4", "euler")).is_err());
+        assert!(parse(&with("rk8", "normalize")).is_err());
+        let e = parse(&with("dop853", "lie_group").replace("rtol = 1e-7", "rtol = 0.0")).unwrap_err().to_string();
+        assert!(e.contains("rtol"), "{e}");
     }
 
     #[test]

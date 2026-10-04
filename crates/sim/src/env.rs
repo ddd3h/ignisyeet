@@ -371,8 +371,28 @@ pub enum IntegratorKind {
     /// Fixed-step classical Runge-Kutta.
     #[default]
     Rk4,
-    /// Adaptive Dormand-Prince using `rtol` / `atol`.
+    /// Adaptive Dormand-Prince 5(4) using `rtol` / `atol`.
     Rk45,
+    /// Adaptive Dormand-Prince 8(5,3) (DOP853) using `rtol` / `atol`.
+    Dop853,
+}
+
+impl IntegratorKind {
+    /// Whether the step size is controlled by `rtol` / `atol`.
+    pub fn is_adaptive(self) -> bool {
+        self != IntegratorKind::Rk4
+    }
+}
+
+/// How the attitude quaternion is advanced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AttitudeKind {
+    /// Quaternion treated as 4 ordinary state components and renormalised after every step.
+    #[default]
+    Normalize,
+    /// Runge-Kutta-Munthe-Kaas on SO(3): `q <- q (x) exp(Theta)`, exactly unit-norm.
+    LieGroup,
 }
 
 #[cfg(test)]
@@ -389,6 +409,8 @@ mod tests {
         let c = AtmosphereConfig { model: AtmosphereKind::Constant, ..Default::default() };
         assert!(matches!(c.build().unwrap(), AtmosphereModel::Constant { .. }));
         assert_eq!(serde_json::from_str::<IntegratorKind>("\"rk45\"").unwrap(), IntegratorKind::Rk45);
+        assert_eq!(serde_json::from_str::<IntegratorKind>("\"dop853\"").unwrap(), IntegratorKind::Dop853);
+        assert_eq!(serde_json::from_str::<AttitudeKind>("\"lie_group\"").unwrap(), AttitudeKind::LieGroup);
     }
 
     fn cfg(model: WindModel) -> WindConfig {

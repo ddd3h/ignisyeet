@@ -8,6 +8,7 @@
 //! returns the auxiliary value of its last evaluation so callers can reuse it.
 
 use anyhow::{bail, Result};
+use crate::tableau::RkTableau;
 use geom::{Quat, Vec3};
 
 #[derive(Debug, Clone, Copy)]
@@ -75,7 +76,22 @@ const A: [[f64; 6]; 6] = [
     [9017.0 / 3168.0, -355.0 / 33.0, 46732.0 / 5247.0, 49.0 / 176.0, -5103.0 / 18656.0, 0.0],
     [35.0 / 384.0, 0.0, 500.0 / 1113.0, 125.0 / 192.0, -2187.0 / 6784.0, 11.0 / 84.0],
 ];
-const E: [f64; 7] = [71.0 / 57600.0, 0.0, -71.0 / 16695.0, 71.0 / 1920.0, -17253.0 / 339200.0, 22.0 / 525.0, -1.0 / 40.0];
+/// Error weights `b5 - b4` of the 7 stages.
+pub const E: [f64; 7] = [71.0 / 57600.0, 0.0, -71.0 / 16695.0, 71.0 / 1920.0, -17253.0 / 339200.0, 22.0 / 525.0, -1.0 / 40.0];
+
+/// The Dormand-Prince 5(4) tableau as an [`RkTableau`] with 7 stages (the 7th, FSAL, stage has
+/// weight 0 in `b`), for the Lie-group integrator.
+pub fn dopri5_tableau() -> RkTableau {
+    let mut c = vec![0.0];
+    c.extend_from_slice(&C);
+    let mut a = vec![vec![]];
+    for (i, row) in A.iter().enumerate() {
+        a.push(row[..=i].to_vec());
+    }
+    let mut b = A[5].to_vec();
+    b.push(0.0);
+    RkTableau { c, a, b, order: 5 }
+}
 
 pub const SAFETY: f64 = 0.9;
 pub const MIN_FACTOR: f64 = 0.2;
@@ -165,6 +181,13 @@ mod tests {
 
     fn init() -> State {
         State { pos: Vec3::new(1.0, 0.0, 0.0), vel: Vec3::ZERO, q: Quat::IDENTITY, w: Vec3::ZERO }
+    }
+
+    #[test]
+    fn dopri5_tableau_is_consistent() {
+        let t = dopri5_tableau();
+        t.check().unwrap();
+        assert_eq!(t.stages(), 7);
     }
 
     #[test]

@@ -161,6 +161,28 @@ pub fn tableau() -> RkTableau {
     }
 }
 
+/// Weights `(er, b - bhh)` (12 entries each) of the two embedded error estimates of
+/// `dop853.f`: `err_5 = h sum er_i k_i` and `err_3 = h sum (b_i - bhh_i) k_i`, so that
+/// `y_new - y_hat` for the 5th- and 3rd-order solutions respectively. Used by integrators that
+/// have to form the same estimates on components that are not plain vector-space ones
+/// (Lie-group attitude).
+pub fn error_weights() -> (Vec<f64>, Vec<f64>) {
+    let e5 = ER.to_vec();
+    let e3 = B.iter().zip(BHH.iter()).map(|(b, h)| b - h).collect();
+    (e5, e3)
+}
+
+/// Scaled error norm of `dop853.f` from the sums of squared scaled components
+/// (`sum5 = sum (e5_i/sk_i)^2`, `sum3 = sum (e3_i/sk_i)^2`, both computed WITHOUT the factor `h`),
+/// for `n` components: `|h| sum5 / sqrt(n (sum5 + 0.01 sum3))`.
+pub fn error_norm(h: f64, sum5: f64, sum3: f64, n: usize) -> f64 {
+    let mut deno = sum5 + 0.01 * sum3;
+    if deno <= 0.0 {
+        deno = 1.0;
+    }
+    h.abs() * sum5 * (1.0 / (n as f64 * deno)).sqrt()
+}
+
 /// Result of one DOP853 step on a state of length `n`.
 pub struct Dop853Step {
     /// Solution at `t + h` (8th order).
@@ -233,11 +255,7 @@ pub fn step(
         err2_sum += (e2 / sk) * (e2 / sk);
         err_sum += (e / sk) * (e / sk);
     }
-    let mut deno = err_sum + 0.01 * err2_sum;
-    if deno <= 0.0 {
-        deno = 1.0;
-    }
-    let err = h.abs() * err_sum * (1.0 / (n as f64 * deno)).sqrt();
+    let err = error_norm(h, err_sum, err2_sum, n);
 
     // The 13th function evaluation at the accepted end point.
     let mut k_new = vec![0.0; n];

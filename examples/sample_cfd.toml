@@ -103,7 +103,8 @@ roughness_length = 0.03    # log model [m]
 # profile = "wind.csv"     # profile model: CSV with columns altitude_m,speed,direction_deg
 
 [sim]
-integrator = "rk4"         # "rk4" | "rk45"
+integrator = "rk4"         # "rk4" | "rk45" | "dop853"
+# attitude = "normalize"   # "normalize" | "lie_group"
 dt = 0.002
 rtol = 1e-7                # rk45 only
 atol = 1e-6                # rk45 only

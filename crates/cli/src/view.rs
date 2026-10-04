@@ -71,6 +71,12 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
         }
     }
 
+    p.section("Resources");
+    let r = cfg.resources.resolve();
+    p.row("threads", val(r.threads, &format!("of {} available", r.available)));
+    p.row("memory", r.memory_bytes.map(|b| format!("{:.1} GB budget", b as f64 / 1e9)).unwrap_or_else(|| "no limit".into()));
+    p.row("nice", r.nice.to_string());
+
     if flight {
         p.section("Rocket");
         let r = &cfg.rocket;

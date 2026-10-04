@@ -83,12 +83,54 @@ fn parse_descent(s: &str) -> Result<Descent, String> {
     }
 }
 
+/// Loads the config and applies its `[resources]` (thread pools, priority, memory budget).
+fn load_config(path: &Path) -> Result<Config> {
+    let cfg = Config::load(path)?;
+    apply_resources(&cfg.resources.resolve());
+    Ok(cfg)
+}
+
+fn apply_resources(r: &config::Resolved) {
+    if let Some(w) = &r.warning {
+        match ui().mode {
+            ui::Mode::Quiet => eprintln!("warning: {w}"),
+            _ => ui().warn(w),
+        }
+    }
+    // Must run before any rayon use; an already-built pool (tests) is left alone.
+    let _ = rayon::ThreadPoolBuilder::new().num_threads(r.threads).build_global();
+    panel::set_parallelism(r.threads);
+    panel::set_memory_limit(r.memory_bytes);
+    if r.nice > 0 {
+        set_nice(r.nice);
+    }
+}
+
+#[cfg(unix)]
+fn set_nice(nice: i32) {
+    // SAFETY: plain syscall; children (SU2, mpirun, gmsh) inherit the priority.
+    let rc = unsafe { libc::setpriority(libc::PRIO_PROCESS, 0, nice) };
+    if rc != 0 {
+        ui().warn(format!("resources.nice = {nice} could not be applied: {}", std::io::Error::last_os_error()));
+    }
+}
+
+#[cfg(not(unix))]
+fn set_nice(_nice: i32) {
+    ui().warn("resources.nice is ignored on this platform");
+}
+
+fn cfd_budget(cfg: &Config) -> cfd::ResourceBudget {
+    let r = cfg.resources.resolve();
+    cfd::ResourceBudget { threads: r.threads, memory_bytes: r.memory_bytes }
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     ui::init(cli.quiet, cli.no_progress);
     match cli.cmd {
         Cmd::Geom { config } => {
-            let cfg = Config::load(&config)?;
+            let cfg = load_config(&config)?;
             begin(&cfg, &config, Sub::Geom);
             let step = ui().step("Extracting geometry");
             let g = geometry(&cfg)?;
@@ -97,22 +139,22 @@ fn main() -> Result<()> {
             show_geometry(&g, true);
         }
         Cmd::Aero { config, force } => {
-            let cfg = Config::load(&config)?;
+            let cfg = load_config(&config)?;
             begin(&cfg, &config, Sub::Aero);
             aero_table_for(&cfg, force, Sub::Aero)?;
         }
         Cmd::Sim { config, descent } => {
-            let cfg = Config::load(&config)?;
+            let cfg = load_config(&config)?;
             begin(&cfg, &config, Sub::Sim);
             run_sim(&cfg, descent)?
         }
         Cmd::Dispersion { config } => {
-            let cfg = Config::load(&config)?;
+            let cfg = load_config(&config)?;
             begin(&cfg, &config, Sub::Dispersion);
             run_dispersion(&cfg)?
         }
         Cmd::CfdCheck { config, mesh } => {
-            let cfg = Config::load(&config)?;
+            let cfg = load_config(&config)?;
             return cfd_check(&cfg, &config, mesh);
         }
         Cmd::SampleStl { path } => {
@@ -136,6 +178,11 @@ fn main() -> Result<()> {
 
 /// Banner and configuration summary (rich mode only).
 fn begin(cfg: &Config, config_path: &Path, sub: Sub) {
+    if ui().plain() {
+        let r = cfg.resources.resolve();
+        let mem = r.memory_bytes.map(|b| format!("{:.1} GB", b as f64 / 1e9)).unwrap_or_else(|| "no limit".into());
+        println!("Resources: threads {} of {} available, memory {mem}, nice {}", r.threads, r.available, r.nice);
+    }
     if !ui().rich() {
         return;
     }
@@ -411,7 +458,7 @@ fn cfd_table(cfg: &Config, g: Geometry, hash: String, path: &Path, start: std::t
     };
     let out_dir = cfg.out_dir();
     let raw = if cfg.aero.cfd.surface == cfd::SurfaceKind::Stl { Some(raw_stl(cfg)?) } else { None };
-    let built = cfd::build_table_with_progress(&g, &cfg.aero.cfd, &aero_options(cfg), &out_dir, hash, cfg.aero.extrapolation, &cfd::ResourceBudget::default(), raw.as_deref(), &progress);
+    let built = cfd::build_table_with_progress(&g, &cfg.aero.cfd, &aero_options(cfg), &out_dir, hash, cfg.aero.extrapolation, &cfd_budget(cfg), raw.as_deref(), &progress);
     pb.finish_and_clear();
     let (table, report) = built?;
     table.save(path)?;
@@ -454,7 +501,7 @@ fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
         let g = geometry(cfg)?;
         let raw = if opt.surface == cfd::SurfaceKind::Stl { Some(raw_stl(cfg)?) } else { None };
         let t = std::time::Instant::now();
-        let m = cfd::mesh_only(&g, opt, &aero_options(cfg), &cfg.out_dir(), &cfd::ResourceBudget::default(), raw.as_deref())?;
+        let m = cfd::mesh_only(&g, opt, &aero_options(cfg), &cfg.out_dir(), &cfd_budget(cfg), raw.as_deref())?;
         let s = &m.stats;
         println!(
             "Mesh {} ({}): {} nodes, {} cells, {} wall triangles, {:.1?}",
@@ -927,5 +974,16 @@ mod tests {
         // A panel table needs the STL, which this directory does not have.
         cfg.aero.method = config::AeroMethod::Panel;
         assert!(aero_table(&cfg, false).is_err());
+    }
+
+    #[test]
+    fn resources_do_not_change_the_hash() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+        let text = include_str!("../../../examples/sample.toml");
+        let load = |t: &str| Config::from_value(toml::from_str(t).unwrap(), Some(&dir)).unwrap();
+        let a = load(text);
+        let b = load(&text.replace("threads = 0 ", "threads = 1 ").replace("memory_gb = 0 ", "memory_gb = 4 ").replace("nice = 0 ", "nice = 5 "));
+        assert_eq!((b.resources.threads, b.resources.nice), (1, 5));
+        assert_eq!(source_hash(&a).unwrap(), source_hash(&b).unwrap());
     }
 }

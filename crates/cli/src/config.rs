@@ -27,6 +27,8 @@ pub struct Config {
     pub sim: SimCfg,
     #[serde(default)]
     pub dispersion: sim::DispersionConfig,
+    #[serde(default)]
+    pub resources: ResourcesCfg,
     #[serde(skip)]
     pub base_dir: PathBuf,
 }
@@ -166,6 +168,56 @@ impl Default for SimCfg {
     }
 }
 
+/// Compute resources IgnisYeet may use. They never change results, so they are not part of the aero hash.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, default)]
+pub struct ResourcesCfg {
+    /// Maximum number of CPU threads for everything; 0 = all available.
+    pub threads: usize,
+    /// Memory budget in GB for heavy steps (CFD cases, the panel dense matrix); 0 = no limit.
+    pub memory_gb: f64,
+    /// Process priority lowering, 0..=19 (0 = unchanged).
+    pub nice: i32,
+}
+
+/// [`ResourcesCfg`] with defaults and clamping applied.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Resolved {
+    pub threads: usize,
+    pub available: usize,
+    pub memory_bytes: Option<u64>,
+    pub nice: i32,
+    /// Set when the requested thread count was clamped.
+    pub warning: Option<String>,
+}
+
+impl ResourcesCfg {
+    pub fn validate(&self) -> Result<()> {
+        if !self.memory_gb.is_finite() || self.memory_gb < 0.0 {
+            bail!("resources.memory_gb must be 0 (no limit) or positive");
+        }
+        if !(0..=19).contains(&self.nice) {
+            bail!("resources.nice must be between 0 and 19");
+        }
+        Ok(())
+    }
+
+    pub fn resolve(&self) -> Resolved {
+        let available = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
+        let mut warning = None;
+        let threads = if self.threads == 0 {
+            available
+        } else if self.threads > available {
+            warning = Some(format!("resources.threads = {} exceeds the {available} available threads; using {available}", self.threads));
+            available
+        } else {
+            self.threads
+        };
+        let memory_bytes = (self.memory_gb > 0.0).then_some((self.memory_gb * 1e9) as u64);
+        Resolved { threads, available, memory_bytes, nice: self.nice, warning }
+    }
+}
+
 fn yes() -> bool {
     true
 }
@@ -246,6 +298,7 @@ impl Config {
         if self.sim.integrator == sim::IntegratorKind::Rk45 && !(self.sim.rtol > 0.0 && self.sim.atol > 0.0) {
             bail!("sim.rtol and sim.atol must be positive for integrator = \"rk45\"");
         }
+        self.resources.validate()?;
         self.nose_direction()?;
         Ok(())
     }
@@ -332,6 +385,30 @@ mod tests {
         let bad = text.replace("alphas_deg = [0, 4]", "alphas_deg = [2, 4]");
         assert!(parse(&bad).unwrap_err().to_string().contains("include 0"));
         assert!(parse(&(text + "bogus = 1\n")).is_err());
+    }
+
+    #[test]
+    fn resources_section() {
+        let sample = include_str!("../../../examples/sample.toml");
+        let c = parse(sample).unwrap();
+        assert_eq!(c.resources.threads, 0);
+        // drop the sample's own [resources] section so the tests can append theirs
+        let sample = sample.replace("[resources]\nthreads = 0 ", "[resources_x]\n#").replace("memory_gb = 0 ", "#").replace("nice = 0 ", "#").replace("[resources_x]", "");
+        let sample = sample.as_str();
+        let r = c.resources.resolve();
+        assert_eq!(r.threads, r.available);
+        assert_eq!(r.memory_bytes, None);
+        let c = parse(&format!("{sample}\n[resources]\nthreads = 1\nmemory_gb = 2.5\nnice = 10\n")).unwrap();
+        let r = c.resources.resolve();
+        assert_eq!((r.threads, r.memory_bytes, r.nice), (1, Some(2_500_000_000), 10));
+        assert!(r.warning.is_none());
+        let c = parse(&format!("{sample}\n[resources]\nthreads = 100000\n")).unwrap();
+        let r = c.resources.resolve();
+        assert_eq!(r.threads, r.available);
+        assert!(r.warning.unwrap().contains("exceeds"));
+        for bad in ["memory_gb = -1", "nice = 20", "nice = -1", "bogus = 1"] {
+            assert!(parse(&format!("{sample}\n[resources]\n{bad}\n")).is_err(), "{bad}");
+        }
     }
 
     #[test]

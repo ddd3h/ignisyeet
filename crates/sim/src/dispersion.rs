@@ -580,6 +580,24 @@ mod tests {
     }
 
     #[test]
+    fn thread_count_does_not_change_results() {
+        let (t, m) = (table(), motor());
+        let b = base(&t, &m);
+        let cfg = MonteCarloConfig { samples: 12, seed: 5, ..Default::default() };
+        let dcfg = DispersionConfig { wind_speeds: vec![2.0, 6.0], directions: 4, ..Default::default() };
+        let go = |n: usize| {
+            rayon::ThreadPoolBuilder::new().num_threads(n).build().unwrap().install(|| {
+                let mc = run_monte_carlo(&cfg, &b, true).unwrap();
+                let (_, grid) = run(&dcfg, &b, true).unwrap();
+                (landings(&mc), format!("{grid:?}"))
+            })
+        };
+        let one = go(1);
+        assert_eq!(one, go(4));
+        assert_eq!(one, go(7));
+    }
+
+    #[test]
     fn perturbations_act_as_documented() {
         let (t, m) = (table(), motor());
         let b = base(&t, &m);

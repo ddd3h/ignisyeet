@@ -660,6 +660,7 @@ dependencies = [
  "console",
  "geom",
  "indicatif",
+ "libc",
  "panel",
  "rayon",
  "serde",

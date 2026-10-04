@@ -274,6 +274,47 @@ pub enum PanelStage {
     Done,
 }
 
+static MEMORY_LIMIT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Sets the parallelism of the dense LU solver (faer): 1 runs sequentially, `n > 1` uses `n` rayon
+/// threads and 0 uses the whole current rayon pool. Matrix assembly follows the caller's rayon pool.
+pub fn set_parallelism(threads: usize) {
+    use faer::Par;
+    faer::set_global_parallelism(match threads {
+        0 => Par::rayon(0),
+        1 => Par::Seq,
+        n => Par::rayon(n),
+    });
+}
+
+/// Sets the memory budget [bytes] checked before the dense solve; `None` = no limit.
+pub fn set_memory_limit(bytes: Option<u64>) {
+    MEMORY_LIMIT.store(bytes.unwrap_or(0), std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Peak memory [bytes] of the dense solve for `n` panels: the assembled matrix and its LU factor
+/// (two `n x n` f64 matrices coexist), plus the right-hand sides.
+pub fn dense_solve_bytes(n: usize) -> u64 {
+    let n = n as u64;
+    16 * n * n + 64 * n
+}
+
+/// Fails when the dense solve of `n` panels exceeds `limit`.
+pub fn check_memory(n: usize, limit: Option<u64>) -> Result<()> {
+    if let Some(limit) = limit {
+        let need = dense_solve_bytes(n);
+        if need > limit {
+            bail!(
+                "the panel method needs about {:.2} GB for {n} panels (dense matrix), above resources.memory_gb = {:.3}; \
+                 use coarser panel settings (body_axial, body_circ, fin_chord, fin_span) or raise the budget",
+                need as f64 / 1e9,
+                limit as f64 / 1e9
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Builds the aerodynamic table with the panel method.
 pub fn build_table(
     geom: &Geometry,
@@ -306,6 +347,10 @@ pub fn build_table_with_progress(
     progress(PanelStage::Mesh { subsonic_solves: machs_sub.len() });
     let mesh = Mesh::from_geometry(geom, panel)?;
     progress(PanelStage::MeshReady { panels: mesh.panels.len(), wake_panels: mesh.wake_panels.len() });
+    check_memory(mesh.panels.len(), match MEMORY_LIMIT.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => None,
+        b => Some(b),
+    })?;
     let s_ref = geom.ref_area;
 
     // Subsonic solutions (Goethert-scaled incompressible problems).

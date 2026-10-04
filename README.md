@@ -164,6 +164,7 @@ Configuration is written in TOML. Relative paths are resolved against **the dire
 | Section | Main contents |
 |---|---|
 | `[output]` | Output directory `dir`, `kml` switch for the Google Earth file |
+| `[resources]` | Compute resources: `threads` (CPU thread cap, 0 = all available), `memory_gb` (budget for the panel matrix and CFD cases, 0 = no limit), `nice` (0 to 19, lowers the process priority) |
 | `[rocket]` | STL path and unit `stl_scale`, `nose_direction`, dry mass, center of gravity, moments of inertia, roughness, fin leading- and trailing-edge shapes, `extra_cd`, `[rocket.fin_override]` (manual fin specification) |
 | `[motor]` | RASP `.eng` file, motor aft position `aft_x`, nozzle exit diameter, override of the propellant mass |
 | `[launch]` | Latitude, longitude, elevation, rail length, elevation angle, azimuth |

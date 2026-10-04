@@ -24,3 +24,6 @@ panel.workspace = true
 cfd.workspace = true
 indicatif.workspace = true
 console.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

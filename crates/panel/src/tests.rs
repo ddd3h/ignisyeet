@@ -249,3 +249,19 @@ fn supersonic_comparison_with_barrowman() {
     }
     assert!(peak <= 1.35 * c08, "CNa peak {peak} vs M=0.8 value {c08}");
 }
+
+#[test]
+fn memory_estimate_and_check() {
+    assert_eq!(dense_solve_bytes(1000), 16_000_000 + 64_000);
+    assert!(check_memory(1000, None).is_ok());
+    assert!(check_memory(1000, Some(17_000_000)).is_ok());
+    let e = check_memory(10_000, Some(1_000_000_000)).unwrap_err().to_string();
+    assert!(e.contains("coarser") && e.contains("resources.memory_gb"), "{e}");
+}
+
+#[test]
+fn build_table_fails_early_over_memory_budget() {
+    let g = geometry(&SampleRocket::default());
+    let r = check_memory(Mesh::from_geometry(&g, &coarse()).unwrap().panels.len(), Some(1000));
+    assert!(r.is_err());
+}

@@ -713,10 +713,58 @@ def cfd_study(f, out, pn, data):
     f.save(fig, "cfd_asymmetry")
 
 
+def read_stl(path):
+    """Triangles of a binary or ASCII STL as an array of shape (n, 3, 3)."""
+    data = Path(path).read_bytes()
+    if data[:5] == b"solid" and b"facet" in data[:1024]:
+        v = [list(map(float, l.split()[1:4])) for l in data.decode().splitlines() if l.strip().startswith("vertex")]
+        return np.array(v).reshape(-1, 3, 3)
+    n = int.from_bytes(data[80:84], "little")
+    rec = np.frombuffer(data[84:84 + 50 * n], dtype=np.dtype([("n", "<f4", 3), ("v", "<f4", (3, 3)), ("a", "<u2")]))
+    return rec["v"].astype(float)
+
+
+def stl_mesh(f):
+    """The sample rocket STL drawn as its triangles: whole body and a close-up of the tail."""
+    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+    tris = read_stl(Path(__file__).resolve().parents[2] / "examples" / "sample_rocket.stl")
+    # STL is in mm with the nose towards +z; lay it on its side (x along the body) for the page.
+    t = tris[:, :, [2, 0, 1]].copy()
+    t[:, :, 0] *= -1
+    nrm = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
+    nrm /= np.linalg.norm(nrm, axis=1, keepdims=True) + 1e-30
+    light = np.array([-0.3, -0.8, 0.5])
+    light /= np.linalg.norm(light)
+    shade = 0.25 + 0.75 * np.clip(np.abs(nrm @ light), 0, 1) ** 1.5
+    hi_c, lo_c = np.array(matplotlib.colors.to_rgb("#9ec5f4")), np.array(matplotlib.colors.to_rgb("#184f95"))
+    face = lo_c[None, :] + (hi_c - lo_c)[None, :] * shade[:, None]
+
+    fig = plt.figure(figsize=(10, 4.6))
+    views = [
+        (fig.add_axes([0.0, 0.05, 0.62, 0.9], projection="3d"), None, 0.0),
+        (fig.add_axes([0.6, 0.0, 0.42, 1.0], projection="3d"), (1150, 1500), 0.35),
+    ]
+    for ax, xlim, lw in views:
+        sel = t if xlim is None else t[(t[:, :, 0].max(axis=1) >= xlim[0]) & (t[:, :, 0].min(axis=1) <= xlim[1])]
+        fc = face if xlim is None else face[(t[:, :, 0].max(axis=1) >= xlim[0]) & (t[:, :, 0].min(axis=1) <= xlim[1])]
+        ax.add_collection3d(Poly3DCollection(sel, facecolors=fc, edgecolors=(0.05, 0.12, 0.25, 0.55) if lw else "none", linewidths=lw, alpha=1.0))
+        lo, hi = sel.reshape(-1, 3).min(axis=0), sel.reshape(-1, 3).max(axis=0)
+        ax.set_xlim(lo[0], hi[0]); ax.set_ylim(lo[1], hi[1]); ax.set_zlim(lo[2], hi[2])
+        ax.set_box_aspect(hi - lo)
+        ax.view_init(elev=22, azim=-62)
+        ax.set_axis_off()
+    fig.savefig(f.out / "stl_mesh.svg", bbox_inches="tight")
+    fig.savefig(f.out / "stl_mesh.pdf", bbox_inches="tight")
+    plt.close(fig)
+    print("plot  stl_mesh.svg")
+
+
 def main():
     out, figdir = Path(sys.argv[1]), Path(sys.argv[2])
     f = Figs(figdir)
     theory(f)
+    stl_mesh(f)
     rigid_body(f)
     from_outputs(f, out)
     if len(sys.argv) > 3:

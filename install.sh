@@ -112,22 +112,35 @@ repeat() { local i s=""; for ((i = 0; i < $2; i++)); do s="$s$1"; done; printf '
 
 strip_ansi() { printf '%s' "$1" | sed $'s/\033\\[[0-9;?]*[a-zA-Z]//g'; }
 
+# The summary box buffers its rows so its width can follow the longest line
+# (at least BOXW, at most the terminal width).
+BOX_TITLE=""
+BOX_ROWS=()
 box_top() {
-  local title="$1" plain
-  plain=$(strip_ansi "$title")
-  say "${GREY}${B_TL}${B_H} ${RESET}${BOLD}${title}${RESET}${GREY} $(repeat "$B_H" $((BOXW - ${#plain} - 5)))${B_TR}${RESET}"
+  BOX_TITLE="$1"
+  BOX_ROWS=()
 }
-box_row() {
-  local plain pad
-  plain=$(strip_ansi "$1")
-  pad=$((BOXW - ${#plain} - 4))
-  if [ "$pad" -lt 0 ]; then say "${GREY}${B_V}${RESET} $1"; return; fi # too long: leave the border open
-  say "${GREY}${B_V}${RESET} $1$(repeat ' ' "$pad") ${GREY}${B_V}${RESET}"
-}
+box_row() { BOX_ROWS+=("$1"); }
 # cmdpath PATH: like tilde, but with $HOME (safe inside double quotes when the user pastes the command)
 cmdpath() { case "$1" in "$HOME"/*) printf '$HOME%s' "${1#"$HOME"}" ;; *) printf '%s' "$1" ;; esac; }
 tilde() { case "$1" in "$HOME"/*) printf '~%s' "${1#"$HOME"}" ;; *) printf '%s' "$1" ;; esac; }
-box_bottom() { say "${GREY}${B_BL}$(repeat "$B_H" $((BOXW - 2)))${B_BR}${RESET}"; }
+box_bottom() {
+  local w=$BOXW max=$((COLS - 2)) row plain pad title_plain
+  for row in "${BOX_ROWS[@]}"; do
+    plain=$(strip_ansi "$row")
+    [ $((${#plain} + 4)) -gt "$w" ] && w=$((${#plain} + 4))
+  done
+  [ "$w" -gt "$max" ] && w=$max
+  title_plain=$(strip_ansi "$BOX_TITLE")
+  say "${GREY}${B_TL}${B_H} ${RESET}${BOLD}${BOX_TITLE}${RESET}${GREY} $(repeat "$B_H" $((w - ${#title_plain} - 5)))${B_TR}${RESET}"
+  for row in "${BOX_ROWS[@]}"; do
+    plain=$(strip_ansi "$row")
+    pad=$((w - ${#plain} - 4))
+    if [ "$pad" -lt 0 ]; then say "${GREY}${B_V}${RESET} $row"; continue; fi # wider than the terminal: leave the border open
+    say "${GREY}${B_V}${RESET} $row$(repeat ' ' "$pad") ${GREY}${B_V}${RESET}"
+  done
+  say "${GREY}${B_BL}$(repeat "$B_H" $((w - 2)))${B_BR}${RESET}"
+}
 
 banner() {
   local c1 c2 c3 c4 c5 on="█" sp=" "
@@ -994,7 +1007,8 @@ summary() {
     local ex; ex="$(cmdpath "$DATA_ROOT")/current/examples"
     [ "${PATH_MISSING:-0}" = 1 ] && box_row "  ${CYAN}export PATH=\"$(cmdpath "$BIN_DIR"):\$PATH\"${RESET}"
     box_row "  ${CYAN}ignisyeet --help${RESET}"
-    box_row "  ${CYAN}cp -r $ex ignisyeet-examples && cd ignisyeet-examples${RESET}"
+    box_row "  ${CYAN}cp -r $ex ignisyeet-examples${RESET}"
+    box_row "  ${CYAN}cd ignisyeet-examples${RESET}"
     box_row "  ${CYAN}ignisyeet sim sample.toml${RESET}"
     box_row "  ${CYAN}ignisyeet-plot all out${RESET}"
   else

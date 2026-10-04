@@ -80,7 +80,7 @@ impl Fidelity {
         if self.max_error() > self.fail_above {
             bail!(
                 "STL geometry error {:.3e} m (CFD wall vs union {:.3e} m, wall vs input STL {:.3e} m) exceeds max_geometry_error {:.3e} m; \
-                 use stl_remesh = false, a smaller wall_size, or raise max_geometry_error",
+                 use stl_remesh = \"none\", a smaller wall_size, or raise max_geometry_error",
                 self.max_error(),
                 self.cfd_vs_union.max,
                 self.cfd_wall_vs_input.max,

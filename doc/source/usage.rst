@@ -47,6 +47,77 @@ Python
 インストール
 ------------
 
+インストーラ
+~~~~~~~~~~~~
+
+Linux（x86_64、aarch64）と macOS（Intel、Apple Silicon）では、次の 1 行でインストールできる。
+
+.. code-block:: sh
+
+   curl -fsSL https://raw.githubusercontent.com/ddd3h/ignisyeet/main/install.sh | bash
+
+インストーラは最初に利用者（user）か開発者（developer）かを尋ね、
+すでに入っているツール（cargo、uv、python3、git、conda や micromamba、既存の ``ignisyeet-cfd`` 環境、SU2、gmsh、TeX など）を検出して一覧にする。
+入っているものは再インストールせず、足りないものだけを入れる。再実行しても安全である。
+
+user
+   GitHub のリリースから自分のプラットフォーム用のバイナリを取得し、SHA-256 を検証してから
+   ``~/.local/bin/ignisyeet`` に置く。例題と ``python/plot.py`` は ``~/.local/share/ignisyeet/<バージョン>`` に入り、
+   ``current`` というリンクが最新版を指す。作図用の環境（uv、なければ ``venv`` と ``pip``）と、
+   それを使う ``ignisyeet-plot`` コマンドも用意する。ドキュメント作成用のツールは入れない。
+
+developer
+   git でリポジトリを取得（既存の clone があれば再利用し、変更がなければ ``git pull`` する）し、
+   ``cargo`` がなければ ``rustup`` を入れ、``cargo build --release`` と ``cargo test --release`` を実行する。
+   ``python/`` と ``doc/`` の環境は ``uv sync`` で作る。
+   TeX Live、dvisvgm、mutool、inkscape、IPAex フォントのうち足りないものは、
+   実行すべき ``apt`` または ``brew`` のコマンドを表示する（``sudo`` はインストーラ自身は実行しない）。
+
+どちらの役割でも、CFD ツール（SU2、gmsh、Open MPI。conda-forge から約 3 GB）を任意で入れられる。
+既存の micromamba、mamba、conda と既存の ``ignisyeet-cfd`` 環境があればそれを使う。
+x86_64 の Linux で AVX-512 のない CPU では、SU2 8.5.0 のパッケージが異常終了するため、SU2 を 8.3.0 に固定する。
+インストール後に、設定ファイルの ``[aero.cfd] prefix`` に書く値（または環境変数 ``IGNISYEET_CFD_PREFIX``）を表示する。
+
+主なオプションは ``bash -s --`` の後ろに付ける。
+
+.. code-block:: sh
+
+   curl -fsSL https://raw.githubusercontent.com/ddd3h/ignisyeet/main/install.sh | bash -s -- --developer --cfd -y
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - オプション
+     - 内容
+   * - ``--user`` ``--developer``
+     - 役割を尋ねずに指定する
+   * - ``--cfd`` ``--no-cfd``
+     - CFD ツールを入れる、入れない
+   * - ``--version vX.Y.Z``
+     - 入れるリリース（既定は最新）。developer ではチェックアウトするタグ
+   * - ``--prefix DIR``
+     - インストール先（既定は ``~/.local``）
+   * - ``--dir DIR``
+     - developer の clone 先（既定は実行した clone、なければ ``~/ignisyeet``）
+   * - ``-y`` ``--yes``
+     - 質問せず既定値を使う（user、CFD なし、シェル設定ファイルは書き換えない）
+   * - ``--dry-run``
+     - 計画だけを表示して終了する
+   * - ``--uninstall``
+     - バイナリ、リンク、リリースデータを削除する。作図環境と CFD 環境は確認してから削除する（``--purge`` で両方）。developer の clone は明示的に確認したときだけ削除する
+
+各オプションには環境変数（``IGNISYEET_VERSION``、``IGNISYEET_PREFIX``、``IGNISYEET_CFD`` など）も対応する。
+``NO_COLOR`` を設定するか、端末でない場所へ出力すると、装飾のない行単位の出力になる。
+実行内容は ``~/.local/share/ignisyeet/install.log`` に記録される。
+リリースの配布物は ``ignisyeet-<バージョン>-<ターゲット>.tar.gz`` と ``.sha256`` であり、
+インストーラはチェックサムを検証してから展開する。
+
+ソースからのビルド
+~~~~~~~~~~~~~~~~~~
+
+インストーラを使わずに、リポジトリから直接ビルドすることもできる。
+
 .. code-block:: sh
 
    git clone https://github.com/ddd3h/ignisyeet.git

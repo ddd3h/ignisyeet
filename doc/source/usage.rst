@@ -22,7 +22,7 @@
 Rust と Python について
 ~~~~~~~~~~~~~~~~~~~~~~~
 
-IgnisYeet は、計算の重い部分を Rust、作図を Python で書いている。二つの言語の特徴と、この役割分担にした理由を簡単に述べる。
+IgnisYeet は、計算の重い部分を `Rust <https://www.rust-lang.org/>`__、作図を `Python <https://www.python.org/>`__ で書いている。二つの言語の特徴と、この役割分担にした理由を簡単に述べる。
 
 Rust
    コンパイルして機械語の実行ファイルを作る言語で、C や C++ と同程度の速さで動く。

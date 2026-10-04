@@ -197,8 +197,8 @@ Dormand–Prince 法（``rk45``）
 .. math::
    :label: eq-dopri
 
-   \bm{k}_i=\bm{f}\!\left(t+c_ih,\ \bm{y}_n+h\sum_{j<i}a_{ij}\bm{k}_j\right)\ (i=2,\dots,6),\qquad
-   \bm{y}_{n+1}=\bm{y}_n+h\sum_{j=1}^{6}b_j\bm{k}_j,\qquad
+   \bm{k}_i&=\bm{f}\!\left(t+c_ih,\ \bm{y}_n+h\sum_{j<i}a_{ij}\bm{k}_j\right)\quad (i=2,\dots,6),\\
+   \bm{y}_{n+1}&=\bm{y}_n+h\sum_{j=1}^{6}b_j\bm{k}_j,\qquad
    \bm{k}_7=\bm{f}(t+h,\ \bm{y}_{n+1})
 
 とする。係数は\ :eq:`eq-butcher` の Butcher 表 :cite:`dormand` のとおりで、5 次の解の重み :math:`b_j` は第 6 段の行（:math:`c_6=1`）と同じである。
@@ -470,9 +470,9 @@ Lie 環 so(3) を :math:`\mathbb{R}^3` と同一視し、括弧積を外積と�
 .. math::
    :label: eq-lie-series
 
-   \frac{1-\cos s}{s^2}=\frac12-\frac{s^2}{24}+\frac{s^4}{720}-\cdots,\quad
-   \frac{s-\sin s}{s^3}=\frac16-\frac{s^2}{120}+\frac{s^4}{5040}-\cdots,\quad
-   \frac1{s^2}\left(1-\frac s2\cot\frac s2\right)=\frac1{12}+\frac{s^2}{720}+\frac{s^4}{30240}+\cdots
+   \frac{1-\cos s}{s^2}&=\frac12-\frac{s^2}{24}+\frac{s^4}{720}-\cdots,\\
+   \frac{s-\sin s}{s^3}&=\frac16-\frac{s^2}{120}+\frac{s^4}{5040}-\cdots,\\
+   \frac1{s^2}\left(1-\frac s2\cot\frac s2\right)&=\frac1{12}+\frac{s^2}{720}+\frac{s^4}{30240}+\cdots
 
 で評価する。:math:`\mathrm{dexp}^{-1}` は :math:`s=2\pi` で特異になるが、1 ステップの回転角はそれよりずっと小さい。
 

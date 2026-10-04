@@ -162,9 +162,9 @@ IgnisYeet では、抽出した半径分布を断面ごとの円錐台の連な�
 
 .. math::
 
-   K_1=\frac{2}{\beta},\qquad
-   K_2=\frac{(\gamma+1)M^4-4\beta^2}{4\beta^4},\qquad
-   K_3=\frac{(\gamma+1)M^8+(2\gamma^2-7\gamma-5)M^6+10(\gamma+1)M^4+8}{6\beta^7}
+   K_1&=\frac{2}{\beta},\qquad
+   K_2=\frac{(\gamma+1)M^4-4\beta^2}{4\beta^4},\\
+   K_3&=\frac{(\gamma+1)M^8+(2\gamma^2-7\gamma-5)M^6+10(\gamma+1)M^4+8}{6\beta^7}
 
 である。迎角 :math:`\alpha` の平板では下面が :math:`\eta=+\alpha`、上面が :math:`\eta=-\alpha` なので、両面の差をとると :math:`K_2` の項は打ち消し合い、
 

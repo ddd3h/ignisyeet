@@ -803,7 +803,9 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - 必須
      - 頂点から開傘までの遅れ [s]
 
-``[aero]``
+.. _sec-config-aero:
+
+``[aero]``\ （手法の選び方は :ref:`sec-aero-select`）
 
 .. list-table::
    :header-rows: 1
@@ -818,7 +820,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
        ``"table"`` は外部の係数表の読み込み、``"panel"`` はパネル法（:doc:`panel`）、``"cfd"`` は SU2 による CFD（:doc:`cfd`）
    * - ``table``
      - なし
-     - ``method = "table"`` のとき必須。係数表の CSV ファイル（形式は後述）
+     - ``method = "table"`` のとき必須。係数表の CSV ファイル（:ref:`sec-usage-external-table`、形式は :ref:`sec-aero-table-format`）
    * - ``mach_min`` / ``mach_max`` / ``mach_step``
      - ``0`` / ``3`` / ``0.02``
      - 係数表の Mach 数の範囲と刻み
@@ -836,10 +838,10 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - 表の範囲外の扱い: ``"linear"`` （線形外挿）または ``"clamp"`` （端の値で一定）
    * - ``table_kind``
      - ``"axisymmetric"``
-     - 飛翔計算に使う係数表の種類。``"axisymmetric"`` （全迎角の軸対称表）または ``"general"`` （迎角と横滑り角の 6 成分の一般表。軸対称表から展開して作る。:ref:`sec-aero-table`）
+     - 飛翔計算に使う係数表の種類。``"axisymmetric"`` （全迎角の軸対称表）または ``"general"`` （迎角と横滑り角の 6 成分の一般表。:ref:`sec-aero-table`）
    * - ``general_mach_step``
      - ``0.05``
-     - ``table_kind = "general"`` で ``method = "barrowman"`` のときの Mach 数の刻み（正）
+     - ``table_kind = "general"`` で ``method = "barrowman"`` のときの Mach 数の刻み（正。:ref:`sec-aero-table-format`）
 
 ``[aero.panel]``\ （``method = "panel"`` のときだけ使う）
 
@@ -872,9 +874,9 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - ``"biconvex"``
      - フィンの断面形状（現在は両凸のみ）
 
-各項目の意味と、パネル法が出力する ``panel_cp.csv`` は :doc:`panel` で説明する。
+各項目の意味は :doc:`panel`、``panel_cp.csv`` の列は :ref:`sec-file-panel-cp` で説明する。
 
-``[aero.cfd]``\ （``method = "cfd"`` のときだけ使う。SU2、gmsh、Open MPI が必要で、``surface = "stl"`` では manifold3d も要る。設定と計算の流れは :doc:`cfd` で説明する）
+``[aero.cfd]``\ （``method = "cfd"`` のときだけ使う。SU2、gmsh、Open MPI が必要で、``surface = "stl"`` では manifold3d も要る。使い方は :doc:`cfd`、内部は :doc:`cfd_internals` で説明する）
 
 .. list-table::
    :header-rows: 1
@@ -886,7 +888,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - 意味
    * - ``model``
      - ``"euler"``
-     - 支配方程式。``"euler"`` は非粘性の Euler 方程式（粘性の抗力項は部品積み上げ法で補う）、``"rans"`` は Spalart–Allmaras モデルの RANS（検証できていない）
+     - 支配方程式。``"euler"`` は非粘性の Euler 方程式（粘性の抗力項は部品積み上げ法で補う）、``"rans"`` は Spalart–Allmaras モデルの RANS（検証できていないので、結果を頼らない。:doc:`cfd`）
    * - ``machs``
      - ``[0.3, 0.6, 0.8, 0.95, 1.1, 1.3, 1.6, 2.0, 2.5, 3.0]``
      - 解く Mach 数（正、昇順、重複なし）
@@ -899,21 +901,20 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
        ``"offset"`` は :math:`\alpha=0` の値を引く、``"single"`` は結果をそのまま使う
    * - ``z_mirror_mesh``
      - ``true``
-     - 1/4 領域をメッシュにして :math:`z=0` で鏡映し、:math:`z` について厳密に対称な半モデルのメッシュにする。``panel_mesh`` ではフィンの配置が :math:`z` について対称でないとき、``stl`` では和の表面が :math:`z=0` について鏡映対称と確かめられないとき（:ref:`sec-cfd-stl-symmetry`）は無視する
+     - 1/4 領域をメッシュにして :math:`z=0` で鏡映し、:math:`z` について厳密に対称なメッシュにするか。形状が :math:`z` について対称でないときは無視する（:ref:`sec-cfd-stl-symmetry`）
    * - ``symmetry``
      - ``true``
-     - ピッチ面（:math:`y=0`）で切った半モデルを使ってよいか。半モデルは、形状が :math:`y=0` について対称（``panel_mesh`` はフィンの配置、``stl`` は和の表面の検査）で、``shape_symmetry`` に :math:`y=0` の鏡映が含まれ、``betas_deg = [0]`` で、ロール減衰のケースがないときだけ使う。
-       それ以外と ``false`` は全領域（形状が対称なら半球または半領域のメッシュを鏡映、そうでなければ箱）
+     - ピッチ面（:math:`y=0`）で切った半モデルを使ってよいか。半モデルを使うのは、形状が :math:`y=0` について対称で、``shape_symmetry`` に :math:`y=0` の鏡映が含まれ、``betas_deg = [0]`` で、ロール減衰のケースがないときだけである。それ以外と ``false`` は全領域を解く（領域の作り方は :ref:`sec-cfd-stl-symmetry`）
    * - ``surface``
      - ``"panel_mesh"``
-     - 壁面の形状。``"panel_mesh"``\ （別名 ``"cad"``）は抽出した胴体とフィンを OpenCASCADE で再構成する。``"stl"`` は入力の STL をそのまま使い、重なった殻を manifold3d で和にする（:ref:`sec-cfd-stl`）
+     - 壁面の形状。``"panel_mesh"``\ （別名 ``"cad"``）は抽出した胴体とフィンを再構成する。``"stl"`` は入力の STL から壁面を作る（入力の形状と同一ではない。:ref:`sec-cfd-stl`、:ref:`sec-cfd-fidelity`）
    * - ``betas_deg``
      - ``[0]``
-     - 解く横滑り角 [deg]（0 以上、昇順、0 で始まる）。0 だけでないと係数表は 6 成分の一般表になる。:ref:`sec-cfd-general`
+     - 解く横滑り角 [deg]（0 以上、昇順、0 で始まる）。0 だけでないと係数表は 6 成分の一般表になる（:ref:`sec-cfd-table-kind`）
    * - ``shape_symmetry``
      - ``"auto"``
-     - 鏡映像として得て解かない対称性。``"axisymmetric"``\ （:math:`y=0` と :math:`z=0`）、``"pitch_plane"``\ （:math:`y=0`）、``"none"``\ （使わない。全領域）、``"auto"``\ （``panel_mesh`` はフィンの配置から、``stl`` は和の表面の鏡映検査で通った平面）。
-       ``stl`` で ``"axisymmetric"`` か ``"pitch_plane"`` を明示して検査に通らなければエラー（:ref:`sec-cfd-stl-symmetry`）。``"pitch_plane"`` と ``"none"`` は一般表になる
+     - 鏡映像として得て解かない対称性。``"axisymmetric"``\ （:math:`y=0` と :math:`z=0`）、``"pitch_plane"``\ （:math:`y=0`）、``"none"``\ （使わない）、``"auto"``\ （形状から判定する）。
+       判定と、``stl`` で明示した対称性が検査に通らないときのエラーは :ref:`sec-cfd-stl-symmetry`、表の種類との関係は :ref:`sec-cfd-table-kind` で述べる
    * - ``roll_damping``
      - ``false``
      - 各 Mach 数でロール減衰のケース（:math:`\alpha=\beta=0`、回転座標系、:math:`\hat p` が ``roll_rate_hat`` の正負、全領域）を解き、:math:`C_{lp}` を CFD の値にする。Euler だけ
@@ -931,7 +932,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - ``surface = "stl"`` で、CFD の壁面が入力の STL または和から離れてよい最大の距離 [m]。超えるとエラー、``wall_size`` の半分を超えると警告（:ref:`sec-cfd-fidelity`）
    * - ``general_mach_step``
      - ``0.1``
-     - 一般表の Mach 数の刻み。0 なら ``[aero]`` の ``mach_step``。一般表は 1 つの Mach 数あたり 61 × 43 点の（迎角 × 横滑り角）を持つ
+     - 一般表の Mach 数の刻み。0 なら ``[aero]`` の ``mach_step``\ （格子は :ref:`sec-aero-table-format`）
    * - ``fin_roll_deg``
      - ``0``
      - フィンの組を機軸のまわりに回す角度 [deg]（0 でフィン 2 枚が :math:`y=0` 面に載る、45 で載らない）
@@ -955,7 +956,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - 早期終了の最小反復数。これより前にはケースを止めない。Euler の Roe では制限関数もこの反復で固定する（``LIMITER_ITER``）。``stable_window`` 以上
    * - ``stable_window``
      - ``60``
-     - 早期終了の判定で、力とモーメントの係数が落ち着いているかを見る直近の反復数（10 以上）。:ref:`sec-cfd-run`
+     - 早期終了の判定で、力とモーメントの係数が落ち着いているかを見る直近の反復数（10 以上。:ref:`sec-cfd-run`）
    * - ``cfl``
      - ``5.0``
      - CFL 数の初期値（適応的に変える）
@@ -967,7 +968,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - 対流フラックス。``"roe"``\ （MUSCL と Venkatakrishnan の制限関数で 2 次精度）または ``"jst"``
    * - ``multigrid``
      - ``0``
-     - 凝集型マルチグリッドの粗い格子の数（``MGLEVEL``、0 から 4）。壁面の三角形が多い四面体メッシュでは SU2 が粗い格子を作れず、効果がない（:ref:`sec-cfd-multigrid`）
+     - 凝集型マルチグリッドの粗い格子の数（``MGLEVEL``、0 から 4）。壁面の三角形が多い四面体メッシュでは SU2 が粗い格子を作れず、効果がない（測定は :doc:`verification_aero`）
    * - ``multigrid_cycle``
      - ``"w"``
      - マルチグリッドのサイクル。``"w"`` または ``"v"``
@@ -1204,50 +1205,30 @@ CFD の準備は ``ignisyeet cfd-check 設定ファイル [--mesh]`` で確か�
 乱数はこれらを表の最後に引くので、最初の 11 項目の値はこの 6 項目の設定に依存しない。
 各項目の扱いの詳細は :ref:`sec-mc` で述べる。
 
-.. _sec-aero-table-format:
+.. _sec-usage-external-table:
 
-外部の係数表（``aero.method = "table"``）
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+外部の係数表を使う（``aero.method = "table"``）
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-風洞試験や CFD などで得た係数を使うときは、``aero.method = "table"`` と ``aero.table = "cfd_table.csv"`` を指定する。
+風洞試験や CFD などで得た係数を使うときは、設定に次の 2 項目を書く。
+
+.. code-block:: toml
+
+   [aero]
+   method = "table"
+   table  = "cfd_table.csv"
+
 STL からの形状抽出と空力モデルの計算は行わず、``sim`` と ``dispersion`` はこの表をそのまま使う（``aero`` は表の行数を表示するだけである）。
-形式は ``out/aero_table.csv`` と同じで、CSV と、拡張子を ``.json`` に替えた同名の付随ファイル（メタデータ）の 2 つが必要である。
-
-CSV の 1 行目は次の見出しで、続く行は Mach 数が外側、迎角が内側の順（Mach 数ごとに迎角を小さい方から並べる）に、全格子点を 1 行ずつ書く。
-
-.. code-block:: text
-
-   mach,alpha_deg,cn,ca_on,ca_off,xcp,cna,damp_s0,damp_s1,damp_s2,cl_delta,clp
-
-各列は、法線力係数 :math:`C_N`、軸力係数（燃焼中・燃焼後）、圧力中心 :math:`x_{cp}` [m]（ノーズ先端から）、
-:math:`C_{N\alpha}` [1/rad]、ピッチ減衰の和 :math:`S_0, S_1, S_2`\ （:eq:`eq-moment-damp`）、
-カントあたりのロールモーメント係数 :math:`C_{l\delta}` [1/rad]、ロール減衰微係数 :math:`C_{lp}` である。
-最後の 2 列（ロール項）は省略できる。省略した 8 列の表（付随ファイルに ``format_version`` もない）はロール項が 0 の軸対称表として読み込み、
-ロール項がすべて 0 の表には、現在の STL のフィンから部品積み上げ法のロール項を補う（補ったことを端末に表示する。:ref:`sec-aero-table`）。
-
-付随の ``.json`` には、基準面積 ``ref_area`` [m\ :sup:`2`]、基準直径 ``ref_diameter`` [m]、全長 ``length`` [m]、
-格子 ``machs`` と ``alphas_deg``\ （各列の値）、``extrapolation``\ （``"linear"`` または ``"clamp"``）、``source_hash``\ （任意の文字列でよい）を書く。
-次の項目は省略できる。
-
-* ``format_version``：形式のバージョン。現在は 2 で、省略すると 1（ロール項なし）として読む。
-* ``kind``：``"axisymmetric"``\ （既定）または ``"general"``。
-* ``fin_cant_ref_deg``：表の :math:`C_l` に含まれるフィンのカント [deg]（既定は 0。:ref:`sec-aero-table`）。
-* ``betas_deg``：``kind = "general"`` のときの横滑り角の格子（:math:`-90^\circ` から :math:`90^\circ`）。
-* ``moment_ref``：モーメントの基準点。現在は ``"nose_tip"`` だけである。
-
-行数が ``machs`` と ``alphas_deg``\ （一般表では ``betas_deg`` も）の積に一致しないとエラーになる。``motor.aft_x`` を省略したときのモータ後端位置は、この ``length`` になる。
-
-``kind = "general"`` の表の CSV は、見出しが次のとおりで、Mach 数、迎角、横滑り角の順（横滑り角が最も内側）に全格子点を書く（各列の意味は :ref:`sec-aero-table`）。
-迎角と横滑り角の格子は不等間隔でもよい。
-
-.. code-block:: text
-
-   mach,alpha_deg,beta_deg,cx_on,cx_off,cy,cz,cl,cm,cn,cl_delta,clp,sq0,sq1,sq2,sr0,sr1,sr2
+表は、``out/aero_table.csv`` と同じ形式の CSV と、拡張子を ``.json`` に替えた同名の付随ファイル（メタデータ）の 2 つで用意する。
+列、付随ファイルの項目、一般表の格子、ロール項の補い方は :ref:`sec-aero-table-format` にある。
+表の考え方は :ref:`sec-aero-external` を参照されたい。
 
 設定ファイルの未知の項目は、綴りの誤りを見逃さないようにすべてエラーとして扱う。
 
 出力ファイル
 ------------
+
+出力先ディレクトリ（``[output] dir``）に書かれる主なファイルを示す。列と項目の仕様は :doc:`file_formats` にまとめてある。
 
 .. list-table::
    :header-rows: 1
@@ -1257,50 +1238,33 @@ CSV の 1 行目は次の見出しで、続く行は Mach 数が外側、迎角�
    * - ファイル
      - 内容
    * - ``geometry.json``
-     - 抽出した形状（全長、基準直径、ノーズ、ボートテール、フィン、断面ごとの半径など）。機体軸 :math:`x_b,y_b,z_b` を STL の座標で表した単位ベクトル ``body_x``, ``body_y``, ``body_z`` も含む（:ref:`sec-body-basis`）
+     - 抽出した形状（全長、基準直径、ノーズ、ボートテール、フィン、断面ごとの半径など）と、機体軸の STL 座標での単位ベクトル ``body_x``, ``body_y``, ``body_z``\ （:ref:`sec-body-basis`、:ref:`sec-file-geometry`）
    * - ``profile.csv``
      - 断面ごとの胴体半径 ``r`` とフィン高さ ``fin_span``
    * - ``aero_table.csv`` / ``.json``
-     - 軸対称表は (Mach, 迎角) ごとの :math:`C_N`, :math:`C_A`\ （燃焼中・燃焼後）, :math:`x_{cp}`, :math:`C_{N\alpha}`、ピッチ減衰の和、ロールの微係数 :math:`C_{l\delta}`, :math:`C_{lp}`。
-       ``table_kind = "general"`` では (Mach, 迎角, 横滑り角) ごとの 6 係数、ロールの微係数、ピッチとヨーの減衰の和。``.json`` は表の種類・格子・基準量・入力ハッシュ
+     - 空力係数表と、その種類・格子・基準量・入力のハッシュ値の付随ファイル（:ref:`sec-aero-table-format`）
    * - ``aero_drag.csv``
-     - Mach 数ごとの抗力の内訳、:math:`C_{N\alpha}`、:math:`x_{cp}`\ （``method = "panel"`` では内訳なしで合計の ``cd_off``, ``cd_on`` のみ）
+     - Mach 数ごとの抗力の内訳、:math:`C_{N\alpha}`、:math:`x_{cp}`\ （``method = "barrowman"`` と ``"panel"``。:ref:`sec-file-drag`）
    * - ``cfd_cases.csv``
-     - ``method = "cfd"``。ケースごとの状態（``converged``, ``accepted``, ``failed``）、反復数、残差、SU2 の生の係数、使う係数、計算時間、暖機起動の有無。
-       横滑り角 ``beta_deg``、ロール減衰のケースの ``roll_hat``、機体軸の 6 成分 ``cx``, ``cy``, ``cz``, ``cl``, ``cm``, ``cn_yaw``\ （:math:`C_n`）の列を含む
+     - ``method = "cfd"``。ケースごとの状態、反復数、残差、SU2 の生の係数、表に使う係数、計算時間（:ref:`sec-file-cfd`）
    * - ``cfd_report.json``
-     - ``method = "cfd"``。ケース数、失敗と未収束の一覧、メッシュの節点数とセル数、総計算時間、測定した :math:`\alpha=0` の非対称性、実行の並列度と 1 ケースのメモリの見積もり。
-       係数表の種類 ``table_kind``、``shape_symmetry``、``domain``\ （``half`` または ``full``）、``betas_deg``、失敗したケースのディレクトリ ``failed_cases``、
-       一般表で CFD の値を使う範囲 ``cfd_region`` と ``model_outside_cfd_region``、ロール減衰の CFD とモデルの値と採用した側 ``clp`` と ``clp_source``（``cfd``, ``barrowman``, ``mixed``）、
-       零角度の傾き ``diagnostics``、``yaw_damping_from_pitch``、基準のカント ``fin_cant_ref_deg``、``base_treatment``、``warnings``、
-       STL の鏡映対称性の判定 ``symmetry_check``、STL の形状の忠実度 ``fidelity``\ （``fidelity``、``union``、``repair`` を含む）
+     - ``method = "cfd"``。ケース数、失敗と未収束の一覧、メッシュの大きさ、計算時間、表の種類、CFD の値を使う範囲、ロール減衰の採用元、STL の対称性と忠実度の判定など（:ref:`sec-file-cfd`）
    * - ``<workdir>/mesh/``
-     - ``method = "cfd"`` のメッシュのキャッシュ（``mesh.su2`` など）。``surface = "stl"`` では、修復した成分（``component_0.stl`` など）、修復の報告 ``repair_report.json``、
-       和 ``union.stl`` と ``union_report.json``\ （体積、表面積、種数など）、形状の忠実度 ``stl_fidelity.json``\ （:ref:`sec-cfd-fidelity`）も入る
+     - ``method = "cfd"`` のメッシュのキャッシュ。``surface = "stl"`` では修復と和の報告 ``repair_report.json`` ``union_report.json`` と、形状の忠実度 ``stl_fidelity.json`` も入る（:ref:`sec-file-mesh`、:ref:`sec-cfd-fidelity`）
    * - ``panel_cp.csv``
-     - ``method = "panel"``。表面パネルの位置・法線・面積・圧力係数 ``cp``\ （迎角 4°、最も低い亜音速 Mach 数）と部位（``body`` または ``fin``）。
-       ``python/plot.py panel`` で作図する
+     - ``method = "panel"``。表面パネルの位置・法線・面積・圧力係数 ``cp`` と部位。``python/plot.py panel`` で作図する（:ref:`sec-file-panel-cp`）
    * - ``trajectory.csv``
-     - 時刻歴（位置、緯度経度、速度、Mach 数、迎角、推力、質量、重心、圧力中心、安定余裕、動圧、姿勢、角速度）。
-       末尾の 4 列は ``beta_deg``\ （横滑り角 :math:`\beta` [deg]）、``roll_rate``\ （ロール角速度 :math:`\omega_x` [rad/s]）、
-       ``cl``\ （ロールの係数 :math:`C_l^{\mathrm{tot}}`、:eq:`eq-cl-total`）、``cy``\ （一般表の :math:`C_Y`。軸対称表では 0）。
-       ``alpha_deg`` は全迎角 :math:`\alpha_t`、``x_cp`` は一般表では等価な圧力中心（:eq:`eq-xcp-eff`）である
+     - 飛翔の時刻歴（位置、速度、Mach 数、迎角、質量、重心、圧力中心、安定余裕、姿勢、角速度など。:ref:`sec-file-trajectory`）
    * - ``summary.json``
      - ランチャ離脱速度、最大 Mach 数、最大動圧、頂点、最小安定余裕、着地点など
    * - ``ignisyeet.kml``
      - ``kml = true`` のとき ``sim`` と ``dispersion`` が書き出す、Google Earth 用の KML ファイル 1 つ。射点、飛翔経路（段階ごとに色分け）とイベントの印、風の格子の着地点の輪郭、モンテカルロの着地点と誤差楕円をフォルダに分けて収める（:ref:`sec-kml`）
    * - ``dispersion.csv``
-     - ``mode = "wind_grid"``。風の各ケースの着地点（ENU と緯度経度）、頂点、飛行時間など
+     - ``mode = "wind_grid"``。風の各ケースの着地点、頂点、飛行時間など
    * - ``dispersion_mc.csv``
-     - ``mode = "monte_carlo"``。サンプルごと・降下モードごとの 1 行。サンプル番号、降下モード、``status``\ （``ok`` または ``failed``）、
-       引いたばらつき（相対のものは割合、``wind_speed_delta`` と ``wind_direction_deg_delta`` は風速・風向のずれ）、
-       そのサンプルの基準風速・風向、着地点（ENU と緯度経度）、着地距離、着地時刻、着地速度、頂点、頂点時刻、最大 Mach 数、
-       ランチャ離脱速度、最小静安定余裕。失敗した行は結果の列が空欄になる。
-       末尾に、ロールと非対称の引いた値 ``thrust_misalignment_y_deg``, ``thrust_misalignment_z_deg``, ``thrust_offset_y``, ``thrust_offset_z``, ``fin_cant_deg``,
-       ``cg_lateral_y``, ``cg_lateral_z``, ``cl_scale``, ``clp_scale`` の 9 列が続く
+     - ``mode = "monte_carlo"``。サンプルごと・降下モードごとの 1 行（ばらつき、基準風、着地点、頂点など。失敗した行は結果の列が空欄になる）
    * - ``dispersion_summary.json``
-     - ``mode = "monte_carlo"``。降下モードごとの有効サンプル数 ``n``、失敗数 ``failed``、着地点の平均・共分散行列、
-       :math:`1\sigma` と :math:`3\sigma` の誤差楕円（長半径・短半径・長軸の方位）、最大着地距離とそのサンプル番号、頂点高度の平均と標準偏差
+     - ``mode = "monte_carlo"``。降下モードごとの着地点の統計と誤差楕円、最大着地距離、頂点高度の平均と標準偏差
 
 .. _sec-kml:
 

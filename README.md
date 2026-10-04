@@ -296,11 +296,17 @@ Detailed equations and derivations are in the chapters of the documentation (in 
 |---|---|---|
 | Overall | Processing flow, and why the coefficient table is built first | [`doc/source/overview.rst`](doc/source/overview.rst) |
 | Geometry extraction | Principal axis by PCA; radius distribution and fins estimated from sections perpendicular to the axis | [`doc/source/geometry.rst`](doc/source/geometry.rst) |
-| Aerodynamics (Barrowman method) | Component build-up of normal force, center of pressure, drag, and pitch damping. Supersonic by Busemann's second-order theory, transonic joined by a cubic | [`doc/source/aerodynamics.rst`](doc/source/aerodynamics.rst) |
+| Aerodynamics (overview) | The coefficient table that connects the aerodynamic methods to the flight simulation; axisymmetric and general tables; choosing a method; table interpolation and external tables | [`doc/source/aerodynamics.rst`](doc/source/aerodynamics.rst) |
+| Aerodynamic coefficients | Six body-axis force and moment coefficients, CN, CA and the center of pressure, alpha, beta and the total angle of attack, damping and roll derivatives | [`doc/source/aero_coefficients.rst`](doc/source/aero_coefficients.rst) |
+| Aerodynamics (Barrowman method) | Component build-up of normal force, center of pressure, drag, and pitch damping. Supersonic by Busemann's second-order theory, transonic joined by a cubic | [`doc/source/barrowman.rst`](doc/source/barrowman.rst) |
 | Aerodynamics (panel method) | Morino method (Goethert transformation) for subsonic, local-inclination method for supersonic, cubic Hermite interpolation between them for transonic | [`doc/source/panel.rst`](doc/source/panel.rst) |
+| Aerodynamics (CFD) | Using SU2 through the CFD mode: wall geometry from the rebuilt body or the STL, the run, how to read the outputs, how far to trust them | [`doc/source/cfd.rst`](doc/source/cfd.rst) |
+| Aerodynamics (CFD internals) | Governing equations, SU2 settings, geometry preparation, meshing, case execution, post-processing | [`doc/source/cfd_internals.rst`](doc/source/cfd_internals.rst) |
 | Flight | 6-DoF rigid body, launch-rail constraint, changes in propellant mass, center of gravity, and inertia | [`doc/source/dynamics.rst`](doc/source/dynamics.rst), [`doc/source/propulsion.rst`](doc/source/propulsion.rst) |
 | Coordinates and environment | Flat ENU and ECEF, atmosphere, wind, gravity | [`doc/source/coordinates.rst`](doc/source/coordinates.rst), [`doc/source/environment.rst`](doc/source/environment.rst) |
 | Landing dispersion | Wind grid and Monte Carlo method, error ellipses | [`doc/source/dispersion.rst`](doc/source/dispersion.rst) |
+| Verification of the aerodynamic models | Checks, cross-comparisons between the methods, and computation times | [`doc/source/verification_aero.rst`](doc/source/verification_aero.rst) |
+| File formats | Columns and keys of the coefficient tables, the CFD reports, and the other output files | [`doc/source/file_formats.rst`](doc/source/file_formats.rst) |
 | Applicability | Limits of the methods | [`doc/source/limitations.rst`](doc/source/limitations.rst) |
 
 Landing points are output as WGS84 latitude and longitude. For descent, you can choose between a parachute (point mass, with `cd_s` and a deployment delay) and ballistic descent (kept in 6 DoF until landing). In a ballistic descent whose apogee is nearly vertical the rocket tumbles, so the landing point is sensitive to small changes. This is real behavior, not numerical noise.
@@ -311,7 +317,7 @@ Landing points are output as WGS84 latitude and longitude. For descent, you can 
 cargo test --release
 ```
 
-The main things checked by the tests are as follows (details in [`doc/source/verification.rst`](doc/source/verification.rst) and [`doc/source/panel.rst`](doc/source/panel.rst), in Japanese).
+The main things checked by the tests are as follows (details in [`doc/source/verification.rst`](doc/source/verification.rst) and [`doc/source/verification_aero.rst`](doc/source/verification_aero.rst), in Japanese).
 
 - **Geometry extraction**: fin dimensions of a rotated and scaled sample rocket are recovered within 1 mm
 - **Barrowman method**: against a hand calculation for the sample rocket (CNalpha = 11.617, center of pressure 1.1619 m), the values computed from the STL agree with CNalpha = 11.617 and 1.1620 m. For the body alone, CNalpha is within 0.02 of 2. Transonic continuity is also checked

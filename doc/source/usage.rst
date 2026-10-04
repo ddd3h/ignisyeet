@@ -888,7 +888,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - 意味
    * - ``model``
      - ``"euler"``
-     - 支配方程式。``"euler"`` は非粘性の Euler 方程式（粘性の抗力項は部品積み上げ法で補う）、``"rans"`` は Spalart–Allmaras モデルの RANS（検証できていないので、結果を頼らない。:doc:`cfd`）
+     - 支配方程式。``"euler"`` は非粘性の Euler 方程式（粘性の抗力項は部品積み上げ法で補う）、``"rans"`` は Spalart–Allmaras モデルの RANS（信頼できない。結果に頼らない。:ref:`sec-cfd-run`）
    * - ``machs``
      - ``[0.3, 0.6, 0.8, 0.95, 1.1, 1.3, 1.6, 2.0, 2.5, 3.0]``
      - 解く Mach 数（正、昇順、重複なし）
@@ -904,7 +904,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - 1/4 領域をメッシュにして :math:`z=0` で鏡映し、:math:`z` について厳密に対称なメッシュにするか。形状が :math:`z` について対称でないときは無視する（:ref:`sec-cfd-stl-symmetry`）
    * - ``symmetry``
      - ``true``
-     - ピッチ面（:math:`y=0`）で切った半モデルを使ってよいか。半モデルを使うのは、形状が :math:`y=0` について対称で、``shape_symmetry`` に :math:`y=0` の鏡映が含まれ、``betas_deg = [0]`` で、ロール減衰のケースがないときだけである。それ以外と ``false`` は全領域を解く（領域の作り方は :ref:`sec-cfd-stl-symmetry`）
+     - ピッチ面（:math:`y=0`）で切った半モデルを使ってよいか。使う条件と領域の意味は :ref:`sec-cfd-stl-symmetry`。条件を満たさないときと ``false`` は全領域を解く
    * - ``surface``
      - ``"panel_mesh"``
      - 壁面の形状。``"panel_mesh"``\ （別名 ``"cad"``）は抽出した胴体とフィンを再構成する。``"stl"`` は入力の STL から壁面を作る（入力の形状と同一ではない。:ref:`sec-cfd-stl`、:ref:`sec-cfd-fidelity`）
@@ -917,13 +917,13 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
        判定と、``stl`` で明示した対称性が検査に通らないときのエラーは :ref:`sec-cfd-stl-symmetry`、表の種類との関係は :ref:`sec-cfd-table-kind` で述べる
    * - ``roll_damping``
      - ``false``
-     - 各 Mach 数でロール減衰のケース（:math:`\alpha=\beta=0`、回転座標系、:math:`\hat p` が ``roll_rate_hat`` の正負、全領域）を解き、:math:`C_{lp}` を CFD の値にする。Euler だけ
+     - 各 Mach 数でロール減衰の 2 ケースを回転座標系で解き、:math:`C_{lp}` を CFD の値にする（:ref:`sec-cfd-run`、:ref:`sec-cfd-roll-cases`）。Euler だけ
    * - ``roll_rate_hat``
      - ``0.01``
      - ロール減衰のケースの無次元ロール角速度 :math:`\hat p=pd/(2V)`\ （0 より大きく 0.05 以下）
    * - ``base_treatment``
      - なし
-     - ``surface = "stl"`` かつ Euler のとき **必須**\ 。``"fairing"`` は底面の後ろに円すいを足す（入力の STL を変更する）、``"flat"`` は平らな底面のままにする（Euler の解は収束しにくく、収束しないケースは失敗）
+     - ``surface = "stl"`` かつ Euler のとき **必須**\ 。``"fairing"`` は底面の後ろに円すいを足す（入力の STL を変更する）、``"flat"`` は平らな底面のままにする（Euler の解は収束しないことがあり、収束しないケースは失敗。:ref:`sec-cfd-stl-base`）
    * - ``stl_remesh``
      - ``"classify"``
      - ``surface = "stl"`` の壁面の処理。``"classify"`` は gmsh で曲面を作り ``wall_size`` で作り直す、``"none"`` は STL の三角形をそのまま使う（フィンの解像が足りず法線力が低くなる）
@@ -953,10 +953,10 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - 1 ケースの最大反復数（RANS は 300 で打ち切る）
    * - ``min_iterations``
      - ``100``
-     - 早期終了の最小反復数。これより前にはケースを止めない。Euler の Roe では制限関数もこの反復で固定する（``LIMITER_ITER``）。``stable_window`` 以上
+     - 早期終了の最小反復数。これより前にはケースを止めない。``stable_window`` 以上（:ref:`sec-cfd-int-convergence`。Euler の Roe の制限関数もこの反復で固定する）
    * - ``stable_window``
      - ``60``
-     - 早期終了の判定で、力とモーメントの係数が落ち着いているかを見る直近の反復数（10 以上。:ref:`sec-cfd-run`）
+     - 早期終了の判定で、力とモーメントの係数が落ち着いているかを見る直近の反復数（10 以上。:ref:`sec-cfd-int-convergence`）
    * - ``cfl``
      - ``5.0``
      - CFL 数の初期値（適応的に変える）
@@ -965,10 +965,10 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - 密度の二乗平均残差の目標（0 と 1 の間）
    * - ``scheme``
      - ``"roe"``
-     - 対流フラックス。``"roe"``\ （MUSCL と Venkatakrishnan の制限関数で 2 次精度）または ``"jst"``
+     - 対流フラックス。``"roe"`` または ``"jst"``\ （:ref:`sec-cfd-int-discretization`）
    * - ``multigrid``
      - ``0``
-     - 凝集型マルチグリッドの粗い格子の数（``MGLEVEL``、0 から 4）。壁面の三角形が多い四面体メッシュでは SU2 が粗い格子を作れず、効果がない（測定は :doc:`verification_aero`）
+     - 凝集型マルチグリッドの粗い格子の数（``MGLEVEL``、0 から 4）。壁面の三角形が多い四面体メッシュでは効果がない（:ref:`測定 <sec-cfd-multigrid>`）
    * - ``multigrid_cycle``
      - ``"w"``
      - マルチグリッドのサイクル。``"w"`` または ``"v"``
@@ -991,7 +991,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - ``"cfd"``
      - ``output.dir`` の下の作業ディレクトリ（ケースごとのサブディレクトリとメッシュのキャッシュ）
 
-CFD の準備は ``ignisyeet cfd-check 設定ファイル [--mesh]`` で確かめる。``surface = "stl"`` の ``--mesh`` は、形状の忠実度も表示する。
+CFD の準備は ``ignisyeet cfd-check 設定ファイル [--mesh]`` で確かめる（:doc:`cfd`）。``surface = "stl"`` の ``--mesh`` は、形状の忠実度も表示する。
 結果は ``cfd_cases.csv`` と ``cfd_report.json`` に書かれる（後述）。
 
 ``[earth]``

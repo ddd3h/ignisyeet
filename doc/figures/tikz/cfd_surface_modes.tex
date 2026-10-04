@@ -13,6 +13,7 @@
   \node[file] (a1) at (0,0) {入力の STL\\\scriptsize 形状の抽出};
   \node[box] (a2) at (4.4,0) {半径分布 $r(x)$\\\scriptsize とフィンの寸法};
   \node[boxo] (a3) at (8.8,0) {回転体と台形フィン\\\scriptsize として作り直す};
+  \node[font=\scriptsize, cink2, anchor=north, align=center] at (8.8,-0.9) {Euler では底面にフェアリング};
   \node[res] (a4) at (13.2,0) {CFD の壁面\\\scriptsize 回転体 + 台形フィン};
   \draw[arr] (a1) -- (a2);
   \draw[arr] (a2) -- (a3);
@@ -21,8 +22,8 @@
   % mode (b)
   \node[font=\small\bfseries, anchor=west] at (-2,-2.6) {(b) \texttt{stl}};
   \node[file] (b1) at (0,-4) {入力の STL\\\scriptsize 重なった閉じた殻};
-  \node[boxo] (b2) at (4.4,-4) {修復と和\\\scriptsize 一つの立体にする};
-  \node[boxo] (b3) at (8.8,-4) {再メッシュ\\\scriptsize Euler では底面にフェアリング};
+  \node[boxo] (b2) at (4.4,-4) {修復と和\\\scriptsize Euler では底面にフェアリング};
+  \node[boxo] (b3) at (8.8,-4) {再メッシュ\\\scriptsize \texttt{wall\_size} で作り直す};
   \node[res] (b4) at (13.2,-4) {CFD の壁面\\\scriptsize 入力に近いが同一でない};
   \draw[arr] (b1) -- (b2);
   \draw[arr] (b2) -- (b3);

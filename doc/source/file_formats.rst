@@ -138,7 +138,7 @@ Mach 数の刻みは、作り方で異なる。
 * CFD：``aero.cfd.general_mach_step``\ （既定 0.1。0 のとき ``aero.mach_step``）
 
 サンプルの機体の一般表（部品積み上げ法）は、61（Mach 数）× 61（迎角）× 43（横滑り角）= 160003 行になる。
-軸対称表から展開した一般表は、軸対称表より情報を増やさない。サンプルでは、頂点高度が軸対称表で 4440.7 m、一般表で 4440.8 m である。
+軸対称表から展開した一般表は、軸対称表より情報を増やさない（飛翔の比較は :ref:`sec-vaero-table` に示す）。
 
 .. _sec-file-sidecar:
 
@@ -192,14 +192,14 @@ Mach 数の刻みは、作り方で異なる。
      - 必須
      - 表の範囲外の扱い。``"linear"``\ （線形外挿）または ``"clamp"``\ （端の値で一定）
 
-部品積み上げ法とパネル法の表の ``fin_cant_ref_deg`` は、設定したカントである。CFD の表の値は ``cfd_report.json`` の ``fin_cant_ref_deg`` にも出る。
+部品積み上げ法、パネル法、CFD の軸対称表の ``fin_cant_ref_deg`` は、設定したカントである。CFD の一般表では、``stl`` のとき設定したカント、``panel_mesh`` のとき 0 である（形状にカントがないため）。CFD の表の値は ``cfd_report.json`` の ``fin_cant_ref_deg`` にも出る。
 
 読み込み時の検査
 ~~~~~~~~~~~~~~~~
 
 CSV の行数が、``machs`` と ``alphas_deg``\ （一般表では ``betas_deg`` も）の積に一致しないと、``aero table size does not match its metadata`` のエラーになる。
 値が数として読めない行、列数が合わない行もエラーである。
-一般表の行は 18 個の値を全部持たなければならない。軸対称表の行は、後述の 8 列の形式か 12 列の形式である。
+一般表の行は 18 個の値を全部持たなければならない。軸対称表の行は、12 列の形式か、後述のバージョン 1 の 10 列（格子の 2 列に値 8 個）の形式である。
 
 .. _sec-file-v1:
 
@@ -209,8 +209,8 @@ CSV の行数が、``machs`` と ``alphas_deg``\ （一般表では ``betas_deg`
 軸対称表の行が値を 8 個（``mach`` ``alpha_deg`` に続けて ``cn`` から ``damp_s2`` まで、合わせて 10 列）しか持たない表は、ロール項 ``cl_delta`` と ``clp`` を 0 とした軸対称表として読み込む。
 このとき付随ファイルに ``format_version`` がなくてもよい。保存するときは常にバージョン 2（12 列）で書く。
 
-外部の表でロール項がすべて 0 のとき（8 列の表を含む）は、``sim`` と ``dispersion`` の実行時に、現在の STL のフィンから部品積み上げ法のロール項（:math:`C_{l\delta}` と :math:`C_{lp}`）を求めて表に補う。
-補ったときは、端末に注意書きを表示する。形状を抽出できないときは、注意書きを表示してロール項を 0 のままにし、機体はロールしない。フィンがなければ補う値も 0 である。
+``aero.method = "table"`` で読み込んだ表のロール項がすべて 0 のとき（バージョン 1 の表を含む）は、``aero``、``sim``、``dispersion`` のどれでも、現在の STL のフィンから部品積み上げ法のロール項（:math:`C_{l\delta}` と :math:`C_{lp}`）を求めて表に補う。
+補ったときは、端末に注意書きを表示する。形状を抽出できないときは、注意書きを表示してロール項を 0 のままにし、機体はロールしない。フィンがなければ補う値も 0 で、注意書きは出ない。
 ロール項を含む表は、そのまま使う。補った値は、読み込んだ表のメモリ上だけに入り、元のファイルは書き換えない。
 
 .. _sec-aero-table-format-external:
@@ -270,7 +270,7 @@ Mach 数ごとの抗力の内訳である。``method = "barrowman"`` と ``"pane
 CFD の出力
 ----------
 
-``method = "cfd"`` は、係数表と ``aero_drag.csv`` に加えて、次のファイルを書く。値の読み方は :doc:`cfd` にある。
+``method = "cfd"`` は、係数表に加えて、次のファイルを書く（``aero_drag.csv`` は書かない）。値の読み方は :doc:`cfd` にある。
 
 ``cfd_cases.csv``
 ~~~~~~~~~~~~~~~~~
@@ -354,7 +354,7 @@ CFD の実行の要約である。項目は次のとおりである。
    * - ``clp`` / ``clp_source``
      - Mach 数ごとのロール減衰の CFD の値、部品積み上げ法の値、採用した側と理由（``clp``）と、全体の採用元（``cfd``、``barrowman``、``mixed``）
    * - ``diagnostics``
-     - Mach 数ごとの零角度の傾き（``cna_pitch`` ``xcp_pitch`` ``cna_yaw`` ``xcp_yaw``）。一般表の入力ではなく診断用である
+     - Mach 数ごとの零角度の傾き（``cna_pitch`` ``xcp_pitch`` ``cna_yaw`` ``xcp_yaw``）。一般表の入力ではなく診断用で、軸対称表ではヨーの値は入らない
    * - ``yaw_damping_from_pitch``
      - 横滑り角のデータのない一般表で、ヨー減衰の和がピッチと同じかどうか
    * - ``fin_cant_ref_deg``
@@ -389,7 +389,7 @@ CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surf
 ``stl_fidelity.json``
    形状の忠実度（:ref:`sec-cfd-fidelity`）。``mesh_hash`` とその ``fidelity`` を持ち、``fidelity`` は次の項目を持つ。
 
-   * ``input`` / ``union`` / ``cfd``：入力の STL、和、CFD の壁面それぞれの ``triangles``、``area``、``volume``\ （入力は殻が重なるので ``null``）、``bbox_min``、``bbox_max``
+   * ``input`` / ``union`` / ``cfd``：入力の STL、和、CFD の壁面それぞれの ``triangles``、``area``、``volume``\ （入力は殻が重なるので ``null``。半領域をそのまま解くときは和と CFD の壁面も ``null``）、``bbox_min``、``bbox_max``
    * ``cfd_wall_triangles`` / ``cfd_base_triangles``：CFD の壁面と底面の三角形数
    * ``cfd_vs_union`` / ``cfd_wall_vs_input``：距離の統計 [m]（``max``、その位置 ``max_at``、``p99``、``rms``、標本数 ``samples``）
    * ``wall_size`` / ``warn_above`` / ``fail_above``：壁面の要素の大きさ、警告の水準（0.5 ``wall_size``）、エラーの水準（``max_geometry_error``）[m]

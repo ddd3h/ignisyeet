@@ -50,15 +50,47 @@ Python
 インストーラ
 ~~~~~~~~~~~~
 
-Linux（x86_64、aarch64）と macOS（Intel、Apple Silicon）では、次の 1 行でインストールできる。
+Linux（x86_64、aarch64）と macOS（Intel、Apple Silicon）では、インストーラ ``install.sh`` を実行するだけでインストールできる。
+ここでは、利用者（user）として入れる場合の手順を、実際の画面とともに順に説明する。
+画面は ``install.sh`` の実際の出力であり、パスはホームディレクトリを ``~`` で示している。
+
+手順 1　準備
+^^^^^^^^^^^^
+
+必要なものは次のとおりである。管理者権限（``sudo``）は要らない。すべて自分のホームディレクトリの下（既定は ``~/.local``）に入る。
+
+* 対応する OS（上記の Linux または macOS）
+* ``bash``、``curl``、``tar``\ （ほとんどの環境に最初から入っている）
+* インターネット接続（リリースの取得と、作図用ライブラリの導入に使う）
+
+``git``、``cargo``、``uv``、``python3`` などは、user では必須ではない。
+``python3`` が 3.10 未満または無いときは、インストーラが ``uv`` を使って用意することを提案する。
+
+手順 2　インストーラを実行する
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+次の 1 行を端末に貼り付けて実行する。
 
 .. code-block:: sh
 
    curl -fsSL https://raw.githubusercontent.com/ddd3h/ignisyeet/main/install.sh | bash
 
-インストーラは最初に利用者（user）か開発者（developer）かを尋ね、
-すでに入っているツール（cargo、uv、python3、git、conda や micromamba、既存の ``ignisyeet-cfd`` 環境、SU2、gmsh、TeX など）を検出して一覧にする。
-入っているものは再インストールせず、足りないものだけを入れる。再実行しても安全である。
+インターネット上のスクリプトをそのまま実行することに抵抗があるときは、いったん保存して中身を読んでから実行するとよい。
+
+.. code-block:: sh
+
+   curl -fsSLO https://raw.githubusercontent.com/ddd3h/ignisyeet/main/install.sh
+   less install.sh
+   bash install.sh
+
+インストーラは起動すると、ロゴを表示してから質問を始める。
+``curl ... | bash`` で実行しても、質問は端末から読み取るので、そのまま答えられる。
+
+手順 3　役割を選ぶ
+^^^^^^^^^^^^^^^^^^
+
+最初に、どのように使うかを尋ねられる（:numref:`fig-screen-install-role`）。
+``1`` が user（既定）、``2`` が developer である。Enter だけを押すと user になる。
 
 user
    GitHub のリリースから自分のプラットフォーム用のバイナリを取得し、SHA-256 を検証してから
@@ -67,18 +99,174 @@ user
    それを使う ``ignisyeet-plot`` コマンドも用意する。ドキュメント作成用のツールは入れない。
 
 developer
-   git でリポジトリを取得（既存の clone があれば再利用し、変更がなければ ``git pull`` する）し、
-   ``cargo`` がなければ ``rustup`` を入れ、``cargo build --release`` と ``cargo test --release`` を実行する。
-   ``python/`` と ``doc/`` の環境は ``uv sync`` で作る。
-   TeX Live、dvisvgm、mutool、inkscape、IPAex フォントのうち足りないものは、
-   実行すべき ``apt`` または ``brew`` のコマンドを表示する（``sudo`` はインストーラ自身は実行しない）。
+   ソースからビルドして開発する人向けである。詳しくは後の「developer の場合」で述べる。
 
-どちらの役割でも、CFD ツール（SU2、gmsh、Open MPI。conda-forge から約 3 GB）を任意で入れられる。
-既存の micromamba、mamba、conda と既存の ``ignisyeet-cfd`` 環境があればそれを使う。
+.. _fig-screen-install-role:
+
+.. figure:: _generated/screens/screen_install_role.png
+   :width: 100%
+   :alt: インストーラの起動画面と役割の質問
+
+   手順 3：インストーラの起動画面。``1``\ （user）を選んだところである。
+
+手順 4　CFD ツールを入れるか選ぶ
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+インストーラは、すでに入っているツール（cargo、uv、python3、git、conda や micromamba、既存の ``ignisyeet-cfd`` 環境、SU2、gmsh など）を検出して
+一覧にする（``Environment``）。続けて、CFD ツール（SU2、gmsh、Open MPI。conda-forge から約 3 GB）を入れるかを尋ねられる
+（:numref:`fig-screen-install-cfd`）。これは CFD による空力計算（:doc:`cfd` を参照）で使う任意の部品で、
+Barrowman 法やパネル法だけを使うなら要らない。既定は ``n``\ （入れない）である。
+既存の micromamba、mamba、conda と既存の ``ignisyeet-cfd`` 環境があればそれを使い、すでに SU2 が見つかっているときは質問しない。
+質問を省くには ``--cfd`` または ``--no-cfd`` を指定する。
+
+.. _fig-screen-install-cfd:
+
+.. figure:: _generated/screens/screen_install_cfd.png
+   :width: 100%
+   :alt: 環境の検出結果と CFD ツールの質問
+
+   手順 4：検出したツールの一覧と CFD ツールの質問。``n`` と答えたところである。
+
+手順 5　計画を確認する
+^^^^^^^^^^^^^^^^^^^^^^
+
+答えがそろうと、実行する内容が ``Plan`` として一覧になり、``Proceed?`` と尋ねられる（:numref:`fig-screen-install-plan`）。
+この時点では何も変更していないので、内容が気に入らなければ ``n`` で中止できる。
+
+``Environment`` の行頭の記号は、次の意味である。
+
+* 緑のチェック（✔）：すでに見つかった。入っているものは再インストールせず、そのまま使う。
+* 黄色の丸（○）：見つからなかった。必要なものは ``Plan`` で入れる手順に含まれる。
+
+``Plan`` には、取得するファイル名、置き場所、作る環境が順番に並ぶ。
+``y`` または Enter で進む。
+
+.. _fig-screen-install-plan:
+
+.. figure:: _generated/screens/screen_install_plan.png
+   :width: 100%
+   :alt: 実行計画の一覧と確認
+
+   手順 5：実行計画と確認。``y`` と答えて実行に進む。
+
+手順 6　インストールの進行を見る
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+各手順は、スピナー（回転する記号）とともに実行される。ダウンロードでは、進み具合を示すバーとサイズが出る
+（:numref:`fig-screen-install-progress`）。続いてチェックサムの検証、展開、作図用環境の作成が行われ、
+終わった手順には緑のチェックと所要時間が付く。
+詳しい出力はすべて ``~/.local/share/ignisyeet/install.log`` に記録される。
+作図用環境の作成は、初回はライブラリ（numpy、pandas、matplotlib）の取得のため、数十秒かかることがある。
+
+.. _fig-screen-install-progress:
+
+.. figure:: _generated/screens/screen_install_progress.png
+   :width: 100%
+   :alt: ダウンロード中の進行バー
+
+   手順 6：ダウンロード中の画面。進行バーと、取得済みのサイズ・全体のサイズが出る。
+
+手順 7　完了と PATH の設定
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+最後に、結果をまとめた枠（``IgnisYeet is ready``）が出る（:numref:`fig-screen-install-done`）。
+インストールされたバージョン、実行ファイル、データ、作図環境の場所と、次に実行するコマンドが書かれている。
+
+実行ファイルを置く ``~/.local/bin`` が ``PATH`` に入っていないときは、インストーラがシェルの設定ファイル
+（bash なら ``~/.bashrc``、zsh なら ``~/.zshrc``）に PATH の行を追加するか尋ねる。
+``y`` と答えるか、最初から ``--add-path`` を付けると、次の行が追記される。
+``n`` と答えたときは、枠の下に表示される行を、自分で設定ファイルに書き加える。
+
+.. code-block:: sh
+
+   export PATH="$HOME/.local/bin:$PATH"
+
+設定ファイルを書き換えたあとは、**新しい端末を開く**\ （または ``source ~/.bashrc`` を実行する）と、``ignisyeet`` コマンドが使えるようになる。
+
+.. _fig-screen-install-done:
+
+.. figure:: _generated/screens/screen_install_done.png
+   :width: 100%
+   :alt: インストール完了の枠と PATH の案内
+
+   手順 7：完了の画面。PATH の質問（ここでは ``n``）、結果の枠、``PATH`` に追加する行が出る。
+
+手順 8　動作を確認する
+^^^^^^^^^^^^^^^^^^^^^^
+
+新しい端末で、バージョンを表示して確かめる。
+
+.. code-block:: sh
+
+   ignisyeet --version
+
+続いて、インストールされた例題を作業用の場所にコピーし、計算を実行する。
+計算が終わると ``out/`` に結果の CSV と JSON が書かれる（:numref:`fig-screen-install-check`、:numref:`fig-screen-install-check-sim`）。
+
+.. code-block:: sh
+
+   cp -r ~/.local/share/ignisyeet/current/examples ignisyeet-examples
+   cd ignisyeet-examples
+   ignisyeet sim sample.toml
+
+図を描くには、``ignisyeet-plot`` を使う。作図用の環境はインストーラが用意したものが自動で使われる。
+
+.. code-block:: sh
+
+   ignisyeet-plot all out
+
+.. _fig-screen-install-check:
+
+.. figure:: _generated/screens/screen_install_check.png
+   :width: 100%
+   :alt: ignisyeet --version の出力と例題の実行
+
+   手順 8：``ignisyeet --version`` と、例題のコピーと実行。
+
+.. _fig-screen-install-check-sim:
+
+.. figure:: _generated/screens/screen_install_check_sim.png
+   :width: 100%
+   :alt: インストールした例題の計算結果
+
+   手順 8：``ignisyeet sim sample.toml`` の出力。計算の流れ、飛翔の結果、書き出したファイルが出る。
+
+計算全体の流れは、この後の「最初の実行」を参照されたい。
+
+developer の場合
+^^^^^^^^^^^^^^^^
+
+手順 3 で ``2``\ （developer）を選ぶと、手順 6 の内容が次のように変わる。
+その他の手順は user と同じである。
+
+* git でリポジトリを取得する（既存の clone があれば再利用し、変更がなければ ``git pull`` する）。
+* ``cargo`` がなければ ``rustup`` を入れ、``cargo build --release`` と ``cargo test --release`` を実行する（テストは実行するか尋ねられる）。
+* ``python/`` と ``doc/`` の環境を ``uv sync`` で作る。
+* TeX Live、dvisvgm、mutool、inkscape、IPAex フォントのうち足りないものは、
+  実行すべき ``apt`` または ``brew`` のコマンドを表示する（``sudo`` はインストーラ自身は実行しない）。
+
+実行する内容は ``--dry-run`` で先に確かめられる（:numref:`fig-screen-install`）。
+
+.. _fig-screen-install:
+
+.. figure:: _generated/screens/screen_install.png
+   :width: 100%
+   :alt: install.sh の実行画面（developer、CFD あり、--dry-run）
+
+   ``install.sh --developer --cfd --dry-run`` の画面。何も変更せずに、検出したツールと実行する手順の一覧だけを示す。
+
+CFD ツールについて
+^^^^^^^^^^^^^^^^^^
+
+どちらの役割でも、CFD ツール（SU2、gmsh、Open MPI）を任意で入れられる（手順 4）。
 x86_64 の Linux で AVX-512 のない CPU では、SU2 8.5.0 のパッケージが異常終了するため、SU2 を 8.3.0 に固定する。
 インストール後に、設定ファイルの ``[aero.cfd] prefix`` に書く値（または環境変数 ``IGNISYEET_CFD_PREFIX``）を表示する。
 
-主なオプションは ``bash -s --`` の後ろに付ける。
+オプション
+^^^^^^^^^^
+
+質問に答える代わりに、オプションで指定することもできる。
+``curl ... | bash`` の場合は、オプションを ``bash -s --`` の後ろに付ける。
 
 .. code-block:: sh
 
@@ -100,6 +288,10 @@ x86_64 の Linux で AVX-512 のない CPU では、SU2 8.5.0 のパッケージ
      - インストール先（既定は ``~/.local``）
    * - ``--dir DIR``
      - developer の clone 先（既定は実行した clone、なければ ``~/ignisyeet``）
+   * - ``--add-path``
+     - ``PATH`` の行をシェルの設定ファイルに、尋ねずに追記する
+   * - ``--force``
+     - 同じバージョンが入っていても入れ直す
    * - ``-y`` ``--yes``
      - 質問せず既定値を使う（user、CFD なし、シェル設定ファイルは書き換えない）
    * - ``--dry-run``
@@ -107,20 +299,91 @@ x86_64 の Linux で AVX-512 のない CPU では、SU2 8.5.0 のパッケージ
    * - ``--uninstall``
      - バイナリ、リンク、リリースデータを削除する。作図環境と CFD 環境は確認してから削除する（``--purge`` で両方）。developer の clone は明示的に確認したときだけ削除する
 
-各オプションには環境変数（``IGNISYEET_VERSION``、``IGNISYEET_PREFIX``、``IGNISYEET_CFD`` など）も対応する。
+環境変数
+^^^^^^^^
+
+各オプションには環境変数も対応する。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 60
+
+   * - 環境変数
+     - 対応するオプションなど
+   * - ``IGNISYEET_ROLE``
+     - ``--user`` ``--developer``\ （``user`` または ``developer``）
+   * - ``IGNISYEET_VERSION``
+     - ``--version``
+   * - ``IGNISYEET_PREFIX``
+     - ``--prefix``
+   * - ``IGNISYEET_DIR``
+     - ``--dir``
+   * - ``IGNISYEET_CFD``
+     - ``--cfd``\ （``1``）、``--no-cfd``\ （``0``）
+   * - ``IGNISYEET_YES``、``IGNISYEET_DRY_RUN``、``IGNISYEET_FORCE``、``IGNISYEET_ADD_PATH``
+     - ``-y``、``--dry-run``、``--force``、``--add-path``\ （``1`` で有効）
+   * - ``IGNISYEET_NO_COLOR``
+     - 色を使わない（``NO_COLOR`` を設定しても同じになる）
+   * - ``IGNISYEET_DOWNLOAD_BASE``、``IGNISYEET_REPO_URL``
+     - リリースの取得元の URL、developer が clone する git の URL（ミラーや検証用）
+
 ``NO_COLOR`` を設定するか、端末でない場所へ出力すると、装飾のない行単位の出力になる。
-実行内容は ``~/.local/share/ignisyeet/install.log`` に記録される。
+端末でないとき（``-y`` を付けた場合やパイプ越しで入力がない場合を含む）は質問せず、既定値（user、CFD なし、PATH は書き換えない）を使う。
 リリースの配布物は ``ignisyeet-<バージョン>-<ターゲット>.tar.gz`` と ``.sha256`` であり、
 インストーラはチェックサムを検証してから展開する。
 
-.. _fig-screen-install:
+アンインストール
+^^^^^^^^^^^^^^^^
 
-.. figure:: _generated/screens/screen_install.png
+インストーラに ``--uninstall`` を付けて実行する。
+
+.. code-block:: sh
+
+   bash install.sh --uninstall
+
+バイナリ、``ignisyeet-plot`` のリンク、リリースデータを削除するか尋ねたあと、
+作図用の環境、CFD の conda 環境（作成していた場合）を削除するかをそれぞれ尋ねる（:numref:`fig-screen-install-uninstall`）。
+developer の clone は、明示的に確認したときだけ削除する。作業中の変更が失われるので、通常は ``n`` と答える。
+``--purge`` を付けると、作図環境と CFD 環境も尋ねずに削除する。
+``install.log`` と、シェルの設定ファイルに追記した PATH の行は残るので、不要なら手で消す。
+
+.. _fig-screen-install-uninstall:
+
+.. figure:: _generated/screens/screen_install_uninstall.png
    :width: 100%
-   :alt: install.sh の実行画面（developer、CFD あり、--dry-run）
+   :alt: install.sh --uninstall の実行画面
 
-   ``install.sh --developer --cfd --dry-run`` の画面。検出したツール（緑のチェックは既存のものを使う）と、
-   実行する手順の一覧を示す。``--dry-run`` では何も変更しない。
+   ``install.sh --uninstall`` の画面。バイナリとリリースデータ、作図環境の削除に ``y`` と答えたところである。
+
+更新と再インストール
+^^^^^^^^^^^^^^^^^^^^
+
+新しいバージョンに更新するには、手順 2 のコマンドをもう一度実行する。
+入っていないものだけを入れるので、再実行しても安全である。
+user では最新のリリースが取得され、``current`` のリンクが新しい版に切り替わる。古い版のデータは ``~/.local/share/ignisyeet/<バージョン>`` に残る。
+特定のバージョンを入れたいときは ``--version vX.Y.Z`` を指定する。
+同じバージョンがすでに入っているときは、``Reinstall it?`` と尋ねられる。尋ねられない場面（``-y`` など）で入れ直したいときは ``--force`` を付ける。
+
+困ったとき
+^^^^^^^^^^
+
+``could not determine the latest release``\ （最新のリリースが分からない）
+   まだリリースが公開されていないか、ネットワークに接続できていない。developer の役割（``--developer``）で入れるか、
+   ``--version vX.Y.Z`` でバージョンを指定する。
+
+``ignisyeet: command not found``
+   ``~/.local/bin`` が ``PATH`` に入っていない。手順 7 の ``export PATH=...`` の行をシェルの設定ファイルに書き、新しい端末を開く。
+
+プロキシの内側でダウンロードに失敗する
+   ``curl`` は ``https_proxy`` と ``http_proxy`` を読む。実行前に設定しておく（例：``export https_proxy=http://proxy.example.com:8080``）。
+
+途中で失敗した
+   失敗した手順の名前と、ログの末尾が画面に出る。全体の記録は ``~/.local/share/ignisyeet/install.log`` にある。
+   インストーラは再実行しても安全なので、原因を取り除いてからもう一度実行する。
+
+CFD ツールで SU2 が異常終了する（AVX-512 のない CPU）
+   x86_64 の Linux で AVX-512 のない CPU では、SU2 8.5.0 が異常終了する。
+   インストーラはこれを検出して 8.3.0 に固定するが、すでに作成された環境を使っているときは、画面に出る再作成のコマンドで作り直す。
 
 リリースとバージョン
 ~~~~~~~~~~~~~~~~~~~~

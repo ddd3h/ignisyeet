@@ -146,7 +146,7 @@ banner() {
   r5="@@@ _@@@ @__@ @@@ @@@_ __@__ @@@@ @@@@ __@__"
   local rows=("$r1" "$r2" "$r3" "$r4" "$r5") cols=("$c1" "$c2" "$c3" "$c4" "$c5")
   local rocket=("    /\\    " "   /  \\   " "  | () |  " "  |    |  " " /|____|\\ ")
-  local rocket_u=("    ╱╲    " "   ╱  ╲   " "  │ ◉◉ │  " "  │    │  " " ╱│▒▒▒▒│╲ ")
+  local rocket_u=("    ╱╲    " "   ╱  ╲   " "  │ () │  " "  │    │  " " ╱│▒▒▒▒│╲ ")
   local i line rk
   say ""
   for i in 0 1 2 3 4; do
@@ -157,9 +157,9 @@ banner() {
     say "  ${ORANGE}${rk}${RESET}  ${cols[$i]}${line}${RESET}"
   done
   if [ "$USE_UTF8" = 1 ]; then
-    say "  ${YELLOW}    ╲╱╲╱    ${RESET}  ${BOLD}installer${RESET} ${GREY}${G_DOT} rocket flight simulation & aerodynamics toolkit${RESET}"
+    say "  ${YELLOW}   ╲╱╲╱   ${RESET}  ${BOLD}installer${RESET} ${GREY}${G_DOT} rocket flight simulation & aerodynamics toolkit${RESET}"
   else
-    say "  ${YELLOW}    VvVv    ${RESET}  ${BOLD}installer${RESET} ${GREY}${G_DOT} rocket flight simulation & aerodynamics toolkit${RESET}"
+    say "  ${YELLOW}   VvVv   ${RESET}  ${BOLD}installer${RESET} ${GREY}${G_DOT} rocket flight simulation & aerodynamics toolkit${RESET}"
   fi
   say ""
 }

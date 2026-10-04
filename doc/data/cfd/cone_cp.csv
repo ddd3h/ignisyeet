@@ -1,0 +1,5 @@
+# 10 deg half-angle cone + cylinder, M=2, alpha=0, Euler (Roe, half model), cone surface Cp (0.4..0.95 of cone length) vs Taylor-Maccoll (panel::supersonic::cone_cp)
+wall_size_m,cells,surface_nodes,cp_mean,cp_std,cp_taylor_maccoll,error_percent
+0.01,38775,318,0.09274,0.00598,0.10448,-11.23
+0.005,74350,811,0.09886,0.00364,0.10448,-5.38
+0.0025,189199,3080,0.10259,0.00125,0.10448,-1.80

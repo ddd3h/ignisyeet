@@ -1,0 +1,8 @@
+{
+  "machine": "i7-12700 (20 threads), 30 GB, SU2 8.3.0, Open MPI 5.0.11, gmsh 4.15.2",
+  "euler_matrix": {"machs": [0.3, 0.8, 1.2, 2.0], "alphas_deg": [0, 2, 4, 8], "cells": 633552, "wall_size_m": 0.0025,
+                   "ranks_per_case": 4, "parallel_cases": 5, "total_wall_s": 874, "per_case_wall_s": "32-198 (median about 70)", "unconverged_accepted": 1},
+  "rans_case": {"mach": 0.8, "alphas_deg": [0, 4], "cells": 196947, "wall_size_m": 0.005, "ranks": 4, "wall_s": [69, 85], "note": "no boundary-layer prisms; SA + standard wall function, first-order Roe, 300 iteration cap"},
+  "memory": {"su2_peak_rss_per_rank_MB": {"80k cells": 87, "197k cells": 165, "633k cells": 422}, "model": "40 MB per rank + 2.7 kB per cell (Euler)"},
+  "cone_validation": "cone_cp.csv"
+}

@@ -171,7 +171,7 @@ CAD ソフトの多くは慣性乗積を :math:`+\int xy\,\mathrm{d}m` の符号
    \dot{\bm{\omega}} = I^{-1}\left(\bm{M}_b-\bm{\omega}\times(I\bm{\omega})\right)
 
 とする。設定を読むときに、:math:`I` が正定値でなければエラーにする。
-質量の時間変化による :math:`\dot I` の項は無視する（:doc:`limitations`）。
+質量の時間変化による :math:`\dot I` の項は無視する（:ref:`sec-lim-motion`）。
 
 空力モーメント
 ~~~~~~~~~~~~~~
@@ -207,7 +207,7 @@ CAD ソフトの多くは慣性乗積を :math:`+\int xy\,\mathrm{d}m` の符号
    K_q=\max\!\left(0,\ S_2^q-2x_{cg}S_1^q+x_{cg}^2S_0^q\right)
 
 とする（:math:`K_r` は :math:`S^r` で同じ形）。部品積み上げ法とパネル法から展開した表では :math:`S^q=S^r` で、\ :eq:`eq-moment-damp` に一致する。
-減衰は、重心が横にずれていても軸上の重心を仮定した式で求める（:doc:`limitations`）。
+減衰は、重心が横にずれていても軸上の重心を仮定した式で求める（:ref:`sec-lim-motion`）。
 
 .. _sec-roll-moment:
 
@@ -245,7 +245,7 @@ CAD ソフトの多くは慣性乗積を :math:`+\int xy\,\mathrm{d}m` の符号
    \omega_x = -\frac{2V\,C_{l\delta}\,\delta}{C_{lp}\,d}
 
 と求まる（軸対称表、またはそれを展開した一般表の場合）。:math:`C_{l\delta}` と :math:`C_{lp}` は部品積み上げ法で求める（:ref:`sec-barrowman-roll`）。
-ロールのモーメントはピッチ・ヨーと連成しない。ロールとピッチ・ヨーの交差する微係数は扱わない（:doc:`limitations`）。
+ロールのモーメントはピッチ・ヨーと連成しない。ロールとピッチ・ヨーの交差する微係数は扱わない（:ref:`sec-lim-motion`）。
 
 .. _sec-thrust-line:
 

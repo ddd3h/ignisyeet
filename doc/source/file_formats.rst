@@ -318,7 +318,7 @@ CFD の実行の要約である。項目は次のとおりである。
 
 .. list-table::
    :header-rows: 1
-   :widths: 30 70
+   :widths: 45 55
    :class: longtable
 
    * - 項目
@@ -350,7 +350,8 @@ CFD の実行の要約である。項目は次のとおりである。
    * - ``betas_deg``
      - 解いた横滑り角
    * - ``cfd_region`` / ``model_outside_cfd_region``
-     - 一般表で、CFD の値を使う範囲（``alpha_min_deg`` ``alpha_max_deg`` ``beta_min_deg`` ``beta_max_deg``）と、その外側がモデルの値かどうか（一般表では ``true``）
+     - 一般表で、CFD の値を使う範囲（``alpha_min_deg`` ``alpha_max_deg``
+       ``beta_min_deg`` ``beta_max_deg``）と、その外側がモデルの値かどうか（一般表では ``true``）
    * - ``clp`` / ``clp_source``
      - Mach 数ごとのロール減衰の CFD の値、部品積み上げ法の値、採用した側と理由（``clp``）と、全体の採用元（``cfd``、``barrowman``、``mixed``）
    * - ``diagnostics``

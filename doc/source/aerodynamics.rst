@@ -103,7 +103,7 @@ STL から機体の寸法（半径分布、フィンの平面形、機体軸）�
   解いた領域の外側の値は CFD の結果ではなく、モデルによる補完である。
 
 差の大きい量は不確かさが大きいと考える。その大きさは、モンテカルロ解析の ``cn_scale``, ``ca_scale``\ （:doc:`dispersion`）に反映するのがよい。
-サンプル機体での三つの手法の比較は :doc:`verification_aero` にまとめる。そこでは、亜音速の法線力傾斜は CFD とパネル法が近く、部品積み上げ法が小さく出ている。
+サンプル機体での三つの手法の比較は :ref:`sec-vaero-compare-three` にまとめる。そこでは、亜音速の法線力傾斜は CFD とパネル法が近く、部品積み上げ法が小さく出ている。
 
 .. _sec-aero-methods:
 
@@ -139,7 +139,7 @@ CFD（``method = "cfd"``、:doc:`cfd`、:doc:`cfd_internals`）
    風洞試験などで得た係数表を読み込む。形状の抽出と空力モデルの計算は行わない（:ref:`sec-aero-external`）。
 
 三つの手法の違いを :numref:`tbl-aero-methods` にまとめる。計算時間は桁の目安で、「表全体」と「1 ケース」を区別して書く。
-実測の時間とセル数は :doc:`verification_aero` にある。
+計算時間とセル数は :ref:`sec-vaero-timing` にある。
 
 .. _tbl-aero-methods:
 
@@ -301,7 +301,7 @@ CFD（``method = "cfd"``、:doc:`cfd`、:doc:`cfd_internals`）
 * 係数表の読み込みと内挿・外挿は、軸対称表と一般表の両方で確かめた。
 * 三つの手法の係数を同じ機体で比べ、差の傾向を確かめた（相互比較であり、実測との比較ではない）。
 
-結果は :doc:`verification_aero` にまとめる。
+結果は :doc:`verification_aero` に、手法どうしの比較は :ref:`sec-vaero-compare` にまとめる。
 
 注意
 ----
@@ -311,4 +311,4 @@ CFD（``method = "cfd"``、:doc:`cfd`、:doc:`cfd_internals`）
 * 展開した一般表は、非対称な機体の係数を含まない。
 * 一般表は 6 成分の準定常空力であり、完全な非定常空力ではない。
 
-詳しくは :doc:`limitations` を参照。
+詳しくは :ref:`sec-lim-aero` を参照。

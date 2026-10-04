@@ -98,6 +98,7 @@
 .. list-table:: モンテカルロ解析のばらつき（標準偏差の既定値）
    :header-rows: 1
    :widths: 22 12 14 52
+   :class: longtable
 
    * - 項目
      - 種類

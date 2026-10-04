@@ -664,6 +664,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
 .. list-table::
    :header-rows: 1
    :widths: 27 22 51
+   :class: longtable
 
    * - 項目
      - 既定値
@@ -838,6 +839,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
 .. list-table::
    :header-rows: 1
    :widths: 27 22 51
+   :class: longtable
 
    * - 項目
      - 既定値
@@ -1056,6 +1058,7 @@ CFD の準備は ``ignisyeet cfd-check 設定ファイル [--mesh]`` で確か�
 .. list-table::
    :header-rows: 1
    :widths: 27 22 51
+   :class: longtable
 
    * - 項目
      - 既定値
@@ -1132,6 +1135,7 @@ CSV の 1 行目は次の見出しで、続く行は Mach 数が外側、迎角�
 .. list-table::
    :header-rows: 1
    :widths: 30 70
+   :class: longtable
 
    * - ファイル
      - 内容

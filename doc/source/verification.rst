@@ -11,6 +11,7 @@
 .. list-table:: 自動テストの一覧
    :header-rows: 1
    :widths: 34 66
+   :class: longtable
 
    * - テスト
      - 内容

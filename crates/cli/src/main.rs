@@ -370,11 +370,19 @@ fn aero_table_for(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
         }
     }
     if cfg.aero.table_kind == aero::table::TableKind::General && t.kind() == aero::table::TableKind::Axisymmetric {
+        let start = std::time::Instant::now();
+        let u = ui();
         let (alphas, betas) = general_axes();
         t = t.to_general(alphas, betas);
+        let (nm, na, nb) = (t.meta.machs.len(), t.meta.alphas_deg.len(), t.meta.betas_deg.len());
         if cfg.aero.method != config::AeroMethod::Table {
-            t.save(&out_path(cfg, "aero_table.csv")?)?;
+            let path = out_path(cfg, "aero_table.csv")?;
+            t.save(&path)?;
+            if u.plain() {
+                println!("General table: {nm} Mach x {na} alpha x {nb} beta = {} rows in {:.2?} -> {}", t.rows(), start.elapsed(), path.display());
+            }
         }
+        u.done_line("General table", &format!("{nm} Mach x {na} alpha x {nb} beta ({} rows)", t.rows()), start.elapsed());
     }
     Ok(t)
 }

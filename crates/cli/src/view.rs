@@ -82,9 +82,23 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
         let r = &cfg.rocket;
         p.row("dry mass", format!("{}{s}CG {}{s}Ixx {}{s}Iyy {}", val(format!("{:.3}", r.dry_mass), "kg"), val(format!("{:.3}", r.cg_dry), "m"), val(r.ixx_dry, "kg m2"), val(r.iyy_dry, "kg m2")));
         p.row("extra Cd", format!("{}{s}motor aft_x {}", val(r.extra_cd, ""), cfg.motor.aft_x.map_or("body length".to_string(), |x| format!("{x} m"))));
+        if r.izz_dry.is_some() || r.ixy_dry != 0.0 || r.ixz_dry != 0.0 || r.iyz_dry != 0.0 {
+            let izz = r.izz_dry.unwrap_or(r.iyy_dry);
+            p.row("inertia", format!("Izz {}{s}Ixy {}{s}Ixz {}{s}Iyz {}", val(izz, "kg m2"), val(r.ixy_dry, ""), val(r.ixz_dry, ""), val(r.iyz_dry, "")));
+        }
+        if r.cg_lateral_dry != [0.0, 0.0] || r.cant_deg() != 0.0 {
+            p.row("asymmetry", format!("CG y {} z {}{s}fin cant {}", val(r.cg_lateral_dry[0], "m"), val(r.cg_lateral_dry[1], "m"), val(r.cant_deg(), "deg")));
+        }
+        let mo = &cfg.motor;
+        if mo.misalignment_deg != 0.0 || mo.misalignment_offset != [0.0, 0.0] {
+            p.row(
+                "thrust line",
+                format!("tilt {} toward {}{s}offset y {} z {}", val(mo.misalignment_deg, "deg"), val(mo.misalignment_azimuth_deg, "deg"), val(mo.misalignment_offset[0], "m"), val(mo.misalignment_offset[1], "m")),
+            );
+        }
     } else {
         p.section("Geometry");
-        let fin = if let Some(o) = &cfg.rocket.fin_override { format!("override ({} fields)", [o.count.is_some(), o.root_chord.is_some(), o.tip_chord.is_some(), o.span.is_some(), o.sweep.is_some(), o.thickness.is_some(), o.x_le_root.is_some()].iter().filter(|b| **b).count()) } else { "auto-detect".to_string() };
+        let fin = if let Some(o) = &cfg.rocket.fin_override { format!("override ({} fields)", [o.count.is_some(), o.root_chord.is_some(), o.tip_chord.is_some(), o.span.is_some(), o.sweep.is_some(), o.thickness.is_some(), o.x_le_root.is_some(), o.cant_deg.is_some()].iter().filter(|b| **b).count()) } else { "auto-detect".to_string() };
         p.row("slices", format!("{}{s}fin threshold {}{s}fins {}", val(cfg.aero.n_slices, ""), val(cfg.aero.fin_threshold, ""), fin));
     }
 
@@ -93,6 +107,9 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
         p.section("Launch");
         p.row("site", format!("{}, {}{s}{} {}", val(format!("{:.4}", l.latitude), "N"), val(format!("{:.4}", l.longitude), "E"), val(format!("{:.0}", l.altitude), "m"), dim("ASL")));
         p.row("rail", format!("{}{s}elevation {}{s}azimuth {}", val(format!("{:.1}", l.rail_length), "m"), val(format!("{:.1}", l.elevation_deg), "deg"), val(format!("{:.0}", l.azimuth_deg), "deg")));
+        if l.roll_deg != 0.0 {
+            p.row("launch roll", val(l.roll_deg, "deg"));
+        }
         p.section("Recovery");
         if cfg.recovery.enabled {
             p.row("parachute", format!("Cd*S {}{s}deploys {} after apogee", val(format!("{:.2}", cfg.recovery.cd_s), "m2"), val(format!("{:.1}", cfg.recovery.delay), "s")));
@@ -112,6 +129,9 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
             _ => {
                 p.row("method", format!("{m}{s}roughness {}{s}extra Cd {}", val(cfg.rocket.roughness * 1e6, "um"), val(cfg.rocket.extra_cd, "")));
                 p.row("grid", format!("Mach {} .. {} step {}{s}alpha 0 .. {} step {} deg", val(a.mach_min, ""), val(a.mach_max, ""), val(a.mach_step, ""), val(a.alpha_max_deg, ""), val(a.alpha_step_deg, "")));
+                if a.table_kind == aero::table::TableKind::General {
+                    p.row("table", format!("{}{s}α ±180, β ±90 deg{s}Mach step {}", style("general").bold(), val(a.general_mach_step, "")));
+                }
             }
         }
         if a.method == AeroMethod::Cfd {

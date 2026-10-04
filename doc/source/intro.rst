@@ -55,7 +55,9 @@ IgnisYeet はどの団体・組織にも属さないオープンソースソフ�
 * すぐに使いたい場合は :doc:`usage` を読めばよい。
 * 計算全体の流れは :doc:`overview` にまとめた。
 * :doc:`coordinates` から :doc:`dispersion` までが理論編で、プログラムの処理順に並べている。
-* :doc:`verification` では、各モデルが正しく実装されていることをどう確かめたかを示す。
+  空力は、全体像（:doc:`aerodynamics`）、係数と座標系（:doc:`aero_coefficients`）、三つの手法（:doc:`barrowman`、:doc:`panel`、CFD の使い方 :doc:`cfd` と内部 :doc:`cfd_internals`）の順に読める。
+* :doc:`verification` では、各モデルが正しく実装されていることをどう確かめたかを示す。空力モデルの検証は :doc:`verification_aero` にある。
+* 出力ファイルの列と項目は :doc:`file_formats` にまとめてある。
 * :doc:`limitations` には、現時点のモデルが扱えないことを正直に書いた。結果を使う前に必ず目を通してほしい。
 
 記号は各章で定義するが、主なものを次に示す。

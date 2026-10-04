@@ -377,34 +377,3 @@ CFD は Euler 方程式で、:math:`M=0.3,0.8,1.2,2.0` と :math:`\alpha=0,2,4,8
 
 これらは非粘性の仮定の上での比較で、実測との比較ではない。どの値が実機に近いかは、この比較だけでは決まらない。
 差の理由は、パネル法と CFD の章でさらに詳しく調べている。
-
-付録：係数表のファイル形式（移動予定）
---------------------------------------
-
-（この節は :doc:`file_formats` に移す予定の仮置きである。軸対称表の列と付随ファイルの項目は :ref:`sec-aero-table-format` にある。）
-
-軸対称表の CSV は ``mach,alpha_deg,cn,ca_on,ca_off,xcp,cna,damp_s0,damp_s1,damp_s2,cl_delta,clp`` の順で、既定では
-:math:`M=0,0.02,\dots,3.0`\ （151 点）、:math:`\alpha=0^\circ,1^\circ,\dots,30^\circ`\ （31 点）の格子である。
-基準量・格子・入力のハッシュ値は ``aero_table.json`` に保存する。付随ファイルには形式のバージョン ``format_version``\ （現在は 2）と
-表の種類 ``kind``\ （``"axisymmetric"`` または ``"general"``）を書く。軸対称表の ``alpha_deg`` は全迎角 :math:`\alpha_t` である。
-
-一般表は :math:`(M,\alpha,\beta)` の格子上に 6 係数と、ロールの微係数、ピッチとヨーの減衰の和を持つ。
-迎角は :math:`-180^\circ\le\alpha\le180^\circ`、横滑り角は :math:`-90^\circ\le\beta\le90^\circ` を覆い、
-両方の軸は不等間隔で、:math:`\pm30^\circ` の内側は 2° 刻み、外側は 10° 刻みである（:math:`\alpha` は 61 点、:math:`\beta` は 43 点）。
-Mach 数の刻みは、部品積み上げ法では ``aero.general_mach_step``\ （既定 0.05）、パネル法と外部の表では軸対称表の刻み、CFD では ``aero.cfd.general_mach_step`` である。
-サンプルの機体の一般表（部品積み上げ法）は 61（Mach 数）× 61 × 43 = 160003 行になる。
-列は次の順で、Mach 数が最も外側、:math:`\beta` が最も内側である。``alpha_deg`` は :math:`\alpha` である。
-
-.. code-block:: text
-
-   mach,alpha_deg,beta_deg,cx_on,cx_off,cy,cz,cl,cm,cn,cl_delta,clp,sq0,sq1,sq2,sr0,sr1,sr2
-
-``sq0``–``sq2`` はピッチの減衰の和 :math:`S_0^q,S_1^q,S_2^q`、``sr0``–``sr2`` はヨーの和 :math:`S_0^r,S_1^r,S_2^r` である。
-一般表では単一の圧力中心 :math:`x_{cp}` や :math:`C_{N\alpha}` を飛翔計算に使わない。
-展開した一般表では :math:`C_l` は :math:`C_{l\delta}\,\delta_{\mathrm{ref}}\,\sgn(u_x)`、ピッチとヨーの和は軸対称表の :math:`S_0,S_1,S_2` を両方に入れる。
-サンプルでは、頂点高度が軸対称表で 4440.7 m、一般表で 4440.8 m である。
-
-付随ファイルのモーメントの基準点は ``moment_ref``\ （値は ``"nose_tip"``）、一般表の横滑り角の格子は ``betas_deg`` である。
-
-バージョン 1 の表：付随ファイルに ``format_version`` がなく、CSV が 8 列（``cn`` から ``damp_s2``）の表は、ロール項を 0 とした軸対称表として読み込む。
-保存するときは常にバージョン 2 で書く。

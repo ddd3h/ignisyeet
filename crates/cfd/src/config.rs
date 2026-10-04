@@ -133,8 +133,25 @@ pub enum MultigridCycle {
     V,
 }
 
+/// Default early-stop minimum iteration count (also the iteration at which the Euler slope limiter is frozen).
+pub const DEFAULT_MIN_ITERATIONS: usize = 100;
+/// Default length of the coefficient-stability window of the early stop.
+pub const DEFAULT_STABLE_WINDOW: usize = 60;
 /// Default agglomeration multigrid levels of Euler cases (RANS: 0).
 pub const DEFAULT_EULER_MULTIGRID: usize = 0;
+
+fn default_min_iterations() -> usize {
+    DEFAULT_MIN_ITERATIONS
+}
+fn is_default_min_iterations(v: &usize) -> bool {
+    *v == DEFAULT_MIN_ITERATIONS
+}
+fn default_stable_window() -> usize {
+    DEFAULT_STABLE_WINDOW
+}
+fn is_default_stable_window(v: &usize) -> bool {
+    *v == DEFAULT_STABLE_WINDOW
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
@@ -212,6 +229,13 @@ pub struct CfdOptions {
     /// Multigrid cycle (`MGCYCLE`).
     #[serde(skip_serializing_if = "is_default")]
     pub multigrid_cycle: MultigridCycle,
+    /// Early stop: no case is stopped before this iteration, and the Euler slope limiter is frozen at it
+    /// (`LIMITER_ITER`), so that the residual can drop below the limiter-chatter level.
+    #[serde(default = "default_min_iterations", skip_serializing_if = "is_default_min_iterations")]
+    pub min_iterations: usize,
+    /// Early stop: the force coefficients must be flat over this many last iterations.
+    #[serde(default = "default_stable_window", skip_serializing_if = "is_default_stable_window")]
+    pub stable_window: usize,
     pub cfl: f64,
     /// Target level of the RMS density residual (e.g. 1e-6 -> `CONV_RESIDUAL_MINVAL = -6`).
     pub convergence: f64,
@@ -262,6 +286,8 @@ impl Default for CfdOptions {
             iterations: 3000,
             multigrid: None,
             multigrid_cycle: MultigridCycle::W,
+            min_iterations: DEFAULT_MIN_ITERATIONS,
+            stable_window: DEFAULT_STABLE_WINDOW,
             cfl: 5.0,
             convergence: 1e-6,
             scheme: Scheme::Roe,
@@ -382,6 +408,12 @@ impl CfdOptions {
         }
         if self.multigrid.is_some_and(|m| m > 4) {
             bail!("aero.cfd.multigrid must be in 0..=4 (agglomeration multigrid levels)");
+        }
+        if self.stable_window < 10 {
+            bail!("aero.cfd.stable_window must be at least 10 iterations");
+        }
+        if self.min_iterations < self.stable_window {
+            bail!("aero.cfd.min_iterations ({}) must not be smaller than stable_window ({})", self.min_iterations, self.stable_window);
         }
         if !(self.timeout_minutes.is_finite() && self.timeout_minutes >= 0.0) {
             bail!("aero.cfd.timeout_minutes must be >= 0");
@@ -526,23 +558,32 @@ mod tests {
     }
 
     #[test]
-    fn multigrid_options_are_validated_and_not_serialised_at_their_defaults() {
+    fn solver_acceleration_options_are_validated_and_not_serialised_at_their_defaults() {
         let o = CfdOptions::default();
-        assert_eq!((o.multigrid, o.multigrid_cycle), (None, MultigridCycle::W));
+        assert_eq!((o.multigrid, o.multigrid_cycle, o.min_iterations, o.stable_window), (None, MultigridCycle::W, DEFAULT_MIN_ITERATIONS, DEFAULT_STABLE_WINDOW));
         let j = serde_json::to_string(&o).unwrap();
-        assert!(!j.contains("multigrid"), "{j}");
-        let p: CfdOptions = serde_json::from_str(r#"{"multigrid":3,"multigrid_cycle":"v"}"#).unwrap();
+        assert!(!j.contains("multigrid") && !j.contains("min_iterations") && !j.contains("stable_window"), "{j}");
+        let p: CfdOptions = serde_json::from_str(r#"{"multigrid":3,"multigrid_cycle":"v","min_iterations":120,"stable_window":50}"#).unwrap();
         p.validate().unwrap();
-        assert_eq!((p.multigrid_levels(), p.multigrid_cycle), (3, MultigridCycle::V));
+        assert_eq!((p.multigrid_levels(), p.multigrid_cycle, p.min_iterations, p.stable_window), (3, MultigridCycle::V, 120, 50));
         let j = serde_json::to_string(&p).unwrap();
-        assert!(j.contains("\"multigrid\":3") && j.contains("\"multigrid_cycle\":\"v\""), "{j}");
+        assert!(j.contains("\"multigrid\":3") && j.contains("\"multigrid_cycle\":\"v\"") && j.contains("min_iterations") && j.contains("stable_window"), "{j}");
         // RANS keeps the single grid unless asked.
         let r = CfdOptions { model: FlowModel::Rans, ..Default::default() };
         assert_eq!(r.multigrid_levels(), 0);
         assert_eq!(CfdOptions { model: FlowModel::Rans, multigrid: Some(2), ..Default::default() }.multigrid_levels(), 2);
-        let mut bad = CfdOptions::default();
-        bad.multigrid = Some(5);
-        assert!(bad.validate().unwrap_err().to_string().contains("multigrid"));
+        let bad = |f: fn(&mut CfdOptions)| {
+            let mut o = CfdOptions::default();
+            f(&mut o);
+            o.validate().unwrap_err().to_string()
+        };
+        assert!(bad(|o| o.multigrid = Some(5)).contains("multigrid"));
+        assert!(bad(|o| o.stable_window = 5).contains("stable_window"));
+        assert!(bad(|o| {
+            o.min_iterations = 60;
+            o.stable_window = 80;
+        })
+        .contains("min_iterations"));
         assert!(serde_json::from_str::<CfdOptions>(r#"{"multigrid_cycle":"f"}"#).is_err());
     }
 

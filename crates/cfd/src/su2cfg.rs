@@ -34,9 +34,6 @@ use crate::case::CaseSpec;
 use crate::config::{CfdOptions, FlowModel, MultigridCycle, Scheme};
 use aero::atmosphere::{Atmosphere, GAMMA, R_AIR};
 
-/// Iteration at which the slope limiter is frozen (ROE + MUSCL).
-pub const LIMITER_FREEZE_ITER: usize = 250;
-
 /// Iteration cap of RANS cases (see `su2_config`).
 pub const RANS_MAX_ITER: usize = 300;
 
@@ -179,7 +176,7 @@ pub fn su2_config_case(opt: &CfdOptions, spec: &CaseSpec, dims: &RefDims, atm: &
         c.kv("VENKAT_LIMITER_COEFF", "0.05");
         // Freeze the limiter once the flow has developed: without it the limiter chatter keeps the
         // residual at about 1e-4 and the base wake of the Euler model prevents convergence.
-        c.kv("LIMITER_ITER", LIMITER_FREEZE_ITER);
+        c.kv("LIMITER_ITER", opt.min_iterations);
     }
     c.kv("TIME_DISCRE_FLOW", "EULER_IMPLICIT");
     if rans {
@@ -267,7 +264,7 @@ mod tests {
             "CONV_NUM_METHOD_FLOW= ROE",
             "MUSCL_FLOW= YES",
             "SLOPE_LIMITER_FLOW= VENKATAKRISHNAN",
-            "LIMITER_ITER= 250",
+            "LIMITER_ITER= 100",
             "TIME_DISCRE_FLOW= EULER_IMPLICIT",
             "CFL_ADAPT= YES",
             "CFL_NUMBER= 5",
@@ -288,13 +285,13 @@ mod tests {
     }
 
     #[test]
-    fn multigrid_lines() {
+    fn multigrid_and_limiter_freeze_lines() {
         // Single grid by default: no multigrid lines.
         let d = su2_config(&CfdOptions::default(), 0.8, 2.0, &dims(), &atm(), &CaseFiles::default());
         assert!(!d.contains("MGLEVEL") && !d.contains("MGCYCLE"), "{d}");
-        let o = CfdOptions { multigrid: Some(3), multigrid_cycle: crate::config::MultigridCycle::V, ..Default::default() };
+        let o = CfdOptions { multigrid: Some(3), multigrid_cycle: crate::config::MultigridCycle::V, min_iterations: 100, stable_window: 60, ..Default::default() };
         let s = su2_config(&o, 0.8, 2.0, &dims(), &atm(), &CaseFiles::default());
-        for l in ["MGLEVEL= 3", "MGCYCLE= V_CYCLE"] {
+        for l in ["MGLEVEL= 3", "MGCYCLE= V_CYCLE", "LIMITER_ITER= 100"] {
             assert!(has(&s, l), "missing {l:?} in\n{s}");
         }
         let w = su2_config(&CfdOptions { multigrid: Some(2), ..Default::default() }, 0.8, 2.0, &dims(), &atm(), &CaseFiles::default());

@@ -21,8 +21,8 @@
 //! # Acceptance
 //!
 //! * Residual target reached: `converged`, coefficients of the last row.
-//! * Early stop: after 250 iterations, a drop of 3 orders and coefficients flat (see `History::coefficients_stable`) over the last 120
-//!   iterations stop the case gracefully and accept it (`converged = false`).
+//! * Early stop: after `min_iterations`, a drop of 3 orders and coefficients flat (see `History::coefficients_stable`) over the last
+//!   `stable_window` iterations stop the case gracefully and accept it (`converged = false`).
 //! * Iteration limit / timeout without reaching the target: accepted (`converged = false`) when the
 //!   density residual dropped at least 3 orders (RANS: 1 order) from its peak and `CFx`, `CFz`, `CMy` varied by less
 //!   than 1 % over the last window; the coefficients are averaged over that window.
@@ -48,10 +48,6 @@ use std::process::{Child, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
-
-/// Early stop: minimum iterations and averaging window of the coefficient-stability test.
-const EARLY_MIN_ITER: usize = 250;
-const EARLY_WINDOW: usize = 120;
 
 /// Everything the runner needs.
 pub struct RunSetup<'a> {
@@ -253,9 +249,9 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, restart: Opt
                     let _ = tx.send(Event::Progress { i, iter: h.last_iteration(), residual: r });
                 }
                 // Practically converged (typical for RANS / Euler wake limit cycles): residual down 3
-                // orders and the coefficients flat over EARLY_WINDOW iterations. Stop SU2 gracefully
+                // orders and the coefficients flat over `stable_window` iterations. Stop SU2 gracefully
                 // (it writes its restart file) before the residual drifts and diverges.
-                if h.rows.len() >= EARLY_MIN_ITER && h.residual_drop_from_peak().is_some_and(|d| d >= min_drop) && h.coefficients_stable(EARLY_WINDOW) {
+                if h.rows.len() >= setup.opt.min_iterations && h.residual_drop_from_peak().is_some_and(|d| d >= min_drop) && h.coefficients_stable(setup.opt.stable_window) {
                     child.kill(libc::SIGTERM);
                     let t = Instant::now();
                     while t.elapsed() < Duration::from_secs(30) && child.0.try_wait()?.is_none() {

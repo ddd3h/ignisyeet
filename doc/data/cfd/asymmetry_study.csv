@@ -1,0 +1,17 @@
+# Sample rocket, Euler, wall_size 10 mm, alpha=0 and +-4 deg. cn0, moment0: raw values at alpha=0 (true value 0 for a symmetric body). cn_even=(CN(+4)+CN(-4))/2 is the same offset at 4 deg; cn_odd=(CN(+4)-CN(-4))/2 the mirror-combined normal force.
+config,description,mach,cn0,nose_moment0_m,cn_even_4deg,cn_odd_4deg
+base,"half model, fins at +-y,+-z (2 fins in the symmetry plane), Roe, 87958 cells",0.3,-0.04684,-0.06486,-0.05537,1.17880
+base,"half model, fins at +-y,+-z (2 fins in the symmetry plane), Roe, 87958 cells",0.8,-0.06276,-0.09077,-0.06877,1.16374
+base,"half model, fins at +-y,+-z (2 fins in the symmetry plane), Roe, 87958 cells",2,-0.01724,-0.02502,-0.01881,0.80208
+roll45,"fins rolled 45 deg (no fin in the symmetry plane), Roe",0.3,-0.05764,-0.07778,-0.05349,1.20468
+roll45,"fins rolled 45 deg (no fin in the symmetry plane), Roe",0.8,-0.04452,-0.06249,-0.04232,1.16284
+roll45,"fins rolled 45 deg (no fin in the symmetry plane), Roe",2,-0.06309,-0.08934,-0.05987,0.80192
+jst,"as base, JST scheme",0.3,0.09096,0.11821,0.08504,1.03984
+jst,"as base, JST scheme",0.8,-0.03309,-0.05276,-0.03955,1.06551
+jst,"as base, JST scheme",2,-0.01267,-0.01940,-0.01383,0.73359
+tight,"as base, residual target 1e-9 (6000 it)",0.3,-0.04652,-0.06448,-0.05514,1.17891
+tight,"as base, residual target 1e-9 (6000 it)",0.8,-0.06276,-0.09078,-0.06877,1.16375
+tight,"as base, residual target 1e-9 (6000 it)",2,-0.01723,-0.02496,-0.01891,0.80205
+zm,"as base, z-symmetric (quarter + mirror) mesh, 92668 cells",0.3,-0.00000,-0.00000,0.00012,1.21430
+zm,"as base, z-symmetric (quarter + mirror) mesh, 92668 cells",0.8,0.00000,0.00000,-0.00000,1.17607
+zm,"as base, z-symmetric (quarter + mirror) mesh, 92668 cells",2,-0.00000,-0.00000,0.00001,0.79617

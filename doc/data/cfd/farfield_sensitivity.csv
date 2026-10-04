@@ -1,0 +1,5 @@
+# Sample rocket, Euler, M=0.8, alpha=4 deg, wall_size 2 mm, z-symmetric mesh. farfield = sphere radius in body lengths (1.8 m).
+farfield_L,cells,cn,xcp_m,ca_cfd,cn_diff_vs_20L_percent
+10,940588,1.20711,1.21278,-0.03955,-0.22
+20,941082,1.20979,1.21626,-0.03829,0.00
+40,943850,1.20830,1.21873,-0.03719,-0.12

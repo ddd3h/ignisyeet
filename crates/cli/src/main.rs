@@ -970,7 +970,8 @@ fn write_monte_carlo_csv(path: &Path, rows: &[sim::dispersion::McRow]) -> Result
     writeln!(
         f,
         "sample,descent,status,thrust_scale,burn_time_scale,dry_mass,cg,cn_scale,ca_scale,elevation_deg,azimuth_deg,wind_speed_delta,wind_direction_deg_delta,parachute_cd_s_scale,\
-wind_speed,wind_direction_deg,landing_east,landing_north,landing_lat,landing_lon,landing_distance,landing_time,landing_speed,apogee,apogee_time,max_mach,rail_exit_speed,min_stability_cal"
+wind_speed,wind_direction_deg,landing_east,landing_north,landing_lat,landing_lon,landing_distance,landing_time,landing_speed,apogee,apogee_time,max_mach,rail_exit_speed,min_stability_cal,\
+thrust_misalignment_y_deg,thrust_misalignment_z_deg,thrust_offset_y,thrust_offset_z,fin_cant_deg,cg_lateral_y,cg_lateral_z,cl_scale,clp_scale"
     )?;
     for row in rows {
         let p = &row.perturbation;
@@ -983,14 +984,19 @@ wind_speed,wind_direction_deg,landing_east,landing_north,landing_lat,landing_lon
             p.thrust_scale, p.burn_time_scale, p.dry_mass, p.cg, p.cn_scale, p.ca_scale, p.elevation_deg, p.azimuth_deg, p.wind_speed, p.wind_direction_deg, p.parachute_cd_s_scale
         )?;
         match &row.result {
-            Ok(s) => writeln!(
+            Ok(s) => write!(
                 f,
                 "{},{},{:.2},{:.2},{:.8},{:.8},{:.2},{:.2},{:.2},{:.2},{:.2},{:.4},{:.2},{:.3}",
                 s.wind_speed, s.wind_direction_deg, s.landing_east, s.landing_north, s.landing_lat, s.landing_lon, s.landing_distance,
                 s.landing_time, s.landing_speed, s.apogee, s.apogee_time, s.max_mach, s.rail_exit_speed, s.min_stability_cal
             )?,
-            Err(_) => writeln!(f, ",,,,,,,,,,,,,")?,
+            Err(_) => write!(f, ",,,,,,,,,,,,,")?,
         }
+        writeln!(
+            f,
+            ",{},{},{},{},{},{},{},{},{}",
+            p.misalignment_y_deg, p.misalignment_z_deg, p.offset_y, p.offset_z, p.fin_cant_deg, p.cg_lateral_y, p.cg_lateral_z, p.cl_scale, p.clp_scale
+        )?;
     }
     f.flush()?;
     Ok(())
@@ -1039,6 +1045,58 @@ mod tests {
         let c = t.lookup(0.5, 0.0);
         assert!(c.cl_delta > 0.0 && c.clp < 0.0, "{c:?}");
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn monte_carlo_csv_rows_match_the_header() {
+        let mut rows = Vec::new();
+        for ok in [true, false] {
+            let result = if ok {
+                let cfg = sample_summary();
+                Ok(cfg)
+            } else {
+                Err("failed".to_string())
+            };
+            rows.push(sim::dispersion::McRow { sample: 0, descent: Descent::Ballistic, perturbation: sim::dispersion::Perturbation { cl_scale: 0.25, ..Default::default() }, result });
+        }
+        let path = std::env::temp_dir().join(format!("ignisyeet_mc_csv_{}.csv", std::process::id()));
+        write_monte_carlo_csv(&path, &rows).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        let lines: Vec<Vec<&str>> = text.lines().map(|l| l.split(',').collect()).collect();
+        assert_eq!(lines.len(), 3);
+        assert!(lines.iter().all(|l| l.len() == lines[0].len()), "{:?}", lines.iter().map(Vec::len).collect::<Vec<_>>());
+        // New columns are appended at the end.
+        let col = lines[0].iter().position(|c| *c == "cl_scale").unwrap();
+        assert_eq!(col, lines[0].len() - 2);
+        assert_eq!(lines[1][col], "0.25");
+    }
+
+    fn sample_summary() -> sim::Summary {
+        sim::Summary {
+            descent: Descent::Ballistic,
+            wind_speed: 1.0,
+            wind_direction_deg: 2.0,
+            rail_exit_time: 0.1,
+            rail_exit_speed: 20.0,
+            burnout_time: 2.0,
+            max_speed: 100.0,
+            max_mach: 0.3,
+            max_dyn_pressure: 1.0,
+            apogee_time: 10.0,
+            apogee: 500.0,
+            apogee_east: 1.0,
+            apogee_north: 1.0,
+            min_stability_cal: 2.0,
+            stability_at_rail_exit: 2.0,
+            landing_time: 30.0,
+            landing_east: 10.0,
+            landing_north: 20.0,
+            landing_lat: 35.0,
+            landing_lon: 139.0,
+            landing_distance: 22.0,
+            landing_speed: 30.0,
+        }
     }
 
     #[test]

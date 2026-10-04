@@ -51,6 +51,19 @@ pub struct MonteCarloConfig {
     pub wind_direction_deg: f64,
     /// Relative: parachute drag area Cd*S.
     pub parachute_cd_s_scale: f64,
+    /// Absolute [deg]: thrust misalignment; two orthogonal normals (y_b, z_b tilt components) are added
+    /// to the nominal tilt vector, which gives the misalignment angle and its azimuth.
+    pub thrust_misalignment_deg: f64,
+    /// Absolute [m]: nozzle-exit point of the thrust line, one normal draw per body axis y and z.
+    pub thrust_offset: f64,
+    /// Absolute [deg]: fin cant added to the configured cant (the tabulated roll moment stays at the reference cant).
+    pub fin_cant_deg: f64,
+    /// Absolute [m]: lateral dry CG offset, one normal draw per body axis y and z.
+    pub cg_lateral: f64,
+    /// Relative: roll-moment coefficient Cl and its cant slope Cl_delta.
+    pub cl_scale: f64,
+    /// Relative: roll-damping derivative Clp.
+    pub clp_scale: f64,
 }
 
 impl Default for MonteCarloConfig {
@@ -69,6 +82,12 @@ impl Default for MonteCarloConfig {
             wind_speed: 1.0,
             wind_direction_deg: 15.0,
             parachute_cd_s_scale: 0.1,
+            thrust_misalignment_deg: 0.0,
+            thrust_offset: 0.0,
+            fin_cant_deg: 0.0,
+            cg_lateral: 0.0,
+            cl_scale: 0.0,
+            clp_scale: 0.0,
         }
     }
 }
@@ -136,6 +155,19 @@ pub struct Perturbation {
     pub wind_speed: f64,
     pub wind_direction_deg: f64,
     pub parachute_cd_s_scale: f64,
+    /// Thrust tilt added along y_b and z_b [deg].
+    pub misalignment_y_deg: f64,
+    pub misalignment_z_deg: f64,
+    /// Nozzle-exit offset added along y_b and z_b [m].
+    pub offset_y: f64,
+    pub offset_z: f64,
+    /// Fin cant added [deg].
+    pub fin_cant_deg: f64,
+    /// Lateral dry CG offset added along y_b and z_b [m].
+    pub cg_lateral_y: f64,
+    pub cg_lateral_z: f64,
+    pub cl_scale: f64,
+    pub clp_scale: f64,
 }
 
 /// Smallest allowed multiplicative factor.
@@ -147,13 +179,14 @@ fn factor(e: f64) -> f64 {
 
 impl Perturbation {
     /// Draws all perturbations of sample `index` from `ChaCha8Rng::seed_from_u64(seed + index)`.
-    /// All eleven normals are always drawn (in field order), so switching one sigma on or off does
-    /// not change the draws of the others.
+    /// All normals are always drawn (in field order; the six dispersions of the roll and
+    /// asymmetry terms come after the original eleven), so switching one sigma on or off does not
+    /// change the draws of the others and old seeds reproduce the old samples.
     pub fn draw(cfg: &MonteCarloConfig, index: usize) -> Self {
         let mut rng = ChaCha8Rng::seed_from_u64(cfg.seed.wrapping_add(index as u64));
         let mut n = |sigma: f64| {
             let z: f64 = StandardNormal.sample(&mut rng);
-            sigma * z
+            sigma * z + 0.0
         };
         Self {
             thrust_scale: n(cfg.thrust_scale),
@@ -167,6 +200,15 @@ impl Perturbation {
             wind_speed: n(cfg.wind_speed),
             wind_direction_deg: n(cfg.wind_direction_deg),
             parachute_cd_s_scale: n(cfg.parachute_cd_s_scale),
+            misalignment_y_deg: n(cfg.thrust_misalignment_deg),
+            misalignment_z_deg: n(cfg.thrust_misalignment_deg),
+            offset_y: n(cfg.thrust_offset),
+            offset_z: n(cfg.thrust_offset),
+            fin_cant_deg: n(cfg.fin_cant_deg),
+            cg_lateral_y: n(cfg.cg_lateral),
+            cg_lateral_z: n(cfg.cg_lateral),
+            cl_scale: n(cfg.cl_scale),
+            clp_scale: n(cfg.clp_scale),
         }
     }
 
@@ -183,8 +225,25 @@ impl Perturbation {
         s.mass.dry_mass *= fm;
         s.mass.ixx_dry *= fm;
         s.mass.iyy_dry *= fm;
+        s.mass.izz_dry = s.mass.izz_dry.map(|z| z * fm);
+        s.mass.ixy_dry *= fm;
+        s.mass.ixz_dry *= fm;
+        s.mass.iyz_dry *= fm;
         s.mass.cg_dry += self.cg;
-        s.aero_scale = AeroScale { cn: factor(self.cn_scale), ca: factor(self.ca_scale) };
+        s.mass.cg_lateral_dry[0] += self.cg_lateral_y;
+        s.mass.cg_lateral_dry[1] += self.cg_lateral_z;
+        s.aero_scale = AeroScale { cn: factor(self.cn_scale), ca: factor(self.ca_scale), cl: factor(self.cl_scale), clp: factor(self.clp_scale) };
+        s.fin_cant_deg += self.fin_cant_deg;
+        s.thrust_line.offset[0] += self.offset_y;
+        s.thrust_line.offset[1] += self.offset_z;
+        if self.misalignment_y_deg != 0.0 || self.misalignment_z_deg != 0.0 {
+            // Add the draws to the nominal tilt vector (eps cos phi, eps sin phi).
+            let t = base.thrust_line;
+            let (sp, cp) = t.misalignment_azimuth_deg.to_radians().sin_cos();
+            let (y, z) = (t.misalignment_deg * cp + self.misalignment_y_deg, t.misalignment_deg * sp + self.misalignment_z_deg);
+            s.thrust_line.misalignment_deg = y.hypot(z);
+            s.thrust_line.misalignment_azimuth_deg = z.atan2(y).to_degrees();
+        }
         s.launch.elevation_deg += self.elevation_deg;
         s.launch.azimuth_deg += self.azimuth_deg;
         if self.wind_speed != 0.0 || self.wind_direction_deg != 0.0 {
@@ -464,6 +523,12 @@ mod tests {
             wind_speed: 0.0,
             wind_direction_deg: 0.0,
             parachute_cd_s_scale: 0.0,
+            thrust_misalignment_deg: 0.0,
+            thrust_offset: 0.0,
+            fin_cant_deg: 0.0,
+            cg_lateral: 0.0,
+            cl_scale: 0.0,
+            clp_scale: 0.0,
         }
     }
 
@@ -604,15 +669,65 @@ mod tests {
     fn perturbations_act_as_documented() {
         let (t, m) = (table(), motor());
         let b = base(&t, &m);
-        let p = Perturbation { thrust_scale: 0.1, burn_time_scale: 0.25, dry_mass: 0.2, cg: 0.01, cn_scale: 0.1, ca_scale: -2.0, elevation_deg: -1.0, azimuth_deg: 2.0, wind_speed: -9.0, wind_direction_deg: 100.0, parachute_cd_s_scale: 0.5 };
+        let p = Perturbation { thrust_scale: 0.1, burn_time_scale: 0.25, dry_mass: 0.2, cg: 0.01, cn_scale: 0.1, ca_scale: -2.0, elevation_deg: -1.0, azimuth_deg: 2.0, wind_speed: -9.0, wind_direction_deg: 100.0, parachute_cd_s_scale: 0.5, ..Default::default() };
         let pm = p.motor(&m);
         let s = p.simulation(&b, &pm);
         assert!((pm.total_impulse() - 1.1 * m.total_impulse()).abs() < 1e-9 && (pm.burn_time() - 2.5).abs() < 1e-12);
         assert_eq!(pm.propellant_mass, m.propellant_mass);
         assert!((s.mass.dry_mass - 12.0).abs() < 1e-12 && (s.mass.iyy_dry - 1.2).abs() < 1e-12 && (s.mass.cg_dry - 0.51).abs() < 1e-12);
-        assert_eq!(s.aero_scale, AeroScale { cn: 1.1, ca: 0.05 });
+        assert_eq!(s.aero_scale, AeroScale { cn: 1.1, ca: 0.05, cl: 1.0, clp: 1.0 });
         assert_eq!((s.launch.elevation_deg, s.launch.azimuth_deg), (89.0, 2.0));
         assert_eq!((s.wind.speed, s.wind.direction_deg), (0.0, 10.0));
         assert!((s.recovery.cd_s - 1.5).abs() < 1e-12);
+    }
+
+    #[test]
+    fn old_seeds_reproduce_the_old_draws_and_new_sigmas_do_not_move_them() {
+        let base = MonteCarloConfig { samples: 4, seed: 11, ..Default::default() };
+        let all = MonteCarloConfig {
+            thrust_misalignment_deg: 0.3,
+            thrust_offset: 0.002,
+            fin_cant_deg: 0.1,
+            cg_lateral: 0.001,
+            cl_scale: 0.2,
+            clp_scale: 0.2,
+            ..base.clone()
+        };
+        for i in 0..4 {
+            let (a, b) = (Perturbation::draw(&base, i), Perturbation::draw(&all, i));
+            // The first eleven draws are the original ones, independent of the new sigmas.
+            assert_eq!(
+                (a.thrust_scale, a.burn_time_scale, a.dry_mass, a.cg, a.cn_scale, a.ca_scale, a.elevation_deg, a.azimuth_deg, a.wind_speed, a.wind_direction_deg, a.parachute_cd_s_scale),
+                (b.thrust_scale, b.burn_time_scale, b.dry_mass, b.cg, b.cn_scale, b.ca_scale, b.elevation_deg, b.azimuth_deg, b.wind_speed, b.wind_direction_deg, b.parachute_cd_s_scale)
+            );
+            // Zero sigmas draw exact zeros for the new terms.
+            assert_eq!((a.misalignment_y_deg, a.offset_z, a.fin_cant_deg, a.cg_lateral_y, a.cl_scale, a.clp_scale), (0.0, 0.0, 0.0, 0.0, 0.0, 0.0));
+            assert!(b.misalignment_y_deg != 0.0 && b.offset_y != 0.0 && b.fin_cant_deg != 0.0 && b.cg_lateral_z != 0.0 && b.cl_scale != 0.0 && b.clp_scale != 0.0);
+        }
+        // Frozen first draw of seed 11 (guards the draw order of the original eleven).
+        let p = Perturbation::draw(&base, 0);
+        let mut rng = ChaCha8Rng::seed_from_u64(11);
+        let z: f64 = StandardNormal.sample(&mut rng);
+        assert_eq!(p.thrust_scale, base.thrust_scale * z);
+    }
+
+    #[test]
+    fn new_perturbations_act_on_the_simulation() {
+        let (t, m) = (table(), motor());
+        let mut b = base(&t, &m);
+        b.thrust_line = ThrustLine { misalignment_deg: 1.0, misalignment_azimuth_deg: 0.0, offset: [0.001, 0.0] };
+        b.fin_cant_deg = 0.5;
+        let p = Perturbation { misalignment_z_deg: 1.0, offset_z: 0.002, fin_cant_deg: 0.25, cg_lateral_y: 0.003, cl_scale: 0.5, clp_scale: -0.5, ..Default::default() };
+        let pm = p.motor(&m);
+        let s = p.simulation(&b, &pm);
+        // Nominal tilt (1, 0) deg plus (0, 1) deg.
+        assert!((s.thrust_line.misalignment_deg - 2f64.sqrt()).abs() < 1e-12 && (s.thrust_line.misalignment_azimuth_deg - 45.0).abs() < 1e-9);
+        assert_eq!(s.thrust_line.offset, [0.001, 0.002]);
+        assert_eq!((s.fin_cant_deg, s.mass.cg_lateral_dry), (0.75, [0.003, 0.0]));
+        assert_eq!((s.aero_scale.cl, s.aero_scale.clp), (1.5, 0.5));
+        // Zero perturbation leaves the simulation exactly nominal.
+        let z = Perturbation::default().simulation(&b, &m);
+        assert_eq!((z.thrust_line, z.fin_cant_deg, z.aero_scale), (b.thrust_line, b.fin_cant_deg, AeroScale::default()));
+        assert!(z.mass.is_axisymmetric());
     }
 }

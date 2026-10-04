@@ -581,6 +581,8 @@ pub fn load_monte_carlo(dir: &Path) -> Result<Option<MonteCarlo>, String> {
         let perturbation = Perturbation {
             thrust_scale: g("thrust_scale"), burn_time_scale: g("burn_time_scale"), dry_mass: g("dry_mass"), cg: g("cg"), cn_scale: g("cn_scale"), ca_scale: g("ca_scale"), elevation_deg: g("elevation_deg"),
             azimuth_deg: g("azimuth_deg"), wind_speed: g("wind_speed_delta"), wind_direction_deg: g("wind_direction_deg_delta"), parachute_cd_s_scale: g("parachute_cd_s_scale"),
+            misalignment_y_deg: g("thrust_misalignment_y_deg"), misalignment_z_deg: g("thrust_misalignment_z_deg"), offset_y: g("thrust_offset_y"), offset_z: g("thrust_offset_z"), fin_cant_deg: g("fin_cant_deg"),
+            cg_lateral_y: g("cg_lateral_y"), cg_lateral_z: g("cg_lateral_z"), cl_scale: g("cl_scale"), clp_scale: g("clp_scale"),
         };
         let result = if t.text(r, "status") == Some("ok") { Ok(summary_from_row(&t, r).map_err(|e| format!("{}: {e}", csv.display()))?) } else { Err("failed".to_string()) };
         rows.push(McRow { sample, descent, perturbation, result });

@@ -170,11 +170,15 @@ pub struct AeroScale {
     pub cn: f64,
     /// Scales `ca_on` and `ca_off`.
     pub ca: f64,
+    /// Scales the roll-moment coefficient and its cant slope `cl_delta`.
+    pub cl: f64,
+    /// Scales the roll-damping derivative `clp`.
+    pub clp: f64,
 }
 
 impl Default for AeroScale {
     fn default() -> Self {
-        Self { cn: 1.0, ca: 1.0 }
+        Self { cn: 1.0, ca: 1.0, cl: 1.0, clp: 1.0 }
     }
 }
 
@@ -336,12 +340,14 @@ impl<'a> Simulation<'a> {
     /// Table lookup with the dispersion multipliers applied.
     fn lookup(&self, mach: f64, alpha: f64) -> AeroCoeffs {
         let mut c = self.table.lookup(mach, alpha);
-        let AeroScale { cn, ca } = self.aero_scale;
+        let AeroScale { cn, ca, cl, clp } = self.aero_scale;
         c.cn *= cn;
         c.cna *= cn;
         c.damp = c.damp.map(|d| d * cn);
         c.ca_on *= ca;
         c.ca_off *= ca;
+        c.cl_delta *= cl;
+        c.clp *= clp;
         c
     }
 
@@ -349,7 +355,10 @@ impl<'a> Simulation<'a> {
     /// and moment coefficient and the damping sums, `ca` the axial force).
     fn lookup6(&self, mach: f64, alpha: f64, beta: f64) -> Coeffs6 {
         let mut c = self.table.lookup6(mach, alpha, beta);
-        let AeroScale { cn, ca } = self.aero_scale;
+        let AeroScale { cn, ca, cl, clp } = self.aero_scale;
+        c.cl *= cl;
+        c.cl_delta *= cl;
+        c.clp *= clp;
         c.cy *= cn;
         c.cz *= cn;
         c.cm *= cn;

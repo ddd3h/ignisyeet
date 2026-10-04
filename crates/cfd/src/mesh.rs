@@ -27,7 +27,7 @@
 //! The mesh is cached below `<workdir>/mesh/` keyed by a hash of the geometry and the settings.
 
 use crate::case::hash_parts;
-use crate::config::{CfdOptions, FlowModel};
+use crate::config::{y_symmetric_layout, CfdOptions, FlowModel};
 use crate::tools;
 use aero::atmosphere::Atmosphere;
 use geom::Geometry;
@@ -79,7 +79,17 @@ pub struct MeshParams {
     pub length: f64,
     pub center_x: f64,
     pub farfield_radius: f64,
+    /// Mesh only the half y >= 0 and keep the `symmetry` marker (SU2 half domain).
     pub symmetry: bool,
+    /// Full domain of a y-symmetric layout: mesh the half and mirror it about y = 0 (no `symmetry` marker).
+    pub y_mirror: bool,
+    /// `half`, `full_mirror` (half mesh mirrored about y = 0), `full_box` (box farfield) or `stl_box`:
+    /// part of the mesh hash.
+    pub domain: String,
+    /// `cad` (rebuilt geometry, `mesh_gmsh.py`) or `stl` (direct STL surface, `mesh_stl.py`).
+    pub kind: String,
+    /// STL surface: hash of the united surface the mesh was made from (empty for `cad`).
+    pub union_hash: String,
     pub wall_size: f64,
     pub max_size: f64,
     pub growth: f64,
@@ -176,8 +186,18 @@ impl MeshParams {
         let (_, fins) = cad_description(geom);
         let tail_length = if opt.model == FlowModel::Euler { opt.tail_fairing * geom.base_radius } else { 0.0 };
         let profile = cfd_profile(geom, tail_length);
+        let layout_y = y_symmetric_layout(fins.as_ref().map_or(0, |f| f.count), opt.fin_roll_deg);
+        let (y_mirror, domain) = match (opt.symmetry, layout_y) {
+            (true, _) => (false, "half"),
+            (false, true) => (true, "full_mirror"),
+            (false, false) => (false, "full_box"),
+        };
         MeshParams {
             out_su2: p("mesh.su2"),
+            y_mirror,
+            domain: domain.into(),
+            kind: "cad".into(),
+            union_hash: String::new(),
             stats_json: p("mesh_stats.json"),
             length,
             center_x: 0.5 * length,
@@ -366,6 +386,11 @@ mod tests {
         assert_ne!(mesh_hash(&a), mesh_hash(&c));
         let d = MeshParams::new(&CfdOptions { symmetry: false, ..o.clone() }, &g, Path::new("/a"), 4);
         assert_ne!(mesh_hash(&a), mesh_hash(&d));
+        assert_eq!((a.domain.as_str(), d.domain.as_str(), d.y_mirror), ("half", "full_mirror", true));
+        // A layout that is not symmetric about y = 0 gets the box farfield.
+        let e = MeshParams::new(&CfdOptions { symmetry: false, fin_roll_deg: 10.0, ..o.clone() }, &g, Path::new("/a"), 4);
+        assert_eq!((e.domain.as_str(), e.y_mirror), ("full_box", false));
+        assert_ne!(mesh_hash(&d), mesh_hash(&e));
         let mut g2 = g.clone();
         g2.fins.as_mut().unwrap().span *= 1.1;
         assert_ne!(mesh_hash(&a), mesh_hash(&MeshParams::new(&o, &g2, Path::new("/a"), 4)));

@@ -14,6 +14,7 @@
 pub mod case;
 pub mod config;
 pub mod forces;
+pub mod general;
 pub mod history;
 pub mod mesh;
 pub mod runner;
@@ -22,7 +23,7 @@ pub mod su2cfg;
 pub mod table;
 pub mod tools;
 
-pub use config::{z_symmetric_layout, AlphaMode, CfdOptions, FlowModel, Scheme, SurfaceKind};
+pub use config::{y_symmetric_layout, z_symmetric_layout, AlphaMode, BaseTreatment, CfdOptions, FlowModel, Scheme, ShapeSymmetry, SurfaceKind};
 
 use aero::{AeroOptions, AeroTable, Extrapolation};
 use anyhow::{bail, Result};
@@ -67,6 +68,32 @@ pub struct CfdReport {
     pub bytes_per_case: u64,
     /// RANS: estimated y+ of the first cell centre of the wall mesh (see [`mesh::wall_yplus`]).
     pub est_wall_yplus: Option<f64>,
+    /// `axisymmetric` or `general`.
+    pub table_kind: String,
+    /// Resolved shape symmetry (`axisymmetric`, `pitch_plane`, `none`) and domain (`half`, `full`).
+    pub shape_symmetry: String,
+    pub domain: String,
+    pub betas_deg: Vec<f64>,
+    /// Case directories of failed cases.
+    pub failed_cases: Vec<String>,
+    /// General table: the angle region that comes from CFD; everywhere else the Barrowman model,
+    /// offset-matched at the boundary of the region.
+    pub cfd_region: Option<general::Region>,
+    pub model_outside_cfd_region: bool,
+    /// Roll damping per Mach number: CFD value, Barrowman value, which one the table uses and why.
+    pub clp: Vec<general::ClpEntry>,
+    /// `cfd` (all Mach numbers), `barrowman` (not solved or all rejected) or `mixed`.
+    pub clp_source: String,
+    /// Slopes at zero angle (diagnostics: they are not inputs of a general table).
+    pub diagnostics: Vec<general::Slopes>,
+    /// General table without sideslip data: the yaw damping sums equal the pitch sums.
+    pub yaw_damping_from_pitch: bool,
+    /// Fin cant [deg] contained in the CFD geometry (reference of the roll forcing).
+    pub fin_cant_ref_deg: f64,
+    pub base_treatment: Option<String>,
+    pub warnings: Vec<String>,
+    /// STL surface: geometry fidelity of the CFD wall (see [`fidelity`]).
+    pub fidelity: Option<serde_json::Value>,
 }
 
 /// Message of the missing-tools error.
@@ -84,14 +111,34 @@ pub fn check_tools(opt: &CfdOptions) -> Result<tools::ToolReport> {
     Ok(r)
 }
 
-/// The options with `z_mirror_mesh` switched off when the fin layout of `geom` is not symmetric about the
-/// x-y plane (the quarter-domain mesh would symmetrise the geometry).
+/// The options with every automatic choice made.
+///
+/// * `shape_symmetry`: `auto` becomes `none` for an STL surface; for the rebuilt geometry it is
+///   `axisymmetric` (the table is roll-averaged) unless sideslip is solved, where the fin layout decides
+///   (`axisymmetric`: symmetric about y = 0 and z = 0, `pitch_plane`: about y = 0 only, else `none`).
+/// * `symmetry` (the SU2 half domain) is kept only for the rebuilt geometry with a layout symmetric about
+///   y = 0, a shape symmetry that includes y = 0, `betas_deg = [0]` and no roll cases; otherwise the full
+///   domain is solved (the mesher mirrors the half mesh when the layout is symmetric, else it uses a box farfield).
+/// * `z_mirror_mesh` stays on only for layouts symmetric about both planes.
 pub fn resolve_options(geom: &Geometry, cfd: &CfdOptions) -> CfdOptions {
     let mut o = cfd.clone();
+    let stl = o.surface == SurfaceKind::Stl;
     let (count, roll) = mesh::cad_description(geom).1.map_or((0, 0.0), |f| (f.count, cfd.fin_roll_deg));
-    if o.z_mirror_mesh && !(o.symmetry && z_symmetric_layout(count, roll)) {
-        o.z_mirror_mesh = false;
-    }
+    let (ysym, zsym) = (y_symmetric_layout(count, roll), z_symmetric_layout(count, roll));
+    let sideslip = o.betas_deg.iter().any(|&b| b != 0.0);
+    let shape = match o.shape_symmetry {
+        Some(s) if s != ShapeSymmetry::Auto => s,
+        _ if stl => ShapeSymmetry::None,
+        _ if sideslip => match (ysym, zsym) {
+            (true, true) => ShapeSymmetry::Axisymmetric,
+            (true, false) => ShapeSymmetry::PitchPlane,
+            _ => ShapeSymmetry::None,
+        },
+        _ => ShapeSymmetry::Axisymmetric,
+    };
+    o.shape_symmetry = Some(shape);
+    o.z_mirror_mesh = o.z_mirror_mesh && !stl && ysym && zsym;
+    o.symmetry = o.symmetry && !stl && ysym && shape != ShapeSymmetry::None && !sideslip && !o.roll_damping;
     o
 }
 
@@ -199,18 +246,8 @@ pub fn prepare_surface(geom: &Geometry, cfd: &CfdOptions, raw: Option<&[geom::st
 /// body profile and fin set, and a raw STL cannot be united or remeshed reliably (the sample STL
 /// models its fins as closed boxes embedded in the body, i.e. separate overlapping solids).
 fn reject_stl(cfd: &CfdOptions, _raw: Option<&[geom::stl::Triangle]>) -> Result<()> {
-    if !cfd.symmetry {
-        bail!(
-            "aero.cfd.symmetry = false is not supported: gmsh/HXT fails to tetrahedralise the full (periodic) domain. \
-             The flow is mirror symmetric about the pitch plane for the supported layouts, so the half model is exact; use symmetry = true."
-        );
-    }
     if cfd.surface == SurfaceKind::Stl {
-        bail!(
-            "aero.cfd.surface = \"stl\" is not supported: STL triangulations cannot be united (fins as separate closed solids) \
-             or remeshed reliably, so the CFD geometry is rebuilt from the extracted body profile and fins. \
-             Use surface = \"panel_mesh\" (the default)."
-        );
+        bail!("aero.cfd.surface = \"stl\" is not available in this build step");
     }
     Ok(())
 }
@@ -256,34 +293,110 @@ pub fn build_table_with_progress(
     let run = runner::RunSetup { opt: cfd, dims, atm, mesh_hash: mesh.hash.clone(), mesh_file: mesh.su2.clone(), work: work.clone(), ranks: plan.ranks, parallel: plan.parallel, tools: &tools };
     let results = runner::run_all(&run, progress)?;
     progress(CfdStage::Table);
-    let points: Vec<table::SolvedPoint> = results
-        .iter()
-        .map(|r| table::SolvedPoint { mach: r.spec.mach, alpha_deg: r.spec.alpha_deg, coeffs: r.result.as_ref().map(|x| x.coeffs) })
-        .collect();
-    let (points, asymmetry) = table::apply_alpha_mode(&points, cfd.alpha_mode);
     let model = aero::AeroModel::new(geom.clone(), aero.clone());
-    let (tab, fill) = table::build_from_points(&points, &model, cfd.model, hash, extrapolation).map_err(|e| {
-        match results.iter().find_map(|r| r.error.as_ref().map(|m| (r.spec, m))) {
-            Some((s, m)) => anyhow::anyhow!("{e}\nfirst failed case M={} alpha={} deg ({}): {m}", s.mach, s.alpha_deg, s.dir(&work).display()),
-            None => e,
-        }
-    })?;
-    runner::write_cases_csv(&out_dir.join("cfd_cases.csv"), &results, &points, cfd.alpha_mode)?;
-    let report = CfdReport {
+    let first_error = |e: anyhow::Error| match results.iter().find_map(|r| r.error.as_ref().map(|m| (r.spec, m))) {
+        Some((s, m)) => anyhow::anyhow!("{e}\nfirst failed case M={} alpha={} beta={} deg ({}): {m}", s.mach, s.alpha_deg, s.beta_deg, s.dir(&work).display()),
+        None => e,
+    };
+    let base_cfd = |r: &runner::CaseOutcome| !r.spec.is_roll();
+    // Roll pairs (alpha = beta = 0, +-roll_rate_hat) per Mach number.
+    let roll_pairs: Vec<general::RollPair> = if cfd.roll_damping {
+        let mut machs: Vec<f64> = results.iter().filter(|r| r.spec.is_roll()).map(|r| r.spec.mach).collect();
+        machs.dedup();
+        machs
+            .into_iter()
+            .map(|m| {
+                let c = |sign: f64| results.iter().find(|r| r.spec.is_roll() && r.spec.mach == m && r.spec.roll_hat * sign > 0.0).and_then(|r| r.result.as_ref()).and_then(|r| r.coeffs6);
+                general::RollPair { mach: m, roll_hat: cfd.roll_rate_hat, plus: c(1.0), minus: c(-1.0) }
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+    let clp = general::roll_entries(&roll_pairs, &model);
+    let shape = cfd.shape();
+    let mut warnings: Vec<String> = Vec::new();
+    for e in clp.iter().filter(|e| e.source != "cfd") {
+        warnings.push(format!("roll damping at M={}: using the Barrowman Clp ({:.3}): {}", e.mach, e.barrowman, e.reason.as_deref().unwrap_or("")));
+    }
+    let mut report = CfdReport {
         cases: results.len(),
         failed: results.iter().filter(|r| r.result.is_none()).map(|r| (r.spec.mach, r.spec.alpha_deg)).collect(),
+        failed_cases: results.iter().filter(|r| r.result.is_none()).map(|r| r.spec.dir_name()).collect(),
         unconverged: results.iter().filter(|r| r.result.as_ref().is_some_and(|x| !x.converged)).map(|r| (r.spec.mach, r.spec.alpha_deg)).collect(),
         wall_seconds: t0.elapsed().as_secs_f64(),
         mesh_nodes: mesh.stats.nodes,
         mesh_cells: mesh.stats.cells,
         case_seconds: results.iter().filter_map(|r| r.result.as_ref().map(|x| x.wall_seconds)).sum(),
-        filled: fill.filled,
         alpha_mode: format!("{:?}", cfd.alpha_mode).to_lowercase(),
-        asymmetry,
         ranks_per_case: plan.ranks,
         parallel_cases: plan.parallel,
         bytes_per_case: plan.bytes_per_case,
         est_wall_yplus: (cfd.model == FlowModel::Rans).then(|| mesh::wall_yplus(cfd, geom.length, &atm)),
+        shape_symmetry: format!("{shape:?}").to_lowercase(),
+        domain: if cfd.symmetry { "half" } else { "full" }.into(),
+        betas_deg: cfd.betas_deg.clone(),
+        clp_source: if clp.is_empty() {
+            "barrowman"
+        } else if clp.iter().all(|e| e.source == "cfd") {
+            "cfd"
+        } else if clp.iter().all(|e| e.source != "cfd") {
+            "barrowman"
+        } else {
+            "mixed"
+        }
+        .into(),
+        clp: clp.clone(),
+        base_treatment: cfd.base_treatment.map(|b| format!("{b:?}").to_lowercase()),
+        warnings,
+        ..Default::default()
+    };
+    let tab = if cfd.general_table() {
+        let points: Vec<general::SolvedPoint6> = results
+            .iter()
+            .filter(|r| base_cfd(r))
+            .map(|r| general::SolvedPoint6 { mach: r.spec.mach, alpha_deg: r.spec.alpha_deg, beta_deg: r.spec.beta_deg, coeffs: r.result.as_ref().and_then(|x| x.coeffs6) })
+            .collect();
+        // The rebuilt geometry has no fin cant, so its roll forcing is the model's: reference cant 0.
+        let cant_ref = if cfd.surface == SurfaceKind::Stl { geom.fins.as_ref().map_or(0.0, |f| f.cant_deg) } else { 0.0 };
+        let inp = general::GeneralInput {
+            points: &points,
+            roll: &roll_pairs,
+            model: &model,
+            flow: cfd.model,
+            source_hash: hash,
+            extrapolation,
+            shape,
+            average: cfd.alpha_mode == AlphaMode::Mirror,
+            offset: cfd.alpha_mode == AlphaMode::Offset,
+            mach_step: cfd.general_mach_step,
+            fin_cant_ref_deg: cant_ref,
+        };
+        let (tab, fill) = general::build_general(&inp).map_err(first_error)?;
+        runner::write_cases_csv(&out_dir.join("cfd_cases.csv"), &results, &[], AlphaMode::Single)?;
+        report.table_kind = "general".into();
+        report.filled = fill.filled.iter().map(|f| (f.0, f.1)).collect();
+        report.cfd_region = Some(fill.region);
+        report.model_outside_cfd_region = true;
+        report.diagnostics = fill.slopes;
+        report.yaw_damping_from_pitch = fill.yaw_from_pitch;
+        report.fin_cant_ref_deg = cant_ref;
+        tab
+    } else {
+        let points: Vec<table::SolvedPoint> = results
+            .iter()
+            .filter(|r| base_cfd(r))
+            .map(|r| table::SolvedPoint { mach: r.spec.mach, alpha_deg: r.spec.alpha_deg, coeffs: r.result.as_ref().map(|x| x.coeffs) })
+            .collect();
+        let (points, asymmetry) = table::apply_alpha_mode(&points, cfd.alpha_mode);
+        let (tab, fill) = table::build_from_points_roll(&points, &model, cfd.model, hash, extrapolation, &clp).map_err(first_error)?;
+        runner::write_cases_csv(&out_dir.join("cfd_cases.csv"), &results, &points, cfd.alpha_mode)?;
+        report.table_kind = "axisymmetric".into();
+        report.filled = fill.filled;
+        report.asymmetry = asymmetry;
+        report.diagnostics = fill.slopes.iter().map(|&(mach, cna, xcp)| general::Slopes { mach, cna_pitch: cna, xcp_pitch: xcp, cna_yaw: None, xcp_yaw: None }).collect();
+        report.fin_cant_ref_deg = tab.meta.fin_cant_ref_deg;
+        tab
     };
     progress(CfdStage::Done);
     Ok((tab, report))
@@ -330,6 +443,30 @@ mod tests {
         let p = plan_resources(&opts(4, 8), &ResourceBudget { threads: 40, memory_bytes: Some(2_200_000_000) }, 100_000, 12);
         assert_eq!(p.parallel, 4, "{p:?}");
         assert!(case_memory_bytes(FlowModel::Rans, 100_000, 4) > case_memory_bytes(FlowModel::Euler, 100_000, 4));
+    }
+
+    #[test]
+    fn automatic_options_are_resolved_from_the_layout() {
+        let g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
+        let d = resolve_options(&g, &CfdOptions::default());
+        // Default configuration: half model, axisymmetric table, quarter mesh (unchanged behaviour).
+        assert!(d.symmetry && d.z_mirror_mesh && d.shape() == ShapeSymmetry::Axisymmetric && !d.general_table());
+        // Sideslip, roll cases or symmetry = false need the full domain.
+        for o in [CfdOptions { betas_deg: vec![0.0, 4.0], ..Default::default() }, CfdOptions { roll_damping: true, ..Default::default() }, CfdOptions { symmetry: false, ..Default::default() }] {
+            let r = resolve_options(&g, &o);
+            assert!(!r.symmetry && r.z_mirror_mesh, "{r:?}");
+        }
+        // The fin layout decides the shape symmetry when sideslip is solved.
+        let r = resolve_options(&g, &CfdOptions { betas_deg: vec![0.0, 4.0], fin_roll_deg: 10.0, ..Default::default() });
+        assert_eq!((r.shape(), r.z_mirror_mesh, r.symmetry), (ShapeSymmetry::None, false, false));
+        let three = extract(&SampleRocket { fin_count: 3, ..Default::default() }.mesh(), &ExtractOptions::default()).unwrap();
+        let r = resolve_options(&three, &CfdOptions { betas_deg: vec![0.0, 4.0], ..Default::default() });
+        assert_eq!((r.shape(), r.z_mirror_mesh), (ShapeSymmetry::PitchPlane, false));
+        // An explicit choice wins; the STL surface is always the full domain without symmetry.
+        let r = resolve_options(&g, &CfdOptions { surface: SurfaceKind::Stl, ..Default::default() });
+        assert_eq!((r.shape(), r.symmetry, r.z_mirror_mesh), (ShapeSymmetry::None, false, false));
+        let r = resolve_options(&g, &CfdOptions { shape_symmetry: Some(ShapeSymmetry::PitchPlane), ..Default::default() });
+        assert_eq!(r.shape(), ShapeSymmetry::PitchPlane);
     }
 
     #[test]

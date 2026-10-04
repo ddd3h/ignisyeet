@@ -1,5 +1,0 @@
-# Sample rocket, Euler, M=2, alpha=4 deg: CN (alpha=0 offset removed), xcp [m], CA from CFD (pressure only) vs surface size.
-wall_size_m,cells,cn,xcp_m,ca_cfd
-0.01,87608,0.7990,1.0981,0.0699
-0.005,214114,0.8853,1.1413,0.0969
-0.0025,633552,0.9210,1.1552,0.1055

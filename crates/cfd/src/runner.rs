@@ -33,7 +33,8 @@
 //! keep their `done.json`.
 
 use crate::case::{case_hash, case_list, read_done, warm_start_source, write_done, CaseResult, CaseSpec};
-use crate::config::CfdOptions;
+use crate::config::{AlphaMode, CfdOptions};
+use crate::table::SolvedPoint;
 use crate::forces::{BodyCoeffs, Su2Coeffs};
 use crate::history::{summarize, History};
 use crate::su2cfg::{su2_config, CaseFiles, RefDims};
@@ -373,23 +374,28 @@ pub fn run_all(setup: &RunSetup, progress: &(dyn Fn(CfdStage) + Sync)) -> Result
     Ok(outcomes.into_iter().map(|o| o.expect("every case has an outcome")).collect())
 }
 
-/// Writes `cfd_cases.csv`: every solved point with its convergence information.
-pub fn write_cases_csv(path: &Path, outcomes: &[CaseOutcome], _dims: &RefDims) -> Result<()> {
+/// Writes `cfd_cases.csv`: every solved case (raw, including the negative angles of `mirror` mode)
+/// with its convergence information, followed in `mirror` mode by the combined odd/even rows
+/// (`status = combined`, `corrected` are the points of [`crate::table::apply_alpha_mode`]).
+/// `cn`, `nose_moment`, `xcp_m` are the values the table uses: offset-corrected in `offset` mode,
+/// equal to the raw ones in `single` mode, empty on raw `mirror` rows.
+pub fn write_cases_csv(path: &Path, outcomes: &[CaseOutcome], corrected: &[SolvedPoint], mode: AlphaMode) -> Result<()> {
     use std::fmt::Write;
-    let mut s = String::from("mach,alpha_deg,status,iterations,residual_first,residual_last,cn_raw,ca_cfd,xcp_raw_m,nose_moment_raw,cn,xcp_m,wall_seconds,warm_start\n");
-    // alpha = 0 offsets per Mach (see table::remove_zero_offset).
-    let off = |m: f64| outcomes.iter().find(|o| o.spec.mach == m && o.spec.alpha_deg == 0.0).and_then(|o| o.result.as_ref()).map(|r| (r.coeffs.cn, r.coeffs.mom));
+    let mut s = String::from("mach,alpha_deg,status,iterations,residual_first,residual_last,cn_raw,ca_cfd,nose_moment_raw,xcp_raw_m,cn,nose_moment,xcp_m,wall_seconds,warm_start\n");
+    let f = |v: Option<f64>| v.map_or(String::new(), |x| format!("{x:.8e}"));
+    let corr = |m: f64, a: f64| corrected.iter().find(|p| p.mach == m && p.alpha_deg == a).and_then(|p| p.coeffs);
+    let used = |c: &BodyCoeffs| (Some(c.cn), Some(c.mom), c.xcp());
     for o in outcomes {
         let status = match &o.result {
             Some(r) if r.converged => "converged",
             Some(_) => "accepted",
             None => "failed",
         };
-        let f = |v: Option<f64>| v.map_or(String::new(), |x| format!("{x:.8e}"));
         let r = o.result.as_ref();
+        let (cn, mom, xcp) = if mode == AlphaMode::Mirror { (None, None, None) } else { corr(o.spec.mach, o.spec.alpha_deg).as_ref().map_or((None, None, None), used) };
         let _ = writeln!(
             s,
-            "{},{},{},{},{},{},{},{},{},{},{},{},{:.1},{}",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{:.1},{}",
             o.spec.mach,
             o.spec.alpha_deg,
             status,
@@ -398,17 +404,20 @@ pub fn write_cases_csv(path: &Path, outcomes: &[CaseOutcome], _dims: &RefDims) -
             f(r.and_then(|r| r.residual_last)),
             f(r.map(|r| r.coeffs.cn)),
             f(r.map(|r| r.coeffs.ca)),
-            f(r.and_then(|r| r.coeffs.xcp())),
             f(r.map(|r| r.coeffs.mom)),
-            f(r.map(|r| r.coeffs.cn - off(o.spec.mach).map_or(0.0, |z| z.0))),
-            f(r.and_then(|r| {
-                let (c0, m0) = off(o.spec.mach).unwrap_or((0.0, 0.0));
-                let cn = r.coeffs.cn - c0;
-                (cn.abs() > 1e-9).then(|| (r.coeffs.mom - m0) / cn)
-            })),
+            f(r.and_then(|r| r.coeffs.xcp())),
+            f(cn),
+            f(mom),
+            f(xcp),
             r.map_or(0.0, |r| r.wall_seconds),
             o.warm
         );
+    }
+    if mode == AlphaMode::Mirror {
+        for p in corrected.iter().filter(|p| p.alpha_deg > 0.0) {
+            let (cn, mom, xcp) = p.coeffs.as_ref().map_or((None, None, None), used);
+            let _ = writeln!(s, "{},{},combined,,,,,{},,,{},{},{},,", p.mach, p.alpha_deg, f(p.coeffs.map(|c| c.ca)), f(cn), f(mom), f(xcp));
+        }
     }
     std::fs::write(path, s).with_context(|| format!("cannot write {}", path.display()))
 }
@@ -439,7 +448,7 @@ while [ $i -lt 30 ]; do
     unstable) r=$(echo "-1.0 - 0.2*$i" | bc -l);;
     *) r=$(echo "-1.0 - 0.25*$i" | bc -l);;
   esac
-  fx=0.3; fz=$(echo "$aoa * 0.05" | bc -l); my=$(echo "-$aoa * 0.08" | bc -l)
+  fx=0.3; fz=$(echo "$aoa * 0.05" | bc -l); my=$(echo "0 - $aoa * 0.08" | bc -l)
   [ "$mode" = unstable ] && { par=$((i % 2)); fz=$(echo "$aoa * 0.05 + $par * 0.3" | bc -l); }
   echo "$i,$r,$fx,$fz,$my" >> history.csv
   [ "$mode" = ok ] && [ $i -ge 24 ] && break
@@ -472,6 +481,7 @@ exit 0
         let opt = CfdOptions {
             machs: vec![0.5, 2.0],
             alphas_deg: vec![0.0, 4.0, 8.0],
+            alpha_mode: AlphaMode::Single,
             ranks_per_case: 1,
             parallel_cases: 2,
             iterations: 100,
@@ -524,10 +534,37 @@ exit 0
         assert!(ev.iter().any(|s| matches!(s, CfdStage::Case { .. })));
         // Restart files are removed once nothing needs them.
         assert!(!out[0].spec.dir(&e.dir.join("work")).join("restart.dat").exists());
-        write_cases_csv(&e.dir.join("cases.csv"), &out, &e.setup().dims).unwrap();
+        let pts: Vec<SolvedPoint> = out.iter().map(|o| SolvedPoint { mach: o.spec.mach, alpha_deg: o.spec.alpha_deg, coeffs: o.result.as_ref().map(|r| r.coeffs) }).collect();
+        let (corrected, _) = crate::table::apply_alpha_mode(&pts, AlphaMode::Single);
+        write_cases_csv(&e.dir.join("cases.csv"), &out, &corrected, AlphaMode::Single).unwrap();
         let csv = std::fs::read_to_string(e.dir.join("cases.csv")).unwrap();
         assert_eq!(csv.lines().count(), 7);
         assert!(csv.contains("converged"));
+        let _ = std::fs::remove_dir_all(&e.dir);
+    }
+
+    #[test]
+    fn mirror_mode_runs_negative_angles() {
+        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let mut e = env("mirror", "ok");
+        e.opt.alpha_mode = AlphaMode::Mirror;
+        e.opt.z_mirror_mesh = false;
+        e.opt.alphas_deg = vec![0.0, 4.0];
+        let out = run_all(&e.setup(), &|_| {}).unwrap();
+        assert_eq!(out.len(), 6);
+        let neg = out.iter().find(|o| o.spec.alpha_deg == -4.0 && o.spec.mach == 0.5).unwrap();
+        assert!(neg.result.is_some() && neg.warm, "{neg:?}");
+        assert!(neg.spec.dir(&e.dir.join("work")).join("done.json").exists());
+        assert!(e.dir.join("work/m0.500_a-04.00").is_dir());
+        // Mock: CFz = 0.05 alpha (odd), so the combination reproduces CN = 0.2 at +4 deg.
+        let pts: Vec<SolvedPoint> = out.iter().map(|o| SolvedPoint { mach: o.spec.mach, alpha_deg: o.spec.alpha_deg, coeffs: o.result.as_ref().map(|r| r.coeffs) }).collect();
+        let (corrected, asym) = crate::table::apply_alpha_mode(&pts, AlphaMode::Mirror);
+        assert_eq!((corrected.len(), asym.len()), (4, 2));
+        assert!((corrected.iter().find(|p| p.alpha_deg == 4.0).unwrap().coeffs.unwrap().cn - 0.2).abs() < 1e-9);
+        write_cases_csv(&e.dir.join("cases.csv"), &out, &corrected, AlphaMode::Mirror).unwrap();
+        let csv = std::fs::read_to_string(e.dir.join("cases.csv")).unwrap();
+        assert_eq!(csv.lines().count(), 1 + 6 + 2);
+        assert_eq!(csv.lines().filter(|l| l.contains(",combined,")).count(), 2);
         let _ = std::fs::remove_dir_all(&e.dir);
     }
 

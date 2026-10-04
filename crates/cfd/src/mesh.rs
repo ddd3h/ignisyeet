@@ -88,6 +88,10 @@ pub struct MeshParams {
     /// Length of the conical tail fairing behind the base [m]; 0 = flat base.
     pub tail_length: f64,
     pub threads: usize,
+    /// Roll of the fin set about the body axis [deg].
+    pub fin_roll_deg: f64,
+    /// Mesh the quarter domain and mirror it about z = 0 (exactly z-symmetric half-model mesh).
+    pub z_mirror: bool,
     /// Body profile `(x, r)` from the nose tip to the base.
     pub profile: Vec<[f64; 2]>,
     pub fins: Option<FinParams>,
@@ -186,6 +190,8 @@ impl MeshParams {
             min_size_divisor: 8.0,
             tail_length,
             threads: threads.max(1),
+            fin_roll_deg: opt.fin_roll_deg,
+            z_mirror: opt.z_mirror_mesh,
             profile,
             fins,
         }

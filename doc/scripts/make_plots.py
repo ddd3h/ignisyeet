@@ -842,6 +842,43 @@ def cfd_fields(f, fields):
     f.save(fig, "cfd_convergence")
 
 
+def cfd_stl_check(f, data):
+    """Direct-STL CFD versus the rebuilt (CAD) geometry and the Barrowman model (doc/data/cfd/stl_cross_check*)."""
+    t = pd.read_csv(data / "stl_cross_check.csv")
+    clp = pd.read_csv(data / "stl_cross_check_clp.csv")
+    d = 0.1
+    t["cn_n"] = -t.cz
+    t["xcp"] = np.where(t.cz.abs() > 1e-6, t.cm * d / t.cz.where(t.cz.abs() > 1e-6, 1.0), np.nan)
+    sty = {"barrowman": ("部品積み上げ法", SERIES[0]), "cad": ("CFD（形状を作り直し）", SERIES[1]), "stl": ("CFD（STL をそのまま）", SERIES[2])}
+    fig, axs = plt.subplots(1, 3, figsize=(10.5, 3.6), gridspec_kw={"width_ratios": [1.15, 1.15, 0.9]})
+    for mach, ls, mk in ((0.8, "-", "o"), (2.0, "--", "s")):
+        b = t[(t.method == "barrowman") & (t.mach == mach)].sort_values("alpha_deg")
+        axs[0].plot(b.alpha_deg, b.cn_n, ls, color=sty["barrowman"][1], lw=1.6)
+        bb = b[b.alpha_deg >= 2]
+        axs[1].plot(bb.alpha_deg, bb.xcp, ls, color=sty["barrowman"][1], lw=1.6)
+        for meth in ("cad", "stl"):
+            c = t[(t.method == meth) & (t.mach == mach) & (t.beta_deg == 0)].sort_values("alpha_deg")
+            off = -0.15 if meth == "cad" else 0.15
+            axs[0].plot(c.alpha_deg + off, c.cn_n, mk, color=sty[meth][1], markersize=6, mfc=sty[meth][1] if mach == 0.8 else "white", mew=1.5)
+            cc = c[c.alpha_deg > 0]
+            axs[1].plot(cc.alpha_deg + off, cc.xcp, mk, color=sty[meth][1], markersize=6, mfc=sty[meth][1] if mach == 0.8 else "white", mew=1.5)
+    axs[0].set_xlabel("迎角 $\\alpha$ [deg]"); axs[0].set_ylabel("法線力係数 $C_N=-C_Z$")
+    axs[1].set_xlabel("迎角 $\\alpha$ [deg]"); axs[1].set_ylabel("圧力中心 $x_{cp}$ [m]（先端から）")
+    w = 0.25
+    for k, meth in enumerate(("barrowman", "cad", "stl")):
+        c = clp[clp.method == meth].sort_values("mach")
+        xs = np.arange(len(c)) + (k - 1) * w
+        axs[2].bar(xs, c.clp, width=w * 0.9, color=sty[meth][1], label=sty[meth][0])
+    axs[2].set_xticks([0, 1]); axs[2].set_xticklabels(["$M=0.8$", "$M=2.0$"])
+    axs[2].set_ylabel("ロール減衰 $C_{lp}$"); axs[2].grid(axis="x", visible=False)
+    from matplotlib.lines import Line2D
+    handles = [Line2D([], [], color=sty[m][1], marker="o" if m != "barrowman" else None, ls="-" if m == "barrowman" else "none", label=sty[m][0]) for m in sty]
+    handles += [Line2D([], [], color=INK2, ls="-", marker="o", label="$M=0.8$（実線・塗り）"), Line2D([], [], color=INK2, ls="--", marker="s", mfc="white", label="$M=2.0$（破線・白抜き）")]
+    fig.legend(handles=handles, loc="lower center", ncol=5, bbox_to_anchor=(0.5, -0.08), fontsize=8.5)
+    fig.tight_layout()
+    f.save(fig, "cfd_stl_check")
+
+
 def read_stl(path):
     """Triangles of a binary or ASCII STL as an array of shape (n, 3, 3)."""
     data = Path(path).read_bytes()
@@ -904,6 +941,8 @@ def main():
     if (data / "sample_euler_vs_models.csv").exists():
         pn = Path(sys.argv[4]) if len(sys.argv) > 4 else None
         cfd_study(f, out, pn, data)
+    if (data / "stl_cross_check.csv").exists():
+        cfd_stl_check(f, data)
     if (data / "fields" / "mesh_symmetry.npz").exists():
         cfd_fields(f, data / "fields")
 

@@ -1,0 +1,121 @@
+{
+ "description": "Sample STL: direct-STL Euler CFD vs rebuilt (CAD) geometry, M 0.8 and 2.0, alpha 0/4/8 deg, beta 0/4 deg (STL), roll pair p_hat = +-0.01, wall_size 2 mm, base_treatment fairing, 4 ranks x 4 cases on a 12-core i7-12700",
+ "final": {
+  "stl": {
+   "cases": 16,
+   "failed": 0,
+   "accepted": 10,
+   "cells": 1756532,
+   "seconds": 1951.7
+  },
+  "cad": {
+   "cases": 10,
+   "failed": 0,
+   "accepted": 5,
+   "cells": 1883732,
+   "seconds": 1074.1
+  }
+ },
+ "before_speedups": {
+  "stl": {
+   "cases": 24,
+   "failed": 0,
+   "accepted": 17,
+   "cells": 1943324,
+   "seconds": 8919.1
+  },
+  "cad": {
+   "cases": 10,
+   "failed": 0,
+   "accepted": 2,
+   "cells": 1883732,
+   "seconds": 2236.4
+  },
+  "note": "before min_iterations 100 / stable_window 60 and the verified STL mirror symmetry (STL solved +-alpha on a directly meshed full domain, shape_symmetry axisymmetric only skipped beta < 0)"
+ },
+ "stl_mesh_seconds": {
+  "final_quarter_mirrored": 42.3,
+  "before_direct_full": 320.0
+ },
+ "fidelity": {
+  "mesh_hash": "26e424ee6b97d9c5",
+  "fidelity": {
+   "input": {
+    "triangles": 14448,
+    "area": 0.5849673440056901,
+    "volume": null,
+    "bbox_min": [
+     -0.0,
+     -0.10748023223876953,
+     -0.10748023223876953
+    ],
+    "bbox_max": [
+     1.5,
+     0.10748023223876953,
+     0.10748023223876953
+    ]
+   },
+   "union": {
+    "triangles": 16816,
+    "area": 0.6098637782726022,
+    "volume": 0.011699092886054908,
+    "bbox_min": [
+     -0.0,
+     -0.1074802353978157,
+     -0.1074802353978157
+    ],
+    "bbox_max": [
+     1.7699999809265137,
+     0.1074802353978157,
+     0.1074802353978157
+    ]
+   },
+   "cfd": {
+    "triangles": 268428,
+    "area": 0.6096881671927825,
+    "volume": 0.011695278949104068,
+    "bbox_min": [
+     -0.0,
+     -0.107480235398,
+     -0.107480235398
+    ],
+    "bbox_max": [
+     1.76999998093,
+     0.107480235398,
+     0.107480235398
+    ]
+   },
+   "cfd_wall_triangles": 250692,
+   "cfd_base_triangles": 17736,
+   "cfd_vs_union": {
+    "max": 0.0005208292658941045,
+    "max_at": [
+     1.7652408534058333,
+     0.004067578219903096,
+     0.004108342605444248
+    ],
+    "p99": 4.5100269096392405e-05,
+    "rms": 1.0608732749973693e-05,
+    "samples": 1255732
+   },
+   "cfd_wall_vs_input": {
+    "max": 0.0015251628999999323,
+    "max_at": [
+     1.5015251629,
+     -0.0490848543229,
+     -0.00793192900596
+    ],
+    "p99": 3.0346895473067757e-05,
+    "rms": 1.2394380959243325e-05,
+    "samples": 952076
+   },
+   "wall_size": 0.002,
+   "warn_above": 0.001,
+   "fail_above": 0.002,
+   "genus": 0,
+   "warnings": [
+    "geometry error 1.525e-3 m exceeds half the wall size (1.000e-3 m)"
+   ]
+  }
+ }
+}

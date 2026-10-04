@@ -28,6 +28,7 @@ IgnisYeet ドキュメント
    geometry
    aerodynamics
    panel
+   cfd
    environment
    propulsion
    dynamics

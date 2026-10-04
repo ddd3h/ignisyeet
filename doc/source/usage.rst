@@ -391,7 +391,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
    * - ``method``
      - ``"barrowman"``
      - 空力係数の求め方。``"barrowman"`` は STL から抽出した形状に対する部品積み上げ法（:doc:`aerodynamics`）、
-       ``"table"`` は外部の係数表の読み込み、``"panel"`` はパネル法（:doc:`panel`）
+       ``"table"`` は外部の係数表の読み込み、``"panel"`` はパネル法（:doc:`panel`）、``"cfd"`` は SU2 による CFD（:doc:`cfd`）
    * - ``table``
      - なし
      - ``method = "table"`` のとき必須。係数表の CSV ファイル（形式は後述）
@@ -443,6 +443,85 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - フィンの断面形状（現在は両凸のみ）
 
 各項目の意味と、パネル法が出力する ``panel_cp.csv`` は :doc:`panel` で説明する。
+
+``[aero.cfd]``\ （``method = "cfd"`` のときだけ使う。SU2、gmsh、Open MPI が必要で、設定と計算の流れは :doc:`cfd` で説明する）
+
+.. list-table::
+   :header-rows: 1
+   :widths: 27 22 51
+
+   * - 項目
+     - 既定値
+     - 意味
+   * - ``model``
+     - ``"euler"``
+     - 支配方程式。``"euler"`` は非粘性の Euler 方程式（粘性の抗力項は部品積み上げ法で補う）、``"rans"`` は Spalart–Allmaras モデルの RANS（検証できていない）
+   * - ``machs``
+     - ``[0.3, 0.6, 0.8, 0.95, 1.1, 1.3, 1.6, 2.0, 2.5, 3.0]``
+     - 解く Mach 数（正、昇順、重複なし）
+   * - ``alphas_deg``
+     - ``[0, 2, 4, 8, 12, 16]``
+     - 解く迎角 [deg]（0 以上、昇順、0 を含み、0 より大きい値が 1 つ以上）
+   * - ``alpha_mode``
+     - ``"mirror"``
+     - 迎角の正負と :math:`\alpha=0` のずれの扱い。``"mirror"`` は正負の解の奇関数・偶関数部分を使う（:math:`z` 対称メッシュでは負の迎角は解かない）、
+       ``"offset"`` は :math:`\alpha=0` の値を引く、``"single"`` は結果をそのまま使う
+   * - ``z_mirror_mesh``
+     - ``true``
+     - 1/4 領域をメッシュにして :math:`z=0` で鏡映し、:math:`z` について厳密に対称な半モデルのメッシュにする。フィンの配置が :math:`z` について対称でないときは無視する
+   * - ``symmetry``
+     - ``true``
+     - ピッチ面（:math:`y=0`）で切った半モデル。``false`` は現状エラー
+   * - ``surface``
+     - ``"panel_mesh"``
+     - 壁面の形状。抽出した胴体とフィンを OpenCASCADE で再構成する。``"stl"`` はエラー
+   * - ``fin_roll_deg``
+     - ``0``
+     - フィンの組を機軸のまわりに回す角度 [deg]（0 でフィン 2 枚が :math:`y=0` 面に載る、45 で載らない）
+   * - ``tail_fairing``
+     - ``6.0``
+     - Euler のみ。平らな底面の後ろに置く円すい形の尾部フェアリングの長さ（底面半径の倍数）。0 なら平らな底面。RANS は常に平らな底面
+   * - ``farfield``
+     - ``20.0``
+     - 遠方境界の球の半径（全長の倍数、5 以上）
+   * - ``wall_size``
+     - ``0.002``
+     - 壁面の要素の大きさ [m]。小さいほど細かく、セル数と時間が増える
+   * - ``yplus``
+     - ``1.0``
+     - RANS の目標 :math:`y^+`
+   * - ``iterations``
+     - ``3000``
+     - 1 ケースの最大反復数（RANS は 300 で打ち切る）
+   * - ``cfl``
+     - ``5.0``
+     - CFL 数の初期値（適応的に変える）
+   * - ``convergence``
+     - ``1e-6``
+     - 密度の二乗平均残差の目標（0 と 1 の間）
+   * - ``scheme``
+     - ``"roe"``
+     - 対流フラックス。``"roe"``\ （MUSCL と Venkatakrishnan の制限関数で 2 次精度）または ``"jst"``
+   * - ``prefix``
+     - ``""``
+     - CFD ツールの環境（``<prefix>/bin/SU2_CFD``、``mpirun``、gmsh を持つ ``python``）。空なら環境変数 ``IGNISYEET_CFD_PREFIX``、それも空なら ``PATH``。先頭の ``~`` は展開する
+   * - ``su2`` / ``mpi``
+     - ``"SU2_CFD"`` / ``"mpirun"``
+     - SU2 の実行ファイル名（またはパス）と MPI の起動コマンド（``ranks_per_case`` が 2 以上のときだけ使う）
+   * - ``ranks_per_case``
+     - ``4``
+     - 1 ケースの MPI ランク数。0 で自動（4 とスレッド数の小さいほう）
+   * - ``parallel_cases``
+     - ``4``
+     - 同時に解くケース数。0 で自動（メモリとスレッドの予算に収まる数）。``ranks_per_case`` × ``parallel_cases`` が使えるスレッド数を超えると警告する
+   * - ``timeout_minutes``
+     - ``0``
+     - 1 ケースの時間の上限 [分]。0 で無制限。上限に達したケースは、係数が落ち着いていれば受け入れ、そうでなければ失敗とする
+   * - ``workdir``
+     - ``"cfd"``
+     - ``output.dir`` の下の作業ディレクトリ（ケースごとのサブディレクトリとメッシュのキャッシュ）
+
+CFD の準備は ``ignisyeet cfd-check 設定ファイル [--mesh]`` で確かめる。結果は ``cfd_cases.csv`` と ``cfd_report.json`` に書かれる（後述）。
 
 ``[earth]``
 
@@ -666,6 +745,10 @@ CSV の 1 行目は次の見出しで、続く行は Mach 数が外側、迎角�
      - (Mach, 迎角) ごとの :math:`C_N`, :math:`C_A`\ （燃焼中・燃焼後）, :math:`x_{cp}`, :math:`C_{N\alpha}`、ピッチ減衰の和。``.json`` は格子・基準量・入力ハッシュ
    * - ``aero_drag.csv``
      - Mach 数ごとの抗力の内訳、:math:`C_{N\alpha}`、:math:`x_{cp}`\ （``method = "panel"`` では内訳なしで合計の ``cd_off``, ``cd_on`` のみ）
+   * - ``cfd_cases.csv``
+     - ``method = "cfd"``。ケースごとの状態（``converged``, ``accepted``, ``failed``）、反復数、残差、SU2 の生の係数、使う係数、計算時間、暖機起動の有無
+   * - ``cfd_report.json``
+     - ``method = "cfd"``。ケース数、失敗と未収束の一覧、メッシュの節点数とセル数、総計算時間、測定した :math:`\alpha=0` の非対称性、実行の並列度と 1 ケースのメモリの見積もり
    * - ``panel_cp.csv``
      - ``method = "panel"``。表面パネルの位置・法線・面積・圧力係数 ``cp``\ （迎角 4°、最も低い亜音速 Mach 数）と部位（``body`` または ``fin``）。
        ``python/plot.py panel`` で作図する
@@ -740,6 +823,7 @@ KML の絶対高度は名目上は平均海面（EGM96 ジオイド）からの�
    crates/geom/          STL の入出力、機軸の決定、断面切り出し、フィン抽出、サンプル形状
    crates/aero/          標準大気、空力モデル、係数表（保存・内挿・外挿）
    crates/panel/         パネル法の空力解析（亜音速 Morino 法、超音速局所傾斜法）
+   crates/cfd/           CFD による空力解析（gmsh のメッシュ、SU2 のケース実行、係数表の作成）
    crates/sim/           推力曲線、6 自由度飛翔、測地座標変換
    crates/cli/           ignisyeet コマンドと設定ファイル
    python/plot.py        作図（uv プロジェクト）

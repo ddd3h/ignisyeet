@@ -23,6 +23,7 @@ Detailed documentation with equations, figures, and verification is available in
 
 - **Geometry extraction from STL**: principal-axis detection, per-section radius distribution, and automatic estimation of the number and dimensions of fins (manual override is possible)
 - **Three aerodynamic models**: Barrowman method (including Niskanen's supersonic and drag extensions), panel method (Morino method for subsonic, local-inclination method for supersonic), and external coefficient tables (e.g. from CFD)
+- **CFD mode** (`aero.method = "cfd"`): an optional fourth route that rebuilds the extracted body and fins as an OpenCASCADE solid, meshes it with gmsh and solves a steady (Mach, angle of attack) matrix with SU2 (Euler by default, Roe/MUSCL scheme, parallel MPI cases with warm starts and resume). The solved points are interpolated onto the same coefficient table, so the flight simulation is unchanged. It needs SU2 8.3.0, gmsh and Open MPI (for example from conda-forge; check with `ignisyeet cfd-check`) and takes tens of minutes for a small matrix; see [`doc/source/cfd.rst`](doc/source/cfd.rst). The RANS option is not validated.
 - **Cached coefficient table**: not recomputed if the inputs are unchanged; interpolated inside the range and linearly extrapolated or clamped outside it
 - **6-DoF flight**: flat Earth (local ENU) and rotating Earth (ECEF, with Coriolis and centrifugal forces); constant, inverse-square, and J2 gravity
 - **Atmosphere and wind models**: US Standard Atmosphere 1976 (with optional temperature offset) and a constant atmosphere; constant, power-law, logarithmic, and altitude-table winds
@@ -169,7 +170,7 @@ Configuration is written in TOML. Relative paths are resolved against **the dire
 | `[motor]` | RASP `.eng` file, motor aft position `aft_x`, nozzle exit diameter, override of the propellant mass |
 | `[launch]` | Latitude, longitude, elevation, rail length, elevation angle, azimuth |
 | `[recovery]` | Whether a parachute is used (`enabled`), `cd_s`, deployment delay `delay` |
-| `[aero]` | `method` (`barrowman`, `panel`, `table`), external table `table`, Mach and angle-of-attack grids, number of sections `n_slices`, `fin_threshold`, `extrapolation` (`linear`, `clamp`) |
+| `[aero]` | `method` (`barrowman`, `panel`, `table`, `cfd`), external table `table`, Mach and angle-of-attack grids, number of sections `n_slices`, `fin_threshold`, `extrapolation` (`linear`, `clamp`) |
 | `[aero.panel]` | Panel-method mesh divisions (`body_axial`, `body_circ`, `fin_chord`, `fin_span`), `wake_length`, `tail_radii`, `subsonic_machs`, `transonic`, `fin_section` |
 | `[earth]` | `model` (`flat`, `ecef`), `gravity` (`constant`, `inverse_square`, `j2`; `j2` requires `ecef`) |
 | `[atmosphere]` | `model` (`us1976`, `constant`), `temperature_offset`, constant-atmosphere `density`, `sound_speed`, `viscosity` |

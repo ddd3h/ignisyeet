@@ -713,6 +713,135 @@ def cfd_study(f, out, pn, data):
     f.save(fig, "cfd_asymmetry")
 
 
+def cfd_fields(f, fields):
+    """Sample-rocket CFD meshes and flow fields (doc/data/cfd/fields, extracted by extract_cfd_fields.py)."""
+    from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
+    from matplotlib.tri import Triangulation
+    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+
+    seq_cmap = LinearSegmentedColormap.from_list("seq", ["#f4f8fd", "#86b6ef", "#2a78d6", "#104281", "#08223f"])
+    div_cmap = LinearSegmentedColormap.from_list("div", ["#104281", "#5598e7", "#f0efec", "#f19a6c", "#b23f0f"])
+    body_c = "#c9c8c3"
+    cases = [("m0.800_a04.00", "$M_\\infty=0.8$"), ("m2.000_a04.00", "$M_\\infty=2.0$")]
+
+    def shaded(tri3, base):
+        n = np.cross(tri3[:, 1] - tri3[:, 0], tri3[:, 2] - tri3[:, 0])
+        n /= np.linalg.norm(n, axis=1, keepdims=True) + 1e-30
+        light = np.array([0.3, 0.8, 0.5]) / np.linalg.norm([0.3, 0.8, 0.5])
+        k = 0.55 + 0.45 * np.abs(n @ light)
+        return np.clip(base * k[:, None], 0, 1)
+
+    def frame3d(ax, pts):
+        lo, hi = pts.min(axis=0), pts.max(axis=0)
+        ax.set_xlim(lo[0], hi[0]); ax.set_ylim(lo[1], hi[1]); ax.set_zlim(lo[2], hi[2])
+        ax.set_box_aspect(hi - lo)
+        ax.set_axis_off()
+
+    # surface mesh: nose tip and fin root (half model, outer side)
+    w = np.load(fields / "mesh_wall.npz")
+    p, t = w["points"].astype(float), w["triangles"]
+    cen = p[t].mean(axis=1)
+    fig = plt.figure(figsize=(10, 4.2))
+    for k, (rect, sel, view, lab) in enumerate((
+        ([0.0, 0.02, 0.4, 0.96], (cen[:, 0] < 0.09), (20, -60), "ノーズ先端"),
+        ([0.42, 0.0, 0.58, 1.0], (cen[:, 0] > 1.27) & (cen[:, 0] < 1.40) & (cen[:, 2] > -0.01) & (cen[:, 1] > -1e-3) & (np.hypot(cen[:, 1], cen[:, 2]) < 0.085), (25, -120), "フィンの付け根（前縁側）"),
+    )):
+        ax = fig.add_axes(rect, projection="3d")
+        tri3 = p[t[sel]]
+        face = shaded(tri3, np.array(matplotlib.colors.to_rgb("#e3eefb")))
+        ax.add_collection3d(Poly3DCollection(tri3, facecolors=face, edgecolors=(0.06, 0.16, 0.32, 0.9), linewidths=0.25, rasterized=True))
+        frame3d(ax, tri3.reshape(-1, 3))
+        ax.view_init(elev=view[0], azim=view[1])
+        ax.text2D(0.03, 0.95, lab, transform=ax.transAxes, color=INK2, fontsize=10)
+    f.save(fig, "cfd_mesh_surface")
+
+    # volume mesh: section on the symmetry plane
+    m = np.load(fields / "mesh_symmetry.npz")
+    tr = Triangulation(m["points"][:, 0], m["points"][:, 1], m["triangles"])
+    fig, axs = plt.subplots(1, 3, figsize=(10.5, 3.6), gridspec_kw={"width_ratios": [1, 1.25, 1.25]})
+    wins = [None, ((-0.6, 2.4), (-1.0, 1.0)), ((1.15, 1.85), (-0.2, 0.2))]
+    lws = [0.15, 0.12, 0.15]
+    for ax, win, lw in zip(axs, wins, lws):
+        ax.set_facecolor(body_c)
+        ax.triplot(tr, color=SEQ[7], linewidth=lw, rasterized=True)
+        if win:
+            ax.set_xlim(*win[0]); ax.set_ylim(*win[1])
+        else:
+            ax.set_facecolor(SURFACE)
+        ax.set_aspect("equal")
+        ax.grid(False)
+        ax.set_xlabel("$x$ [m]")
+    axs[0].set_ylabel("$z$ [m]")
+    f.save(fig, "cfd_mesh_section")
+
+    # Mach number on the symmetry plane, relative to the free stream
+    fig, axs = plt.subplots(2, 1, figsize=(10, 5.6), sharex=True)
+    for ax, (case, lab) in zip(axs, cases):
+        d = np.load(fields / f"field_{case}.npz")
+        minf = float(case[1:6])
+        mach = d["sym_mach"].astype(float)
+        span = float(np.percentile(np.abs(mach - minf), 96.0))
+        norm = TwoSlopeNorm(vmin=minf - span, vcenter=minf, vmax=minf + span)
+        lev = np.linspace(minf - span, minf + span, 41)
+        ax.set_facecolor(body_c)
+        cs = ax.tricontourf(tr, mach, levels=lev, cmap=div_cmap, norm=norm, extend="both")
+        cs.set_rasterized(True)
+        ax.set_xlim(-0.2, 2.15); ax.set_ylim(-0.32, 0.32)
+        ax.set_aspect("equal"); ax.grid(False)
+        ax.set_ylabel("$z$ [m]")
+        ax.text(0.0, 1.03, lab + "、$\\alpha=4^\\circ$", transform=ax.transAxes, fontsize=10, color=INK)
+        cb = fig.colorbar(cs, ax=ax, fraction=0.025, pad=0.01, ticks=np.round(np.linspace(minf - span, minf + span, 5), 2))
+        cb.set_label("Mach 数", color=INK2)
+        cb.ax.tick_params(labelsize=8)
+    axs[-1].set_xlabel("$x$ [m]")
+    f.save(fig, "cfd_mach_field")
+
+    # wall pressure coefficient (half model mirrored to the full body), nose and tail, seen from the windward side
+    fig = plt.figure(figsize=(10, 6.4))
+    for k, (case, lab) in enumerate(cases):
+        d = np.load(fields / f"field_{case}.npz")
+        cp = d["wall_cp"].astype(float)
+        pm = p * np.array([1, -1, 1])
+        cpf_all = np.concatenate([cp[t].mean(axis=1)] * 2)
+        tri_all = np.concatenate([p[t], pm[t]])
+        cen_all = tri_all.mean(axis=1)[:, 0]
+        lim = float(np.percentile(np.abs(cpf_all), 99.5))
+        norm = TwoSlopeNorm(vmin=-lim, vcenter=0.0, vmax=lim)
+        for j, (sel, rect, view) in enumerate((
+            (cen_all < 0.32, [0.0, 0.52 - 0.5 * k, 0.32, 0.44], (-20, -60)),
+            (cen_all > 1.2, [0.3, 0.5 - 0.5 * k, 0.56, 0.48], (-22, -55)),
+        )):
+            ax = fig.add_axes(rect, projection="3d")
+            tri3 = tri_all[sel]
+            face = shaded(tri3, div_cmap(norm(cpf_all[sel]))[:, :3])
+            ax.add_collection3d(Poly3DCollection(tri3, facecolors=face, edgecolors="none", rasterized=True))
+            frame3d(ax, tri3.reshape(-1, 3))
+            ax.view_init(elev=view[0], azim=view[1])
+            if j == 0:
+                ax.text2D(0.0, 1.0, lab + "、$\\alpha=4^\\circ$", transform=ax.transAxes, color=INK, fontsize=10)
+        cax = fig.add_axes([0.9, 0.58 - 0.5 * k, 0.012, 0.34])
+        cb = fig.colorbar(matplotlib.cm.ScalarMappable(norm=norm, cmap=div_cmap), cax=cax)
+        cb.set_label("$C_p$", color=INK2)
+        cb.ax.tick_params(labelsize=8)
+    f.save(fig, "cfd_cp_surface")
+
+    # convergence histories
+    fig, axs = plt.subplots(1, 2, figsize=(10, 3.6))
+    for i, case in enumerate(["m0.800_a00.00", "m0.800_a04.00", "m2.000_a00.00", "m2.000_a04.00"]):
+        h = pd.read_csv(fields / f"history_{case}.csv", skipinitialspace=True)
+        h.columns = [c.strip().strip('"') for c in h.columns]
+        mach, alpha = float(case[1:6]), float(case[8:])
+        lab = f"$M={mach:g}$、$\\alpha={alpha:g}^\\circ$"
+        ls = "-" if alpha > 0 else "--"
+        axs[0].plot(h["Inner_Iter"], h["rms[Rho]"], ls, color=SERIES[i // 2], lw=1.4, label=lab)
+        if alpha > 0:
+            axs[1].plot(h["Inner_Iter"], h["CL"], color=SERIES[i // 2], lw=1.4, label=f"$M={mach:g}$")
+    axs[0].set_xlabel("反復回数"); axs[0].set_ylabel("密度の残差 $\\log_{10}$ RMS")
+    axs[1].set_xlabel("反復回数"); axs[1].set_ylabel("揚力係数 $C_L$（$\\alpha=4^\\circ$）")
+    axs[0].legend(); axs[1].legend()
+    f.save(fig, "cfd_convergence")
+
+
 def read_stl(path):
     """Triangles of a binary or ASCII STL as an array of shape (n, 3, 3)."""
     data = Path(path).read_bytes()
@@ -775,6 +904,8 @@ def main():
     if (data / "sample_euler_vs_models.csv").exists():
         pn = Path(sys.argv[4]) if len(sys.argv) > 4 else None
         cfd_study(f, out, pn, data)
+    if (data / "fields" / "mesh_symmetry.npz").exists():
+        cfd_fields(f, data / "fields")
 
 
 if __name__ == "__main__":

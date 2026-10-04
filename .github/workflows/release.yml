@@ -1,0 +1,137 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+#
+# Build release archives for every supported platform and publish a GitHub Release.
+# Trigger: push a tag `vX.Y.Z` that equals the workspace version in Cargo.toml,
+#          or run manually with the tag as input (the tag must already exist).
+#
+#   git tag v0.2.0 && git push origin v0.2.0
+
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release (vX.Y.Z)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event.inputs.tag || github.ref_name }}
+  CARGO_TERM_COLOR: always
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+      - name: Tag must equal the Cargo workspace version
+        run: |
+          ws=$(awk '/^\[workspace\.package\]/{f=1;next} /^\[/{f=0} f && /^version[[:space:]]*=/{gsub(/"/,"",$3); print $3; exit}' Cargo.toml)
+          echo "tag=$TAG workspace version=$ws"
+          if [ "$TAG" != "v$ws" ]; then
+            echo "::error::tag $TAG does not match the workspace version v$ws in Cargo.toml"
+            exit 1
+          fi
+
+  build:
+    needs: verify
+    name: build (${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          # Linux binaries are static (musl), cross-linked with zig via cargo-zigbuild.
+          - { target: x86_64-unknown-linux-musl,  os: ubuntu-24.04,    zig: true,  test: true }
+          - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04,    zig: true,  test: false }
+          - { target: x86_64-apple-darwin,        os: macos-15-intel,  zig: false, test: true }
+          - { target: aarch64-apple-darwin,       os: macos-14,        zig: false, test: true }
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install zig and cargo-zigbuild
+        if: matrix.zig
+        run: |
+          python3 -m venv "$RUNNER_TEMP/zig-venv"
+          "$RUNNER_TEMP/zig-venv/bin/pip" install --quiet ziglang cargo-zigbuild
+          echo "$RUNNER_TEMP/zig-venv/bin" >> "$GITHUB_PATH"
+
+      # Tests run natively (the host target); the aarch64 Linux build is cross-compiled and untested here.
+      - name: Test
+        if: matrix.test
+        run: cargo test --release --locked
+
+      - name: Build (zigbuild, static musl)
+        if: matrix.zig
+        run: cargo zigbuild --release --locked --target ${{ matrix.target }} -p ignisyeet
+
+      - name: Build
+        if: ${{ !matrix.zig }}
+        run: cargo build --release --locked --target ${{ matrix.target }} -p ignisyeet
+
+      - name: Package
+        run: scripts/package-release.sh "${{ matrix.target }}" "$TAG" "target/${{ matrix.target }}/release/ignisyeet" dist
+
+      - name: Smoke test the packaged binary
+        if: ${{ matrix.target != 'aarch64-unknown-linux-musl' }}
+        run: |
+          tar -xzf "dist/ignisyeet-$TAG-${{ matrix.target }}.tar.gz" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/ignisyeet-$TAG-${{ matrix.target }}/bin/ignisyeet" --version
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+          fetch-depth: 0 # full history and tags for the release notes
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+
+      - name: Release notes and installer
+        run: |
+          scripts/release-notes.sh "$TAG" "$GITHUB_REPOSITORY" > RELEASE_NOTES.md
+          cp install.sh dist/install.sh
+          ls -l dist
+          cat RELEASE_NOTES.md
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ env.TAG }}
+          name: IgnisYeet ${{ env.TAG }}
+          body_path: RELEASE_NOTES.md
+          files: dist/*
+          fail_on_unmatched_files: true

@@ -103,7 +103,7 @@
 
 となる。ここで :math:`p_0=101\,325` Pa、:math:`H_j^{+}=\min(H,\,H_{j+1})`\ （最上層では :math:`H_j^{+}=H`）である。
 温度は :math:`T=T_k+L_k(H-H_k)+\Delta T`、密度・音速・粘性係数は\ :eq:`eq-atm-derived` に :math:`T` を入れて求める。
-:math:`\Delta T=0` のときは標準大気そのもの（:eq:`eq-us76`）を返す。:eq:`eq-us76-offset` を :math:`\Delta T=0` で評価しても、
+:math:`\Delta T=0` のときは標準大気そのもの（:eq:`eq-us76`）を返す。\ :eq:`eq-us76-offset` を :math:`\Delta T=0` で評価しても、
 標準大気の基準圧力 :math:`p_k`\ （表）を相対誤差 :math:`2\times10^{-5}` 以内で再現する。
 :math:`\Delta T` は :math:`-200` K より大きくなければならない。
 

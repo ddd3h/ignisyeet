@@ -21,7 +21,7 @@
 2. **空力解析**\ （:doc:`aerodynamics`）
    求めた形状から、Mach 数 :math:`M` と迎角 :math:`\alpha` の格子上で空力係数を計算し、表として保存する。
    この計算は入力が変わらない限り **一度だけ** 行う。
-   手法は設定で選べ、既定は部品積み上げ法（Barrowman 法）、``aero.method = "panel"`` で表面パネルを解くパネル法（:doc:`panel`）になる。
+   手法は設定で選べ、既定は部品積み上げ法（Barrowman 法）、``aero.method = "panel"`` で表面パネルを解くパネル法（:doc:`panel`）、``aero.method = "cfd"`` で SU2 による CFD（:doc:`cfd`）になる。
 3. **飛翔計算**\ （:doc:`dynamics`）
    大気・重力・風（:doc:`environment`）と推力（:doc:`propulsion`）を与え、運動方程式を Runge–Kutta 法
    （固定刻みの 4 次、または刻み幅を自動で調整する Dormand–Prince 法 :cite:`dormand`）で積分する :cite:`hairer`。
@@ -46,7 +46,7 @@
 そこで、係数を格子上で一度だけ計算して表にしておき、飛翔計算では表の内挿だけを行う。
 内挿は四つの格子点の重み付き和なので非常に速く、空力モデルの計算コストと飛翔計算のコストを切り離せる。
 より重い空力解析に置き換える場合も、同じ表形式で出力すれば飛翔計算側は変更せずに使える。
-実際に、パネル法（``aero.method = "panel"``、:doc:`panel`）は同じ表を作り、CFD などの外部の表も ``aero.method = "table"`` で読み込める。
+実際に、パネル法（``aero.method = "panel"``、:doc:`panel`）と CFD（``aero.method = "cfd"``、:doc:`cfd`）は同じ表を作り、外部の表も ``aero.method = "table"`` で読み込める。
 
 計算時間の目安
 --------------
@@ -63,6 +63,8 @@
      - 0.1 s 未満（係数表だけなら約 10 ms）
    * - 係数表（パネル法、``aero.method = "panel"``、既定のメッシュ約 5900 枚）
      - 約 8 s（亜音速 6 点の連立方程式が約 6.5 s）
+   * - 係数表（CFD、``aero.method = "cfd"``、Euler、約 94 万セル、:math:`M=0.3`〜2 の 4 点 × 迎角 4 点の 16 ケース）
+     - 約 22 分（4 ランク × 4 ケースの並列。メッシュ生成 14 s を含む。:doc:`cfd`）
    * - 1 回の飛翔（パラシュート降下を含め約 690 s 分）、``rk4``\ （:math:`\Delta t=2` ms）
      - 約 0.2 s
    * - 同、``rk45``\ （既定の許容誤差）

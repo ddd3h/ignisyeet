@@ -2,7 +2,7 @@
 // Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Case matrix, directory names, input hashes and the `done.json` status file.
 
-use crate::config::CfdOptions;
+use crate::config::{AlphaMode, CfdOptions};
 use crate::forces::BodyCoeffs;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -15,31 +15,41 @@ pub struct CaseSpec {
     pub alpha_deg: f64,
 }
 
-/// All cases ordered for warm starts: by Mach, then alpha ascending.
+/// All cases ordered for warm starts: by Mach, then `alpha = 0`, the positive angles ascending and,
+/// in `mirror` mode, the negative angles by increasing magnitude (each configured `alpha > 0` is
+/// also solved at `-alpha`).
 pub fn case_list(opt: &CfdOptions) -> Vec<CaseSpec> {
     let mut machs = opt.machs.clone();
     let mut alphas = opt.alphas_deg.clone();
     machs.sort_by(|a, b| a.partial_cmp(b).unwrap());
     alphas.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    // With an exactly z-symmetric mesh the -alpha solution is the mirror image of +alpha: not solved
+    // (the mirror combination then reduces to the +alpha result, whose alpha = 0 offset is zero).
+    if opt.alpha_mode == AlphaMode::Mirror && !opt.z_mirror_mesh {
+        let neg: Vec<f64> = alphas.iter().filter(|&&a| a > 0.0).map(|&a| -a).collect();
+        alphas.extend(neg);
+    }
     machs.iter().flat_map(|&mach| alphas.iter().map(move |&alpha_deg| CaseSpec { mach, alpha_deg })).collect()
 }
 
-/// Index (into `cases`) of the case whose restart file seeds case `i`: the previous alpha at
-/// the same Mach, or for the lowest alpha the lowest-alpha case of the previous Mach.
+/// Index (into `cases`) of the case whose restart file seeds case `i`: the next smaller angle of the
+/// same sign at the same Mach (or `alpha = 0` for the smallest), and for `alpha = 0` the `alpha = 0`
+/// case of the previous Mach.
 pub fn warm_start_source(cases: &[CaseSpec], i: usize) -> Option<usize> {
     let c = cases[i];
-    if i > 0 && cases[i - 1].mach == c.mach {
-        return Some(i - 1);
+    if c.alpha_deg != 0.0 {
+        let same = |x: &CaseSpec| x.mach == c.mach && (x.alpha_deg == 0.0 || x.alpha_deg.signum() == c.alpha_deg.signum()) && x.alpha_deg.abs() < c.alpha_deg.abs();
+        return (0..cases.len()).filter(|&j| same(&cases[j])).max_by(|&p, &q| cases[p].alpha_deg.abs().partial_cmp(&cases[q].alpha_deg.abs()).unwrap());
     }
-    let first_of = |m: f64| cases.iter().position(|x| x.mach == m);
     let prev_mach = cases.iter().map(|x| x.mach).filter(|&m| m < c.mach).fold(f64::NEG_INFINITY, f64::max);
-    if prev_mach.is_finite() { first_of(prev_mach) } else { None }
+    if prev_mach.is_finite() { cases.iter().position(|x| x.mach == prev_mach && x.alpha_deg == 0.0) } else { None }
 }
 
 impl CaseSpec {
-    /// Directory name, e.g. `m0.950_a04.00` (sorts like the case order).
+    /// Directory name, e.g. `m0.950_a04.00` or `m0.950_a-04.00` for a negative angle.
     pub fn dir_name(&self) -> String {
-        format!("m{:.3}_a{:05.2}", self.mach, self.alpha_deg)
+        let sign = if self.alpha_deg < 0.0 { "-" } else { "" };
+        format!("m{:.3}_a{sign}{:05.2}", self.mach, self.alpha_deg.abs())
     }
 
     pub fn dir(&self, workdir: &Path) -> PathBuf {
@@ -98,7 +108,7 @@ mod tests {
 
     #[test]
     fn ordering_names_and_warm_starts() {
-        let o = CfdOptions { machs: vec![0.5, 2.0], alphas_deg: vec![0.0, 4.0, 8.0], ..Default::default() };
+        let o = CfdOptions { machs: vec![0.5, 2.0], alphas_deg: vec![0.0, 4.0, 8.0], alpha_mode: AlphaMode::Single, ..Default::default() };
         let c = case_list(&o);
         assert_eq!(c.len(), 6);
         assert_eq!((c[0].mach, c[0].alpha_deg, c[5].mach, c[5].alpha_deg), (0.5, 0.0, 2.0, 8.0));
@@ -106,12 +116,35 @@ mod tests {
         assert_eq!(warm_start_source(&c, 0), None);
         assert_eq!(warm_start_source(&c, 2), Some(1));
         assert_eq!(warm_start_source(&c, 3), Some(0));
-        let mut names: Vec<String> = c.iter().map(|x| x.dir_name()).collect();
-        let sorted = {
-            names.sort();
-            names.clone()
-        };
-        assert_eq!(sorted, c.iter().map(|x| x.dir_name()).collect::<Vec<_>>());
+        assert_eq!(case_list(&CfdOptions { alpha_mode: AlphaMode::Offset, ..o.clone() }), c);
+    }
+
+    #[test]
+    fn mirror_mode_adds_negative_angles() {
+        let o = CfdOptions { machs: vec![2.0, 0.5], alphas_deg: vec![0.0, 4.0, 8.0], z_mirror_mesh: false, ..Default::default() };
+        assert_eq!(o.alpha_mode, AlphaMode::Mirror);
+        // z-symmetric mesh: no negative angles needed.
+        assert_eq!(case_list(&CfdOptions { z_mirror_mesh: true, ..o.clone() }).len(), 6);
+        let c = case_list(&o);
+        let a: Vec<f64> = c.iter().map(|x| x.alpha_deg).collect();
+        assert_eq!(c.len(), 10);
+        assert_eq!(&a[..5], &[0.0, 4.0, 8.0, -4.0, -8.0]);
+        assert_eq!((c[0].mach, c[5].mach), (0.5, 2.0));
+        let names: Vec<String> = c.iter().map(|x| x.dir_name()).collect();
+        assert_eq!(names[3], "m0.500_a-04.00");
+        assert_eq!(names.iter().collect::<std::collections::BTreeSet<_>>().len(), c.len());
+        // Warm starts: both branches grow from alpha = 0; alpha = 0 chains over Mach.
+        assert_eq!(warm_start_source(&c, 0), None);
+        assert_eq!(warm_start_source(&c, 1), Some(0));
+        assert_eq!(warm_start_source(&c, 2), Some(1));
+        assert_eq!(warm_start_source(&c, 3), Some(0));
+        assert_eq!(warm_start_source(&c, 4), Some(3));
+        assert_eq!(warm_start_source(&c, 5), Some(0));
+        assert_eq!(warm_start_source(&c, 8), Some(5));
+        assert_eq!(warm_start_source(&c, 9), Some(8));
+        // The case hash distinguishes the sign of the angle.
+        let cfg = |alpha| crate::su2cfg::su2_config(&o, 0.5, alpha, &crate::su2cfg::RefDims { length: 0.1, area: 0.01 }, &aero::atmosphere::AtmosphereModel::default().at(0.0), &Default::default());
+        assert_ne!(case_hash(&cfg(4.0), "m"), case_hash(&cfg(-4.0), "m"));
     }
 
     #[test]

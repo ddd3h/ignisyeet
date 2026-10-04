@@ -60,7 +60,7 @@ extrapolation = "linear"   # "linear" | "clamp"
 # SU2 CFD aerodynamics (needs SU2 >= 8, MPI and gmsh; see `ignisyeet cfd-check examples/sample_cfd.toml`).
 # Each (Mach, alpha) case is a steady SU2 run on a half-model mesh (one fin in the pitch plane); the
 # solved points are interpolated onto the regular table grid above. This reduced default matrix
-# (4 Mach x 3 alpha, Euler) takes a few minutes to ~20 minutes on a 20-thread desktop. Cases are cached in
+# (4 Mach x 3 alpha, Euler, 2 mm surface mesh) takes about 15-20 minutes on a 20-thread desktop. Cases are cached in
 # out_cfd/cfd/ and re-used when nothing changed (delete the directory to start over).
 [aero.cfd]
 prefix = "~/.local/share/micromamba/envs/ignisyeet-cfd"  # <prefix>/bin/SU2_CFD, mpirun, python (with gmsh)
@@ -69,9 +69,12 @@ machs = [0.3, 0.8, 1.2, 2.0]   # solved Mach numbers (increasing)
 alphas_deg = [0, 4, 8]         # solved angles of attack (must contain 0)
 surface = "panel_mesh"     # geometry rebuilt from the extracted profile + fins as one fused solid ("stl" is not supported)
 symmetry = true            # half model about the pitch plane (required: the full domain cannot be meshed yet)
+z_mirror_mesh = true       # mesh a quarter and mirror it about the x-y plane: exactly z-symmetric mesh, no spurious CN at alpha = 0
+alpha_mode = "mirror"      # "mirror" | "offset" | "single": odd/even combination of +alpha and -alpha runs (-alpha is skipped when
+                           # z_mirror_mesh makes it redundant), "offset" subtracts the alpha = 0 values, "single" uses the raw results
 tail_fairing = 6.0         # euler: conical fairing behind the flat base [base radii], 0 = flat base (rans always flat)
 farfield = 20.0            # farfield radius [body lengths]
-wall_size = 0.005          # surface element size [m] (0.0025 = fine, about 3x the cost)
+wall_size = 0.002          # surface element size [m]: about 0.9 M cells, CN within ~2 % of the mesh-converged value (0.005 = coarse, 5x cheaper, CN up to ~7 % low at M 2)
 yplus = 1.0                # rans: target y+ of the first prism layer
 iterations = 3000
 cfl = 5.0

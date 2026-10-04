@@ -37,13 +37,40 @@ pub enum Scheme {
     Jst,
 }
 
+/// How the angle-of-attack matrix is solved and the zero-angle asymmetry of the steady solution is handled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum AlphaMode {
+    /// Every solved `alpha > 0` is solved at `-alpha` too; `CN` and the nose moment are the odd part
+    /// `(f(+a) - f(-a)) / 2`, `CA` the even part. `alpha = 0` is solved once and only reported
+    /// (the measured asymmetry). Robust against any mirror-asymmetric numerical offset.
+    #[default]
+    Mirror,
+    /// Only the configured angles; the `alpha = 0` values of `CN` and the nose moment are subtracted.
+    Offset,
+    /// Only the configured angles, results used as they are.
+    Single,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct CfdOptions {
+    /// Treatment of the angle-of-attack asymmetry, see [`AlphaMode`].
+    pub alpha_mode: AlphaMode,
+    /// Roll of the fin set about the body axis [deg] (0: fins at +-y and +-z, so two fins lie in the
+    /// y = 0 symmetry plane; 45: no fin in the symmetry plane). Only meaningful for symmetric layouts.
+    pub fin_roll_deg: f64,
+    /// Mesh a quarter of the domain and mirror it about the x-y plane, so the half-model mesh is exactly
+    /// symmetric in z. An unstructured mesh of the half model is not, which gives a spurious normal force
+    /// at alpha = 0 (see `alpha_mode`). With the exact z-symmetry `-alpha` is the mirror image of `+alpha`,
+    /// so `alpha_mode = "mirror"` needs no extra `-alpha` runs. Used only when the fin layout is symmetric
+    /// about the x-y plane too (see [`z_symmetric_layout`]); otherwise ignored.
+    pub z_mirror_mesh: bool,
     pub model: FlowModel,
     /// Solved Mach numbers (strictly increasing, positive).
     pub machs: Vec<f64>,
-    /// Solved angles of attack [deg] (strictly increasing, >= 0, must contain 0).
+    /// Solved angles of attack [deg] (strictly increasing, >= 0, must contain 0). In `mirror` mode each
+    /// angle above 0 is also solved at its negative.
     pub alphas_deg: Vec<f64>,
     pub surface: SurfaceKind,
     /// Half model about the pitch plane (y = 0, keeping y >= 0).
@@ -55,7 +82,8 @@ pub struct CfdOptions {
     pub tail_fairing: f64,
     /// Farfield radius in body lengths.
     pub farfield: f64,
-    /// Surface element size [m].
+    /// Surface element size [m]. 2 mm gives about 0.9 M half-model cells for the 1.8 m sample rocket and a
+    /// normal-force error of about 2 % at M 2 (mesh convergence study, doc/data/cfd/mesh_convergence.csv).
     pub wall_size: f64,
     /// RANS: target y+ of the first layer.
     pub yplus: f64,
@@ -88,6 +116,9 @@ pub struct CfdOptions {
 impl Default for CfdOptions {
     fn default() -> Self {
         Self {
+            alpha_mode: AlphaMode::Mirror,
+            fin_roll_deg: 0.0,
+            z_mirror_mesh: true,
             model: FlowModel::Euler,
             machs: vec![0.3, 0.6, 0.8, 0.95, 1.1, 1.3, 1.6, 2.0, 2.5, 3.0],
             alphas_deg: vec![0.0, 2.0, 4.0, 8.0, 12.0, 16.0],
@@ -95,7 +126,7 @@ impl Default for CfdOptions {
             symmetry: true,
             tail_fairing: 6.0,
             farfield: 20.0,
-            wall_size: 0.004,
+            wall_size: 0.002,
             yplus: 1.0,
             iterations: 3000,
             cfl: 5.0,
@@ -110,6 +141,19 @@ impl Default for CfdOptions {
             workdir: "cfd".into(),
         }
     }
+}
+
+/// Whether `count` fins (one at +z before the roll of `roll_deg`) form a layout that is mirror symmetric
+/// about the x-y plane (z -> -z), so that a quarter model can represent it. No fins is symmetric.
+pub fn z_symmetric_layout(count: usize, roll_deg: f64) -> bool {
+    let ang = |k: usize| (90.0 + roll_deg + 360.0 * k as f64 / count.max(1) as f64).rem_euclid(360.0);
+    count == 0 || (0..count).all(|k| {
+        let m = (-ang(k)).rem_euclid(360.0);
+        (0..count).any(|j| {
+            let d = (ang(j) - m).rem_euclid(360.0);
+            d < 1e-6 || d > 360.0 - 1e-6
+        })
+    })
 }
 
 fn strictly_increasing(v: &[f64]) -> bool {
@@ -140,6 +184,9 @@ impl CfdOptions {
             if !(v.is_finite() && v > 0.0) {
                 bail!("aero.cfd.{name} must be positive");
             }
+        }
+        if !(self.fin_roll_deg.is_finite() && self.fin_roll_deg.abs() <= 360.0) {
+            bail!("aero.cfd.fin_roll_deg must be a finite angle");
         }
         if !(self.tail_fairing.is_finite() && self.tail_fairing >= 0.0) {
             bail!("aero.cfd.tail_fairing must be >= 0");
@@ -196,6 +243,13 @@ mod tests {
         assert_eq!(o.alphas_deg, vec![0.0, 2.0, 4.0, 8.0, 12.0, 16.0]);
         assert_eq!((o.ranks_per_case, o.parallel_cases, o.iterations), (4, 4, 3000));
         assert!((o.residual_minval() + 6.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn layout_symmetry() {
+        assert!(z_symmetric_layout(4, 0.0) && z_symmetric_layout(4, 45.0) && z_symmetric_layout(2, 0.0) && z_symmetric_layout(0, 0.0));
+        assert!(z_symmetric_layout(6, 0.0));
+        assert!(!z_symmetric_layout(3, 0.0) && !z_symmetric_layout(4, 10.0) && !z_symmetric_layout(5, 0.0));
     }
 
     #[test]

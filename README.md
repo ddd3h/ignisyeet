@@ -4,6 +4,19 @@
 # IgnisYeet
 
 **A rocket simulator that estimates aerodynamics from an STL file, flies the rocket in 6 degrees of freedom, and computes the landing dispersion**
+
+[![Docs](https://github.com/ddd3h/ignisyeet/actions/workflows/docs.yml/badge.svg?branch=main)](https://github.com/ddd3h/ignisyeet/actions/workflows/docs.yml)
+[![Documentation](https://img.shields.io/badge/docs-www.ddd3h.com%2Fignisyeet-1f6feb?logo=readthedocs&logoColor=white)](https://www.ddd3h.com/ignisyeet/)
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-0.2.0-informational)](CITATION.cff)
+
+[![Rust](https://img.shields.io/badge/Rust-2021_edition-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![uv](https://img.shields.io/badge/uv-supported-DE5FE9?logo=uv&logoColor=white)](https://docs.astral.sh/uv/)
+[![Sphinx](https://img.shields.io/badge/docs-Sphinx-0A507A?logo=sphinx&logoColor=white)](https://www.sphinx-doc.org/)
+[![Platform](https://img.shields.io/badge/platform-Linux-FCC624?logo=linux&logoColor=black)](#requirements)
+[![Google Earth KML](https://img.shields.io/badge/output-KML-4285F4?logo=googleearth&logoColor=white)](#output-files)
+[![Citation](https://img.shields.io/badge/cite-CITATION.cff-orange)](CITATION.cff)
 </div>
 
 Given a rocket **STL file**, mass properties, a motor thrust curve, and launch-site conditions, IgnisYeet runs the following pipeline:
@@ -23,6 +36,7 @@ Detailed documentation with equations, figures, and verification is available in
 
 - **Geometry extraction from STL**: principal-axis detection, per-section radius distribution, and automatic estimation of the number and dimensions of fins (manual override is possible)
 - **Three aerodynamic models**: Barrowman method (including Niskanen's supersonic and drag extensions), panel method (Morino method for subsonic, local-inclination method for supersonic), and external coefficient tables (e.g. from CFD)
+- **CFD mode** (`aero.method = "cfd"`): an optional fourth route that rebuilds the extracted body and fins as an OpenCASCADE solid, meshes it with gmsh and solves a steady (Mach, angle of attack) matrix with SU2 (Euler by default, Roe/MUSCL scheme, parallel MPI cases with warm starts and resume). The solved points are interpolated onto the same coefficient table, so the flight simulation is unchanged. It needs SU2 8.3.0, gmsh and Open MPI (for example from conda-forge; check with `ignisyeet cfd-check`) and takes tens of minutes for a small matrix; see [`doc/source/cfd.rst`](doc/source/cfd.rst). The RANS option is not validated.
 - **Cached coefficient table**: not recomputed if the inputs are unchanged; interpolated inside the range and linearly extrapolated or clamped outside it
 - **6-DoF flight**: flat Earth (local ENU) and rotating Earth (ECEF, with Coriolis and centrifugal forces); constant, inverse-square, and J2 gravity
 - **Atmosphere and wind models**: US Standard Atmosphere 1976 (with optional temperature offset) and a constant atmosphere; constant, power-law, logarithmic, and altitude-table winds
@@ -91,13 +105,59 @@ All of the following are results for the bundled sample rocket (100 mm diameter,
 | LuaLaTeX (luatexja), dvisvgm | Only for building the TikZ figures of the documentation |
 | upLaTeX, dvipdfmx, latexmk, inkscape | Only for building the PDF version of the documentation |
 
-## Installation and quick start
+## Installation
+
+One-line installer (Linux x86_64 / aarch64, macOS Intel / Apple Silicon):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ddd3h/ignisyeet/main/install.sh | bash
+```
+
+The installer asks whether you are a **user** or a **developer**, shows which tools it already found (cargo, uv, python3, git, conda/micromamba, an existing `ignisyeet-cfd` environment, SU2, gmsh, TeX, ...), and installs only what is missing. Nothing is reinstalled when it is already present, and re-running it is safe.
+
+| Role | What is installed |
+|---|---|
+| user | The release binary for your platform (sha256 verified) in `~/.local/bin`, the examples and `python/plot.py` in `~/.local/share/ignisyeet/<version>` (with a `current` link), a plotting environment (uv, or `venv` + pip), and an `ignisyeet-plot` command. No documentation tools. |
+| developer | A git clone (default `~/ignisyeet`, or the clone you run it from), Rust via rustup if `cargo` is missing, uv, `cargo build --release`, `cargo test --release`, the `python/` and `doc/` environments. Missing documentation tools (TeX Live, dvisvgm, mutool, inkscape, IPAex fonts) are listed with the exact `apt` / `brew` command; the installer never runs `sudo`. |
+
+Both roles can additionally install the CFD tools (SU2, gmsh, Open MPI from conda-forge, about 3 GB) into a conda environment named `ignisyeet-cfd`. An existing micromamba/mamba/conda and an existing environment are reused. On x86_64 Linux CPUs without AVX-512, SU2 is pinned to 8.3.0 because the 8.5.0 package crashes there. The installer prints the `[aero.cfd] prefix` value to put in your configuration (or `IGNISYEET_CFD_PREFIX`).
+
+Options are given after `bash -s --`:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ddd3h/ignisyeet/main/install.sh | bash -s -- --developer --cfd -y
+```
+
+| Option | Meaning |
+|---|---|
+| `--user` / `--developer` | Choose the role without asking |
+| `--cfd` / `--no-cfd` | Install or skip the optional CFD tools |
+| `--version vX.Y.Z` | Release to install (default: the latest GitHub release); developer: tag to check out |
+| `--prefix DIR` | Install prefix (default `~/.local`) |
+| `--dir DIR` | Developer clone location |
+| `--no-test` | Developer: skip `cargo test` |
+| `--add-path` | Append the `PATH` line to your shell rc file (never done silently) |
+| `--force` | Reinstall even if the same version is installed |
+| `-y`, `--yes` | No questions; defaults (user, no CFD, no rc-file edit) |
+| `--dry-run` | Show the plan and exit |
+| `--uninstall` | Remove the binary, links and release data; asks before removing the plotting environment and the CFD environment (`--purge` removes both). A developer clone is deleted only after an explicit confirmation |
+| `--no-color`, `--help` | Plain output; usage |
+
+Every option also has an environment variable (`IGNISYEET_VERSION`, `IGNISYEET_PREFIX`, `IGNISYEET_ROLE`, `IGNISYEET_DIR`, `IGNISYEET_CFD=1|0`, `IGNISYEET_YES=1`, ...). Output follows `NO_COLOR`, falls back to ASCII on a non-UTF-8 locale and to plain lines when it is not a terminal. Everything is logged to `~/.local/share/ignisyeet/install.log`.
+
+Releases are published on GitHub as `ignisyeet-<version>-<target>.tar.gz` with a `.sha256` file; the installer verifies the checksum before installing, and you can check it by hand with `sha256sum -c ignisyeet-<version>-<target>.tar.gz.sha256`. To read the script before running it, download it first: `curl -fsSLO https://raw.githubusercontent.com/ddd3h/ignisyeet/main/install.sh && bash install.sh`.
+
+A release is made by pushing a tag equal to the workspace version (`git tag v0.2.0 && git push origin v0.2.0`); the `release` workflow builds the four platform archives and creates the GitHub Release.
+
+### Building from source
 
 ```sh
 git clone https://github.com/ddd3h/ignisyeet.git
 cd ignisyeet
 cargo build --release          # produces target/release/ignisyeet
 ```
+
+### Quick start
 
 Run the whole pipeline (aerodynamics, flight, dispersion, plotting) on the bundled sample rocket.
 
@@ -169,7 +229,7 @@ Configuration is written in TOML. Relative paths are resolved against **the dire
 | `[motor]` | RASP `.eng` file, motor aft position `aft_x`, nozzle exit diameter, override of the propellant mass |
 | `[launch]` | Latitude, longitude, elevation, rail length, elevation angle, azimuth |
 | `[recovery]` | Whether a parachute is used (`enabled`), `cd_s`, deployment delay `delay` |
-| `[aero]` | `method` (`barrowman`, `panel`, `table`), external table `table`, Mach and angle-of-attack grids, number of sections `n_slices`, `fin_threshold`, `extrapolation` (`linear`, `clamp`) |
+| `[aero]` | `method` (`barrowman`, `panel`, `table`, `cfd`), external table `table`, Mach and angle-of-attack grids, number of sections `n_slices`, `fin_threshold`, `extrapolation` (`linear`, `clamp`) |
 | `[aero.panel]` | Panel-method mesh divisions (`body_axial`, `body_circ`, `fin_chord`, `fin_span`), `wake_length`, `tail_radii`, `subsonic_machs`, `transonic`, `fin_section` |
 | `[earth]` | `model` (`flat`, `ecef`), `gravity` (`constant`, `inverse_square`, `j2`; `j2` requires `ecef`) |
 | `[atmosphere]` | `model` (`us1976`, `constant`), `temperature_offset`, constant-atmosphere `density`, `sound_speed`, `viscosity` |

@@ -1,8 +1,15 @@
 {
   "machine": "i7-12700 (20 threads), 30 GB, SU2 8.3.0, Open MPI 5.0.11, gmsh 4.15.2",
-  "euler_matrix": {"machs": [0.3, 0.8, 1.2, 2.0], "alphas_deg": [0, 2, 4, 8], "cells": 633552, "wall_size_m": 0.0025,
-                   "ranks_per_case": 4, "parallel_cases": 5, "total_wall_s": 874, "per_case_wall_s": "32-198 (median about 70)", "unconverged_accepted": 1},
-  "rans_case": {"mach": 0.8, "alphas_deg": [0, 4], "cells": 196947, "wall_size_m": 0.005, "ranks": 4, "wall_s": [69, 85], "note": "no boundary-layer prisms; SA + standard wall function, first-order Roe, 300 iteration cap"},
-  "memory": {"su2_peak_rss_per_rank_MB": {"80k cells": 87, "197k cells": 165, "633k cells": 422}, "model": "40 MB per rank + 2.7 kB per cell (Euler)"},
-  "cone_validation": "cone_cp.csv"
+  "settings": {"model": "euler", "wall_size_m": 0.002, "farfield_L": 20, "tail_fairing": 6.0, "scheme": "roe", "alpha_mode": "mirror", "z_mirror_mesh": true,
+               "note": "z_mirror_mesh makes -alpha the exact mirror image of +alpha, so mirror mode needs no -alpha solves; on an asymmetric half-model mesh mirror mode solves every alpha > 0 also at -alpha"},
+  "euler_matrix": {"machs": [0.3, 0.8, 1.2, 2.0], "alphas_deg": [0, 2, 4, 8], "cases": 16, "cells": 941082, "nodes": 200978, "ranks_per_case": 4, "parallel_cases": 4,
+                   "total_wall_s": 1325, "sum_of_case_wall_s": 2339, "per_case_wall_s": "49-330 (median about 160)", "unconverged_accepted": ["M1.2 a0", "M1.2 a8", "M2.0 a8"],
+                   "peak_rss_per_rank_MB": 819, "mesh_s": 14},
+  "mesh_convergence": {"file": "mesh_convergence.csv", "M0.8": {"fit_order": "non-monotone, scatter about +-1 % for wall_size <= 5 mm", "cn_extrapolated": 1.214, "gci": "not defined (non-monotone)"},
+                       "M2.0": {"fit_order": 2.65, "cn_extrapolated": 0.9394, "gci_fine_pair_percent": 5.6, "cn_error_at_2mm_percent": -2.2}},
+  "farfield_sensitivity": "farfield_sensitivity.csv: M0.8 alpha 4, CN within 0.25 % for 10, 20, 40 body lengths",
+  "asymmetry": "asymmetry_study.csv",
+  "rans_case": {"mach": 0.8, "alphas_deg": [0, 4], "cells": 196947, "wall_size_m": 0.005, "ranks": 4, "wall_s": [69, 85], "note": "older run (half model, alpha 0 offset subtracted, before the z-symmetric mesh); no boundary-layer prisms; SA + standard wall function, first-order Roe, 300 iteration cap"},
+  "memory": {"su2_peak_rss_per_rank_MB": {"93k cells": 266, "222k cells": 332, "379k cells": 444, "649k cells": 629, "941k cells": 819, "1124k cells": 923}, "model": "40 MB per rank + 3.3 kB per cell (Euler, summed over ranks)"},
+  "cone_validation": "cone_cp.csv (older run, wall_size 10..2.5 mm)"
 }

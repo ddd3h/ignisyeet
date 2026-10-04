@@ -84,7 +84,7 @@ IgnisYeet では、抽出した半径分布を断面ごとの円錐台の連な�
    S_0^{\mathrm{body}}=\sum_k C_{N\alpha,k},\qquad S_1^{\mathrm{body}}=\sum_k C_{N\alpha,k}\,x_{cp,k},\qquad S_2^{\mathrm{body}}=\sum_k C_{N\alpha,k}\,x_{cp,k}^2
 
 とおく。:math:`S_2` はピッチ減衰（:ref:`sec-damping`）で使う。
-ノーズと円筒からなり後端が平らな機体では、:eq:`eq-body-cna` の和は :math:`2(A_{\mathrm{base}}-0)/S=2` となり、
+ノーズと円筒からなり後端が平らな機体では、\ :eq:`eq-body-cna` の和は :math:`2(A_{\mathrm{base}}-0)/S=2` となり、
 ノーズの形によらず :math:`C_{N\alpha}^{\mathrm{body}}=2` という古典的な結果 :cite:`munk,barrowman` が得られる。
 
 有限の迎角では、ポテンシャル流の寄与を
@@ -317,7 +317,7 @@ IgnisYeet では、抽出した半径分布を断面ごとの円錐台の連な�
    M_{\mathrm{damp}} = -\frac{qS}{V}\,\omega\sum_i C_{N\alpha,i}\,(x_i-x_{cg})^2
    = -\frac{qS}{V}\,\omega\left(S_2-2x_{cg}S_1+x_{cg}^2S_0\right)
 
-となる。ここで :math:`S_n=\sum_i C_{N\alpha,i}\,x_i^n`\ （胴体の和 :eq:`eq-body-sums` にフィンの寄与を加えたもの）である。
+となる。ここで :math:`S_n=\sum_i C_{N\alpha,i}\,x_i^n`\ （:eq:`eq-body-sums` の胴体の和にフィンの寄与を加えたもの）である。
 重心は燃焼とともに移動するので、表には :math:`x_{cg}` に依存しない :math:`S_0,S_1,S_2` を Mach 数ごとに保存し、
 飛翔計算のたびに\ :eq:`eq-damping` を組み立てる。括弧内が負になる場合（ボートテールの負の寄与が勝つ場合）は 0 とする。
 

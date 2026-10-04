@@ -22,7 +22,7 @@ pub mod su2cfg;
 pub mod table;
 pub mod tools;
 
-pub use config::{CfdOptions, FlowModel, Scheme, SurfaceKind};
+pub use config::{z_symmetric_layout, AlphaMode, CfdOptions, FlowModel, Scheme, SurfaceKind};
 
 use aero::{AeroOptions, AeroTable, Extrapolation};
 use anyhow::{bail, Result};
@@ -56,8 +56,11 @@ pub struct CfdReport {
     pub case_seconds: f64,
     /// Failed cases bridged by interpolation.
     pub filled: Vec<(f64, f64)>,
-    /// Removed alpha = 0 offsets per Mach: `(mach, CN0, nose moment0 [m])`, see [`table::remove_zero_offset`].
-    pub zero_offsets: Vec<(f64, f64, f64)>,
+    /// `alpha_mode`: `mirror`, `offset` or `single`.
+    pub alpha_mode: String,
+    /// Measured alpha = 0 asymmetry per Mach (`CN`, nose moment [m]; the body is symmetric, so the true
+    /// values are 0). Removed in `offset` mode, only reported in `mirror` mode.
+    pub asymmetry: Vec<table::Asymmetry>,
     /// Resolved MPI ranks per case, concurrent cases and the estimated memory per case [bytes].
     pub ranks_per_case: usize,
     pub parallel_cases: usize,
@@ -79,6 +82,17 @@ pub fn check_tools(opt: &CfdOptions) -> Result<tools::ToolReport> {
         bail!("{}", not_installed_message(&r, opt));
     }
     Ok(r)
+}
+
+/// The options with `z_mirror_mesh` switched off when the fin layout of `geom` is not symmetric about the
+/// x-y plane (the quarter-domain mesh would symmetrise the geometry).
+pub fn resolve_options(geom: &Geometry, cfd: &CfdOptions) -> CfdOptions {
+    let mut o = cfd.clone();
+    let (count, roll) = mesh::cad_description(geom).1.map_or((0, 0.0), |f| (f.count, cfd.fin_roll_deg));
+    if o.z_mirror_mesh && !(o.symmetry && z_symmetric_layout(count, roll)) {
+        o.z_mirror_mesh = false;
+    }
+    o
 }
 
 /// Reference dimensions of the full rocket for the SU2 configuration.
@@ -115,8 +129,8 @@ pub struct RunPlan {
 /// Estimated SU2 memory of one case with `cells` volume cells on `ranks` ranks.
 ///
 /// Measured (SU2 8.3, Euler, Roe + MUSCL, implicit FGMRES/ILU, tetrahedra, 4 ranks, peak RSS per
-/// rank from `/usr/bin/time -v`): 87 MB at 80 k cells and 165 MB at 197 k cells, i.e. about 40 MB
-/// per rank plus 2.7 kB per cell (summed over ranks). RANS carries the turbulence variable, its
+/// rank from `/usr/bin/time -v`): 87 MB at 80 k cells, 165 MB at 197 k cells and 819 MB at 941 k cells
+/// (largest rank), i.e. about 40 MB per rank plus 3.3 kB per cell (summed over ranks). RANS carries the turbulence variable, its
 /// gradients and a larger linear system: [`RANS_MEMORY_FACTOR`] times the per-cell part.
 pub fn case_memory_bytes(model: FlowModel, cells: usize, ranks: usize) -> u64 {
     let per_cell = match model {
@@ -126,7 +140,7 @@ pub fn case_memory_bytes(model: FlowModel, cells: usize, ranks: usize) -> u64 {
     (ranks as f64 * 40e6 + per_cell * cells as f64) as u64
 }
 
-pub const EULER_BYTES_PER_CELL: f64 = 2.7e3;
+pub const EULER_BYTES_PER_CELL: f64 = 3.3e3;
 pub const RANS_MEMORY_FACTOR: f64 = 1.5;
 
 /// Resolves `ranks_per_case` / `parallel_cases` (0 = auto) against the budget.
@@ -204,6 +218,7 @@ fn reject_stl(cfd: &CfdOptions, _raw: Option<&[geom::stl::Triangle]>) -> Result<
 /// Surface export and volume meshing only (`cfd-check --mesh`).
 pub fn mesh_only(geom: &Geometry, cfd: &CfdOptions, _aero: &AeroOptions, out_dir: &Path, budget: &ResourceBudget, raw: Option<&[geom::stl::Triangle]>) -> Result<mesh::MeshResult> {
     cfd.validate()?;
+    let cfd = &resolve_options(geom, cfd);
     check_tools(cfd)?;
     reject_stl(cfd, raw)?;
     mesh::ensure_mesh(cfd, geom, &work_dir(cfd, out_dir), budget.threads)
@@ -225,6 +240,7 @@ pub fn build_table_with_progress(
     progress: &(dyn Fn(CfdStage) + Sync),
 ) -> Result<(AeroTable, CfdReport)> {
     cfd.validate()?;
+    let cfd = &resolve_options(geom, cfd);
     let tools = check_tools(cfd)?;
     let t0 = std::time::Instant::now();
     progress(CfdStage::Mesh);
@@ -240,11 +256,11 @@ pub fn build_table_with_progress(
     let run = runner::RunSetup { opt: cfd, dims, atm, mesh_hash: mesh.hash.clone(), mesh_file: mesh.su2.clone(), work: work.clone(), ranks: plan.ranks, parallel: plan.parallel, tools: &tools };
     let results = runner::run_all(&run, progress)?;
     progress(CfdStage::Table);
-    let mut points: Vec<table::SolvedPoint> = results
+    let points: Vec<table::SolvedPoint> = results
         .iter()
         .map(|r| table::SolvedPoint { mach: r.spec.mach, alpha_deg: r.spec.alpha_deg, coeffs: r.result.as_ref().map(|x| x.coeffs) })
         .collect();
-    let offsets = table::remove_zero_offset(&mut points);
+    let (points, asymmetry) = table::apply_alpha_mode(&points, cfd.alpha_mode);
     let model = aero::AeroModel::new(geom.clone(), aero.clone());
     let (tab, fill) = table::build_from_points(&points, &model, cfd.model, hash, extrapolation).map_err(|e| {
         match results.iter().find_map(|r| r.error.as_ref().map(|m| (r.spec, m))) {
@@ -252,7 +268,7 @@ pub fn build_table_with_progress(
             None => e,
         }
     })?;
-    runner::write_cases_csv(&out_dir.join("cfd_cases.csv"), &results, &dims)?;
+    runner::write_cases_csv(&out_dir.join("cfd_cases.csv"), &results, &points, cfd.alpha_mode)?;
     let report = CfdReport {
         cases: results.len(),
         failed: results.iter().filter(|r| r.result.is_none()).map(|r| (r.spec.mach, r.spec.alpha_deg)).collect(),
@@ -262,7 +278,8 @@ pub fn build_table_with_progress(
         mesh_cells: mesh.stats.cells,
         case_seconds: results.iter().filter_map(|r| r.result.as_ref().map(|x| x.wall_seconds)).sum(),
         filled: fill.filled,
-        zero_offsets: offsets,
+        alpha_mode: format!("{:?}", cfd.alpha_mode).to_lowercase(),
+        asymmetry,
         ranks_per_case: plan.ranks,
         parallel_cases: plan.parallel,
         bytes_per_case: plan.bytes_per_case,
@@ -309,8 +326,8 @@ mod tests {
         let p = plan_resources(&opts(4, 4), &b, 1_000_000, 12);
         assert_eq!(p.parallel, 1);
         assert!(p.notes.iter().any(|n| n.contains("single case")));
-        // 100 k cells: about 0.43 GB per case -> 4 fit into 2 GB.
-        let p = plan_resources(&opts(4, 8), &ResourceBudget { threads: 40, ..b }, 100_000, 12);
+        // 100 k cells: about 0.49 GB per case -> 4 fit into 2.2 GB.
+        let p = plan_resources(&opts(4, 8), &ResourceBudget { threads: 40, memory_bytes: Some(2_200_000_000) }, 100_000, 12);
         assert_eq!(p.parallel, 4, "{p:?}");
         assert!(case_memory_bytes(FlowModel::Rans, 100_000, 4) > case_memory_bytes(FlowModel::Euler, 100_000, 4));
     }

@@ -1,0 +1,62 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+% CFD computational domain: (a) section in the y = 0 symmetry plane (x-z), (b) view along the body axis (y-z) of the half ball.
+\begin{tikzpicture}[font=\small]
+  \def\R{2.6}
+  % ---------------- (a) x-z section
+  \begin{scope}
+    % meshed quarter (z >= 0) and mirrored copy (z <= 0)
+    \fill[cfill] (-\R,0) arc (180:0:\R) -- cycle;
+    \fill[cfillg] (-\R,0) arc (180:360:\R) -- cycle;
+    \draw[cblue, very thick] (0,0) circle (\R);
+    \draw[cink2, dash pattern=on 5pt off 2pt] (-\R-0.3,0) -- (\R+0.3,0);
+    % body (not to scale)
+    \fill[white, draw=cink, thick] (-0.9,0) .. controls (-0.7,0.18) .. (-0.3,0.2) -- (0.7,0.2) -- (0.7,-0.2) -- (-0.3,-0.2) .. controls (-0.7,-0.18) .. cycle;
+    \fill[white, draw=cink, thick] (0.1,0.2) -- (0.4,0.2) -- (0.7,0.5) -- (0.7,0.2) -- cycle;
+    \fill[white, draw=cink, thick] (0.1,-0.2) -- (0.4,-0.2) -- (0.7,-0.5) -- (0.7,-0.2) -- cycle;
+    \draw[corange, very thick] (0.7,0.2) -- (1.15,0.0) -- (0.7,-0.2);
+    % freestream
+    \begin{scope}[rotate=14]
+      \foreach \yy in {-0.5,0,0.5}{
+        \draw[cink2, ->, thick] (-\R-0.9,\yy) -- (-\R-0.1,\yy);
+      }
+    \end{scope}
+    \node[cink2, anchor=east] at (-\R-1.0,1.2) {自由流};
+    \pgfmathsetmacro{\px}{-(\R+0.9)*cos(14)}
+    \pgfmathsetmacro{\py}{-(\R+0.9)*sin(14)}
+    \draw[cink2, dash pattern=on 2pt off 2pt] (\px,\py) -- ++(1.1,0);
+    \draw[cink2] (\px+0.9,\py) arc (0:14:0.9);
+    \node[cink2, anchor=west] at (\px+0.95,\py+0.13) {\scriptsize $\alpha$};
+    \node[cblue, anchor=south west] at (\R*0.707+0.05,\R*0.707+0.05) {farfield};
+    \node[cink, anchor=west] at (\R+0.35,0.0) {$z=0$};
+    \node[cink, align=center] at (0,1.55) {メッシュを作る領域\\（$z\ge 0$）};
+    \node[cink2, align=center] at (-0.2,-1.95) {鏡映して作る領域\\（$z\le 0$）};
+    \draw[cink, ->] (0.2,0.75) to[bend left=20] (0.55,0.45);
+    \node[cink, anchor=south] at (0.2,0.78) {\scriptsize 機体};
+    \node[corange, anchor=north, align=center] at (1.0,-0.5) {\scriptsize base\\\scriptsize（尾部フェアリング）};
+    \node[cink, anchor=north] at (0,-\R-0.35) {(a) $y=0$（symmetry）面の断面};
+  \end{scope}
+  % ---------------- (b) y-z view along the axis
+  \begin{scope}[xshift=9.0cm]
+    \def\r{0.45}
+    \fill[cfill] (0,0) -- (0,\R) arc (90:0:\R) -- cycle;
+    \fill[cfillg] (0,0) -- (\R,0) arc (0:-90:\R) -- cycle;
+    \draw[cblue, very thick] (0,-\R) arc (-90:90:\R);
+    \draw[corange, very thick] (0,-\R) -- (0,\R);
+    \draw[cink2, dash pattern=on 5pt off 2pt] (-0.5,0) -- (\R+0.3,0);
+    % body circle and fins (fins at +y and +-z)
+    \foreach \a in {0,90,-90}{
+      \begin{scope}[rotate=\a]
+        \fill[white, draw=cink, thick] (\r,-0.04) rectangle (\r+0.5,0.04);
+      \end{scope}
+    }
+    \fill[white, draw=cink, thick] (0,0) circle (\r);
+    \node[cink, anchor=west] at (\R+0.35,0.0) {$z=0$};
+    \node[cblue, anchor=south west] at (\R*0.707+0.05,\R*0.707+0.05) {farfield};
+    \node[corange, anchor=east] at (-0.1,\R+0.15) {symmetry（$y=0$）};
+    \node[cink, align=center] at (1.35,1.35) {1/4 領域};
+    \node[cink2, align=center] at (1.35,-1.35) {鏡映};
+    \draw[cink, ->] (-0.9,-0.9) node[anchor=east, align=right] {\scriptsize wall\\\scriptsize（機体表面）} to[bend right=10] ({-\r*0.7},{-\r*0.7});
+    \node[cink, anchor=north] at (\R*0.3,-\R-0.35) {(b) 軸方向から見た半球};
+  \end{scope}
+\end{tikzpicture}

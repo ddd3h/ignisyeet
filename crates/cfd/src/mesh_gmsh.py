@@ -31,6 +31,9 @@ L = p["length"]
 R = p["farfield_radius"]
 x0 = p["center_x"]
 half = bool(p["symmetry"])
+# z_mirror: mesh only the quarter y >= 0, z >= 0 and mirror it about z = 0 afterwards, so the half-model mesh
+# is exactly symmetric about the x-y plane (a Delaunay mesh of the half model is not).
+zmirror = bool(p["z_mirror"]) and half
 h0 = p["wall_size"]
 hmax = p["max_size"]
 grow = p["growth"]
@@ -40,7 +43,8 @@ fins = p["fins"]
 # Body of revolution: the profile lies in a half plane at azimuth `seam`, away from the fin planes
 # and the symmetry plane so that no surface seam coincides with y = 0.
 nf = fins["count"] if fins else 0
-seam = math.radians(45.0 if nf == 0 else 90.0 + 180.0 / nf)
+roll = math.radians(p["fin_roll_deg"])
+seam = math.radians(45.0 if nf == 0 else 90.0 + 180.0 / nf) + roll
 if abs(math.sin(seam)) < 0.2:
     seam += math.radians(30.0)
 cs, sn = math.cos(seam), math.sin(seam)
@@ -85,7 +89,7 @@ def lens(x_le, x_te, r_pos, phi, thick):
 if fins:
     f = fins
     for k in range(nf):
-        phi = math.radians(90.0) + 2 * math.pi * k / nf
+        phi = math.radians(90.0) + roll + 2 * math.pi * k / nf
         r_in = 0.5 * f["inner_radius"]
         r_tip = f["body_radius"] + f["span"]
         w1 = lens(f["x_le"], f["x_te"], r_in, phi, f["thickness"])
@@ -99,7 +103,8 @@ if fins:
 
 if half:
     # Half ball y >= 0 as a sphere sector (azimuth 0..pi about the z axis): no boolean on the sphere.
-    domain = [(3, occ.addSphere(x0, 0, 0, R, angle1=-math.pi / 2, angle2=math.pi / 2, angle3=math.pi))]
+    # Quarter ball (z >= 0 too) for z_mirror: latitude 0..pi/2.
+    domain = [(3, occ.addSphere(x0, 0, 0, R, angle1=0.0 if zmirror else -math.pi / 2, angle2=math.pi / 2, angle3=math.pi))]
 else:
     domain = [(3, occ.addSphere(x0, 0, 0, R))]
 fluid, _ = occ.cut(domain, parts)
@@ -111,11 +116,13 @@ vol = vols[0]
 
 # ---- classify the boundary faces -------------------------------------------------------------------
 tol = 1e-4 * L  # bounding boxes are enlarged by the OCC tolerance
-wallsurf, cap, far, symm = [], [], [], []
+wallsurf, cap, far, symm, symz = [], [], [], [], []
 for d, t in gmsh.model.getEntities(2):
     b = gmsh.model.getBoundingBox(2, t)  # xmin ymin zmin xmax ymax zmax
     if half and b[4] - b[1] < tol and abs(b[1]) < tol:
         symm.append(t)
+    elif zmirror and b[5] - b[2] < tol and abs(b[2]) < tol:
+        symz.append(t)
     elif b[3] - b[0] > 0.5 * R:
         far.append(t)
     elif b[0] > L - tol:
@@ -152,6 +159,8 @@ gmsh.model.setPhysicalName(2, pg(2, cap), "base")
 gmsh.model.setPhysicalName(2, pg(2, far), "farfield")
 if half:
     gmsh.model.setPhysicalName(2, pg(2, symm), "symmetry")
+if zmirror:
+    gmsh.model.setPhysicalName(2, pg(2, symz), "symz")
 gmsh.model.setPhysicalName(3, pg(3, [vol]), "fluid")
 
 # ---- volume mesh -----------------------------------------------------------------------------------
@@ -171,6 +180,56 @@ t2 = time.time()
 gmsh.option.setNumber("Mesh.Binary", 0)
 gmsh.option.setNumber("Mesh.SaveAll", 0)
 gmsh.write(p["out_su2"])
+
+
+def mirror_su2(path, tol):
+    """Mirrors a quarter mesh (z >= 0) about z = 0 into the half mesh; the marker `symz` is dropped."""
+    lines = open(path).read().split("\n")
+    i = 0
+    elems, nodes, marks = [], [], []
+    while i < len(lines):
+        ln = lines[i]
+        if ln.startswith("NELEM="):
+            n = int(ln.split("=")[1])
+            elems = [list(map(int, l.split())) for l in lines[i + 1:i + 1 + n]]
+            i += n
+        elif ln.startswith("NPOIN="):
+            n = int(ln.split("=")[1].split()[0])
+            nodes = [list(map(float, l.split()[:3])) for l in lines[i + 1:i + 1 + n]]
+            i += n
+        elif ln.startswith("MARKER_TAG="):
+            tag = ln.split("=")[1].strip()
+            n = int(lines[i + 1].split("=")[1])
+            marks.append((tag, [list(map(int, l.split())) for l in lines[i + 2:i + 2 + n]]))
+            i += 1 + n
+        i += 1
+    nn = len(nodes)
+    m = list(range(nn))
+    extra = []
+    for k, (x, y, z) in enumerate(nodes):
+        if abs(z) > tol:
+            m[k] = nn + len(extra)
+            extra.append((x, y, -z))
+    out = ["NDIME= 3"]
+    # Tetrahedra (type 10): swapping two vertices keeps the orientation of the mirrored cells positive.
+    allel = elems + [[e[0], m[e[1]], m[e[3]], m[e[2]], m[e[4]]] + [0] for e in elems]
+    out.append("NELEM= %d" % len(allel))
+    out += ["%d %d %d %d %d %d" % (e[0], e[1], e[2], e[3], e[4], k) for k, e in enumerate(allel)]
+    out.append("NPOIN= %d" % (nn + len(extra)))
+    allp = nodes + extra
+    out += ["%.12g %.12g %.12g %d" % (x, y, z, k) for k, (x, y, z) in enumerate(allp)]
+    keep = [(t, e) for t, e in marks if t != "symz"]
+    out.append("NMARK= %d" % len(keep))
+    for t, e in keep:
+        both = e + [[x[0], m[x[1]], m[x[3]], m[x[2]]] for x in e]
+        out.append("MARKER_TAG= " + t)
+        out.append("MARKER_ELEMS= %d" % len(both))
+        out += ["%d %d %d %d" % tuple(x) for x in both]
+    open(path, "w").write("\n".join(out) + "\n")
+    return len(allel), nn + len(extra)
+
+
+mirrored = mirror_su2(p["out_su2"], 1e-9 * L) if zmirror else None
 
 # ---- statistics ------------------------------------------------------------------------------------
 ntags = gmsh.model.mesh.getNodes()[0]
@@ -200,6 +259,9 @@ stats = {
     "seconds_setup": t1 - t0,
     "seconds_mesh": t2 - t1,
 }
+if mirrored:
+    stats["cells"], stats["nodes"], stats["wall_triangles"] = mirrored[0], mirrored[1], 2 * nwall
+    stats["by_type"] = {"Tetrahedron 4": mirrored[0]}
 json.dump(stats, open(p["stats_json"], "w"), indent=1)
 print("MESH_OK nodes=%d cells=%d minSICN=%.4f surface %.1fs volume %.1fs" % (stats["nodes"], stats["cells"], q_min, t_surf - t1, t2 - t_surf))
 gmsh.finalize()

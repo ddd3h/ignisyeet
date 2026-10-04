@@ -13,7 +13,7 @@
 //! bridged and is an error. Finally hybrid viscous terms ([`crate::forces::hybrid_axial`]) are
 //! added and the pitch-damping sums are scaled to the CFD slope and centroid.
 
-use crate::config::FlowModel;
+use crate::config::{AlphaMode, FlowModel};
 use crate::forces::{hybrid_axial, scale_damping, BodyCoeffs};
 use aero::table::{AeroCoeffs, TableMeta};
 use aero::{AeroModel, AeroTable, Extrapolation};
@@ -48,6 +48,64 @@ pub fn remove_zero_offset(points: &mut [SolvedPoint]) -> Vec<(f64, f64, f64)> {
         removed.push((m, c0.cn, c0.mom));
     }
     removed
+}
+
+/// Measured zero-angle asymmetry of one Mach number: `CN` and nose moment [m] at `alpha = 0`.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct Asymmetry {
+    pub mach: f64,
+    pub cn0: f64,
+    pub mom0: f64,
+}
+
+/// Turns the solved points into the odd/even parts used by the table, according to `mode`.
+///
+/// * `Mirror`: for every `alpha > 0` with a solved `-alpha` partner the result is
+///   `CN = (CN(+a) - CN(-a)) / 2`, nose moment likewise, `CA = (CA(+a) + CA(-a)) / 2`. A numerical
+///   offset `c0` that is the same for both signs (`f(+a) = odd + c0`, `f(-a) = -odd + c0`) cancels
+///   exactly. When one partner failed, the other is used with the `alpha = 0` value as the offset
+///   estimate (raw if that failed too). The `alpha = 0` point keeps only its `CA`; its `CN` and moment
+///   (the asymmetry) are returned, not used. Negative angles are consumed.
+/// * `Offset`: the `alpha = 0` `CN` / moment are subtracted from every angle of that Mach number.
+/// * `Single`: unchanged.
+///
+/// Returns the points for [`build_from_points`] and the measured asymmetry per Mach.
+pub fn apply_alpha_mode(points: &[SolvedPoint], mode: AlphaMode) -> (Vec<SolvedPoint>, Vec<Asymmetry>) {
+    let mut asym = Vec::new();
+    for p in points.iter().filter(|p| p.alpha_deg == 0.0) {
+        if let Some(c) = p.coeffs {
+            asym.push(Asymmetry { mach: p.mach, cn0: c.cn, mom0: c.mom });
+        }
+    }
+    let out = match mode {
+        AlphaMode::Single => points.to_vec(),
+        AlphaMode::Offset => {
+            let mut v = points.to_vec();
+            remove_zero_offset(&mut v);
+            v
+        }
+        AlphaMode::Mirror => {
+            let find = |m: f64, a: f64| points.iter().find(|q| q.mach == m && q.alpha_deg == a).and_then(|q| q.coeffs);
+            let mut v = Vec::new();
+            for p in points.iter().filter(|p| p.alpha_deg >= 0.0) {
+                let coeffs = if p.alpha_deg == 0.0 {
+                    p.coeffs.map(|c| BodyCoeffs { cn: 0.0, mom: 0.0, ..c })
+                } else {
+                    let zero = find(p.mach, 0.0);
+                    let (c0, m0) = zero.map_or((0.0, 0.0), |z| (z.cn, z.mom));
+                    match (p.coeffs, find(p.mach, -p.alpha_deg)) {
+                        (Some(a), Some(b)) => Some(BodyCoeffs { cn: 0.5 * (a.cn - b.cn), ca: 0.5 * (a.ca + b.ca), mom: 0.5 * (a.mom - b.mom) }),
+                        (Some(a), None) => Some(BodyCoeffs { cn: a.cn - c0, mom: a.mom - m0, ..a }),
+                        (None, Some(b)) => Some(BodyCoeffs { cn: c0 - b.cn, mom: m0 - b.mom, ..b }),
+                        (None, None) => None,
+                    }
+                };
+                v.push(SolvedPoint { coeffs, ..*p });
+            }
+            v
+        }
+    };
+    (out, asym)
 }
 
 /// What the table builder derived.
@@ -302,6 +360,43 @@ mod tests {
         assert!((p[1].coeffs.unwrap().cn - 1.0).abs() < 1e-12 && (p[1].coeffs.unwrap().mom - 1.5).abs() < 1e-12);
         assert_eq!(p[1].coeffs.unwrap().ca, 0.1);
         assert_eq!(p[3].coeffs.unwrap().cn, 1.0, "no alpha = 0 result: unchanged");
+    }
+
+    #[test]
+    fn mirror_combination_cancels_a_common_offset() {
+        let pt = |m: f64, a: f64, cn: f64, ca: f64, mom: f64| SolvedPoint { mach: m, alpha_deg: a, coeffs: Some(BodyCoeffs { cn, ca, mom }) };
+        // f(+a) = odd + c0, f(-a) = -odd + c0 with c0 = (0.3 CN, 0.4 moment); CA even part 0.2 +- 0.01.
+        let p = vec![
+            pt(0.5, 0.0, 0.3, 0.19, 0.4),
+            pt(0.5, 4.0, 1.3, 0.21, 1.9),
+            pt(0.5, 8.0, 2.3, 0.25, 3.4),
+            pt(0.5, -4.0, -0.7, 0.20, -1.1),
+            pt(0.5, -8.0, -1.7, 0.23, -2.6),
+        ];
+        let (v, asym) = apply_alpha_mode(&p, AlphaMode::Mirror);
+        assert_eq!(asym, vec![Asymmetry { mach: 0.5, cn0: 0.3, mom0: 0.4 }]);
+        assert_eq!(v.len(), 3, "negative angles are consumed");
+        let c = |a: f64| v.iter().find(|q| q.alpha_deg == a).unwrap().coeffs.unwrap();
+        assert_eq!((c(0.0).cn, c(0.0).mom, c(0.0).ca), (0.0, 0.0, 0.19));
+        assert!((c(4.0).cn - 1.0).abs() < 1e-12 && (c(4.0).mom - 1.5).abs() < 1e-12 && (c(4.0).ca - 0.205).abs() < 1e-12);
+        assert!((c(8.0).cn - 2.0).abs() < 1e-12 && (c(8.0).mom - 3.0).abs() < 1e-12);
+        // One partner failed: the other one with the alpha = 0 offset.
+        let mut q = p.clone();
+        q[3].coeffs = None;
+        let (v, _) = apply_alpha_mode(&q, AlphaMode::Mirror);
+        assert!((v.iter().find(|x| x.alpha_deg == 4.0).unwrap().coeffs.unwrap().cn - 1.0).abs() < 1e-12);
+        let mut q = p.clone();
+        q[1].coeffs = None;
+        let (v, _) = apply_alpha_mode(&q, AlphaMode::Mirror);
+        let c4 = v.iter().find(|x| x.alpha_deg == 4.0).unwrap().coeffs.unwrap();
+        assert!((c4.cn - 1.0).abs() < 1e-12 && (c4.mom - 1.5).abs() < 1e-12 && (c4.ca - 0.20).abs() < 1e-12);
+        // Offset and single modes keep the angles they are given.
+        let pos: Vec<SolvedPoint> = p.iter().filter(|x| x.alpha_deg >= 0.0).copied().collect();
+        let (o, _) = apply_alpha_mode(&pos, AlphaMode::Offset);
+        assert!((o[1].coeffs.unwrap().cn - 1.0).abs() < 1e-12 && o[0].coeffs.unwrap().cn == 0.0);
+        let (s, a) = apply_alpha_mode(&pos, AlphaMode::Single);
+        assert_eq!(s[1].coeffs.unwrap().cn, 1.3);
+        assert_eq!(a.len(), 1);
     }
 
     #[test]

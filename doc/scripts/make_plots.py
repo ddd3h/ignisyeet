@@ -628,6 +628,91 @@ def panel_method(f, out, pn):
         f.save(fig, "panel_flight")
 
 
+def cfd_study(f, out, pn, data):
+    """CFD (doc/data/cfd, committed) versus Barrowman and panel; mesh convergence; zero-angle asymmetry."""
+    vm = pd.read_csv(data / "sample_euler_vs_models.csv", comment="#")
+    z = vm[vm.alpha_deg == 0].sort_values("mach")
+    ta = pd.read_csv(out / "aero_table.csv")
+    ta = ta[ta.alpha_deg == 0].sort_values("mach")
+    tb = None
+    if pn is not None and (pn / "aero_table.csv").exists():
+        tb = pd.read_csv(pn / "aero_table.csv")
+        tb = tb[tb.alpha_deg == 0].sort_values("mach")
+    fig, axs = plt.subplots(1, 3, figsize=(7.8, 3.3))
+    cols = (("cna", "cfd_cna_per_rad", "$C_{N\\alpha}$ [1/rad]"), ("xcp", "cfd_xcp_m", "$x_{cp}$（$\\alpha=4^\\circ$）[m]"), ("ca_off", "cfd_ca_off", "軸力係数 $C_A$（$\\alpha=0$、燃焼後）"))
+    for ax, (col, ccol, lab) in zip(axs, cols):
+        if col == "xcp":
+            # xcp at alpha = 4 deg from the solved tables: the alpha = 0 value of the table is the small-angle limit
+            a4 = pd.read_csv(out / "aero_table.csv")
+            a4 = a4[a4.alpha_deg == 4].sort_values("mach")
+            ax.plot(a4.mach, a4.xcp, color=SERIES[0], label="Barrowman 法")
+            if tb is not None:
+                b4 = pd.read_csv(pn / "aero_table.csv")
+                b4 = b4[b4.alpha_deg == 4].sort_values("mach")
+                ax.plot(b4.mach, b4.xcp, color=SERIES[1], linestyle="--", label="パネル法")
+            c4 = vm[vm.alpha_deg == 4].sort_values("mach")
+            ax.plot(c4.mach, c4.cfd_xcp_m, "o", color=SERIES[2], markersize=6, label="CFD（Euler）")
+        else:
+            ax.plot(ta.mach, ta[col], color=SERIES[0], label="Barrowman 法")
+            if tb is not None:
+                ax.plot(tb.mach, tb[col], color=SERIES[1], linestyle="--", label="パネル法")
+            ax.plot(z.mach, z[ccol], "o", color=SERIES[2], markersize=6, label="CFD（Euler）")
+        ax.set_xlabel("Mach 数 $M$")
+        ax.set_ylabel(lab)
+        ax.set_xlim(0, 3)
+    fig.legend(*axs[0].get_legend_handles_labels(), loc="lower center", ncol=3, bbox_to_anchor=(0.5, 0.0))
+    fig.tight_layout(rect=(0, 0.08, 1, 1))
+    f.save(fig, "cfd_compare")
+
+    mc = pd.read_csv(data / "mesh_convergence.csv", comment="#")
+    summ = json.load(open(data / "run_summary.json"))["mesh_convergence"]
+    fig, ax = plt.subplots(figsize=(5.2, 3.5))
+    for m, c, mk in ((2.0, SERIES[0], "o"), (0.8, SERIES[1], "s")):
+        s = mc[mc.mach == m].sort_values("cells")
+        h = s.cells.values ** (-1.0 / 3.0) * 1e2
+        ax.plot(h, s.cn, mk, color=c, markersize=6, label=f"$M={m:g}$")
+        if m == 2.0:
+            y, x = s.cn.values, s.cells.values ** (-1.0 / 3.0)
+            best = None
+            for p in np.arange(0.5, 6.0, 0.01):
+                A = np.c_[np.ones_like(x), x ** p]
+                cf = np.linalg.lstsq(A, y, rcond=None)[0]
+                r = float(((A @ cf - y) ** 2).sum())
+                if best is None or r < best[0]:
+                    best = (r, p, cf)
+            _, p, cf = best
+            xs = np.linspace(0, x.max(), 100)
+            ax.plot(xs * 1e2, cf[0] + cf[1] * xs ** p, color=c, linewidth=1.2, label=f"外挿 $C_N=C_N^\\infty+Ch^{{p}}$（$p={p:.2f}$）")
+            ax.plot([0], [cf[0]], "D", color=c, markersize=6, markerfacecolor="white")
+            ax.axhline(cf[0], color=c, linewidth=0.7, linestyle=":")
+        else:
+            ax.axhline(summ["M0.8"]["cn_extrapolated"], color=c, linewidth=0.7, linestyle=":")
+    ax.set_xlim(left=-0.03)
+    ax.set_xlabel("代表格子幅 $h=N_{cell}^{-1/3}$ [$10^{-2}$]")
+    ax.set_ylabel("$C_N$（$\\alpha=4^\\circ$）")
+    ax.legend(loc="lower left")
+    fig.tight_layout()
+    f.save(fig, "cfd_mesh_convergence")
+
+    asy = pd.read_csv(data / "asymmetry_study.csv", comment="#")
+    order = [("base", "半モデル\n（既定の\nメッシュ）"), ("roll45", "フィン\n45° 回転"), ("jst", "JST"), ("tight", "残差\n$10^{-9}$"), ("zm", "z 対称\nメッシュ")]
+    fig, ax = plt.subplots(figsize=(6.2, 3.3))
+    w = 0.26
+    for i, (m, c) in enumerate(((0.3, SERIES[0]), (0.8, SERIES[1]), (2.0, SERIES[2]))):
+        vals = [float(asy[(asy.config == k) & (asy.mach == m)].cn0.iloc[0]) for k, _ in order]
+        ax.bar(np.arange(len(order)) + (i - 1) * w, vals, w, color=c, label=f"$M={m:g}$")
+    ax.axhline(0, color=INK2, linewidth=0.8)
+    ax.set_xticks(range(len(order)))
+    ax.set_xticklabels([l for _, l in order])
+    ax.set_ylabel("$\\alpha=0$ の法線力係数 $C_N$（真値は 0）")
+    ax.set_ylim(-0.075, 0.125)
+    ax.text(len(order) - 1, 0.008, "$|C_N|<10^{-3}$", ha="center", color=INK2, fontsize=9)
+    ax.legend(loc="upper right", ncol=3)
+    ax.grid(axis="x", visible=False)
+    fig.tight_layout()
+    f.save(fig, "cfd_asymmetry")
+
+
 def main():
     out, figdir = Path(sys.argv[1]), Path(sys.argv[2])
     f = Figs(figdir)
@@ -638,6 +723,10 @@ def main():
         monte_carlo(f, Path(sys.argv[3]))
     if len(sys.argv) > 4 and (Path(sys.argv[4]) / "aero_table.csv").exists():
         panel_method(f, out, Path(sys.argv[4]))
+    data = Path(__file__).resolve().parent.parent / "data" / "cfd"
+    if (data / "sample_euler_vs_models.csv").exists():
+        pn = Path(sys.argv[4]) if len(sys.argv) > 4 else None
+        cfd_study(f, out, pn, data)
 
 
 if __name__ == "__main__":

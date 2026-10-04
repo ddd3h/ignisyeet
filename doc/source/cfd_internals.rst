@@ -1,2 +1,786 @@
 CFD の内部と数値計算法
 ======================
+
+本章は、:doc:`cfd` で使う CFD が内部で何をしているかを、実装を確かめたい読者のために説明する。
+外部プログラムの役割、支配方程式と SU2 の設定、形状とメッシュの作り方、ケースの実行と収束の扱い、結果から係数表を作る後処理の順に述べる。
+使い方と結果の読み方は :doc:`cfd` にあり、実装を確かめた計算（検証）と手法どうしの比較は :doc:`verification_aero` にある。
+
+.. _sec-cfd-int-roles:
+
+構成要素と役割
+--------------
+
+IgnisYeet の CFD モードは、次の外部プログラムを呼び出して、形状の準備、メッシュ、(Mach 数, 迎角, 横滑り角) の各ケースの実行、後処理、係数表の作成までを自動で行う。
+
+* `SU2 <https://su2code.github.io/>`__ :cite:`su2`：流れの解法。Euler 方程式と RANS 方程式を解く。
+* `gmsh <https://gmsh.info/>`__ :cite:`gmsh`：体積メッシュの生成。
+* `OpenCASCADE <https://dev.opencascade.org/>`__ :cite:`occt`：CAD の立体カーネル。gmsh から使い、``panel_mesh`` の形状の再構成と遠方境界の切り抜きを行う。
+* `Manifold <https://github.com/elalish/manifold>`__ :cite:`manifold`：重なった閉じた STL の殻のブーリアン和。``surface = "stl"`` のときだけ使う。
+* Open MPI :cite:`openmpi`：1 ケースを複数のランクで並列に解くときに使う。
+
+:numref:`fig-cfd-pipeline` に全体の流れを示す。
+壁面の形状は、``surface = "stl"`` では入力の STL を修復して一つの立体にしたもの、``surface = "panel_mesh"`` では抽出した半径分布とフィンの寸法から作り直した立体である。
+どちらも gmsh で体積メッシュにし、SU2 で各ケースを解き、力とモーメントの係数を機体軸の係数に直して、他の手法と同じ形式の係数表にする。
+
+.. _fig-cfd-pipeline:
+
+.. figure:: _generated/tikz/cfd_pipeline.*
+   :width: 100%
+
+   CFD モードの処理の流れ。橙は gmsh、OpenCASCADE、Manifold を呼ぶ処理（Python）、青は Rust 側の処理（SU2 の実行と後処理）である。
+   STL モードの内訳は :numref:`fig-cfd-stl-pipeline` に示す。
+
+支配方程式
+----------
+
+本節は、SU2 に解かせる方程式を示す。既定は非粘性の Euler 方程式で、RANS は乱流を渦粘性で表す Spalart–Allmaras モデルを足したものである。
+
+Euler 方程式
+~~~~~~~~~~~~
+
+非粘性の圧縮性流れは、質量、運動量、エネルギーの保存則で表される。検査体積について保存形で書くと
+
+.. math::
+   :label: eq-cfd-euler
+
+   \frac{\partial}{\partial t}\int_\Omega \bm{U}\,\dd\Omega + \oint_{\partial\Omega}\bm{F}\cdot\bm{n}\,\dd S = 0,\qquad
+   \bm{U}=\begin{pmatrix}\rho\\ \rho\bm{u}\\ \rho E\end{pmatrix},\quad
+   \bm{F}=\begin{pmatrix}\rho\bm{u}\\ \rho\bm{u}\otimes\bm{u}+p\,\mathsf{I}\\ (\rho E+p)\bm{u}\end{pmatrix}
+
+である。:math:`\Omega` は検査体積、:math:`\rho` は密度、:math:`\bm{u}` は速度、:math:`E` は単位質量あたりの全エネルギー、:math:`p` は圧力である。
+理想気体として :math:`p=(\gamma-1)\left(\rho E-\tfrac12\rho|\bm{u}|^2\right)` で閉じ、比熱比 :math:`\gamma` と気体定数 :math:`R` は大気モデルの値（空気）を使う。
+
+壁面（``wall``）には滑りの境界条件（流れが壁を通り抜けない条件）を課す。
+Euler 方程式には粘性がないので、壁面の力は圧力だけで決まり、摩擦抗力は含まれない。
+
+RANS と Spalart–Allmaras モデル
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+RANS（Reynolds 平均 Navier–Stokes 方程式）は、:eq:`eq-cfd-euler` に粘性応力と熱伝導の項を加え、乱流の効果を渦粘性として足したものである。
+粘性係数は Sutherland の式（:math:`\mu_{ref}=1.716\times10^{-5}` Pa s、:math:`T_{ref}=273.15` K、定数 110.4 K）で与え、大気モデル（:doc:`environment`）の Sutherland 則に一致する。
+渦粘性は一方程式モデルの Spalart–Allmaras（SA）モデル :cite:`spalart1992,spalart1994` で求める。
+修正した渦粘性 :math:`\tilde\nu` の輸送方程式は
+
+.. math::
+   :label: eq-cfd-sa
+
+   \frac{\partial\tilde\nu}{\partial t}+\bm{u}\cdot\nabla\tilde\nu
+   = c_{b1}\tilde S\,\tilde\nu-c_{w1}f_w\left(\frac{\tilde\nu}{d}\right)^2
+   +\frac{1}{\sigma}\left[\nabla\cdot\bigl((\nu+\tilde\nu)\nabla\tilde\nu\bigr)+c_{b2}|\nabla\tilde\nu|^2\right]
+
+で、渦粘性は :math:`\mu_t=\rho\tilde\nu f_{v1}` となる。:math:`d` は最寄りの壁までの距離、:math:`\tilde S` は渦度に基づく生成項、
+:math:`c_{b1},c_{b2},c_{w1},\sigma` はモデル定数、:math:`f_{v1},f_w` は壁近傍の減衰関数であり、SU2 の標準の SA モデルをそのまま使う。
+壁面は断熱の粘着壁とし、壁面の近くの速度分布には対数則に基づく壁関数（SU2 の ``STANDARD_WALL_FUNCTION``）を使う。
+自由流の渦粘性は :math:`\tilde\nu=3\nu`\ （``FREESTREAM_NU_FACTOR = 3``）である。
+
+SU2 の設定と数値解法
+--------------------
+
+本節は、IgnisYeet が SU2 に渡す離散化と時間積分の設定、生成される設定ファイル、座標と符号の取り決めを述べる。
+
+離散化
+~~~~~~
+
+SU2 は非構造メッシュの節点を中心とする有限体積法で、各節点のまわりの双対セルについて\ :eq:`eq-cfd-euler` を離散化する。
+IgnisYeet が設定する数値解法は次のとおりである。
+
+* **対流フラックス**\ ：既定は Roe の近似 Riemann 解法 :cite:`roe`\ 。``scheme = "jst"`` では Jameson–Schmidt–Turkel の中心差分と人工粘性 :cite:`jst`\ （センサ係数 0.5 と 0.02）を使う。
+* **2 次精度化**\ ：Roe のときは MUSCL 形の再構成（勾配は重み付き最小二乗法）に Venkatakrishnan の制限関数 :cite:`venkat`\ （係数 0.05）を組み合わせる。
+  ``min_iterations``\ （既定 100）反復の時点で制限関数の値を固定する。固定しないと、制限関数の切り替わりで残差が 10\ :sup:`-4` 付近から下がらなくなるためである。
+  固定の反復は早期終了の最小反復数（:ref:`sec-cfd-int-convergence`）と同じにしてあり、残差が下がる余地を残して止める。
+  JST では再構成を使わない。
+* **時間積分**\ ：定常解を得るために、陰的 Euler 法による擬似時間の進行を使う。連立 1 次方程式は FGMRES（前処理は ILU、許容 10\ :sup:`-6`、10 反復）で解く。
+  CFL 数は適応的に変え、既定の初期値 ``cfl`` = 5 から、収束が進むと 1.2 倍に増やし、悪化すると 0.5 倍に減らす。範囲は :math:`0.2\,\mathrm{cfl}` から :math:`50\,\mathrm{cfl}` である。
+* **収束判定**\ ：密度の二乗平均残差が ``convergence``\ （既定 :math:`10^{-6}`）以下になるか、``iterations``\ （既定 3000）に達すると終了する。判定は 10 反復目から行う。
+* **マルチグリッド**\ ：``multigrid``\ （``MGLEVEL``、既定 0）を 1 から 4 にすると、SU2 の凝集型マルチグリッドの設定（``MGLEVEL``、``MGCYCLE``）を書く。
+  サンプルのメッシュでは SU2 が粗い格子を作れないので、効果がない（実測は :doc:`verification_aero`）。
+
+RANS では、乱流量の対流は 1 次風上、時間積分は陰的 Euler 法とし、流れの対流は **1 次精度** の Roe（再構成なし）を使う。
+接線方向に細長い四面体の壁面メッシュで 2 次の再構成が発散したためである。
+CFL の上限は :math:`4\,\mathrm{cfl}` である。残差は 10\ :sup:`-5` 付近で止まり、数百反復のあと発散に向かう一方、係数は 100 反復ごろから平らになるので、反復数の上限を 300 にしている。
+
+生成される設定ファイルと基準量
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+実際に生成される SU2 の設定ファイル（Euler、Roe、:math:`M=2`、:math:`\alpha=4^\circ`、半モデル、基準直径 0.1 m）の主な行を示す。
+
+.. code-block:: text
+
+   SOLVER= EULER
+   MACH_NUMBER= 2.000000
+   AOA= 4.000000
+   SIDESLIP_ANGLE= 0.0
+   FLUID_MODEL= IDEAL_GAS
+   INIT_OPTION= TD_CONDITIONS
+   FREESTREAM_OPTION= TEMPERATURE_FS
+   FREESTREAM_PRESSURE= 101325.0000
+   FREESTREAM_TEMPERATURE= 288.1500
+   REF_ORIGIN_MOMENT_X= 0.0
+   REF_LENGTH= 0.10000000
+   REF_AREA= 0.0039269908
+   MARKER_EULER= ( wall, base )
+   MARKER_MONITORING= ( wall )
+   MARKER_FAR= ( farfield )
+   MARKER_SYM= ( symmetry )
+   NUM_METHOD_GRAD= WEIGHTED_LEAST_SQUARES
+   CONV_NUM_METHOD_FLOW= ROE
+   MUSCL_FLOW= YES
+   SLOPE_LIMITER_FLOW= VENKATAKRISHNAN
+   VENKAT_LIMITER_COEFF= 0.05
+   LIMITER_ITER= 100
+   TIME_DISCRE_FLOW= EULER_IMPLICIT
+   CFL_NUMBER= 5
+   CFL_ADAPT= YES
+   CFL_ADAPT_PARAM= ( 0.5, 1.2, 1.000, 250.0 )
+   LINEAR_SOLVER= FGMRES
+   LINEAR_SOLVER_PREC= ILU
+   ITER= 3000
+   CONV_FIELD= RMS_DENSITY
+   CONV_RESIDUAL_MINVAL= -6
+
+自由流の圧力と温度は、射点の標高（``launch.altitude``）の大気の値である（上の例は海面の値）。
+機体はメッシュの中に固定し、自由流の向きを迎角 :math:`\alpha` と横滑り角 :math:`\beta` だけ傾けるので、SU2 の力とモーメントの係数がそのまま機体軸の係数になる。
+座標は、:math:`x` がノーズ先端から後方への距離、:math:`z` が上向き、:math:`y` が横方向である。
+自由流は :math:`\alpha>0` で :math:`+z` 方向の成分を持つので、機体には :math:`+z` 向きの法線力が働く。
+モーメントはノーズ先端のまわりにとり、基準長さは機体の直径 :math:`d`、基準面積は断面積 :math:`S` である。
+半領域では基準面積を :math:`S/2` にするので、半モデルの力がそのまま全機の係数になる。全領域では :math:`S` である。
+
+.. _sec-cfd-sideslip:
+
+横滑り角とロール角速度
+~~~~~~~~~~~~~~~~~~~~~~
+
+機体座標の対気速度 :math:`(u,v,w)` から、迎角と横滑り角は :math:`\alpha=\operatorname{atan2}(w,u)`、:math:`\beta=\arcsin(v/V)` と定義する（:eq:`eq-alpha-beta`）。
+SU2 には ``AOA`` に :math:`\alpha` を、``SIDESLIP_ANGLE`` に :math:`-\beta` を渡す。
+SU2 の自由流の向きは CFD の座標で :math:`(\cos\alpha\cos\beta',\ \sin\beta',\ \sin\alpha\cos\beta')` で、その横滑り角 :math:`\beta'` は機体軸の :math:`\beta` と符号が逆だからである。
+符号は、軸対称な表の展開（:eq:`eq-coeff-6-axisym`）との一致で確かめた（:doc:`verification_aero`）。
+:math:`\beta=0` の設定は ``SIDESLIP_ANGLE= 0.0`` のままである。
+
+ロール減衰微係数のケースは、機体を回転させずに、SU2 の **定常な回転座標系** で解く。
+:math:`\alpha=\beta=0` で、機体がロール角速度 :math:`p` で回る流れを、次の行で与える。
+
+.. code-block:: text
+
+   GRID_MOVEMENT= ROTATING_FRAME
+   MOTION_ORIGIN= 0.0 0.0 0.0
+   ROTATION_RATE= -p 0.0 0.0
+
+回転の中心はノーズ先端の原点で、軸は機軸（CFD の :math:`x`）である。CFD の :math:`x` は後ろ向きなので、機体軸の正のロール角速度は :math:`-x` まわりの回転になり、符号が逆になる。
+角速度は無次元のロール角速度 :math:`\hat p` から固定した式
+
+.. math::
+   :label: eq-cfd-roll-rate
+
+   p=\frac{2V}{d}\,\hat p,\qquad V=M\,a
+
+で決める。:math:`a` は基準高度（``aero.reference_altitude``）の音速、:math:`\hat p` は ``roll_rate_hat``\ （既定 0.01）である。
+Mach 数ごとに :math:`V` を決めるので、:math:`C_{lp}=\partial C_l/\partial\hat p` は飛翔計算の正規化（:eq:`eq-cl-total`）と同じ意味を持つ。
+
+形状の準備
+----------
+
+本節は、壁面になる立体をどう作るかを述べる。``panel_mesh`` では半径分布とフィンの寸法から立体を作り直し、``stl`` では入力の STL を修復して重なった殻を一つの立体にする。
+どちらの場合も、CFD の壁面は入力の形そのものではない。ずれの大きさは形状の忠実度で測る。
+
+.. _sec-cfd-rebuild:
+
+形状の再構成
+~~~~~~~~~~~~
+
+``surface = "panel_mesh"`` の入力は、:doc:`geometry` で抽出した胴体の半径分布 :math:`r(x)` とフィンの寸法である。
+IgnisYeet はこれを OpenCASCADE の立体として **作り直す**\ 。
+
+1. 半径分布の折れ線を簡略化し（全長の 0.005 % 以内で頂点を間引く）、機軸のまわりに回転させて胴体の立体を作る。
+2. フィンは、パネル法と同じ寸法（根元翼弦、先端翼弦、後退、スパン、厚み）の **両凸断面** を、根元と翼端の 2 つの断面から線形に補間して作る（loft）。
+   根元は胴体の内側（胴体半径の最小値の半分の位置）まで延ばして、胴体と確実に交わるようにする。
+3. 胴体とフィンを、ブーリアン演算の和（fuse）で一つの立体にする。
+4. 遠方境界の領域（半球、球の 1/4、または箱。:ref:`sec-cfd-domain`）から、この立体を切り抜く。
+
+この構成では、曲面が正確な曲線として残り、gmsh が自分の表面メッシャで曲率に応じてメッシュを切り直せる。
+一方で、形状は回転体と台形フィンに限られ、レールボタンやポッド、非対称な突起は入らない。それらを含めて解くときは STL モードを使う。
+
+パネル法の表面メッシュを直接使わないのは、その三角形がノーズ先端やフィンの先端が胴体と交わる付近で極端に小さくなり、
+gmsh の離散曲面からの四面体分割が「頂点が線分上にある」というエラーで失敗するためである。
+機体の底面は、Euler では尾部フェアリング（:ref:`sec-cfd-fairing`）、RANS では平らな底面のままにする。
+
+STL の処理
+~~~~~~~~~~
+
+STL は、サンプル機体のようにフィンが胴体に埋め込まれた別の閉じた立体として表されていることがあり、そのままでは体積メッシュにできない。
+``surface = "stl"`` は、次の手順で STL を一つの立体にして壁面とする（:numref:`fig-cfd-stl-pipeline`）。
+形状の再構成は行わないので、抽出した寸法には依存しない。
+
+.. _fig-cfd-stl-pipeline:
+
+.. figure:: _generated/tikz/cfd_stl_pipeline.*
+   :width: 100%
+
+   STL モードの処理の流れ。青は Rust、橙は Python（gmsh と manifold3d）で行う。底面の処理は Euler のときだけである。
+
+1. **座標の変換**\ 。STL の点（m）を機体軸（:ref:`sec-body-basis`）で表し、CFD の座標 :math:`(x,y,z)_{\mathrm{CFD}}=(-x_b,\,y_b,\,-z_b)` に写す。
+   :math:`x` はノーズ先端から後ろ向きである。STL に含まれるフィンの向き（ロール）はそのまま保ち、形状の再構成のようにフィンを :math:`+z` に合わせる回転は行わない。
+   ``fin_roll_deg`` は使わない。
+2. **修復**\ 。位相だけを直し、点の位置は動かさない。
+   頂点を溶接し（許容は全長の :math:`10^{-6}` 倍）、縮退した三角形（頂点が重なるもの、面積が許容の 2 乗の :math:`10^{-3}` 倍未満のもの）と重複した三角形を除く。
+   頂点を共有する三角形を連結成分に分け、成分ごとに辺をたどって向きをそろえ、符号付き体積が正になる（面の法線が外を向く）ように統一する。
+   成分ごとに水密であることを確かめ、水密でない、3 枚以上の面が一つの辺を共有する、体積がない、のいずれかであればエラーにする。
+   サンプルの STL は 5 つの成分（胴体の 14400 枚と、フィンの箱 4 つ）からなり、すべて **裏向き** であった。サンプルの STL を書き出す処理が座標軸を入れ替えて鏡映するためで、修復で向きを直す。
+   修復の結果（成分ごとの三角形数、体積、向きを反転したか、除いた三角形数）は ``repair_report.json`` に残る。
+3. **底面の処理**\ （Euler のとき。:ref:`sec-cfd-stl-base`）。
+4. **和**\ 。Manifold :cite:`manifold` の exact なブーリアン演算（``batch_boolean`` の和）で、成分を一つの立体にする。
+   成分ごとに有効な多様体であることと体積が正であることを、和については体積が正であることと種数（genus）が 0 以上であることを確かめる。
+   種数が負になるのは、和が互いに離れた複数の立体になるときで、フィンが胴体に触れていないなどの入力の誤りを意味するので、エラーにする。
+   結果は ``union.stl`` と ``union_report.json``\ （体積、表面積、種数、三角形数、成分の体積の和と和の体積の差である重なりの体積）に書かれる。
+   和の表面は、:math:`y=0` と :math:`z=0` の平面について鏡映対称かを検査する（:ref:`sec-cfd-stl-symmetry-check`）。
+5. **壁面の再メッシュと体積メッシュ**\ 。``stl_remesh`` による（下記）。対称と確かめた平面があれば、和をその平面で切って 1/4 領域または半領域だけをメッシュにし、そのあと鏡映して必要な領域にする。対称でなければ遠方境界は箱の全領域である。
+6. **形状の忠実度**\ （:ref:`sec-cfd-int-fidelity`、結果の読み方は :ref:`sec-cfd-fidelity`）。
+
+``stl_remesh`` は、和の表面を体積メッシャに渡す前の処理を選ぶ。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 76
+
+   * - 値
+     - 内容
+   * - ``"classify"``\ （既定）
+     - gmsh の ``classifySurfaces``\ （折れ角 40 度）と ``createGeometry`` で曲面を作り、壁面の大きさ ``wall_size`` で表面を作り直す。
+       STL は曲面を細長い三角形に、平らな面（フィン）を少数の大きな三角形に分けるので、等方的な三角形に置き換える。曲面の再構成に失敗したときはエラーにする。
+       要素の大きさは :eq:`eq-cfd-size` と同じで、曲率の大きい部分は円周あたり 12 要素にし、最小の大きさは :math:`h_w/5` までとする（これより細かい曲率の要素は、再メッシュした面に HXT が受け付けない反転した三角形を作る）。``panel_mesh`` の曲率の設定（円周あたり 24 要素、最小 :math:`h_w/8`）とは別である。
+   * - ``"none"``
+     - 和の三角形をそのままメッシュにする。サンプルの STL ではフィンの面が少数の大きな三角形で、フィンを解像できず、法線力が 3 割ほど低くなる。
+
+
+.. _sec-cfd-stl-symmetry-check:
+
+鏡映対称の検査と 1/4・半領域のメッシュ
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``surface = "stl"`` は、和の表面が鏡映対称と確かめられたときだけ、1/4 領域または半領域をメッシュにする。
+本節はその検査の手順と、検査に通った形状のメッシュの作り方を述べる。利用者から見た動作（``shape_symmetry`` の値と領域）は :ref:`sec-cfd-stl-symmetry` にある。
+
+和の表面を、機軸を含む二つの平面 :math:`y=0`（ピッチ面）と :math:`z=0` について別々に検査する。
+検査は、位置の許容を全長の :math:`10^{-6}` 倍（サンプルで 1.8 μm）として、次の二段で行う。
+
+1. 頂点を許容で溶接し、溶接した頂点をすべて鏡映する。鏡映した点に頂点がなければ非対称とする。
+   鏡映した三角形の集合（ソートした頂点の三つ組）が元の集合と一致すれば、そこで対称と判定する。
+2. 三角形の分割が鏡映の関係にないときは、表面そのものを比べる。鏡映した三角形の頂点、辺の中点、重心がすべて、元の表面から許容以内にあれば対称とする（最寄りの三角形を厳密に探す）。
+   鏡映した面は、向きの違う対角線で分割した平らな四角形と同じ点の集合になる。メッシュ生成器が曲面や平面を鏡映の関係にない三角形に分割するのは普通のことで、
+   サンプルの STL でも三角形の 99 % が鏡映のもの（頂点が同じ）と一致しない。
+   頂点の一致は結果に記録するが、判定には使わない（三角形の分割が違えば、ブーリアン演算で生じる交線の頂点の位置が一致するとは限らない）。
+
+平面ごとに、対称か否か、鏡映した点と表面の最大の距離（``max_mismatch``）、一致した頂点の数、三角形の分割が同一か、非対称のときの理由（最大の距離とその位置、対応する頂点のない頂点の数）を記録する。
+サンプルの STL（フェアリングを含む和、8410 頂点）は、どちらの平面も対称で、最大の距離は :math:`6.1\times10^{-9}` m、頂点は全部が一致し、三角形の分割は同一ではない。
+尾部フェアリングの円すいは、胴体の底面の縁が両方の平面について対称で、縁の頂点が平面上にあるとき、頂点数が 4 の倍数の環を 1/4 の領域でつないで鏡映して作るので、分割まで厳密に対称である。
+縁がそうでないときは、環を角度の順につなぐだけの作り方になり、和は検査を通らない。
+
+検査の結果と ``shape_symmetry`` から対称性と領域が決まる（:ref:`sec-cfd-stl-symmetry`）。
+選んだ対称性と理由は、実行のとき標準エラー出力に表示し、``stl_fidelity.json`` と ``cfd_report.json``\ （``symmetry_check``）に平面ごとの数値とともに記録する。メッシュのハッシュには選んだ領域が含まれる。
+
+メッシュは、対称な平面で切った和の表面から作る。三角形を平面で切って（平面上の頂点は平面に載せる）、``union_clip.stl`` に書く。
+切った表面は切断面に沿って開いていて、その境界の曲線が箱の対称面を閉じる。
+gmsh の ``classifySurfaces`` は、境界の曲線を折れ角が 0.1 rad（約 6 度）を超える点で分けるので、切断面が機軸と交わる点（ノーズ先端、尾部の先端）が曲線の端点になる。
+対称面（``symmetry`` が :math:`y=0`、``symz`` が :math:`z=0`）は、箱の辺と、この離散曲線を並べた閉じた輪でできる平面で、1/4 領域では輪が機軸に沿って箱の隅の点とノーズ先端、尾部の先端を結ぶ。
+メッシュのあとは、CAD のメッシュと同じに仕上げる。1/4 領域は :math:`z=0` で鏡映して :math:`z` について厳密に対称な半領域のメッシュにし（頂点の順序を入れ替えて向きを保ち、:math:`z=0` 上の節点は共有する）、
+半領域のままにするか（``symmetry`` のマーカを持つ SU2 の半領域）、:math:`y=0` で鏡映して全領域にする。内部の対称面のマーカ（``symz``、全領域では ``symmetry`` も）は落とす。
+半領域のままにするのは、``symmetry = true`` で、``betas_deg = [0]`` で、ロール減衰のケースがなく、:math:`y=0` の鏡映を含む対称性のときだけである。
+:math:`z` について厳密に対称なので、``alpha_mode = "mirror"`` では :math:`-\alpha` は :math:`+\alpha` の鏡像で、解かない（:ref:`sec-cfd-alpha-mode`）。
+
+サンプルの STL で作った 1/4・半領域・全領域のメッシュのセル数と作成時間、鏡映した全領域と半領域の係数の比較は :doc:`verification_aero` に示す。
+鏡映した全領域は直接作った全領域より大幅に速く作れる。
+メッシュの作成は実行ごとに同一にならず（和の三角形の並びが実行ごとに違うことが原因と考えられる）、``wall_size`` 5 mm の :math:`C_N` はメッシュごとに数 % 変わる。
+半領域と全領域の比較は、同じメッシュから作ったものどうしでなければ意味を持たない。
+
+.. _sec-cfd-int-fidelity:
+
+形状の忠実度の測り方
+~~~~~~~~~~~~~~~~~~~~
+
+STL モードでは、CFD の壁面が入力の形からどれだけずれたかを測る。再メッシュとフェアリングで形が変わるので、結果の信頼性の目安になる。
+利用者向けの読み方は :ref:`sec-cfd-fidelity` にある。ここでは何を比べ、どう測るかを述べる。
+比べる面は次の三つで、すべて CFD の座標で扱う。
+
+* **入力**\ ：変換した STL（殻が重なったまま）。
+* **和**\ ：修復した殻の和（フェアリングがあれば含む）。
+* **CFD の壁面**\ ：SU2 のメッシュの ``wall`` と ``base`` の三角形。
+
+それぞれについて、包含箱、三角形の数、表面積、（定義できるものは）体積を求める。入力は殻が重なるので体積を定義しない。
+面どうしの距離は、サンプリングによる近似で測る。ある面の全頂点と、面積に比例して選んだ乱数の点（``wall`` の三角形数の 4 倍、2 万から 20 万の範囲。乱数は固定の種）を、
+もう一方の面の最寄りの三角形へ射影し（一様格子で探索）、距離の最大値、99 パーセンタイル、二乗平均平方根を求める。比較は次の二つである。
+
+* **CFD の壁面と和**\ ：両方向（壁面から和へ、和から壁面へ）。メッシュが元の面からずれた量を表す近似的な Hausdorff 距離である。
+* **CFD の壁面と入力**\ ：``wall`` から入力への片方向。逆向きは、入力に胴体に埋まったフィンの箱の面があるので意味を持たない。
+  フェアリングは入力にないので、``base`` は含めない。
+
+距離の最大値のうち大きいほうが ``wall_size`` の半分を超えると警告を出し、``max_geometry_error``\ （既定は ``wall_size``）を超えるとエラーにする。
+最大値の位置も記録するので、ずれの原因（意図した変更か、再メッシュの失敗か）を判断できる。
+結果は ``<出力先>/<workdir>/mesh/stl_fidelity.json`` に保存される。
+``cfd_report.json`` の ``fidelity`` にも、修復と和の報告とともに入る。距離はサンプリングによる近似で、細い特徴の見落としがありうる。
+
+サンプルの STL を ``wall_size`` 2 mm で作った結果の三つの面の比較と距離の表は :doc:`verification_aero` に示す。
+CFD の壁面は和から ``wall_size`` より小さい距離にあり、入力からの最大のずれは、意図した変更であるフェアリングが底面とつながる位置にある。
+
+メッシュ生成
+------------
+
+本節は、体積メッシュの領域、境界のマーカ、セルの大きさの決め方を述べる。
+体積メッシュは四面体で、gmsh の HXT 法で作る。HXT が失敗したときは、新しいプロセスで Delaunay 法をやり直す。
+
+.. _sec-cfd-domain:
+
+計算領域
+~~~~~~~~
+
+遠方境界の大きさは ``farfield`` × 全長（既定 20）で決め、機体の中央を中心とする。領域の形は、壁面のモードと対称性で次のように決まる。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - 場合
+     - 領域
+   * - ``panel_mesh``、半領域
+     - 半径 ``farfield`` × 全長の半球（:math:`y\ge0`）。:math:`y=0` の平面に ``symmetry`` の境界条件を課し、法線方向の流れがないものとする
+   * - ``panel_mesh``、全領域、フィンの配置が :math:`y=0` について対称
+     - 半球のメッシュを :math:`y=0` で鏡映して全球にする。``symmetry`` のマーカは付かない。全球を一度に作ると gmsh/HXT が周期の継ぎ目で失敗するためである
+   * - ``panel_mesh``、全領域、フィンの配置が対称でない（3 枚フィンなど）
+     - 一辺 :math:`2\times` ``farfield`` × 全長の箱。OpenCASCADE の箱は面の間で辺を共有するので、HXT がメッシュを作れる
+   * - ``stl``、和の表面が :math:`y=0` について鏡映対称（検査に通った）
+     - 1/4 または半分の箱を作り、``panel_mesh`` と同じに鏡映して半領域または全領域にする（:ref:`sec-cfd-stl-symmetry-check`）
+   * - ``stl``、対称でない（または ``shape_symmetry = "none"``）
+     - 一辺 :math:`2\times` ``farfield`` × 全長の箱の全領域（:ref:`sec-cfd-stl`）
+
+半領域を使うのは、``symmetry = true``\ （既定）で、かつ次のすべてが成り立つときだけである。
+形状が :math:`y=0` について対称であり（``panel_mesh`` はフィンの配置から、``stl`` は和の表面の検査で確かめる）、形状の対称性（``shape_symmetry``）に :math:`y=0` の鏡映が含まれ、``betas_deg = [0]`` で、ロール減衰のケースがない。
+どれか一つでも崩れると全領域を解く。``symmetry = false`` は全領域を強制する。
+
+``shape_symmetry`` の値と動作は :ref:`sec-cfd-stl-symmetry` にある。
+
+箱の遠方境界は、機体の中央を中心とする一辺 :math:`2\times` ``farfield`` × 全長の立方体である。
+箱の 6 つの面は辺（曲線）を共有させて作る。共有しないと、HXT が「頂点が線分上にある」というエラーで失敗する。
+対称と確かめた STL では、箱ではなく 1/4 または半分の箱を使う（:ref:`sec-cfd-stl-symmetry-check`）。
+
+境界には名前（マーカ）が付いている。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 80
+
+   * - マーカ
+     - 内容
+   * - ``wall``
+     - 機体表面（胴体とフィン）。力を積分する面。STL モードでは、再メッシュした和の表面のうち ``base`` でない三角形
+   * - ``base``
+     - 底面。Euler では尾部フェアリングの面（STL で ``"flat"`` なら平らな底面）で、力を積分しない（RANS では平らな底面で、積分する）
+   * - ``farfield``
+     - 遠方境界。特性量に基づく非反射の境界条件
+   * - ``symmetry``
+     - :math:`y=0` の平面。半領域のときだけ
+   * - ``symz``
+     - :math:`z=0` の平面。1/4 領域をメッシュにする途中だけにあり、鏡映して半領域にするときに落とす
+
+STL モードの ``wall`` と ``base`` は、メッシュの三角形の重心と法線から分ける。
+重心が底面の平面 :math:`x=L` より後ろに全長の :math:`10^{-4}` 倍以上あるか、その範囲内にあって法線が :math:`+x` を向く三角形（平らな底面と、底面に揃ったフィンの後縁）が ``base`` である。
+
+.. _sec-cfd-fairing:
+
+尾部フェアリング
+~~~~~~~~~~~~~~~~
+
+非粘性の流れでは、平らな底面の後ろの流れは問題として成り立たない。
+後流が非対称な定常解を持ち、解の対称性が保てないためである。
+そこで Euler では、底面の後ろに円すい形の尾部フェアリングを置く。長さは ``tail_fairing``\ （既定 6）× 底面半径で、先端は一点に閉じる。
+フェアリングの面は ``base`` マーカで、力の積分から外す。
+したがって底面の抗力は CFD からは得られず、部品積み上げ法の底面抗力の項で補う（:ref:`sec-cfd-post`）。
+RANS では後流が解の一部なので、底面は平らなままにする。
+STL モードでは ``base_treatment = "fairing"`` がこれに当たる（:ref:`sec-cfd-stl-base`）。
+
+z 対称メッシュ
+~~~~~~~~~~~~~~
+
+機体が :math:`z` 方向にも鏡映対称（:math:`z\to-z`）であっても、非構造のメッシュは対称にならない。
+半モデルのメッシュを一度に作ると、:math:`z>0` と :math:`z<0` でセルの並びが異なり、:math:`\alpha=0` でも法線力が 0 にならない（数値は :doc:`verification_aero` に示す）。
+そこで ``z_mirror_mesh``\ （既定 ``true``）では、:math:`y\ge0` かつ :math:`z\ge0` の **1/4 領域だけ** をメッシュにし、
+それを :math:`z=0` 面で鏡映して半球のメッシュにする（:numref:`fig-cfd-domain`）。
+鏡映したセルは頂点の順序を入れ替えて、向きを正に保つ。:math:`z=0` の面上の節点は共有される。
+こうして得た半モデルのメッシュは :math:`z` について **厳密に対称** で、:math:`-\alpha` の解は :math:`+\alpha` の解の鏡像になる（:ref:`sec-cfd-alpha-mode`）。
+
+.. _fig-cfd-domain:
+
+.. figure:: _generated/tikz/cfd_domain.*
+   :width: 100%
+
+   計算領域の概念図。(a) 半球の :math:`y=0` 面での断面。機体は拡大して描き、実際の遠方境界は機体よりはるかに大きい。
+   上半分（:math:`z\ge0`）だけをメッシュにし、:math:`z=0` で鏡映して下半分を作る。
+   (b) 機軸の方向から見た半球。:math:`y=0` が symmetry の平面で、フィンが :math:`+y` と :math:`\pm z` に付いている。
+
+この手法が使えるのは、形状が :math:`z\to-z` について対称なときだけである（``panel_mesh`` では、フィンが 4 枚で ``fin_roll_deg`` が 0 度または 45 度、2 枚、6 枚など。3 枚や 5 枚、roll が 10 度などは非対称）。
+対称でない形状では、``z_mirror_mesh`` は自動的に無視される。
+``panel_mesh`` では、フィンの配置が :math:`z\to-z` について対称なときに ``z_mirror_mesh`` が働く。``stl`` では、和の表面が :math:`z=0` と :math:`y=0` について鏡映対称と確かめられたとき（:ref:`sec-cfd-stl-symmetry-check`）に働く。
+全領域でも、1/4 領域を :math:`z=0` と :math:`y=0` で鏡映して全領域にする。
+
+メッシュの大きさ
+~~~~~~~~~~~~~~~~
+
+体積メッシュは四面体である（gmsh の HXT 法）。セルの大きさは、壁面までの距離 :math:`s` の関数
+
+.. math::
+   :label: eq-cfd-size
+
+   h(s)=\min\bigl(h_{\max},\;h_w+0.2\,s\bigr),\qquad h_{\max}=\frac{R_\infty}{10}
+
+で決める。:math:`h_w` は ``wall_size``\ （壁面の要素の大きさ、既定 2 mm）、:math:`R_\infty` は遠方境界の半径である。
+壁から離れるにつれ、要素の列ごとに約 1.2 倍の割合で大きくなる。
+``panel_mesh`` では、曲率の大きい部分（ノーズ、フィンの縁）は、円周あたり 24 要素になるよう壁面の要素を細かくし、最小の大きさは :math:`h_w/8` までとする。``stl_remesh = "classify"`` の曲率の設定は円周あたり 12 要素、最小 :math:`h_w/5` で、モードごとに別である。
+メッシュの生成は単一スレッドで行う。複数スレッドでは実行のたびに異なるメッシュになり、CFD の結果の再現性が損なわれるためである。
+
+既定の 2 mm で、サンプル機体の半モデルは約 94 万セル（約 20 万節点）になる。
+壁面（``wall``）は 14.2 万、尾部フェアリング（``base``）は 1.5 万、対称面は 2.9 万の三角形である。
+
+:numref:`fig-cfd-mesh-surface` に壁面のメッシュを示す。
+ノーズ先端は曲率が大きいので、先端に向かって要素が細かくなる。フィンの付け根では、胴体とフィンの面が一つの立体として交わり、交線に沿って要素がつながる。
+
+.. _fig-cfd-mesh-surface:
+
+.. figure:: _generated/plots/cfd_mesh_surface.*
+   :width: 100%
+
+   サンプル機体の壁面のメッシュ（``wall_size`` 2 mm、半モデル）。左はノーズ先端（先端から 9 cm）、右はフィンの付け根の前縁側。
+
+体積メッシュの様子は、対称面（:math:`y=0`）での断面で分かる（:numref:`fig-cfd-mesh-section`）。
+壁面の近くでは要素が 2 mm で、壁から離れるにつれ\ :eq:`eq-cfd-size` に従って大きくなり、遠方境界（半径 30 m）では最大の大きさ 3 m に達する。
+
+.. _fig-cfd-mesh-section:
+
+.. figure:: _generated/plots/cfd_mesh_section.*
+   :width: 100%
+
+   対称面 :math:`y=0` での体積メッシュの断面。左から計算領域の全体、機体のまわり、フィンと尾部フェアリングの拡大。灰色の部分は機体（とフィン）の内部である。
+
+メッシュは ``<出力先>/<workdir>/mesh/`` に保存され、形状と設定のハッシュが同じなら再利用される。
+
+ケースの実行
+------------
+
+本節は、ケースの行列をどういう順序と初期値で解くか、収束とみなす条件、結果の再利用の規則を述べる。
+行列の指定と計算資源の設定は :ref:`sec-cfd-run` にある。
+
+.. _sec-cfd-alpha-mode:
+
+迎角の正負と非対称性の補正
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``alpha_mode`` は、迎角の正負と :math:`\alpha=0` での非対称性の扱いを決める（値の一覧は :ref:`sec-cfd-run`）。
+
+``mirror`` では、各正の迎角 :math:`\alpha` について、:math:`+\alpha` と :math:`-\alpha` の結果 :math:`f(\pm\alpha)` から
+
+.. math::
+   :label: eq-cfd-mirror
+
+   C_N=\frac{C_N(+\alpha)-C_N(-\alpha)}{2},\qquad
+   m=\frac{m(+\alpha)-m(-\alpha)}{2},\qquad
+   C_A=\frac{C_A(+\alpha)+C_A(-\alpha)}{2}
+
+を使う。:math:`m=C_N x_{cp}` はノーズ周りのモーメント（長さの次元）である。
+正負の迎角で同じ値だけ現れる数値的なずれ :math:`c_0`\ （:math:`f(\pm\alpha)=\pm f_{odd}+c_0`）は、:eq:`eq-cfd-mirror` で打ち消される。
+片方の迎角の解が得られなかったときは、もう一方に :math:`\alpha=0` の値をずれの推定値として使う。
+:math:`\alpha=0` の解は一度だけ解き、軸力 :math:`C_A` だけを使う。その法線力とモーメント（真値は 0）は、実測された非対称性として ``cfd_report.json`` の ``asymmetry`` に記録する。
+``offset`` では、:math:`\alpha=0` の値を :math:`C_N^{(0)},m^{(0)}` として
+
+.. math::
+   :label: eq-cfd-offset
+
+   C_N=C_N(\alpha)-C_N^{(0)},\qquad m=m(\alpha)-m^{(0)}
+
+とする。``z_mirror_mesh`` が有効なとき、:math:`-\alpha` の解は :math:`+\alpha` の解の鏡像なので、``mirror`` の組合せは :math:`+\alpha` の結果に一致する。
+:math:`\alpha=0` のずれは 0 になり、負の迎角の計算は不要になる。
+
+解く符号は ``shape_symmetry``\ （:ref:`sec-cfd-domain`）で決まる。
+
+* ``"axisymmetric"``\ ：:math:`\alpha\ge0` と :math:`\beta\ge0` だけ。``alpha_mode = "mirror"`` で :math:`z` 対称メッシュでないときは、各正の迎角を負の迎角でも解く。
+* ``"pitch_plane"``\ ：:math:`\pm\alpha` と :math:`\beta\ge0`。
+* ``"none"``\ ：:math:`\pm\alpha` と :math:`\pm\beta`。
+
+解かない符号の係数は、後処理で鏡映して補う（:ref:`sec-cfd-general`）。
+:math:`n_\alpha` 個の正の迎角と :math:`n_\beta` 個の正の横滑り角を指定したとき、1 つの Mach 数の ``"none"`` のケース数は :math:`(2n_\alpha+1)(2n_\beta+1)` である。
+横滑り角のケースは、そのぶん計算が増える。
+
+.. _sec-cfd-roll-cases:
+
+ロール減衰のケース
+~~~~~~~~~~~~~~~~~~
+
+``roll_damping = true`` にすると、各 Mach 数で :math:`\alpha=\beta=0`、:math:`\hat p=\pm` ``roll_rate_hat`` の 2 ケースを回転座標系で解く（:ref:`sec-cfd-sideslip`）。
+回転があると :math:`y=0` について対称でなくなるので、全領域で解く。Euler だけで使える。
+2 ケースの差からロール減衰微係数 :math:`C_{lp}` を求める（:ref:`sec-cfd-roll-post`）。差を取るので、フィンのカントや非対称による :math:`\hat p=0` のずれは打ち消される。
+
+暖機起動と並列実行
+~~~~~~~~~~~~~~~~~~
+
+各ケースは、近いケースの収束解を初期値にして始める（暖機起動）。元のケースは次のとおりである。
+
+* :math:`\alpha\ne0`：同じ Mach 数と横滑り角で、一つ小さい迎角（符号が同じもの、最小は :math:`\alpha=0`）。
+* :math:`\alpha=0`、:math:`\beta\ne0`：同じ Mach 数の :math:`\alpha=0` で、一つ小さい横滑り角（符号が同じもの、最小は :math:`\beta=0`）。
+* :math:`\alpha=\beta=0`：一つ小さい Mach 数の :math:`\alpha=\beta=0`。
+* ロール減衰のケース：同じ Mach 数の回転しない :math:`\alpha=\beta=0`。
+
+元のケースが終わる（成功でも失敗でも）まで待ち、失敗した場合は自由流から始める。
+この依存関係のもとで、準備のできたケースを ``parallel_cases`` 個まで同時に実行する。
+最初に :math:`\alpha=\beta=0` の列が Mach 数順に解かれ、そのあと各 Mach 数の角度の列が並列に進む。
+
+各ケースは ``mpirun -n <ranks> --bind-to none SU2_CFD case.cfg`` で実行する（ランク数が 1 のときは ``SU2_CFD case.cfg`` を直接）。
+単一ノードの実行になるので、MPI の通信は共有メモリだけにしている。
+Ctrl-C や SIGTERM を受けると、子プロセスをまとめて終了し、終わったケースの結果は残す。
+
+
+.. _sec-cfd-int-convergence:
+
+再開と収束の判定
+~~~~~~~~~~~~~~~~
+
+各ケースの出力、再開の規則、収束の判定を述べる。
+
+各ケースは ``<出力先>/<workdir>/m0.800_a04.00/`` のようなディレクトリに入る（負の迎角は ``a-04.00``）。
+横滑り角があれば ``_b04.00``、ロール減衰のケースは ``_r+0.0100`` と ``_r-0.0100`` を名前に足す（例：``m0.800_a04.00_b04.00``）。
+SU2 の設定、ログ、履歴（``history.csv``）、壁面の分布（``surface_flow.csv``）があり、終わると ``done.json``\ （入力のハッシュ、係数、収束の状態）が書かれる。
+入力のハッシュは SU2 の設定（暖機起動の行を除く）とメッシュのハッシュから作る。
+同じハッシュの ``done.json`` があるケースは次の実行で飛ばす。途中で止めても、あるいは設定を一部変えても、影響を受けないケースは再利用される。
+最初からやり直すには、このディレクトリを削除する。
+
+ケースの結果は、次のいずれかで扱う。
+
+* **収束**\ ：残差の目標に達した。最後の反復の係数を使う。
+* **早期終了**\ ：``min_iterations``\ （既定 100）反復を過ぎて残差が 3 桁以上下がり、直近 ``stable_window``\ （既定 60）反復の力とモーメントが落ち着いたとき（前半と後半の平均の差が力の大きさの 2 % 未満など）、ケースを止めて受け入れる（``status`` は ``accepted``）。
+  ``min_iterations`` は ``stable_window`` 以上でなければならない。Euler の Roe の制限関数は ``min_iterations`` 反復で固定する（``LIMITER_ITER``）。既定値の根拠の実測は :doc:`verification_aero` に示す。
+* **受け入れ**\ ：反復の上限か時間の上限（``timeout_minutes``、既定 0 で無制限）に達したが、残差が最大値から 3 桁（RANS は 1 桁）以上下がり、
+  最後の窓で力とモーメントの変動が 1 % 未満のとき、係数を窓の平均として受け入れる。どちらの場合も「収束」には数えず、``cfd_report.json`` の ``unconverged`` に載る。
+  残差は下がりきらなくても係数が平らになる状況（例えば底面の後流が振動する場合）を、結果として使うための扱いである。
+* **失敗**\ ：SU2 のエラー、発散、履歴なし、あるいは収束も安定もしていない場合。``done.json`` は作らない。
+  表の作成では、失敗したケースを飛ばして補間する（:ref:`sec-cfd-post`）。
+
+
+.. _sec-cfd-post:
+
+後処理
+------
+
+本節は、SU2 が出した力とモーメントの係数から、飛翔計算が読む係数表を作る手順を述べる。
+座標と符号の変換、CFD が与えない項の補い方、解いた点から規則的な表の格子への補間、一般表の作り方、ロール減衰微係数の取り出しの順に進む。
+
+SU2 の係数から機体軸の係数へ
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+機体はメッシュに固定されているので、SU2 の力の係数 :math:`C_{Fx},C_{Fz}` はそのまま機体軸の係数である。
+
+.. math::
+   :label: eq-cfd-body
+
+   C_N=C_{Fz},\qquad C_A^{\mathrm{CFD}}=C_{Fx},\qquad m=C_N\,x_{cp}=-C_{My}\,d
+
+SU2 はモーメントを :math:`\bm{M}=\bm{r}\times\bm{F}` で計算するので、その :math:`y` 成分は :math:`zF_x-xF_z` である。
+ノーズ先端から後方 :math:`x_{cp}` に働く正の法線力は負の :math:`C_{My}` を与える。圧力中心は
+
+.. math::
+   :label: eq-cfd-xcp
+
+   x_{cp}=\frac{m}{C_N}=-\frac{C_{My}\,d}{C_N}
+
+である。:math:`|C_N|` が小さいときは定義しない。:math:`C_L,C_D` しか得られないときは、自由流の方向で回転して :math:`C_{Fx}=C_D\cos\alpha-C_L\sin\alpha`、:math:`C_{Fz}=C_D\sin\alpha+C_L\cos\alpha` とする。
+
+.. _sec-cfd-body6:
+
+6 成分の係数
+~~~~~~~~~~~~
+
+横滑りやロールを解くときは、SU2 の 6 成分の力とモーメントの係数 :math:`C_{Fx},C_{Fy},C_{Fz},C_{Mx},C_{My},C_{Mz}` を使う。
+CFD の座標は機体座標を :math:`y` まわりに 180 度回したもの（:math:`\mathrm{diag}(-1,1,-1)`）で、モーメントは軸性ベクトルなので、機体軸の係数（:eq:`eq-coeff-6`）は
+
+.. math::
+   :label: eq-cfd-body6
+
+   C_X=-C_{Fx},\quad C_Y=C_{Fy},\quad C_Z=-C_{Fz},\qquad
+   C_l=-C_{Mx},\quad C_m=C_{My},\quad C_n=-C_{Mz}
+
+となる。力は :math:`qS`、モーメントはノーズ先端まわりで :math:`qSd` で無次元化している。
+:eq:`eq-cfd-body` との関係は、:math:`C_Z=-C_N`、:math:`C_m=x_{cp}C_Z/d` である（:eq:`eq-coeff-6-axisym`）。
+鏡映の像は、:math:`z\to-z` で :math:`(\alpha,\beta)\to(-\alpha,\beta)` となり :math:`C_Z,C_l,C_m` の符号が変わる。
+:math:`y\to-y` では :math:`(\alpha,\beta)\to(\alpha,-\beta)` となり :math:`C_Y,C_l,C_n` の符号が変わる。
+
+軸力
+~~~~
+
+軸力 :math:`C_A` は、CFD が供給しない項を部品積み上げ法で補う。
+:math:`\alpha`・Mach 数ごとの CFD の軸力 :math:`C_A^{\mathrm{CFD}}` に、:eq:`eq-cd0` の成分のうち CFD が与えない項を、迎角の補正 :math:`f(\alpha)`\ （:eq:`eq-ca-alpha`）をかけて足す。
+
+* **Euler**\ ：CFD は圧力による抗力（造波抗力）だけを与える。底面は力の積分から外してあるので、
+
+  .. math::
+     :label: eq-cfd-ca
+
+     C_A=\max\Bigl(C_A^{\mathrm{CFD}}+f(\alpha)\bigl(C_{D,f}+C_{D,\mathrm{base}}+C_{D,\mathrm{fin}}+C_{D,\mathrm{bt}}+C_{D,\mathrm{extra}}\bigr),\,0\Bigr)
+
+  である。足すのは摩擦、底面、フィン縁（丸い前縁と四角い後縁）、ボートテール、追加抗力で、ノーズの圧力抗力 :math:`C_{D,\mathrm{nose}}` は **含めない**\ （CFD が与えるため）。
+  燃焼中の値では、底面の項に、ノズル出口の面積を除いた底面積を使う。
+* **RANS**\ ：摩擦、底面圧力、フィン、ボートテールの抗力は CFD が与えるので、追加抗力 :math:`C_{D,\mathrm{extra}}` だけを足す。
+  燃焼中は、ノズル出口の面積にかかる底面圧力の寄与を引く。
+
+亜音速の Euler では、CFD の軸力の理論値は 0（d'Alembert のパラドックス）である。実際の値は小さな負の数（本章のサンプルで :math:`-0.03` から :math:`-0.06`）になり、そのまま合計に入る。
+
+ピッチ減衰
+~~~~~~~~~~
+
+定常な CFD はピッチ減衰を与えない。そこで :ref:`sec-damping` の和 :math:`S_0,S_1,S_2`\ （:doc:`barrowman` の\ :eq:`eq-body-sums` と同じ定義）は、
+部品積み上げ法（パネル法があればその値）の **ばらつき** を残したまま、全体の傾きと重心を CFD の値に取り替える。
+モデルの和を :math:`S_k^{m}` として、そのまわりのばらつき（分散）
+
+.. math::
+   :label: eq-cfd-var
+
+   \sigma^2=\frac{S_2^m}{S_0^m}-\left(\frac{S_1^m}{S_0^m}\right)^2
+
+を保ち、CFD の :math:`C_{N\alpha}` と小迎角の圧力中心 :math:`x_{cp0}` から
+
+.. math::
+   :label: eq-cfd-damp
+
+   S_0=C_{N\alpha},\qquad S_1=C_{N\alpha}\,x_{cp0},\qquad S_2=C_{N\alpha}\bigl(x_{cp0}^2+\sigma^2\bigr)
+
+とする。
+
+係数表の作成
+~~~~~~~~~~~~
+
+解いた点は不規則な格子（解いた Mach 数と迎角）なので、それを係数表の規則的な格子に埋める。
+
+1. 各 Mach 数の列で、:math:`C_N` とノーズ周りのモーメント :math:`m` は迎角について奇関数とし、原点 :math:`(0,0)` を通る。
+   :math:`C_N,m` と CFD の軸力を、迎角について単調な 3 次補間（PCHIP :cite:`fritsch`）する。
+   解いた迎角の範囲を超えるときは、端の傾きを延長する（``extrapolation = "linear"``）か、端の値で一定とする（``"clamp"``）。
+2. :math:`C_{N\alpha}` と :math:`x_{cp}(\alpha\to0)` は、最小の二つの正の迎角を通る奇関数の 3 次式 :math:`c_1\alpha+c_3\alpha^3` から求める。
+3. Mach 数の方向にも、各量を係数表の Mach 数の格子に PCHIP で補間する（外挿の規則は同じ）。
+   途中の Mach 数の列が失敗していれば、両隣の列で補間して埋める。最小または最大の Mach 数の列の失敗は補えず、エラーになる。
+4. 軸力に上の項を足し、ピッチ減衰の和を取り替える。``roll_damping`` が真のときは、:math:`C_{lp}` も CFD の値（:ref:`sec-cfd-roll-post`）にする。
+
+係数表の入力ハッシュには ``[aero.cfd]`` の設定が含まれる。ただし CFD の実装（コード）の版は含まれない。
+
+
+.. _sec-cfd-general:
+
+一般表の作成
+~~~~~~~~~~~~
+
+係数表は、次のとき一般表（6 成分、:ref:`sec-aero-coeff6`）になる。
+``surface = "stl"`` であるか、``shape_symmetry`` が ``"pitch_plane"`` か ``"none"`` と明示されているか、``betas_deg`` に 0 以外があるときである。
+それ以外は軸対称表で、ロール減衰だけを解いた場合も軸対称表である。
+
+一般表の格子は、迎角が :math:`-180^\circ` から :math:`180^\circ`、横滑り角が :math:`-90^\circ` から :math:`90^\circ` である。
+どちらも非一様で、:math:`\pm30^\circ` までは 2 度刻み、その外側は 10 度刻み（迎角 61 点、横滑り角 43 点）とする。
+Mach 数の刻みは ``general_mach_step``\ （既定 0.1、0 なら ``[aero]`` の ``mach_step``）で、範囲は ``[aero]`` の ``mach_min`` から ``mach_max`` である。
+格子は 1 つの Mach 数あたり :math:`61\times43` 点で、Mach 数の刻みを粗くするとファイルが小さくなる。
+
+Mach 数ごとの作り方は次のとおりである。
+
+1. **対称性による補完**\ 。解いた点に、形状の鏡映（:ref:`sec-cfd-body6`）の像を加える。``alpha_mode = "mirror"`` では、同じ :math:`(\alpha,\beta)` に重なるすべての像を平均し、数値的な非対称を消す。
+   そうでなければ、解いた点が像より優先される。``"offset"`` では、鏡映対称により :math:`(0,0)` で 0 になる成分を、先に全点から引く。
+2. **CFD の補間**\ 。解いた範囲 :math:`R=[\alpha_{\min},\alpha_{\max}]\times[\beta_{\min},\beta_{\max}]` の中を、各横滑り角で迎角について PCHIP :cite:`fritsch` し、その値を横滑り角について PCHIP する（変数分離）。
+3. **モデルで埋める**\ 。:math:`R` の外側は、部品積み上げ法の軸対称表を 6 成分に展開した値 :math:`T`\ （:eq:`eq-coeff-6-axisym`、全迎角 90 度まで）の変化を、:math:`R` の境界の CFD の値に合わせて足す。
+   :math:`R` の内側に最も近い点を :math:`(\alpha_c,\beta_c)` として、
+
+   .. math::
+      :label: eq-cfd-fill
+
+      C(\alpha,\beta)=F(\alpha_c,\beta_c)+T(\alpha,\beta)-T(\alpha_c,\beta_c)
+
+   とする。境界をまたいで連続である。:math:`R` の内側では :math:`C=F` である。
+   CFD の領域とモデルの領域は、表の付随ファイルではなく ``cfd_report.json`` の ``cfd_region`` と ``model_outside_cfd_region`` に記録する。
+4. **軸力**\ 。CFD の :math:`C_A^{\mathrm{CFD}}=-F_{C_X}` に、:eq:`eq-cfd-ca` と同じ項を足す。迎角の補正は :math:`(\alpha_c,\beta_c)` の全迎角 :math:`\cos\alpha_t=\cos\alpha\cos\beta` から :math:`\alpha_t'=\min(\alpha_t,\pi-\alpha_t)` で決める。
+   燃焼中と燃焼後の :math:`C_X` が得られる。
+5. **Mach 数の方向**\ 。格子の点ごとに、解いた Mach 数の値を PCHIP で補間する（外挿の規則は ``extrapolation``）。
+   最小または最大の Mach 数のケースが全部失敗していれば、補えないのでエラーにする。
+
+ピッチとヨーの減衰の和は、零角度の傾きから別々に取り替える。
+ピッチは :math:`\beta=0` で、ヨーは :math:`\alpha=0` で、奇関数の 3 次式 :math:`c_1\theta+c_3\theta^3` を最小の二つの正の角度に当てはめて傾きを求め、
+
+.. math::
+   :label: eq-cfd-slopes
+
+   \begin{aligned}
+   C_{N\alpha}^{q}&=-\frac{\partial C_Z}{\partial\alpha},&\quad
+   x_{cp0}^{q}&=d\,\frac{\partial C_m/\partial\alpha}{\partial C_Z/\partial\alpha},\\
+   C_{N\alpha}^{r}&=-\frac{\partial C_Y}{\partial\beta},&\quad
+   x_{cp0}^{r}&=-d\,\frac{\partial C_n/\partial\beta}{\partial C_Y/\partial\beta}
+   \end{aligned}
+
+とする。:eq:`eq-cfd-damp` をピッチ（:math:`S^q`）とヨー（:math:`S^r`）にそれぞれ適用する。
+横滑りを解かないときは、ヨーの和をピッチの和に等しくし、``cfd_report.json`` の ``yaw_damping_from_pitch`` が真になる。
+:math:`C_{N\alpha}` と :math:`x_{cp0}` は一般表の入力ではなく、``cfd_report.json`` の ``diagnostics`` に記録する診断値である。
+ピッチとヨーを別々に求めるので、機体が非対称なときは異なる値になる。
+
+ロールのカント強制 :math:`C_{l\delta}` は、部品積み上げ法の値を使う。
+一般表は、表の :math:`C_l` に含まれるカント :math:`\delta_{\mathrm{ref}}` を記録する（:eq:`eq-cl-total`）。
+STL モードでは、形状（STL）にカントが含まれているので、:math:`\delta_{\mathrm{ref}}` は設定したフィンのカントである。
+カントの影響は :math:`C_l` にすでに入っており、:math:`\delta=\delta_{\mathrm{ref}}` の飛翔では強制項を足さない（二重に数えない）。
+``panel_mesh`` は形状にカントがないので、:math:`\delta_{\mathrm{ref}}=0` である。
+
+
+.. _sec-cfd-region-outside:
+
+CFD の領域の外の扱い
+~~~~~~~~~~~~~~~~~~~~
+
+一般表の値のうち、解いた迎角と横滑り角の範囲の外側は、CFD の結果ではなくモデルの値である。
+本節は、どこまでが CFD の値で、どこからがモデルの値かを、実装がどう決めて記録するかを述べる。
+
+解いた範囲 :math:`R` の内側は CFD の補間値である。外側は、部品積み上げ法の軸対称表を 6 成分に展開した値の変化を、:math:`R` の境界の CFD の値に合わせて足したもので、:eq:`eq-cfd-fill` により境界をまたいで連続である。
+一般表を作ったときは、``cfd_report.json`` の ``cfd_region`` に :math:`R`\ （迎角と横滑り角の最小・最大）を、``model_outside_cfd_region`` に真を記録する。
+係数表のファイルには領域の情報は付かないので、どこまでが CFD の値かは、このレポートで確かめる。
+展開は軸対称な形状のものなので、非対称な形状の :math:`R` の外側では当てにならない。
+
+Mach 数の方向も同様で、解いた Mach 数の範囲の外は ``extrapolation`` の規則（線形または端の値で一定）で延ばす。
+軸対称表でも、解いた迎角の外は同じ規則で延ばす。
+CFD が与えない項（摩擦、底面、フィン縁、ボートテールの抗力）とピッチ・ヨー減衰の和は、部品積み上げ法（またはパネル法）のモデルから補う（:ref:`sec-cfd-post`）。
+
+.. _sec-cfd-roll-post:
+
+ロール減衰微係数
+~~~~~~~~~~~~~~~~
+
+回転座標系の 2 ケース（:ref:`sec-cfd-roll-cases`）から、Mach 数ごとに
+
+.. math::
+   :label: eq-cfd-clp
+
+   C_{lp}=\frac{C_l(+\hat p)-C_l(-\hat p)}{2\,\hat p}
+
+を求める（:math:`C_l=-C_{Mx}`）。差を取るので、カントや非対称による零回転のずれは消える。
+次の場合、その Mach 数の値は使わず、部品積み上げ法の :math:`C_{lp}` に替えて、理由を警告と ``cfd_report.json`` の ``clp`` に記録する。
+
+* 2 ケースのどちらかが失敗したか、値が有限でない。
+* フィンがあるのに :math:`C_{lp}` が正である（ロール減衰は負でなければならない）。
+* フィンがあるのに :math:`|C_{lp}|<10^{-6}` である。
+
+表の値は、部品積み上げ法の :math:`C_{lp}(M)` に、使える Mach 数での CFD / 部品積み上げ法の比を PCHIP で補間して（範囲外は端の値で一定）かけた値である。
+使える Mach 数がなければ部品積み上げ法の値になる。``clp_source`` は ``"cfd"``\ （すべての Mach 数が CFD）、``"barrowman"``\ （解かない、またはすべて不採用）、``"mixed"`` のいずれかである。
+ロール減衰は Euler の解であり、粘性の寄与（フィンの摩擦）は含まない。
+
+確認済み
+--------
+
+CFD の実装について、次の点を確かめた。数値と手順は :doc:`verification_aero` に示す。
+
+* 円すいの表面圧力は、メッシュを細かくすると Taylor–Maccoll の理論解に近づく。
+* 迎角の正負を解いて奇関数と偶関数に分ける処理（``alpha_mode = "mirror"``）と :math:`z` 対称メッシュで、:math:`\alpha=0` の見かけの非対称性が消える。
+* 回転座標系のロール減衰の符号と無次元化、6 成分への写像と ``SIDESLIP_ANGLE`` の符号は、軸対称表を展開した値と一致する。
+* 亜音速の :math:`C_{N\alpha}` は、CFD とパネル法がよく一致する。手法どうしの相互比較であり、実測との比較（妥当性確認）ではない。
+* STL をそのまま解く計算は、作り直した形状による計算や Barrowman 法と相互比較した。
+
+注意
+----
+
+実装上の制約は :doc:`limitations` にまとめた。本章に関係する主なものは次のとおりである。
+
+* 境界層のプリズム層がなく、RANS は信頼できる結果を出せない。
+* メッシュ収束は完全でなく、STL のメッシュは作成のたびに少し変わる。
+* Euler の底面は尾部フェアリングで避けるので、底面抗力は経験式による。
+* ピッチ・ヨー減衰（:math:`C_{mq}`、:math:`C_{nr}`）は CFD が直接与えるものではなく、交差する微係数は扱わない。
+* 一般表の CFD の領域の外はモデルの値である。
+* 形状の忠実度の距離はサンプリングによる近似で、係数表のハッシュに CFD の実装の版は含まれない。

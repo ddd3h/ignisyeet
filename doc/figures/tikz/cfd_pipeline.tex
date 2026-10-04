@@ -21,14 +21,15 @@
   \node[file] (tab) at (4.2,-4.5) {係数表\\\scriptsize aero\_table.csv};
   \draw[arr] (stl) -- (union);
   \draw[arr] (union) -- (remesh);
-  \draw[arr] (remesh) -| (vol);
+  \draw[arr] (remesh.east) -| (vol.north);
   \draw[arr] (geo) -- (rebuild);
-  \draw[arr] (rebuild) -| ($(remesh.east)+(1.0,0)$) |- (vol.west);
+  \draw[arr] (rebuild.east) -| ($(vol.west)+(-0.7,0)$) -- (vol.west);
   \draw[arr] (vol) -- (su2);
   \draw[arr] (su2) -- (post);
   \draw[arr] (post) -- (tab);
   \node[font=\scriptsize, cink2, anchor=south west] at (-1.6,0.7) {\texttt{surface = "stl"}};
   \node[font=\scriptsize, cink2, anchor=north west] at (-1.6,-3.7) {\texttt{surface = "panel\_mesh"}};
   \node[font=\scriptsize, cink2, anchor=north] at (4.2,-5.3) {モデルで補う項を足し、解いた範囲の外はモデルで埋める};
-  \node[font=\scriptsize, cink2, anchor=south] at (8.4,0.7) {Euler のとき底面にフェアリング};
+  \node[font=\scriptsize, cink2, anchor=south] at (4.2,0.7) {Euler のとき底面にフェアリングを足す};
+  \node[font=\scriptsize, cink2, anchor=south, align=center] at (4.2,-2.3) {Euler のとき底面にフェアリング};
 \end{tikzpicture}

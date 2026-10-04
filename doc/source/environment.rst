@@ -102,8 +102,8 @@
    \end{cases}
 
 となる。ここで :math:`p_0=101\,325` Pa、:math:`H_j^{+}=\min(H,\,H_{j+1})`\ （最上層では :math:`H_j^{+}=H`）である。
-温度は :math:`T=T_k+L_k(H-H_k)+\Delta T`、密度・音速・粘性係数は式 :eq:`eq-atm-derived` に :math:`T` を入れて求める。
-:math:`\Delta T=0` のときは標準大気そのもの（式 :eq:`eq-us76`）を返す。式 :eq:`eq-us76-offset` を :math:`\Delta T=0` で評価しても、
+温度は :math:`T=T_k+L_k(H-H_k)+\Delta T`、密度・音速・粘性係数は\ :eq:`eq-atm-derived` に :math:`T` を入れて求める。
+:math:`\Delta T=0` のときは標準大気そのもの（:eq:`eq-us76`）を返す。\ :eq:`eq-us76-offset` を :math:`\Delta T=0` で評価しても、
 標準大気の基準圧力 :math:`p_k`\ （表）を相対誤差 :math:`2\times10^{-5}` 以内で再現する。
 :math:`\Delta T` は :math:`-200` K より大きくなければならない。
 
@@ -162,7 +162,7 @@
       k=\frac32J_2\left(\frac{a}{r}\right)^2,\quad \zeta=\frac{Z}{r}
 
    定数は :math:`GM=3.986\,004\,418\times10^{14}\ \mathrm{m^3/s^2}`、:math:`J_2=1.082\,626\,68\times10^{-3}`、:math:`a=6\,378\,137\ \mathrm{m}` である :cite:`wgs84`。
-   この式は万有引力だけで、遠心力は含まない（ECEF モードでは式 :eq:`eq-ecef-accel` の遠心加速度として別に加える）。
+   この式は万有引力だけで、遠心力は含まない（ECEF モードでは\ :eq:`eq-ecef-accel` の遠心加速度として別に加える）。
    鉛直方向以外にも小さな成分（赤道向きに約 :math:`3J_2g\sin\phi\cos\phi`）を持つ。
    平面地球モードでは地球の形が定義できないので、``gravity = "j2"`` はエラーになる。
 
@@ -329,15 +329,15 @@
      - 低高度
      - 地上風
    * - ``power``
-     - 式 :eq:`eq-wind`
+     - :eq:`eq-wind`
      - 〜1 km
      - 地上風
    * - ``log``
-     - 式 :eq:`eq-wind-log`、:math:`z_0` は粗度長
+     - :eq:`eq-wind-log`、:math:`z_0` は粗度長
      - 〜100 m
      - 地上風、粗度
    * - ``profile``
-     - 高度別の表の成分補間（式 :eq:`eq-wind-profile`）
+     - 高度別の表の成分補間（:eq:`eq-wind-profile`）
      - 表の範囲
      - ラジオゾンデ・数値予報などの風
 

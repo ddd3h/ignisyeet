@@ -620,7 +620,7 @@ CSV の 1 行目は次の見出しで、続く行は Mach 数が外側、迎角�
    mach,alpha_deg,cn,ca_on,ca_off,xcp,cna,damp_s0,damp_s1,damp_s2
 
 各列は、法線力係数 :math:`C_N`、軸力係数（燃焼中・燃焼後）、圧力中心 :math:`x_{cp}` [m]（ノーズ先端から）、
-:math:`C_{N\alpha}` [1/rad]、ピッチ減衰の和 :math:`S_0, S_1, S_2`\ （式 :eq:`eq-moment-damp`）である。
+:math:`C_{N\alpha}` [1/rad]、ピッチ減衰の和 :math:`S_0, S_1, S_2`\ （:eq:`eq-moment-damp`）である。
 
 付随の ``.json`` には、基準面積 ``ref_area`` [m\ :sup:`2`]、基準直径 ``ref_diameter`` [m]、全長 ``length`` [m]、
 格子 ``machs`` と ``alphas_deg``\ （各列の値）、``extrapolation``\ （``"linear"`` または ``"clamp"``）、``source_hash``\ （任意の文字列でよい）を書く。
@@ -699,7 +699,7 @@ KML は地理情報を記述する XML 形式で、OGC の標準（KML 2.2 :cite
    弾道落下は青、パラシュート降下は橙で、風速が大きいほど濃い色にする。
 
 ``Dispersion – Monte Carlo``
-   モンテカルロの結果（``dispersion_mc.csv`` と ``dispersion_summary.json``）があるときに入る。降下モードごとのフォルダに、平均着地点（Mean landing）、:math:`1\sigma` と :math:`3\sigma` の誤差楕円（式 :eq:`eq-mc-stat` の共分散から作る 72 頂点の閉じた折れ線で、塗りつぶさない）、
+   モンテカルロの結果（``dispersion_mc.csv`` と ``dispersion_summary.json``）があるときに入る。降下モードごとのフォルダに、平均着地点（Mean landing）、:math:`1\sigma` と :math:`3\sigma` の誤差楕円（:eq:`eq-mc-stat` の共分散から作る 72 頂点の閉じた折れ線で、塗りつぶさない）、
    各サンプルの着地点（``Landing points`` フォルダ）が入る。失敗したサンプルは含まない。
 
 落下分散の図形はすべて地面に固定して描く。

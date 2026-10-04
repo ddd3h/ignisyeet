@@ -19,7 +19,7 @@ numfig = True
 numfig_format = {"figure": "図 %s", "table": "表 %s", "code-block": "リスト %s", "section": "%s 節"}
 math_numfig = True
 math_number_all = False
-math_eqref_format = "({number})"
+math_eqref_format = "式 ({number})"
 
 mathjax3_config = {
     "tex": {

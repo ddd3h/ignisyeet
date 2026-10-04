@@ -32,12 +32,16 @@ IgnisYeet ドキュメント
    coordinates
    geometry
    aerodynamics
+   aero_coefficients
    barrowman
    panel
    cfd
+   cfd_internals
    environment
    propulsion
    dynamics
    dispersion
    verification
+   verification_aero
    limitations
+   file_formats

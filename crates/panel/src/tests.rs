@@ -95,7 +95,7 @@ fn thin_wing_matches_helmbold() {
     let rk = SampleRocket { radius: 0.01, nose_length: 0.2, ..Default::default() };
     let mut g = geometry(&SampleRocket { fin_count: 0, ..rk.clone() });
     let (c, s, r) = (0.25, 0.5, 0.01);
-    g.fins = Some(FinSet { count: 2, root_chord: c, tip_chord: c, span: s, sweep: 0.0, thickness: 0.01, x_le_root: 0.6, body_radius: r });
+    g.fins = Some(FinSet { count: 2, root_chord: c, tip_chord: c, span: s, sweep: 0.0, thickness: 0.01, x_le_root: 0.6, body_radius: r, cant_deg: 0.0 });
     let opt = PanelOptions { body_axial: 50, body_circ: 24, fin_chord: 14, fin_span: 8, ..coarse() };
     // Fins sit at +-z; turn them by 90 degrees so the flow in the x-z plane is normal to them.
     let mesh = Mesh::from_geometry(&g, &opt).unwrap().rotated_about_x(0.5 * PI);

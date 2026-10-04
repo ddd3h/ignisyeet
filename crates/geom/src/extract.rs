@@ -67,6 +67,9 @@ pub struct FinSet {
     pub x_le_root: f64,
     /// Body radius at the fin root.
     pub body_radius: f64,
+    /// Fin cant angle [deg]; positive cant produces a positive roll moment about the forward body x axis.
+    #[serde(default)]
+    pub cant_deg: f64,
 }
 
 impl FinSet {
@@ -108,6 +111,27 @@ pub struct Frame {
     pub aft_direction: [f64; 3],
     /// Nose tip position along the aft direction relative to `axis_point`.
     pub nose_offset: f64,
+}
+
+impl Frame {
+    /// Body axes expressed in mesh (STL) coordinates: x forward (towards the nose), y and z across.
+    ///
+    /// y is `aft × helper` with helper the mesh x axis (or y when the body lies along x), and
+    /// z completes the right-handed set. Every component that needs a body-fixed lateral direction
+    /// (6-component coefficients, CG offsets, products of inertia, thrust misalignment) uses these axes.
+    pub fn body_basis(&self) -> [Vec3; 3] {
+        let aft = Vec3::new(self.aft_direction[0], self.aft_direction[1], self.aft_direction[2]).normalized();
+        let helper = if aft.x.abs() < 0.9 { Vec3::new(1.0, 0.0, 0.0) } else { Vec3::new(0.0, 1.0, 0.0) };
+        let ey = aft.cross(helper).normalized();
+        let ez_aft = aft.cross(ey);
+        [aft * -1.0, ey, ez_aft * -1.0]
+    }
+    /// Mesh point -> body coordinates with the origin at the nose tip (x forward, so x <= 0 on the body).
+    pub fn to_body(&self, v: Vec3) -> Vec3 {
+        let [ex, ey, ez] = self.body_basis();
+        let d = v - Vec3::new(self.axis_point[0], self.axis_point[1], self.axis_point[2]);
+        Vec3::new(d.dot(ex) + self.nose_offset, d.dot(ey), d.dot(ez))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -453,7 +477,7 @@ fn detect_fins(slices: &[Slice], info: &[FinSlice], dx: f64) -> Option<FinSet> {
     th.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let thickness = if th.is_empty() { 0.0 } else { th[th.len() / 2] };
 
-    Some(FinSet { count, root_chord, tip_chord, span, sweep, thickness, x_le_root, body_radius })
+    Some(FinSet { count, root_chord, tip_chord, span, sweep, thickness, x_le_root, body_radius, cant_deg: 0.0 })
 }
 
 #[cfg(test)]
@@ -464,6 +488,18 @@ mod tests {
 
     fn close(a: f64, b: f64, tol: f64) -> bool {
         (a - b).abs() <= tol
+    }
+
+    #[test]
+    fn body_basis_is_right_handed_and_points_to_the_nose() {
+        let fr = Frame { axis_point: [1.0, 2.0, 3.0], aft_direction: [0.0, 0.0, -1.0], nose_offset: 0.4 };
+        let [ex, ey, ez] = fr.body_basis();
+        assert!((ex.cross(ey) - ez).norm() < 1e-12);
+        assert!((ex - Vec3::new(0.0, 0.0, 1.0)).norm() < 1e-12);
+        // The nose tip sits at the body origin; a point 1 m aft has x = -1.
+        let nose = Vec3::new(1.0, 2.0, 3.0 - 0.4);
+        assert!(fr.to_body(nose).norm() < 1e-12);
+        assert!((fr.to_body(nose + Vec3::new(0.0, 0.0, -1.0)).x + 1.0).abs() < 1e-12);
     }
 
     #[test]

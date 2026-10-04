@@ -234,6 +234,7 @@ fn geometry(cfg: &Config) -> Result<Geometry> {
             thickness: 0.0,
             x_le_root: 0.0,
             body_radius: r_body,
+            cant_deg: 0.0,
         });
         f.count = o.count.unwrap_or(f.count);
         f.root_chord = o.root_chord.unwrap_or(f.root_chord);

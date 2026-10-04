@@ -51,7 +51,7 @@
 計算時間の目安
 --------------
 
-サンプル機体での実測値（20 スレッドの CPU）を示す。測定の条件と内訳は :doc:`verification_aero` にまとめてある。
+サンプル機体での測定値（20 スレッドの CPU）を示す。測定の条件と内訳は :ref:`sec-vaero-timing` にまとめてある。
 
 .. list-table::
    :header-rows: 1

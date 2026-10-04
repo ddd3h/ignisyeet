@@ -188,7 +188,7 @@ fn to_arr(c: &AeroCoeffs) -> [f64; 8] {
 }
 
 fn from_arr(a: [f64; 8]) -> AeroCoeffs {
-    AeroCoeffs { cn: a[0], ca_on: a[1], ca_off: a[2], xcp: a[3], cna: a[4], damp: [a[5], a[6], a[7]] }
+    AeroCoeffs { cn: a[0], ca_on: a[1], ca_off: a[2], xcp: a[3], cna: a[4], damp: [a[5], a[6], a[7]], ..Default::default() }
 }
 
 impl Ctx<'_> {
@@ -208,7 +208,7 @@ impl Ctx<'_> {
                 let (cn, mom) = if a == 0.0 { (0.0, 0.0) } else { cn_mom(a) };
                 let xcp = if a == 0.0 || cn.abs() < 1e-12 { x0 } else { mom / cn };
                 let k = axial_alpha_factor(a);
-                AeroCoeffs { cn, ca_on: ca_on * k, ca_off: ca_off * k, xcp, cna, damp }
+                AeroCoeffs { cn, ca_on: ca_on * k, ca_off: ca_off * k, xcp, cna, damp, ..Default::default() }
             })
             .collect()
     }
@@ -449,12 +449,17 @@ pub fn build_table_with_progress(
         length: geom.length,
         machs: machs.clone(),
         alphas_deg: alphas_deg.clone(),
+        fin_cant_ref_deg: geom.fins.as_ref().map_or(0.0, |f| f.cant_deg),
         extrapolation,
+        ..Default::default()
     };
+    // Roll terms (cant forcing, roll damping) come from the component build-up model.
+    let roll = AeroModel::new(geom.clone(), aero.clone());
     let table = AeroTable::from_fn(meta, |m, a| {
         let i = machs.iter().position(|&v| v == m).unwrap();
         let j = alphas_deg.iter().position(|&v| v == a).unwrap();
-        cols[i][j]
+        let (cl_delta, clp) = roll.roll_terms(m);
+        AeroCoeffs { cl_delta, clp, ..cols[i][j] }
     });
     let report = PanelReport { panels: mesh.panels.len(), wake_panels: mesh.wake_panels.len(), solve_seconds, subsonic: summaries, surface_cp };
     progress(PanelStage::Done);

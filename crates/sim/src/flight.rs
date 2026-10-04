@@ -615,6 +615,7 @@ mod tests {
             machs: vec![0.0, 5.0],
             alphas_deg: vec![0.0, 90.0],
             extrapolation: Extrapolation::Clamp,
+            ..Default::default()
         };
         let table = AeroTable::from_fn(meta, |_, _| AeroCoeffs { xcp: 0.5, ..Default::default() });
         let motor = Motor::new("c".into(), 0.05, 0.3, 0.0, vec![(0.0, VAC_F), (VAC_BURN, VAC_F)]);
@@ -731,6 +732,7 @@ mod tests {
             machs: vec![0.0, 5.0],
             alphas_deg: vec![0.0, 90.0],
             extrapolation: Extrapolation::Clamp,
+            ..Default::default()
         };
         let table = AeroTable::from_fn(meta, |_, _| AeroCoeffs { xcp: 0.5, ..Default::default() });
         let (f, burn, m) = (3000.0, 5.0, 10.0);
@@ -915,6 +917,7 @@ mod tests {
             machs: vec![0.0, 5.0],
             alphas_deg: vec![0.0, 90.0],
             extrapolation: Extrapolation::Clamp,
+            ..Default::default()
         };
         let table = AeroTable::from_fn(meta, |_, a| AeroCoeffs { cn: 0.2 * a, cna: 11.0, ca_on: 0.5, ca_off: 0.5, xcp: 1.0, ..Default::default() });
         let motor = Motor::new("s".into(), 0.054, 0.5, 1.0, vec![(0.0, 0.0), (0.1, 800.0), (2.0, 800.0), (2.1, 0.0)]);

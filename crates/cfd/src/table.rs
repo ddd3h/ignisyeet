@@ -287,7 +287,7 @@ pub fn build_from_points(
                 let (cn, mom) = if a == 0.0 { (0.0, 0.0) } else { (cn_p[j].eval(m, linear), mom_p[j].eval(m, linear)) };
                 let xcp = if cn.abs() > 1e-9 { mom / cn } else { xcp0 };
                 let (ca_on, ca_off) = hybrid_axial(flow, model, m, a.to_radians(), ca_p[j].eval(m, linear));
-                AeroCoeffs { cn, ca_on, ca_off, xcp, cna, damp }
+                AeroCoeffs { cn, ca_on, ca_off, xcp, cna, damp, ..Default::default() }
             })
             .collect();
         rows.push(row);
@@ -301,6 +301,7 @@ pub fn build_from_points(
         machs: machs.clone(),
         alphas_deg: alphas.clone(),
         extrapolation,
+        ..Default::default()
     };
     let table = AeroTable::from_fn(meta, |m, a| {
         let i = machs.iter().position(|&v| v == m).unwrap();

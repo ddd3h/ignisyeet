@@ -1,7 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
-//! Pre-computed aerodynamic coefficient table on a (Mach, alpha) grid, with CSV/JSON
-//! persistence and bilinear interpolation / linear extrapolation.
+//! Pre-computed aerodynamic coefficient tables with CSV/JSON persistence.
+//!
+//! Two kinds share one file format (version 2, recorded in the JSON sidecar):
+//!
+//! * **Axisymmetric**: (Mach, total angle of attack) grid with the normal force, axial force,
+//!   centre of pressure and CG-independent damping sums of a body of revolution, plus the roll
+//!   forcing per radian of fin cant and the roll-damping derivative. Bilinear interpolation.
+//! * **General**: (Mach, alpha, beta) grid with the six body-axis coefficients
+//!   CX, CY, CZ, Cl, Cm, Cn (moments about the nose tip, normalised by q S d), the roll terms and
+//!   separate pitch and yaw damping sums. Trilinear interpolation.
+//!
+//! Version-1 files (8 value columns, no version in the sidecar) load as axisymmetric tables with
+//! zero roll terms.
 
 use crate::model::{axial_alpha_factor, AeroModel};
 use anyhow::{bail, Context, Result};
@@ -19,16 +30,71 @@ pub enum Extrapolation {
     Clamp,
 }
 
+/// Current table file format.
+pub const FORMAT_VERSION: u32 = 2;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum TableKind {
+    /// Body of revolution: coefficients of the total angle of attack.
+    #[default]
+    Axisymmetric,
+    /// Six body-axis coefficients of (alpha, beta).
+    General,
+}
+
+fn format_v1() -> u32 {
+    1
+}
+fn nose_tip() -> String {
+    "nose_tip".into()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TableMeta {
+    /// File format version (1 when the sidecar has none).
+    #[serde(default = "format_v1")]
+    pub format_version: u32,
+    #[serde(default)]
+    pub kind: TableKind,
     /// Hash of the inputs (mesh + options) the table was built from.
     pub source_hash: String,
     pub ref_area: f64,
     pub ref_diameter: f64,
     pub length: f64,
     pub machs: Vec<f64>,
+    /// Axisymmetric: total angle of attack 0..alpha_max. General: alpha = atan2(w, u), -180..180.
     pub alphas_deg: Vec<f64>,
+    /// General tables only: sideslip beta = asin(v / V), -90..90.
+    #[serde(default)]
+    pub betas_deg: Vec<f64>,
+    /// Fin cant [deg] already contained in the tabulated roll moment; the flight adds
+    /// `cl_delta * (cant - fin_cant_ref)`.
+    #[serde(default)]
+    pub fin_cant_ref_deg: f64,
+    /// Moment reference point of the tabulated moments.
+    #[serde(default = "nose_tip")]
+    pub moment_ref: String,
     pub extrapolation: Extrapolation,
+}
+
+impl Default for TableMeta {
+    fn default() -> Self {
+        Self {
+            format_version: FORMAT_VERSION,
+            kind: TableKind::Axisymmetric,
+            source_hash: String::new(),
+            ref_area: 0.0,
+            ref_diameter: 0.0,
+            length: 0.0,
+            machs: Vec::new(),
+            alphas_deg: Vec::new(),
+            betas_deg: Vec::new(),
+            fin_cant_ref_deg: 0.0,
+            moment_ref: nose_tip(),
+            extrapolation: Extrapolation::Linear,
+        }
+    }
 }
 
 /// Coefficients at one flight condition.
@@ -43,16 +109,131 @@ pub struct AeroCoeffs {
     pub cna: f64,
     /// Pitch-damping sums Σ CNa_i, Σ CNa_i x_i, Σ CNa_i x_i².
     pub damp: [f64; 3],
+    /// Roll moment per radian of fin cant, d Cl / d delta (Cl normalised by q S d).
+    pub cl_delta: f64,
+    /// Roll-damping derivative d Cl / d p_hat with p_hat = p d / (2 V) (negative).
+    pub clp: f64,
 }
 
-const N_FIELDS: usize = 8;
-const HEADER: &str = "mach,alpha_deg,cn,ca_on,ca_off,xcp,cna,damp_s0,damp_s1,damp_s2";
+/// Six body-axis coefficients and the rate-damping terms at one flight condition.
+///
+/// Body axes: x forward (nose), y and z from [`geom::Frame::body_basis`]. Forces are normalised by
+/// q S, moments by q S d and taken about the nose tip.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct Coeffs6 {
+    pub cx_on: f64,
+    pub cx_off: f64,
+    pub cy: f64,
+    pub cz: f64,
+    pub cl: f64,
+    pub cm: f64,
+    pub cn: f64,
+    /// d Cl / d delta per radian of fin cant (added for cant different from the table reference).
+    pub cl_delta: f64,
+    /// d Cl / d p_hat, p_hat = p d / (2 V).
+    pub clp: f64,
+    /// Pitch-damping sums about the nose (as `AeroCoeffs::damp`, x aft of the nose tip).
+    pub sq: [f64; 3],
+    /// Yaw-damping sums about the nose.
+    pub sr: [f64; 3],
+}
+
+impl Coeffs6 {
+    fn to_arr(self) -> [f64; N_GEN] {
+        let c = self;
+        [c.cx_on, c.cx_off, c.cy, c.cz, c.cl, c.cm, c.cn, c.cl_delta, c.clp, c.sq[0], c.sq[1], c.sq[2], c.sr[0], c.sr[1], c.sr[2]]
+    }
+    fn from_arr(a: [f64; N_GEN]) -> Self {
+        Self {
+            cx_on: a[0],
+            cx_off: a[1],
+            cy: a[2],
+            cz: a[3],
+            cl: a[4],
+            cm: a[5],
+            cn: a[6],
+            cl_delta: a[7],
+            clp: a[8],
+            sq: [a[9], a[10], a[11]],
+            sr: [a[12], a[13], a[14]],
+        }
+    }
+}
+
+const N_FIELDS: usize = 10;
+const N_FIELDS_V1: usize = 8;
+const N_GEN: usize = 15;
+const HEADER: &str = "mach,alpha_deg,cn,ca_on,ca_off,xcp,cna,damp_s0,damp_s1,damp_s2,cl_delta,clp";
+const HEADER_GEN: &str = "mach,alpha_deg,beta_deg,cx_on,cx_off,cy,cz,cl,cm,cn,cl_delta,clp,sq0,sq1,sq2,sr0,sr1,sr2";
+
+#[derive(Debug, Clone)]
+enum TableData {
+    /// Row-major [mach][alpha]: cn, ca_on, ca_off, xcp, cna, s0, s1, s2, cl_delta, clp.
+    Axisymmetric(Vec<[f64; N_FIELDS]>),
+    /// Row-major [mach][alpha][beta]: the fields of [`Coeffs6`].
+    General(Vec<[f64; N_GEN]>),
+}
 
 #[derive(Debug, Clone)]
 pub struct AeroTable {
     pub meta: TableMeta,
-    /// Row-major [mach][alpha][field] values: cn, ca_on, ca_off, xcp, cna, s0, s1, s2.
-    data: Vec<[f64; N_FIELDS]>,
+    data: TableData,
+}
+
+/// Unit vector of the vehicle velocity relative to the air in body axes for alpha and beta [rad]:
+/// (cos b cos a, sin b, cos b sin a).
+pub fn airspeed_direction(alpha: f64, beta: f64) -> [f64; 3] {
+    [beta.cos() * alpha.cos(), beta.sin(), beta.cos() * alpha.sin()]
+}
+
+/// alpha = atan2(w, u) and beta = asin(v / V) of a body-axis airspeed (u, v, w) [rad].
+pub fn aero_angles(u: f64, v: f64, w: f64) -> (f64, f64) {
+    let speed = (u * u + v * v + w * w).sqrt();
+    if speed <= 0.0 {
+        return (0.0, 0.0);
+    }
+    (w.atan2(u), (v / speed).clamp(-1.0, 1.0).asin())
+}
+
+/// Six-component coefficients of an axisymmetric data point at angles (alpha, beta) [rad].
+///
+/// The total angle is the angle between the airspeed and the body axis; the normal force acts
+/// against the crossflow at the centre of pressure, the axial force along the axis (reversed in
+/// backward flight, as in the axisymmetric flight model), and the tabulated roll forcing at the
+/// reference cant.
+pub fn expand_axisymmetric(c: &AeroCoeffs, alpha: f64, beta: f64, ref_diameter: f64, cant_ref_rad: f64) -> Coeffs6 {
+    let [u, v, w] = airspeed_direction(alpha, beta);
+    let lat = v.hypot(w);
+    let (ey, ez) = if lat > 1e-12 { (v / lat, w / lat) } else { (0.0, 0.0) };
+    let sgn = if u >= 0.0 { 1.0 } else { -1.0 };
+    let (cy, cz) = (-c.cn * ey, -c.cn * ez);
+    let d = ref_diameter;
+    Coeffs6 {
+        cx_on: -c.ca_on * sgn,
+        cx_off: -c.ca_off * sgn,
+        cy,
+        cz,
+        cl: c.cl_delta * cant_ref_rad * sgn,
+        cm: c.xcp * cz / d,
+        cn: -c.xcp * cy / d,
+        cl_delta: c.cl_delta,
+        clp: c.clp,
+        sq: c.damp,
+        sr: c.damp,
+    }
+}
+
+/// Non-uniform symmetric angle axis: `fine_step` up to +-`fine_limit`, then `coarse_step` up to +-`limit` [deg].
+pub fn angle_axis(limit: f64, fine_limit: f64, fine_step: f64, coarse_step: f64) -> Vec<f64> {
+    let fine_limit = fine_limit.min(limit);
+    let mut pos = grid(0.0, fine_limit, fine_step);
+    if limit > fine_limit + 1e-9 {
+        let n = ((limit - fine_limit) / coarse_step).ceil().max(1.0) as usize;
+        pos.extend((1..=n).map(|i| fine_limit + (limit - fine_limit) * i as f64 / n as f64));
+    }
+    let mut out: Vec<f64> = pos.iter().skip(1).rev().map(|v| -v).collect();
+    out.extend(pos);
+    out
 }
 
 fn grid(lo: f64, hi: f64, step: f64) -> Vec<f64> {
@@ -76,11 +257,12 @@ impl AeroTable {
             let cd_off = model.cd0(m, false).total();
             let cna = model.cna(m);
             let s = model.damping_sums(m);
+            let roll = model.roll_terms(m);
             for &a in &alphas_deg {
                 let ar = a.to_radians();
                 let (cn, xcp) = if a == 0.0 { (0.0, s[1] / s[0]) } else { model.normal(m, ar) };
                 let k = axial_alpha_factor(ar);
-                data.push([cn, cd_on * k, cd_off * k, xcp, cna, s[0], s[1], s[2]]);
+                data.push([cn, cd_on * k, cd_off * k, xcp, cna, s[0], s[1], s[2], roll.0, roll.1]);
             }
             progress(row + 1, machs.len());
         }
@@ -92,62 +274,178 @@ impl AeroTable {
             length: g.length,
             machs,
             alphas_deg,
+            fin_cant_ref_deg: g.fins.as_ref().map_or(0.0, |f| f.cant_deg),
             extrapolation,
+            ..Default::default()
         };
-        Self { meta, data }
+        Self { meta, data: TableData::Axisymmetric(data) }
     }
 
-    /// Table from an arbitrary function of (Mach, alpha [deg]); used for tests and custom data.
+    /// Axisymmetric table from an arbitrary function of (Mach, alpha [deg]); used for tests and custom data.
     pub fn from_fn(meta: TableMeta, f: impl Fn(f64, f64) -> AeroCoeffs) -> Self {
         let mut data = Vec::new();
         for &m in &meta.machs {
             for &a in &meta.alphas_deg {
                 let c = f(m, a);
-                data.push([c.cn, c.ca_on, c.ca_off, c.xcp, c.cna, c.damp[0], c.damp[1], c.damp[2]]);
+                data.push([c.cn, c.ca_on, c.ca_off, c.xcp, c.cna, c.damp[0], c.damp[1], c.damp[2], c.cl_delta, c.clp]);
             }
         }
-        Self { meta, data }
+        let meta = TableMeta { kind: TableKind::Axisymmetric, format_version: FORMAT_VERSION, ..meta };
+        Self { meta, data: TableData::Axisymmetric(data) }
+    }
+
+    /// General table from a function of (Mach, alpha [deg], beta [deg]) on `meta`'s grid.
+    pub fn general_from_fn(meta: TableMeta, f: impl Fn(f64, f64, f64) -> Coeffs6) -> Self {
+        let mut data = Vec::with_capacity(meta.machs.len() * meta.alphas_deg.len() * meta.betas_deg.len());
+        for &m in &meta.machs {
+            for &a in &meta.alphas_deg {
+                for &b in &meta.betas_deg {
+                    data.push(f(m, a, b).to_arr());
+                }
+            }
+        }
+        let meta = TableMeta { kind: TableKind::General, format_version: FORMAT_VERSION, ..meta };
+        Self { meta, data: TableData::General(data) }
+    }
+
+    pub fn kind(&self) -> TableKind {
+        self.meta.kind
+    }
+
+    /// General table with the same Mach grid on (alphas, betas) [deg], expanded from this
+    /// axisymmetric table (a general table is returned unchanged).
+    pub fn to_general(&self, alphas_deg: Vec<f64>, betas_deg: Vec<f64>) -> AeroTable {
+        if self.meta.kind == TableKind::General {
+            return self.clone();
+        }
+        let meta = TableMeta { alphas_deg, betas_deg, ..self.meta.clone() };
+        let (d, cant) = (self.meta.ref_diameter, self.meta.fin_cant_ref_deg.to_radians());
+        AeroTable::general_from_fn(meta, |m, a, b| {
+            let (ar, br) = (a.to_radians(), b.to_radians());
+            let [u, v, w] = airspeed_direction(ar, br);
+            let total = v.hypot(w).atan2(u);
+            let eff = total.min(std::f64::consts::PI - total);
+            expand_axisymmetric(&self.lookup(m, eff), ar, br, d, cant)
+        })
     }
 
     pub fn save(&self, csv_path: &Path) -> Result<()> {
         let mut f = std::io::BufWriter::new(std::fs::File::create(csv_path).with_context(|| format!("cannot write {}", csv_path.display()))?);
-        writeln!(f, "{HEADER}")?;
         let na = self.meta.alphas_deg.len();
-        for (i, row) in self.data.iter().enumerate() {
-            write!(f, "{},{}", self.meta.machs[i / na], self.meta.alphas_deg[i % na])?;
-            for v in row {
-                write!(f, ",{v:.9e}")?;
+        match &self.data {
+            TableData::Axisymmetric(data) => {
+                writeln!(f, "{HEADER}")?;
+                for (i, row) in data.iter().enumerate() {
+                    write!(f, "{},{}", self.meta.machs[i / na], self.meta.alphas_deg[i % na])?;
+                    for v in row {
+                        write!(f, ",{v:.9e}")?;
+                    }
+                    writeln!(f)?;
+                }
             }
-            writeln!(f)?;
+            TableData::General(data) => {
+                writeln!(f, "{HEADER_GEN}")?;
+                let nb = self.meta.betas_deg.len();
+                for (i, row) in data.iter().enumerate() {
+                    let (im, ia, ib) = (i / (na * nb), (i / nb) % na, i % nb);
+                    write!(f, "{},{},{}", self.meta.machs[im], self.meta.alphas_deg[ia], self.meta.betas_deg[ib])?;
+                    for v in row {
+                        write!(f, ",{v:.9e}")?;
+                    }
+                    writeln!(f)?;
+                }
+            }
         }
-        std::fs::write(csv_path.with_extension("json"), serde_json::to_string_pretty(&self.meta)?)?;
+        let meta = TableMeta { format_version: FORMAT_VERSION, ..self.meta.clone() };
+        std::fs::write(csv_path.with_extension("json"), serde_json::to_string_pretty(&meta)?)?;
         Ok(())
     }
 
+    /// Loads a table; version-1 files (8 value columns) become axisymmetric tables without roll terms.
     pub fn load(csv_path: &Path) -> Result<Self> {
-        let meta: TableMeta = serde_json::from_str(&std::fs::read_to_string(csv_path.with_extension("json"))?)?;
+        let mut meta: TableMeta = serde_json::from_str(&std::fs::read_to_string(csv_path.with_extension("json"))?)?;
         let text = std::fs::read_to_string(csv_path).with_context(|| format!("cannot read {}", csv_path.display()))?;
-        let mut data = Vec::new();
-        for line in text.lines().skip(1).filter(|l| !l.trim().is_empty()) {
-            let v: Vec<f64> = line.split(',').map(|s| s.trim().parse::<f64>()).collect::<Result<_, _>>()?;
-            if v.len() != N_FIELDS + 2 {
-                bail!("bad row in {}: {line}", csv_path.display());
+        let rows = text.lines().skip(1).filter(|l| !l.trim().is_empty()).map(|line| {
+            line.split(',').map(|s| s.trim().parse::<f64>()).collect::<Result<Vec<f64>, _>>().with_context(|| format!("bad row in {}: {line}", csv_path.display()))
+        });
+        let data = match meta.kind {
+            TableKind::Axisymmetric => {
+                let mut data = Vec::new();
+                for v in rows {
+                    let v = v?;
+                    let mut r = [0.0; N_FIELDS];
+                    match v.len() {
+                        n if n == N_FIELDS + 2 => r.copy_from_slice(&v[2..]),
+                        n if n == N_FIELDS_V1 + 2 => r[..N_FIELDS_V1].copy_from_slice(&v[2..]),
+                        _ => bail!("bad row in {}: expected {} or {} values, found {}", csv_path.display(), N_FIELDS_V1 + 2, N_FIELDS + 2, v.len()),
+                    }
+                    data.push(r);
+                }
+                if data.len() != meta.machs.len() * meta.alphas_deg.len() {
+                    bail!("aero table size does not match its metadata");
+                }
+                TableData::Axisymmetric(data)
             }
-            data.push(v[2..].try_into().unwrap());
-        }
-        if data.len() != meta.machs.len() * meta.alphas_deg.len() {
-            bail!("aero table size does not match its metadata");
-        }
+            TableKind::General => {
+                let mut data = Vec::new();
+                for v in rows {
+                    let v = v?;
+                    if v.len() != N_GEN + 3 {
+                        bail!("bad row in {}: expected {} values, found {}", csv_path.display(), N_GEN + 3, v.len());
+                    }
+                    data.push(v[3..].try_into().unwrap());
+                }
+                if data.len() != meta.machs.len() * meta.alphas_deg.len() * meta.betas_deg.len() {
+                    bail!("aero table size does not match its metadata");
+                }
+                TableData::General(data)
+            }
+        };
+        meta.format_version = FORMAT_VERSION;
         Ok(Self { meta, data })
     }
 
-    /// Coefficients at Mach `m` and total angle of attack `alpha` [rad] (≥ 0).
+    /// Fills the roll terms (cant forcing and roll damping) of an axisymmetric table from
+    /// `f(mach) -> (cl_delta, clp)`; used for external tables without roll data.
+    pub fn set_roll_terms(&mut self, f: impl Fn(f64) -> (f64, f64)) {
+        let na = self.meta.alphas_deg.len();
+        match &mut self.data {
+            TableData::Axisymmetric(data) => {
+                for (i, row) in data.iter_mut().enumerate() {
+                    let (cd, cp) = f(self.meta.machs[i / na]);
+                    row[8] = cd;
+                    row[9] = cp;
+                }
+            }
+            TableData::General(data) => {
+                let nb = self.meta.betas_deg.len().max(1);
+                for (i, row) in data.iter_mut().enumerate() {
+                    let (cd, cp) = f(self.meta.machs[i / (na * nb)]);
+                    row[7] = cd;
+                    row[8] = cp;
+                }
+            }
+        }
+    }
+
+    /// True when every roll term of the table is zero (e.g. a version-1 file).
+    pub fn has_roll_terms(&self) -> bool {
+        match &self.data {
+            TableData::Axisymmetric(d) => d.iter().any(|r| r[8] != 0.0 || r[9] != 0.0),
+            TableData::General(d) => d.iter().any(|r| r[7] != 0.0 || r[8] != 0.0),
+        }
+    }
+
+    /// Coefficients at Mach `m` and total angle of attack `alpha` [rad] (≥ 0) of an axisymmetric table.
+    ///
+    /// Panics for a general table; use [`lookup6`](Self::lookup6).
     pub fn lookup(&self, m: f64, alpha: f64) -> AeroCoeffs {
+        let TableData::Axisymmetric(data) = &self.data else { panic!("lookup() on a general aero table") };
         let clamp = self.meta.extrapolation == Extrapolation::Clamp;
         let (i, tm) = locate(&self.meta.machs, m, clamp);
         let (j, ta) = locate(&self.meta.alphas_deg, alpha.abs().to_degrees(), clamp);
         let na = self.meta.alphas_deg.len();
-        let at = |ii: usize, jj: usize| &self.data[ii * na + jj];
+        let at = |ii: usize, jj: usize| &data[ii * na + jj];
         let mut out = [0.0; N_FIELDS];
         let (i1, j1) = ((i + 1).min(self.meta.machs.len() - 1), (j + 1).min(na - 1));
         for (k, o) in out.iter_mut().enumerate() {
@@ -166,11 +464,50 @@ impl AeroTable {
             xcp: out[3],
             cna: out[4],
             damp: [out[5], out[6], out[7]],
+            cl_delta: out[8],
+            clp: out[9],
         }
     }
 
+    /// Six-component coefficients at Mach `m`, alpha = atan2(w, u) and beta = asin(v / V) [rad].
+    ///
+    /// General tables are interpolated trilinearly; axisymmetric tables are expanded from the
+    /// total angle (see [`expand_axisymmetric`]).
+    pub fn lookup6(&self, m: f64, alpha: f64, beta: f64) -> Coeffs6 {
+        let data = match &self.data {
+            TableData::General(d) => d,
+            TableData::Axisymmetric(_) => {
+                let [u, v, w] = airspeed_direction(alpha, beta);
+                let total = v.hypot(w).atan2(u);
+                let eff = total.min(std::f64::consts::PI - total);
+                return expand_axisymmetric(&self.lookup(m, eff), alpha, beta, self.meta.ref_diameter, self.meta.fin_cant_ref_deg.to_radians());
+            }
+        };
+        let clamp = self.meta.extrapolation == Extrapolation::Clamp;
+        let (na, nb) = (self.meta.alphas_deg.len(), self.meta.betas_deg.len());
+        let (i, tm) = locate(&self.meta.machs, m, clamp);
+        let (j, ta) = locate(&self.meta.alphas_deg, alpha.to_degrees(), clamp);
+        let (k, tb) = locate(&self.meta.betas_deg, beta.to_degrees(), clamp);
+        let (i1, j1, k1) = ((i + 1).min(self.meta.machs.len() - 1), (j + 1).min(na - 1), (k + 1).min(nb - 1));
+        let at = |ii: usize, jj: usize, kk: usize| &data[(ii * na + jj) * nb + kk];
+        let mut out = [0.0; N_GEN];
+        for (f, o) in out.iter_mut().enumerate() {
+            let lerp = |a: f64, b: f64, t: f64| a + (b - a) * t;
+            let c = |ii: usize| {
+                let b0 = lerp(at(ii, j, k)[f], at(ii, j, k1)[f], tb);
+                let b1 = lerp(at(ii, j1, k)[f], at(ii, j1, k1)[f], tb);
+                lerp(b0, b1, ta)
+            };
+            *o = lerp(c(i), c(i1), tm);
+        }
+        Coeffs6::from_arr(out)
+    }
+
     pub fn rows(&self) -> usize {
-        self.data.len()
+        match &self.data {
+            TableData::Axisymmetric(d) => d.len(),
+            TableData::General(d) => d.len(),
+        }
     }
 }
 
@@ -235,5 +572,81 @@ mod tests {
         let (a, b) = (t.lookup(1.23, 0.07), u.lookup(1.23, 0.07));
         assert!((a.cn - b.cn).abs() < 1e-7 && (a.xcp - b.xcp).abs() < 1e-7);
         assert_eq!(u.meta.source_hash, "h");
+    }
+
+    #[test]
+    fn loads_version_1_files_without_roll_terms() {
+        let (t, _) = table(Extrapolation::Linear);
+        let dir = std::env::temp_dir().join(format!("ignisyeet_aero_v1_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("t.csv");
+        // Write a version-1 file: 8 value columns and a sidecar without version or kind.
+        let mut csv = String::from("mach,alpha_deg,cn,ca_on,ca_off,xcp,cna,damp_s0,damp_s1,damp_s2\n");
+        let na = t.meta.alphas_deg.len();
+        for i in 0..t.rows() {
+            let (m, a) = (t.meta.machs[i / na], t.meta.alphas_deg[i % na]);
+            let c = t.lookup(m, a.to_radians());
+            csv += &format!("{m},{a},{},{},{},{},{},{},{},{}\n", c.cn, c.ca_on, c.ca_off, c.xcp, c.cna, c.damp[0], c.damp[1], c.damp[2]);
+        }
+        std::fs::write(&p, csv).unwrap();
+        let mut j: serde_json::Value = serde_json::to_value(&t.meta).unwrap();
+        for k in ["format_version", "kind", "betas_deg", "fin_cant_ref_deg", "moment_ref"] {
+            j.as_object_mut().unwrap().remove(k);
+        }
+        std::fs::write(p.with_extension("json"), j.to_string()).unwrap();
+        let u = AeroTable::load(&p).unwrap();
+        assert_eq!(u.kind(), TableKind::Axisymmetric);
+        assert!(!u.has_roll_terms());
+        assert!((u.lookup(0.7, 0.05).cn - t.lookup(0.7, 0.05).cn).abs() < 1e-9);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn general_table_reproduces_axisymmetric_expansion() {
+        let (t, _) = table(Extrapolation::Linear);
+        let g = t.to_general(angle_axis(180.0, 30.0, 2.0, 10.0), angle_axis(90.0, 30.0, 2.0, 10.0));
+        assert_eq!(g.kind(), TableKind::General);
+        // On grid nodes the trilinear lookup equals the expansion.
+        let (m, a, b) = (0.5, 4f64.to_radians(), 0.0);
+        let c6 = g.lookup6(m, a, b);
+        let c = t.lookup(m, a);
+        assert!((c6.cz + c.cn).abs() < 1e-9, "CZ = -CN for pure pitch");
+        assert!(c6.cy.abs() < 1e-12);
+        assert!((c6.cm - c.xcp * c6.cz / t.meta.ref_diameter).abs() < 1e-9);
+        assert!((c6.cx_off + c.ca_off).abs() < 1e-9);
+        // Sideslip: CY odd in beta, Cn = -xcp CY / d; alpha: CZ odd.
+        let p = g.lookup6(0.5, 0.0, 4f64.to_radians());
+        let q = g.lookup6(0.5, 0.0, -4f64.to_radians());
+        assert!((p.cy + q.cy).abs() < 1e-9 && p.cy < 0.0);
+        assert!((p.cn + c.xcp * p.cy / t.meta.ref_diameter).abs() < 1e-9);
+        let r = g.lookup6(0.5, -4f64.to_radians(), 0.0);
+        assert!((r.cz + c6.cz).abs() < 1e-9);
+        // Backward flight (alpha = 180 deg): the axial force reverses.
+        let back = g.lookup6(0.5, std::f64::consts::PI, 0.0);
+        assert!((back.cx_off - c.ca_off.max(0.0) * 0.0 - t.lookup(0.5, 0.0).ca_off).abs() < 1e-9);
+        // Save / load round trip of a general table.
+        let p = std::env::temp_dir().join(format!("ignisyeet_aero_gen_{}.csv", std::process::id()));
+        g.save(&p).unwrap();
+        let u = AeroTable::load(&p).unwrap();
+        let (x, y) = (u.lookup6(0.73, 0.1, -0.05), g.lookup6(0.73, 0.1, -0.05));
+        for (a, b) in x.to_arr().iter().zip(y.to_arr()) {
+            assert!((a - b).abs() <= 1e-8 * b.abs().max(1.0));
+        }
+        let _ = std::fs::remove_file(&p);
+        let _ = std::fs::remove_file(p.with_extension("json"));
+    }
+
+    #[test]
+    fn aero_angles_match_the_direction_vector() {
+        for (a, b) in [(0.3, -0.2), (2.9, 0.4), (-2.5, -1.2)] {
+            let [u, v, w] = airspeed_direction(a, b);
+            let (a2, b2) = aero_angles(3.0 * u, 3.0 * v, 3.0 * w);
+            assert!((a - a2).abs() < 1e-12 && (b - b2).abs() < 1e-12);
+        }
+        let ax = angle_axis(180.0, 30.0, 2.0, 10.0);
+        assert_eq!(ax.first(), Some(&-180.0));
+        assert_eq!(ax.last(), Some(&180.0));
+        assert!(ax.windows(2).all(|w| w[1] > w[0]));
+        assert!(ax.contains(&0.0) && ax.contains(&30.0) && ax.contains(&40.0));
     }
 }

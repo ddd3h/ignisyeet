@@ -966,6 +966,7 @@ mod tests {
             machs: vec![0.0, 1.0],
             alphas_deg: vec![0.0, 10.0],
             extrapolation: aero::Extrapolation::Clamp,
+            ..Default::default()
         };
         AeroTable::from_fn(meta, |_, a| aero::AeroCoeffs { cn: a, ca_off: 0.5, xcp: 0.6, ..Default::default() }).save(&dir.join("cfd.csv")).unwrap();
         let text = include_str!("../../../examples/sample.toml").replace("method = \"barrowman\"", "method = \"table\"\ntable = \"cfd.csv\"");

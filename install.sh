@@ -715,15 +715,15 @@ show_plan() {
   if [ "$ROLE" = user ]; then
     say "  ${GREY}version${RESET}      $VERSION"
     if [ "$SAME_VERSION" = 1 ]; then p "keep ignisyeet $VERSION ${GREY}(already installed)${RESET}"
-    else p "download ${CYAN}ignisyeet-$VERSION-$TARGET.tar.gz${RESET}, verify sha256, install to ${CYAN}$DATA_ROOT/$VERSION${RESET}"
-      p "link ${CYAN}$BIN_DIR/ignisyeet${RESET} and ${CYAN}ignisyeet-plot${RESET}"; fi
+    else p "download ${CYAN}ignisyeet-$VERSION-$TARGET.tar.gz${RESET}, verify sha256, install to ${CYAN}$(tilde "$DATA_ROOT")/$VERSION${RESET}"
+      p "link ${CYAN}$(tilde "$BIN_DIR")/ignisyeet${RESET} and ${CYAN}ignisyeet-plot${RESET}"; fi
     [ "$INSTALL_UV" = 1 ] && p "install ${CYAN}uv${RESET} (astral.sh installer)"
-    if [ "$USE_UV" = 1 ]; then p "plotting env (numpy, pandas, matplotlib) with uv ${GREY}${UV_VER:+(reusing uv $UV_VER)}${RESET} in $VENV_DIR"
-    else p "plotting env with python3 -m venv + pip in $VENV_DIR"; fi
+    if [ "$USE_UV" = 1 ]; then p "plotting env (numpy, pandas, matplotlib) with uv ${GREY}${UV_VER:+(reusing uv $UV_VER)}${RESET} in $(tilde "$VENV_DIR")"
+    else p "plotting env with python3 -m venv + pip in $(tilde "$VENV_DIR")"; fi
   else
-    say "  ${GREY}directory${RESET}    $DEV_DIR"
-    if [ -d "$DEV_DIR/.git" ]; then p "reuse clone ${CYAN}$DEV_DIR${RESET}; ${GREY}git pull --ff-only if clean${RESET}"
-    else p "git clone ${CYAN}$REPO_URL${RESET} -> $DEV_DIR"; fi
+    say "  ${GREY}directory${RESET}    $(tilde "$DEV_DIR")"
+    if [ -d "$DEV_DIR/.git" ]; then p "reuse clone ${CYAN}$(tilde "$DEV_DIR")${RESET}; ${GREY}git pull --ff-only if clean${RESET}"
+    else p "git clone ${CYAN}$REPO_URL${RESET} -> $(tilde "$DEV_DIR")"; fi
     [ -n "$VERSION" ] && p "check out ${CYAN}$VERSION${RESET}"
     if [ "$INSTALL_RUST" = 1 ]; then p "install ${CYAN}Rust${RESET} via rustup (sh.rustup.rs, minimal profile)"
     else p "reuse ${CYAN}cargo $CARGO_VER${RESET}"; fi
@@ -736,9 +736,9 @@ show_plan() {
     else p "documentation tools: ${GREEN}all found${RESET}"; fi
   fi
   case "$CFD_ACTION" in
-    reuse) p "CFD: ${GREEN}reuse${RESET} ${CFD_PREFIX:-$SU2_PATH}" ;;
+    reuse) p "CFD: ${GREEN}reuse${RESET} $(tilde "${CFD_PREFIX:-$SU2_PATH}")" ;;
     create)
-      [ "$CFD_NEED_MM" = 1 ] && p "install ${CYAN}micromamba${RESET} to $BIN_DIR/micromamba"
+      [ "$CFD_NEED_MM" = 1 ] && p "install ${CYAN}micromamba${RESET} to $(tilde "$BIN_DIR")/micromamba"
       p "CFD: create conda-forge env ${CYAN}$CFD_ENV_NAME${RESET} with ${CFD_PACKAGES/su2/${SU2_PIN:-su2}} ${GREY}(~3 GB)${RESET}"
       [ -n "$SU2_PIN" ] && note "no AVX-512 on this CPU: su2 is pinned to 8.3.0 (8.5.0 crashes with SIGILL)" ;;
     none) skip "CFD: not requested" ;;

@@ -2,19 +2,27 @@
 // Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! 6-DoF flight simulation. The integration frame is selected by the Earth model (see
 //! `frame.rs`): a flat local ENU frame (x east, y north, z up) or the rotating ECEF frame.
-//! Body frame: x forward along the axis towards the nose; the rocket is axisymmetric.
+//! Body frame: x forward along the axis towards the nose, y and z the body axes of the aerodynamic
+//! table. Axisymmetric tables use the total angle of attack; general tables the six body-axis
+//! coefficients of (alpha, beta). The mass distribution may carry a full inertia tensor, a lateral
+//! CG offset and a misaligned thrust line.
 
 use crate::env::{is_pos, AtmosphereModel, AttitudeKind, Earth, IntegratorKind, Wind};
 use crate::frame::Frame;
 use crate::integrator::{self, State};
 use crate::stepper::Stepper;
 use crate::motor::Motor;
+use aero::table::{aero_angles, Coeffs6, TableKind};
 use aero::{AeroCoeffs, AeroTable};
 use anyhow::{bail, Result};
 use geom::{Mat3, Quat, Vec3};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Dry mass properties in body axes (x forward). The inertia entries are the elements of the
+/// tensor `I = [[Ixx, Ixy, Ixz], [Ixy, Iyy, Iyz], [Ixz, Iyz, Izz]]` about the dry CG, so
+/// `Ixy = -∫ x y dm` (the classical product of inertia with a minus sign).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
 pub struct MassProperties {
     /// Mass without propellant (including the empty motor casing) [kg].
     pub dry_mass: f64,
@@ -22,8 +30,77 @@ pub struct MassProperties {
     pub cg_dry: f64,
     /// Dry roll inertia about the axis [kg m^2].
     pub ixx_dry: f64,
-    /// Dry pitch/yaw inertia about the dry CG [kg m^2].
+    /// Dry pitch inertia about the dry CG [kg m^2].
     pub iyy_dry: f64,
+    /// Dry yaw inertia [kg m^2]; equal to `iyy_dry` when absent.
+    pub izz_dry: Option<f64>,
+    pub ixy_dry: f64,
+    pub ixz_dry: f64,
+    pub iyz_dry: f64,
+    /// Lateral dry CG offset (y, z) in body axes [m].
+    pub cg_lateral_dry: [f64; 2],
+}
+
+impl MassProperties {
+    /// Axisymmetric mass properties.
+    pub fn axisymmetric(dry_mass: f64, cg_dry: f64, ixx_dry: f64, iyy_dry: f64) -> Self {
+        Self { dry_mass, cg_dry, ixx_dry, iyy_dry, ..Default::default() }
+    }
+
+    /// Dry inertia tensor about the dry CG.
+    pub fn dry_tensor(&self) -> Mat3 {
+        let izz = self.izz_dry.unwrap_or(self.iyy_dry);
+        Mat3([[self.ixx_dry, self.ixy_dry, self.ixz_dry], [self.ixy_dry, self.iyy_dry, self.iyz_dry], [self.ixz_dry, self.iyz_dry, izz]])
+    }
+
+    /// True when the rocket is a plain body of revolution (no products, Iyy = Izz, CG on the axis).
+    pub fn is_axisymmetric(&self) -> bool {
+        self.ixy_dry == 0.0
+            && self.ixz_dry == 0.0
+            && self.iyz_dry == 0.0
+            && self.izz_dry.map_or(true, |z| z == self.iyy_dry)
+            && self.cg_lateral_dry == [0.0, 0.0]
+    }
+}
+
+/// Mass, CG and inertia at one instant (body axes, tensor about the instantaneous CG).
+#[derive(Debug, Clone, Copy)]
+pub struct MassState {
+    pub m: f64,
+    /// CG aft of the nose tip [m].
+    pub x_cg: f64,
+    /// Lateral CG offset (y, z) in body axes [m].
+    pub cg_lat: [f64; 2],
+    pub inertia: Mat3,
+    /// Inverse of `inertia` (general case only).
+    pub inv: Option<Mat3>,
+    /// True when the tensor is diag(Ixx, Iyy, Iyy) and the CG is on the axis.
+    pub diagonal: bool,
+}
+
+/// Thrust line of the motor: a direction error and an offset of the nozzle-exit point.
+///
+/// The thrust direction in body axes is `(cos e, sin e cos f, sin e sin f)` with `e` the
+/// misalignment and `f` its azimuth from +y_b towards +z_b.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq)]
+#[serde(default)]
+pub struct ThrustLine {
+    pub misalignment_deg: f64,
+    pub misalignment_azimuth_deg: f64,
+    /// Nozzle-exit point (y, z) in body axes [m].
+    pub offset: [f64; 2],
+}
+
+impl ThrustLine {
+    pub fn is_aligned(&self) -> bool {
+        self.misalignment_deg == 0.0 && self.offset == [0.0, 0.0]
+    }
+    /// Unit thrust direction in body axes.
+    pub fn direction(&self) -> Vec3 {
+        let (se, ce) = self.misalignment_deg.to_radians().sin_cos();
+        let (sf, cf) = self.misalignment_azimuth_deg.to_radians().sin_cos();
+        Vec3::new(ce, se * cf, se * sf)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,6 +114,9 @@ pub struct Launch {
     pub elevation_deg: f64,
     /// Rail azimuth, clockwise from north [deg].
     pub azimuth_deg: f64,
+    /// Roll of the body about the rail axis [deg]; 0 puts +y_b horizontal.
+    #[serde(default)]
+    pub roll_deg: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -98,6 +178,19 @@ impl Default for AeroScale {
     }
 }
 
+/// Inertia tensor of a point mass `m` at offset `d` from the reference point: m (|d|^2 E - d d^T).
+pub fn parallel_axis(m: f64, d: Vec3) -> Mat3 {
+    let d2 = d.dot(d);
+    let v = [d.x, d.y, d.z];
+    let mut r = [[0.0; 3]; 3];
+    for (i, row) in r.iter_mut().enumerate() {
+        for (j, e) in row.iter_mut().enumerate() {
+            *e = m * (if i == j { d2 } else { 0.0 } - v[i] * v[j]);
+        }
+    }
+    Mat3(r)
+}
+
 #[derive(Clone)]
 pub struct Simulation<'a> {
     pub table: &'a AeroTable,
@@ -113,6 +206,10 @@ pub struct Simulation<'a> {
     pub settings: Settings,
     /// Multipliers on the table coefficients (default 1).
     pub aero_scale: AeroScale,
+    /// Thrust misalignment and nozzle offset.
+    pub thrust_line: ThrustLine,
+    /// Fin cant [deg]; the roll forcing is `cl_delta * (cant - table.fin_cant_ref_deg)` on top of the table.
+    pub fin_cant_deg: f64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -144,6 +241,14 @@ pub struct Sample {
     pub wx: f64,
     pub wy: f64,
     pub wz: f64,
+    /// Sideslip asin(v / V) in body axes [deg].
+    pub beta_deg: f64,
+    /// Body roll rate [rad/s] (relative to the integration frame).
+    pub roll_rate: f64,
+    /// Total roll-moment coefficient applied (forcing and damping).
+    pub cl: f64,
+    /// Side-force coefficient (body y).
+    pub cy: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -194,6 +299,9 @@ struct Aux {
     qdyn: f64,
     cn: f64,
     ca: f64,
+    beta: f64,
+    cl: f64,
+    cy: f64,
 }
 
 /// Per-run constants of the dynamics: integration frame and rail direction in that frame.
@@ -216,7 +324,13 @@ impl<'a> Simulation<'a> {
         let az = self.launch.azimuth_deg.to_radians();
         let yb = fr.from_launch_enu(Vec3::new(az.cos(), -az.sin(), 0.0));
         let zb = xb.cross(yb);
-        Quat::from_mat(&Mat3::from_cols(xb, yb, zb))
+        if self.launch.roll_deg == 0.0 {
+            return Quat::from_mat(&Mat3::from_cols(xb, yb, zb));
+        }
+        // Roll about the rail axis: y' = cos y + sin z, z' = x cross y'.
+        let (sr, cr) = self.launch.roll_deg.to_radians().sin_cos();
+        let yr = yb * cr + zb * sr;
+        Quat::from_mat(&Mat3::from_cols(xb, yr, xb.cross(yr)))
     }
 
     /// Table lookup with the dispersion multipliers applied.
@@ -231,44 +345,88 @@ impl<'a> Simulation<'a> {
         c
     }
 
-    /// Mass, CG and inertias (Ixx, Iyy) at time t.
-    fn mass_at(&self, t: f64) -> (f64, f64, f64, f64) {
+    /// General-table lookup with the dispersion multipliers applied (`cn` scales every normal-force
+    /// and moment coefficient and the damping sums, `ca` the axial force).
+    fn lookup6(&self, mach: f64, alpha: f64, beta: f64) -> Coeffs6 {
+        let mut c = self.table.lookup6(mach, alpha, beta);
+        let AeroScale { cn, ca } = self.aero_scale;
+        c.cy *= cn;
+        c.cz *= cn;
+        c.cm *= cn;
+        c.cn *= cn;
+        c.sq = c.sq.map(|d| d * cn);
+        c.sr = c.sr.map(|d| d * cn);
+        c.cx_on *= ca;
+        c.cx_off *= ca;
+        c
+    }
+
+    /// Effective centre of pressure [m aft of the nose] of the transverse force of a general table:
+    /// from Cm = x_cp Cz / d and Cn = -x_cp Cy / d. Near zero transverse force the value at 0.5 deg
+    /// angle of attack is used.
+    fn eff_xcp(&self, c: &Coeffs6, mach: f64) -> Option<f64> {
+        let d = self.table.meta.ref_diameter;
+        let of = |c: &Coeffs6| {
+            let t2 = c.cy * c.cy + c.cz * c.cz;
+            (t2 > 1e-12).then(|| d * (c.cm * c.cz - c.cn * c.cy) / t2)
+        };
+        of(c).or_else(|| of(&self.lookup6(mach, 0.5f64.to_radians(), 0.0)))
+    }
+
+    /// Mass, CG and inertia at time t.
+    fn mass_at(&self, t: f64) -> MassState {
         let m = &self.mass;
         let mp = self.motor.propellant_left(t);
         let total = m.dry_mass + mp;
         let xp = self.motor_aft_x - 0.5 * self.motor.length;
         let xcg = (m.dry_mass * m.cg_dry + mp * xp) / total;
         let r = 0.5 * self.motor.diameter;
-        let iyy = m.iyy_dry
-            + m.dry_mass * (m.cg_dry - xcg).powi(2)
-            + mp * (3.0 * r * r + self.motor.length.powi(2)) / 12.0
-            + mp * (xp - xcg).powi(2);
-        let ixx = m.ixx_dry + 0.5 * mp * r * r;
-        (total, xcg, ixx, iyy)
+        if m.is_axisymmetric() {
+            let iyy = m.iyy_dry
+                + m.dry_mass * (m.cg_dry - xcg).powi(2)
+                + mp * (3.0 * r * r + self.motor.length.powi(2)) / 12.0
+                + mp * (xp - xcg).powi(2);
+            let ixx = m.ixx_dry + 0.5 * mp * r * r;
+            return MassState { m: total, x_cg: xcg, cg_lat: [0.0, 0.0], inertia: Mat3::diag(ixx, iyy, iyy), inv: None, diagonal: true };
+        }
+        // Body coordinates of the parts (x forward): dry CG (-cg_dry, ly, lz), propellant (-xp, 0, 0).
+        let lat = [m.dry_mass * m.cg_lateral_dry[0] / total, m.dry_mass * m.cg_lateral_dry[1] / total];
+        let d_dry = Vec3::new(xcg - m.cg_dry, m.cg_lateral_dry[0] - lat[0], m.cg_lateral_dry[1] - lat[1]);
+        let d_p = Vec3::new(xcg - xp, -lat[0], -lat[1]);
+        let iyy_p = mp * (3.0 * r * r + self.motor.length.powi(2)) / 12.0;
+        let prop = Mat3::diag(0.5 * mp * r * r, iyy_p, iyy_p);
+        let inertia = m.dry_tensor().add(&parallel_axis(m.dry_mass, d_dry)).add(&prop).add(&parallel_axis(mp, d_p));
+        MassState { m: total, x_cg: xcg, cg_lat: lat, inertia, inv: inertia.inverse(), diagonal: false }
     }
 
     /// State derivative. The frame supplies gravity, the apparent (Coriolis/centrifugal)
     /// accelerations, the local vertical for height and the ENU basis for the wind.
     fn deriv(&self, cx: &Ctx, t: f64, s: &State, phase: Phase) -> (State, Aux) {
         let thrust = self.motor.thrust(t);
-        let (mass, x_cg, ixx, iyy) = self.mass_at(t);
+        let ms = self.mass_at(t);
+        let (mass, x_cg) = (ms.m, ms.x_cg);
         let fr = &cx.frame;
         let loc = fr.local(s.pos);
         let atm = self.atmosphere.at(self.launch.altitude + loc.height);
         let g = fr.gravity(s.pos, &loc, &self.earth) + fr.apparent_accel(s.pos, s.vel);
         let zero = State::ZERO_DERIV;
         let s_ref = self.table.meta.ref_area;
-        let mut aux = Aux { thrust, mass, x_cg, x_cp: 0.0, airspeed: 0.0, mach: 0.0, alpha: 0.0, qdyn: 0.0, cn: 0.0, ca: 0.0 };
+        let mut aux = Aux { thrust, mass, x_cg, x_cp: 0.0, airspeed: 0.0, mach: 0.0, alpha: 0.0, qdyn: 0.0, cn: 0.0, ca: 0.0, beta: 0.0, cl: 0.0, cy: 0.0 };
 
         match phase {
             Phase::Rail => {
                 let d = cx.rail;
                 let v = s.vel.dot(d);
                 let mach = v.abs() / atm.sound_speed;
-                let c = self.lookup(mach, 0.0);
-                let ca = if thrust > 0.0 { c.ca_on } else { c.ca_off };
+                let (ca, x_cp) = if self.table.kind() == TableKind::General {
+                    let c = self.lookup6(mach, 0.0, 0.0);
+                    (-(if thrust > 0.0 { c.cx_on } else { c.cx_off }), self.eff_xcp(&c, mach).unwrap_or(f64::NAN))
+                } else {
+                    let c = self.lookup(mach, 0.0);
+                    (if thrust > 0.0 { c.ca_on } else { c.ca_off }, c.xcp)
+                };
                 let qd = 0.5 * atm.density * v * v;
-                let mut a = (thrust - ca * qd * s_ref * v.signum()) / mass + g.dot(d);
+                let mut a = (thrust * self.thrust_line.direction().x - ca * qd * s_ref * v.signum()) / mass + g.dot(d);
                 if v <= 0.0 && a < 0.0 {
                     a = 0.0;
                 }
@@ -276,7 +434,7 @@ impl<'a> Simulation<'a> {
                 aux.mach = mach;
                 aux.qdyn = qd;
                 aux.ca = ca;
-                aux.x_cp = c.xcp;
+                aux.x_cp = x_cp;
                 (State { pos: s.vel, vel: d * a, ..zero }, aux)
             }
             Phase::Free => {
@@ -286,25 +444,73 @@ impl<'a> Simulation<'a> {
                 let v = ub.norm();
                 let mut f_body = Vec3::new(thrust, 0.0, 0.0);
                 let mut m_body = Vec3::ZERO;
+                let tl = &self.thrust_line;
+                if !(tl.is_aligned() && ms.cg_lat == [0.0, 0.0]) {
+                    // Thrust along the misaligned line through the nozzle-exit point; its moment about the CG.
+                    let ft = tl.direction() * thrust;
+                    let r_n = Vec3::new(-self.motor_aft_x, tl.offset[0], tl.offset[1]);
+                    let r_cg = Vec3::new(-x_cg, ms.cg_lat[0], ms.cg_lat[1]);
+                    f_body = ft;
+                    m_body += (r_n - r_cg).cross(ft);
+                }
                 if v > 1e-6 {
                     let lat = ub.y.hypot(ub.z);
                     let alpha = lat.atan2(ub.x);
+                    let beta = (ub.y / v).clamp(-1.0, 1.0).asin();
+                    let d_ref = self.table.meta.ref_diameter;
+                    let d_cant = (self.fin_cant_deg - self.table.meta.fin_cant_ref_deg).to_radians();
+                    let p_hat = s.w.x * d_ref / (2.0 * v);
+                    if self.table.kind() == TableKind::General {
+                        // Six body-axis coefficients of (alpha, beta); no tail-first mirroring.
+                        let (alpha_g, beta_g) = aero_angles(ub.x, ub.y, ub.z);
+                        let mach = v / atm.sound_speed;
+                        let c = self.lookup6(mach, alpha_g, beta_g);
+                        let qd = 0.5 * atm.density * v * v;
+                        let qs = qd * s_ref;
+                        let cx = if thrust > 0.0 { c.cx_on } else { c.cx_off };
+                        let f_aero = Vec3::new(cx, c.cy, c.cz) * qs;
+                        f_body += f_aero;
+                        let cl = c.cl + c.cl_delta * d_cant + c.clp * p_hat;
+                        // Table moments are about the nose tip; transfer to the CG at (-x_cg, y, z).
+                        m_body += Vec3::new(cl, c.cm, c.cn) * (qs * d_ref) + Vec3::new(x_cg, -ms.cg_lat[0], -ms.cg_lat[1]).cross(f_aero);
+                        // Rate damping about the CG from the sums about the nose; the lateral CG
+                        // offset is neglected here.
+                        let kq = (c.sq[2] - 2.0 * x_cg * c.sq[1] + x_cg * x_cg * c.sq[0]).max(0.0);
+                        let kr = (c.sr[2] - 2.0 * x_cg * c.sr[1] + x_cg * x_cg * c.sr[0]).max(0.0);
+                        m_body += Vec3::new(0.0, -s.w.y * kq, -s.w.z * kr) * (qs / v);
+                        // Effective centre of pressure of the transverse force (for the stability margin).
+                        let x_cp = self.eff_xcp(&c, mach).unwrap_or(f64::NAN);
+                        aux = Aux { airspeed: v, mach, alpha, qdyn: qd, cn: c.cy.hypot(c.cz), ca: -cx, x_cp, beta, cl, cy: c.cy, ..aux };
+                    } else {
                     // Tail-first flight (alpha > 90 deg) mirrors the nose-first coefficients.
                     let alpha_eff = alpha.min(std::f64::consts::PI - alpha);
                     let mach = v / atm.sound_speed;
                     let c = self.lookup(mach, alpha_eff);
                     let qd = 0.5 * atm.density * v * v;
                     let ca = if thrust > 0.0 { c.ca_on } else { c.ca_off };
-                    f_body += Vec3::new(-ca * qd * s_ref * ub.x.signum(), 0.0, 0.0);
+                    let axial = Vec3::new(-ca * qd * s_ref * ub.x.signum(), 0.0, 0.0);
+                    f_body += axial;
+                    let mut f_aero = axial;
                     if lat > 1e-12 {
                         let fn_b = Vec3::new(0.0, -ub.y / lat, -ub.z / lat) * (c.cn * qd * s_ref);
                         f_body += fn_b;
+                        f_aero += fn_b;
                         m_body += Vec3::new(x_cg - c.xcp, 0.0, 0.0).cross(fn_b);
                     }
                     let [s0, s1, s2] = c.damp;
                     let k = (s2 - 2.0 * x_cg * s1 + x_cg * x_cg * s0).max(0.0);
                     m_body += Vec3::new(0.0, s.w.y, s.w.z) * (-qd * s_ref * k / v);
-                    aux = Aux { airspeed: v, mach, alpha, qdyn: qd, cn: c.cn, ca, x_cp: c.xcp, ..aux };
+                    // Roll: the tabulated forcing at the reference cant (zero for a rocket without
+                    // cant), the change of cant and the roll damping.
+                    let sgn = if ub.x >= 0.0 { 1.0 } else { -1.0 };
+                    let cl = c.cl_delta * (self.table.meta.fin_cant_ref_deg.to_radians() * sgn + d_cant) + c.clp * p_hat;
+                    m_body += Vec3::new(qd * s_ref * d_ref * cl, 0.0, 0.0);
+                    if ms.cg_lat != [0.0, 0.0] {
+                        // The aerodynamic force acts on the axis; the CG is off it.
+                        m_body += Vec3::new(0.0, -ms.cg_lat[0], -ms.cg_lat[1]).cross(f_aero);
+                    }
+                    aux = Aux { airspeed: v, mach, alpha, qdyn: qd, cn: c.cn, ca, x_cp: c.xcp, beta, cl, cy: 0.0, ..aux };
+                    }
                 }
                 let acc = rot.mul_vec(f_body) / mass + g;
                 // `s.w` is the angular velocity relative to the frame; the Euler equations need the
@@ -312,9 +518,16 @@ impl<'a> Simulation<'a> {
                 // dw_rel/dt = dw_inertial/dt + w_rel x (R^T Omega).
                 let om_b = rot.transpose_mul_vec(fr.omega());
                 let wi = s.w + om_b;
-                let iw = Vec3::new(ixx * wi.x, iyy * wi.y, iyy * wi.z);
-                let gyro = wi.cross(iw);
-                let dwi = Vec3::new((m_body.x - gyro.x) / ixx, (m_body.y - gyro.y) / iyy, (m_body.z - gyro.z) / iyy);
+                let dwi = if ms.diagonal {
+                    let (ixx, iyy) = (ms.inertia.0[0][0], ms.inertia.0[1][1]);
+                    let iw = Vec3::new(ixx * wi.x, iyy * wi.y, iyy * wi.z);
+                    let gyro = wi.cross(iw);
+                    Vec3::new((m_body.x - gyro.x) / ixx, (m_body.y - gyro.y) / iyy, (m_body.z - gyro.z) / iyy)
+                } else {
+                    // Full tensor: dw = I^-1 (M - w x I w).
+                    let gyro = wi.cross(ms.inertia.mul_vec(wi));
+                    ms.inv.unwrap_or(Mat3::identity()).mul_vec(m_body - gyro)
+                };
                 let dw = dwi + s.w.cross(om_b);
                 (State { pos: s.vel, vel: acc, q: s.q.derivative(s.w), w: dw }, aux)
             }
@@ -366,6 +579,10 @@ impl<'a> Simulation<'a> {
             wx: s.w.x,
             wy: s.w.y,
             wz: s.w.z,
+            beta_deg: aux.beta.to_degrees(),
+            roll_rate: s.w.x,
+            cl: aux.cl,
+            cy: aux.cy,
         }
     }
 
@@ -591,7 +808,7 @@ mod tests {
     use geom::{extract, ExtractOptions};
 
     fn launch(elev: f64) -> Launch {
-        Launch { latitude: 35.0, longitude: 139.0, altitude: 0.0, rail_length: 3.0, elevation_deg: elev, azimuth_deg: 0.0 }
+        Launch { latitude: 35.0, longitude: 139.0, altitude: 0.0, rail_length: 3.0, elevation_deg: elev, azimuth_deg: 0.0, roll_deg: 0.0 }
     }
 
     fn wind(speed: f64) -> Wind {
@@ -625,7 +842,7 @@ mod tests {
     fn vacuum_sim<'a>(table: &'a AeroTable, motor: &'a Motor) -> Simulation<'a> {
         Simulation {
             table,
-            mass: MassProperties { dry_mass: VAC_M, cg_dry: 0.5, ixx_dry: 0.01, iyy_dry: 1.0 },
+            mass: MassProperties::axisymmetric(VAC_M, 0.5, 0.01, 1.0),
             motor,
             motor_aft_x: 1.0,
             launch: launch(90.0),
@@ -635,6 +852,8 @@ mod tests {
             earth: Earth::default(),
             settings: settings(),
             aero_scale: AeroScale::default(),
+            thrust_line: ThrustLine::default(),
+            fin_cant_deg: 0.0,
         }
     }
 
@@ -653,7 +872,7 @@ mod tests {
     fn sample_sim<'a>(table: &'a AeroTable, motor: &'a Motor, wind: f64) -> Simulation<'a> {
         Simulation {
             table,
-            mass: MassProperties { dry_mass: 8.0, cg_dry: 0.85, ixx_dry: 0.02, iyy_dry: 1.5 },
+            mass: MassProperties::axisymmetric(8.0, 0.85, 0.02, 1.5),
             motor,
             motor_aft_x: 1.5,
             launch: launch(85.0),
@@ -663,6 +882,8 @@ mod tests {
             earth: Earth::default(),
             settings: settings(),
             aero_scale: AeroScale::default(),
+            thrust_line: ThrustLine::default(),
+            fin_cant_deg: 0.0,
         }
     }
 
@@ -935,5 +1156,215 @@ mod tests {
                 assert!((a.summary.apogee - d.summary.apogee).abs() < 0.05);
             }
         }
+    }
+
+    // ---- roll, full inertia tensor, thrust misalignment, general tables ----
+
+    fn roll_meta(machs: Vec<f64>) -> TableMeta {
+        TableMeta { ref_area: 0.01, ref_diameter: 0.1, length: 1.0, machs, alphas_deg: vec![0.0, 90.0], extrapolation: Extrapolation::Clamp, ..Default::default() }
+    }
+
+    /// Vertical powered flight in a table with only roll terms; the roll inertia is small so the
+    /// roll rate follows the quasi-steady value.
+    fn roll_sim<'a>(table: &'a AeroTable, motor: &'a Motor, cant: f64) -> Simulation<'a> {
+        let mut sim = vacuum_sim(table, motor);
+        sim.mass = MassProperties::axisymmetric(VAC_M, 0.5, 0.001, 1.0);
+        sim.fin_cant_deg = cant;
+        sim
+    }
+
+    /// Steady roll rate p = -2 V Cl / (Clp d) for the total roll coefficient Cl; checked on the samples
+    /// of the second half of the burn.
+    fn check_steady_roll(sim: &Simulation, cl_total: f64, clp: f64) {
+        let r = sim.run(Descent::Ballistic, true).unwrap();
+        let d = sim.table.meta.ref_diameter;
+        let mut n = 0;
+        for smp in r.samples.iter().filter(|s| s.t > 1.2 && s.t < 1.9) {
+            let expect = -2.0 * smp.airspeed * cl_total / (clp * d);
+            assert!((smp.roll_rate / expect - 1.0).abs() < 0.08, "t {}: p {} vs {}", smp.t, smp.roll_rate, expect);
+            n += 1;
+        }
+        assert!(n > 5);
+    }
+
+    #[test]
+    fn axisymmetric_cant_gives_steady_roll_rate() {
+        let (cl_delta, clp, cant) = (2.0, -20.0, 1.5f64);
+        let meta = roll_meta(vec![0.0, 5.0]);
+        let table = AeroTable::from_fn(meta, |_, _| AeroCoeffs { xcp: 0.5, cl_delta, clp, ..Default::default() });
+        let (_, motor) = vacuum_parts();
+        check_steady_roll(&roll_sim(&table, &motor, cant), cl_delta * cant.to_radians(), clp);
+    }
+
+    #[test]
+    fn general_table_roll_adds_only_the_cant_difference() {
+        let (cl_delta, clp, cl0) = (2.0, -20.0, 0.3);
+        let mut meta = roll_meta(vec![0.0, 5.0]);
+        meta.alphas_deg = vec![-180.0, -90.0, 0.0, 90.0, 180.0];
+        meta.betas_deg = vec![-90.0, 0.0, 90.0];
+        meta.fin_cant_ref_deg = 2.0;
+        let table = AeroTable::general_from_fn(meta, |_, _, _| aero::table::Coeffs6 { cl: cl0, cl_delta, clp, ..Default::default() });
+        let (_, motor) = vacuum_parts();
+        // delta = delta_ref: the table value alone; otherwise the cant difference is added.
+        check_steady_roll(&roll_sim(&table, &motor, 2.0), cl0, clp);
+        check_steady_roll(&roll_sim(&table, &motor, 3.0), cl0 + cl_delta * 1.0f64.to_radians(), clp);
+    }
+
+    #[test]
+    fn axisymmetric_reference_cant_with_equal_cant_keeps_table_roll() {
+        let (cl_delta, clp) = (2.0, -20.0);
+        let mut meta = roll_meta(vec![0.0, 5.0]);
+        meta.fin_cant_ref_deg = 2.0;
+        let table = AeroTable::from_fn(meta, |_, _| AeroCoeffs { xcp: 0.5, cl_delta, clp, ..Default::default() });
+        let (_, motor) = vacuum_parts();
+        check_steady_roll(&roll_sim(&table, &motor, 2.0), cl_delta * 2.0f64.to_radians(), clp);
+    }
+
+    #[test]
+    fn point_mass_inertia_sign() {
+        // A point mass at (x, y, 0): tensor element Ixy = -m x y (and Ixx = m y^2, Iyy = m x^2).
+        let (m, x, y) = (2.0, 0.3, -0.2);
+        let i = parallel_axis(m, Vec3::new(x, y, 0.0));
+        assert!((i.0[0][1] + m * x * y).abs() < 1e-15 && (i.0[1][0] - i.0[0][1]).abs() < 1e-15);
+        assert!((i.0[0][0] - m * y * y).abs() < 1e-15 && (i.0[1][1] - m * x * x).abs() < 1e-15);
+        assert!((i.0[2][2] - m * (x * x + y * y)).abs() < 1e-15);
+    }
+
+    #[test]
+    fn off_axis_dry_cg_gives_product_of_inertia_with_propellant() {
+        let (table, _) = vacuum_parts();
+        let motor = Motor::new("c".into(), 0.05, 0.3, 1.0, vec![(0.0, VAC_F), (VAC_BURN, VAC_F)]);
+        let mut sim = vacuum_sim(&table, &motor);
+        sim.mass = MassProperties { dry_mass: 10.0, cg_dry: 0.5, ixx_dry: 0.01, iyy_dry: 1.0, cg_lateral_dry: [0.02, 0.0], ..Default::default() };
+        let ms = sim.mass_at(0.0);
+        assert!(!ms.diagonal);
+        let mp = motor.propellant_left(0.0);
+        let total = 10.0 + mp;
+        let xp = sim.motor_aft_x - 0.5 * motor.length;
+        let lat = 10.0 * 0.02 / total;
+        assert!((ms.cg_lat[0] - lat).abs() < 1e-15);
+        // Ixy = -sum m dx dy about the common CG, d = r - r_cg in body axes (x = -aft).
+        let (dx_d, dy_d) = (ms.x_cg - 0.5, 0.02 - lat);
+        let (dx_p, dy_p) = (ms.x_cg - xp, -lat);
+        let expect = -(10.0 * dx_d * dy_d + mp * dx_p * dy_p);
+        assert!((ms.inertia.0[0][1] - expect).abs() < 1e-12, "{} vs {expect}", ms.inertia.0[0][1]);
+        assert!(ms.inertia.0[0][1] != 0.0);
+        assert!(ms.inertia.det() > 0.0);
+    }
+
+    /// Integrates the torque-free rotation of a state with the given integrator.
+    fn spin_free(sim: &Simulation, i: IntegratorKind, at: AttitudeKind, w0: Vec3, tend: f64) -> (State, Vec3, f64) {
+        let cx = Ctx { frame: Frame::new(&sim.earth, &sim.launch), rail: Vec3::new(0.0, 0.0, 1.0) };
+        let stepper = Stepper::new(i, at);
+        let t0 = 100.0; // after burnout: no thrust, no propellant
+        let mut s = State { pos: cx.frame.origin(), vel: Vec3::ZERO, q: Quat::IDENTITY, w: w0 };
+        let mut f = |tt: f64, st: &State| sim.deriv(&cx, tt, st, Phase::Free);
+        let mut t = 0.0;
+        let mut h: f64 = 0.002;
+        let (rtol, atol) = (1e-10, 1e-10);
+        while t < tend - 1e-12 {
+            let (k1, _) = f(t0 + t, &s);
+            let hh = h.min(tend - t);
+            let st = stepper.step(&mut f, t0 + t, &s, &k1, hh, rtol, atol, true);
+            if !stepper.adaptive() {
+                s = st.y;
+                t += hh;
+            } else if st.err <= 1.0 {
+                s = st.y;
+                t += hh;
+                h = (hh * stepper.factor(st.err)).min(0.05);
+            } else {
+                h = hh * stepper.factor(st.err);
+            }
+        }
+        let inertia = sim.mass_at(t0).inertia;
+        // Inertial angular momentum, expressed in the frame.
+        let l = s.q.to_mat().mul_vec(inertia.mul_vec(s.w));
+        let e = 0.5 * s.w.dot(inertia.mul_vec(s.w));
+        (s, l, e)
+    }
+
+    #[test]
+    fn torque_free_asymmetric_body_conserves_energy_and_momentum() {
+        let (table, motor) = vacuum_parts();
+        let mut sim = vacuum_sim(&table, &motor);
+        sim.mass = MassProperties { dry_mass: 5.0, cg_dry: 0.5, ixx_dry: 0.02, iyy_dry: 1.5, izz_dry: Some(1.8), ixy_dry: 0.05, ixz_dry: -0.03, iyz_dry: 0.1, cg_lateral_dry: [0.01, -0.02] };
+        assert!(sim.mass_at(100.0).inertia.det() > 0.0);
+        let w0 = Vec3::new(0.5, 3.0, 0.4);
+        let l0 = sim.mass_at(100.0).inertia.mul_vec(w0).norm();
+        let e0 = 0.5 * w0.dot(sim.mass_at(100.0).inertia.mul_vec(w0));
+        for (i, at) in COMBOS {
+            let (s, l, e) = spin_free(&sim, i, at, w0, 60.0);
+            println!("{i:?}/{at:?}: |L| {:e} E {:e} |w| {}", l.norm() / l0 - 1.0, e / e0 - 1.0, s.w.norm());
+            assert!((l.norm() / l0 - 1.0).abs() < 1e-6, "{i:?}/{at:?} |L|");
+            assert!((e / e0 - 1.0).abs() < 1e-6, "{i:?}/{at:?} energy");
+        }
+    }
+
+    #[test]
+    fn misaligned_thrust_points_along_azimuth_and_pitches() {
+        let (table, motor) = vacuum_parts();
+        let aligned = vacuum_sim(&table, &motor);
+        let mut mis = aligned.clone();
+        mis.thrust_line = ThrustLine { misalignment_deg: 2.0, misalignment_azimuth_deg: 90.0, offset: [0.0, 0.0] };
+        let cx = Ctx { frame: Frame::new(&aligned.earth, &aligned.launch), rail: Vec3::new(0.0, 0.0, 1.0) };
+        let s = State { pos: cx.frame.origin(), vel: Vec3::ZERO, q: Quat::IDENTITY, w: Vec3::ZERO };
+        let (a, _) = aligned.deriv(&cx, 1.0, &s, Phase::Free);
+        let (b, _) = mis.deriv(&cx, 1.0, &s, Phase::Free);
+        let ms = aligned.mass_at(1.0);
+        let t = motor.thrust(1.0);
+        let eps = 2.0f64.to_radians();
+        // phi = 90 deg: lateral thrust component towards +z_b.
+        assert!((b.vel.z - a.vel.z - t * eps.sin() / ms.m).abs() < 1e-9);
+        assert!((b.vel.y - a.vel.y).abs() < 1e-9);
+        assert!((b.vel.x - a.vel.x + t * (1.0 - eps.cos()) / ms.m).abs() < 1e-9);
+        // The nozzle is aft of the CG: a +z_b force gives a +y_b moment.
+        let lever = aligned.motor_aft_x - ms.x_cg;
+        assert!((b.w.y - lever * t * eps.sin() / ms.inertia.0[1][1]).abs() < 1e-9);
+        assert!(b.w.x.abs() < 1e-12 && b.w.z.abs() < 1e-9);
+        // Zero misalignment adds no moment.
+        assert_eq!(a.w.y, 0.0);
+    }
+
+    #[test]
+    fn nozzle_offset_gives_moment_about_the_cg() {
+        let (table, motor) = vacuum_parts();
+        let mut sim = vacuum_sim(&table, &motor);
+        sim.thrust_line = ThrustLine { misalignment_deg: 0.0, misalignment_azimuth_deg: 0.0, offset: [0.01, 0.0] };
+        let cx = Ctx { frame: Frame::new(&sim.earth, &sim.launch), rail: Vec3::new(0.0, 0.0, 1.0) };
+        let s = State { pos: cx.frame.origin(), vel: Vec3::ZERO, q: Quat::IDENTITY, w: Vec3::ZERO };
+        let (b, _) = sim.deriv(&cx, 1.0, &s, Phase::Free);
+        // (r_n - r_cg) x (T, 0, 0) with r_n - r_cg = (-lever, 0.01, 0): z component = -0.01 T.
+        let t = motor.thrust(1.0);
+        assert!((b.w.z + 0.01 * t / sim.mass_at(1.0).inertia.0[2][2]).abs() < 1e-9);
+    }
+
+    #[test]
+    fn general_table_flight_matches_axisymmetric_table() {
+        let (table, motor) = sample_parts();
+        let general = table.to_general(aero::table::angle_axis(180.0, 30.0, 2.0, 10.0), aero::table::angle_axis(90.0, 30.0, 2.0, 10.0));
+        assert_eq!(general.kind(), TableKind::General);
+        for wind in [0.0, 5.0] {
+            let a = sample_sim(&table, &motor, wind).run(Descent::Ballistic, true).unwrap();
+            let b = sample_sim(&general, &motor, wind).run(Descent::Ballistic, true).unwrap();
+            println!("wind {wind}: apogee {} vs {}, landing ({}, {}) vs ({}, {})", a.summary.apogee, b.summary.apogee, a.summary.landing_east, a.summary.landing_north, b.summary.landing_east, b.summary.landing_north);
+            assert!((a.summary.apogee - b.summary.apogee).abs() < 0.5, "wind {wind} apogee");
+            assert!((a.summary.min_stability_cal - b.summary.min_stability_cal).abs() < 0.1, "stability");
+            assert!(b.samples.iter().all(|s| s.alpha_deg.is_finite() && s.beta_deg.is_finite()));
+        }
+    }
+
+    #[test]
+    fn launch_roll_rotates_the_body_about_the_rail() {
+        let (table, motor) = vacuum_parts();
+        let mut sim = vacuum_sim(&table, &motor);
+        sim.launch.elevation_deg = 80.0;
+        let fr = Frame::new(&sim.earth, &sim.launch);
+        let q0 = sim.initial_attitude(&fr).to_mat();
+        sim.launch.roll_deg = 90.0;
+        let q1 = sim.initial_attitude(&fr).to_mat();
+        assert!((q1.col(0) - q0.col(0)).norm() < 1e-12);
+        assert!((q1.col(1) - q0.col(2)).norm() < 1e-12);
+        assert!((q1.col(2) - q0.col(1) * -1.0).norm() < 1e-12);
     }
 }

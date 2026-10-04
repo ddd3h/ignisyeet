@@ -594,7 +594,7 @@ fn simulation<'a>(cfg: &Config, p: &'a Prepared) -> Result<Simulation<'a>> {
     let r = &cfg.rocket;
     Ok(Simulation {
         table: &p.table,
-        mass: sim::MassProperties { dry_mass: r.dry_mass, cg_dry: r.cg_dry, ixx_dry: r.ixx_dry, iyy_dry: r.iyy_dry },
+        mass: sim::MassProperties::axisymmetric(r.dry_mass, r.cg_dry, r.ixx_dry, r.iyy_dry),
         motor: &p.motor,
         motor_aft_x: p.motor_aft_x,
         launch: cfg.launch.clone(),
@@ -612,6 +612,8 @@ fn simulation<'a>(cfg: &Config, p: &'a Prepared) -> Result<Simulation<'a>> {
             atol: cfg.sim.atol,
         },
         aero_scale: sim::AeroScale::default(),
+        thrust_line: sim::ThrustLine::default(),
+        fin_cant_deg: 0.0,
     })
 }
 
@@ -754,7 +756,7 @@ fn write_kml(cfg: &Config, mut parts: kml::Parts) -> Result<()> {
 
 fn write_trajectory(path: &Path, samples: &[sim::flight::Sample]) -> Result<()> {
     let mut f = std::io::BufWriter::new(std::fs::File::create(path)?);
-    writeln!(f, "t,phase,east,north,up,lat,lon,alt,vel_e,vel_n,vel_u,airspeed,mach,alpha_deg,thrust,mass,x_cg,x_cp,stability_cal,dyn_pressure,cn,ca,pitch_deg,heading_deg,wx,wy,wz")?;
+    writeln!(f, "t,phase,east,north,up,lat,lon,alt,vel_e,vel_n,vel_u,airspeed,mach,alpha_deg,thrust,mass,x_cg,x_cp,stability_cal,dyn_pressure,cn,ca,pitch_deg,heading_deg,wx,wy,wz,beta_deg,roll_rate,cl,cy")?;
     for s in samples {
         let phase = match s.phase {
             sim::flight::Phase::Rail => "rail",
@@ -763,9 +765,9 @@ fn write_trajectory(path: &Path, samples: &[sim::flight::Sample]) -> Result<()> 
         };
         writeln!(
             f,
-            "{:.4},{phase},{:.3},{:.3},{:.3},{:.8},{:.8},{:.3},{:.4},{:.4},{:.4},{:.4},{:.5},{:.4},{:.3},{:.4},{:.5},{:.5},{:.4},{:.2},{:.5},{:.5},{:.4},{:.4},{:.5},{:.5},{:.5}",
+            "{:.4},{phase},{:.3},{:.3},{:.3},{:.8},{:.8},{:.3},{:.4},{:.4},{:.4},{:.4},{:.5},{:.4},{:.3},{:.4},{:.5},{:.5},{:.4},{:.2},{:.5},{:.5},{:.4},{:.4},{:.5},{:.5},{:.5},{:.4},{:.5},{:.6},{:.5}",
             s.t, s.east, s.north, s.up, s.lat, s.lon, s.alt, s.vel_e, s.vel_n, s.vel_u, s.airspeed, s.mach, s.alpha_deg, s.thrust, s.mass,
-            s.x_cg, s.x_cp, s.stability_cal, s.dyn_pressure, s.cn, s.ca, s.pitch_deg, s.heading_deg, s.wx, s.wy, s.wz
+            s.x_cg, s.x_cp, s.stability_cal, s.dyn_pressure, s.cn, s.ca, s.pitch_deg, s.heading_deg, s.wx, s.wy, s.wz, s.beta_deg, s.roll_rate, s.cl, s.cy
         )?;
     }
     Ok(())

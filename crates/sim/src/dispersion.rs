@@ -408,7 +408,7 @@ fn run_wind_grid(cfg: &DispersionConfig, base: &Simulation, recovery_enabled: bo
 mod tests {
     use super::*;
     use crate::env::{AtmosphereModel, Earth, IntegratorKind, Wind, WindConfig, WindModel};
-    use crate::flight::{Launch, MassProperties, Recovery, Settings};
+    use crate::flight::{Launch, MassProperties, Recovery, Settings, ThrustLine};
     use aero::table::TableMeta;
     use aero::{AeroCoeffs, AeroTable, Extrapolation};
 
@@ -434,16 +434,18 @@ mod tests {
     fn base<'a>(table: &'a AeroTable, motor: &'a Motor) -> Simulation<'a> {
         Simulation {
             table,
-            mass: MassProperties { dry_mass: 10.0, cg_dry: 0.5, ixx_dry: 0.01, iyy_dry: 1.0 },
+            mass: MassProperties::axisymmetric(10.0, 0.5, 0.01, 1.0),
             motor,
             motor_aft_x: 1.0,
-            launch: Launch { latitude: 35.0, longitude: 139.0, altitude: 0.0, rail_length: 3.0, elevation_deg: 90.0, azimuth_deg: 0.0 },
+            launch: Launch { latitude: 35.0, longitude: 139.0, altitude: 0.0, rail_length: 3.0, elevation_deg: 90.0, azimuth_deg: 0.0, roll_deg: 0.0 },
             recovery: Recovery { enabled: true, cd_s: 1.0, delay: 1.0 },
             wind: Wind::from_config(&WindConfig { model: WindModel::Constant, speed: 5.0, direction_deg: 270.0, ..Default::default() }).unwrap(),
             atmosphere: AtmosphereModel::default(),
             earth: Earth::default(),
             settings: Settings { integrator: IntegratorKind::Rk45, max_time: 2000.0, ..Default::default() },
             aero_scale: AeroScale::default(),
+            thrust_line: ThrustLine::default(),
+            fin_cant_deg: 0.0,
         }
     }
 

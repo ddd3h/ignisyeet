@@ -14,5 +14,5 @@ pub mod stepper;
 
 pub use dispersion::{DispersionConfig, DispersionMode, McResult, McRow, MonteCarloConfig, Perturbation};
 pub use env::{AtmosphereConfig, AtmosphereModel, Earth, EarthConfig, EarthModel, GravityModel, IntegratorKind, AttitudeKind, Wind, WindConfig, WindModel};
-pub use flight::{AeroScale, Descent, Launch, MassProperties, Recovery, Settings, SimResult, Simulation, Summary};
+pub use flight::{AeroScale, Descent, Launch, MassProperties, MassState, ThrustLine, Recovery, Settings, SimResult, Simulation, Summary};
 pub use motor::Motor;

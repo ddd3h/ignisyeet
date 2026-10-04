@@ -157,7 +157,7 @@ mod tests {
     use super::*;
 
     fn launch() -> Launch {
-        Launch { latitude: 34.7, longitude: 139.4, altitude: 20.0, rail_length: 5.0, elevation_deg: 85.0, azimuth_deg: 270.0 }
+        Launch { latitude: 34.7, longitude: 139.4, altitude: 20.0, rail_length: 5.0, elevation_deg: 85.0, azimuth_deg: 270.0, roll_deg: 0.0 }
     }
 
     #[test]

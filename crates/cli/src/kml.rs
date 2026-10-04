@@ -485,7 +485,7 @@ pub fn load_flight(dir: &Path) -> Result<Option<Flight>, String> {
         samples.push(Sample {
             t: p("t")?, phase, east: g("east"), north: g("north"), up: g("up"), lat: p("lat")?, lon: p("lon")?, alt: p("alt")?, vel_e: g("vel_e"), vel_n: g("vel_n"), vel_u: g("vel_u"),
             airspeed: g("airspeed"), mach: g("mach"), alpha_deg: g("alpha_deg"), thrust: g("thrust"), mass: g("mass"), x_cg: g("x_cg"), x_cp: g("x_cp"), stability_cal: g("stability_cal"),
-            dyn_pressure: g("dyn_pressure"), cn: g("cn"), ca: g("ca"), pitch_deg: g("pitch_deg"), heading_deg: g("heading_deg"), wx: g("wx"), wy: g("wy"), wz: g("wz"),
+            dyn_pressure: g("dyn_pressure"), cn: g("cn"), ca: g("ca"), pitch_deg: g("pitch_deg"), heading_deg: g("heading_deg"), wx: g("wx"), wy: g("wy"), wz: g("wz"), beta_deg: g("beta_deg"), roll_rate: g("roll_rate"), cl: g("cl"), cy: g("cy"),
         });
     }
     if samples.is_empty() {
@@ -630,13 +630,13 @@ mod tests {
     }
 
     fn site() -> Launch {
-        Launch { latitude: 34.7347, longitude: 139.4204, altitude: 20.0, rail_length: 5.0, elevation_deg: 85.0, azimuth_deg: 270.0 }
+        Launch { latitude: 34.7347, longitude: 139.4204, altitude: 20.0, rail_length: 5.0, elevation_deg: 85.0, azimuth_deg: 270.0, roll_deg: 0.0 }
     }
 
     fn sample(t: f64, phase: Phase, thrust: f64, alt: f64) -> Sample {
         Sample {
             t, phase, east: 0.0, north: 0.0, up: alt - 20.0, lat: 34.7347 + t * 1e-4, lon: 139.4204 - t * 1e-4, alt, vel_e: 0.0, vel_n: 0.0, vel_u: 10.0, airspeed: 10.0,
-            mach: 0.0, alpha_deg: 0.0, thrust, mass: 1.0, x_cg: 0.0, x_cp: 0.0, stability_cal: 1.0, dyn_pressure: 0.0, cn: 0.0, ca: 0.0, pitch_deg: 0.0, heading_deg: 0.0, wx: 0.0, wy: 0.0, wz: 0.0,
+            mach: 0.0, alpha_deg: 0.0, thrust, mass: 1.0, x_cg: 0.0, x_cp: 0.0, stability_cal: 1.0, dyn_pressure: 0.0, cn: 0.0, ca: 0.0, pitch_deg: 0.0, heading_deg: 0.0, wx: 0.0, wy: 0.0, wz: 0.0, beta_deg: 0.0, roll_rate: 0.0, cl: 0.0, cy: 0.0,
         }
     }
 

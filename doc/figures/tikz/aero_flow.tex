@@ -1,0 +1,33 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+\begin{tikzpicture}[
+  font=\small,
+  rust/.style={draw=cblue, fill=cfill, thick, rounded corners=3pt, minimum height=9mm, align=center},
+  meth/.style={draw=cblue, fill=cfill, thick, rounded corners=3pt, minimum width=50mm, minimum height=11mm, align=center},
+  ext/.style={draw=cink2, fill=white, thick, dashed, rounded corners=3pt, minimum width=50mm, minimum height=11mm, align=center},
+  file/.style={draw=cink2, fill=cfillg, minimum height=8mm, align=center, font=\footnotesize\ttfamily},
+  arr/.style={->, thick, cink2}, note/.style={font=\footnotesize, cink2, align=left}]
+  \node[file] (stl) at (0,0) {rocket.stl};
+  \node[rust, minimum width=22mm] (geom) at (3.6,0) {形状抽出};
+  \node[file] (gj) at (3.6,-1.8) {geometry.json\\（形状情報）};
+  \node[meth] (m1) at (9.2,3.6) {部品積み上げ法\\{\footnotesize 部品ごとの式の和}};
+  \node[meth] (m2) at (9.2,1.2) {パネル法\\{\footnotesize 表面のポテンシャル流}};
+  \node[meth] (m3) at (9.2,-1.2) {CFD\\{\footnotesize 体積メッシュ上の Euler 方程式}};
+  \node[ext] (m4) at (9.2,-3.6) {外部の表\\{\footnotesize 風洞試験・他の解析}};
+  \node[file, minimum width=30mm] (tab) at (15.0,0) {aero\_table.csv\\（係数表）};
+  \node[rust, minimum width=34mm] (sim) at (15.0,-3.4) {6自由度の剛体運動\\の計算};
+
+  \draw[arr] (stl) -- (geom);
+  \draw[arr] (geom) -- (gj);
+  \coordinate (b1) at (6.2,0);
+  \draw[thick, cink2] (gj.east) -| (b1);
+  \draw[thick, cink2] (geom.east) -- (b1);
+  \foreach \m in {m1,m2,m3} { \draw[arr] (b1) |- (\m.west); }
+  \coordinate (b2) at (12.3,0);
+  \foreach \m in {m1,m2,m3,m4} { \draw[thick, cink2] (\m.east) -| (b2); }
+  \draw[arr] (b2) -- (tab.west);
+  \draw[arr] (tab) -- node[right, note]{内挿・外挿だけ} (sim);
+  \node[note, anchor=north west] at (-0.6,-3.0) {外部の表だけは\\形状を使わない};
+  \node[note, anchor=south, text width=48mm, align=center] at (9.2,4.6) {どの手法も同じ形式の表を作る};
+  \node[note, anchor=north, text width=44mm, align=center] at (15.0,-4.2) {飛翔計算は表がどの手法で\\作られたかを区別しない};
+\end{tikzpicture}

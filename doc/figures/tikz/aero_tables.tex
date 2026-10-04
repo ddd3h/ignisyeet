@@ -1,0 +1,39 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+\begin{tikzpicture}[
+  font=\small,
+  boxo/.style={draw=corange, fill=cfillo, thick, rounded corners=3pt, align=center},
+  arr/.style={->, thick, cink2}, note/.style={font=\footnotesize, cink2, align=center}]
+  % ---- left: axisymmetric table over (M, alpha_t) ----
+  \node[font=\bfseries] at (2.0,4.6) {軸対称表};
+  \draw[->, thick, cink] (0,0) -- (4.4,0) node[right] {$M$};
+  \draw[->, thick, cink] (0,0) -- (0,3.8) node[above] {$\alpha_t$};
+  \foreach \x in {0.8,1.6,2.4,3.2} \draw[cgrid] (\x,0) -- (\x,3.4);
+  \foreach \y in {0.7,1.4,2.1,2.8} \draw[cgrid] (0,\y) -- (4.0,\y);
+  \fill[cblue] (2.4,2.1) circle (2pt);
+  \node[note, anchor=north] at (2.0,-0.5) {各点の値：$C_N,\ C_A,\ x_{cp},\ C_{N\alpha}$,\\減衰の和 $S_0,S_1,S_2$、ロールの微係数};
+  \node[note, anchor=north] at (2.0,-1.7) {$\alpha_t$ の既定の範囲は 0 から 30°\\（超える分は外挿）};
+  % ---- middle: expansion ----
+  \draw[arr] (6.0,2.2) -- (9.4,2.2);
+  \node[note, anchor=south, text width=36mm] at (7.7,2.35) {展開\\$\cos\alpha_t=\cos\alpha\cos\beta$};
+  \node[note, anchor=north, text width=36mm] at (7.7,2.05) {引く角は $\alpha_t'=\min(\alpha_t,\pi-\alpha_t)$};
+  \node[note, anchor=north, text width=36mm] at (7.7,0.6) {展開しても\\情報は増えない};
+  % ---- right: general table, a stack of (M, alpha) grids, one per beta ----
+  \node[font=\bfseries] at (13.0,4.6) {一般表};
+  \foreach \k in {3,2,1,0} {
+    \begin{scope}[shift={({10.2+0.55*\k},{0.38*\k})}]
+      \filldraw[draw=cblue, fill=cfill, thick] (0,0) rectangle (3.6,3.2);
+      \foreach \x in {0.9,1.8,2.7} \draw[cgrid] (\x,0) -- (\x,3.2);
+      \foreach \y in {0.8,1.6,2.4} \draw[cgrid] (0,\y) -- (3.6,\y);
+    \end{scope}
+  }
+  \draw[->, thick, cink] (10.2,0) -- (14.6,0) node[right] {$M$};
+  \draw[->, thick, cink] (10.2,0) -- (10.2,4.2) node[above] {$\alpha$};
+  \draw[->, thick, corange] (10.2,0) -- (12.4,1.5) node[above right] {$\beta$};
+  \node[note, anchor=north] at (12.6,-0.5) {各点の値：$C_X,C_Y,C_Z,C_l,C_m,C_n$,\\ロールの微係数、ピッチ・ヨーの減衰の和};
+  % ---- bottom: direct sources ----
+  \node[boxo, minimum width=62mm, minimum height=9mm] (dir) at (12.6,-2.6) {CFD の一般表・外部の一般表};
+  \draw[arr] (dir.north) -- ++(0,0.45);
+  \node[note, anchor=east] at (8.9,-2.6) {展開を通さずに\\直接作る};
+  \draw[arr, dashed] (9.0,-2.6) -- (dir.west);
+\end{tikzpicture}

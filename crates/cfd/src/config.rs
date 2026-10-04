@@ -48,6 +48,11 @@ pub struct CfdOptions {
     pub surface: SurfaceKind,
     /// Half model about the pitch plane (y = 0, keeping y >= 0).
     pub symmetry: bool,
+    /// Euler only: the flat base is followed by a conical tail fairing of this length in base radii
+    /// (0 = flat base). The inviscid flow behind a flat base is ill-posed (asymmetric steady wake);
+    /// the fairing, marker `base`, is not monitored, so the base drag comes from the Barrowman term.
+    /// RANS always keeps the flat base (the wake is part of the solution).
+    pub tail_fairing: f64,
     /// Farfield radius in body lengths.
     pub farfield: f64,
     /// Surface element size [m].
@@ -69,8 +74,13 @@ pub struct CfdOptions {
     pub su2: String,
     /// MPI launcher (only needed when `ranks_per_case > 1`).
     pub mpi: String,
+    /// MPI ranks per case; 0 = automatic (4, or fewer if the thread budget is smaller).
     pub ranks_per_case: usize,
+    /// Concurrent cases; 0 = automatic (as many as fit the thread and memory budget).
     pub parallel_cases: usize,
+    /// Wall-clock limit per case [minutes]; 0 disables it. A case hitting the limit is stopped and
+    /// accepted only if it is practically converged (see `runner`).
+    pub timeout_minutes: f64,
     /// Working directory below `output.dir`; one sub-directory per case.
     pub workdir: PathBuf,
 }
@@ -83,6 +93,7 @@ impl Default for CfdOptions {
             alphas_deg: vec![0.0, 2.0, 4.0, 8.0, 12.0, 16.0],
             surface: SurfaceKind::PanelMesh,
             symmetry: true,
+            tail_fairing: 6.0,
             farfield: 20.0,
             wall_size: 0.004,
             yplus: 1.0,
@@ -95,6 +106,7 @@ impl Default for CfdOptions {
             mpi: "mpirun".into(),
             ranks_per_case: 4,
             parallel_cases: 4,
+            timeout_minutes: 0.0,
             workdir: "cfd".into(),
         }
     }
@@ -129,14 +141,20 @@ impl CfdOptions {
                 bail!("aero.cfd.{name} must be positive");
             }
         }
+        if !(self.tail_fairing.is_finite() && self.tail_fairing >= 0.0) {
+            bail!("aero.cfd.tail_fairing must be >= 0");
+        }
         if self.farfield < 5.0 {
             bail!("aero.cfd.farfield must be at least 5 body lengths");
         }
         if !(self.convergence > 0.0 && self.convergence < 1.0) {
             bail!("aero.cfd.convergence must be in (0, 1), e.g. 1e-6");
         }
-        if self.iterations == 0 || self.ranks_per_case == 0 || self.parallel_cases == 0 {
-            bail!("aero.cfd.iterations, ranks_per_case and parallel_cases must be at least 1");
+        if self.iterations == 0 {
+            bail!("aero.cfd.iterations must be at least 1");
+        }
+        if !(self.timeout_minutes.is_finite() && self.timeout_minutes >= 0.0) {
+            bail!("aero.cfd.timeout_minutes must be >= 0");
         }
         if self.su2.trim().is_empty() {
             bail!("aero.cfd.su2 must name the SU2_CFD executable");
@@ -152,7 +170,7 @@ impl CfdOptions {
     pub fn warnings_for(&self, available: usize) -> Vec<String> {
         let mut w = Vec::new();
         let need = self.ranks_per_case * self.parallel_cases;
-        if need > available {
+        if self.ranks_per_case > 0 && self.parallel_cases > 0 && need > available {
             w.push(format!(
                 "aero.cfd: ranks_per_case x parallel_cases = {need} exceeds the {available} available cores; cases will be slowed down"
             ));

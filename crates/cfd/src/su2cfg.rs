@@ -25,11 +25,18 @@
 //!   (`TD_CONDITIONS`, `TEMPERATURE_FS`); for RANS SU2 then derives the Reynolds number from the
 //!   mesh length unit (metres) and the Sutherland viscosity, which equals the Sutherland law of
 //!   `aero::atmosphere`.
+//! * RANS (no boundary-layer prisms, see `mesh`): SA, standard wall function, first-order Roe, CFL limit `4 cfl`.
 //! * Time stepping: implicit Euler with adaptive CFL starting at `cfl`
 //!   (limits `0.2 cfl` .. `50 cfl`, factors 0.5 down / 1.2 up).
 
 use crate::config::{CfdOptions, FlowModel, Scheme};
 use aero::atmosphere::{Atmosphere, GAMMA, R_AIR};
+
+/// Iteration at which the slope limiter is frozen (ROE + MUSCL).
+pub const LIMITER_FREEZE_ITER: usize = 250;
+
+/// Iteration cap of RANS cases (see `su2_config`).
+pub const RANS_MAX_ITER: usize = 300;
 
 /// Reference dimensions of the full (not halved) rocket.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -109,6 +116,9 @@ pub fn su2_config(opt: &CfdOptions, mach: f64, alpha_deg: f64, dims: &RefDims, a
     c.blank();
     if rans {
         c.kv("MARKER_HEATFLUX", "( wall, 0.0, base, 0.0 )");
+        // No prismatic boundary layer (see `mesh`): the first cell is at y+ ~ 50-300, so the wall shear
+        // comes from the standard (log-law) wall function.
+        c.kv("MARKER_WALL_FUNCTIONS", "( wall, STANDARD_WALL_FUNCTION, base, STANDARD_WALL_FUNCTION )");
         c.kv("MARKER_MONITORING", "( wall, base )");
     } else {
         c.kv("MARKER_EULER", "( wall, base )");
@@ -125,15 +135,22 @@ pub fn su2_config(opt: &CfdOptions, mach: f64, alpha_deg: f64, dims: &RefDims, a
         c.kv("CONV_NUM_METHOD_FLOW", "JST");
         c.kv("JST_SENSOR_COEFF", "( 0.5, 0.02 )");
         c.kv("MUSCL_FLOW", "NO");
+    } else if rans {
+        // Second-order reconstruction diverged on the tetrahedral wall mesh: first-order Roe.
+        c.kv("CONV_NUM_METHOD_FLOW", "ROE");
+        c.kv("MUSCL_FLOW", "NO");
     } else {
         c.kv("CONV_NUM_METHOD_FLOW", "ROE");
         c.kv("MUSCL_FLOW", "YES");
         c.kv("SLOPE_LIMITER_FLOW", "VENKATAKRISHNAN");
         c.kv("VENKAT_LIMITER_COEFF", "0.05");
+        // Freeze the limiter once the flow has developed: without it the limiter chatter keeps the
+        // residual at about 1e-4 and the base wake of the Euler model prevents convergence.
+        c.kv("LIMITER_ITER", LIMITER_FREEZE_ITER);
     }
     c.kv("TIME_DISCRE_FLOW", "EULER_IMPLICIT");
     if rans {
-        c.kv("CONV_NUM_METHOD_TURB", "BOUNDED_SCALAR");
+        c.kv("CONV_NUM_METHOD_TURB", "SCALAR_UPWIND");
         c.kv("MUSCL_TURB", "NO");
         c.kv("TIME_DISCRE_TURB", "EULER_IMPLICIT");
     }
@@ -141,13 +158,16 @@ pub fn su2_config(opt: &CfdOptions, mach: f64, alpha_deg: f64, dims: &RefDims, a
     c.kv("CFL_NUMBER", opt.cfl);
     c.kv("CFL_ADAPT", "YES");
     // ( factor down, factor up, CFL min, CFL max )
-    c.kv("CFL_ADAPT_PARAM", format!("( 0.5, 1.2, {:.3}, {:.1} )", 0.2 * opt.cfl, 50.0 * opt.cfl));
+    let cfl_max = if rans { 4.0 } else { 50.0 };
+    c.kv("CFL_ADAPT_PARAM", format!("( 0.5, 1.2, {:.3}, {:.1} )", 0.2 * opt.cfl, cfl_max * opt.cfl));
     c.kv("LINEAR_SOLVER", "FGMRES");
     c.kv("LINEAR_SOLVER_PREC", "ILU");
     c.kv("LINEAR_SOLVER_ERROR", "1E-6");
     c.kv("LINEAR_SOLVER_ITER", "10");
     c.blank();
-    c.kv("ITER", opt.iterations);
+    // RANS (first-order Roe, no prisms): the residual stalls near 1e-5 and drifts towards divergence
+        // after a few hundred iterations while the coefficients are flat from about iteration 100.
+        c.kv("ITER", if rans { opt.iterations.min(RANS_MAX_ITER) } else { opt.iterations });
     c.kv("CONV_FIELD", "RMS_DENSITY");
     c.kv("CONV_RESIDUAL_MINVAL", opt.residual_minval());
     c.kv("CONV_STARTITER", "10");
@@ -158,9 +178,10 @@ pub fn su2_config(opt: &CfdOptions, mach: f64, alpha_deg: f64, dims: &RefDims, a
     c.kv("CONV_FILENAME", "history");
     c.kv("SURFACE_FILENAME", "surface_flow");
     c.kv("TABULAR_FORMAT", "CSV");
-    c.kv("OUTPUT_FILES", "( RESTART, SURFACE_CSV )");
+    c.kv("OUTPUT_FILES", "( RESTART, SURFACE_CSV, SURFACE_PARAVIEW_ASCII )");
     c.kv("HISTORY_OUTPUT", "( ITER, RMS_RES, AERO_COEFF )");
-    c.kv("SCREEN_OUTPUT", "( INNER_ITER, RMS_DENSITY, LIFT, DRAG, CMY )");
+    c.kv("SCREEN_OUTPUT", "( INNER_ITER, RMS_DENSITY, LIFT, DRAG, MOMENT_Y )");
+    c.kv("VOLUME_OUTPUT", "( COORDINATES, SOLUTION, PRIMITIVE )");
     c.kv("SCREEN_WRT_FREQ_INNER", "10");
     c.kv("HISTORY_WRT_FREQ_INNER", "1");
     c.kv("OUTPUT_WRT_FREQ", "500");
@@ -205,6 +226,7 @@ mod tests {
             "CONV_NUM_METHOD_FLOW= ROE",
             "MUSCL_FLOW= YES",
             "SLOPE_LIMITER_FLOW= VENKATAKRISHNAN",
+            "LIMITER_ITER= 250",
             "TIME_DISCRE_FLOW= EULER_IMPLICIT",
             "CFL_ADAPT= YES",
             "CFL_NUMBER= 5",
@@ -213,8 +235,9 @@ mod tests {
             "CONV_RESIDUAL_MINVAL= -6",
             "MESH_FILENAME= mesh.su2",
             "RESTART_SOL= NO",
-            "OUTPUT_FILES= ( RESTART, SURFACE_CSV )",
+            "OUTPUT_FILES= ( RESTART, SURFACE_CSV, SURFACE_PARAVIEW_ASCII )",
             "HISTORY_OUTPUT= ( ITER, RMS_RES, AERO_COEFF )",
+            "VOLUME_OUTPUT= ( COORDINATES, SOLUTION, PRIMITIVE )",
         ] {
             assert!(has(&s, l), "missing line {l:?} in\n{s}");
         }
@@ -234,6 +257,7 @@ mod tests {
             "INIT_OPTION= TD_CONDITIONS",
             "FREESTREAM_OPTION= TEMPERATURE_FS",
             "MARKER_HEATFLUX= ( wall, 0.0, base, 0.0 )",
+            "MARKER_WALL_FUNCTIONS= ( wall, STANDARD_WALL_FUNCTION, base, STANDARD_WALL_FUNCTION )",
             "MARKER_MONITORING= ( wall, base )",
             "CONV_NUM_METHOD_FLOW= JST",
             "MUSCL_FLOW= NO",

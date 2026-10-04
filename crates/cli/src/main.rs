@@ -65,7 +65,12 @@ enum Cmd {
     /// Landing dispersion: wind speed x direction grid (dispersion.csv) or Monte Carlo (dispersion_mc.csv, dispersion_summary.json).
     Dispersion { config: PathBuf },
     /// Check that the CFD tools (SU2, MPI, gmsh) are installed and report their versions.
-    CfdCheck { config: PathBuf },
+    CfdCheck {
+        config: PathBuf,
+        /// Also export the wall surface and build the volume mesh (reports node/cell counts and quality).
+        #[arg(long)]
+        mesh: bool,
+    },
     /// Write the built-in sample rocket as a binary STL in millimetres, nose towards +z.
     SampleStl { path: PathBuf },
 }
@@ -106,10 +111,9 @@ fn main() -> Result<()> {
             begin(&cfg, &config, Sub::Dispersion);
             run_dispersion(&cfg)?
         }
-        Cmd::CfdCheck { config } => {
+        Cmd::CfdCheck { config, mesh } => {
             let cfg = Config::load(&config)?;
-            cfd_check(&cfg, &config);
-            return Ok(());
+            return cfd_check(&cfg, &config, mesh);
         }
         Cmd::SampleStl { path } => {
             let tris: Vec<_> = geom::sample::SampleRocket::default()
@@ -374,37 +378,55 @@ fn show_table(t: &AeroTable, elapsed: Option<std::time::Duration>, sub: Sub) {
     }
 }
 
+/// Raw STL in metres (only needed for `surface = "stl"`).
+fn raw_stl(cfg: &Config) -> Result<Vec<geom::stl::Triangle>> {
+    let s = cfg.rocket.stl_scale;
+    Ok(geom::stl::read_stl(&cfg.resolve(&cfg.rocket.stl))?.into_iter().map(|t| t.map(|v| v * s)).collect())
+}
+
 /// Build the coefficient table with SU2.
 fn cfd_table(cfg: &Config, g: Geometry, hash: String, path: &Path, start: std::time::Instant, sub: Sub) -> Result<AeroTable> {
     use cfd::CfdStage as St;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     let u = ui();
     let pb = u.bar(1, "CFD", BAR_T);
+    let finished = AtomicUsize::new(0);
     let progress = |st: St| match st {
         St::Mesh => pb.set_message("surface and volume mesh"),
         St::Case { index, total, mach, alpha, iter, residual } => {
             pb.set_length(total as u64);
-            pb.set_message(format!("case {}/{total}: M={mach:.2} alpha={alpha:.1} deg, iter {iter}, log10 res {residual:.2}", index + 1));
+            let msg = if iter == 0 {
+                format!("case {}/{total}: M={mach:.2} alpha={alpha:.1} deg, starting", index + 1)
+            } else {
+                format!("case {}/{total}: M={mach:.2} alpha={alpha:.1} deg, iter {iter}, log10 res {residual:.2}", index + 1)
+            };
+            pb.set_message(msg);
         }
-        St::CaseDone { index, total, .. } => {
+        St::CaseDone { total, .. } => {
             pb.set_length(total as u64);
-            pb.set_position(index as u64 + 1);
+            pb.set_position(finished.fetch_add(1, Ordering::SeqCst) as u64 + 1);
         }
         St::Table => pb.set_message("filling the aero table"),
         St::Done => {}
     };
     let out_dir = cfg.out_dir();
-    let built = cfd::build_table_with_progress(&g, &cfg.aero.cfd, &aero_options(cfg), &out_dir, hash, cfg.aero.extrapolation, &progress);
+    let raw = if cfg.aero.cfd.surface == cfd::SurfaceKind::Stl { Some(raw_stl(cfg)?) } else { None };
+    let built = cfd::build_table_with_progress(&g, &cfg.aero.cfd, &aero_options(cfg), &out_dir, hash, cfg.aero.extrapolation, &cfd::ResourceBudget::default(), raw.as_deref(), &progress);
     pb.finish_and_clear();
     let (table, report) = built?;
     table.save(path)?;
     std::fs::write(out_path(cfg, "cfd_report.json")?, serde_json::to_string_pretty(&report)?)?;
-    u.done_line("CFD", &format!("{} cases, {} failed", report.cases, report.failed.len()), start.elapsed());
+    ui().record(&out_dir.join("cfd_cases.csv"));
+    if u.plain() {
+        println!("Aero table: CFD, {} cases ({} failed, {} unconverged), {} cells, {:.1?} -> {}", report.cases, report.failed.len(), report.unconverged.len(), report.mesh_cells, start.elapsed(), path.display());
+    }
+    u.done_line("CFD", &format!("{} cases, {} failed, {} cells", report.cases, report.failed.len(), report.mesh_cells), start.elapsed());
     show_table(&table, Some(start.elapsed()), sub);
     Ok(table)
 }
 
-/// `cfd-check`: report the CFD tools and their versions.
-fn cfd_check(cfg: &Config, config_path: &Path) {
+/// `cfd-check`: report the CFD tools and their versions; with `mesh`, also build the volume mesh.
+fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
     let opt = &cfg.aero.cfd;
     let roots = [cfg.base_dir.clone()];
     let r = cfd::tools::check_tools(opt, &roots);
@@ -426,7 +448,27 @@ fn cfd_check(cfg: &Config, config_path: &Path) {
         println!("CFD mode is ready ({} cases for model {:?}).", cfd::case::case_list(opt).len(), opt.model);
     } else {
         println!("CFD mode is not available: {}", cfd::not_installed_message(&r, opt).lines().next().unwrap_or(""));
+        return Ok(());
     }
+    if mesh {
+        let g = geometry(cfg)?;
+        let raw = if opt.surface == cfd::SurfaceKind::Stl { Some(raw_stl(cfg)?) } else { None };
+        let t = std::time::Instant::now();
+        let m = cfd::mesh_only(&g, opt, &aero_options(cfg), &cfg.out_dir(), &cfd::ResourceBudget::default(), raw.as_deref())?;
+        let s = &m.stats;
+        println!(
+            "Mesh {} ({}): {} nodes, {} cells, {} wall triangles, {:.1?}",
+            m.su2.display(),
+            if m.cached { "cached" } else { "built" },
+            s.nodes,
+            s.cells,
+            s.wall_triangles,
+            t.elapsed()
+        );
+        println!("  cell types: {:?}", s.by_type);
+        println!("  quality (SICN, 1 = ideal): min {:.3}, mean {:.3}, {} cells below 0.05", s.quality_sicn_min, s.quality_sicn_mean, s.cells_bad);
+    }
+    Ok(())
 }
 
 /// Build the coefficient table with the panel method and write its diagnostics.

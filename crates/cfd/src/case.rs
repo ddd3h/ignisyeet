@@ -72,6 +72,7 @@ pub struct CaseResult {
     pub alpha_deg: f64,
     pub coeffs: BodyCoeffs,
     pub iterations: usize,
+    /// The residual reached the target (`false`: accepted as practically converged, see `runner`).
     pub converged: bool,
     pub residual_first: Option<f64>,
     pub residual_last: Option<f64>,

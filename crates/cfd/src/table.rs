@@ -28,6 +28,28 @@ pub struct SolvedPoint {
     pub coeffs: Option<BodyCoeffs>,
 }
 
+/// Removes the numerical zero-angle offset of the normal force and nose moment.
+///
+/// The body is axisymmetric / mirror symmetric, so `CN(0) = 0` exactly; the steady solution on an
+/// unstructured mesh can nevertheless carry a (sometimes large, mesh-dependent) asymmetric offset,
+/// most visibly in the subsonic Euler wake. Per Mach number the `alpha = 0` values of `CN` and the
+/// nose moment are subtracted from all angles of that Mach number (and the `alpha = 0` point itself
+/// becomes 0). The axial coefficient is left alone. Returns the removed `(mach, CN0, moment0)`.
+pub fn remove_zero_offset(points: &mut [SolvedPoint]) -> Vec<(f64, f64, f64)> {
+    let mut removed = Vec::new();
+    let zero: Vec<(f64, BodyCoeffs)> = points.iter().filter(|p| p.alpha_deg == 0.0).filter_map(|p| p.coeffs.map(|c| (p.mach, c))).collect();
+    for (m, c0) in zero {
+        for p in points.iter_mut().filter(|p| p.mach == m) {
+            if let Some(c) = &mut p.coeffs {
+                c.cn -= c0.cn;
+                c.mom -= c0.mom;
+            }
+        }
+        removed.push((m, c0.cn, c0.mom));
+    }
+    removed
+}
+
 /// What the table builder derived.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TableFill {
@@ -265,6 +287,22 @@ mod tests {
 
     const MACHS: [f64; 6] = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0];
     const ALPHAS: [f64; 6] = [0.0, 2.0, 4.0, 8.0, 12.0, 16.0];
+
+    #[test]
+    fn zero_offset_is_removed_per_mach() {
+        let mut p = vec![
+            SolvedPoint { mach: 0.5, alpha_deg: 0.0, coeffs: Some(BodyCoeffs { cn: 0.3, ca: 0.1, mom: 0.4 }) },
+            SolvedPoint { mach: 0.5, alpha_deg: 4.0, coeffs: Some(BodyCoeffs { cn: 1.3, ca: 0.1, mom: 1.9 }) },
+            SolvedPoint { mach: 2.0, alpha_deg: 0.0, coeffs: None },
+            SolvedPoint { mach: 2.0, alpha_deg: 4.0, coeffs: Some(BodyCoeffs { cn: 1.0, ca: 0.2, mom: 1.0 }) },
+        ];
+        let r = remove_zero_offset(&mut p);
+        assert_eq!(r, vec![(0.5, 0.3, 0.4)]);
+        assert_eq!(p[0].coeffs.unwrap().cn, 0.0);
+        assert!((p[1].coeffs.unwrap().cn - 1.0).abs() < 1e-12 && (p[1].coeffs.unwrap().mom - 1.5).abs() < 1e-12);
+        assert_eq!(p[1].coeffs.unwrap().ca, 0.1);
+        assert_eq!(p[3].coeffs.unwrap().cn, 1.0, "no alpha = 0 result: unchanged");
+    }
 
     #[test]
     fn matches_analytic_field() {

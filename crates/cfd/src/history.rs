@@ -78,6 +78,63 @@ impl HistorySummary {
     }
 }
 
+impl History {
+    /// log10 RMS density residual of the last row.
+    pub fn last_residual(&self) -> Option<f64> {
+        let c = self.col(&["rms[Rho]", "Res_Flow[0]", "rms[P]"])?;
+        self.rows.last().map(|r| r[c]).filter(|x| x.is_finite())
+    }
+
+    /// Orders of magnitude between the largest density residual of the run and the last one.
+    pub fn residual_drop_from_peak(&self) -> Option<f64> {
+        let c = self.col(&["rms[Rho]", "Res_Flow[0]", "rms[P]"])?;
+        let peak = self.rows.iter().map(|r| r[c]).filter(|x| x.is_finite()).fold(f64::NEG_INFINITY, f64::max);
+        Some(peak - self.last_residual()?).filter(|d| d.is_finite())
+    }
+
+    /// Latest inner iteration number (row count when there is no iteration column).
+    pub fn last_iteration(&self) -> usize {
+        match (self.col(&["Inner_Iter", "Iteration", "Iter"]), self.rows.last()) {
+            (Some(c), Some(r)) if r[c].is_finite() => r[c] as usize,
+            _ => self.rows.len().saturating_sub(1),
+        }
+    }
+
+    /// The force coefficients (`CFx`, `CFz`, `CMy`, or `CD`, `CL`) are flat over the last `window`
+    /// rows: the means of the two half windows differ by less than 2 % of the force scale (+ 5e-4)
+    /// and the inter-quartile range stays below 4 times that. Moment tolerance: 25 % of the force scale.
+    pub fn coefficients_stable(&self, window: usize) -> bool {
+        let n = self.rows.len();
+        if n < window.max(4) {
+            return false;
+        }
+        // (mean, drift between the two half-window means, inter-quartile range) of a column.
+        let stats = |names: &[&str]| -> Option<(f64, f64, f64)> {
+            let c = self.col(names)?;
+            let v: Vec<f64> = self.rows[n - window..].iter().map(|r| r[c]).collect();
+            if v.iter().any(|x| !x.is_finite()) {
+                return Some((f64::NAN, f64::INFINITY, f64::INFINITY));
+            }
+            let mean = |s: &[f64]| s.iter().sum::<f64>() / s.len() as f64;
+            let (a, b) = v.split_at(v.len() / 2);
+            let mut s = v.clone();
+            s.sort_by(|x, y| x.partial_cmp(y).unwrap());
+            let iqr = s[3 * s.len() / 4] - s[s.len() / 4];
+            Some((mean(&v), (mean(b) - mean(a)).abs(), iqr))
+        };
+        let (fx, fz, my) = (stats(&["CFx", "CD"]), stats(&["CFz", "CL"]), stats(&["CMy"]));
+        if fx.is_none() && fz.is_none() && my.is_none() {
+            return false;
+        }
+        // The two forces share the larger mean as scale, so a noisy near-zero normal force at
+        // alpha = 0 is judged against the axial force; the nose-origin moment has the scale of
+        // about 12 reference lengths times that. The inter-quartile range ignores isolated spikes.
+        let scale = [fx, fz].iter().flatten().map(|s| s.0.abs()).fold(0.0, f64::max);
+        let ok = |s: Option<(f64, f64, f64)>, tol: f64| s.is_none_or(|(_, drift, spread)| drift <= tol && spread <= 4.0 * tol);
+        ok(fx, 0.02 * scale + 5e-4) && ok(fz, 0.02 * scale + 5e-4) && ok(my, 0.25 * scale + 5e-3)
+    }
+}
+
 /// Summary of `h`; coefficients are averaged over the last `window` rows (1 = last row only).
 pub fn summarize(h: &History, window: usize) -> Option<HistorySummary> {
     let n = h.rows.len();

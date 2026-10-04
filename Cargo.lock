@@ -148,6 +148,7 @@ dependencies = [
  "aero",
  "anyhow",
  "geom",
+ "libc",
  "panel",
  "serde",
  "serde_json",

@@ -1,7 +1,7 @@
 # IgnisYeet example configuration. Relative paths are resolved from this file's directory.
 
 [output]
-dir = "out"
+dir = "out_cfd"          # CFD results do not overwrite the Barrowman / panel outputs in out/
 kml = true                 # also write ignisyeet.kml for Google Earth
 
 [rocket]
@@ -46,7 +46,7 @@ cd_s = 3.5                 # parachute Cd*S [m^2]
 delay = 1.0                # s after apogee
 
 [aero]
-method = "barrowman"       # "barrowman" | "panel" | "table" | "cfd"
+method = "cfd"             # "barrowman" | "panel" | "table" | "cfd"
 # table = "cfd_table.csv"  # method = "table": external coefficient table (same CSV format as out/aero_table.csv, with .json sidecar)
 mach_min = 0.0
 mach_max = 3.0
@@ -57,38 +57,30 @@ n_slices = 600
 fin_threshold = 0.05
 extrapolation = "linear"   # "linear" | "clamp"
 
-# Settings of the panel method (only used when method = "panel").
-[aero.panel]
-body_axial = 80
-body_circ = 48
-fin_chord = 16
-fin_span = 10
-wake_length = 20.0
-tail_radii = 6.0           # solid tail fairing behind the base [base radii]
-subsonic_machs = [0.0, 0.3, 0.5, 0.6, 0.7, 0.8]
-transonic = [0.8, 1.2]
-fin_section = "biconvex"
-
-# Settings of the SU2 CFD method (only used when method = "cfd"; needs SU2, MPI and gmsh).
-# [aero.cfd]
-# prefix = "~/.local/share/micromamba/envs/ignisyeet-cfd"  # tools: <prefix>/bin/SU2_CFD, mpirun, python (gmsh); empty: IGNISYEET_CFD_PREFIX or PATH
-# model = "euler"          # "euler" | "rans" (Spalart-Allmaras)
-# machs = [0.3, 0.6, 0.8, 0.95, 1.1, 1.3, 1.6, 2.0, 2.5, 3.0]   # solved Mach numbers
-# alphas_deg = [0, 2, 4, 8, 12, 16]                              # solved angles of attack (must contain 0)
-# surface = "panel_mesh"   # geometry rebuilt from the extracted profile + fins as one fused solid ("stl" is not supported)
-# symmetry = true          # half model about the pitch plane
-# farfield = 20.0          # farfield radius [body lengths]
-# wall_size = 0.004        # surface element size [m]
-# yplus = 1.0              # rans: first-layer y+
-# iterations = 3000
-# cfl = 5.0
-# convergence = 1e-6       # target RMS density residual
-# scheme = "roe"           # "roe" | "jst"
-# su2 = "SU2_CFD"
-# mpi = "mpirun"
-# ranks_per_case = 4
-# parallel_cases = 4
-# workdir = "cfd"
+# SU2 CFD aerodynamics (needs SU2 >= 8, MPI and gmsh; see `ignisyeet cfd-check examples/sample_cfd.toml`).
+# Each (Mach, alpha) case is a steady SU2 run on a half-model mesh (one fin in the pitch plane); the
+# solved points are interpolated onto the regular table grid above. This reduced default matrix
+# (4 Mach x 3 alpha, Euler) takes a few minutes to ~20 minutes on a 20-thread desktop. Cases are cached in
+# out_cfd/cfd/ and re-used when nothing changed (delete the directory to start over).
+[aero.cfd]
+prefix = "~/.local/share/micromamba/envs/ignisyeet-cfd"  # <prefix>/bin/SU2_CFD, mpirun, python (with gmsh)
+model = "euler"            # "euler" | "rans" (Spalart-Allmaras)
+machs = [0.3, 0.8, 1.2, 2.0]   # solved Mach numbers (increasing)
+alphas_deg = [0, 4, 8]         # solved angles of attack (must contain 0)
+surface = "panel_mesh"     # geometry rebuilt from the extracted profile + fins as one fused solid ("stl" is not supported)
+symmetry = true            # half model about the pitch plane (required: the full domain cannot be meshed yet)
+tail_fairing = 6.0         # euler: conical fairing behind the flat base [base radii], 0 = flat base (rans always flat)
+farfield = 20.0            # farfield radius [body lengths]
+wall_size = 0.005          # surface element size [m] (0.0025 = fine, about 3x the cost)
+yplus = 1.0                # rans: target y+ of the first prism layer
+iterations = 3000
+cfl = 5.0
+convergence = 1e-6         # target RMS density residual
+scheme = "roe"             # "roe" | "jst"
+ranks_per_case = 4         # MPI ranks per case, 0 = automatic
+parallel_cases = 4         # concurrent cases (ranks_per_case x parallel_cases <= cores), 0 = automatic
+timeout_minutes = 0        # per-case limit, 0 = none
+workdir = "cfd"            # below output.dir
 
 [earth]
 model = "flat"             # "flat" | "ecef"

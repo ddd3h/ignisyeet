@@ -2,6 +2,7 @@
 /target/
 /out/
 /examples/out/
+/examples/out_cfd/
 .venv/
 __pycache__/
 .claude/

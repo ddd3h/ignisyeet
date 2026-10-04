@@ -202,6 +202,68 @@ fn finish(tris: Vec<Triangle>, length: f64) -> Result<WallSurface> {
     Ok(s)
 }
 
+/// Clips triangles at the plane `y = 0`, keeping `y >= 0`. Vertices within `tol` of the plane are
+/// snapped onto it, triangles lying in the plane are dropped, and edge intersections are computed
+/// from a canonical vertex order so that neighbouring triangles obtain bit-identical points.
+pub fn clip_half(tris: &[Triangle], tol: f64) -> Vec<Triangle> {
+    let snap = |mut v: Vec3| {
+        if v.y.abs() < tol {
+            v.y = 0.0;
+        }
+        v
+    };
+    let cut = |a: Vec3, b: Vec3| {
+        let (p, q) = if (a.x, a.y, a.z) <= (b.x, b.y, b.z) { (a, b) } else { (b, a) };
+        let t = (0.0 - p.y) / (q.y - p.y);
+        Vec3::new(p.x + t * (q.x - p.x), 0.0, p.z + t * (q.z - p.z))
+    };
+    let mut out = Vec::with_capacity(tris.len());
+    for t in tris {
+        let v = t.map(snap);
+        if v.iter().all(|p| p.y >= 0.0) {
+            if v.iter().any(|p| p.y > 0.0) {
+                out.push(v);
+            }
+            continue;
+        }
+        if v.iter().all(|p| p.y <= 0.0) {
+            continue;
+        }
+        // Sutherland-Hodgman against y >= 0.
+        let mut poly: Vec<Vec3> = Vec::with_capacity(4);
+        for i in 0..3 {
+            let (a, b) = (v[i], v[(i + 1) % 3]);
+            if a.y >= 0.0 {
+                poly.push(a);
+            }
+            if (a.y > 0.0 && b.y < 0.0) || (a.y < 0.0 && b.y > 0.0) {
+                poly.push(cut(a, b));
+            }
+        }
+        for k in 1..poly.len().saturating_sub(1) {
+            let tri = [poly[0], poly[k], poly[k + 1]];
+            if tri_normal(&tri).norm() > 1e-20 {
+                out.push(tri);
+            }
+        }
+    }
+    out
+}
+
+/// The `y >= 0` half of a closed surface; its only open boundary lies in the plane `y = 0`.
+pub fn half_surface(s: &WallSurface, length: f64) -> Result<WallSurface> {
+    let tol = 1e-7 * length;
+    let h = WallSurface { wall: clip_half(&s.wall, tol), base: clip_half(&s.base, tol) };
+    let (cnt, _) = edge_counts(&h.all(), 1e-8 * length);
+    let key_on_plane = |k: &(Key, Key)| k.0 .1 == 0 && k.1 .1 == 0;
+    let stray = cnt.iter().filter(|(k, &c)| c == 1 && !key_on_plane(k)).count();
+    let over = cnt.values().filter(|&&c| c > 2).count();
+    if stray > 0 || over > 0 {
+        bail!("half model: clipping at y = 0 left {stray} open edges off the symmetry plane and {over} non-manifold edges; use symmetry = false");
+    }
+    Ok(h)
+}
+
 /// Surface according to `opt.surface`; `raw` is the STL (metres) for `SurfaceKind::Stl`.
 pub fn build_surface(geom: &Geometry, opt: &CfdOptions, raw: Option<&[Triangle]>) -> Result<WallSurface> {
     match opt.surface {
@@ -290,6 +352,37 @@ mod tests {
         raw.truncate(raw.len() / 2);
         let e = stl_surface(&raw, &g).unwrap_err().to_string();
         assert!(e.contains("not watertight") && e.contains("holes"), "{e}");
+    }
+
+    fn area(t: &[Triangle]) -> f64 {
+        t.iter().map(|t| 0.5 * tri_normal(t).norm()).sum()
+    }
+
+    #[test]
+    fn half_surface_is_clipped_at_the_symmetry_plane() {
+        let g = geom_of(&SampleRocket::default());
+        let full = panel_mesh_surface(&g, &CfdOptions::default()).unwrap();
+        let half = half_surface(&full, g.length).unwrap();
+        let (lo, hi) = extent(&half.all());
+        assert!(lo[1] >= 0.0 && hi[1] > 0.05);
+        // The sample rocket is mirror symmetric: half the surface area (plus nothing from the cut).
+        let (af, ah) = (area(&full.all()), area(&half.all()));
+        assert!((ah / af - 0.5).abs() < 5e-3, "{}", ah / af);
+        // The only open edges lie in y = 0.
+        let (cnt, _) = edge_counts(&half.all(), 1e-8 * g.length);
+        let open: Vec<_> = cnt.iter().filter(|(_, &c)| c == 1).collect();
+        assert!(!open.is_empty() && open.iter().all(|(k, _)| k.0 .1 == 0 && k.1 .1 == 0));
+        // Clipping twice changes nothing.
+        assert_eq!(clip_half(&half.wall, 1e-7 * g.length).len(), half.wall.len());
+    }
+
+    #[test]
+    fn clip_splits_crossing_triangles_exactly() {
+        let t: Triangle = [Vec3::new(0.0, -1.0, 0.0), Vec3::new(1.0, 1.0, 0.0), Vec3::new(0.0, 1.0, 1.0)];
+        let c = clip_half(&[t], 1e-9);
+        assert_eq!(c.len(), 2);
+        assert!(c.iter().flatten().all(|v| v.y >= 0.0));
+        assert!(clip_half(&[[Vec3::new(0.0, -1.0, 0.0), Vec3::new(1.0, -1.0, 0.0), Vec3::new(0.0, -0.5, 1.0)]], 1e-9).is_empty());
     }
 
     #[test]

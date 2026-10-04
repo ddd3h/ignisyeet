@@ -191,6 +191,6 @@ mod tests {
         let o = CfdOptions { prefix: "~/x".into(), ..Default::default() };
         let p = resolve_prefix(&o).unwrap();
         assert!(p.ends_with("x") && !p.to_string_lossy().starts_with('~'));
-        assert_eq!(find_exe("sh", None).is_some(), true);
+        assert!(find_exe("sh", None).is_some());
     }
 }

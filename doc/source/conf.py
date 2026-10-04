@@ -52,5 +52,6 @@ latex_elements = {
 \usepackage{amsmath,amssymb,bm}
 \newcommand{\dd}{\mathrm{d}}
 \newcommand{\sgn}{\operatorname{sgn}}
+\renewcommand{\bibname}{参考文献}
 """,
 }

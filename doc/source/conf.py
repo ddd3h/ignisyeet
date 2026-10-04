@@ -8,7 +8,7 @@ copyright = "2025-2026, 西濱大将 (NISHIHAMA Daisuke)"
 release = "0.3.0"
 language = "ja"
 
-extensions = ["sphinx.ext.mathjax", "sphinxcontrib.bibtex"]
+extensions = ["sphinx.ext.mathjax", "sphinxcontrib.bibtex", "sphinxext.opengraph"]
 bibtex_bibfiles = ["references.bib"]
 bibtex_default_style = "plain"
 bibtex_reference_style = "author_year"
@@ -41,6 +41,15 @@ html_theme_options = {
     "source_branch": "main",
     "source_directory": "doc/source/",
 }
+
+# Open Graph / Twitter card metadata for link previews (image: scripts/make_ogp.py)
+ogp_site_url = "https://www.ddd3h.com/ignisyeet/"
+ogp_site_name = "IgnisYeet ドキュメント"
+ogp_image = "_static/ogp.png"
+ogp_image_alt = "IgnisYeet: STL からの空力推算と 6 自由度飛翔・落下分散解析"
+ogp_type = "website"
+ogp_social_cards = {"enable": False}
+ogp_custom_meta_tags = ['<meta name="twitter:card" content="summary_large_image" />']
 
 # PDF (make pdf): upLaTeX + jsbook. Figures are generated as both SVG (HTML) and PDF (LaTeX).
 latex_engine = "uplatex"

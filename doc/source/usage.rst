@@ -1219,18 +1219,14 @@ KML の絶対高度は名目上は平均海面（EGM96 ジオイド）からの�
 ディレクトリ構成
 ----------------
 
-.. code-block:: text
+リポジトリの主なファイルとディレクトリを :numref:`fig-directory-tree` に示す。
 
-   Cargo.toml            Rust ワークスペース
-   crates/geom/          STL の入出力、機軸の決定、断面切り出し、フィン抽出、サンプル形状
-   crates/aero/          標準大気、空力モデル、係数表（保存・内挿・外挿）
-   crates/panel/         パネル法の空力解析（亜音速 Morino 法、超音速局所傾斜法）
-   crates/cfd/           CFD による空力解析（gmsh のメッシュ、SU2 のケース実行、係数表の作成）
-   crates/sim/           推力曲線、6 自由度飛翔、測地座標変換
-   crates/cli/           ignisyeet コマンドと設定ファイル
-   python/plot.py        作図（uv プロジェクト）
-   examples/             サンプルの設定・STL・推力曲線（推力曲線は架空のもの）
-   doc/                  このドキュメント（Sphinx）
+.. _fig-directory-tree:
+
+.. figure:: _generated/tikz/directory_tree.*
+   :width: 100%
+
+   リポジトリの構成。フォルダのアイコンはディレクトリ、紙のアイコンはファイルを表す。
 
 .. _sec-doc-build:
 

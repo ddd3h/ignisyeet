@@ -1,0 +1,49 @@
+\tikzset{
+  folder/.pic={
+    \fill[cblue!80] (0,0.06) -- (0,0.27) -- (0.13,0.27) -- (0.17,0.22) -- (0.36,0.22) -- (0.36,0.06) -- cycle;
+    \fill[cblue] (0,0) rectangle (0.36,0.2);
+  },
+  file/.pic={
+    \filldraw[fill=white, draw=cink2, line width=0.5pt] (0.04,0) -- (0.04,0.3) -- (0.22,0.3) -- (0.3,0.22) -- (0.3,0) -- cycle;
+    \draw[cink2, line width=0.5pt] (0.22,0.3) -- (0.22,0.22) -- (0.3,0.22);
+    \draw[cgrid, line width=0.6pt] (0.09,0.16) -- (0.25,0.16) (0.09,0.1) -- (0.25,0.1) (0.09,0.04) -- (0.21,0.04);
+  },
+}
+% \entry{row}{depth}{folder|file}{name}{description}
+\newcommand{\entry}[5]{%
+  \pgfmathsetmacro{\yy}{-0.55*#1}
+  \pgfmathsetmacro{\xx}{0.6*#2}
+  \pic at (\xx,\yy-0.14) {#3};
+  \node[anchor=west, inner sep=0, font=\ttfamily\small, text=cink] at (\xx+0.46,\yy) {#4};
+  \node[anchor=west, inner sep=0, font=\small, text=cink2] at (5.0,\yy) {#5};
+}
+% \branch{from row}{to row}{depth}: vertical guide with ticks to each child row
+\newcommand{\guide}[3]{%
+  \pgfmathsetmacro{\gx}{0.6*#3-0.42}
+  \draw[cgrid, line width=0.7pt] (\gx,-0.55*#1-0.2) -- (\gx,-0.55*#2);
+}
+\newcommand{\tick}[2]{%
+  \pgfmathsetmacro{\gx}{0.6*#2-0.42}
+  \draw[cgrid, line width=0.7pt] (\gx,-0.55*#1) -- (\gx+0.34,-0.55*#1);
+}
+\begin{tikzpicture}
+  \entry{0}{0}{folder}{ignisyeet/}{}
+  \guide{0}{14}{1}
+  \foreach \r in {1,2,3,10,11,12,13,14} {\tick{\r}{1}}
+  \entry{1}{1}{file}{Cargo.toml}{Rust ワークスペース}
+  \entry{2}{1}{file}{Makefile}{サンプルの計算と作図をまとめて実行する}
+  \entry{3}{1}{folder}{crates/}{}
+  \guide{3}{9}{2}
+  \foreach \r in {4,...,9} {\tick{\r}{2}}
+  \entry{4}{2}{folder}{geom/}{STL の入出力、機軸の決定、断面切り出し、フィン抽出、サンプル形状}
+  \entry{5}{2}{folder}{aero/}{標準大気、空力モデル、係数表（保存・内挿・外挿）}
+  \entry{6}{2}{folder}{panel/}{パネル法の空力解析（亜音速 Morino 法、超音速局所傾斜法）}
+  \entry{7}{2}{folder}{cfd/}{CFD による空力解析（gmsh のメッシュ、SU2 のケース実行、係数表の作成）}
+  \entry{8}{2}{folder}{sim/}{推力曲線、6 自由度飛翔、測地座標変換}
+  \entry{9}{2}{folder}{cli/}{ignisyeet コマンドと設定ファイル}
+  \entry{10}{1}{folder}{python/}{作図（plot.py、uv プロジェクト）}
+  \entry{11}{1}{folder}{examples/}{サンプルの設定・STL・推力曲線（推力曲線は架空のもの）}
+  \entry{12}{1}{folder}{doc/}{このドキュメント（Sphinx）}
+  \entry{13}{1}{folder}{scripts/}{リリース用のスクリプト}
+  \entry{14}{1}{file}{install.sh}{インストーラ}
+\end{tikzpicture}

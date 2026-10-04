@@ -274,6 +274,123 @@ def theory(f):
     f.save(fig, "skin_friction")
 
 
+# ---------------------------------------------------------------- free rigid body: RKMK vs RK4 + normalisation
+RB_INERTIA = np.array([1.0, 2.0, 3.0])
+
+
+def qmul(a, b):
+    aw, av, bw, bv = a[0], a[1:], b[0], b[1:]
+    return np.concatenate([[aw * bw - av @ bv], aw * bv + bw * av + np.cross(av, bv)])
+
+
+def qconj(q):
+    return np.array([q[0], -q[1], -q[2], -q[3]])
+
+
+def exp_so3(th):
+    n = np.linalg.norm(th)
+    if n < 1e-8:
+        return np.concatenate([[1.0 - n * n / 8.0], 0.5 * th])
+    return np.concatenate([[np.cos(0.5 * n)], np.sin(0.5 * n) / n * th])
+
+
+def log_so3(q):
+    if q[0] < 0:
+        q = -q
+    n = np.linalg.norm(q[1:])
+    return np.zeros(3) if n < 1e-14 else 2.0 * np.arctan2(n, q[0]) / n * q[1:]
+
+
+def dexpinv(u, v):
+    s_ = np.linalg.norm(u)
+    g = 1.0 / 12.0 + s_**2 / 720.0 if s_ < 0.1 else (1.0 - 0.5 * s_ / np.tan(0.5 * s_)) / s_**2
+    uv = np.cross(u, v)
+    return v - 0.5 * uv + g * np.cross(u, uv)
+
+
+def euler_rhs(w):
+    i1, i2, i3 = RB_INERTIA
+    return np.array([(i2 - i3) / i1 * w[1] * w[2], (i3 - i1) / i2 * w[2] * w[0], (i1 - i2) / i3 * w[0] * w[1]])
+
+
+RK4_A = [[], [0.5], [0.0, 0.5], [0.0, 0.0, 1.0]]
+RK4_B = [1 / 6, 1 / 3, 1 / 3, 1 / 6]
+DP5_A = [[], [1 / 5], [3 / 40, 9 / 40], [44 / 45, -56 / 15, 32 / 9],
+         [19372 / 6561, -25360 / 2187, 64448 / 6561, -212 / 729],
+         [9017 / 3168, -355 / 33, 46732 / 5247, 49 / 176, -5103 / 18656],
+         [35 / 384, 0, 500 / 1113, 125 / 192, -2187 / 6784, 11 / 84]]
+DP5_B = [35 / 384, 0, 500 / 1113, 125 / 192, -2187 / 6784, 11 / 84, 0]
+
+
+def rkmk_step(a_tab, b_tab, w, q, h):
+    kx, kt = [], []
+    for i in range(len(b_tab)):
+        th = h * sum((a * kt[j] for j, a in enumerate(a_tab[i])), np.zeros(3))
+        wi = w + h * sum((a * kx[j] for j, a in enumerate(a_tab[i])), np.zeros(3))
+        kx.append(euler_rhs(wi))
+        kt.append(dexpinv(-th, wi))
+    wn = w + h * sum(b * k for b, k in zip(b_tab, kx))
+    th = h * sum(b * k for b, k in zip(b_tab, kt))
+    return wn, qmul(q, exp_so3(th))
+
+
+def rk4_normalise_step(w, q, h):
+    kw, kq = [], []
+    for i in range(4):
+        wi = w + h * sum((a * kw[j] for j, a in enumerate(RK4_A[i])), np.zeros(3))
+        qi = q + h * sum((a * kq[j] for j, a in enumerate(RK4_A[i])), np.zeros(4))
+        kw.append(euler_rhs(wi))
+        kq.append(0.5 * qmul(qi, np.concatenate([[0.0], wi])))
+    wn = w + h * sum(b * k for b, k in zip(RK4_B, kw))
+    qn = q + h * sum(b * k for b, k in zip(RK4_B, kq))
+    return wn, qn
+
+
+def rigid_body(f):
+    w0 = np.array([0.3, 1.0, 0.4])
+    q0 = exp_so3(np.array([0.4, -0.7, 0.2]))
+    h, tend, href = 0.05, 20.0, 0.001
+    n, r = int(round(tend / h)), int(round(h / href))
+    # reference: RKMK with the 5th-order Dormand-Prince tableau, h = 1 ms
+    wr, qr = w0.copy(), q0.copy()
+    ref = [qr]
+    for _ in range(n):
+        for _ in range(r):
+            wr, qr = rkmk_step(DP5_A, DP5_B, wr, qr, href)
+        ref.append(qr)
+    t = h * np.arange(n + 1)
+    # RKMK + RK4
+    w, q = w0.copy(), q0.copy()
+    e_lie, d_lie = [0.0], [0.0]
+    for k in range(n):
+        w, q = rkmk_step(RK4_A, RK4_B, w, q, h)
+        e_lie.append(np.linalg.norm(log_so3(qmul(qconj(ref[k + 1]), q))))
+        d_lie.append(abs(np.linalg.norm(q) - 1.0))
+    # RK4 on (w, q) in R^3 x R^4, renormalised after every step
+    w, q = w0.copy(), q0.copy()
+    e_nrm, d_nrm = [0.0], [0.0]
+    for k in range(n):
+        w, q = rk4_normalise_step(w, q, h)
+        d_nrm.append(abs(np.linalg.norm(q) - 1.0))  # deviation removed by the renormalisation
+        q = q / np.linalg.norm(q)
+        e_nrm.append(np.linalg.norm(log_so3(qmul(qconj(ref[k + 1]), q))))
+    print(f"rigid body h={h}: final attitude error RKMK {e_lie[-1]:.3e} rad, RK4+normalise {e_nrm[-1]:.3e} rad; "
+          f"max |q|-1 RKMK {max(d_lie):.2e}, pre-normalisation RK4 {max(d_nrm):.2e}")
+    fig, axs = plt.subplots(1, 2, figsize=(9.0, 3.4))
+    axs[0].semilogy(t[1:], e_nrm[1:], color=SERIES[1], label="RK4 + 正規化")
+    axs[0].semilogy(t[1:], e_lie[1:], color=SERIES[0], label="RKMK + RK4")
+    axs[0].set_xlabel("時刻 $t$ [s]")
+    axs[0].set_ylabel("姿勢の誤差 [rad]")
+    axs[0].legend(loc="lower right")
+    axs[1].semilogy(t[1:], np.maximum(d_nrm[1:], 1e-17), color=SERIES[1], label="RK4（正規化前）")
+    axs[1].semilogy(t[1:], np.maximum(d_lie[1:], 1e-17), color=SERIES[0], label="RKMK + RK4")
+    axs[1].set_xlabel("時刻 $t$ [s]")
+    axs[1].set_ylabel("$\\left|\\,|q|-1\\right|$")
+    axs[1].legend(loc="center right")
+    fig.tight_layout()
+    f.save(fig, "rigid_body_attitude")
+
+
 def from_outputs(f, out):
     geo = json.loads((out / "geometry.json").read_text())
     prof = pd.read_csv(out / "profile.csv")
@@ -515,6 +632,7 @@ def main():
     out, figdir = Path(sys.argv[1]), Path(sys.argv[2])
     f = Figs(figdir)
     theory(f)
+    rigid_body(f)
     from_outputs(f, out)
     if len(sys.argv) > 3:
         monte_carlo(f, Path(sys.argv[3]))

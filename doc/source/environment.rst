@@ -102,8 +102,8 @@
    \end{cases}
 
 となる。ここで :math:`p_0=101\,325` Pa、:math:`H_j^{+}=\min(H,\,H_{j+1})`\ （最上層では :math:`H_j^{+}=H`）である。
-温度は :math:`T=T_k+L_k(H-H_k)+\Delta T`、密度・音速・粘性係数は式 :eq:`eq-atm-derived` に :math:`T` を入れて求める。
-:math:`\Delta T=0` のときは標準大気そのもの（式 :eq:`eq-us76`）を返す。式 :eq:`eq-us76-offset` を :math:`\Delta T=0` で評価しても、
+温度は :math:`T=T_k+L_k(H-H_k)+\Delta T`、密度・音速・粘性係数は\ :eq:`eq-atm-derived` に :math:`T` を入れて求める。
+:math:`\Delta T=0` のときは標準大気そのもの（:eq:`eq-us76`）を返す。:eq:`eq-us76-offset` を :math:`\Delta T=0` で評価しても、
 標準大気の基準圧力 :math:`p_k`\ （表）を相対誤差 :math:`2\times10^{-5}` 以内で再現する。
 :math:`\Delta T` は :math:`-200` K より大きくなければならない。
 
@@ -162,7 +162,7 @@
       k=\frac32J_2\left(\frac{a}{r}\right)^2,\quad \zeta=\frac{Z}{r}
 
    定数は :math:`GM=3.986\,004\,418\times10^{14}\ \mathrm{m^3/s^2}`、:math:`J_2=1.082\,626\,68\times10^{-3}`、:math:`a=6\,378\,137\ \mathrm{m}` である :cite:`wgs84`。
-   この式は万有引力だけで、遠心力は含まない（ECEF モードでは式 :eq:`eq-ecef-accel` の遠心加速度として別に加える）。
+   この式は万有引力だけで、遠心力は含まない（ECEF モードでは\ :eq:`eq-ecef-accel` の遠心加速度として別に加える）。
    鉛直方向以外にも小さな成分（赤道向きに約 :math:`3J_2g\sin\phi\cos\phi`）を持つ。
    平面地球モードでは地球の形が定義できないので、``gravity = "j2"`` はエラーになる。
 
@@ -213,7 +213,7 @@
 
       w(h) = w_{\mathrm{ref}}\,\frac{\ln\bigl(\max(h,\,z_0)/z_0\bigr)}{\ln(h_{\mathrm{ref}}/z_0)}
 
-   とする。:math:`h\le z_0` では 0 になる。:math:`z_0` は開けた草地で 0.01〜0.05 m、樹木や建物のある地表で 0.3〜1 m 程度とされる :cite:`stull`。
+   とする。式の上では :math:`h\le z_0` で 0 になる（実際の地面付近の扱いは :ref:`sec-wind-blend`）。:math:`z_0` は開けた草地で 0.01〜0.05 m、樹木や建物のある地表で 0.3〜1 m 程度とされる :cite:`stull`。
    :math:`0<z_0<h_{\mathrm{ref}}` でなければならない（:numref:`fig-wind-models` 左）。
 
 ``profile``\ （高度別の表）
@@ -230,6 +230,33 @@
 これを数 km まで延長すると、:numref:`fig-wind-profile` や :numref:`fig-wind-models` のように上空の風速を過大に見積もりやすい。
 到達高度が高い機体の落下分散（特にパラシュート降下）は、この仮定に強く依存することに注意してほしい。
 高高度まで飛ぶ機体では、高層観測や数値予報の風を ``profile`` で与えるのが望ましい。
+
+.. _sec-wind-blend:
+
+地面付近のなめらかな接続
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+``power`` と ``log`` の風速は、地面（:math:`h=0`）で 0 になる。``power`` の :math:`h^{1/n}` は :math:`h=0` で傾きが無限大になり、
+``log`` は :math:`h=z_0` で 0 に折れる。このような点があると、刻み幅を制御する積分法（``rk45``、``dop853``）は許容誤差が小さいときに着地の直前で刻み幅を極端に小さくし、
+刻み幅が下限を下回ってエラーになりうる。そこで、地面から高さ :math:`h_b`\ （``ground_blend_height``、既定 1 m）までは、風速を 3 次の Hermite 多項式 :math:`p(h)` に置き換える。
+:math:`t=h/h_b` として、
+
+.. math::
+   :label: eq-wind-blend
+
+   p(h)=w(h_b)\left(-t^3+t^2+t\right)+h_b\,w'(h_b)\left(t^3-t^2\right),\qquad 0\le h\le h_b
+
+である。これは次の 4 つの条件を満たす 3 次式である。
+
+.. math::
+
+   p(0)=0,\qquad p'(0)=\frac{w(h_b)}{h_b},\qquad p(h_b)=w(h_b),\qquad p'(h_b)=w'(h_b)
+
+高さ :math:`h_b` では風速も傾きもモデルの値と連続につながり、地面では風速が 0 で傾きが有限（:math:`w(h_b)/h_b`）になる。
+:math:`h\ge h_b` の風速は、:eq:`eq-wind` や :eq:`eq-wind-log` のままである。
+``ground_blend_height`` は正で ``ref_height`` より小さい値でなければならない。``log`` では :math:`z_0` より大きい必要があり、
+設定値が :math:`z_0` 以下なら :math:`\max(h_b,\,2z_0)` に読み替える。``constant`` と ``profile`` には適用しない。
+サンプル（``power``、:math:`h_b=1` m）では、この接続による着地点の変化は約 1 cm である。
 
 .. _sec-wind-profile:
 
@@ -329,15 +356,15 @@
      - 低高度
      - 地上風
    * - ``power``
-     - 式 :eq:`eq-wind`
+     - :eq:`eq-wind`
      - 〜1 km
      - 地上風
    * - ``log``
-     - 式 :eq:`eq-wind-log`、:math:`z_0` は粗度長
+     - :eq:`eq-wind-log`、:math:`z_0` は粗度長
      - 〜100 m
      - 地上風、粗度
    * - ``profile``
-     - 高度別の表の成分補間（式 :eq:`eq-wind-profile`）
+     - 高度別の表の成分補間（:eq:`eq-wind-profile`）
      - 表の範囲
      - ラジオゾンデ・数値予報などの風
 

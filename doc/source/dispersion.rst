@@ -171,8 +171,8 @@
 空力係数
 ^^^^^^^^
 
-空力のばらつきは、係数表の **引いたあとの値** に掛ける。式 :eq:`eq-aero-force` の :math:`C_N` に加え、
-:math:`C_{N\alpha}` とピッチ減衰の和 :math:`S_0,S_1,S_2`\ （式 :eq:`eq-moment-damp`）も同じ倍率 :math:`f_{N}` で変えるので、
+空力のばらつきは、係数表の **引いたあとの値** に掛ける。:eq:`eq-aero-force` の :math:`C_N` に加え、
+:math:`C_{N\alpha}` とピッチ減衰の和 :math:`S_0,S_1,S_2`\ （:eq:`eq-moment-damp`）も同じ倍率 :math:`f_{N}` で変えるので、
 圧力中心 :math:`x_{cp}` は変わらず、復元モーメントとピッチ減衰がともに :math:`f_N` 倍になる。
 軸力は :math:`C_A^{\mathrm{on}}` と :math:`C_A^{\mathrm{off}}` の両方を :math:`f_A` 倍する。
 係数表そのものは全サンプルで共有するので、サンプルごとに作り直すことはない。

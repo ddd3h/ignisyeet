@@ -183,7 +183,7 @@ ENU 座標から測地座標へ
 
 であり、ENU 座標 :math:`(x_E,y_N,z_U)` の点の ECEF 座標は
 :math:`\bm{X}=\bm{X}_0+x_E\bm{e}_E+y_N\bm{e}_N+z_U\bm{e}_U` となる。
-これに式 :eq:`eq-ecef-lla` を適用して緯度・経度を得る。
+これに\ :eq:`eq-ecef-lla` を適用して緯度・経度を得る。
 逆向き（ECEF から ENU）は、この三つのベクトルを行に並べた行列を :math:`\bm{X}-\bm{X}_0` に掛ければよい。
 
 .. _sec-enu-range:
@@ -256,7 +256,7 @@ ECEF 座標系は地球の自転ベクトル :math:`\bm{\Omega}=(0,0,\Omega_\opl
    \dot{\bm{v}} = \frac{1}{m}\,R(\bm{q})\left(\bm{F}_T+\bm{F}_A\right)_b + \bm{g}(\bm{r})
    - 2\,\bm{\Omega}\times\bm{v} - \bm{\Omega}\times(\bm{\Omega}\times\bm{r})
 
-となる。右辺の第 1 項が推力と空気力、第 2 項が重力（遠心力を含まない万有引力のみ。:ref:`sec-gravity`）、第 3 項が Coriolis 加速度、第 4 項が遠心加速度である :cite:`goldstein`\ （:numref:`fig-ecef-rotating`）。ランチャ上の運動（式 :eq:`eq-rail`）も同じ加速度を使う。
+となる。右辺の第 1 項が推力と空気力、第 2 項が重力（遠心力を含まない万有引力のみ。:ref:`sec-gravity`）、第 3 項が Coriolis 加速度、第 4 項が遠心加速度である :cite:`goldstein`\ （:numref:`fig-ecef-rotating`）。ランチャ上の運動（:eq:`eq-rail`）も同じ加速度を使う。
 
 .. _fig-ecef-rotating:
 
@@ -272,7 +272,7 @@ ECEF 座標系は地球の自転ベクトル :math:`\bm{\Omega}=(0,0,\Omega_\opl
 姿勢の方程式
 ~~~~~~~~~~~~
 
-Euler の運動方程式（式 :eq:`eq-euler`）の角速度は **慣性系に対する** ものでなければならない :cite:`goldstein`。
+Euler の運動方程式（:eq:`eq-euler`）の角速度は **慣性系に対する** ものでなければならない :cite:`goldstein`。
 ECEF に対する角速度 :math:`\bm{\omega}` に、自転ベクトルを機体座標で表した :math:`R^\top\bm{\Omega}` を足して
 
 .. math::
@@ -291,27 +291,27 @@ ECEF に対する角速度 :math:`\bm{\omega}` に、自転ベクトルを機体
 で :math:`\bm{\omega}` の変化を求める。第 2 式は、:math:`\bm{\Omega}` が ECEF で一定なので
 :math:`\mathrm{d}(R^\top\bm{\Omega})/\mathrm{d}t=-\bm{\omega}\times(R^\top\bm{\Omega})` となることから得られる。
 クォータニオンは ECEF に対する角速度で更新する（:math:`\dot{\bm{q}}=\tfrac12\,\bm{q}\otimes(0,\bm{\omega})`）。
-空力モーメントとピッチ減衰（式 :eq:`eq-moment-damp`）は :math:`\bm{\omega}` の横成分に対して計算する。
-平面地球モードでは :math:`\bm{\Omega}=0` なので、これらは式 :eq:`eq-euler` に一致する。
+空力モーメントとピッチ減衰（:eq:`eq-moment-damp`）は :math:`\bm{\omega}` の横成分に対して計算する。
+平面地球モードでは :math:`\bm{\Omega}=0` なので、これらは\ :eq:`eq-euler` に一致する。
 
 初期状態
 ~~~~~~~~
 
-射点の測地座標 :math:`(\phi_0,\lambda_0,h_0)` から式 :eq:`eq-lla-ecef` で :math:`\bm{r}_0` を求め、
+射点の測地座標 :math:`(\phi_0,\lambda_0,h_0)` から\ :eq:`eq-lla-ecef` で :math:`\bm{r}_0` を求め、
 :math:`\bm{v}=0`\ （機体は地球とともに回転しているので、地球に対して静止）、:math:`\bm{\omega}=0` で始める。
-機体の初期姿勢は、ランチャの方向（式 :eq:`eq-rail-dir`）と機体軸の定義を射点の ENU 基底（式 :eq:`eq-enu-basis`）で ECEF 座標に直して作る。
+機体の初期姿勢は、ランチャの方向（:eq:`eq-rail-dir`）と機体軸の定義を射点の ENU 基底（:eq:`eq-enu-basis`）で ECEF 座標に直して作る。
 
 現在位置での局所座標
 ~~~~~~~~~~~~~~~~~~~~
 
-積分の各ステップで、現在の ECEF 位置から式 :eq:`eq-ecef-lla` で測地座標 :math:`(\phi,\lambda,h)` を求め、次の量を決める。
+積分の各ステップで、現在の ECEF 位置から\ :eq:`eq-ecef-lla` で測地座標 :math:`(\phi,\lambda,h)` を求め、次の量を決める。
 
-* **高さ** :math:`z=h-h_0`\ （射点標高からの楕円体高の差）。大気・音速は海抜高度 :math:`h` で、重力は式 :eq:`eq-gravity` の :math:`h_0+z` で評価する。
-* **局所の東・北・天頂** :math:`\bm{e}_E,\bm{e}_N,\bm{e}_U`\ （式 :eq:`eq-enu-basis` を現在の :math:`(\phi,\lambda)` で評価する）。
+* **高さ** :math:`z=h-h_0`\ （射点標高からの楕円体高の差）。大気・音速は海抜高度 :math:`h` で、重力は\ :eq:`eq-gravity` の :math:`h_0+z` で評価する。
+* **局所の東・北・天頂** :math:`\bm{e}_E,\bm{e}_N,\bm{e}_U`\ （:eq:`eq-enu-basis` を現在の :math:`(\phi,\lambda)` で評価する）。
 * **風**：高度 :math:`z` での風速（:ref:`sec-wind`）の水平成分を :math:`\bm{w}=w_E\bm{e}_E+w_N\bm{e}_N` として ECEF 座標に直し、
   対気速度を :math:`\bm{v}_a=\bm{v}-\bm{w}` とする。鉛直成分は 0 である。
 * **重力**：``inverse_square`` と ``constant`` では、大きさは平面地球モードと同じで（それぞれ :math:`g_0(R_\oplus/(R_\oplus+h_0+z))^2` と :math:`g_0`）、
-  向きを現在位置の測地的な下向き :math:`-\bm{e}_U` にとる。``j2`` では :ref:`sec-gravity` の式 :eq:`eq-j2` を ECEF 位置で評価した
+  向きを現在位置の測地的な下向き :math:`-\bm{e}_U` にとる。``j2`` では :ref:`sec-gravity` の\ :eq:`eq-j2` を ECEF 位置で評価した
   ベクトルをそのまま使う（水平成分を含む）。
 
 着地と出力

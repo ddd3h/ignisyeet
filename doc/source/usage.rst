@@ -536,10 +536,13 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - 意味
    * - ``integrator``
      - ``"rk4"``
-     - 数値積分法。``"rk4"``\ （固定刻みの古典的 Runge–Kutta 法）``"rk45"``\ （刻み幅制御付きの Dormand–Prince 法。:ref:`sec-integrators`）、``"dop853"``\ （刻み幅制御付きの 8 次の Dormand–Prince 法）のいずれか
+     - 数値積分法。``"rk4"``\ （固定刻みの古典的 Runge–Kutta 法）、``"rk45"``\ （刻み幅制御付きの Dormand–Prince 5(4) 法）、
+       ``"dop853"``\ （刻み幅制御付きの Dormand–Prince 8(5,3) 法）のいずれか（:ref:`sec-integrators`）
    * - ``attitude``
      - ``"normalize"``
-     - 姿勢の更新法。``"normalize"`` は四元数を通常の状態量として積分し、各ステップ後に正規化する。``"lie_group"`` は SO(3) 上の Runge–Kutta–Munthe-Kaas 法で、四元数のノルムが丸め誤差の範囲で 1 に保たれる。どの積分法とも組み合わせられる
+     - 姿勢の更新法。``"normalize"`` は四元数を通常の状態量として積分し、各ステップ後に正規化する。
+       ``"lie_group"`` は SO(3) 上の Runge–Kutta–Munthe-Kaas 法で、正規化をせずに四元数のノルムが丸め誤差の範囲で 1 に保たれる。
+       どの積分法とも組み合わせられる（:ref:`sec-integrators`）
    * - ``dt``
      - ``0.002``
      - ``rk4`` の時間刻み [s]。``rk45``・``dop853`` では最初の刻み幅として使う
@@ -551,7 +554,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - 計算を打ち切る時刻 [s]
    * - ``output_interval``
      - ``0.05``
-     - ``trajectory.csv`` に書き出す間隔 [s]。``rk45`` では刻み幅の上限でもある
+     - ``trajectory.csv`` に書き出す間隔 [s]。``rk45``・``dop853`` では刻み幅の上限でもある（正）
    * - ``descent``
      - 自動
      - ``sim`` の降下モード。省略時はパラシュートが有効なら ``"parachute"``、無効なら ``"ballistic"``
@@ -647,7 +650,7 @@ CSV の 1 行目は次の見出しで、続く行は Mach 数が外側、迎角�
    mach,alpha_deg,cn,ca_on,ca_off,xcp,cna,damp_s0,damp_s1,damp_s2
 
 各列は、法線力係数 :math:`C_N`、軸力係数（燃焼中・燃焼後）、圧力中心 :math:`x_{cp}` [m]（ノーズ先端から）、
-:math:`C_{N\alpha}` [1/rad]、ピッチ減衰の和 :math:`S_0, S_1, S_2`\ （式 :eq:`eq-moment-damp`）である。
+:math:`C_{N\alpha}` [1/rad]、ピッチ減衰の和 :math:`S_0, S_1, S_2`\ （:eq:`eq-moment-damp`）である。
 
 付随の ``.json`` には、基準面積 ``ref_area`` [m\ :sup:`2`]、基準直径 ``ref_diameter`` [m]、全長 ``length`` [m]、
 格子 ``machs`` と ``alphas_deg``\ （各列の値）、``extrapolation``\ （``"linear"`` または ``"clamp"``）、``source_hash``\ （任意の文字列でよい）を書く。
@@ -726,7 +729,7 @@ KML は地理情報を記述する XML 形式で、OGC の標準（KML 2.2 :cite
    弾道落下は青、パラシュート降下は橙で、風速が大きいほど濃い色にする。
 
 ``Dispersion – Monte Carlo``
-   モンテカルロの結果（``dispersion_mc.csv`` と ``dispersion_summary.json``）があるときに入る。降下モードごとのフォルダに、平均着地点（Mean landing）、:math:`1\sigma` と :math:`3\sigma` の誤差楕円（式 :eq:`eq-mc-stat` の共分散から作る 72 頂点の閉じた折れ線で、塗りつぶさない）、
+   モンテカルロの結果（``dispersion_mc.csv`` と ``dispersion_summary.json``）があるときに入る。降下モードごとのフォルダに、平均着地点（Mean landing）、:math:`1\sigma` と :math:`3\sigma` の誤差楕円（:eq:`eq-mc-stat` の共分散から作る 72 頂点の閉じた折れ線で、塗りつぶさない）、
    各サンプルの着地点（``Landing points`` フォルダ）が入る。失敗したサンプルは含まない。
 
 落下分散の図形はすべて地面に固定して描く。

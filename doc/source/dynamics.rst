@@ -89,7 +89,7 @@ Coriolis 力と遠心力の項が加わる以外は同じ式を使う（:ref:`se
 である。:math:`x_{cp}>x_{cg}`\ （圧力中心が重心より後ろ）のとき、このモーメントは機首を対気速度の方向へ向ける。
 これを **風見効果**\ （weathercocking）と呼ぶ。横風を受けると機体は風上を向くので、弾道落下の着地点は風上側にずれる。
 
-これに式 :eq:`eq-damping` のピッチ減衰を加える。
+これに\ :eq:`eq-damping` のピッチ減衰を加える。
 
 .. math::
    :label: eq-moment-damp
@@ -114,7 +114,7 @@ Coriolis 力と遠心力の項が加わる以外は同じ式を使う（:ref:`se
 ランチャ滑走
 ~~~~~~~~~~~~
 
-ランチャ上では、機体はレールの方向 :math:`\bm{d}`\ （式 :eq:`eq-rail-dir`）にしか動けず、姿勢も変わらない。
+ランチャ上では、機体はレールの方向 :math:`\bm{d}`\ （:eq:`eq-rail-dir`）にしか動けず、姿勢も変わらない。
 レールに沿った速さを :math:`v_\parallel=\bm{v}\cdot\bm{d}` として
 
 .. math::
@@ -131,7 +131,7 @@ Coriolis 力と遠心力の項が加わる以外は同じ式を使う（:ref:`se
 自由飛行
 ~~~~~~~~
 
-式 :eq:`eq-translation` と :eq:`eq-euler` による 6 自由度の運動である。
+:eq:`eq-translation` と :eq:`eq-euler` による 6 自由度の運動である。
 弾道落下モードでは着地までこのまま計算する。
 
 パラシュート降下
@@ -154,7 +154,7 @@ Coriolis 力と遠心力の項が加わる以外は同じ式を使う（:ref:`se
 
 ランチャ離脱後に :math:`z_U\le0` となったステップで計算を終える（ECEF モードでは測地的な高さ :math:`h-h_0\le0`）。
 直前のステップとの間を線形補間し、
-:math:`z_U=0` となる位置と時刻を着地点・着地時刻とする。着地点は式 :eq:`eq-enu-basis` と :eq:`eq-ecef-lla` で緯度・経度に変換する。
+:math:`z_U=0` となる位置と時刻を着地点・着地時刻とする。着地点は\ :eq:`eq-enu-basis` と :eq:`eq-ecef-lla` で緯度・経度に変換する。
 
 .. _sec-integrators:
 
@@ -162,7 +162,7 @@ Coriolis 力と遠心力の項が加わる以外は同じ式を使う（:ref:`se
 --------
 
 状態方程式 :math:`\dot{\bm{y}}=\bm{f}(t,\bm{y})` を、設定 ``sim.integrator`` で選んだ方法で積分する。
-どちらの方法でも、1 ステップの後でクォータニオンを正規化し、段階の切り替え（ランチャ離脱・頂点・開傘・着地）を判定する。
+どの方法でも、1 ステップの後で（``attitude = "normalize"`` ではクォータニオンを正規化したうえで）、段階の切り替え（ランチャ離脱・頂点・開傘・着地）を判定する。
 段階はステップの途中では変えない。
 
 古典的 Runge–Kutta 法（``rk4``）
@@ -201,7 +201,7 @@ Dormand–Prince 法（``rk45``）
    \bm{y}_{n+1}=\bm{y}_n+h\sum_{j=1}^{6}b_j\bm{k}_j,\qquad
    \bm{k}_7=\bm{f}(t+h,\ \bm{y}_{n+1})
 
-とする。係数は式 :eq:`eq-butcher` の Butcher 表 :cite:`dormand` のとおりで、5 次の解の重み :math:`b_j` は第 6 段の行（:math:`c_6=1`）と同じである。
+とする。係数は\ :eq:`eq-butcher` の Butcher 表 :cite:`dormand` のとおりで、5 次の解の重み :math:`b_j` は第 6 段の行（:math:`c_6=1`）と同じである。
 
 .. math::
    :label: eq-butcher
@@ -222,7 +222,7 @@ Dormand–Prince 法（``rk45``）
 
    (E_1,\dots,E_7)=\left(\frac{71}{57600},\ 0,\ -\frac{71}{16695},\ \frac{71}{1920},\ -\frac{17253}{339200},\ \frac{22}{525},\ -\frac1{40}\right)
 
-式 :eq:`eq-butcher-e` の :math:`E_j` は 5 次の解と 4 次の解の差を与える係数で、誤差の推定に使う。
+:eq:`eq-butcher-e` の :math:`E_j` は 5 次の解と 4 次の解の差を与える係数で、誤差の推定に使う。
 :math:`\bm{k}_7` は新しい点での右辺そのものなので、受理されたステップの :math:`\bm{k}_7` を次のステップの :math:`\bm{k}_1` として再利用する
 （FSAL: first same as last :cite:`hairer`）。したがって 1 ステップあたりの右辺の評価は 6 回である。
 段階が切り替わったステップの後は右辺が変わるので、:math:`\bm{k}_1` を評価し直す。
@@ -339,6 +339,286 @@ Dormand–Prince 法（``rk45``）
 ランチャ離脱は、``rk4`` では刻み :math:`\Delta t` の単位（0.248 s、45.84 m/s）、``rk45`` ではレール終端に合わせるので、
 0.2472 s、45.66 m/s と細かく求まる（参照解の 0.2475 s、45.74 m/s に近い）。
 
+Dormand–Prince 8(5,3) 法（``dop853``）
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Prince と Dormand の 8 次の埋め込み公式 :cite:`princedormand` を、Hairer と Wanner の実装（``dop853.f``）に従って用いる :cite:`hairer`。
+刻み幅 :math:`h` の 1 ステップは 12 段で、8 次の解を伝播させる。
+
+.. math::
+   :label: eq-dop853
+
+   \bm{k}_i=\bm{f}\!\left(t+c_ih,\ \bm{y}_n+h\sum_{j<i}a_{ij}\bm{k}_j\right)\ (i=1,\dots,12),\qquad
+   \bm{y}_{n+1}=\bm{y}_n+h\sum_{i=1}^{12}b_i\bm{k}_i
+
+係数 :math:`c_i,\,a_{ij},\,b_i` は ``dop853.f`` の値をそのまま写したものである（:math:`c_{12}=1`）。:math:`b_i` は :math:`i=1,6,\dots,12` だけが 0 でない。
+係数が正しいことは、SciPy の係数表の 76 個の定数と :math:`10^{-15}` で一致すること、
+:math:`y'=y\cos t` の固定刻みの積分で観測される次数が 8 であることで確かめている（:doc:`verification`）。
+密な出力（dense output）の係数は使わない。頂点・着地の時刻は ``rk45`` と同じく、ステップ内の線形補間で求める。
+
+誤差の推定
+^^^^^^^^^^
+
+誤差の推定には、5 次と 3 次の 2 つの埋め込み解を使う。``dop853.f`` の係数 :math:`\mathrm{er}_i` と、
+8 次の重み :math:`b_i` から 3 次の解の重み :math:`\widehat b_i`\ （``bhh``。:math:`i=1,9,12` だけが 0 でない）を引いた :math:`b_i-\widehat b_i` を用いて、
+
+.. math::
+   :label: eq-dop853-e
+
+   \bm{e}_5=h\sum_{i=1}^{12}\mathrm{er}_i\,\bm{k}_i,\qquad
+   \bm{e}_3=h\sum_{i=1}^{12}\left(b_i-\widehat b_i\right)\bm{k}_i
+
+とする。:math:`\bm{e}_5,\bm{e}_3` の各成分 :math:`c` を :math:`\mathrm{sc}_c=\varepsilon_a+\varepsilon_r\max(|y_{n,c}|,\,|y_{n+1,c}|)` で割り、
+:math:`n=13` 個の成分の二乗平均平方根を :math:`\mathrm{err}_5,\ \mathrm{err}_3` とする。
+実装では、:math:`h` を除いた二乗和 :math:`S_5=\sum_c\bigl(\sum_i\mathrm{er}_ik_{i,c}/\mathrm{sc}_c\bigr)^2`、
+:math:`S_3=\sum_c\bigl(\sum_i(b_i-\widehat b_i)k_{i,c}/\mathrm{sc}_c\bigr)^2` から
+
+.. math::
+   :label: eq-dop853-err
+
+   \mathrm{err}=\frac{|h|\,S_5}{\sqrt{n\,\bigl(S_5+0.01\,S_3\bigr)}}
+   =\frac{\mathrm{err}_5^{\,2}}{\sqrt{\mathrm{err}_5^{\,2}+0.01\,\mathrm{err}_3^{\,2}}}
+
+を求める。5 次の推定を 3 次の推定で補正した形である。
+刻み幅が小さいとき :math:`\mathrm{err}_5\propto h^6`、:math:`\mathrm{err}_3\propto h^4` なので、:math:`\mathrm{err}\propto h^8` となり、
+刻み幅の制御に指数 :math:`1/8` を使う根拠になる。
+
+刻み幅の制御
+^^^^^^^^^^^^
+
+:math:`\mathrm{err}\le1` ならステップを受理し、次の刻み幅（やり直す場合はそのときの刻み幅）に
+
+.. math::
+   :label: eq-dop853-factor
+
+   h\leftarrow h\cdot f,\qquad f=\min\!\left(6,\ \max\!\left(0.333,\ 0.9\,\mathrm{err}^{-1/8}\right)\right)
+
+を掛ける。安全率は 0.9、倍率の範囲は 0.333〜6 で、:math:`\mathrm{err}=0` のときは 6 である。
+``dop853.f`` にある、直前のステップの誤差を使う安定化（:math:`\beta`）は使わない。刻み幅の上限と下限の扱いは ``rk45`` と同じである。
+12 段の計算の後に、受理された点での右辺 :math:`\bm{k}_{13}=\bm{f}(t+h,\bm{y}_{n+1})` を 1 回評価し、次のステップの :math:`\bm{k}_1` として再利用する
+（FSAL）。したがって 1 ステップあたりの右辺の評価は 13 回で、``rk45`` の 6 回の約 2 倍である。
+段階が切り替わったステップの後は ``rk45`` と同じく :math:`\bm{k}_1` を評価し直す。
+``attitude = "normalize"`` では、:math:`\bm{k}_{13}` はクォータニオンを正規化する前の :math:`\bm{y}_{n+1}` で評価する（正規化による差は許容誤差の程度である）。
+
+``dop853`` が有利になる場合
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+高次の方法は、解が滑らかで許容誤差が厳しいときに、少ない評価回数で同じ精度に達する。
+空力係数が Mach 数に依らず迎角に線形で、風がなく、推力が 0 から始まって 0 で終わる滑らかな弾道飛翔（出力間隔 0.5 s）では、
+``rk45`` と ``dop853`` の右辺の評価回数は、``rtol = atol = 1e-9`` で 7532 回と 4202 回、``1e-11`` で 17978 回と 6350 回であった（実測）。
+許容誤差が厳しいほど差は開く。
+
+一方、サンプルの設定ではこの利点は出ない（:numref:`tbl-integrator-attitude`）。
+空力係数表は区分的に線形なので、Mach 数と迎角が格子点をまたぐところで右辺の微分が不連続になり、高次の方法でも刻み幅は大きくできない。
+さらに、刻み幅は出力間隔（0.05 s）で頭打ちになる。降下中は解が滑らかなので ``rk45`` でも誤差の条件より先にこの上限に達し、
+ステップ数は ``rk45`` が約 1.39 万、``dop853`` が約 1.27 万とほとんど変わらない。1 ステップの評価回数が 13 回と 6 回なので、``dop853`` の評価回数は約 2 倍になる。
+このサンプルでは、``rk45`` のほうが評価回数も時間も少ない。
+
+Lie 群による姿勢の積分（``attitude = "lie_group"``）
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+既定の ``attitude = "normalize"`` は、クォータニオンの 4 成分を通常の状態量として積分し、1 ステップごとに正規化する。
+``"lie_group"`` では、姿勢を単位クォータニオンのなす群 :math:`S^3`\ （回転群 SO(3) の 2 重被覆）の上で直接進める。
+Munthe-Kaas の Runge–Kutta–Munthe-Kaas（RKMK）法 :cite:`munthekaas98,munthekaas99` で、Lie 群上の積分の総説は :cite:`iserles,hairergni` にある。
+更新は常に単位クォータニオンどうしの積なので、正規化をしなくても :math:`|\bm{q}|` は丸め誤差の範囲で 1 に保たれる。
+
+指数写像と対数写像
+^^^^^^^^^^^^^^^^^^
+
+Lie 環 so(3) を :math:`\mathbb{R}^3` と同一視し、括弧積を外積とする。回転ベクトル :math:`\bm\theta`\ （rad）に対して
+
+.. math::
+   :label: eq-lie-exp
+
+   \exp(\bm\theta)=\left(\cos\frac{|\bm\theta|}2,\ \sin\frac{|\bm\theta|}2\,\frac{\bm\theta}{|\bm\theta|}\right)
+
+は、:math:`\bm\theta` まわりに角度 :math:`|\bm\theta|` だけ回す単位クォータニオンである。逆写像は、:math:`\bm{q}=(q_w,\bm{q}_v)` を :math:`q_w\ge0` となる符号にとって
+
+.. math::
+   :label: eq-lie-log
+
+   \log(\bm{q})=\frac{2\,\mathrm{atan2}(|\bm{q}_v|,\,q_w)}{|\bm{q}_v|}\,\bm{q}_v
+
+で、角度が :math:`[0,\pi]` の最短の回転を与える（:math:`\bm{q}` と :math:`-\bm{q}` は同じ回転）。
+:math:`|\bm\theta|` が小さいときは、:math:`\cos(|\bm\theta|/2)` と :math:`\sin(|\bm\theta|/2)/|\bm\theta|` を Taylor 展開で評価する。
+
+指数写像の微分
+^^^^^^^^^^^^^^
+
+運動方程式 :math:`\dot{\bm{q}}=\frac12\bm{q}\otimes(0,\bm{\omega})` を、:math:`\bm{q}=\bm{q}_n\otimes\exp(\bm\Theta(t))` と置いて :math:`\bm\Theta` の方程式に直す。
+:math:`\exp(\bm{u})^{-1}\,\mathrm{d}\exp(\bm{u}+\epsilon\bm{v})/\mathrm{d}\epsilon=\mathrm{dexp}_{-\bm{u}}(\bm{v})` なので、
+
+.. math::
+   :label: eq-lie-theta
+
+   \dot{\bm\Theta}=\mathrm{dexp}^{-1}_{-\bm\Theta}(\bm{\omega})
+
+となる。so(3) では :math:`\mathrm{dexp}` とその逆が閉じた形で書ける（:math:`s=|\bm{u}|`）。
+
+.. math::
+   :label: eq-lie-dexp
+
+   \mathrm{dexp}_{\bm{u}}(\bm{v})=\bm{v}+\frac{1-\cos s}{s^2}\,\bm{u}\times\bm{v}+\frac{s-\sin s}{s^3}\,\bm{u}\times(\bm{u}\times\bm{v})
+
+.. math::
+   :label: eq-lie-dexpinv
+
+   \mathrm{dexp}^{-1}_{\bm{u}}(\bm{v})=\bm{v}-\frac12\,\bm{u}\times\bm{v}+\frac1{s^2}\left(1-\frac s2\cot\frac s2\right)\bm{u}\times(\bm{u}\times\bm{v})
+
+これらの係数は :math:`s\to0` で 0 を 0 で割る形になるので、:math:`s<0.1` のときは級数
+
+.. math::
+   :label: eq-lie-series
+
+   \frac{1-\cos s}{s^2}=\frac12-\frac{s^2}{24}+\frac{s^4}{720}-\cdots,\quad
+   \frac{s-\sin s}{s^3}=\frac16-\frac{s^2}{120}+\frac{s^4}{5040}-\cdots,\quad
+   \frac1{s^2}\left(1-\frac s2\cot\frac s2\right)=\frac1{12}+\frac{s^2}{720}+\frac{s^4}{30240}+\cdots
+
+で評価する。:math:`\mathrm{dexp}^{-1}` は :math:`s=2\pi` で特異になるが、1 ステップの回転角はそれよりずっと小さい。
+
+RKMK 法の 1 ステップ
+^^^^^^^^^^^^^^^^^^^^
+
+状態を、ユークリッド空間の部分 :math:`\bm{x}=(\bm{x}_{\mathrm{pos}},\bm{v},\bm{\omega})`\ （9 成分）と姿勢 :math:`\bm{q}` に分ける。
+右辺を :math:`(\dot{\bm{x}},\bm{\omega})=\bm{f}(t,\bm{x},\bm{q})` として、Butcher 表 :math:`(c_i,a_{ij},b_i)` の方法の 1 ステップは次のとおりである。
+
+.. math::
+   :label: eq-rkmk-stage
+
+   \begin{aligned}
+   \bm\Theta_i&=h\sum_{j<i}a_{ij}\widetilde{\bm{K}}_j, &
+   \bm{X}_i&=\bm{x}_n+h\sum_{j<i}a_{ij}\bm{k}_j, &
+   \bm{Q}_i&=\bm{q}_n\otimes\exp(\bm\Theta_i),\\
+   (\bm{k}_i,\bm{\omega}_i)&=\bm{f}(t+c_ih,\ \bm{X}_i,\ \bm{Q}_i), &
+   \widetilde{\bm{K}}_i&=\mathrm{dexp}^{-1}_{-\bm\Theta_i}(\bm{\omega}_i)
+   \end{aligned}
+
+.. math::
+   :label: eq-rkmk-update
+
+   \bm{x}_{n+1}=\bm{x}_n+h\sum_ib_i\bm{k}_i,\qquad
+   \bm\Theta=h\sum_ib_i\widetilde{\bm{K}}_i,\qquad
+   \bm{q}_{n+1}=\bm{q}_n\otimes\exp(\bm\Theta)
+
+角速度 :math:`\bm\omega` はユークリッド部分 :math:`\bm{x}` の成分でもあるので、Euler の運動方程式（:eq:`eq-euler`）の積分は通常の Runge–Kutta 法と同じで、
+各段の姿勢 :math:`\bm{Q}_i` を右辺の空力に渡す点だけが違う。:eq:`eq-lie-dexpinv` の閉じた形をそのまま使うので、表の方法の次数は保たれる。
+自由な剛体（慣性主軸のモーメント :math:`I=\mathrm{diag}(1,2,3)`、:math:`\bm\omega_0=(0.3,\,1.0,\,0.4)` rad/s、トルクなし、:math:`t\in[0,20]` s）で
+観測した次数は、RKMK 法の ``rk4`` の表で 4.10、Dormand–Prince 5 次の表で 4.92 である。
+
+.. _fig-rigid-body-attitude:
+
+.. figure:: _generated/plots/rigid_body_attitude.*
+   :width: 100%
+
+   トルクのない剛体（:math:`I=\mathrm{diag}(1,2,3)`、刻み :math:`h=0.05` s）の姿勢の誤差（左）とクォータニオンのノルムの誤差（右）。
+   参照解は RKMK 法（Dormand–Prince 5 次、:math:`h=1` ms）である。RK4 の「正規化前」は、毎ステップの正規化で取り除かれる偏差を示す。
+
+同じ問題の結果を :numref:`fig-rigid-body-attitude` に示す。刻み :math:`h=0.01` s の RKMK 法（``rk4`` の表）では、:math:`\bigl||\bm{q}|-1\bigr|` の最大値は :math:`5.8\times10^{-15}`、
+エネルギーの相対誤差は :math:`7.1\times10^{-12}`、角運動量の大きさの相対誤差は :math:`4.6\times10^{-12}` である（実測）。
+:math:`h=0.05` s では、姿勢の誤差は RKMK 法が :math:`1.57\times10^{-7}` rad、RK4 と正規化が :math:`2.59\times10^{-7}` rad で、同程度である。
+この問題では、通常の状態量として積分した RK4 は 1 ステップごとに最大 :math:`1.9\times10^{-10}` のノルムの偏差を生じ、正規化がそれを取り除いている。
+
+誤差の推定と刻み幅の制御
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+適応的な方法（``rk45``、``dop853``）では、埋め込み解の重み :math:`e_i` を、ユークリッド部分の :math:`\bm{k}_i` と、姿勢の Lie 環の増分 :math:`\widetilde{\bm{K}}_i` の両方に掛ける。
+
+.. math::
+   :label: eq-lie-err
+
+   \bm{e}_x=h\sum_ie_i\,\bm{k}_i,\qquad
+   \bm\Theta_e=h\sum_ie_i\,\widetilde{\bm{K}}_i
+
+``rk45`` では :math:`e_i=E_i`\ （:eq:`eq-butcher-e`）、``dop853`` では :eq:`eq-dop853-e` の 2 組の重みを使う。
+:math:`\bm\Theta_e` は回転ベクトル（rad）で、2 つの解の姿勢の間の角度に（1 次の精度で）等しい。
+ユークリッド部分の 9 成分は :math:`\varepsilon_a+\varepsilon_r\max(|x_{n,c}|,|x_{n+1,c}|)` で、姿勢の 3 成分は :math:`\varepsilon_a+\varepsilon_r\pi` で割る。
+許容誤差が小さいときは、姿勢の誤差が :math:`\varepsilon_a` rad 程度まで許される。
+計算した 12 成分から ``rk45`` は :eq:`eq-dopri-err` と同じ二乗平均平方根を、``dop853`` は :eq:`eq-dop853-err` を（:math:`n=12`）求める。
+刻み幅の制御は、それぞれの方法のとおりである。
+
+座標系と段階
+^^^^^^^^^^^^
+
+運動方程式 :math:`\dot{\bm{q}}=\frac12\bm{q}\otimes(0,\bm\omega)` の :math:`\bm\omega` は、積分する座標系に対する機体座標での角速度で、状態量の :math:`\bm\omega` そのものである。
+平面地球では座標系は回転しない。ECEF では :math:`\bm{q}` は機体から ECEF への姿勢で、:math:`\bm\omega` は ECEF に対する角速度である。
+地球の自転 :math:`\bm\Omega_\oplus` の項は :math:`\dot{\bm\omega}` の方程式にだけ現れ（:eq:`eq-ecef-euler`）、:math:`\dot{\bm{q}}` には現れない。
+したがって、どちらの座標系でも Lie 環の元は各段の :math:`\bm\omega_i` である。
+
+ランチャ上とパラシュート降下では姿勢の運動を解かず、:math:`\bm{q}` は一定である。このとき Lie 環の元を :math:`\bm\omega_i=\bm{0}` とすると、
+:math:`\bm\Theta_i=\bm\Theta=\bm{0}` となって :math:`\bm{q}` はまったく変わらず、ユークリッド部分は同じ Butcher 表で進む。
+
+積分法と姿勢の更新法の組合せ
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+積分法は ``sim.integrator``\ （``"rk4"``、``"rk45"``、``"dop853"``）、姿勢の更新法は ``sim.attitude``\ （``"normalize"``、``"lie_group"``）で選び、
+6 通りの組合せがすべて使える。:numref:`tbl-integrator-attitude-keys` に仕組みを、:numref:`tbl-integrator-attitude` にサンプルの結果をまとめる。
+
+.. _tbl-integrator-attitude-keys:
+
+.. list-table:: 積分法と姿勢の更新法
+   :header-rows: 1
+   :widths: 20 20 20 20 20
+
+   * - ``sim.integrator``
+     - 刻み幅
+     - 1 ステップの評価回数
+     - 誤差の成分数（``normalize`` / ``lie_group``）
+     - 姿勢の扱い
+   * - ``rk4``
+     - 固定（``dt``）
+     - 4
+     - なし
+     - ``normalize``: 毎ステップ正規化、``lie_group``: :eq:`eq-rkmk-update`
+   * - ``rk45``
+     - 制御（``rtol``、``atol``）
+     - 6（FSAL）
+     - 13 / 12
+     - 同上
+   * - ``dop853``
+     - 制御（``rtol``、``atol``）
+     - 13（FSAL）
+     - 13 / 12
+     - 同上
+
+.. _tbl-integrator-attitude:
+
+.. list-table:: 積分法と姿勢の更新法の比較（サンプル、パラシュート降下、既定の許容誤差、単一スレッド）
+   :header-rows: 1
+   :widths: 30 20 25 25
+
+   * - 積分法 / 姿勢
+     - 頂点 [m]
+     - 評価回数
+     - 時間 [ms]
+   * - ``rk4`` / ``normalize``
+     - 4440.742
+     - 1 369 992
+     - 180
+   * - ``rk45`` / ``normalize``
+     - 4440.665
+     - 83 205
+     - 17
+   * - ``rk45`` / ``lie_group``
+     - 4440.669
+     - 83 151
+     - 24
+   * - ``dop853`` / ``normalize``
+     - 4440.677
+     - 165 171
+     - 46
+   * - ``dop853`` / ``lie_group``
+     - 4440.671
+     - 165 219
+     - 47
+   * - ``rk4`` :math:`\Delta t=0.5` ms（参照）
+     - 4440.697
+     - ―
+     - ―
+
+どの組合せも、頂点高度は参照解と 0.05 m 以内で一致する。``lie_group`` は、``normalize`` に比べて ``rk45`` で時間が 7 ms（約 40 %）増える。
+サンプルでは、姿勢の更新法による頂点高度の差は 0.01 m 以下で、計算時間は ``lie_group`` のほうが長い。
+``lie_group`` は、正規化に頼らず四元数のノルムを 1 に保ちたいときに選ぶ。
+
 計算例
 ------
 
@@ -377,5 +657,5 @@ Dormand–Prince 法（``rk45``）
    * - 着地
      - 685 s、射点から 7.7 km
 
-ランチャ離脱直後は速度が小さく、横風による迎角が大きい（約 6°）。迎角が大きいと胴体揚力（式 :eq:`eq-body-lift`）が圧力中心を前に移すので、
+ランチャ離脱直後は速度が小さく、横風による迎角が大きい（約 6°）。迎角が大きいと胴体揚力（:eq:`eq-body-lift`）が圧力中心を前に移すので、
 静安定余裕はこのとき最小になる。その後、推進剤の消費で重心が前に移り、超音速ではフィンの圧力中心が後退するので、安定余裕は 3.7 cal まで増える。

@@ -35,9 +35,9 @@
 use crate::case::{case_hash, case_list, read_done, warm_start_source, write_done, CaseResult, CaseSpec};
 use crate::config::{AlphaMode, CfdOptions};
 use crate::table::SolvedPoint;
-use crate::forces::{BodyCoeffs, Su2Coeffs};
+use crate::forces::{BodyCoeffs, BodyCoeffs6, Su2Coeffs, Su2Coeffs6};
 use crate::history::{summarize, History};
-use crate::su2cfg::{su2_config, CaseFiles, RefDims};
+use crate::su2cfg::{su2_config_case, CaseFiles, RefDims};
 use crate::tools::{self, ToolReport};
 use crate::CfdStage;
 use aero::atmosphere::Atmosphere;
@@ -133,7 +133,7 @@ impl Drop for Group {
 
 /// SU2 configuration text of a case without the restart line: the input of its hash.
 fn base_config(setup: &RunSetup, spec: &CaseSpec) -> String {
-    su2_config(setup.opt, spec.mach, spec.alpha_deg, &setup.dims, &setup.atm, &CaseFiles { mesh: setup.mesh_file.display().to_string(), restart_from: None })
+    su2_config_case(setup.opt, spec, &setup.dims, &setup.atm, &CaseFiles { mesh: setup.mesh_file.display().to_string(), restart_from: None })
 }
 
 /// Excerpt of the SU2 log for an error message: the SU2 "Error" block when there is one (MPI noise
@@ -150,7 +150,7 @@ fn tail(path: &Path, n: usize) -> String {
 
 enum Event {
     Progress { i: usize, iter: usize, residual: f64 },
-    Finished { i: usize, outcome: CaseOutcome },
+    Finished { i: usize, outcome: Box<CaseOutcome> },
 }
 
 fn command(setup: &RunSetup, dir: &Path) -> Result<std::process::Command> {
@@ -190,7 +190,7 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, restart: Opt
         _ => p.display().to_string(),
     });
     let files = CaseFiles { mesh: setup.mesh_file.display().to_string(), restart_from };
-    std::fs::write(dir.join("case.cfg"), su2_config(setup.opt, spec.mach, spec.alpha_deg, &setup.dims, &setup.atm, &files))?;
+    std::fs::write(dir.join("case.cfg"), su2_config_case(setup.opt, &spec, &setup.dims, &setup.atm, &files))?;
     let t0 = Instant::now();
     let mut cmd = command(setup, &dir)?;
     let mut child = match cmd.spawn() {
@@ -272,6 +272,10 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, restart: Opt
         Ok(c) => BodyCoeffs::from_su2(&c, setup.dims.length),
         Err(e) => return Ok(fail(e.to_string())),
     };
+    let coeffs6 = Su2Coeffs6::from_summary(&s).ok().map(|c| BodyCoeffs6::from_su2(&c));
+    if coeffs6.is_none() && (spec.is_roll() || setup.opt.general_table()) {
+        return Ok(fail("the history has no CFx, CFy, CFz, CMx, CMy, CMz columns (needed for sideslip, roll and general tables)".into()));
+    }
     let first = summarize(&h, 1).and_then(|_| {
         let c = h.col(&["rms[Rho]", "Res_Flow[0]", "rms[P]"])?;
         Some(h.rows[0][c])
@@ -280,7 +284,10 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, restart: Opt
         input_hash: hash.to_string(),
         mach: spec.mach,
         alpha_deg: spec.alpha_deg,
+        beta_deg: spec.beta_deg,
+        roll_hat: spec.roll_hat,
         coeffs,
+        coeffs6,
         iterations: s.iterations,
         converged: reached,
         residual_first: first,
@@ -310,7 +317,9 @@ pub fn run_all(setup: &RunSetup, progress: &(dyn Fn(CfdStage) + Sync)) -> Result
     let mut outcomes: Vec<Option<CaseOutcome>> = vec![None; n];
     let mut state = vec![St::Pending; n];
     for i in 0..n {
-        if let Some(r) = read_done(&cases[i].dir(&setup.work), &hashes[i]) {
+        // Results stored before the six coefficients existed cannot feed a general table or the roll pair.
+        let need6 = cases[i].is_roll() || setup.opt.general_table();
+        if let Some(r) = read_done(&cases[i].dir(&setup.work), &hashes[i]).filter(|r| !need6 || r.coeffs6.is_some()) {
             progress(CfdStage::CaseDone { index: i, total: n, mach: cases[i].mach, alpha: cases[i].alpha_deg, converged: r.converged });
             outcomes[i] = Some(CaseOutcome { spec: cases[i], result: Some(r), error: None, cached: true, warm: false });
             state[i] = St::Finished;
@@ -344,7 +353,7 @@ pub fn run_all(setup: &RunSetup, progress: &(dyn Fn(CfdStage) + Sync)) -> Result
                     sc.spawn(move || {
                         let r = run_case(setup, i, spec, &hash, restart, &tx);
                         let outcome = r.unwrap_or_else(|e| CaseOutcome { spec, result: None, error: Some(e.to_string()), cached: false, warm: false });
-                        let _ = tx.send(Event::Finished { i, outcome });
+                        let _ = tx.send(Event::Finished { i, outcome: Box::new(outcome) });
                     });
                 }
             }
@@ -364,7 +373,7 @@ pub fn run_all(setup: &RunSetup, progress: &(dyn Fn(CfdStage) + Sync)) -> Result
                         let conv = outcome.result.as_ref().is_some_and(|r| r.converged);
                         progress(CfdStage::CaseDone { index: i, total: n, mach: cases[i].mach, alpha: cases[i].alpha_deg, converged: conv });
                     }
-                    outcomes[i] = Some(outcome);
+                    outcomes[i] = Some(*outcome);
                     cleanup(&state);
                 }
                 Err(_) => {}
@@ -387,9 +396,14 @@ pub fn run_all(setup: &RunSetup, progress: &(dyn Fn(CfdStage) + Sync)) -> Result
 /// equal to the raw ones in `single` mode, empty on raw `mirror` rows.
 pub fn write_cases_csv(path: &Path, outcomes: &[CaseOutcome], corrected: &[SolvedPoint], mode: AlphaMode) -> Result<()> {
     use std::fmt::Write;
-    let mut s = String::from("mach,alpha_deg,status,iterations,residual_first,residual_last,cn_raw,ca_cfd,nose_moment_raw,xcp_raw_m,cn,nose_moment,xcp_m,wall_seconds,warm_start\n");
+    let mut s = String::from("mach,alpha_deg,status,iterations,residual_first,residual_last,cn_raw,ca_cfd,nose_moment_raw,xcp_raw_m,cn,nose_moment,xcp_m,wall_seconds,warm_start,beta_deg,roll_hat,cx,cy,cz,cl,cm,cn_yaw\n");
     let f = |v: Option<f64>| v.map_or(String::new(), |x| format!("{x:.8e}"));
-    let corr = |m: f64, a: f64| corrected.iter().find(|p| p.mach == m && p.alpha_deg == a).and_then(|p| p.coeffs);
+    let corr = |o: &CaseOutcome| {
+        if o.spec.beta_deg != 0.0 || o.spec.is_roll() {
+            return None;
+        }
+        corrected.iter().find(|p| p.mach == o.spec.mach && p.alpha_deg == o.spec.alpha_deg).and_then(|p| p.coeffs)
+    };
     let used = |c: &BodyCoeffs| (Some(c.cn), Some(c.mom), c.xcp());
     for o in outcomes {
         let status = match &o.result {
@@ -398,10 +412,11 @@ pub fn write_cases_csv(path: &Path, outcomes: &[CaseOutcome], corrected: &[Solve
             None => "failed",
         };
         let r = o.result.as_ref();
-        let (cn, mom, xcp) = if mode == AlphaMode::Mirror { (None, None, None) } else { corr(o.spec.mach, o.spec.alpha_deg).as_ref().map_or((None, None, None), used) };
+        let c6 = r.and_then(|r| r.coeffs6);
+        let (cn, mom, xcp) = if mode == AlphaMode::Mirror { (None, None, None) } else { corr(o).as_ref().map_or((None, None, None), used) };
         let _ = writeln!(
             s,
-            "{},{},{},{},{},{},{},{},{},{},{},{},{},{:.1},{}",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{:.1},{},{},{},{},{},{},{},{},{}",
             o.spec.mach,
             o.spec.alpha_deg,
             status,
@@ -416,13 +431,21 @@ pub fn write_cases_csv(path: &Path, outcomes: &[CaseOutcome], corrected: &[Solve
             f(mom),
             f(xcp),
             r.map_or(0.0, |r| r.wall_seconds),
-            o.warm
+            o.warm,
+            o.spec.beta_deg,
+            o.spec.roll_hat,
+            f(c6.map(|c| c.cx)),
+            f(c6.map(|c| c.cy)),
+            f(c6.map(|c| c.cz)),
+            f(c6.map(|c| c.cl)),
+            f(c6.map(|c| c.cm)),
+            f(c6.map(|c| c.cn))
         );
     }
     if mode == AlphaMode::Mirror {
         for p in corrected.iter().filter(|p| p.alpha_deg > 0.0) {
             let (cn, mom, xcp) = p.coeffs.as_ref().map_or((None, None, None), used);
-            let _ = writeln!(s, "{},{},combined,,,,,{},,,{},{},{},,", p.mach, p.alpha_deg, f(p.coeffs.map(|c| c.ca)), f(cn), f(mom), f(xcp));
+            let _ = writeln!(s, "{},{},combined,,,,,{},,,{},{},{},,,,,,,,,,", p.mach, p.alpha_deg, f(p.coeffs.map(|c| c.ca)), f(cn), f(mom), f(xcp));
         }
     }
     std::fs::write(path, s).with_context(|| format!("cannot write {}", path.display()))
@@ -466,7 +489,7 @@ exit 0
 
     fn tools_with(script: &Path) -> ToolReport {
         let ok = |p: Option<PathBuf>| ToolInfo { name: "x", path: p, version: Some("mock".into()), problem: None };
-        ToolReport { prefix: None, su2: ok(Some(script.to_path_buf())), mpi: ok(None), gmsh: ok(None) }
+        ToolReport { prefix: None, su2: ok(Some(script.to_path_buf())), mpi: ok(None), gmsh: ok(None), manifold: ok(None) }
     }
 
     struct Env {

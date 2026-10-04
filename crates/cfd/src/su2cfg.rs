@@ -17,6 +17,7 @@
 //!   the nose gives a negative `CMy` (see [`crate::forces`]).
 //! * `REF_LENGTH` is the body diameter `d`, `REF_AREA` the body cross-section `S`; with a half
 //!   model `REF_AREA = S/2` so the half-model forces yield full-model coefficients.
+//! * Sideslip and roll rate: see [`su2_config_case`].
 //! * Markers: `wall` (monitored body surface), `base` (flat base cap; for Euler an Euler wall
 //!   that is **not** monitored, so the physically meaningless inviscid base pressure never
 //!   enters the axial force and the Barrowman base term replaces it; for RANS a monitored
@@ -29,6 +30,7 @@
 //! * Time stepping: implicit Euler with adaptive CFL starting at `cfl`
 //!   (limits `0.2 cfl` .. `50 cfl`, factors 0.5 down / 1.2 up).
 
+use crate::case::CaseSpec;
 use crate::config::{CfdOptions, FlowModel, Scheme};
 use aero::atmosphere::{Atmosphere, GAMMA, R_AIR};
 
@@ -73,8 +75,29 @@ impl Cfg {
     }
 }
 
-/// Text of the SU2 configuration for Mach `mach` and angle of attack `alpha_deg`.
+/// Text of the SU2 configuration for Mach `mach` and angle of attack `alpha_deg` (no sideslip, no rotation).
 pub fn su2_config(opt: &CfdOptions, mach: f64, alpha_deg: f64, dims: &RefDims, atm: &Atmosphere, files: &CaseFiles) -> String {
+    su2_config_case(opt, &CaseSpec::new(mach, alpha_deg), dims, atm, files)
+}
+
+/// Roll rate [rad/s] of a roll-damping run: `p = 2 V p_hat / d` with `V = M a` at the reference altitude.
+pub fn roll_rate(spec: &CaseSpec, dims: &RefDims, atm: &Atmosphere) -> f64 {
+    2.0 * spec.mach * atm.sound_speed * spec.roll_hat / dims.length
+}
+
+/// Text of the SU2 configuration of one case.
+///
+/// * `SIDESLIP_ANGLE = -beta`: SU2's freestream direction is `(cos a cos b', sin b', sin a cos b')` with
+///   `b'` its sideslip angle, while the body-axis sideslip is `beta = asin(v / V)` with `v` along
+///   `y_body = y_cfd`; the two have opposite sign in the CFD frame (verified against the expansion of
+///   an axisymmetric table).
+/// * Roll-damping runs (`roll_hat != 0`, `alpha = beta = 0`): steady rotating reference frame,
+///   `GRID_MOVEMENT = ROTATING_FRAME` about the nose-tip origin with `ROTATION_RATE = (-p, 0, 0)`
+///   (the CFD x axis points aft, so a positive body roll rate is a rotation about `-x`). The rate is
+///   fixed by `p = 2 V p_hat / d` ([`roll_rate`]), `V` from the Mach number and the reference
+///   atmosphere, so that `Clp = dCl / dp_hat` has the normalisation of the flight model.
+pub fn su2_config_case(opt: &CfdOptions, spec: &CaseSpec, dims: &RefDims, atm: &Atmosphere, files: &CaseFiles) -> String {
+    let (mach, alpha_deg) = (spec.mach, spec.alpha_deg);
     let rans = opt.model == FlowModel::Rans;
     let area = if opt.symmetry { 0.5 * dims.area } else { dims.area };
     let mut c = Cfg::default();
@@ -91,7 +114,11 @@ pub fn su2_config(opt: &CfdOptions, mach: f64, alpha_deg: f64, dims: &RefDims, a
     c.blank();
     c.kv("MACH_NUMBER", format!("{mach:.6}"));
     c.kv("AOA", format!("{alpha_deg:.6}"));
-    c.kv("SIDESLIP_ANGLE", "0.0");
+    if spec.beta_deg == 0.0 {
+        c.kv("SIDESLIP_ANGLE", "0.0");
+    } else {
+        c.kv("SIDESLIP_ANGLE", format!("{:.6}", -spec.beta_deg));
+    }
     c.kv("FLUID_MODEL", "IDEAL_GAS");
     c.kv("GAMMA_VALUE", GAMMA);
     c.kv("GAS_CONSTANT", format!("{R_AIR:.5}"));
@@ -129,6 +156,12 @@ pub fn su2_config(opt: &CfdOptions, mach: f64, alpha_deg: f64, dims: &RefDims, a
         c.kv("MARKER_SYM", "( symmetry )");
     }
     c.kv("MARKER_PLOTTING", "( wall, base )");
+    if spec.is_roll() {
+        c.blank();
+        c.kv("GRID_MOVEMENT", "ROTATING_FRAME");
+        c.kv("MOTION_ORIGIN", "0.0 0.0 0.0");
+        c.kv("ROTATION_RATE", format!("{:.6} 0.0 0.0", -roll_rate(spec, dims, atm)));
+    }
     c.blank();
     c.kv("NUM_METHOD_GRAD", "WEIGHTED_LEAST_SQUARES");
     if opt.scheme == Scheme::Jst {
@@ -244,6 +277,27 @@ mod tests {
         let area = 0.5 * std::f64::consts::PI * 0.05 * 0.05;
         assert!(has(&s, &format!("REF_AREA= {area:.10}")), "{s}");
         assert!(!s.contains("KIND_TURB_MODEL") && !s.contains("MARKER_HEATFLUX"));
+    }
+
+    #[test]
+    fn sideslip_and_roll_rate_lines() {
+        let o = CfdOptions { symmetry: false, ..Default::default() };
+        let spec = CaseSpec { mach: 0.8, alpha_deg: 2.0, beta_deg: 4.0, roll_hat: 0.0 };
+        let s = su2_config_case(&o, &spec, &dims(), &atm(), &CaseFiles::default());
+        assert!(has(&s, "SIDESLIP_ANGLE= -4.000000") && has(&s, "AOA= 2.000000"), "{s}");
+        assert!(!s.contains("ROTATING_FRAME") && !s.contains("MARKER_SYM"));
+        assert!(has(&s, &format!("REF_AREA= {:.10}", dims().area)));
+        let r = CaseSpec::roll(0.8, 0.01);
+        let p = 2.0 * 0.8 * atm().sound_speed * 0.01 / 0.1;
+        let s = su2_config_case(&o, &r, &dims(), &atm(), &CaseFiles::default());
+        for l in ["GRID_MOVEMENT= ROTATING_FRAME", "MOTION_ORIGIN= 0.0 0.0 0.0", &format!("ROTATION_RATE= {:.6} 0.0 0.0", -p), "SIDESLIP_ANGLE= 0.0", "AOA= 0.000000"] {
+            assert!(has(&s, l), "missing {l:?} in\n{s}");
+        }
+        let n = su2_config_case(&o, &CaseSpec::roll(0.8, -0.01), &dims(), &atm(), &CaseFiles::default());
+        assert!(has(&n, &format!("ROTATION_RATE= {:.6} 0.0 0.0", p)));
+        // Default cases keep their configuration text (case hashes of existing caches stay valid).
+        let d = CfdOptions::default();
+        assert_eq!(su2_config(&d, 2.0, 4.0, &dims(), &atm(), &CaseFiles::default()), su2_config_case(&d, &CaseSpec::new(2.0, 4.0), &dims(), &atm(), &CaseFiles::default()));
     }
 
     #[test]

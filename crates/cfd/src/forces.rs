@@ -74,6 +74,74 @@ impl BodyCoeffs {
     }
 }
 
+/// All six force and moment coefficients of SU2 (CFD frame: x aft, nose-tip moment origin).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Su2Coeffs6 {
+    pub cfx: f64,
+    pub cfy: f64,
+    pub cfz: f64,
+    pub cmx: f64,
+    pub cmy: f64,
+    pub cmz: f64,
+}
+
+impl Su2Coeffs6 {
+    /// From a history summary; fails when one of the six columns is missing or not finite.
+    pub fn from_summary(s: &HistorySummary) -> Result<Self> {
+        let get = |v: Option<f64>, n: &str| v.ok_or_else(|| anyhow::anyhow!("history has no {n}"));
+        let c = Self {
+            cfx: get(s.cfx, "CFx")?,
+            cfy: get(s.cfy, "CFy")?,
+            cfz: get(s.cfz, "CFz")?,
+            cmx: get(s.cmx, "CMx")?,
+            cmy: get(s.cmy, "CMy")?,
+            cmz: get(s.cmz, "CMz")?,
+        };
+        if ![c.cfx, c.cfy, c.cfz, c.cmx, c.cmy, c.cmz].iter().all(|v| v.is_finite()) {
+            bail!("non-finite coefficients in the history (diverged case)");
+        }
+        Ok(c)
+    }
+}
+
+/// Body-axis coefficients of one solved case (x forward, forces / (q S), moments about the nose tip / (q S d)).
+///
+/// `CX = -CFx, CY = CFy, CZ = -CFz, Cl = -CMx, Cm = CMy, Cn = -CMz`: the CFD frame is the body frame
+/// rotated by 180 deg about y (`diag(-1, 1, -1)`), and moments are axial vectors.
+#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+pub struct BodyCoeffs6 {
+    pub cx: f64,
+    pub cy: f64,
+    pub cz: f64,
+    pub cl: f64,
+    pub cm: f64,
+    pub cn: f64,
+}
+
+impl BodyCoeffs6 {
+    pub fn from_su2(c: &Su2Coeffs6) -> Self {
+        Self { cx: -c.cfx, cy: c.cfy, cz: -c.cfz, cl: -c.cmx, cm: c.cmy, cn: -c.cmz }
+    }
+
+    /// Image under the reflection z -> -z (flow `(alpha, beta) -> (-alpha, beta)`): `CZ`, `Cl`, `Cm` change sign.
+    pub fn mirror_z(&self) -> Self {
+        Self { cx: self.cx, cy: self.cy, cz: -self.cz, cl: -self.cl, cm: -self.cm, cn: self.cn }
+    }
+
+    /// Image under the reflection y -> -y (flow `(alpha, beta) -> (alpha, -beta)`): `CY`, `Cl`, `Cn` change sign.
+    pub fn mirror_y(&self) -> Self {
+        Self { cx: self.cx, cy: -self.cy, cz: self.cz, cl: -self.cl, cm: self.cm, cn: -self.cn }
+    }
+
+    pub fn as_array(&self) -> [f64; 6] {
+        [self.cx, self.cy, self.cz, self.cl, self.cm, self.cn]
+    }
+
+    pub fn from_array(a: [f64; 6]) -> Self {
+        Self { cx: a[0], cy: a[1], cz: a[2], cl: a[3], cm: a[4], cn: a[5] }
+    }
+}
+
 /// Axial force coefficients (power-on, power-off) at `mach` / `alpha_rad` from the CFD axial
 /// coefficient `ca_cfd` plus the terms CFD does not supply.
 ///
@@ -145,6 +213,20 @@ mod tests {
         let cmy2 = su2_cmy([0.8, 0.0, 0.05], [3.0, 0.0, 12.0], qsl);
         let c2 = BodyCoeffs::from_su2(&Su2Coeffs { cfx: 3.0 / (q * s), cfz: 12.0 / (q * s), cmy: cmy2 }, l);
         assert!((c2.xcp().unwrap() - (0.8 - 3.0 * 0.05 / 12.0)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn six_component_mapping_and_mirrors() {
+        let s = HistorySummary { cfx: Some(0.3), cfy: Some(0.2), cfz: Some(1.1), cmx: Some(0.05), cmy: Some(-14.0), cmz: Some(2.0), ..Default::default() };
+        let c = BodyCoeffs6::from_su2(&Su2Coeffs6::from_summary(&s).unwrap());
+        assert_eq!(c, BodyCoeffs6 { cx: -0.3, cy: 0.2, cz: -1.1, cl: -0.05, cm: -14.0, cn: -2.0 });
+        assert_eq!(c.mirror_z().mirror_z(), c);
+        assert_eq!(c.mirror_y().mirror_y(), c);
+        assert_eq!(BodyCoeffs6::from_array(c.as_array()), c);
+        let m = BodyCoeffs6::from_su2(&Su2Coeffs6 { cfx: 0.3, cfy: 0.0, cfz: 1.0, cmx: 0.0, cmy: -1.0, cmz: 0.0 });
+        // z-mirror of a pure pitch-plane state: CZ and Cm flip, the axial force stays.
+        assert_eq!((m.mirror_z().cx, m.mirror_z().cz, m.mirror_z().cm), (m.cx, -m.cz, -m.cm));
+        assert!(Su2Coeffs6::from_summary(&HistorySummary { cfx: Some(0.3), ..Default::default() }).is_err());
     }
 
     #[test]

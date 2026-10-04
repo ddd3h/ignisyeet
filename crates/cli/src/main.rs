@@ -535,10 +535,11 @@ fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
         Some(p) => println!("  prefix      {}", p.display()),
         None => println!("  prefix      (none; using PATH)"),
     }
-    for t in [&r.su2, &r.mpi, &r.gmsh] {
+    for t in [&r.su2, &r.mpi, &r.gmsh, &r.manifold] {
         match (&t.problem, &t.version) {
-            (None, v) => println!("  {:<15}ok       {}  [{}]", t.name, v.as_deref().unwrap_or(""), t.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default()),
-            (Some(p), _) => println!("  {:<15}MISSING  {p}", t.name),
+            (None, v) => println!("  {:<21}ok       {}  [{}]", t.name, v.as_deref().unwrap_or(""), t.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default()),
+            (Some(p), _) if t.name.starts_with("manifold3d") && opt.surface != cfd::SurfaceKind::Stl => println!("  {:<21}not installed (only needed for surface = \"stl\")", t.name),
+            (Some(p), _) => println!("  {:<21}MISSING  {p}", t.name),
         }
     }
     for w in opt.warnings() {
@@ -567,6 +568,10 @@ fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
         );
         println!("  cell types: {:?}", s.by_type);
         println!("  quality (SICN, 1 = ideal): min {:.3}, mean {:.3}, {} cells below 0.05", s.quality_sicn_min, s.quality_sicn_mean, s.cells_bad);
+        if let Some(info) = &m.stl {
+            println!("STL geometry fidelity (base treatment: {}):", info.base_treatment);
+            println!("{}", info.fidelity.summary());
+        }
     }
     Ok(())
 }

@@ -5,7 +5,9 @@
 # Builds the rocket as an OpenCASCADE solid (body of revolution united with the fins), cuts it out
 # of the farfield ball (or half ball with the y = 0 symmetry plane), meshes the volume with
 # tetrahedra graded away from the wall and writes an SU2 mesh with the markers wall, base, farfield,
-# symmetry. (No prismatic boundary layer: gmsh 4.15 can extrude one from OpenCASCADE surfaces only in 2D.)
+# symmetry. Full domain: a y-symmetric layout is meshed as the half ball and mirrored about y = 0
+# (the `symmetry` marker is dropped; a full ball fails in HXT at the periodic seam), any other layout
+# uses a box farfield (the OpenCASCADE box shares its edges between the faces). (No prismatic boundary layer: gmsh 4.15 can extrude one from OpenCASCADE surfaces only in 2D.)
 import json
 import math
 import sys
@@ -30,7 +32,7 @@ occ = gmsh.model.occ
 L = p["length"]
 R = p["farfield_radius"]
 x0 = p["center_x"]
-half = bool(p["symmetry"])
+half = bool(p["symmetry"]) or bool(p["y_mirror"])
 # z_mirror: mesh only the quarter y >= 0, z >= 0 and mirror it about z = 0 afterwards, so the half-model mesh
 # is exactly symmetric about the x-y plane (a Delaunay mesh of the half model is not).
 zmirror = bool(p["z_mirror"]) and half
@@ -47,23 +49,39 @@ roll = math.radians(p["fin_roll_deg"])
 seam = math.radians(45.0 if nf == 0 else 90.0 + 180.0 / nf) + roll
 if abs(math.sin(seam)) < 0.2:
     seam += math.radians(30.0)
-cs, sn = math.cos(seam), math.sin(seam)
 prof = p["profile"]
-pts = [occ.addPoint(x, r * cs, r * sn) for x, r in prof]
-axis0 = pts[0] if abs(prof[0][1]) < 1e-12 else occ.addPoint(prof[0][0], 0, 0)
-axis1 = pts[-1] if abs(prof[-1][1]) < 1e-12 else occ.addPoint(prof[-1][0], 0, 0)
-segs = [occ.addLine(pts[i], pts[i + 1]) for i in range(len(pts) - 1)]
-if axis1 != pts[-1]:
-    segs.append(occ.addLine(pts[-1], axis1))
-segs.append(occ.addLine(axis1, axis0))
-if abs(prof[0][1]) > 1e-12:
-    segs.append(occ.addLine(axis0, pts[0]))
-loop = occ.addWire(segs)
-face = occ.addPlaneSurface([loop])
-rev = occ.revolve([(2, face)], 0, 0, 0, 1, 0, 0, 2 * math.pi)
-bodies = [t for d, t in rev if d == 3]
-occ.remove([(2, face)], recursive=False)
-parts = [(3, bodies[0])]
+
+
+def profile_face(az):
+    """Planar face of the body profile in the half plane at azimuth `az`."""
+    cs, sn = math.cos(az), math.sin(az)
+    pts = [occ.addPoint(x, r * cs, r * sn) for x, r in prof]
+    axis0 = pts[0] if abs(prof[0][1]) < 1e-12 else occ.addPoint(prof[0][0], 0, 0)
+    axis1 = pts[-1] if abs(prof[-1][1]) < 1e-12 else occ.addPoint(prof[-1][0], 0, 0)
+    segs = [occ.addLine(pts[i], pts[i + 1]) for i in range(len(pts) - 1)]
+    if axis1 != pts[-1]:
+        segs.append(occ.addLine(pts[-1], axis1))
+    segs.append(occ.addLine(axis1, axis0))
+    if abs(prof[0][1]) > 1e-12:
+        segs.append(occ.addLine(axis0, pts[0]))
+    return occ.addPlaneSurface([occ.addWire(segs)])
+
+
+def revolve(az, angle):
+    face = profile_face(az)
+    rev = occ.revolve([(2, face)], 0, 0, 0, 1, 0, 0, angle)
+    occ.remove([(2, face)], recursive=False)
+    return [(3, t) for d, t in rev if d == 3][0]
+
+
+if half:
+    parts = [revolve(seam, 2 * math.pi)]
+else:
+    # A full body of revolution is a periodic surface with a degenerate apex: HXT rejects its surface
+    # mesh ("overlapping facets"). Two half revolutions give non-periodic faces. They (and the fins)
+    # are all cut from the farfield box, which unites them implicitly; fusing the halves first fails
+    # in OpenCASCADE (BOPAlgo_AlertUnableToOrientTheShape).
+    parts = [revolve(seam, math.pi), revolve(seam + math.pi, math.pi)]
 
 
 def lens(x_le, x_te, r_pos, phi, thick):
@@ -96,17 +114,17 @@ if fins:
         w2 = lens(f["x_le"] + f["sweep"], f["x_le"] + f["sweep"] + f["tip_chord"], r_tip, phi, f["thickness"])
         fin = occ.addThruSections([w1, w2], makeSolid=True, makeRuled=True)
         parts.append(fin[0] if not isinstance(fin[0], int) else (3, fin[0]))
-    if len(parts) > 1:
-        u_out, _ = occ.fuse([parts[0]], parts[1:], removeObject=True, removeTool=True)
-        parts = [t for t in u_out if t[0] == 3]
-    occ.synchronize()
+if half and len(parts) > 1:
+    u_out, _ = occ.fuse([parts[0]], parts[1:], removeObject=True, removeTool=True)
+    parts = [t for t in u_out if t[0] == 3]
+occ.synchronize()
 
 if half:
     # Half ball y >= 0 as a sphere sector (azimuth 0..pi about the z axis): no boolean on the sphere.
     # Quarter ball (z >= 0 too) for z_mirror: latitude 0..pi/2.
     domain = [(3, occ.addSphere(x0, 0, 0, R, angle1=0.0 if zmirror else -math.pi / 2, angle2=math.pi / 2, angle3=math.pi))]
 else:
-    domain = [(3, occ.addSphere(x0, 0, 0, R))]
+    domain = [(3, occ.addBox(x0 - R, -R, -R, 2 * R, 2 * R, 2 * R))]
 fluid, _ = occ.cut(domain, parts)
 occ.synchronize()
 vols = [t for d, t in gmsh.model.getEntities(3)]
@@ -123,7 +141,7 @@ for d, t in gmsh.model.getEntities(2):
         symm.append(t)
     elif zmirror and b[5] - b[2] < tol and abs(b[2]) < tol:
         symz.append(t)
-    elif b[3] - b[0] > 0.5 * R:
+    elif max(b[3] - b[0], b[4] - b[1], b[5] - b[2]) > 0.5 * R:
         far.append(t)
     elif b[0] > L - tol:
         cap.append(t)  # flat base cap or tail fairing (everything aft of the base plane)
@@ -182,8 +200,8 @@ gmsh.option.setNumber("Mesh.SaveAll", 0)
 gmsh.write(p["out_su2"])
 
 
-def mirror_su2(path, tol):
-    """Mirrors a quarter mesh (z >= 0) about z = 0 into the half mesh; the marker `symz` is dropped."""
+def mirror_su2(path, axis, drop, tol):
+    """Mirrors a mesh about the plane x[axis] = 0 (keeping the nodes on it) and drops the marker `drop`."""
     lines = open(path).read().split("\n")
     i = 0
     elems, nodes, marks = [], [], []
@@ -206,10 +224,12 @@ def mirror_su2(path, tol):
     nn = len(nodes)
     m = list(range(nn))
     extra = []
-    for k, (x, y, z) in enumerate(nodes):
-        if abs(z) > tol:
+    for k, c in enumerate(nodes):
+        if abs(c[axis]) > tol:
             m[k] = nn + len(extra)
-            extra.append((x, y, -z))
+            r = list(c)
+            r[axis] = -r[axis]
+            extra.append(r)
     out = ["NDIME= 3"]
     # Tetrahedra (type 10): swapping two vertices keeps the orientation of the mirrored cells positive.
     allel = elems + [[e[0], m[e[1]], m[e[3]], m[e[2]], m[e[4]]] + [0] for e in elems]
@@ -218,7 +238,7 @@ def mirror_su2(path, tol):
     out.append("NPOIN= %d" % (nn + len(extra)))
     allp = nodes + extra
     out += ["%.12g %.12g %.12g %d" % (x, y, z, k) for k, (x, y, z) in enumerate(allp)]
-    keep = [(t, e) for t, e in marks if t != "symz"]
+    keep = [(t, e) for t, e in marks if t != drop]
     out.append("NMARK= %d" % len(keep))
     for t, e in keep:
         both = e + [[x[0], m[x[1]], m[x[3]], m[x[2]]] for x in e]
@@ -229,7 +249,14 @@ def mirror_su2(path, tol):
     return len(allel), nn + len(extra)
 
 
-mirrored = mirror_su2(p["out_su2"], 1e-9 * L) if zmirror else None
+mirrored = None
+wall_mult = 1
+if zmirror:
+    mirrored = mirror_su2(p["out_su2"], 2, "symz", 1e-9 * L)
+    wall_mult *= 2
+if p["y_mirror"]:
+    mirrored = mirror_su2(p["out_su2"], 1, "symmetry", 1e-9 * L)
+    wall_mult *= 2
 
 # ---- statistics ------------------------------------------------------------------------------------
 ntags = gmsh.model.mesh.getNodes()[0]
@@ -260,8 +287,10 @@ stats = {
     "seconds_mesh": t2 - t1,
 }
 if mirrored:
-    stats["cells"], stats["nodes"], stats["wall_triangles"] = mirrored[0], mirrored[1], 2 * nwall
+    stats["cells"], stats["nodes"], stats["wall_triangles"] = mirrored[0], mirrored[1], wall_mult * nwall
     stats["by_type"] = {"Tetrahedron 4": mirrored[0]}
+if stats["cells"] == 0:
+    raise SystemExit("mesh error: the volume mesh is empty (3D meshing failed)")
 json.dump(stats, open(p["stats_json"], "w"), indent=1)
 print("MESH_OK nodes=%d cells=%d minSICN=%.4f surface %.1fs volume %.1fs" % (stats["nodes"], stats["cells"], q_min, t_surf - t1, t2 - t_surf))
 gmsh.finalize()

@@ -93,3 +93,68 @@ fn cone_cp_matches_taylor_maccoll() {
     assert!((mean - tm).abs() / tm < 0.10, "cone Cp {mean} vs Taylor-Maccoll {tm}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+fn sample_stl() -> (Vec<Triangle>, geom::Geometry) {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/sample_rocket.stl");
+    let raw: Vec<Triangle> = geom::stl::read_stl(&path).unwrap().into_iter().map(|t| t.map(|v| v * 0.001)).collect();
+    let g = extract(&raw, &ExtractOptions::default()).unwrap();
+    (raw, g)
+}
+
+fn stl_options() -> CfdOptions {
+    CfdOptions {
+        surface: cfd::SurfaceKind::Stl,
+        symmetry: false,
+        base_treatment: Some(cfd::BaseTreatment::Fairing),
+        machs: vec![0.8],
+        alphas_deg: vec![0.0, 4.0],
+        wall_size: 0.005,
+        ranks_per_case: 4,
+        parallel_cases: 1,
+        roll_damping: true,
+        ..Default::default()
+    }
+}
+
+#[test]
+#[ignore = "needs gmsh and manifold3d (IGNISYEET_CFD_PREFIX)"]
+fn stl_union_is_genus_zero_and_meshes() {
+    let (raw, g) = sample_stl();
+    let dir = std::env::temp_dir().join(format!("ignisyeet_cfd_stl_mesh_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let aero = aero::AeroOptions::default();
+    let m = cfd::mesh_only(&g, &stl_options(), &aero, &dir, &ResourceBudget::default(), Some(&raw)).unwrap();
+    let info = m.stl.as_ref().unwrap();
+    // Five input shells (body + 4 fin boxes) and the fairing cone, united into one solid.
+    assert_eq!(info.union_report["components"].as_array().unwrap().len(), 6, "{}", info.union_report);
+    assert_eq!(info.union_report["genus"].as_i64(), Some(0));
+    assert!(info.repair["components"].as_array().unwrap().iter().all(|c| c["flipped"] == true));
+    assert!(m.stats.cells > 10_000 && m.stats.wall_triangles > 1000);
+    // The remeshed wall stays within the wall size of the union and encloses its volume.
+    assert!(info.fidelity.max_error() < 0.01, "{:?}", info.fidelity);
+    assert!((info.fidelity.cfd.volume.unwrap() / info.fidelity.union.volume.unwrap() - 1.0).abs() < 5e-3);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+#[ignore = "needs SU2, gmsh, manifold3d and MPI (IGNISYEET_CFD_PREFIX)"]
+fn stl_euler_case_and_roll_pair() {
+    let (raw, g) = sample_stl();
+    let dir = std::env::temp_dir().join(format!("ignisyeet_cfd_stl_run_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let aero = aero::AeroOptions { mach_max: 1.0, mach_step: 0.5, ..Default::default() };
+    let opt = stl_options();
+    let (table, report) =
+        cfd::build_table_with_progress(&g, &opt, &aero, &dir, "h".into(), aero::Extrapolation::Linear, &ResourceBudget::default(), Some(&raw), &|_| {}).unwrap();
+    assert!(report.failed.is_empty(), "{report:?}");
+    assert_eq!(report.table_kind, "general");
+    assert_eq!(report.clp_source, "cfd", "{:?}", report.clp);
+    let clp = report.clp[0].cfd.unwrap();
+    assert!(clp < -5.0 && clp > -60.0, "Clp {clp}");
+    // Positive alpha: negative CZ (the body-axis normal force is -CN along z) of a plausible size.
+    let c = table.lookup6(0.8, 4f64.to_radians(), 0.0);
+    assert!(c.cz < -0.3 && c.cz > -3.0, "CZ {}", c.cz);
+    assert!((table.lookup6(0.8, -4f64.to_radians(), 0.0).cz + c.cz).abs() < 0.2 * c.cz.abs());
+    assert!(report.fidelity.is_some() && report.warnings.iter().any(|w| w.contains("MODIFIED")));
+    let _ = std::fs::remove_dir_all(&dir);
+}

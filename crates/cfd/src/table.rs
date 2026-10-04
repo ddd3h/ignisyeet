@@ -118,14 +118,14 @@ pub struct TableFill {
 }
 
 /// Monotone cubic (Fritsch-Carlson) interpolant with selectable extrapolation.
-struct Pchip {
+pub(crate) struct Pchip {
     xs: Vec<f64>,
     ys: Vec<f64>,
     m: Vec<f64>,
 }
 
 impl Pchip {
-    fn new(xs: Vec<f64>, ys: Vec<f64>) -> Self {
+    pub(crate) fn new(xs: Vec<f64>, ys: Vec<f64>) -> Self {
         let n = xs.len();
         let mut m = vec![0.0; n];
         if n >= 2 {
@@ -157,7 +157,7 @@ impl Pchip {
         Self { xs, ys, m }
     }
 
-    fn eval(&self, x: f64, linear: bool) -> f64 {
+    pub(crate) fn eval(&self, x: f64, linear: bool) -> f64 {
         let n = self.xs.len();
         if x <= self.xs[0] {
             return self.ys[0] + if linear { self.m[0] * (x - self.xs[0]) } else { 0.0 };
@@ -170,14 +170,14 @@ impl Pchip {
     }
 }
 
-fn grid(lo: f64, hi: f64, step: f64) -> Vec<f64> {
+pub(crate) fn grid(lo: f64, hi: f64, step: f64) -> Vec<f64> {
     let n = ((hi - lo) / step).round().max(1.0) as usize;
     (0..=n).map(|i| lo + (hi - lo) * i as f64 / n as f64).collect()
 }
 
 /// Slope at alpha -> 0 of an odd function from samples `(alpha_rad, value)`: fit `c1 a + c3 a^3`
 /// through the two lowest points (falls back to the secant when the fit looks unreasonable).
-fn odd_slope(pts: &[(f64, f64)]) -> f64 {
+pub(crate) fn odd_slope(pts: &[(f64, f64)]) -> f64 {
     let (a1, v1) = pts[0];
     let r1 = v1 / a1;
     if pts.len() < 2 {
@@ -234,6 +234,19 @@ pub fn build_from_points(
     source_hash: String,
     extrapolation: Extrapolation,
 ) -> Result<(AeroTable, TableFill)> {
+    build_from_points_roll(points, model, flow, source_hash, extrapolation, &[])
+}
+
+/// [`build_from_points`] with the roll-damping entries of the CFD roll pairs (empty: Barrowman `Clp`).
+/// `cl_delta` is always the Barrowman cant forcing; the table's reference cant is the geometry cant.
+pub fn build_from_points_roll(
+    points: &[SolvedPoint],
+    model: &AeroModel,
+    flow: FlowModel,
+    source_hash: String,
+    extrapolation: Extrapolation,
+    roll: &[crate::general::ClpEntry],
+) -> Result<(AeroTable, TableFill)> {
     let linear = extrapolation == Extrapolation::Linear;
     let o = &model.opt;
     let machs = grid(o.mach_min.max(0.0), o.mach_max, o.mach_step);
@@ -280,6 +293,8 @@ pub fn build_from_points(
     for &m in &machs {
         let (cna, xcp0) = (cna_p.eval(m, linear), x0_p.eval(m, linear));
         let damp = scale_damping(model.damping_sums(m), cna, xcp0);
+        let (cl_delta, _) = model.roll_terms(m);
+        let clp = crate::general::clp_at(roll, model, m);
         let row = alphas
             .iter()
             .enumerate()
@@ -287,7 +302,7 @@ pub fn build_from_points(
                 let (cn, mom) = if a == 0.0 { (0.0, 0.0) } else { (cn_p[j].eval(m, linear), mom_p[j].eval(m, linear)) };
                 let xcp = if cn.abs() > 1e-9 { mom / cn } else { xcp0 };
                 let (ca_on, ca_off) = hybrid_axial(flow, model, m, a.to_radians(), ca_p[j].eval(m, linear));
-                AeroCoeffs { cn, ca_on, ca_off, xcp, cna, damp, ..Default::default() }
+                AeroCoeffs { cn, ca_on, ca_off, xcp, cna, damp, cl_delta, clp }
             })
             .collect();
         rows.push(row);
@@ -300,6 +315,7 @@ pub fn build_from_points(
         length: g.length,
         machs: machs.clone(),
         alphas_deg: alphas.clone(),
+        fin_cant_ref_deg: g.fins.as_ref().map_or(0.0, |f| f.cant_deg),
         extrapolation,
         ..Default::default()
     };

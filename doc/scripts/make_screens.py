@@ -4,8 +4,8 @@
 
 Usage: python scripts/make_screens.py <repo root> <output dir>
 
-Writes screen_sim_start.png and screen_sim_result.png (the final screen of sim, split in two), screen_dispersion.png (mid-run frame with progress bar and ETA)
-and screen_aero_panel.png (mid-run frame of the panel method).  The output is the program's real
+Writes screen_sim_start.png and screen_sim_result.png (the final screen of sim, split in two), screen_dispersion.png (mid-run frame with progress bar and ETA),
+screen_aero_panel.png (mid-run frame of the panel method) and screen_install.png (install.sh dry run).  The output is the program's real
 terminal output: the byte stream is replayed into a virtual terminal and drawn cell by cell
 with DejaVu Sans Mono (braille spinner glyphs fall back to DejaVu Sans).
 """
@@ -201,6 +201,14 @@ def main():
     except SystemExit:
         scr = replay(chunks[: max(1, len(chunks) // 2)])
     render(scr, out / "screen_aero_panel.png", after_config(scr))
+
+    # 4. install.sh: developer + CFD plan in dry-run mode (detects existing tools, changes nothing).
+    home = os.environ.get("HOME", str(root))
+    # Hide the documentation build's own virtual environment so the installer reports the system python.
+    path = ":".join(d for d in os.environ.get("PATH", "").split(":") if ".venv" not in d)
+    env = {"PATH": path, "VIRTUAL_ENV": ""}
+    scr = replay(capture(["bash", "install.sh", "--developer", "--cfd", "--dry-run", "-y", "--dir", f"{home}/ignisyeet"], root, env))
+    render(scr, out / "screen_install.png")
 
 
 if __name__ == "__main__":

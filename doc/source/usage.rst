@@ -113,6 +113,61 @@ x86_64 の Linux で AVX-512 のない CPU では、SU2 8.5.0 のパッケージ
 リリースの配布物は ``ignisyeet-<バージョン>-<ターゲット>.tar.gz`` と ``.sha256`` であり、
 インストーラはチェックサムを検証してから展開する。
 
+.. _fig-screen-install:
+
+.. figure:: _generated/screens/screen_install.png
+   :width: 100%
+   :alt: install.sh の実行画面（developer、CFD あり、--dry-run）
+
+   ``install.sh --developer --cfd --dry-run`` の画面。検出したツール（緑のチェックは既存のものを使う）と、
+   実行する手順の一覧を示す。``--dry-run`` では何も変更しない。
+
+リリースとバージョン
+~~~~~~~~~~~~~~~~~~~~
+
+IgnisYeet のバージョンは ``Cargo.toml`` の ``[workspace.package] version``\ （``ignisyeet --version`` で表示される値）で決まり、
+GitHub では同じ番号のタグ ``vX.Y.Z`` と GitHub Release で管理する。インストーラの user は、
+``--version`` を指定しなければ最新のリリースを入れる。
+
+タグ ``v*`` を push すると、GitHub Actions のワークフロー ``release.yml`` が次の処理を行う。
+
+#. タグと ``Cargo.toml`` のバージョンが一致することを確かめる（一致しなければ失敗する）。
+#. 4 つのターゲット向けにバイナリを作る。Linux は musl で静的にリンクするので、ディストリビューションによらず動く。
+
+   .. list-table::
+      :header-rows: 1
+      :widths: 40 30 30
+
+      * - ターゲット
+        - ビルド環境
+        - テスト
+      * - ``x86_64-unknown-linux-musl``
+        - Ubuntu（cargo-zigbuild）
+        - 実行する
+      * - ``aarch64-unknown-linux-musl``
+        - Ubuntu（cargo-zigbuild）
+        - 実行しない（クロスビルド）
+      * - ``x86_64-apple-darwin``
+        - macOS（Intel）
+        - 実行する
+      * - ``aarch64-apple-darwin``
+        - macOS（Apple Silicon）
+        - 実行する
+
+#. ``scripts/package-release.sh`` で ``ignisyeet-<バージョン>-<ターゲット>.tar.gz`` と SHA-256 を作る。
+   中身はバイナリ（``bin/ignisyeet``）、例題、作図スクリプト（``python/plot.py`` と依存関係の一覧）、
+   ``LICENSE``、``NOTICE``、``CITATION.cff``、``README.md`` である。
+#. GitHub Release を作り、すべての配布物、チェックサム、``install.sh`` を添付する。
+   リリースノートは前のタグからのコミットを Conventional Commits の種類（feat、fix、docs など）ごとにまとめて作る。
+
+新しいバージョンを出すときは、``Cargo.toml``\ （と ``CITATION.cff`` などの表記）のバージョンを上げてコミットし、
+同じ番号のタグを付けて push する。
+
+.. code-block:: sh
+
+   git tag v0.3.0
+   git push origin v0.3.0
+
 ソースからのビルド
 ~~~~~~~~~~~~~~~~~~
 

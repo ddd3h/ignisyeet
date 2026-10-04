@@ -2,7 +2,7 @@
 % Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 \begin{tikzpicture}[font=\small, scale=1.25]
   % ---- left: body axes, alpha and beta (oblique view) ----
-  \begin{scope}[x={(1cm,0cm)}, y={(0.6cm,-0.5cm)}, z={(0cm,1cm)}]
+  \begin{scope}[x={(1cm,0cm)}, y={(-0.6cm,0.42cm)}, z={(0cm,1cm)}]
     \def\al{34}\def\be{30}
     % body silhouette in the x-z plane, nose at +x; the centre of gravity at the origin
     \fill[cfill] (-2.6,0,-0.4) -- (1.6,0,-0.4) .. controls (2.3,0,-0.35) and (2.9,0,-0.12) .. (3.2,0,0) .. controls (2.9,0,0.12) and (2.3,0,0.35) .. (1.6,0,0.4) -- (-2.6,0,0.4) -- cycle;
@@ -12,7 +12,7 @@
     \draw[cink2, dash pattern=on 4pt off 2pt] (-3.1,0,0) -- (0,0,0);
     % body axes
     \draw[->, thick, cink] (0,0,0) -- (3.9,0,0) node[right] {$x_b$};
-    \draw[->, thick, cink] (0,0,0) -- (0,3.0,0) node[below right] {$y_b$};
+    \draw[->, thick, cink] (0,0,0) -- (0,3.0,0) node[above left] {$y_b$};
     \draw[->, thick, cink] (0,0,0) -- (0,0,2.9) node[above] {$z_b$};
     \fill[cink] (0,0,0) circle (1.6pt);
     \node[cink2, font=\footnotesize, anchor=north east] at (-0.1,0,-0.45) {CG};

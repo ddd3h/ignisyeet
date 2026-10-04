@@ -84,7 +84,7 @@ IgnisYeet では、抽出した半径分布を断面ごとの円錐台の連な�
    S_0^{\mathrm{body}}=\sum_k C_{N\alpha,k},\qquad S_1^{\mathrm{body}}=\sum_k C_{N\alpha,k}\,x_{cp,k},\qquad S_2^{\mathrm{body}}=\sum_k C_{N\alpha,k}\,x_{cp,k}^2
 
 とおく。:math:`S_2` はピッチ減衰（:ref:`sec-damping`）で使う。
-ノーズと円筒からなり後端が平らな機体では、式 :eq:`eq-body-cna` の和は :math:`2(A_{\mathrm{base}}-0)/S=2` となり、
+ノーズと円筒からなり後端が平らな機体では、\ :eq:`eq-body-cna` の和は :math:`2(A_{\mathrm{base}}-0)/S=2` となり、
 ノーズの形によらず :math:`C_{N\alpha}^{\mathrm{body}}=2` という古典的な結果 :cite:`munk,barrowman` が得られる。
 
 有限の迎角では、ポテンシャル流の寄与を
@@ -257,7 +257,7 @@ IgnisYeet では、抽出した半径分布を断面ごとの円錐台の連な�
    \dfrac{\mathit{AR}\,\beta-0.67}{2\,\mathit{AR}\,\beta-1} & (M\ge2)
    \end{cases}
 
-とする :cite:`barrowman,niskanen`\ （超音速側は :math:`[0.25,\,0.5]` に制限）。:math:`0.5<M<2` は式 :eq:`eq-hermite` と同じ Hermite 補間でつなぐ。
+とする :cite:`barrowman,niskanen`\ （超音速側は :math:`[0.25,\,0.5]` に制限）。:math:`0.5<M<2` は\ :eq:`eq-hermite` と同じ Hermite 補間でつなぐ。
 :math:`\kappa=0.25` のとき、これは Barrowman のフィン圧力中心 :cite:`barrowman`
 
 .. math::
@@ -281,7 +281,7 @@ IgnisYeet では、抽出した半径分布を断面ごとの円錐台の連な�
 
    x_{cp}(M,\alpha) = \frac{S_1^{\mathrm{body}}\sin\alpha\cos\alpha + C_N^{\mathrm{lift}}x_p + C_N^{\mathrm{fins}}x_f}{C_N}
 
-とする。:math:`\alpha=0` では :math:`C_N=0` で式 :eq:`eq-xcp-total` が 0/0 になるので、表には :math:`\alpha\to0` の極限
+とする。:math:`\alpha=0` では :math:`C_N=0` で\ :eq:`eq-xcp-total` が 0/0 になるので、表には :math:`\alpha\to0` の極限
 :math:`(S_1^{\mathrm{body}}+C_{N\alpha}^{\mathrm{fins}}x_f)/(S_0^{\mathrm{body}}+C_{N\alpha}^{\mathrm{fins}})` を書き込む。
 法線力傾斜 :math:`C_{N\alpha}` は :math:`\alpha=10^{-4}` rad での差分で求める。
 
@@ -317,9 +317,9 @@ IgnisYeet では、抽出した半径分布を断面ごとの円錐台の連な�
    M_{\mathrm{damp}} = -\frac{qS}{V}\,\omega\sum_i C_{N\alpha,i}\,(x_i-x_{cg})^2
    = -\frac{qS}{V}\,\omega\left(S_2-2x_{cg}S_1+x_{cg}^2S_0\right)
 
-となる。ここで :math:`S_n=\sum_i C_{N\alpha,i}\,x_i^n`\ （胴体の和 :eq:`eq-body-sums` にフィンの寄与を加えたもの）である。
+となる。ここで :math:`S_n=\sum_i C_{N\alpha,i}\,x_i^n`\ （:eq:`eq-body-sums` の胴体の和にフィンの寄与を加えたもの）である。
 重心は燃焼とともに移動するので、表には :math:`x_{cg}` に依存しない :math:`S_0,S_1,S_2` を Mach 数ごとに保存し、
-飛翔計算のたびに式 :eq:`eq-damping` を組み立てる。括弧内が負になる場合（ボートテールの負の寄与が勝つ場合）は 0 とする。
+飛翔計算のたびに\ :eq:`eq-damping` を組み立てる。括弧内が負になる場合（ボートテールの負の寄与が勝つ場合）は 0 とする。
 
 抗力（軸力）
 ------------
@@ -422,7 +422,7 @@ Reynolds 数を全長 :math:`L` 基準で :math:`Re=VL/\nu` とする。
    \end{cases}
 
 で、前縁の後退角 :math:`\Gamma_{LE}=\arctan(m/s)` について :math:`\cos^2\Gamma_{LE}` を掛ける。
-3 つの式は :math:`M=0.9` と :math:`M=1` で連続につながる。後縁を切り落とした（square）フィンには、後縁の面積 :math:`Nst` に式 :eq:`eq-base` の底面抗力を加える。
+3 つの式は :math:`M=0.9` と :math:`M=1` で連続につながる。後縁を切り落とした（square）フィンには、後縁の面積 :math:`Nst` に\ :eq:`eq-base` の底面抗力を加える。
 
 ボートテール
 ~~~~~~~~~~~~
@@ -507,7 +507,7 @@ CSV なので、風洞試験や CFD で得た係数に差し替えて使うこ�
 ~~~~
 
 :math:`(M,\alpha)` が表の範囲外にあるときは、最も近い端の区間を使い、:math:`t_M` や :math:`t_\alpha` が :math:`[0,1]` を外れたまま
-式 :eq:`eq-bilinear` を評価する。これは端の区間の傾きをそのまま延長する **線形外挿** である（設定 ``extrapolation = "linear"``）。
+:eq:`eq-bilinear` を評価する。これは端の区間の傾きをそのまま延長する **線形外挿** である（設定 ``extrapolation = "linear"``）。
 ``"clamp"`` を選ぶと :math:`t` を :math:`[0,1]` に制限し、端の値で一定とする。
 外挿で軸力係数が負にならないよう、:math:`C_A` は 0 以上に制限する。
 

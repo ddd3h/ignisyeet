@@ -237,7 +237,7 @@ Green の恒等式を外部領域に適用すると、:math:`\Phi` は表面 :ma
 離散化
 ~~~~~~
 
-表面を :math:`n` 枚のパネルに分け、各パネルで :math:`\mu_j,\sigma_j` を一定とする。条件 :eq:`eq-pn-dirichlet` を各パネルの重心（内側へ向けて極限をとった点）で課すと、
+表面を :math:`n` 枚のパネルに分け、各パネルで :math:`\mu_j,\sigma_j` を一定とする。:eq:`eq-pn-dirichlet` の条件を各パネルの重心（内側へ向けて極限をとった点）で課すと、
 
 .. math::
    :label: eq-pn-system
@@ -250,7 +250,7 @@ Green の恒等式を外部領域に適用すると、:math:`\Phi` は表面 :ma
 となる。:math:`D_{ij}=\Omega_{ij}/4\pi` はパネル :math:`j` の単位強度の二重わき出しがパネル :math:`i` の重心につくるポテンシャル、
 :math:`S_{ij}=\frac{1}{4\pi}\int_j \dd S/r` は単位強度のわき出しが作るポテンシャル（符号を除く）である。
 自己項の :math:`-\tfrac12` は、平らな二重わき出しの面の内側へ近づいたときの極限値である（外側では :math:`+\tfrac12`）。
-後流の寄与は、後流パネルが重心 :math:`i` に作る二重わき出しのポテンシャル :math:`W_i` を、式 :eq:`eq-pn-kutta` により
+後流の寄与は、後流パネルが重心 :math:`i` に作る二重わき出しのポテンシャル :math:`W_i` を、\ :eq:`eq-pn-kutta` により
 :math:`A_{i,u}\mathrel{+}=W_i`, :math:`A_{i,l}\mathrel{-}=W_i` と上面側・下面側パネルの列に加える形で入れる。
 
 影響係数
@@ -362,7 +362,7 @@ Green の恒等式を外部領域に適用すると、:math:`\Phi` は表面 :ma
 
 圧力が面に及ぼす力は :math:`-p\bm n\,\dd S` なので、:math:`z` 方向（法線力の正の向き）の力係数への寄与は、
 パネル :math:`i` について :math:`f_i=-n_{z,i}A_i/S` を使って :math:`-C_{p,i}\,n_{z,i}A_i/S=C_{p,i}\,f_i` である。
-式 :eq:`eq-pn-dcp` を代入し、尾部フェアリングを除く全パネルで足し合わせて、次の四つの量を作る。
+:eq:`eq-pn-dcp` を代入し、尾部フェアリングを除く全パネルで足し合わせて、次の四つの量を作る。
 
 .. math::
    :label: eq-pn-derivs
@@ -393,8 +393,8 @@ Göthert の規則 :cite:`gothert` が得られる。
 :math:`C_p'` は、:math:`y,z` を :math:`\beta` 倍に縮めた物体の非圧縮解である。
 Prandtl–Glauert の規則 :cite:`glauert` を三次元の物体に拡張したもので、薄い物体で、局所の流れがほぼ亜音速である範囲で成り立つ。
 実装では、メッシュの :math:`y,z` 座標を :math:`\beta` 倍にして非圧縮の解を求め、
-その速度分布を **元の形状** のパネル（面積・法線・重心）に割り当てて積分する。このとき式 :eq:`eq-pn-dcp` の迎角微分は
-:math:`\partial C_p/\partial\alpha=\beta\,(-2\bm V_x\cdot\bm V_z)/\beta^2=-2\bm V_x\cdot\bm V_z/\beta` となり、式 :eq:`eq-pn-derivs` にはこの値を使う。
+その速度分布を **元の形状** のパネル（面積・法線・重心）に割り当てて積分する。このとき\ :eq:`eq-pn-dcp` の迎角微分は
+:math:`\partial C_p/\partial\alpha=\beta\,(-2\bm V_x\cdot\bm V_z)/\beta^2=-2\bm V_x\cdot\bm V_z/\beta` となり、\ :eq:`eq-pn-derivs` にはこの値を使う。
 :math:`M=0` では :math:`\beta=1` で元の非圧縮の解に一致する。
 
 ``subsonic_machs`` の各 Mach 数（既定は 0, 0.3, 0.5, 0.6, 0.7, 0.8 の 6 点）で上の解を一度ずつ求め、
@@ -404,7 +404,7 @@ Prandtl–Glauert の規則 :cite:`glauert` を三次元の物体に拡張した
 ピッチ減衰の和
 ~~~~~~~~~~~~~~
 
-前章の式 :eq:`eq-damping` の :math:`S_0,S_1,S_2` を、四つの量から次のように作る。
+前章の\ :eq:`eq-damping` の :math:`S_0,S_1,S_2` を、四つの量から次のように作る。
 
 .. math::
    :label: eq-pn-damping
@@ -419,7 +419,7 @@ Prandtl–Glauert の規則 :cite:`glauert` を三次元の物体に拡張した
 
    M_{cg}=M_{\mathrm{nose}}-x_{cg}N=\frac{\omega}{V}\Bigl[M_r-x_{cg}\,(M_\alpha+N_r)+x_{cg}^2S_0\Bigr]
 
-となる。この角括弧の中が、式 :eq:`eq-damping` の :math:`S_2-2x_{cg}S_1+x_{cg}^2S_0` と一致するのは、:math:`S_1=(M_\alpha+N_r)/2` とおいたときである。
+となる。この角括弧の中が、\ :eq:`eq-damping` の :math:`S_2-2x_{cg}S_1+x_{cg}^2S_0` と一致するのは、:math:`S_1=(M_\alpha+N_r)/2` とおいたときである。
 つまり :math:`S_1` の定義は任意ではなく、重心位置によらず厳密に成り立つように選んでいる。
 
 非線形な法線力
@@ -434,7 +434,7 @@ Prandtl–Glauert の規則 :cite:`glauert` を三次元の物体に拡張した
    C_N^{\mathrm{cross}} = K\,\frac{A_p}{S}\sin^2\alpha\quad(K=1.1)
 
 とし、モーメントは :math:`M_\alpha\sin\alpha\cos\alpha+C_N^{\mathrm{cross}}\,x_p`\ （:math:`x_p` は側面投影面積の図心）とする。
-第 2 項は、迎角が大きいときに胴体を横切る流れがはく離して生じる粘性の横流れ力 :cite:`allen` を、前章の式 :eq:`eq-body-lift` と同じ経験式で与えたものである。
+第 2 項は、迎角が大きいときに胴体を横切る流れがはく離して生じる粘性の横流れ力 :cite:`allen` を、前章の\ :eq:`eq-body-lift` と同じ経験式で与えたものである。
 圧力中心は :math:`x_{cp}=M/C_N`、:math:`\alpha=0` では :math:`M_\alpha/C_{N\alpha}` とする。
 
 フィンと胴体の干渉
@@ -453,7 +453,7 @@ Prandtl–Glauert の規則 :cite:`glauert` を三次元の物体に拡張した
 である :cite:`pnk`\ （Pitts, Nielsen, Kaattari の細長体の結果であり、ここでは上の簡単な写像で再導出して確かめた）。
 :math:`K_{W(B)}` は胴体のあるときのフィンの揚力、:math:`K_{B(W)}` はフィンの存在による胴体への揚力の持ち上げである。
 サンプル機体では :math:`r=0.05` m、:math:`s_t=0.15` m で :math:`\tau=1/3`、:math:`(1+\tau)^2=1.78` になる。
-一方、部品積み上げ法の係数は :math:`K_{fb}=1+r/(s+r)=1.33` である（式 :eq:`eq-fin-total`）。
+一方、部品積み上げ法の係数は :math:`K_{fb}=1+r/(s+r)=1.33` である（:eq:`eq-fin-total`）。
 
 超音速：局所傾斜法
 -------------------
@@ -549,7 +549,7 @@ Taylor–Maccoll の接線円すい
 :math:`4\sin\delta_0\cos\delta_0` を使うと細長体の値 :math:`2\,\dd S/\dd x` に一致する（検証の節で 1.93）。
 円筒では :math:`\delta_0=0` で傾きも 0 なので、増分が一次の法線力を生まない。
 局所の二次元的な膨張を円筒の風下側にそのまま使うと、一次の法線力が見かけ上生じてしまうからである。
-円筒の二次の横流れ力は、前述の式 :eq:`eq-pn-cn-sub` の経験項（:math:`C_N^{\mathrm{cross}}`）で与える。
+円筒の二次の横流れ力は、前述の\ :eq:`eq-pn-cn-sub` の経験項（:math:`C_N^{\mathrm{cross}}`）で与える。
 
 フィンの傾斜と翼端の Mach 円すい
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -578,13 +578,13 @@ Taylor–Maccoll の接線円すい
 
 迎角 0 での :math:`C_x` が造波抗力（圧力による軸力）で、これがそのまま軸力係数の一部になる。
 :math:`C_{N\alpha}`, :math:`M_\alpha`, :math:`N_r`, :math:`M_r` は、迎角と回転についての :math:`\pm0.25^\circ` の中心差分で求める
-（回転は :math:`\omega=0.25^\circ/L`）。係数表の :math:`C_N` は、各迎角で局所傾斜法の力 :math:`C_z` に、式 :eq:`eq-pn-cn-sub` の横流れ項を加える。
+（回転は :math:`\omega=0.25^\circ/L`）。係数表の :math:`C_N` は、各迎角で局所傾斜法の力 :math:`C_z` に、\ :eq:`eq-pn-cn-sub` の横流れ項を加える。
 
 遷音速の補間
 ------------
 
 Mach 数が最後の亜音速解 :math:`M_{lo}`\ （既定は 0.8）と超音速側の下限 :math:`M_{hi}=` ``transonic[1]``\ （既定は 1.2）の間では、
-どちらの手法も成り立たない。前章と同じ 3 次 Hermite 補間（式 :eq:`eq-hermite`）で両端をつなぐ。
+どちらの手法も成り立たない。前章と同じ 3 次 Hermite 補間（:eq:`eq-hermite`）で両端をつなぐ。
 補間する量は、迎角ごとの :math:`C_N`、:math:`C_A`\ （燃焼中・燃焼後）、:math:`x_{cp}`、:math:`C_{N\alpha}` と減衰の和 :math:`S_0,S_1,S_2` である。
 端点の値は、:math:`M_{lo}` では亜音速の列、:math:`M_{hi}` では超音速の列で、端点での Mach 数についての傾きは、
 :math:`h=0.02` だけ外側の点との片側差分で求める。補間区間に Mach 数の格子点がなければ計算しない。
@@ -593,7 +593,7 @@ Mach 数が最後の亜音速解 :math:`M_{lo}`\ （既定は 0.8）と超音速
 軸力
 ----
 
-軸力係数は、迎角 0 の値に、前章と同じ迎角による倍率 :math:`f(\alpha)`\ （式 :eq:`eq-ca-alpha`）を掛けて表に入れる（``axial_alpha_factor``）。
+軸力係数は、迎角 0 の値に、前章と同じ迎角による倍率 :math:`f(\alpha)`\ （:eq:`eq-ca-alpha`）を掛けて表に入れる（``axial_alpha_factor``）。
 零揚力の軸力は、次の項の和である。
 
 .. math::
@@ -605,7 +605,7 @@ Mach 数が最後の亜音速解 :math:`M_{lo}`\ （既定は 0.8）と超音速
    C_{f}^{\mathrm{panel}}+C_{x}^{\mathrm{wave}}+C_{D,\mathrm{base}}+C_{D,\mathrm{fin}}+C_{D,\mathrm{bt}}+C_{D,\mathrm{extra}} & (M\ge M_{hi})
    \end{cases}
 
-:math:`C_{D,\mathrm{nose}}, C_{D,\mathrm{base}}, C_{D,\mathrm{fin}}, C_{D,\mathrm{bt}}, C_{D,\mathrm{extra}}` は前章の部品積み上げ法の項（式 :eq:`eq-cd0`）をそのまま使う。
+:math:`C_{D,\mathrm{nose}}, C_{D,\mathrm{base}}, C_{D,\mathrm{fin}}, C_{D,\mathrm{bt}}, C_{D,\mathrm{extra}}` は前章の部品積み上げ法の項（:eq:`eq-cd0`）をそのまま使う。
 :math:`C_{D,\mathrm{base}}` は燃焼中にノズル出口の面積を差し引くので、係数表に燃焼中・燃焼後の 2 種類の値がある点も同じである。
 超音速では、ノーズの項の代わりに局所傾斜法で積分した造波抗力 :math:`C_x^{\mathrm{wave}}`\ （ノーズ・肩・ボートテール・フィンの厚みの寄与を含む）を使う。
 遷音速は前節の補間で両端をつなぐ。
@@ -687,11 +687,11 @@ Mach 数が最後の亜音速解 :math:`M_{lo}`\ （既定は 0.8）と超音速
      - 1.930
    * - 円すいの表面 :math:`C_p`\ （Taylor–Maccoll）
      - 半頂角 10°、:math:`M=2`
-     - 0.1045（本章の式 :eq:`eq-pn-tm` を独立に積分した値）
+     - 0.1045（本章の\ :eq:`eq-pn-tm` を独立に積分した値）
      - 0.1045
    * - 斜め衝撃波の角度 :math:`\beta_s`
      - くさび角 10°、:math:`M=2`
-     - 39.31°（式 :eq:`eq-pn-tbm`）
+     - 39.31°（:eq:`eq-pn-tbm`）
      - 39.31°（テストの許容は 39.3° ± 0.1°）
    * - Prandtl–Meyer 関数
      - :math:`M=2`
@@ -782,9 +782,9 @@ Barrowman 法との比較（サンプル機体）
 
 亜音速の :math:`C_{N\alpha}` はパネル法が約 27 % 大きい（:math:`M=0.3` で 14.84 と 11.69）。圧力中心は 0.03 m（0.3 cal）ほど後ろになる。
 差は主にフィンと胴体の干渉による。胴体のみのパネル解は :math:`C_{N\alpha}=1.98` で部品積み上げ法の 2 とほぼ一致するから、差はフィン部分にある。
-:math:`M=0.3` で、式 :eq:`eq-fin-sub` による単独のフィン 4 枚分（干渉なし）は :math:`2\times3.633=7.27` で、
+:math:`M=0.3` で、\ :eq:`eq-fin-sub` による単独のフィン 4 枚分（干渉なし）は :math:`2\times3.633=7.27` で、
 部品積み上げ法は :math:`K_{fb}=1.33` を掛けて :math:`2+1.33\times7.27=11.69` とする。
-同じ形で、パネル解が実効的に与える干渉係数は :math:`(14.84-1.98)/7.27=1.77` で、細長体理論の :math:`(1+\tau)^2=1.78`\ （式 :eq:`eq-pn-slender-k`）に近い。
+同じ形で、パネル解が実効的に与える干渉係数は :math:`(14.84-1.98)/7.27=1.77` で、細長体理論の :math:`(1+\tau)^2=1.78`\ （:eq:`eq-pn-slender-k`）に近い。
 全体の :math:`C_{N\alpha}` を干渉のない値 :math:`2+7.27=9.27` と比べた比で言えば、パネル法は 1.60、部品積み上げ法は 1.26 である。
 フィンの揚力そのものは、矩形翼の検証（Helmbold に対して :math:`-3` %）から大きくずれていないと考えられる。
 

@@ -47,6 +47,77 @@ Python
 インストール
 ------------
 
+インストーラ
+~~~~~~~~~~~~
+
+Linux（x86_64、aarch64）と macOS（Intel、Apple Silicon）では、次の 1 行でインストールできる。
+
+.. code-block:: sh
+
+   curl -fsSL https://raw.githubusercontent.com/ddd3h/ignisyeet/main/install.sh | bash
+
+インストーラは最初に利用者（user）か開発者（developer）かを尋ね、
+すでに入っているツール（cargo、uv、python3、git、conda や micromamba、既存の ``ignisyeet-cfd`` 環境、SU2、gmsh、TeX など）を検出して一覧にする。
+入っているものは再インストールせず、足りないものだけを入れる。再実行しても安全である。
+
+user
+   GitHub のリリースから自分のプラットフォーム用のバイナリを取得し、SHA-256 を検証してから
+   ``~/.local/bin/ignisyeet`` に置く。例題と ``python/plot.py`` は ``~/.local/share/ignisyeet/<バージョン>`` に入り、
+   ``current`` というリンクが最新版を指す。作図用の環境（uv、なければ ``venv`` と ``pip``）と、
+   それを使う ``ignisyeet-plot`` コマンドも用意する。ドキュメント作成用のツールは入れない。
+
+developer
+   git でリポジトリを取得（既存の clone があれば再利用し、変更がなければ ``git pull`` する）し、
+   ``cargo`` がなければ ``rustup`` を入れ、``cargo build --release`` と ``cargo test --release`` を実行する。
+   ``python/`` と ``doc/`` の環境は ``uv sync`` で作る。
+   TeX Live、dvisvgm、mutool、inkscape、IPAex フォントのうち足りないものは、
+   実行すべき ``apt`` または ``brew`` のコマンドを表示する（``sudo`` はインストーラ自身は実行しない）。
+
+どちらの役割でも、CFD ツール（SU2、gmsh、Open MPI。conda-forge から約 3 GB）を任意で入れられる。
+既存の micromamba、mamba、conda と既存の ``ignisyeet-cfd`` 環境があればそれを使う。
+x86_64 の Linux で AVX-512 のない CPU では、SU2 8.5.0 のパッケージが異常終了するため、SU2 を 8.3.0 に固定する。
+インストール後に、設定ファイルの ``[aero.cfd] prefix`` に書く値（または環境変数 ``IGNISYEET_CFD_PREFIX``）を表示する。
+
+主なオプションは ``bash -s --`` の後ろに付ける。
+
+.. code-block:: sh
+
+   curl -fsSL https://raw.githubusercontent.com/ddd3h/ignisyeet/main/install.sh | bash -s -- --developer --cfd -y
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+
+   * - オプション
+     - 内容
+   * - ``--user`` ``--developer``
+     - 役割を尋ねずに指定する
+   * - ``--cfd`` ``--no-cfd``
+     - CFD ツールを入れる、入れない
+   * - ``--version vX.Y.Z``
+     - 入れるリリース（既定は最新）。developer ではチェックアウトするタグ
+   * - ``--prefix DIR``
+     - インストール先（既定は ``~/.local``）
+   * - ``--dir DIR``
+     - developer の clone 先（既定は実行した clone、なければ ``~/ignisyeet``）
+   * - ``-y`` ``--yes``
+     - 質問せず既定値を使う（user、CFD なし、シェル設定ファイルは書き換えない）
+   * - ``--dry-run``
+     - 計画だけを表示して終了する
+   * - ``--uninstall``
+     - バイナリ、リンク、リリースデータを削除する。作図環境と CFD 環境は確認してから削除する（``--purge`` で両方）。developer の clone は明示的に確認したときだけ削除する
+
+各オプションには環境変数（``IGNISYEET_VERSION``、``IGNISYEET_PREFIX``、``IGNISYEET_CFD`` など）も対応する。
+``NO_COLOR`` を設定するか、端末でない場所へ出力すると、装飾のない行単位の出力になる。
+実行内容は ``~/.local/share/ignisyeet/install.log`` に記録される。
+リリースの配布物は ``ignisyeet-<バージョン>-<ターゲット>.tar.gz`` と ``.sha256`` であり、
+インストーラはチェックサムを検証してから展開する。
+
+ソースからのビルド
+~~~~~~~~~~~~~~~~~~
+
+インストーラを使わずに、リポジトリから直接ビルドすることもできる。
+
 .. code-block:: sh
 
    git clone https://github.com/ddd3h/ignisyeet.git
@@ -720,7 +791,7 @@ CSV の 1 行目は次の見出しで、続く行は Mach 数が外側、迎角�
    mach,alpha_deg,cn,ca_on,ca_off,xcp,cna,damp_s0,damp_s1,damp_s2
 
 各列は、法線力係数 :math:`C_N`、軸力係数（燃焼中・燃焼後）、圧力中心 :math:`x_{cp}` [m]（ノーズ先端から）、
-:math:`C_{N\alpha}` [1/rad]、ピッチ減衰の和 :math:`S_0, S_1, S_2`\ （式 :eq:`eq-moment-damp`）である。
+:math:`C_{N\alpha}` [1/rad]、ピッチ減衰の和 :math:`S_0, S_1, S_2`\ （:eq:`eq-moment-damp`）である。
 
 付随の ``.json`` には、基準面積 ``ref_area`` [m\ :sup:`2`]、基準直径 ``ref_diameter`` [m]、全長 ``length`` [m]、
 格子 ``machs`` と ``alphas_deg``\ （各列の値）、``extrapolation``\ （``"linear"`` または ``"clamp"``）、``source_hash``\ （任意の文字列でよい）を書く。
@@ -803,7 +874,7 @@ KML は地理情報を記述する XML 形式で、OGC の標準（KML 2.2 :cite
    弾道落下は青、パラシュート降下は橙で、風速が大きいほど濃い色にする。
 
 ``Dispersion – Monte Carlo``
-   モンテカルロの結果（``dispersion_mc.csv`` と ``dispersion_summary.json``）があるときに入る。降下モードごとのフォルダに、平均着地点（Mean landing）、:math:`1\sigma` と :math:`3\sigma` の誤差楕円（式 :eq:`eq-mc-stat` の共分散から作る 72 頂点の閉じた折れ線で、塗りつぶさない）、
+   モンテカルロの結果（``dispersion_mc.csv`` と ``dispersion_summary.json``）があるときに入る。降下モードごとのフォルダに、平均着地点（Mean landing）、:math:`1\sigma` と :math:`3\sigma` の誤差楕円（:eq:`eq-mc-stat` の共分散から作る 72 頂点の閉じた折れ線で、塗りつぶさない）、
    各サンプルの着地点（``Landing points`` フォルダ）が入る。失敗したサンプルは含まない。
 
 落下分散の図形はすべて地面に固定して描く。

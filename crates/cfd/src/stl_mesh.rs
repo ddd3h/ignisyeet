@@ -122,6 +122,11 @@ pub fn ensure_mesh_stl(opt: &CfdOptions, geom: &Geometry, raw: &[Triangle], work
     params.symmetry = false;
     params.y_mirror = false;
     params.z_mirror = false;
+    // Curvature-driven sizes below the wall size make the remeshed discrete surface contain inverted facets
+    // that HXT rejects on some STLs (the 24 elements per circle and wall_size / 8 of the CAD mesh failed on the
+    // sample STL with a few 1e-7 m of coordinate noise): 12 elements per circle and wall_size / 5 are robust.
+    params.curvature_elements = 12;
+    params.min_size_divisor = 5.0;
     params.tail_length = 0.0;
     params.profile = Vec::new();
     params.fins = None;

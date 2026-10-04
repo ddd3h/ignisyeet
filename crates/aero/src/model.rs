@@ -210,6 +210,49 @@ impl AeroModel {
         self.normal(m, h).0 / h
     }
 
+    /// Roll terms of the fin set at Mach `m`: (d Cl / d delta per radian of cant, d Cl / d p_hat).
+    ///
+    /// Cant forcing (Niskanen 2009): each fin's lift slope acts at the spanwise position of its
+    /// mean aerodynamic chord, `Cl_delta = N (y_MAC + r) CNa1 / d`. Roll damping by strip theory:
+    /// a strip at radius xi sees the extra angle `p xi / V`, giving
+    /// `Clp = -(2 a0 N / (A d^2)) * integral(xi^2 c(xi) dxi)` with the two-dimensional lift slope
+    /// `a0 = 2 pi / beta` (subsonic) or `4 / beta` (supersonic), blended over the transonic range
+    /// like the fin normal force. Both use the reference area A and diameter d of the table.
+    pub fn roll_terms(&self, m: f64) -> (f64, f64) {
+        let Some(f) = &self.geom.fins else { return (0.0, 0.0) };
+        if f.span <= 0.0 || f.area() <= 0.0 || f.count == 0 {
+            return (0.0, 0.0);
+        }
+        let d = 2.0 * self.geom.ref_radius;
+        let n = f.count as f64;
+        let (cr, ct, s, r) = (f.root_chord, f.tip_chord, f.span, f.body_radius);
+        let y_mac = if cr + ct > 0.0 { s / 3.0 * (cr + 2.0 * ct) / (cr + ct) } else { 0.5 * s };
+        // integral of xi^2 c(xi) over the span, c linear from cr at xi = r to ct at xi = r + s.
+        let k = (ct - cr) / s;
+        let prim = |xi: f64| (cr - k * r) * xi.powi(3) / 3.0 + k * xi.powi(4) / 4.0;
+        let i2 = prim(r + s) - prim(r);
+        let blend = |sub: &dyn Fn(f64) -> f64, sup: &dyn Fn(f64) -> f64| {
+            if m <= TRANSONIC_LO {
+                sub(m)
+            } else if m >= TRANSONIC_HI {
+                sup(m)
+            } else {
+                let h = 1e-3;
+                let (f0, f1) = (sub(TRANSONIC_LO), sup(TRANSONIC_HI));
+                let d0 = (f0 - sub(TRANSONIC_LO - h)) / h;
+                let d1 = (sup(TRANSONIC_HI + h) - f1) / h;
+                hermite(m, TRANSONIC_LO, TRANSONIC_HI, f0, f1, d0, d1)
+            }
+        };
+        let a = 1e-4;
+        let single = 1.0 / self.fin_scale(f);
+        let cna1 = blend(&|mm| self.fin_cn_sub(f, mm, a) * single / a, &|mm| self.fin_cn_sup(f, mm, a) * single / a);
+        let cl_delta = n * (y_mac + r) * cna1 / d;
+        let a0 = blend(&|mm| 2.0 * PI / beta(mm), &|mm| 4.0 / beta(mm));
+        let clp = -2.0 * a0 * n * i2 / (self.geom.ref_area * d * d);
+        (cl_delta, clp)
+    }
+
     /// Sums Σ CNa_i, Σ CNa_i x_i, Σ CNa_i x_i² used for pitch damping.
     pub fn damping_sums(&self, m: f64) -> [f64; 3] {
         let h = 1e-4;
@@ -420,5 +463,29 @@ mod tests {
         assert!((axial_alpha_factor(0.0) - 1.0).abs() < 1e-12);
         assert!((axial_alpha_factor(17f64.to_radians()) - 1.3).abs() < 1e-12);
         assert!(axial_alpha_factor(PI / 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn roll_terms_signs_and_scaling() {
+        let g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
+        let m4 = AeroModel::new(g.clone(), AeroOptions::default());
+        let (cd, cp) = m4.roll_terms(0.8);
+        assert!(cd > 0.0, "positive cant gives a positive roll moment");
+        assert!(cp < 0.0, "roll damping opposes the roll rate");
+        let mut g3 = g.clone();
+        g3.fins.as_mut().unwrap().count = 3;
+        let m3 = AeroModel::new(g3, AeroOptions::default());
+        assert!((m3.roll_terms(0.8).1 / cp - 0.75).abs() < 1e-12, "damping is proportional to the fin count");
+        // Subsonic strip theory: Clp = -4 pi N I2 / (beta A d^2).
+        let f = g.fins.as_ref().unwrap();
+        let (cr, ct, s, r) = (f.root_chord, f.tip_chord, f.span, f.body_radius);
+        let n = 20000;
+        let i2: f64 = (0..n).map(|i| { let xi = r + (i as f64 + 0.5) * s / n as f64; xi * xi * (cr + (ct - cr) * (xi - r) / s) * s / n as f64 }).sum();
+        let d = 2.0 * g.ref_radius;
+        let expect = -4.0 * PI * 4.0 * i2 / ((1.0f64 - 0.64).sqrt() * g.ref_area * d * d);
+        assert!((cp / expect - 1.0).abs() < 1e-6);
+        // Continuous through the transonic blend.
+        let (a, b) = (m4.roll_terms(0.899).1, m4.roll_terms(0.901).1);
+        assert!((a - b).abs() < 1e-2 * a.abs());
     }
 }

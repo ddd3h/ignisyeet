@@ -1,9 +1,9 @@
 CFD による空力解析
 ==================
 
-前章までの部品積み上げ法（:doc:`aerodynamics`）とパネル法（:doc:`panel`）は、どちらも機体のまわりの流れ場を解かずに係数を求める。
+前章までの部品積み上げ法（:doc:`barrowman`）とパネル法（:doc:`panel`）は、どちらも機体のまわりの流れ場を解かずに係数を求める。
 本章では、機体のまわりの空間を格子で覆い、圧縮性流れの方程式を数値的に解く **CFD**\ （計算流体力学）を説明する。
-設定ファイルで ``aero.method = "cfd"`` を選ぶと、他の手法と同じ形式の係数表（:doc:`aerodynamics` の係数表）が CFD の結果から作られ、
+設定ファイルで ``aero.method = "cfd"`` を選ぶと、他の手法と同じ形式の係数表（:ref:`sec-aero-table`）が CFD の結果から作られ、
 飛翔計算は何も変えずにそれを使う。
 
 流れの解法にはオープンソースの `SU2 <https://su2code.github.io/>`__ :cite:`su2`、メッシュの生成には `gmsh <https://gmsh.info/>`__ :cite:`gmsh` と `OpenCASCADE <https://dev.opencascade.org/>`__ :cite:`occt` を使う。
@@ -15,24 +15,7 @@ IgnisYeet はこれらを外部プログラムとして呼び出し、形状の�
 いつ CFD を使うか
 ~~~~~~~~~~~~~~~~~
 
-三つの手法の違いは、解く方程式の範囲と計算量にある。
-
-.. list-table::
-   :header-rows: 1
-   :widths: 18 41 41
-
-   * - 手法
-     - 扱う流れ
-     - 計算量（サンプル機体）
-   * - 部品積み上げ法
-     - 経験式。部品ごとの寄与の和
-     - 0.1 s 未満
-   * - パネル法
-     - 亜音速のポテンシャル流、超音速の局所傾斜法
-     - 約 8 s
-   * - CFD（本章）
-     - 圧縮性 Euler 方程式、または RANS 方程式を、遷音速・超音速も含めて解く
-     - 数十分から数時間（行列の大きさとメッシュによる）
+三つの手法の違いと計算量は :ref:`sec-aero-methods` にまとめた。
 
 CFD は、衝撃波や遷音速の流れ、フィンと胴体の干渉を物理方程式から直接得られる。
 一方で、1 ケースごとに 10\ :sup:`5` から 10\ :sup:`6` 個の格子点の流れ場を求めるため、計算には数十分から数時間かかり、メモリも使う（:ref:`sec-cfd-run` に目安を示す）。
@@ -447,7 +430,7 @@ SU2 はモーメントを :math:`\bm{M}=\bm{r}\times\bm{F}` で計算するの�
 ピッチ減衰
 ~~~~~~~~~~
 
-定常な CFD はピッチ減衰を与えない。そこで :ref:`sec-damping` の和 :math:`S_0,S_1,S_2`\ （:doc:`aerodynamics` の\ :eq:`eq-body-sums` と同じ定義）は、
+定常な CFD はピッチ減衰を与えない。そこで :ref:`sec-damping` の和 :math:`S_0,S_1,S_2`\ （:doc:`barrowman` の\ :eq:`eq-body-sums` と同じ定義）は、
 部品積み上げ法（パネル法があればその値）の **ばらつき** を残したまま、全体の傾きと重心を CFD の値に取り替える。
 モデルの和を :math:`S_k^{m}` として、そのまわりのばらつき（分散）
 
@@ -796,48 +779,7 @@ Taylor–Maccoll の解 :cite:`taylormaccoll`\ （:doc:`panel` の局所傾斜�
 3 ケース（:math:`M=1.2` の :math:`\alpha=0`、:math:`M=1.2` の :math:`\alpha=8^\circ`、:math:`M=2` の :math:`\alpha=8^\circ`）は、250 反復の時点で係数が落ち着いたので、早期終了して受け入れた（残差は :math:`10^{-4.3}` から :math:`10^{-5.6}`）。
 残りの 13 ケースは残差の目標 :math:`10^{-6}` に達した。
 
-.. _tbl-cfd-compare:
-
-.. list-table:: サンプル機体の CFD、部品積み上げ法（Barrowman）、パネル法の比較。:math:`C_A` は燃焼後の :math:`\alpha=0` の値、:math:`C_{N\alpha}` の単位は 1/rad
-   :header-rows: 1
-   :widths: 10 22 22 22 24
-
-   * - :math:`M`
-     - :math:`C_{N\alpha}`\ （CFD / Barrowman / パネル）
-     - :math:`C_N(4^\circ)`\ （CFD / Barrowman / パネル）
-     - :math:`x_{cp}(4^\circ)` [m]\ （CFD / Barrowman / パネル）
-     - :math:`C_A(0^\circ)`\ （CFD / Barrowman / パネル）
-   * - 0.3
-     - 15.17 / 11.69 / 14.84
-     - 1.165 / 0.911 / 1.128
-     - 1.194 / 1.125 / 1.161
-     - 0.417 / 0.494 / 0.460
-   * - 0.8
-     - 16.40 / 12.24 / 16.10
-     - 1.218 / 0.949 / 1.216
-     - 1.220 / 1.137 / 1.174
-     - 0.571 / 0.624 / 0.618
-   * - 1.2
-     - 18.46 / 13.97 / 20.16
-     - 1.315 / 1.081 / 1.054
-     - 1.239 / 1.174 / 1.199
-     - 0.716 / 0.734 / 0.875
-   * - 2.0
-     - 13.04 / 11.19 / 9.95
-     - 0.919 / 0.879 / 0.791
-     - 1.154 / 1.139 / 1.118
-     - 0.573 / 0.558 / 0.670
-
-:numref:`fig-cfd-compare` に :math:`C_{N\alpha}`、圧力中心、軸力係数を示す。線は Barrowman 法とパネル法の係数表、点は CFD の解いた Mach 数である。
-
-.. _fig-cfd-compare:
-
-.. figure:: _generated/plots/cfd_compare.*
-   :width: 100%
-
-   サンプル機体の法線力傾斜（左）、圧力中心（中、:math:`\alpha=4^\circ`）、軸力係数（右、:math:`\alpha=0`、燃焼後）。
-   線は Barrowman 法（実線）とパネル法（破線）、点は Euler の CFD。
-
+結果は、3 手法を並べて :doc:`aerodynamics` の :numref:`tbl-cfd-compare` と :numref:`fig-cfd-compare` に示した。
 この結果から次のことが言える。
 
 * **亜音速**\ （:math:`M=0.3,0.8`）：CFD の :math:`C_{N\alpha}` はパネル法と 2 % 以内で一致する（15.17 対 14.84、16.40 対 16.10）。独立な二つの非粘性の方法が一致したことになる。

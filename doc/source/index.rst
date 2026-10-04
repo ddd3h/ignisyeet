@@ -27,6 +27,7 @@ IgnisYeet ドキュメント
    coordinates
    geometry
    aerodynamics
+   barrowman
    panel
    cfd
    environment

@@ -780,7 +780,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - 意味
    * - ``method``
      - ``"barrowman"``
-     - 空力係数の求め方。``"barrowman"`` は STL から抽出した形状に対する部品積み上げ法（:doc:`aerodynamics`）、
+     - 空力係数の求め方。``"barrowman"`` は STL から抽出した形状に対する部品積み上げ法（:doc:`barrowman`）、
        ``"table"`` は外部の係数表の読み込み、``"panel"`` はパネル法（:doc:`panel`）、``"cfd"`` は SU2 による CFD（:doc:`cfd`）
    * - ``table``
      - なし

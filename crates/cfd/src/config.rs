@@ -124,6 +124,18 @@ pub enum AlphaMode {
     Single,
 }
 
+/// Multigrid cycle (`MGCYCLE`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum MultigridCycle {
+    #[default]
+    W,
+    V,
+}
+
+/// Default agglomeration multigrid levels of Euler cases (RANS: 0).
+pub const DEFAULT_EULER_MULTIGRID: usize = 0;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct CfdOptions {
@@ -193,6 +205,13 @@ pub struct CfdOptions {
     pub yplus: f64,
     /// Maximum iterations per case.
     pub iterations: usize,
+    /// Agglomeration multigrid levels (`MGLEVEL`, 0..=4; 0 = single grid). `None` = automatic: the measured
+    /// default for Euler, 0 for RANS.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub multigrid: Option<usize>,
+    /// Multigrid cycle (`MGCYCLE`).
+    #[serde(skip_serializing_if = "is_default")]
+    pub multigrid_cycle: MultigridCycle,
     pub cfl: f64,
     /// Target level of the RMS density residual (e.g. 1e-6 -> `CONV_RESIDUAL_MINVAL = -6`).
     pub convergence: f64,
@@ -241,6 +260,8 @@ impl Default for CfdOptions {
             wall_size: 0.002,
             yplus: 1.0,
             iterations: 3000,
+            multigrid: None,
+            multigrid_cycle: MultigridCycle::W,
             cfl: 5.0,
             convergence: 1e-6,
             scheme: Scheme::Roe,
@@ -359,6 +380,9 @@ impl CfdOptions {
         if self.iterations == 0 {
             bail!("aero.cfd.iterations must be at least 1");
         }
+        if self.multigrid.is_some_and(|m| m > 4) {
+            bail!("aero.cfd.multigrid must be in 0..=4 (agglomeration multigrid levels)");
+        }
         if !(self.timeout_minutes.is_finite() && self.timeout_minutes >= 0.0) {
             bail!("aero.cfd.timeout_minutes must be >= 0");
         }
@@ -401,6 +425,11 @@ impl CfdOptions {
             _ if self.surface == SurfaceKind::Stl => ShapeSymmetry::None,
             _ => ShapeSymmetry::Axisymmetric,
         }
+    }
+
+    /// Multigrid levels in effect: the explicit value, else [`DEFAULT_EULER_MULTIGRID`] for Euler and 0 for RANS.
+    pub fn multigrid_levels(&self) -> usize {
+        self.multigrid.unwrap_or(if self.model == FlowModel::Euler { DEFAULT_EULER_MULTIGRID } else { 0 })
     }
 
     /// `CONV_RESIDUAL_MINVAL` (log10 of the RMS density residual target).
@@ -494,6 +523,27 @@ mod tests {
         assert_eq!(CfdOptions::default().shape(), ShapeSymmetry::Axisymmetric);
         assert!(y_symmetric_layout(4, 0.0) && y_symmetric_layout(4, 45.0) && y_symmetric_layout(3, 0.0) && y_symmetric_layout(0, 0.0));
         assert!(!y_symmetric_layout(4, 10.0) && !y_symmetric_layout(5, 10.0) && !y_symmetric_layout(3, 20.0));
+    }
+
+    #[test]
+    fn multigrid_options_are_validated_and_not_serialised_at_their_defaults() {
+        let o = CfdOptions::default();
+        assert_eq!((o.multigrid, o.multigrid_cycle), (None, MultigridCycle::W));
+        let j = serde_json::to_string(&o).unwrap();
+        assert!(!j.contains("multigrid"), "{j}");
+        let p: CfdOptions = serde_json::from_str(r#"{"multigrid":3,"multigrid_cycle":"v"}"#).unwrap();
+        p.validate().unwrap();
+        assert_eq!((p.multigrid_levels(), p.multigrid_cycle), (3, MultigridCycle::V));
+        let j = serde_json::to_string(&p).unwrap();
+        assert!(j.contains("\"multigrid\":3") && j.contains("\"multigrid_cycle\":\"v\""), "{j}");
+        // RANS keeps the single grid unless asked.
+        let r = CfdOptions { model: FlowModel::Rans, ..Default::default() };
+        assert_eq!(r.multigrid_levels(), 0);
+        assert_eq!(CfdOptions { model: FlowModel::Rans, multigrid: Some(2), ..Default::default() }.multigrid_levels(), 2);
+        let mut bad = CfdOptions::default();
+        bad.multigrid = Some(5);
+        assert!(bad.validate().unwrap_err().to_string().contains("multigrid"));
+        assert!(serde_json::from_str::<CfdOptions>(r#"{"multigrid_cycle":"f"}"#).is_err());
     }
 
     #[test]

@@ -136,6 +136,31 @@ fn base_config(setup: &RunSetup, spec: &CaseSpec) -> String {
     su2_config_case(setup.opt, spec, &setup.dims, &setup.atm, &CaseFiles { mesh: setup.mesh_file.display().to_string(), restart_from: None })
 }
 
+/// Number of grid levels SU2 reports in its "MG Level | CVs | Aggl. Rate" table (fine grid included; 0 when no table).
+pub fn multigrid_levels_built(log_text: &str) -> usize {
+    let Some(i) = log_text.find("Aggl. Rate") else { return 0 };
+    log_text[i..].lines().skip(2).take_while(|l| l.starts_with('|')).filter(|l| l.split('|').nth(1).is_some_and(|c| c.trim().parse::<usize>().is_ok())).count()
+}
+
+/// SU2 builds the coarse grids by agglomeration and silently drops the levels when the mesh does not coarsen well
+/// (wall-dominated tetrahedral meshes do not): say so once per run when `multigrid` was requested.
+fn note_multigrid(opt: &CfdOptions, log: &Path) {
+    static NOTED: AtomicBool = AtomicBool::new(false);
+    let want = opt.multigrid_levels();
+    if want == 0 || NOTED.load(Ordering::Relaxed) {
+        return;
+    }
+    let built = multigrid_levels_built(&std::fs::read_to_string(log).unwrap_or_default()).saturating_sub(1);
+    if built < want && !NOTED.swap(true, Ordering::Relaxed) {
+        eprintln!(
+            "note: aero.cfd: multigrid = {want} requested, but SU2 built {built} coarse grid level{} for this mesh (agglomeration of a wall-dominated tetrahedral mesh is poor); \
+             {}",
+            if built == 1 { "" } else { "s" },
+            if built == 0 { "the cases run on the fine grid only, multigrid has no effect" } else { "the cases use the levels that exist" }
+        );
+    }
+}
+
 /// Excerpt of the SU2 log for an error message: the SU2 "Error" block when there is one (MPI noise
 /// follows it), else the last `n` lines.
 fn tail(path: &Path, n: usize) -> String {
@@ -249,6 +274,7 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, restart: Opt
             return Ok(fail(format!("SU2 exited with {st}; end of su2.log:\n{}", tail(&log, 8))));
         }
     }
+    note_multigrid(setup.opt, &log);
     let h = match History::read(&dir.join("history.csv")) {
         Ok(h) if !h.rows.is_empty() => h,
         _ => return Ok(fail(format!("SU2 produced no history.csv; end of su2.log:\n{}", tail(&log, 8)))),
@@ -457,6 +483,14 @@ mod tests {
     use crate::tools::ToolInfo;
     use aero::atmosphere::AtmosphereModel;
     use std::os::unix::fs::PermissionsExt;
+
+    #[test]
+    fn multigrid_levels_are_read_from_the_su2_log() {
+        let none = "Setting the multigrid structure.\nFinding max control volume width.\n";
+        assert_eq!(multigrid_levels_built(none), 0);
+        let two = "Setting the multigrid structure.\n+----+\n|  MG Level|       CVs|Aggl. Rate|       CFL|\n+----+\n|         0|     29545|    1/1.00|         5|\n|         1|     11308|    1/2.61|   5.44538|\n+----+\nFinding max control volume width.\n";
+        assert_eq!(multigrid_levels_built(two), 2);
+    }
 
     /// Mock SU2: parses MACH_NUMBER / AOA / RESTART_SOL from case.cfg, writes a fake history.csv.
     /// MODE (first line of `mode` file next to the script): ok | fail | stall | slow

@@ -31,7 +31,7 @@
 //!   (limits `0.2 cfl` .. `50 cfl`, factors 0.5 down / 1.2 up).
 
 use crate::case::CaseSpec;
-use crate::config::{CfdOptions, FlowModel, Scheme};
+use crate::config::{CfdOptions, FlowModel, MultigridCycle, Scheme};
 use aero::atmosphere::{Atmosphere, GAMMA, R_AIR};
 
 /// Iteration at which the slope limiter is frozen (ROE + MUSCL).
@@ -193,6 +193,14 @@ pub fn su2_config_case(opt: &CfdOptions, spec: &CaseSpec, dims: &RefDims, atm: &
     // ( factor down, factor up, CFL min, CFL max )
     let cfl_max = if rans { 4.0 } else { 50.0 };
     c.kv("CFL_ADAPT_PARAM", format!("( 0.5, 1.2, {:.3}, {:.1} )", 0.2 * opt.cfl, cfl_max * opt.cfl));
+    let mg = opt.multigrid_levels();
+    if mg > 0 {
+        c.kv("MGLEVEL", mg);
+        c.kv("MGCYCLE", match opt.multigrid_cycle {
+            MultigridCycle::W => "W_CYCLE",
+            MultigridCycle::V => "V_CYCLE",
+        });
+    }
     c.kv("LINEAR_SOLVER", "FGMRES");
     c.kv("LINEAR_SOLVER_PREC", "ILU");
     c.kv("LINEAR_SOLVER_ERROR", "1E-6");
@@ -277,6 +285,27 @@ mod tests {
         let area = 0.5 * std::f64::consts::PI * 0.05 * 0.05;
         assert!(has(&s, &format!("REF_AREA= {area:.10}")), "{s}");
         assert!(!s.contains("KIND_TURB_MODEL") && !s.contains("MARKER_HEATFLUX"));
+    }
+
+    #[test]
+    fn multigrid_lines() {
+        // Single grid by default: no multigrid lines.
+        let d = su2_config(&CfdOptions::default(), 0.8, 2.0, &dims(), &atm(), &CaseFiles::default());
+        assert!(!d.contains("MGLEVEL") && !d.contains("MGCYCLE"), "{d}");
+        let o = CfdOptions { multigrid: Some(3), multigrid_cycle: crate::config::MultigridCycle::V, ..Default::default() };
+        let s = su2_config(&o, 0.8, 2.0, &dims(), &atm(), &CaseFiles::default());
+        for l in ["MGLEVEL= 3", "MGCYCLE= V_CYCLE"] {
+            assert!(has(&s, l), "missing {l:?} in\n{s}");
+        }
+        let w = su2_config(&CfdOptions { multigrid: Some(2), ..Default::default() }, 0.8, 2.0, &dims(), &atm(), &CaseFiles::default());
+        assert!(has(&w, "MGLEVEL= 2") && has(&w, "MGCYCLE= W_CYCLE"));
+        // The rotating frame of a roll case keeps the multigrid lines.
+        let r = su2_config_case(&CfdOptions { multigrid: Some(2), symmetry: false, ..Default::default() }, &CaseSpec::roll(0.8, 0.01), &dims(), &atm(), &CaseFiles::default());
+        assert!(has(&r, "MGLEVEL= 2") && has(&r, "GRID_MOVEMENT= ROTATING_FRAME"));
+        // RANS: single grid unless multigrid is set explicitly.
+        let rans = CfdOptions { model: FlowModel::Rans, ..Default::default() };
+        assert!(!su2_config(&rans, 0.8, 2.0, &dims(), &atm(), &CaseFiles::default()).contains("MGLEVEL"));
+        assert!(su2_config(&CfdOptions { multigrid: Some(1), ..rans }, 0.8, 2.0, &dims(), &atm(), &CaseFiles::default()).contains("MGLEVEL= 1"));
     }
 
     #[test]

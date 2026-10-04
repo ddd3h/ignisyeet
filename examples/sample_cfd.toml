@@ -90,6 +90,9 @@ farfield = 20.0            # farfield radius [body lengths]
 wall_size = 0.002          # surface element size [m]: about 0.9 M cells, CN within ~2 % of the mesh-converged value (0.005 = coarse, 5x cheaper, CN up to ~7 % low at M 2)
 yplus = 1.0                # rans: target y+ of the first prism layer
 iterations = 3000
+# multigrid = 0            # SU2 agglomeration multigrid levels (MGLEVEL, 0..4). SU2 builds no coarse grids on the wall-dominated tetrahedral
+                           # meshes of this mode, so it has no effect there (see the CFD chapter)
+# multigrid_cycle = "w"    # "w" | "v"
 cfl = 5.0
 convergence = 1e-6         # target RMS density residual
 scheme = "roe"             # "roe" | "jst"

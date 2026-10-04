@@ -6,7 +6,7 @@ CFD による空力解析
 設定ファイルで ``aero.method = "cfd"`` を選ぶと、他の手法と同じ形式の係数表（:doc:`aerodynamics` の係数表）が CFD の結果から作られ、
 飛翔計算は何も変えずにそれを使う。
 
-流れの解法にはオープンソースの SU2 :cite:`su2`、メッシュの生成には gmsh :cite:`gmsh` と OpenCASCADE :cite:`occt` を使う。
+流れの解法にはオープンソースの `SU2 <https://su2code.github.io/>`__ :cite:`su2`、メッシュの生成には `gmsh <https://gmsh.info/>`__ :cite:`gmsh` と `OpenCASCADE <https://dev.opencascade.org/>`__ :cite:`occt` を使う。
 IgnisYeet はこれらを外部プログラムとして呼び出し、形状の再構成、メッシュ、(Mach 数, 迎角) の各ケースの実行、結果の後処理、係数表の作成までを自動で行う。
 
 位置付け

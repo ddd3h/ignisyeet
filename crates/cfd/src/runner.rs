@@ -183,7 +183,13 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, restart: Opt
     for f in ["history.csv", "done.json", "surface_flow.csv", "restart.dat"] {
         let _ = std::fs::remove_file(dir.join(f));
     }
-    let files = CaseFiles { mesh: setup.mesh_file.display().to_string(), restart_from: restart.map(|p| p.display().to_string()) };
+    // SU2 aborts ("buffer overflow detected") when the restart file path is long, so name the
+    // sibling case directory relative to this one.
+    let restart_from = restart.map(|p| match p.parent().and_then(|d| d.file_name()) {
+        Some(case) if p.parent().and_then(|d| d.parent()) == dir.parent() => format!("../{}/restart.dat", case.to_string_lossy()),
+        _ => p.display().to_string(),
+    });
+    let files = CaseFiles { mesh: setup.mesh_file.display().to_string(), restart_from };
     std::fs::write(dir.join("case.cfg"), su2_config(setup.opt, spec.mach, spec.alpha_deg, &setup.dims, &setup.atm, &files))?;
     let t0 = Instant::now();
     let mut cmd = command(setup, &dir)?;

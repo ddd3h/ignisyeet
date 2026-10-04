@@ -438,7 +438,8 @@ pub fn build_general(inp: &GeneralInput) -> Result<(AeroTable, GeneralFill)> {
         for q in 0..7 {
             let p = Pchip::new(mx.clone(), cols.iter().map(|c| c.nodes[n][q]).collect());
             for (i, &m) in machs.iter().enumerate() {
-                grid_vals[i * na * nb + n][q] = p.eval(m, linear);
+                let v = &mut grid_vals[i * na * nb + n];
+                v[q] = p.eval(m, linear);
             }
         }
     }

@@ -753,6 +753,7 @@ show_plan() {
     create)
       [ "$CFD_NEED_MM" = 1 ] && p "install ${CYAN}micromamba${RESET} to $(tilde "$BIN_DIR")/micromamba"
       p "CFD: create conda-forge env ${CYAN}$CFD_ENV_NAME${RESET} with ${CFD_PACKAGES/su2/${SU2_PIN:-su2}} ${GREY}(~3 GB)${RESET}"
+      p "CFD: pip install ${CYAN}manifold3d${RESET} into it ${GREY}(union of STL shells, surface = \"stl\")${RESET}"
       [ -n "$SU2_PIN" ] && note "no AVX-512 on this CPU: su2 is pinned to 8.3.0 (8.5.0 crashes with SIGILL)" ;;
     none) skip "CFD: not requested" ;;
   esac
@@ -922,6 +923,9 @@ install_cfd() {
       if [ -n "$CFD_PREFIX" ]; then
         ok "reusing existing environment ${CYAN}$CFD_PREFIX${RESET} ${GREY}(su2 ${CFD_SU2_VER:-?})${RESET}"
         [ "$CFD_SU2_BAD" = 1 ] && warn "su2 $CFD_SU2_VER needs AVX-512; recreate with: $CONDA_MGR create -y -n $CFD_ENV_NAME -c conda-forge --override-channels $CFD_PACKAGES su2=8.3.0"
+        if [ -x "$CFD_PREFIX/bin/python" ] && ! "$CFD_PREFIX/bin/python" -c 'import manifold3d' >/dev/null 2>&1; then
+          note "manifold3d is not installed in this environment (only needed for surface = \"stl\"): $CFD_PREFIX/bin/python -m pip install manifold3d"
+        fi
       else
         ok "reusing SU2/gmsh/mpirun found in PATH"
         CFD_PREFIX=$(dirname "$(dirname "$SU2_PATH")")
@@ -959,6 +963,11 @@ install_cfd() {
   CFD_SU2_VER=$(conda_pkg_version "$CFD_PREFIX" su2)
   ok "SU2 ${CFD_SU2_VER:-?} installed in ${CYAN}$CFD_PREFIX${RESET}"
   state_set cfd_env "$CFD_PREFIX"
+  # manifold3d (pip only): the exact union of the overlapping STL shells for surface = "stl". The environment is
+  # removed as a whole by --uninstall --purge, so nothing else has to be tracked.
+  if ! step "Installing manifold3d (pip)" "$CFD_PREFIX/bin/python" -m pip install --quiet manifold3d; then
+    warn "manifold3d could not be installed; surface = \"stl\" will not be available (retry: $CFD_PREFIX/bin/python -m pip install manifold3d)"
+  fi
 }
 
 # --- PATH hint -------------------------------------------------------------------------------------

@@ -150,7 +150,7 @@ fn tail(path: &Path, n: usize) -> String {
 
 enum Event {
     Progress { i: usize, iter: usize, residual: f64 },
-    Finished { i: usize, outcome: CaseOutcome },
+    Finished { i: usize, outcome: Box<CaseOutcome> },
 }
 
 fn command(setup: &RunSetup, dir: &Path) -> Result<std::process::Command> {
@@ -353,7 +353,7 @@ pub fn run_all(setup: &RunSetup, progress: &(dyn Fn(CfdStage) + Sync)) -> Result
                     sc.spawn(move || {
                         let r = run_case(setup, i, spec, &hash, restart, &tx);
                         let outcome = r.unwrap_or_else(|e| CaseOutcome { spec, result: None, error: Some(e.to_string()), cached: false, warm: false });
-                        let _ = tx.send(Event::Finished { i, outcome });
+                        let _ = tx.send(Event::Finished { i, outcome: Box::new(outcome) });
                     });
                 }
             }
@@ -373,7 +373,7 @@ pub fn run_all(setup: &RunSetup, progress: &(dyn Fn(CfdStage) + Sync)) -> Result
                         let conv = outcome.result.as_ref().is_some_and(|r| r.converged);
                         progress(CfdStage::CaseDone { index: i, total: n, mach: cases[i].mach, alpha: cases[i].alpha_deg, converged: conv });
                     }
-                    outcomes[i] = Some(outcome);
+                    outcomes[i] = Some(*outcome);
                     cleanup(&state);
                 }
                 Err(_) => {}
@@ -489,7 +489,7 @@ exit 0
 
     fn tools_with(script: &Path) -> ToolReport {
         let ok = |p: Option<PathBuf>| ToolInfo { name: "x", path: p, version: Some("mock".into()), problem: None };
-        ToolReport { prefix: None, su2: ok(Some(script.to_path_buf())), mpi: ok(None), gmsh: ok(None) }
+        ToolReport { prefix: None, su2: ok(Some(script.to_path_buf())), mpi: ok(None), gmsh: ok(None), manifold: ok(None) }
     }
 
     struct Env {

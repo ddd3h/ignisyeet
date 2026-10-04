@@ -47,6 +47,20 @@ pub enum ShapeSymmetry {
     None,
 }
 
+/// `surface = "stl"`: how the wall surface of the union is prepared for the volume mesher.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum StlRemesh {
+    /// `classifySurfaces` (40 deg) + `createGeometry`, then gmsh's surface mesher at `wall_size` (the STL's thin
+    /// facets on curved faces and huge facets on flat faces, e.g. fins, are replaced by an isotropic mesh; the
+    /// fidelity report measures the deviation). An error when gmsh cannot parametrise the surface.
+    #[default]
+    Classify,
+    /// The triangles of the union as they are. On the sample STL the fins are then under-resolved (their faces are
+    /// a few huge triangles) and the normal force is about 30 % low.
+    None,
+}
+
 /// Euler + STL surface: what to do with the flat base (the inviscid flow behind a flat base does not converge).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -61,6 +75,7 @@ fn is_default<T: Default + PartialEq>(v: &T) -> bool {
     *v == T::default()
 }
 
+#[allow(clippy::ptr_arg)] // serde `skip_serializing_if` passes `&Vec<f64>`
 fn zero_betas(v: &Vec<f64>) -> bool {
     v.len() == 1 && v[0] == 0.0
 }
@@ -153,6 +168,13 @@ pub struct CfdOptions {
     /// `surface = "stl"` with Euler: required, see [`BaseTreatment`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_treatment: Option<BaseTreatment>,
+    /// `surface = "stl"`: preparation of the wall surface, see [`StlRemesh`].
+    #[serde(skip_serializing_if = "is_default")]
+    pub stl_remesh: StlRemesh,
+    /// `surface = "stl"`: the run fails when the CFD wall is farther than this [m] from the input STL or its
+    /// union (see `fidelity`); `None` = `wall_size`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_geometry_error: Option<f64>,
     /// Mach step of a general (six-component) table; 0 = the Mach step of `[aero]`. The general grid has
     /// 61 x 43 angle nodes per Mach number, so a coarser Mach step keeps the file small.
     #[serde(default = "default_general_mach_step", skip_serializing_if = "is_default_general_mach_step")]
@@ -211,6 +233,8 @@ impl Default for CfdOptions {
             roll_rate_hat: default_roll_rate(),
             shape_symmetry: None,
             base_treatment: None,
+            stl_remesh: StlRemesh::Classify,
+            max_geometry_error: None,
             general_mach_step: default_general_mach_step(),
             tail_fairing: 6.0,
             farfield: 20.0,
@@ -300,6 +324,22 @@ impl CfdOptions {
         }
         if !(self.general_mach_step.is_finite() && self.general_mach_step >= 0.0) {
             bail!("aero.cfd.general_mach_step must be >= 0 (0 = the [aero] mach_step)");
+        }
+        if self.max_geometry_error.is_some_and(|e| !(e.is_finite() && e > 0.0)) {
+            bail!("aero.cfd.max_geometry_error must be positive");
+        }
+        if self.surface == SurfaceKind::Stl && self.model == FlowModel::Euler && self.base_treatment.is_none() {
+            bail!(
+                "aero.cfd.surface = \"stl\" with model = \"euler\" needs base_treatment: the inviscid flow behind a flat base does not converge \
+                 (the residual stalls and the normal force flips sign).\n  \
+                 base_treatment = \"fairing\": a closed cone (tail_fairing x base radius long) is united with the body behind the base; \
+                 this MODIFIES the input STL and the base drag comes from the empirical base term.\n  \
+                 base_treatment = \"flat\": the shape is kept, the base is not integrated, but the solution is likely not to converge \
+                 and cases that do not converge fail."
+            );
+        }
+        if self.base_treatment == Some(BaseTreatment::Fairing) && self.surface == SurfaceKind::Stl && self.model == FlowModel::Euler && self.tail_fairing <= 0.0 {
+            bail!("aero.cfd.base_treatment = \"fairing\" needs tail_fairing > 0 (cone length in base radii)");
         }
         if self.roll_damping && self.model == FlowModel::Rans {
             bail!("aero.cfd.roll_damping is only implemented for model = \"euler\"");
@@ -419,6 +459,16 @@ mod tests {
         // Defaults are not serialised (hash of existing configurations).
         let j = serde_json::to_string(&o).unwrap();
         assert!(!j.contains("betas_deg") && !j.contains("roll_damping") && !j.contains("shape_symmetry") && !j.contains("base_treatment"));
+        // STL + Euler needs an explicit base treatment (the message explains both options).
+        let stl = CfdOptions { surface: SurfaceKind::Stl, ..Default::default() };
+        let e = stl.validate().unwrap_err().to_string();
+        assert!(e.contains("base_treatment") && e.contains("fairing") && e.contains("flat") && e.contains("MODIFIES"), "{e}");
+        CfdOptions { base_treatment: Some(BaseTreatment::Flat), ..stl.clone() }.validate().unwrap();
+        CfdOptions { base_treatment: Some(BaseTreatment::Fairing), ..stl.clone() }.validate().unwrap();
+        assert!(CfdOptions { base_treatment: Some(BaseTreatment::Fairing), tail_fairing: 0.0, ..stl.clone() }.validate().unwrap_err().to_string().contains("tail_fairing"));
+        assert!(CfdOptions { base_treatment: Some(BaseTreatment::Flat), max_geometry_error: Some(0.0), ..stl.clone() }.validate().unwrap_err().to_string().contains("max_geometry_error"));
+        // RANS keeps the flat base and needs no choice.
+        CfdOptions { model: FlowModel::Rans, ..stl.clone() }.validate().unwrap();
         let p: CfdOptions = serde_json::from_str(r#"{"shape_symmetry":"pitch_plane","base_treatment":"fairing","betas_deg":[0,4],"roll_damping":true,"symmetry":false}"#).unwrap();
         assert_eq!((p.shape_symmetry, p.base_treatment), (Some(ShapeSymmetry::PitchPlane), Some(BaseTreatment::Fairing)));
         p.validate().unwrap();

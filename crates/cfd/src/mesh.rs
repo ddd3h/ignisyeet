@@ -90,6 +90,11 @@ pub struct MeshParams {
     pub kind: String,
     /// STL surface: hash of the united surface the mesh was made from (empty for `cad`).
     pub union_hash: String,
+    /// `stl`: file name of the united surface (binary STL, next to the script) and how it is prepared (`classify`, `none`).
+    pub stl_surface: String,
+    pub stl_remesh: String,
+    /// `stl`: 3D algorithm of gmsh, 10 = HXT, 1 = Delaunay (the retry after an HXT failure).
+    pub algorithm3d: u32,
     pub wall_size: f64,
     pub max_size: f64,
     pub growth: f64,
@@ -198,6 +203,9 @@ impl MeshParams {
             domain: domain.into(),
             kind: "cad".into(),
             union_hash: String::new(),
+            stl_surface: String::new(),
+            stl_remesh: String::new(),
+            algorithm3d: 10,
             stats_json: p("mesh_stats.json"),
             length,
             center_x: 0.5 * length,
@@ -244,6 +252,8 @@ pub struct MeshResult {
     pub hash: String,
     pub stats: MeshStats,
     pub cached: bool,
+    /// `surface = "stl"`: repair, union and geometry fidelity of the wall.
+    pub stl: Option<crate::stl_mesh::StlMeshInfo>,
 }
 
 /// Hash of the geometry description, every setting that changes the mesh and the script itself.
@@ -253,7 +263,33 @@ pub fn mesh_hash(params: &MeshParams) -> String {
     q.out_su2.clear();
     q.stats_json.clear();
     q.threads = 0;
-    hash_parts(&[serde_json::to_string(&q).unwrap_or_default().as_bytes(), SCRIPT.as_bytes()])
+    let json = serde_json::to_string(&q).unwrap_or_default();
+    if q.kind == "stl" {
+        hash_parts(&[json.as_bytes(), crate::stl_mesh::SCRIPT.as_bytes(), crate::stl_mesh::UNION_SCRIPT.as_bytes()])
+    } else {
+        hash_parts(&[json.as_bytes(), SCRIPT.as_bytes()])
+    }
+}
+
+/// Runs a python script with the gmsh interpreter in `dir` (`script params`), logging to `log`.
+/// Returns the log text; fails unless the process succeeds and the log contains `ok_token`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn run_python(py: &Path, prefix: Option<&Path>, dir: &Path, script: &str, params: &str, log: &str, ok_token: &str, what: &str) -> Result<String> {
+    let out = tools::command(py, prefix)
+        .arg(dir.join(script))
+        .arg(dir.join(params))
+        .current_dir(dir)
+        .output()
+        .with_context(|| format!("cannot run {}", py.display()))?;
+    let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    std::fs::write(dir.join(log), &text)?;
+    if !out.status.success() || !text.contains(ok_token) {
+        // The progress lines of gmsh use carriage returns; keep the last meaningful lines.
+        let clean = text.replace('\r', "\n");
+        let tail: Vec<&str> = clean.lines().filter(|l| !l.contains("%]")).collect::<Vec<_>>().into_iter().rev().take(12).collect::<Vec<_>>().into_iter().rev().collect();
+        bail!("{what} failed (log: {}):\n{}", dir.join(log).display(), tail.join("\n"));
+    }
+    Ok(text)
 }
 
 #[derive(Serialize, Deserialize)]
@@ -272,7 +308,7 @@ pub fn ensure_mesh(opt: &CfdOptions, geom: &Geometry, workdir: &Path, threads: u
     let stamp_path = dir.join("mesh.json");
     if let Some(st) = std::fs::read_to_string(&stamp_path).ok().and_then(|t| serde_json::from_str::<Stamp>(&t).ok()) {
         if st.hash == hash && su2.exists() {
-            return Ok(MeshResult { su2, hash, stats: st.stats, cached: true });
+            return Ok(MeshResult { su2, hash, stats: st.stats, cached: true, stl: None });
         }
     }
     let _ = std::fs::remove_file(&stamp_path);
@@ -297,7 +333,7 @@ pub fn ensure_mesh(opt: &CfdOptions, geom: &Geometry, workdir: &Path, threads: u
     }
     let stats: MeshStats = serde_json::from_str(&std::fs::read_to_string(&params.stats_json)?).context("bad mesh_stats.json")?;
     std::fs::write(&stamp_path, serde_json::to_string(&Stamp { hash: hash.clone(), stats: stats.clone() })?)?;
-    Ok(MeshResult { su2, hash, stats, cached: false })
+    Ok(MeshResult { su2, hash, stats, cached: false, stl: None })
 }
 
 #[cfg(test)]
@@ -330,18 +366,32 @@ mod tests {
         assert!((p.max_size - 2.0 * g.length).abs() < 1e-12);
         assert!((p.center_x - 0.5 * g.length).abs() < 1e-12);
         let j = serde_json::to_value(&p).unwrap();
-        // Every key the script reads must be provided.
+        // Every key a script reads must be provided.
         let mut n = 0;
-        for line in SCRIPT.lines() {
-            let mut rest = line;
-            while let Some(i) = rest.find("p[\"") {
-                rest = &rest[i + 3..];
-                let key = &rest[..rest.find('"').unwrap()];
-                assert!(j.get(key).is_some(), "script reads missing key {key}");
-                n += 1;
+        for (name, script) in [("mesh_gmsh.py", SCRIPT), ("mesh_stl.py", crate::stl_mesh::SCRIPT), ("stl_union.py", crate::stl_mesh::UNION_SCRIPT)] {
+            let mut keys = 0;
+            for line in script.lines() {
+                let mut rest = line;
+                while let Some(i) = rest.find("p[\"") {
+                    rest = &rest[i + 3..];
+                    let key = &rest[..rest.find('"').unwrap()];
+                    // The union script has its own small parameter file.
+                    if name != "stl_union.py" {
+                        assert!(j.get(key).is_some(), "{name} reads missing key {key}");
+                    } else {
+                        assert!(["components", "out_stl", "report_json"].contains(&key), "{key}");
+                    }
+                    keys += 1;
+                    n += 1;
+                }
             }
+            assert!(keys >= 3, "{name}");
         }
-        assert!(n > 10);
+        assert!(n > 20);
+        for name in ["wall", "base", "farfield", "fluid"] {
+            assert!(crate::stl_mesh::SCRIPT.contains(&format!("\"{name}\"")), "{name}");
+        }
+        assert!(crate::stl_mesh::SCRIPT.contains("Mesh.Algorithm3D") && crate::stl_mesh::SCRIPT.contains("classifySurfaces") && crate::stl_mesh::UNION_SCRIPT.contains("batch_boolean"));
         for name in ["wall", "base", "farfield", "symmetry", "fluid"] {
             assert!(SCRIPT.contains(&format!("\"{name}\"")), "{name}");
         }
@@ -391,6 +441,14 @@ mod tests {
         let e = MeshParams::new(&CfdOptions { symmetry: false, fin_roll_deg: 10.0, ..o.clone() }, &g, Path::new("/a"), 4);
         assert_eq!((e.domain.as_str(), e.y_mirror), ("full_box", false));
         assert_ne!(mesh_hash(&d), mesh_hash(&e));
+        // The STL kind, its union and the remesh switch are part of the hash.
+        let mut s1 = a.clone();
+        s1.kind = "stl".into();
+        let mut s2 = s1.clone();
+        s2.union_hash = "u".into();
+        let mut s3 = s1.clone();
+        s3.stl_remesh = "classify".into();
+        assert!(mesh_hash(&s1) != mesh_hash(&a) && mesh_hash(&s1) != mesh_hash(&s2) && mesh_hash(&s1) != mesh_hash(&s3));
         let mut g2 = g.clone();
         g2.fins.as_mut().unwrap().span *= 1.1;
         assert_ne!(mesh_hash(&a), mesh_hash(&MeshParams::new(&o, &g2, Path::new("/a"), 4)));

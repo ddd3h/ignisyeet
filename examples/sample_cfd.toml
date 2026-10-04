@@ -79,7 +79,7 @@ symmetry = true            # cad: allow the half model about the pitch plane. It
                            # images are not solved; auto = none for stl. "pitch_plane" / "none" give a general table.
 # base_treatment = "fairing"  # surface = "stl" + euler (required): "fairing" appends a cone behind the base (modifies the input STL),
                            # "flat" keeps the flat base (the Euler solution is likely not to converge)
-# stl_remesh = false       # stl: remesh the united surface (true) or use its triangles as they are
+# stl_remesh = "classify" # stl: "classify" (gmsh remeshes the united surface at wall_size) | "none" (the STL triangles as they are: fins under-resolved)
 # max_geometry_error = 0.002  # stl: fail when the CFD wall is farther than this [m] from the input STL (default wall_size)
 # general_mach_step = 0.1  # general table: Mach step of the output grid (0 = [aero] mach_step)
 z_mirror_mesh = true       # mesh a quarter and mirror it about the x-y plane: exactly z-symmetric mesh, no spurious CN at alpha = 0

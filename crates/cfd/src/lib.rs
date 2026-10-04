@@ -13,17 +13,19 @@
 
 pub mod case;
 pub mod config;
+pub mod fidelity;
 pub mod forces;
 pub mod general;
 pub mod history;
 pub mod mesh;
 pub mod runner;
 pub mod surface;
+pub mod stl_mesh;
 pub mod su2cfg;
 pub mod table;
 pub mod tools;
 
-pub use config::{y_symmetric_layout, z_symmetric_layout, AlphaMode, BaseTreatment, CfdOptions, FlowModel, Scheme, ShapeSymmetry, SurfaceKind};
+pub use config::{y_symmetric_layout, z_symmetric_layout, AlphaMode, BaseTreatment, CfdOptions, FlowModel, Scheme, ShapeSymmetry, StlRemesh, SurfaceKind};
 
 use aero::{AeroOptions, AeroTable, Extrapolation};
 use anyhow::{bail, Result};
@@ -242,14 +244,12 @@ pub fn prepare_surface(geom: &Geometry, cfd: &CfdOptions, raw: Option<&[geom::st
     }
 }
 
-/// `surface = "stl"` is refused: the OpenCASCADE mesher rebuilds the geometry from the extracted
-/// body profile and fin set, and a raw STL cannot be united or remeshed reliably (the sample STL
-/// models its fins as closed boxes embedded in the body, i.e. separate overlapping solids).
-fn reject_stl(cfd: &CfdOptions, _raw: Option<&[geom::stl::Triangle]>) -> Result<()> {
-    if cfd.surface == SurfaceKind::Stl {
-        bail!("aero.cfd.surface = \"stl\" is not available in this build step");
+/// Meshes the rebuilt geometry or the STL surface according to `cfd.surface` (`raw` in metres for the STL).
+fn ensure_mesh_any(cfd: &CfdOptions, geom: &Geometry, raw: Option<&[geom::stl::Triangle]>, work: &Path, threads: usize) -> Result<mesh::MeshResult> {
+    match cfd.surface {
+        SurfaceKind::Stl => stl_mesh::ensure_mesh_stl(cfd, geom, raw.ok_or_else(|| anyhow::anyhow!("surface = \"stl\" needs the STL triangles"))?, work, threads),
+        SurfaceKind::PanelMesh => mesh::ensure_mesh(cfd, geom, work, threads),
     }
-    Ok(())
 }
 
 /// Surface export and volume meshing only (`cfd-check --mesh`).
@@ -257,8 +257,7 @@ pub fn mesh_only(geom: &Geometry, cfd: &CfdOptions, _aero: &AeroOptions, out_dir
     cfd.validate()?;
     let cfd = &resolve_options(geom, cfd);
     check_tools(cfd)?;
-    reject_stl(cfd, raw)?;
-    mesh::ensure_mesh(cfd, geom, &work_dir(cfd, out_dir), budget.threads)
+    ensure_mesh_any(cfd, geom, raw, &work_dir(cfd, out_dir), budget.threads)
 }
 
 /// Builds the aerodynamic table with SU2: surface, mesh, case runner, table fill.
@@ -281,10 +280,9 @@ pub fn build_table_with_progress(
     let tools = check_tools(cfd)?;
     let t0 = std::time::Instant::now();
     progress(CfdStage::Mesh);
-    reject_stl(cfd, raw)?;
     let atm = aero.atmosphere.at(aero.reference_altitude);
     let work = work_dir(cfd, out_dir);
-    let mesh = mesh::ensure_mesh(cfd, geom, &work, budget.threads)?;
+    let mesh = ensure_mesh_any(cfd, geom, raw, &work, budget.threads)?;
     let dims = ref_dims(geom);
     let plan = plan_resources(cfd, budget, mesh.stats.cells, case::case_list(cfd).len());
     for n in &plan.notes {
@@ -347,10 +345,20 @@ pub fn build_table_with_progress(
         }
         .into(),
         clp: clp.clone(),
-        base_treatment: cfd.base_treatment.map(|b| format!("{b:?}").to_lowercase()),
+        base_treatment: cfd.base_treatment.filter(|_| cfd.model == FlowModel::Euler).map(|b| format!("{b:?}").to_lowercase()),
         warnings,
         ..Default::default()
     };
+    if let Some(info) = &mesh.stl {
+        report.base_treatment = Some(info.base_treatment.clone());
+        report.warnings.extend(info.warnings.clone());
+        report.fidelity = serde_json::to_value(serde_json::json!({
+            "fidelity": info.fidelity,
+            "union": info.union_report,
+            "repair": info.repair,
+        }))
+        .ok();
+    }
     let tab = if cfd.general_table() {
         let points: Vec<general::SolvedPoint6> = results
             .iter()

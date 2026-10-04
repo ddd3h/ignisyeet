@@ -29,6 +29,8 @@ pub struct ToolReport {
     pub su2: ToolInfo,
     pub mpi: ToolInfo,
     pub gmsh: ToolInfo,
+    /// Python module manifold3d (union of the STL shells); required only for `surface = "stl"`.
+    pub manifold: ToolInfo,
 }
 
 impl ToolReport {
@@ -43,6 +45,9 @@ impl ToolReport {
             v.push(&self.mpi);
         }
         v.push(&self.gmsh);
+        if opt.surface == crate::config::SurfaceKind::Stl {
+            v.push(&self.manifold);
+        }
         v.into_iter().filter(|t| !t.ok()).collect()
     }
 }
@@ -162,7 +167,26 @@ pub fn check_tools(opt: &CfdOptions, roots: &[PathBuf]) -> ToolReport {
             }
         }
     }
-    ToolReport { prefix, su2, mpi, gmsh }
+    // manifold3d is imported by the same python that has gmsh.
+    let mut manifold = ToolInfo {
+        name: "manifold3d (python)",
+        path: None,
+        version: None,
+        problem: Some("no python with the gmsh module found, so manifold3d cannot be checked".into()),
+    };
+    if let Some(py) = gmsh.path.clone() {
+        let out = command(&py, pre).args(["-c", "import manifold3d; print('manifold3d', getattr(manifold3d, '__version__', 'installed'))"]).output();
+        manifold = match out {
+            Ok(o) if o.status.success() => ToolInfo { name: "manifold3d (python)", path: Some(py), version: first_line(&o), problem: None },
+            _ => ToolInfo {
+                name: "manifold3d (python)",
+                path: Some(py.clone()),
+                version: None,
+                problem: Some(format!("the python module manifold3d is missing (needed for surface = \"stl\"); install it with: {} -m pip install manifold3d", py.display())),
+            },
+        };
+    }
+    ToolReport { prefix, su2, mpi, gmsh, manifold }
 }
 
 #[cfg(test)]
@@ -177,6 +201,22 @@ mod tests {
         assert!(r.su2.problem.as_ref().unwrap().contains("not found"));
         assert!(!r.ready(&o));
         assert!(r.missing(&o).iter().any(|t| t.name == "SU2_CFD"));
+    }
+
+    #[test]
+    fn manifold_is_required_only_for_stl() {
+        let ok = |name| ToolInfo { name, path: None, version: Some("x".into()), problem: None };
+        let r = ToolReport {
+            prefix: None,
+            su2: ok("SU2_CFD"),
+            mpi: ok("mpirun"),
+            gmsh: ok("gmsh"),
+            manifold: ToolInfo { name: "manifold3d (python)", path: None, version: None, problem: Some("missing".into()) },
+        };
+        let cad = CfdOptions::default();
+        let stl = CfdOptions { surface: crate::config::SurfaceKind::Stl, ..Default::default() };
+        assert!(r.ready(&cad) && !r.ready(&stl));
+        assert_eq!(r.missing(&stl)[0].name, "manifold3d (python)");
     }
 
     #[test]

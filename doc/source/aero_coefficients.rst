@@ -6,7 +6,7 @@
 これを動圧と機体の大きさで割って無次元にしたものが空力係数である。
 どの手法で作った表も、この定義に従う。飛翔計算も、同じ定義で表を読む。
 本章では、座標軸と力・モーメントの向き、6 個の係数の定義、軸対称な機体での特殊形、法線力と圧力中心、
-全迎角 :math:`\alpha_t` と迎角 :math:`\alpha`、横滑り角 :math:`\beta` の違い、減衰とロールの微係数を述べる。
+全迎角と迎角、横滑り角の違い、減衰とロールの微係数を述べる。
 表の形式と内挿は :doc:`aerodynamics` で、手法ごとの係数の求め方は :doc:`barrowman`、:doc:`panel`、:doc:`cfd` で述べる。
 
 この章で決めること
@@ -178,11 +178,9 @@
 ----------------------
 
 軸対称表と一般表は、機体が軸対称なときに一対一に対応する（:numref:`fig-aero-tables`）。
-部品積み上げ法とパネル法は、軸対称な機体の軸対称表を作る。一般表にするときは、:math:`(\alpha,\beta)` ごとに全迎角を
-:math:`\cos\alpha_t=\cos\alpha\cos\beta` から求めて軸対称表を引き、:eq:`eq-coeff-6-axisym` で 6 係数にする。
+軸対称表を一般表に展開するときは、:math:`(\alpha,\beta)` ごとに全迎角を求めて軸対称表を引き、:eq:`eq-coeff-6-axisym` で 6 係数にする。
 展開した一般表は、軸対称表と同じ情報しか持たない。
-非対称な機体や、横滑りで法線力の向きが変わる効果は、CFD の一般表や外部の一般表が与える。
-表の種類と内挿の扱いは :ref:`sec-aero-table` に述べる。
+展開の手順、表を引く角度の範囲、非対称な機体の扱いは :ref:`sec-aero-table` に述べる。
 
 .. _sec-aero-alpha-beta:
 
@@ -200,10 +198,8 @@
 である。:math:`\beta=0` ならば :math:`\alpha_t=|\alpha|`、:math:`\alpha=0` ならば :math:`\alpha_t=|\beta|` となる。
 定義の式（:eq:`eq-alpha-beta`、:eq:`eq-alpha`）と図（:numref:`fig-body-axes`）は :ref:`sec-aero-angles` にある。
 
-係数表を引くときの角度は、表の種類で違う。軸対称表は、全迎角を :math:`\alpha_t'=\min(\alpha_t,\pi-\alpha_t)`、すなわち 0 から 90° の範囲で引く。
-既定の軸対称表が持つのは :math:`\alpha_t'=0` から 30° で、それを超える値は線形に外挿する（設定 ``extrapolation = "clamp"`` では端の値で一定）。
-後ろ向きの飛行（:math:`\alpha_t>90^\circ`）では、前向きの係数を引いて軸力の向きを反転する。
-一般表は :math:`\alpha`（:math:`-180^\circ` から :math:`180^\circ`）と :math:`\beta`（:math:`-90^\circ` から :math:`90^\circ`）で引き、後ろ向きの飛行も表の一部である。
+係数表を引くときの角度は、軸対称表では全迎角 :math:`\alpha_t`（実際には :math:`\min(\alpha_t,\pi-\alpha_t)`）、一般表では :math:`\alpha` と :math:`\beta` である。
+引く範囲、既定の表が持つ範囲、範囲の外の扱い、後ろ向きの飛行の扱いは :ref:`sec-aero-table` と :ref:`sec-aero-interp` にある。
 
 係数表の CSV の列 ``alpha_deg`` は、軸対称表では全迎角 :math:`\alpha_t`、一般表では迎角 :math:`\alpha` を表す。
 外部の表を作るときは、この違いに注意する（:ref:`sec-aero-table-format`）。
@@ -242,7 +238,10 @@
 * **部品積み上げ法**\ ：:math:`S_0,S_1,S_2` を部品の和から（:ref:`sec-damping`）、:math:`C_{l\delta}` と :math:`C_{lp}` を部品積み上げ法のロール項から求める（:ref:`sec-barrowman-roll`）。
 * **パネル法**\ ：:math:`S_0,S_1,S_2` を表面の解から求める。ロール項は部品積み上げ法の値である（:doc:`panel`）。
 * **CFD**\ ：ピッチとヨーは CFD で直接解かず、他の手法の和を CFD の法線力の傾きに合わせて作る（:math:`C_{mq}` と :math:`C_{nr}` は CFD の値ではない）。
-  :math:`C_{lp}` は、設定 ``roll_damping`` が真のとき回転座標系の CFD から求め、そうでなければ部品積み上げ法の値である。:math:`C_{l\delta}` は常に部品積み上げ法の値である（:doc:`cfd`）。
+  :math:`C_{lp}` は、設定 ``roll_damping`` が真のとき、回転座標系の CFD（正負のロール角速度の 2 ケースの差）から Mach 数ごとに求める。
+  採用するのは負で 0 でない値だけで、失敗したケースや採用できない Mach 数は部品積み上げ法の値を使う。
+  表の値は、部品積み上げ法の :math:`C_{lp}` に、CFD と部品積み上げ法の比（Mach 数方向に補間）を掛けたものである。
+  ``roll_damping`` が偽のときは部品積み上げ法の値である。:math:`C_{l\delta}` は常に部品積み上げ法の値である（:doc:`cfd`）。
 * **外部の表**\ ：表に書かれた値をそのまま使う。ロール項がすべて 0 のときは部品積み上げ法の値を補う（:ref:`sec-aero-external`）。
 
 確認済み

@@ -156,6 +156,7 @@ IgnisYeet では、抽出した半径分布を断面ごとの円錐台の連な�
 である。圧縮性の係数を :math:`\beta=\sqrt{|1-M^2|}` とする。
 この :math:`\beta` は、:doc:`aero_coefficients` の横滑り角 :math:`\beta` とは別の量である。
 同じ記号を使うが、本章（とパネル法）では圧縮性の係数だけを指す。
+実装では :math:`M=1` 付近で 0 割りにならないよう、:math:`\beta` に :math:`10^{-3}` の下限を置く。
 
 亜音速（:math:`M\le0.9`）
 ~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -285,7 +286,7 @@ IgnisYeet では、抽出した半径分布を断面ごとの円錐台の連な�
    \dfrac{\mathit{AR}\,\beta-0.67}{2\,\mathit{AR}\,\beta-1} & (M\ge2)
    \end{cases}
 
-とする :cite:`barrowman,niskanen`\ （超音速側は :math:`[0.25,\,0.5]` に制限）。:math:`0.5<M<2` は\ :eq:`eq-hermite` と同じ Hermite 補間でつなぐ。
+とする :cite:`barrowman,niskanen`\ （超音速側は :math:`[0.25,\,0.5]` に制限）。:math:`0.5<M<2` は\ :eq:`eq-hermite` と同じ形の Hermite 補間でつなぐ（:math:`M=0.5` での傾きは 0、:math:`M=2` での傾きは数値微分）。
 :math:`\kappa=0.25` のとき、これは Barrowman のフィン圧力中心 :cite:`barrowman`
 
 .. math::
@@ -354,7 +355,6 @@ IgnisYeet では、抽出した半径分布を断面ごとの円錐台の連な�
 重心より前の部品には上向きの、後ろの部品には下向きの迎角が加わり、そこに生じる法線力が、回転を妨げる向きのモーメントを作る。
 重心から遠い部品ほど、迎角の変化も腕の長さも大きいので、減衰への寄与が大きい（和に距離の 2 乗が入る）。
 IgnisYeet は、部品ごとの法線力の傾きと位置の和を Mach 数ごとに表へ保存し、飛翔計算のときに、そのときの重心位置から減衰のモーメントを組み立てる。
-重心は燃焼とともに移動するので、和は重心に依存しない形で持つ。
 
 機体が角速度 :math:`\omega` でピッチ回転すると、重心から :math:`\xi_i=x_i-x_{cg}` 離れた部品には
 局所的な迎角 :math:`\Delta\alpha_i=\omega\,\xi_i/V` が加わる。そこに生じる法線力
@@ -370,15 +370,9 @@ IgnisYeet は、部品ごとの法線力の傾きと位置の和を Mach 数ご�
 重心は燃焼とともに移動するので、表には :math:`x_{cg}` に依存しない :math:`S_0,S_1,S_2` を Mach 数ごとに保存し、
 飛翔計算のたびに\ :eq:`eq-damping` を組み立てる。括弧内が負になる場合（ボートテールの負の寄与が勝つ場合）は 0 とする。
 
-括弧内を :math:`K=\max(0,\ S_2-2x_{cg}S_1+x_{cg}^2S_0)` とおき、無次元のピッチ角速度を :math:`\hat q=\omega d/(2V)` とすると、
-:eq:`eq-damping` の関係は、ピッチ減衰の微係数 :math:`C_{mq}=\partial C_m/\partial\hat q` を使って
-
-.. math::
-
-   C_{mq}=-\frac{2K}{d^2}
-
-と書ける。これは実装した関係式の無次元の形で、:math:`C_{mq}` は重心位置に依存する。表には :math:`C_{mq}` を直接の列としては持たず、:math:`S_0,S_1,S_2` から作る。
-ヨーの :math:`C_{nr}` も、ヨー用の和から同じ形で作る。各手法での出どころは、:ref:`減衰とロールの微係数 <sec-aero-damping>` にまとめた。
+括弧内の :math:`\max(0,\cdot)` を :math:`K` とおくと、無次元の微係数 :math:`C_{mq}=-2K/d^2` と書ける。
+表には :math:`C_{mq}` を直接の列としては持たず、:math:`S_0,S_1,S_2` から作る。
+この無次元の形、ヨーの :math:`C_{nr}`、各手法での出どころは :ref:`減衰とロールの微係数 <sec-aero-damping>` にまとめた。
 
 適用範囲・制約
 ~~~~~~~~~~~~~~
@@ -468,11 +462,13 @@ IgnisYeet は、迎角 0 の抗力係数をこれらの成分の和で求め、�
 
    C_{D0} = C_{D,f} + C_{D,\mathrm{nose}} + C_{D,\mathrm{base}} + C_{D,\mathrm{fin}} + C_{D,\mathrm{bt}} + C_{D,\mathrm{extra}}
 
+:math:`C_{D,\mathrm{extra}}` は、ラグやボタンなどの追加抗力として設定 ``rocket.extra_cd`` で与える定数である。
+
 表面摩擦
 ~~~~~~~~
 
 Reynolds 数を全長 :math:`L` 基準で :math:`Re=VL/\nu` とする。
-:math:`V` と動粘性係数 :math:`\nu` は射点高度の標準大気での値とし、:math:`V=\max(M,0.05)\,a`\ （極低速で発散しないように下限を設ける）とする。
+:math:`V` と動粘性係数 :math:`\nu` は射点高度の大気（設定した大気モデル）での値とし、:math:`V=\max(M,0.05)\,a`\ （極低速で発散しないように下限を設ける）とする。
 摩擦係数は、乱流の式と粗さで頭打ちになる式の大きい方をとる :cite:`niskanen,schlichting,hoerner`。
 
 .. math::
@@ -482,7 +478,7 @@ Reynolds 数を全長 :math:`L` 基準で :math:`Re=VL/\nu` とする。
    C_f^{\mathrm{rough}}=0.032\left(\frac{R_s}{L}\right)^{0.2},\qquad
    C_f=\max\!\left(C_f^{\mathrm{turb}},\,C_f^{\mathrm{rough}}\right)
 
-ただし :math:`Re<10^4` では :math:`C_f=1.48\times10^{-2}` とする。:math:`R_s` は等価砂粒粗さ（設定 ``roughness``）である。
+ただし :math:`Re<10^4` では :math:`C_f=1.48\times10^{-2}` とする。:math:`R_s` は等価砂粒粗さ（設定 ``rocket.roughness``）で、0 のときは粗さの式を使わない。
 圧縮性の補正 :cite:`niskanen` として
 
 .. math::
@@ -492,7 +488,7 @@ Reynolds 数を全長 :math:`L` 基準で :math:`Re=VL/\nu` とする。
    C_f^{\mathrm{rough}} \leftarrow
    \begin{cases} C_f^{\mathrm{rough}}(1-0.1M^2) & (M<1)\\ C_f^{\mathrm{rough}}/(1+0.18M^2) & (M\ge1)\end{cases}
 
-を掛ける。:numref:`fig-skin-friction` に :math:`Re` と粗さによる変化を示す。サンプル機体（:math:`L=1.5` m、60 µm）では :math:`Re\sim10^7` で粗さの式が支配的になる。
+を掛ける。:numref:`fig-skin-friction` に :math:`Re` と粗さによる変化を示す。サンプル機体（:math:`L=1.5` m、60 µm）では :math:`Re` が約 :math:`10^6` を超えると粗さの式が支配的になる。
 
 .. _fig-skin-friction:
 
@@ -559,7 +555,8 @@ Reynolds 数を全長 :math:`L` 基準で :math:`Re=VL/\nu` とする。
    \end{cases}
 
 で、前縁の後退角 :math:`\Gamma_{LE}=\arctan(m/s)` について :math:`\cos^2\Gamma_{LE}` を掛ける。
-3 つの式は :math:`M=0.9` と :math:`M=1` で連続につながる。後縁を切り落とした（square）フィンには、後縁の面積 :math:`Nst` に\ :eq:`eq-base` の底面抗力を加える。
+3 つの式は :math:`M=0.9` と :math:`M=1` で連続につながる。前縁の項は設定 ``rocket.fin_le`` が ``"rounded"`` のときだけ加える。
+後縁を切り落とした（square）フィン（``rocket.fin_te = "square"``）には、後縁の面積 :math:`Nst` に\ :eq:`eq-base` の底面抗力を加える。
 
 ボートテール
 ~~~~~~~~~~~~

@@ -6,6 +6,9 @@ pub mod flight;
 pub mod frame;
 pub mod geo;
 pub mod integrator;
+pub mod tableau;
+pub mod dop853;
+pub mod lie;
 pub mod motor;
 
 pub use dispersion::{DispersionConfig, DispersionMode, McResult, McRow, MonteCarloConfig, Perturbation};

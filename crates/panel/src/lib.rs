@@ -431,10 +431,12 @@ pub fn set_memory_limit(bytes: Option<u64>) {
 }
 
 /// Peak memory [bytes] of the dense solve for `n` panels: one `n x n` f64 matrix (assembled, then
-/// LU-factored in place, see [`solver::solve_potential`]), plus the right-hand sides.
+/// LU-factored in place, see [`solver::solve_potential`]), plus the right-hand sides. Computed in
+/// saturating 128-bit arithmetic and saturated at `u64::MAX` (from about 1.5e9 panels on), so any size gives
+/// a value to compare with the memory limits.
 pub fn dense_solve_bytes(n: usize) -> u64 {
-    let n = n as u64;
-    8 * n * n + 64 * n
+    let n = n as u128;
+    u64::try_from(n.saturating_mul(n).saturating_mul(8).saturating_add(64 * n)).unwrap_or(u64::MAX)
 }
 
 /// Fails when the dense solve of `n` panels exceeds the budget `limit` (`resources.memory_gb`) or the

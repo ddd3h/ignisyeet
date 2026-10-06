@@ -305,6 +305,12 @@ fn supersonic_comparison_with_barrowman() {
 #[test]
 fn memory_estimate_and_check() {
     assert_eq!(dense_solve_bytes(1000), 8_000_000 + 64_000);
+    // Saturates instead of overflowing u64 (8 n^2 > 2^64 from n = 2^30.5 on).
+    assert_eq!(dense_solve_bytes(1 << 30), 8 * (1u64 << 60) + 64 * (1u64 << 30));
+    for n in [1usize << 31, 1 << 32, usize::MAX] {
+        assert_eq!(dense_solve_bytes(n), u64::MAX, "{n}");
+    }
+    assert!(check_memory(1 << 40, Some(1 << 40)).is_err());
     assert!(check_memory(1000, None).is_ok());
     assert!(check_memory(1000, Some(17_000_000)).is_ok());
     let e = check_memory(20_000, Some(1_000_000_000)).unwrap_err().to_string();

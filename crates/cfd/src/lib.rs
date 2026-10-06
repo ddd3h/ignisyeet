@@ -109,7 +109,7 @@ pub struct CfdReport {
 /// Message of the missing-tools error.
 pub fn not_installed_message(report: &tools::ToolReport, opt: &CfdOptions) -> String {
     let lines: Vec<String> = report.missing(opt).iter().map(|t| format!("  - {}: {}", t.name, t.problem.as_deref().unwrap_or("unusable"))).collect();
-    format!("SU2 is not installed (see doc / cfd/install.sh)\n{}", lines.join("\n"))
+    format!("SU2 is not installed ({})\n{}", tools::INSTALL_HINT, lines.join("\n"))
 }
 
 /// Fails with the "not installed" error unless SU2, MPI (for more than one rank) and gmsh work.
@@ -514,7 +514,7 @@ mod tests {
             .err()
             .unwrap()
             .to_string();
-        assert!(e.starts_with("SU2 is not installed (see doc / cfd/install.sh)"), "{e}");
+        assert!(e.starts_with("SU2 is not installed (install with `install.sh --cfd`"), "{e}");
         assert!(e.contains("no_such_su2_cfd"));
     }
 }

@@ -39,6 +39,26 @@ impl ToolReport {
         self.missing(opt).is_empty()
     }
 
+    /// Every tool required by `opt` is present and usable (the same as [`ToolReport::ready`]; use it for the exit
+    /// status of `cfd-check`).
+    pub fn all_required_present(&self, opt: &CfdOptions) -> bool {
+        self.ready(opt)
+    }
+
+    /// Non-fatal findings: an SU2 version other than the documented 8.3.x (the validation and the case set-up
+    /// are pinned to SU2 8.3.0).
+    pub fn warnings(&self) -> Vec<String> {
+        let mut w = Vec::new();
+        if let (true, Some(v)) = (self.su2.ok(), self.su2.version.as_deref()) {
+            match su2_version(v) {
+                Some((8, 3, _)) => {}
+                Some((a, b, c)) => w.push(format!("SU2 {a}.{b}.{c} found; the documentation and validation are pinned to SU2 8.3.0, results may differ")),
+                None => w.push(format!("cannot read the SU2 version from \"{v}\"; the documentation and validation are pinned to SU2 8.3.0")),
+            }
+        }
+        w
+    }
+
     pub fn missing(&self, opt: &CfdOptions) -> Vec<&ToolInfo> {
         let mut v = vec![&self.su2];
         if opt.ranks_per_case > 1 {
@@ -50,6 +70,16 @@ impl ToolReport {
         }
         v.into_iter().filter(|t| !t.ok()).collect()
     }
+}
+
+/// `(major, minor, patch)` from a banner such as `SU2 v8.3.0 "Harrier"`, or the first `v<digits>.<digits>` token.
+pub fn su2_version(banner: &str) -> Option<(u32, u32, u32)> {
+    let tok = banner.split_whitespace().find_map(|t| {
+        let t = t.trim_start_matches('v').trim_end_matches(|c: char| !c.is_ascii_digit());
+        (t.split('.').count() >= 2 && t.split('.').all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()))).then_some(t)
+    })?;
+    let mut it = tok.split('.').map(|p| p.parse::<u32>().ok());
+    Some((it.next()??, it.next()??, it.next().flatten().unwrap_or(0)))
 }
 
 /// Expands a leading `~`.
@@ -147,7 +177,9 @@ pub fn gmsh_python(prefix: Option<&Path>, roots: &[PathBuf]) -> Vec<PathBuf> {
     v.into_iter().filter(|p| is_exec(p)).collect()
 }
 
-const HINT: &str = "see doc / cfd/install.sh";
+/// Pointer appended to the "not found" problems; also the first line of the not-installed error.
+pub const INSTALL_HINT: &str = "install with `install.sh --cfd`, see the CFD chapter of the documentation";
+const HINT: &str = INSTALL_HINT;
 
 /// Locates the tools and probes their versions.
 pub fn check_tools(opt: &CfdOptions, roots: &[PathBuf]) -> ToolReport {
@@ -217,6 +249,26 @@ mod tests {
         let stl = CfdOptions { surface: crate::config::SurfaceKind::Stl, ..Default::default() };
         assert!(r.ready(&cad) && !r.ready(&stl));
         assert_eq!(r.missing(&stl)[0].name, "manifold3d (python)");
+    }
+
+    #[test]
+    fn su2_version_warning() {
+        assert_eq!(su2_version("SU2 v8.3.0 \"Harrier\", Copyright"), Some((8, 3, 0)));
+        assert_eq!(su2_version("SU2 v8.1.0 \"Harrier\""), Some((8, 1, 0)));
+        assert_eq!(su2_version("no version"), None);
+        let ok = |name, v: Option<&str>| ToolInfo { name, path: None, version: v.map(Into::into), problem: None };
+        let mk = |v: &str| ToolReport { prefix: None, su2: ok("SU2_CFD", Some(v)), mpi: ok("mpirun", None), gmsh: ok("gmsh", None), manifold: ok("m", None) };
+        assert!(mk("SU2 v8.3.0 \"Harrier\"").warnings().is_empty());
+        assert!(mk("SU2 v8.3.2 \"Harrier\"").warnings().is_empty());
+        let w = mk("SU2 v8.1.0 \"Harrier\"").warnings();
+        assert!(w.len() == 1 && w[0].contains("8.3.0"), "{w:?}");
+        assert_eq!(mk("garbled").warnings().len(), 1);
+    }
+
+    #[test]
+    fn all_required_present_follows_the_options() {
+        let o = CfdOptions { su2: "definitely_not_su2_cfd".into(), ..Default::default() };
+        assert!(!check_tools(&o, &[]).all_required_present(&o));
     }
 
     #[test]

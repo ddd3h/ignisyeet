@@ -48,7 +48,8 @@ IgnisYeet ドキュメント
 
 .. raw:: latex
 
-   \appendix
+   \setcounter{secnumdepth}{-1}
+   \renewcommand{\chaptermark}[1]{\markboth{#1}{}}
 
 .. toctree::
    :maxdepth: 1

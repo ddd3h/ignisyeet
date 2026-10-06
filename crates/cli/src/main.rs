@@ -143,7 +143,9 @@ fn main() -> Result<()> {
             write_geometry(&cfg, &g)?;
             step.done(&view::geometry_detail(&g));
             show_geometry(&g, true);
-            print_warnings(&size_warnings(&cfg, g.length, 2.0 * g.ref_radius));
+            let mut w = g.warnings.clone();
+            w.extend(size_warnings(&cfg, g.length, 2.0 * g.ref_radius));
+            print_warnings(&w);
         }
         Cmd::Aero { config, force } => {
             let cfg = load_config(&config)?;
@@ -211,6 +213,61 @@ fn print_warnings(warnings: &[String]) {
             _ => ui().warn(w),
         }
     }
+}
+
+/// Plausibility findings of the last geometry extraction of this process.
+static GEOMETRY_WARNINGS: std::sync::Mutex<Option<Vec<String>>> = std::sync::Mutex::new(None);
+
+/// Geometry findings for the current run: those of an extraction made in this process, otherwise those
+/// stored in the geometry.json next to the cached aero table (none for an external table).
+fn geometry_warnings(cfg: &Config) -> Vec<String> {
+    if let Some(w) = GEOMETRY_WARNINGS.lock().unwrap().clone() {
+        return w;
+    }
+    stored_geometry_warnings(cfg)
+}
+
+fn stored_geometry_warnings(cfg: &Config) -> Vec<String> {
+    if cfg.aero.method == config::AeroMethod::Table {
+        return Vec::new();
+    }
+    let text = std::fs::read_to_string(cfg.out_dir().join("geometry.json")).ok();
+    let json = text.and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok());
+    json.and_then(|j| j.get("warnings").cloned()).and_then(|w| serde_json::from_value(w).ok()).unwrap_or_default()
+}
+
+/// Warning about aero table lookups outside the tabulated range, if there were any.
+fn aero_range_warning(s: &aero::table::OutOfRangeStats) -> Option<String> {
+    if !s.any() {
+        return None;
+    }
+    let mach = s.mach_below + s.mach_above;
+    let mut parts = Vec::new();
+    if mach > 0 {
+        parts.push(format!("{mach} of {} lookups beyond the Mach range", s.lookups));
+    }
+    if s.angle_beyond > 0 {
+        parts.push(format!("{} of {} lookups beyond the angle range", s.angle_beyond, s.lookups));
+    }
+    Some(format!(
+        "aero table: {} (max Mach {:.2}, max |alpha| {:.1} deg); Mach is held at the table edge, angles are extrapolated",
+        parts.join(", "),
+        s.max_mach,
+        s.max_abs_alpha_deg
+    ))
+}
+
+/// The `aero_table_range` object of summary.json.
+fn aero_range_json(s: &aero::table::OutOfRangeStats) -> serde_json::Value {
+    serde_json::json!({
+        "lookups": s.lookups,
+        "mach_below": s.mach_below,
+        "mach_above": s.mach_above,
+        "angle_beyond": s.angle_beyond,
+        "max_mach": s.max_mach,
+        "max_abs_alpha_deg": s.max_abs_alpha_deg,
+        "out_of_range": s.any(),
+    })
 }
 
 /// Plausible size range of a rocket body; outside it `rocket.stl_scale` is most likely wrong.
@@ -307,6 +364,7 @@ fn geometry(cfg: &Config) -> Result<Geometry> {
     let tris: Vec<_> = geom::stl::read_stl(&stl)?.into_iter().map(|t| t.map(|v| v * s)).collect();
     let opt = ExtractOptions { n_slices: cfg.aero.n_slices, nose_direction: cfg.nose_direction()?, fin_threshold: cfg.aero.fin_threshold };
     let mut g = geom::extract(&tris, &opt).with_context(|| format!("geometry extraction failed for {}", stl.display()))?;
+    *GEOMETRY_WARNINGS.lock().unwrap() = Some(g.warnings.clone());
     if let Some(o) = &cfg.rocket.fin_override {
         let r_body = g.ref_radius;
         let f = g.fins.get_or_insert(geom::FinSet {
@@ -540,6 +598,8 @@ fn aero_table_for(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
         }
         u.done_line("General table", &format!("{nm} Mach x {na} alpha x {nb} beta ({} rows)", t.rows()), start.elapsed());
     }
+    // Lookups made while building the table (panel, CFD, the drag file) are not flight lookups.
+    t.reset_out_of_range_stats();
     Ok(t)
 }
 
@@ -574,9 +634,7 @@ fn aero_table_inner(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
         }
     }
     if cfg.aero.method == config::AeroMethod::Cfd {
-        for w in cfg.aero.cfd.warnings() {
-            eprintln!("warning: {w}");
-        }
+        print_warnings(&cfg.aero.cfd.warnings());
         // Fail early (before the geometry step) when the tools are missing.
         cfd::check_tools(&cfg.aero.cfd)?;
     }
@@ -586,6 +644,9 @@ fn aero_table_inner(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
     write_geometry(cfg, &g)?;
     step.done(&view::geometry_detail(&g));
     show_geometry(&g, sub == Sub::Aero);
+    if sub == Sub::Aero {
+        print_warnings(&g.warnings);
+    }
     if cfg.aero.method == config::AeroMethod::Panel {
         return panel_table(cfg, g, hash, &path, start, sub);
     }
@@ -801,6 +862,7 @@ struct Prepared {
     table: AeroTable,
     motor: Motor,
     motor_aft_x: f64,
+    geometry_warnings: Vec<String>,
 }
 
 fn prepare(cfg: &Config) -> Result<Prepared> {
@@ -808,7 +870,7 @@ fn prepare(cfg: &Config) -> Result<Prepared> {
     check_cg(cfg, table.meta.length)?;
     let motor = load_motor(cfg)?;
     let motor_aft_x = cfg.motor.aft_x.unwrap_or(table.meta.length);
-    Ok(Prepared { table, motor, motor_aft_x })
+    Ok(Prepared { table, motor, motor_aft_x, geometry_warnings: geometry_warnings(cfg) })
 }
 
 fn simulation<'a>(cfg: &Config, p: &'a Prepared) -> Result<Simulation<'a>> {
@@ -914,9 +976,14 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
     write_trajectory(&path, &r.samples)?;
     let s = &r.summary;
     let landed = s.landed();
-    let mut warnings = size_warnings(cfg, p.table.meta.length, p.table.meta.ref_diameter);
+    let range = p.table.out_of_range_stats();
+    let mut warnings = p.geometry_warnings.clone();
+    warnings.extend(size_warnings(cfg, p.table.meta.length, p.table.meta.ref_diameter));
     warnings.extend(flight_warnings(cfg, s));
-    std::fs::write(out_path(cfg, "summary.json")?, serde_json::to_string_pretty(&summary_json(cfg, s, &warnings)?)?)?;
+    warnings.extend(aero_range_warning(&range));
+    let mut json = summary_json(cfg, s, &warnings)?;
+    json["aero_table_range"] = aero_range_json(&range);
+    std::fs::write(out_path(cfg, "summary.json")?, serde_json::to_string_pretty(&json)?)?;
     if u.plain() {
         println!("Flight ({descent:?}, wind {:.1} m/s from {:.0} deg)", s.wind_speed, s.wind_direction_deg);
         println!("  rail exit       {:.2} s, {:.1} m/s, stability {:.2} cal", s.rail_exit_time, s.rail_exit_speed, s.stability_at_rail_exit);
@@ -1055,7 +1122,8 @@ impl FarthestLanding {
 
 /// Warnings of the nominal configuration: body size, and stability, wind-model validity and landing of the nominal flight.
 fn nominal_warnings(cfg: &Config, p: &Prepared, base: &Simulation) -> Vec<String> {
-    let mut w = size_warnings(cfg, p.table.meta.length, p.table.meta.ref_diameter);
+    let mut w = p.geometry_warnings.clone();
+    w.extend(size_warnings(cfg, p.table.meta.length, p.table.meta.ref_diameter));
     match base.run(Descent::Ballistic, false) {
         Ok(r) => w.extend(flight_warnings(cfg, &r.summary)),
         Err(e) => w.push(format!("the nominal flight could not be simulated ({e:#}): stability and wind-model checks were skipped")),
@@ -1082,7 +1150,7 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
     let base = simulation(cfg, &p)?;
     let mut warnings = nominal_warnings(cfg, &p, &base);
     if cfg.dispersion.mode == sim::DispersionMode::MonteCarlo {
-        return run_monte_carlo(cfg, &base, warnings);
+        return run_monte_carlo(cfg, &p, &base, warnings);
     }
     let start = std::time::Instant::now();
     let total = sim::dispersion::wind_grid_runs(&cfg.dispersion, cfg.recovery.enabled);
@@ -1112,9 +1180,10 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
             cfg.sim.max_time
         ));
     }
+    warnings.extend(aero_range_warning(&p.table.out_of_range_stats()));
     let path = out_path(cfg, "dispersion.csv")?;
     write_wind_grid_csv(&path, &results)?;
-    let meta = serde_json::json!({ "config_hash": run_hash(cfg, RunKind::WindGrid), "cases": results.len(), "failed": failed, "warnings": warnings });
+    let meta = serde_json::json!({ "config_hash": run_hash(cfg, RunKind::WindGrid), "cases": results.len(), "failed": failed, "warnings": warnings, "aero_table_range": aero_range_json(&p.table.out_of_range_stats()) });
     std::fs::write(out_path(cfg, kml::WIND_GRID_META)?, serde_json::to_string_pretty(&meta)?)?;
     u.done_line("Wind grid", &format!("{} cases, {failed} failed", results.len()), start.elapsed());
     if u.plain() {
@@ -1165,7 +1234,7 @@ fn descent_name(d: Descent) -> &'static str {
     }
 }
 
-fn run_monte_carlo(cfg: &Config, base: &Simulation, mut warnings: Vec<String>) -> Result<Option<String>> {
+fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: Vec<String>) -> Result<Option<String>> {
     let u = ui();
     let start = std::time::Instant::now();
     let mc = &cfg.dispersion.monte_carlo;
@@ -1190,12 +1259,15 @@ fn run_monte_carlo(cfg: &Config, base: &Simulation, mut warnings: Vec<String>) -
             d.descent, d.failed, r.summary.samples, d.not_landed, cfg.sim.max_time
         ));
     }
+    let range = p.table.out_of_range_stats();
+    warnings.extend(aero_range_warning(&range));
     let path = out_path(cfg, "dispersion_mc.csv")?;
     write_monte_carlo_csv(&path, &r.rows)?;
     let spath = out_path(cfg, "dispersion_summary.json")?;
     let mut json = serde_json::to_value(&r.summary)?;
     json["config_hash"] = run_hash(cfg, RunKind::MonteCarlo).into();
     json["warnings"] = serde_json::json!(warnings);
+    json["aero_table_range"] = aero_range_json(&range);
     std::fs::write(&spath, serde_json::to_string_pretty(&json)?)?;
     u.done_line("Monte Carlo", &format!("{} samples x {} descent modes", r.summary.samples, r.summary.descents.len()), start.elapsed());
     if u.plain() {
@@ -1494,6 +1566,30 @@ mod tests {
         let j = summary_json(&cfg, &unlanded(sample_summary()), &[]).unwrap();
         assert_eq!(j["landed"], false);
         assert!(j["landing_east"].is_null() && j["max_time"] == cfg.sim.max_time);
+    }
+
+    #[test]
+    fn aero_range_warning_and_json() {
+        let none = aero::table::OutOfRangeStats { lookups: 10, ..Default::default() };
+        assert!(aero_range_warning(&none).is_none());
+        assert_eq!(aero_range_json(&none)["out_of_range"], false);
+        let s = aero::table::OutOfRangeStats { lookups: 100, mach_above: 7, angle_beyond: 3, max_mach: 2.5, max_abs_alpha_deg: 31.0, ..Default::default() };
+        let w = aero_range_warning(&s).unwrap();
+        assert!(w.contains("7 of 100 lookups beyond the Mach range") && w.contains("3 of 100 lookups beyond the angle range"), "{w}");
+        assert!(w.contains("max Mach 2.50") && w.contains("31.0 deg") && w.contains("held at the table edge"), "{w}");
+        let j = aero_range_json(&s);
+        assert_eq!((j["mach_above"].as_u64(), j["angle_beyond"].as_u64(), j["out_of_range"].as_bool()), (Some(7), Some(3), Some(true)));
+    }
+
+    #[test]
+    fn geometry_warnings_are_read_back_from_geometry_json() {
+        let tmp = std::env::temp_dir().join(format!("ignisyeet_cli_gw_{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
+        cfg.output.dir = tmp.to_string_lossy().into_owned().into();
+        std::fs::write(tmp.join("geometry.json"), r#"{"warnings":["fins look reversed"]}"#).unwrap();
+        assert_eq!(stored_geometry_warnings(&cfg), vec!["fins look reversed".to_string()]);
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]

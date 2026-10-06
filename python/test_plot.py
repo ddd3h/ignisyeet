@@ -334,6 +334,34 @@ class StaleOutputs(unittest.TestCase):
             self.assertEqual(len(w), 1)
             self.assertIn("summary.json", w[0])
 
+    def test_a_failed_sim_marker_does_not_hide_a_dispersion_mismatch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self.write(out, "summary.json", {"failed": True, "error": "state diverged"})
+            self.write(out, "dispersion_meta.json", {"flight_config_hash": "new"})
+            self.write(out, "dispersion_summary.json", {"flight_config_hash": "old"})
+            w = plot.stale_warnings(out)
+            self.assertEqual(len(w), 1)
+            self.assertIn("dispersion_meta.json", w[0])
+            self.assertNotIn("summary.json:", w[0].replace("dispersion_summary.json", ""))
+            r = subprocess.run([sys.executable, str(HERE / "plot.py"), "all", str(out)], capture_output=True, text=True)
+            self.assertIn("written for different flight configurations", r.stderr)
+            # a marker alone is silent
+            (out / "dispersion_summary.json").unlink()
+            self.assertEqual(plot.stale_warnings(out), [])
+
+    def test_dispersion_without_results_removes_the_old_pngs(self):
+        # A failed `dispersion` run deletes its result files; the next plot removes the figures of the earlier run.
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            (out / "plots").mkdir()
+            for name in ("dispersion.png", "dispersion_mc.png"):
+                (out / "plots" / name).write_bytes(b"old")
+            r = subprocess.run([sys.executable, str(HERE / "plot.py"), "all", str(out)], capture_output=True, text=True)
+            self.assertFalse((out / "plots" / "dispersion.png").exists())
+            self.assertFalse((out / "plots" / "dispersion_mc.png").exists())
+            self.assertIn("removed", r.stdout)
+
     def test_truncated_json_warns_instead_of_failing(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
@@ -488,6 +516,17 @@ class Usability(unittest.TestCase):
             fig = capture_figures(plot.plot_dispersion_mc, out)["dispersion_mc.png"]
             text = "\n".join(t.get_text() for ax in fig.axes for t in ax.texts)
             self.assertIn("P50 / P90 / P99 / P99.9: 20 / 40 / 50 / 55 m", text)
+
+    def test_monte_carlo_plot_notes_the_missing_p999(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self.mc_csv(out)
+            st = {"descent": "ballistic", "n": 6, "failed": 1, "mean_east": 25.0, "mean_north": 12.5, "max_landing_distance": 60.0,
+                  "landing_distance_p50": 20.0, "landing_distance_p90": 40.0, "landing_distance_p99": 50.0, "landing_distance_p999": None}
+            (out / "dispersion_summary.json").write_text(json.dumps({**self.CLEAN, "samples": 7, "descents": [st]}))
+            fig = capture_figures(plot.plot_dispersion_mc, out)["dispersion_mc.png"]
+            text = "\n".join(t.get_text() for ax in fig.axes for t in ax.texts)
+            self.assertIn("P50 / P90 / P99: 20 / 40 / 50 m (P99.9 needs ≥ 1000 landed samples)", text)
 
     def test_grid_outline_breaks_at_broadside_cases(self):
         with tempfile.TemporaryDirectory() as tmp:

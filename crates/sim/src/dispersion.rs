@@ -195,8 +195,10 @@ fn factor(e: f64) -> f64 {
 
 impl Perturbation {
     /// Draws all perturbations of sample `index` from `ChaCha8Rng::seed_from_u64(seed + index)`.
-    /// All normals are always drawn (in field order; the six dispersions of the roll and
-    /// asymmetry terms come after the original eleven, the cross-plane rail tilt last), so
+    /// All normals are always drawn (in field order: the eleven original dispersions from
+    /// `thrust_scale` to `parachute_cd_s_scale`, then the nine of the thrust line, fin cant,
+    /// lateral CG and roll coefficients from `misalignment_y_deg` to `clp_scale`, the cross-plane
+    /// rail tilt last; `roll_deg` is not drawn but follows from the rail draws), so
     /// switching one sigma on or off does not change the draws of the others. The rail draws
     /// (in-plane tilt, rotation about the vertical, cross-plane tilt) are turned into the
     /// elevation, azimuth and roll changes of the launch `launch` (see [`tilt_launch`]).
@@ -270,8 +272,9 @@ impl Perturbation {
             s.thrust_line.misalignment_deg = y.hypot(z);
             s.thrust_line.misalignment_azimuth_deg = z.atan2(y).to_degrees();
         }
-        // Rounding must not lift a rail tilted from the vertical above 90 deg.
-        s.launch.elevation_deg = (s.launch.elevation_deg + self.elevation_deg).min(90.0);
+        // `elevation_deg` is the difference of the `tilt_launch` elevation (in [-90, 90] deg) from the
+        // nominal one, so the sum is that elevation again.
+        s.launch.elevation_deg += self.elevation_deg;
         s.launch.azimuth_deg += self.azimuth_deg;
         s.launch.roll_deg += self.roll_deg;
         if self.wind_speed != 0.0 || self.wind_direction_deg != 0.0 {
@@ -1340,6 +1343,23 @@ azimuth_deg = 0.0"#;
             let p = Perturbation::draw(&cfg, i, &b.launch);
             let ang = axes_angle(&b.launch, &p.simulation(&b, &m).launch);
             assert!(ang < 1e-2, "sample {i}: body axes moved {ang} deg ({p:?})");
+        }
+    }
+
+    #[test]
+    fn perturbed_elevation_stays_within_90_deg() {
+        // Rails near the vertical tilted through it by large draws: the perturbed elevation is the
+        // `tilt_launch` one, never above 90 deg.
+        let (t, m) = (table(), motor());
+        let mut b = base(&t, &m);
+        for el in [90.0, 89.99, 89.0, 85.0, 30.0] {
+            b.launch.elevation_deg = el;
+            let cfg = MonteCarloConfig { samples: 400, elevation_deg: 3.0, azimuth_deg: 5.0, ..zero() };
+            for i in 0..400 {
+                let p = Perturbation::draw(&cfg, i, &b.launch);
+                let e = p.simulation(&b, &m).launch.elevation_deg;
+                assert!((-90.0..=90.0).contains(&e), "el {el}, sample {i}: {e}");
+            }
         }
     }
 

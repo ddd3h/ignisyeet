@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 #
-# Build the HTML documentation (doc/) and publish it to GitHub Pages.
+# Build the HTML documentation (doc/) and publish it to GitHub Pages (pull requests: build only).
 # Repository settings: Pages -> Build and deployment -> Source = "GitHub Actions".
 
 name: docs
@@ -9,6 +9,7 @@ name: docs
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -17,7 +18,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: pages
+  group: ${{ github.event_name == 'pull_request' && format('docs-{0}', github.ref) || 'pages' }}
   cancel-in-progress: false
 
 jobs:
@@ -48,13 +49,16 @@ jobs:
       - name: Build HTML documentation
         run: make -C doc html
 
-      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+      - if: github.event_name != 'pull_request'
+        uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
 
-      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
           path: doc/build/html
 
   deploy:
+    if: github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-24.04
     environment:

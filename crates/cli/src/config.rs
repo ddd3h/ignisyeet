@@ -688,6 +688,11 @@ impl Config {
         ] {
             non_negative(&format!("dispersion.monte_carlo.{k} (1-sigma)"), v)?;
         }
+        if let Some(k) = mc.truncate_sigma {
+            if !(k.is_finite() && k > 0.0) {
+                bail!("dispersion.monte_carlo.truncate_sigma must be a finite number > 0 (the bound of the clipped draws in sigma, e.g. 3.0), found {k}");
+            }
+        }
         Ok(())
     }
 
@@ -899,6 +904,18 @@ mod tests {
         assert_eq!(c.aero.panel.body_axial, 80);
         assert_eq!(c.dispersion.directions, 8);
         assert_eq!(c.sim.integrator, sim::IntegratorKind::Rk4);
+    }
+
+    #[test]
+    fn monte_carlo_truncation_key() {
+        let sample = include_str!("../../../examples/sample.toml");
+        assert_eq!(parse(sample).unwrap().dispersion.monte_carlo.truncate_sigma, None);
+        let with = |v: &str| sample.replace("[dispersion.monte_carlo]\n", &format!("[dispersion.monte_carlo]\ntruncate_sigma = {v}\n"));
+        assert_eq!(parse(&with("3.0")).unwrap().dispersion.monte_carlo.truncate_sigma, Some(3.0));
+        for bad in ["0.0", "-1.0", "nan", "inf"] {
+            let e = parse(&with(bad)).unwrap_err().to_string();
+            assert!(e.contains("dispersion.monte_carlo.truncate_sigma"), "{bad}: {e}");
+        }
     }
 
     #[test]

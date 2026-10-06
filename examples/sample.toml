@@ -196,3 +196,5 @@ parachute_cd_s_scale = 0.1 # relative: parachute Cd*S
 # cg_lateral = 0.0               # absolute [m]: lateral dry CG offset, normal per body axis y and z
 # cl_scale = 0.0                 # relative: roll-moment coefficient and cant slope
 # clp_scale = 0.0                # relative: roll damping
+# Optional: clip every standard-normal draw to +-truncate_sigma sigma (e.g. 3.0); unset = untruncated normals.
+# truncate_sigma = 3.0

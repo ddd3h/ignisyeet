@@ -73,6 +73,12 @@ pub struct MonteCarloConfig {
     pub cl_scale: f64,
     /// Relative: roll-damping derivative Clp.
     pub clp_scale: f64,
+    /// Optional bound `k` of every standard-normal draw: each draw `z ~ N(0, 1)` is clipped to
+    /// `[-k, k]` before it is scaled by its sigma (relative and absolute dispersions alike), so no
+    /// perturbation exceeds `k` sigma. Clipping (not redrawing) keeps the number and order of the
+    /// draws, so every other sample and dispersion keeps its value. `None` (the default): untruncated
+    /// normals.
+    pub truncate_sigma: Option<f64>,
 }
 
 impl Default for MonteCarloConfig {
@@ -97,6 +103,7 @@ impl Default for MonteCarloConfig {
             cg_lateral: 0.0,
             cl_scale: 0.0,
             clp_scale: 0.0,
+            truncate_sigma: None,
         }
     }
 }
@@ -204,9 +211,10 @@ impl Perturbation {
     /// elevation, azimuth and roll changes of the launch `launch` (see [`tilt_launch`]).
     pub fn draw(cfg: &MonteCarloConfig, index: usize, launch: &Launch) -> Self {
         let mut rng = ChaCha8Rng::seed_from_u64(cfg.seed.wrapping_add(index as u64));
+        let k = cfg.truncate_sigma.unwrap_or(f64::INFINITY);
         let mut n = |sigma: f64| {
             let z: f64 = StandardNormal.sample(&mut rng);
-            sigma * z + 0.0
+            sigma * z.clamp(-k, k) + 0.0
         };
         let mut p = Self {
             thrust_scale: n(cfg.thrust_scale),
@@ -433,6 +441,8 @@ pub struct DescentStats {
 pub struct McSummary {
     pub samples: usize,
     pub seed: u64,
+    /// `dispersion.monte_carlo.truncate_sigma`: the bound of the clipped standard-normal draws (null: untruncated).
+    pub truncate_sigma: Option<f64>,
     pub descents: Vec<DescentStats>,
 }
 
@@ -505,7 +515,7 @@ pub fn summarize(rows: &[McRow], samples: usize, seed: u64) -> McSummary {
             }
         })
         .collect();
-    McSummary { samples, seed, descents }
+    McSummary { samples, seed, truncate_sigma: None, descents }
 }
 
 /// Monte Carlo landing dispersion around `base`. Every sample draws its own perturbations (see
@@ -582,7 +592,7 @@ pub fn run_monte_carlo_with_progress(
                 .collect::<Vec<_>>()
         })
         .collect();
-    let summary = summarize(&rows, cfg.samples, cfg.seed);
+    let summary = McSummary { truncate_sigma: cfg.truncate_sigma, ..summarize(&rows, cfg.samples, cfg.seed) };
     Ok(McResult { rows, summary })
 }
 
@@ -737,6 +747,7 @@ mod tests {
             cg_lateral: 0.0,
             cl_scale: 0.0,
             clp_scale: 0.0,
+            truncate_sigma: None,
         }
     }
 
@@ -1338,6 +1349,57 @@ azimuth_deg = 0.0"#;
         // A pure azimuth rotation of a vertical rail rolls the rocket with the launcher.
         let (e, a, r) = tilt_launch(&site(90.0, 10.0, 5.0), 0.0, 0.0, 2.0);
         assert_eq!((e, a, r), (90.0, 12.0, 5.0));
+    }
+
+    /// Fingerprint of the default draws (sum of the drawn fields over samples 0..200), fixed so that a change
+    /// of the draw order or of the default distribution shows up.
+    fn draw_fingerprint(cfg: &MonteCarloConfig) -> [f64; 3] {
+        let launch = site(85.0, 270.0, 0.0);
+        let mut s = [0.0; 3];
+        for i in 0..200 {
+            let p = Perturbation::draw(cfg, i, &launch);
+            s[0] += p.thrust_scale + p.ca_scale + p.cn_scale;
+            s[1] += p.wind_speed + p.wind_direction_deg;
+            s[2] += p.elevation_deg + p.azimuth_deg;
+        }
+        s
+    }
+
+    #[test]
+    fn default_draws_are_unchanged_and_truncation_clips_the_standard_normal() {
+        let base = MonteCarloConfig::default();
+        let f = draw_fingerprint(&base);
+        println!("fingerprint {:?}", f.map(|v| format!("{v:.15e}")));
+        let expect = [1.089999041445204e0, 3.003044813475776e2, -1.295713752251350e2];
+        for k in 0..3 {
+            assert!((f[k] - expect[k]).abs() < 1e-9 * expect[k].abs().max(1.0), "{k}: {} vs {}", f[k], expect[k]);
+        }
+        assert_eq!(base.truncate_sigma, None);
+        // A bound beyond every draw changes nothing.
+        let wide = MonteCarloConfig { truncate_sigma: Some(1e6), ..base.clone() };
+        let launch = site(85.0, 270.0, 0.0);
+        for i in 0..200 {
+            assert_eq!(Perturbation::draw(&wide, i, &launch), Perturbation::draw(&base, i, &launch));
+        }
+        // Clipping at 1 sigma: every relative draw within +-sigma, the ones inside unchanged, the others on the bound.
+        let one = MonteCarloConfig { truncate_sigma: Some(1.0), ..base.clone() };
+        let (mut clipped, mut kept) = (0, 0);
+        for i in 0..200 {
+            let (a, b) = (Perturbation::draw(&base, i, &launch), Perturbation::draw(&one, i, &launch));
+            for (sigma, x, y) in
+                [(base.ca_scale, a.ca_scale, b.ca_scale), (base.thrust_scale, a.thrust_scale, b.thrust_scale), (base.wind_speed, a.wind_speed, b.wind_speed)]
+            {
+                assert!(y.abs() <= sigma * (1.0 + 1e-12));
+                if x.abs() <= sigma {
+                    assert_eq!(x, y);
+                    kept += 1;
+                } else {
+                    assert!((y - sigma * x.signum()).abs() < 1e-15);
+                    clipped += 1;
+                }
+            }
+        }
+        assert!(clipped > 50 && kept > 300, "{clipped} {kept}");
     }
 
     #[test]

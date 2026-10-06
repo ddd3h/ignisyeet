@@ -689,7 +689,7 @@ mod tests {
             apogee_mean: 100.0,
             apogee_std: f64::NAN,
         };
-        let sm = sim::dispersion::McSummary { samples: 1, seed: 0, descents: vec![st] };
+        let sm = sim::dispersion::McSummary { samples: 1, seed: 0, truncate_sigma: None, descents: vec![st] };
         let p = monte_carlo_panel(&sm, Duration::ZERO, 1);
         let text = console::strip_ansi_codes(&ui().render_panel(&p).join("\n")).to_string();
         assert!(text.contains("n/a (needs at least 2 landed samples)"), "{text}");

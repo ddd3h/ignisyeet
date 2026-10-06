@@ -247,7 +247,11 @@ impl Perturbation {
         s.launch.elevation_deg += self.elevation_deg;
         s.launch.azimuth_deg += self.azimuth_deg;
         if self.wind_speed != 0.0 || self.wind_direction_deg != 0.0 {
-            s.wind = base.wind.with_speed_direction((base.wind.speed + self.wind_speed).max(0.0), (base.wind.direction_deg + self.wind_direction_deg).rem_euclid(360.0));
+            // For a profile `speed` is the mean speed W: k = (W + delta) / W, clamped to >= 0.
+            // `run_monte_carlo` has already rejected a calm profile, so this does not fail.
+            if let Ok(w) = base.wind.with_speed_direction((base.wind.speed + self.wind_speed).max(0.0), (base.wind.direction_deg + self.wind_direction_deg).rem_euclid(360.0)) {
+                s.wind = w;
+            }
         }
         let k = factor(self.parachute_cd_s_scale);
         s.recovery.cd_s *= k;
@@ -456,6 +460,9 @@ pub fn run_monte_carlo_with_progress(cfg: &MonteCarloConfig, base: &Simulation, 
             bail!("dispersion.monte_carlo.{name} must be a finite number >= 0 (1-sigma), found {v}");
         }
     }
+    if cfg.wind_speed != 0.0 || cfg.wind_direction_deg != 0.0 {
+        base.wind.check_scalable()?;
+    }
     let mut modes = vec![Descent::Ballistic];
     if recovery_enabled {
         modes.push(Descent::Parachute);
@@ -486,7 +493,7 @@ pub fn run_monte_carlo_with_progress(cfg: &MonteCarloConfig, base: &Simulation, 
 }
 
 fn run_wind_grid(cfg: &DispersionConfig, base: &Simulation, recovery_enabled: bool, progress: &(dyn Fn(&Case, &Summary) + Sync)) -> Result<(Vec<Case>, Vec<Summary>)> {
-    let (cases, results) = run_wind_grid_detailed(cfg, base, recovery_enabled, progress);
+    let (cases, results) = run_wind_grid_detailed(cfg, base, recovery_enabled, progress)?;
     let summaries = cases
         .iter()
         .zip(results)
@@ -503,7 +510,9 @@ pub fn run_wind_grid_detailed(
     base: &Simulation,
     recovery_enabled: bool,
     progress: &(dyn Fn(&Case, &Summary) + Sync),
-) -> (Vec<Case>, Vec<std::result::Result<Summary, String>>) {
+) -> Result<(Vec<Case>, Vec<std::result::Result<Summary, String>>)> {
+    // A calm wind profile cannot be scaled to the grid speeds: stop before any case runs.
+    base.wind.check_scalable()?;
     let n = cfg.directions;
     let mut modes = vec![Descent::Ballistic];
     if recovery_enabled {
@@ -519,7 +528,14 @@ pub fn run_wind_grid_detailed(
         .par_iter()
         .map(|c| {
             let mut s = base.clone();
-            s.wind = base.wind.with_speed_direction(c.wind_speed, c.wind_direction_deg);
+            // For a profile the case speed and direction are its mean speed and mean-wind direction.
+            s.wind = match base.wind.with_speed_direction(c.wind_speed, c.wind_direction_deg) {
+                Ok(w) => w,
+                Err(e) => {
+                    progress(c, &Summary::failed(c.descent, c.wind_speed, c.wind_direction_deg));
+                    return Err(format!("{e:#}"));
+                }
+            };
             match s.run(c.descent, false) {
                 Ok(r) => {
                     progress(c, &r.summary);
@@ -532,7 +548,7 @@ pub fn run_wind_grid_detailed(
             }
         })
         .collect();
-    (cases, results)
+    Ok((cases, results))
 }
 
 #[cfg(test)]
@@ -602,6 +618,71 @@ mod tests {
             cl_scale: 0.0,
             clp_scale: 0.0,
         }
+    }
+
+    fn profile_wind(tag: &str, csv: &str) -> Wind {
+        let path = std::env::temp_dir().join(format!("ignisyeet_disp_{}_{tag}.csv", std::process::id()));
+        std::fs::write(&path, csv).unwrap();
+        let w = Wind::from_config(&WindConfig { model: WindModel::Profile, profile: Some(path.clone()), ..Default::default() }).unwrap();
+        let _ = std::fs::remove_file(path);
+        w
+    }
+
+    const CALM_SURFACE: &str = "altitude_m,speed,direction_deg\n0,0,270\n50,6,270\n3000,12,270\n";
+
+    #[test]
+    fn calm_surface_profile_wind_grid_keeps_the_winds_aloft() {
+        let (t, m) = (table(), motor());
+        let mut b = base(&t, &m);
+        b.wind = profile_wind("grid", CALM_SURFACE);
+        let mean = b.wind.speed;
+        assert!(mean > 8.0, "{mean}");
+        let dcfg = DispersionConfig { wind_speeds: vec![mean, 2.0 * mean], directions: 4, ..Default::default() };
+        let (cases, res) = run_wind_grid_detailed(&dcfg, &b, true, &|_, _| {}).unwrap();
+        let landing = |v: f64, d: f64| {
+            let i = cases.iter().position(|c| c.descent == Descent::Parachute && c.wind_speed == v && c.wind_direction_deg == d).unwrap();
+            res[i].as_ref().unwrap().clone()
+        };
+        // wind grid direction 270 = the profile's own direction: k = 1, drift towards the east
+        let s1 = landing(mean, 270.0);
+        assert!((s1.wind_scale.unwrap() - 1.0).abs() < 1e-9 && s1.landing_east > 50.0, "{s1:?}");
+        let s2 = landing(2.0 * mean, 270.0);
+        assert!((s2.wind_scale.unwrap() - 2.0).abs() < 1e-9 && s2.landing_east > 1.5 * s1.landing_east);
+        // the other models report no scale
+        let c = base(&t, &m).run(Descent::Ballistic, false).unwrap().summary;
+        assert_eq!(c.wind_scale, None);
+    }
+
+    #[test]
+    fn calm_surface_profile_monte_carlo_keeps_the_winds_aloft() {
+        let (t, m) = (table(), motor());
+        let mut b = base(&t, &m);
+        b.wind = profile_wind("mc", CALM_SURFACE);
+        let mean = b.wind.speed;
+        let cfg = MonteCarloConfig { samples: 6, wind_speed: 1.0, ..zero() };
+        let r = run_monte_carlo(&cfg, &b, true).unwrap();
+        for row in &r.rows {
+            let s = row.result.as_ref().unwrap();
+            let expect = ((mean + row.perturbation.wind_speed).max(0.0)) / mean;
+            assert!((s.wind_scale.unwrap() - expect).abs() < 1e-9, "{} vs {expect}", s.wind_scale.unwrap());
+            assert!(s.wind_scale.unwrap() > 0.5 && s.wind_scale.unwrap() < 2.0);
+        }
+        // the mean landing stays far downwind (the profile used to collapse to a uniform wind
+        // of the 2 m value, i.e. none)
+        assert!(r.summary.descents[1].landing.mean_east > 50.0, "{:?}", r.summary.descents[1].landing);
+    }
+
+    #[test]
+    fn calm_profile_is_an_error_for_dispersion() {
+        let (t, m) = (table(), motor());
+        let mut b = base(&t, &m);
+        b.wind = profile_wind("calm", "altitude_m,speed,direction_deg\n0,0,0\n100,0.04,0\n");
+        let e = run_wind_grid_detailed(&DispersionConfig::default(), &b, false, &|_, _| {}).unwrap_err().to_string();
+        assert!(e.contains("wind profile is calm") && e.contains("cannot be scaled for dispersion"), "{e}");
+        let e = run_monte_carlo(&MonteCarloConfig { samples: 2, wind_speed: 1.0, ..zero() }, &b, false).unwrap_err().to_string();
+        assert!(e.contains("wind profile is calm"), "{e}");
+        // without a wind sigma nothing is scaled, so the Monte Carlo study runs
+        assert!(run_monte_carlo(&MonteCarloConfig { samples: 2, ..zero() }, &b, false).is_ok());
     }
 
     fn landings(r: &McResult) -> Vec<(f64, f64)> {
@@ -725,7 +806,7 @@ mod tests {
         let b = base(&t, &m);
         // An absurd wind speed (1e12 m/s) makes its cases diverge; the finite ones are unaffected.
         let dcfg = DispersionConfig { wind_speeds: vec![2.0, 1.0e12], directions: 2, ..Default::default() };
-        let (cases, res) = run_wind_grid_detailed(&dcfg, &b, true, &|_, _| {});
+        let (cases, res) = run_wind_grid_detailed(&dcfg, &b, true, &|_, _| {}).unwrap();
         assert_eq!((cases.len(), res.len()), (8, 8));
         for (c, r) in cases.iter().zip(&res) {
             if c.wind_speed > 1e6 {
@@ -859,7 +940,7 @@ mod tests {
             landing_distance: d,
             landing_speed: 10.0,
             main_deploy_time: None,
-            main_deploy_altitude: None,
+            main_deploy_altitude: None, drogue_deploy_time: None, wind_scale: None,
         }
     }
 

@@ -1239,9 +1239,9 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
             pb.inc(1);
         });
         pb.finish_and_clear();
-        r
+        r?
     } else {
-        sim::dispersion::run_wind_grid_detailed(&cfg.dispersion, &base, cfg.recovery.enabled, &|_, _| {})
+        sim::dispersion::run_wind_grid_detailed(&cfg.dispersion, &base, cfg.recovery.enabled, &|_, _| {})?
     };
     let (results, errors) = split_wind_grid(&cases, detailed);
     let mut modes: Vec<Descent> = Vec::new();
@@ -1566,7 +1566,7 @@ mod tests {
             landing_distance: 22.0,
             landing_speed: 30.0,
             main_deploy_time: None,
-            main_deploy_altitude: None,
+            main_deploy_altitude: None, drogue_deploy_time: None, wind_scale: None,
         }
     }
 

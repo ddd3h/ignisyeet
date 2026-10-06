@@ -78,6 +78,11 @@ impl Motor {
         }
         let mut curve = vec![(0.0, 0.0)];
         for (n, l) in lines {
+            // A second header (name, then at least 6 more fields) is a second motor in the file.
+            let fields: Vec<&str> = l.split_whitespace().collect();
+            if fields.len() >= 7 && fields[0].parse::<f64>().is_err() {
+                bail!("line {n}: multiple motors in this file (second header '{l}'): keep one motor per file");
+            }
             let v: Vec<f64> = l.split_whitespace().map(str::parse).collect::<Result<_, _>>().with_context(|| format!("line {n}: bad thrust line '{l}'"))?;
             if v.len() < 2 {
                 bail!("line {n}: bad thrust line '{l}'");
@@ -217,6 +222,14 @@ mod tests {
         assert!(w.iter().any(|w| w.contains("single point")) && w.iter().any(|w| w.contains("shorter than 0.05 s")), "{w:?}");
         let e = format!("{:#}", Motor::load(std::path::Path::new("nope.eng")).unwrap_err());
         assert!(!e.contains("nope.eng"), "{e}");
+    }
+
+    #[test]
+    fn multi_motor_file_is_named_as_such() {
+        let two = "A 54 400 0 1.0 2.0 T\n0.0 50\n0.5 100\n1.0 0\n\nM2 54 400 0 1.0 2.0 T\n0.0 50\n1.0 0\n";
+        let e = format!("{:#}", Motor::parse(two).unwrap_err());
+        assert!(e.contains("line 6") && e.contains("multiple motors in this file") && e.contains("keep one motor per file"), "{e}");
+        assert!(!e.contains("invalid float"), "{e}");
     }
 
     #[test]

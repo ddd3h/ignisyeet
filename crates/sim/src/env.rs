@@ -83,8 +83,9 @@ impl ProfilePoint {
 /// Runtime wind field in the local ENU frame.
 ///
 /// For the `profile` model `speed` and `direction_deg` are not taken from the configuration but
-/// evaluated from the table at `ref_height`; they are what the summary reports and what
-/// [`Wind::with_speed_direction`] changes.
+/// are the profile's representative wind: the mean speed over the profile's altitude range and
+/// the direction of its altitude-averaged wind vector (see [`Wind::profile_mean`]). They are what
+/// the summary reports and what [`Wind::with_speed_direction`] changes.
 #[derive(Debug, Clone)]
 pub struct Wind {
     pub model: WindModel,
@@ -101,7 +102,13 @@ pub struct Wind {
     /// `max(configured, 2 z0)`.
     pub ground_blend_height: f64,
     profile: Vec<ProfilePoint>,
+    /// Profile model: factor the tabulated profile has been multiplied by relative to the CSV
+    /// (1 for the unscaled profile and for every other model).
+    pub profile_scale: f64,
 }
+
+/// A profile whose mean speed is below this [m/s] cannot be scaled to another mean speed.
+pub const CALM_PROFILE_SPEED: f64 = 0.1;
 
 /// Parses a wind profile CSV (`altitude_m,speed,direction_deg`, ascending altitude above ground).
 pub fn parse_wind_profile(text: &str) -> Result<Vec<ProfilePoint>> {
@@ -174,9 +181,9 @@ impl Wind {
                 let text = std::fs::read_to_string(path).with_context(|| format!("cannot read wind profile {}", path.display()))?;
                 let profile = parse_wind_profile(&text).with_context(|| format!("invalid wind profile {}", path.display()))?;
                 let mut w = Self::with_profile(c, profile);
-                let (e, n) = w.vector_at(c.ref_height);
-                w.speed = e.hypot(n);
-                w.direction_deg = if w.speed > 0.0 { direction_from(e, n) } else { 0.0 };
+                let (speed, direction_deg) = w.profile_mean();
+                w.speed = speed;
+                w.direction_deg = direction_deg;
                 return Ok(w);
             }
         }
@@ -198,34 +205,102 @@ impl Wind {
             roughness_length: c.roughness_length,
             ground_blend_height,
             profile,
+            profile_scale: 1.0,
         }
+    }
+
+    /// Representative wind of the profile: `(W, Psi)` with `W` the mean speed over the profile's
+    /// altitude range (trapezoidal average of the interpolated vector magnitude `|w(h)|` from the
+    /// lowest to the highest row; the speed of the row for a single-row profile) and `Psi` the
+    /// direction the altitude-averaged wind vector blows FROM [deg]. If that mean vector is ~0 the
+    /// direction at `ref_height` is used (0 when that wind is calm too). Other models:
+    /// `(speed, direction_deg)`.
+    pub fn profile_mean(&self) -> (f64, f64) {
+        let p = &self.profile;
+        if self.model != WindModel::Profile || p.is_empty() {
+            return (self.speed, self.direction_deg);
+        }
+        let fallback = || {
+            let (e, n) = self.vector_at(self.ref_height);
+            if e.hypot(n) > 1e-9 {
+                direction_from(e, n)
+            } else {
+                0.0
+            }
+        };
+        let (h0, h1) = (p[0].height, p[p.len() - 1].height);
+        if p.len() == 1 || h1 <= h0 {
+            return (p[0].speed, if p[0].speed > 0.0 { p[0].direction_deg } else { fallback() });
+        }
+        // |w| is not linear between rows (veer), so each segment is integrated with 64
+        // trapezoids; the vector components are linear, so their mean is exact.
+        const SUB: usize = 64;
+        let (mut mag, mut me, mut mn) = (0.0, 0.0, 0.0);
+        for seg in p.windows(2) {
+            let (a, b) = (seg[0], seg[1]);
+            let dh = b.height - a.height;
+            let mut prev: Option<f64> = None;
+            for i in 0..=SUB {
+                let (e, n) = self.vector_at(a.height + dh * i as f64 / SUB as f64);
+                let m = e.hypot(n);
+                if let Some(q) = prev {
+                    mag += 0.5 * (q + m) * dh / SUB as f64;
+                }
+                prev = Some(m);
+            }
+            let ((ae, an), (be, bn)) = (a.vector(), b.vector());
+            me += 0.5 * (ae + be) * dh;
+            mn += 0.5 * (an + bn) * dh;
+        }
+        let range = h1 - h0;
+        let (w, me, mn) = (mag / range, me / range, mn / range);
+        let dir = if me.hypot(mn) > 1e-9 { direction_from(me, mn) } else { fallback() };
+        (w, dir)
+    }
+
+    /// Ok when this wind can be scaled to another speed for a dispersion study: always, except for
+    /// a calm `profile` (mean speed below [`CALM_PROFILE_SPEED`]).
+    pub fn check_scalable(&self) -> Result<()> {
+        if self.model == WindModel::Profile && self.speed < CALM_PROFILE_SPEED {
+            bail!(
+                "wind profile is calm (mean speed {:.3} m/s): it cannot be scaled for dispersion; use wind.model = \"constant\"/\"power\" for a wind grid",
+                self.speed
+            );
+        }
+        Ok(())
     }
 
     /// Same wind field with a different reference speed and direction (dispersion cases).
     ///
-    /// For the `profile` model every tabulated speed is multiplied by `speed / self.speed` and
-    /// every direction is rotated by `direction_deg - self.direction_deg`, so the profile keeps its
-    /// shape (speed ratios, veer) while the wind at `ref_height` becomes the requested one. If the
-    /// profile is calm at `ref_height` it cannot be scaled; it is then replaced by a uniform wind
-    /// of the requested speed and direction.
-    pub fn with_speed_direction(&self, speed: f64, direction_deg: f64) -> Self {
+    /// For the `profile` model `speed` means the profile's mean speed `W` and `direction_deg` the
+    /// direction of its mean wind vector `Psi` (see [`profile_mean`](Self::profile_mean)): every
+    /// tabulated speed is multiplied by `k = speed / W` and every direction is rotated by
+    /// `direction_deg - Psi`, so the profile keeps its shape (speed ratios, veer) while its mean
+    /// becomes the requested one. The applied factor accumulates in `profile_scale`. A calm
+    /// profile (`W < CALM_PROFILE_SPEED`) is an error: it is never silently replaced by a
+    /// uniform wind. Monte Carlo draws use the same call with `speed = W + delta`, i.e. `k` is
+    /// `(W + delta) / W` clamped to >= 0. Other models only change `speed` and `direction_deg`
+    /// (the values at `ref_height`).
+    pub fn with_speed_direction(&self, speed: f64, direction_deg: f64) -> Result<Self> {
+        self.check_scalable()?;
         let mut w = self.clone();
+        if self.model == WindModel::Profile {
+            let k = speed.max(0.0) / self.speed;
+            let rot = direction_deg - self.direction_deg;
+            for p in &mut w.profile {
+                p.speed *= k;
+                p.direction_deg = (p.direction_deg + rot).rem_euclid(360.0);
+            }
+            w.profile_scale *= k;
+        }
         w.speed = speed;
         w.direction_deg = direction_deg;
-        if self.model == WindModel::Profile {
-            if self.speed > 0.0 {
-                let k = speed / self.speed;
-                let rot = direction_deg - self.direction_deg;
-                for p in &mut w.profile {
-                    p.speed *= k;
-                    p.direction_deg = (p.direction_deg + rot).rem_euclid(360.0);
-                }
-            } else {
-                w.model = WindModel::Constant;
-                w.profile.clear();
-            }
-        }
-        w
+        Ok(w)
+    }
+
+    /// Largest tabulated speed [m/s] of the (scaled) profile; None for the other models.
+    pub fn profile_max_speed(&self) -> Option<f64> {
+        (self.model == WindModel::Profile).then(|| self.profile.iter().map(|p| p.speed).fold(0.0, f64::max))
     }
 
     /// Horizontal wind (east, north) at height `h` above ground, from the profile table: linear
@@ -505,7 +580,7 @@ mod tests {
         c.model = WindModel::Constant;
         let k = Wind::from_config(&c).unwrap();
         assert!((k.at(2000.0).x - 4.0).abs() < 1e-12 && k.at(0.0).y.abs() < 1e-12);
-        let k2 = k.with_speed_direction(3.0, 0.0);
+        let k2 = k.with_speed_direction(3.0, 0.0).unwrap();
         assert!((k2.at(10.0).y + 3.0).abs() < 1e-12 && (k2.speed, k2.direction_deg) == (3.0, 0.0));
     }
 
@@ -524,7 +599,7 @@ mod tests {
         assert!((w.at(10.0).x - expect).abs() < 1e-12);
         // w(100) = 4 ln(1000)/ln(100) = 6
         assert!((w.at(100.0).x - 6.0).abs() < 1e-12);
-        let w2 = w.with_speed_direction(2.0, 180.0);
+        let w2 = w.with_speed_direction(2.0, 180.0).unwrap();
         assert!((w2.at(100.0).y - 3.0).abs() < 1e-12 && w2.at(100.0).x.abs() < 1e-12);
         c.roughness_length = 10.0;
         assert!(Wind::from_config(&c).unwrap_err().to_string().contains("roughness_length"));
@@ -597,7 +672,7 @@ mod tests {
                 assert_eq!(-w.at(h).y, legacy_speed(&w, h), "{model:?} at {h}");
             }
             // with_speed_direction only scales the speed, so the blend scales with it.
-            let scaled = w.with_speed_direction(9.0, 0.0);
+            let scaled = w.with_speed_direction(9.0, 0.0).unwrap();
             for h in [w.ground_blend_height, 1.5, 2.0, 10.0] {
                 assert_eq!(-scaled.at(h).y, legacy_speed(&scaled, h), "{model:?} scaled at {h}");
             }
@@ -638,24 +713,78 @@ mod tests {
         let w = profile_wind(csv, c.clone());
         // linear in altitude, constant beyond the ends
         assert!((w.at(50.0).x - 4.0).abs() < 1e-12 && (w.at(-5.0).x - 2.0).abs() < 1e-12 && (w.at(1e4).norm() - 4.0).abs() < 1e-12);
-        assert!((w.speed - 4.0).abs() < 1e-12 && (w.direction_deg - 270.0).abs() < 1e-9);
         // 350 and 10 deg average to 0 deg (wind from the north: blows towards -y), speed cos(10 deg) * 4
         let m = w.at(250.0);
         assert!(m.x.abs() < 1e-12 && (m.y + 4.0 * 10f64.to_radians().cos()).abs() < 1e-12, "{m:?}");
-        // dispersion: speed at ref_height -> 8 m/s, direction at ref_height -> 90 deg, whole profile scaled/rotated
-        let d = w.with_speed_direction(8.0, 90.0);
-        assert!((d.speed - 8.0).abs() < 1e-12);
-        let r = d.at(50.0);
-        assert!((r.x + 8.0).abs() < 1e-9 && r.y.abs() < 1e-9, "{r:?}");
+        // speed and direction are the profile's mean speed and the direction of its mean vector
+        let (mean, psi) = w.profile_mean();
+        assert!((w.speed - mean).abs() < 1e-12 && (w.direction_deg - psi).abs() < 1e-12);
+        assert!(mean > 3.5 && mean < 4.5 && w.profile_scale == 1.0);
+        // dispersion: the whole profile is scaled by speed / W and rotated by direction - Psi
+        let d = w.with_speed_direction(2.0 * mean, psi + 180.0).unwrap();
+        assert!((d.profile_scale - 2.0).abs() < 1e-12 && (d.speed - 2.0 * mean).abs() < 1e-12);
         assert!((d.at(0.0).norm() - 4.0).abs() < 1e-9 && (d.at(100.0).norm() - 12.0).abs() < 1e-9);
-        // 350 deg point rotated by +180 -> 170
+        // the 350 deg row rotated by the (270 deg -> psi + 180) offset
+        let rot = (psi + 180.0) - psi;
         let q = d.at(200.0);
         let from = (-q.x).atan2(-q.y).to_degrees().rem_euclid(360.0);
-        assert!((from - 170.0).abs() < 1e-9, "{from}");
-        // a calm profile at ref_height degrades to a uniform wind
-        let calm = profile_wind("altitude_m,speed,direction_deg\n0,0,0\n10,0,0\n100,5,0\n", WindConfig { ref_height: 0.5, ..cfg(WindModel::Profile) });
-        let u = calm.with_speed_direction(3.0, 180.0);
-        assert!((u.at(1000.0).y - 3.0).abs() < 1e-12);
+        assert!((from - (350.0 + rot).rem_euclid(360.0)).abs() < 1e-9, "{from}");
+        // the mean of the rescaled profile is the requested one
+        let (m2, _) = d.profile_mean();
+        assert!((m2 - 2.0 * mean).abs() < 1e-9, "{m2}");
+    }
+
+    #[test]
+    fn profile_mean_is_over_the_altitude_range() {
+        // linear 2 -> 6 m/s over 0..100 m: mean 4 from 270 deg
+        let w = profile_wind("altitude_m,speed,direction_deg\n0,2,270\n100,6,270\n", cfg(WindModel::Profile));
+        let (m, psi) = w.profile_mean();
+        assert!((m - 4.0).abs() < 1e-9 && (psi - 270.0).abs() < 1e-9, "{m} {psi}");
+        // single row: that row
+        let one = profile_wind("altitude_m,speed,direction_deg\n10,3,90\n", cfg(WindModel::Profile));
+        assert_eq!(one.profile_mean(), (3.0, 90.0));
+        // opposite winds: the mean vector is ~0, the direction at ref_height is used
+        let opp = profile_wind("altitude_m,speed,direction_deg\n0,5,0\n100,5,180\n", WindConfig { ref_height: 1.0, ..cfg(WindModel::Profile) });
+        assert!(opp.direction_deg < 1e-6 || opp.direction_deg > 360.0 - 1e-6, "{}", opp.direction_deg);
+        assert!(opp.speed > 2.0);
+    }
+
+    #[test]
+    fn calm_surface_profile_keeps_the_winds_aloft() {
+        // calm at ref_height (2 m), 10-14 m/s aloft: the profile used to become a uniform wind
+        let csv = "altitude_m,speed,direction_deg\n0,0,270\n500,10,270\n2000,14,270\n";
+        let w = profile_wind(csv, cfg(WindModel::Profile));
+        let (mean, _) = w.profile_mean();
+        assert!(mean > 8.0, "{mean}");
+        let d = w.with_speed_direction(mean, 270.0).unwrap();
+        assert!((d.profile_scale - 1.0).abs() < 1e-12 && d.at(0.0).norm() == 0.0 && (d.at(2000.0).norm() - 14.0).abs() < 1e-9);
+        let d = w.with_speed_direction(mean * 0.5, 90.0).unwrap();
+        assert!((d.at(2000.0).norm() - 7.0).abs() < 1e-9 && d.at(2000.0).x < 0.0);
+        // a zero-speed case zeroes the profile (k = 0) without an error
+        assert_eq!(w.with_speed_direction(0.0, 0.0).unwrap().at(1000.0).norm(), 0.0);
+    }
+
+    #[test]
+    fn near_calm_surface_does_not_amplify_the_profile() {
+        let csv = "altitude_m,speed,direction_deg\n0,0.02,270\n500,10,270\n2000,14,270\n";
+        let w = profile_wind(csv, WindConfig { ref_height: 2.0, ..cfg(WindModel::Profile) });
+        let (mean, _) = w.profile_mean();
+        // a 9 m/s case scales by 9 / mean (about 1), not by 9 / 0.02 m/s
+        let d = w.with_speed_direction(9.0, 270.0).unwrap();
+        assert!((d.profile_scale - 9.0 / mean).abs() < 1e-12 && d.profile_scale < 1.5);
+        assert!(d.at(2000.0).norm() < 20.0);
+    }
+
+    #[test]
+    fn calm_profile_cannot_be_scaled() {
+        let w = profile_wind("altitude_m,speed,direction_deg\n0,0.01,0\n100,0.05,0\n", cfg(WindModel::Profile));
+        let e = w.with_speed_direction(3.0, 90.0).unwrap_err().to_string();
+        assert!(e.contains("wind profile is calm (mean speed 0.030") && e.contains("cannot be scaled for dispersion") && e.contains("\"constant\"/\"power\""), "{e}");
+        assert!(w.check_scalable().is_err());
+        // the flight itself is not affected: the wind is simply weak
+        assert!(w.at(50.0).norm() < 0.1);
+        // other models are always scalable
+        assert!(Wind::from_config(&cfg(WindModel::Power)).unwrap().with_speed_direction(0.0, 0.0).is_ok());
     }
 
     #[test]

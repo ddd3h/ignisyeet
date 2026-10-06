@@ -307,6 +307,10 @@ pub struct Summary {
     pub apogee: f64,
     pub apogee_east: f64,
     pub apogee_north: f64,
+    /// Smallest static margin (x_cp - x_cg) / reference diameter [cal], sampled once per integration
+    /// step only while the rocket is in free flight (after rail exit) before apogee and its airspeed
+    /// exceeds 10 m/s. The slow part near apogee and the descent (tumbling, parachute) are not
+    /// included; NaN when no step qualified. The value at rail exit is `stability_at_rail_exit`.
     pub min_stability_cal: f64,
     pub stability_at_rail_exit: f64,
     pub landing_time: f64,
@@ -322,6 +326,15 @@ pub struct Summary {
     /// Dual deploy: altitude of the main deployment above the launch site [m].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub main_deploy_altitude: Option<f64>,
+    /// Time the (first) parachute deployed [s]; None for ballistic runs and when the flight
+    /// landed (or ended) before apogee + `recovery.delay`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drogue_deploy_time: Option<f64>,
+    /// Wind profile model: factor the tabulated profile was scaled by in this run (1 = as in the
+    /// CSV; dispersion cases and Monte Carlo samples scale it to their mean speed). None for the
+    /// other wind models.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub wind_scale: Option<f64>,
 }
 
 impl Summary {
@@ -353,6 +366,8 @@ impl Summary {
             landing_speed: n,
             main_deploy_time: None,
             main_deploy_altitude: None,
+            drogue_deploy_time: None,
+            wind_scale: None,
         }
     }
 
@@ -530,6 +545,9 @@ impl<'a> Simulation<'a> {
             }
             Phase::Free => {
                 let rot = s.q.to_mat();
+                // ECEF: the wind (east, north) is taken in the local ENU basis at the rocket, not the launch-site
+                // basis, so a wind "from the west" stays westerly along the track; the two differ by a rotation of
+                // about downrange distance / R_earth (0.5 deg at 55 km), negligible against wind uncertainty.
                 let va = s.vel - loc.to_frame(self.wind.at(loc.height));
                 let ub = rot.transpose_mul_vec(va);
                 let v = ub.norm();
@@ -629,6 +647,9 @@ impl<'a> Simulation<'a> {
                 (State { pos: s.vel, vel: acc, q: s.q.derivative(s.w), w: dw }, aux)
             }
             Phase::Parachute => {
+                // ECEF: the wind (east, north) is taken in the local ENU basis at the rocket, not the launch-site
+                // basis, so a wind "from the west" stays westerly along the track; the two differ by a rotation of
+                // about downrange distance / R_earth (0.5 deg at 55 km), negligible against wind uncertainty.
                 let va = s.vel - loc.to_frame(self.wind.at(loc.height));
                 let v = va.norm();
                 let drag = va * (-0.5 * atm.density * v * cx.cd_s.get() / mass);
@@ -745,6 +766,8 @@ impl<'a> Simulation<'a> {
             landing_speed: f64::NAN,
             main_deploy_time: None,
             main_deploy_altitude: None,
+            drogue_deploy_time: None,
+            wind_scale: (self.wind.model == crate::env::WindModel::Profile).then_some(self.wind.profile_scale),
         };
         let mut deploy_at = f64::INFINITY;
         let mut past_apogee = false;
@@ -781,7 +804,7 @@ impl<'a> Simulation<'a> {
             if t > self.settings.max_time {
                 break;
             }
-            if phase == Phase::Rail && t > burn {
+            if phase == Phase::Rail && t > burn && s.vel.dot(cx.rail) <= 0.0 {
                 bail!("rocket never left the launch rail (thrust too low?)");
             }
 
@@ -840,15 +863,15 @@ impl<'a> Simulation<'a> {
             }
             t += h;
             if !finite_state(&s) {
-                bail!("integration diverged at t = {t:.4} s; reduce sim.dt or tighten rtol/atol");
+                bail!("integration diverged at t = {t:.4} s; reduce sim.dt or tighten rtol/atol, or check the aero table and mass properties");
             }
             // A state no rocket reaches is a numerical blow-up as well, even when it is still finite.
             let (speed_now, alt_now) = (s.vel.norm(), frame.local(s.pos).height);
             if speed_now > MAX_SPEED {
-                bail!("integration diverged at t = {t:.4} s (speed {speed_now:.3e} m/s is not physical); reduce sim.dt or tighten rtol/atol");
+                bail!("integration diverged at t = {t:.4} s (speed {speed_now:.3e} m/s is not physical); reduce sim.dt or tighten rtol/atol, or check the aero table and mass properties");
             }
             if alt_now > MAX_ALTITUDE {
-                bail!("integration diverged at t = {t:.4} s (altitude {alt_now:.3e} m is not physical); reduce sim.dt or tighten rtol/atol");
+                bail!("integration diverged at t = {t:.4} s (altitude {alt_now:.3e} m is not physical); reduce sim.dt or tighten rtol/atol, or check the aero table and mass properties");
             }
             max_qerr = max_qerr.max((crate::lie::quat_norm(s.q) - 1.0).abs());
             let loc_prev = loc;
@@ -893,7 +916,18 @@ impl<'a> Simulation<'a> {
                 deploy_at = t_apo + self.recovery.delay;
             }
             if descent == Descent::Parachute && phase == Phase::Free && t >= deploy_at - 1e-12 {
+                // The step overshot the deployment instant (delay shorter than the step past
+                // apogee): go back to it (cubic Hermite position, linear velocity) first.
+                let back = deploy_at < t - 1e-12 && deploy_at > t - h;
+                if back {
+                    let fd = (deploy_at - (t - h)) / h;
+                    let pd = hermite_pos(&prev, &s, h, fd);
+                    s = State { pos: pd, ..lerp_state(&prev, &s, fd) };
+                    t = deploy_at;
+                    loc = frame.local(s.pos);
+                }
                 phase = Phase::Parachute;
+                sum.drogue_deploy_time = Some(t);
                 cx.cd_s.set(self.recovery.cd_s);
                 if let Some((main_cd_s, main_alt)) = main {
                     if loc.height <= main_alt {
@@ -904,6 +938,9 @@ impl<'a> Simulation<'a> {
                     } else {
                         main_pending = true;
                     }
+                }
+                if back {
+                    continue;
                 }
             } else if main_pending && phase == Phase::Parachute && loc_prev.height > main.unwrap().1 && loc.height <= main.unwrap().1 {
                 // Descent through the main altitude inside this step: go back to the crossing
@@ -1159,6 +1196,30 @@ mod tests {
         sim.recovery = Recovery { enabled: true, cd_s: 0.4, delay: 1.0, main_cd_s: Some(4.0), main_altitude: Some(1.0e5) };
         let sm = sim.run(Descent::Parachute, false).unwrap().summary;
         assert!((sm.main_deploy_time.unwrap() - (sm.apogee_time + 1.0)).abs() < 0.01);
+    }
+
+    #[test]
+    fn parachute_deploys_at_apogee_plus_delay_even_when_the_step_overshoots_it() {
+        let g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
+        let model = AeroModel::new(g, AeroOptions::default());
+        let table = AeroTable::build(&model, String::new(), Extrapolation::Linear);
+        let (_, motor) = sample_parts();
+        for integrator in [IntegratorKind::Rk4, IntegratorKind::Rk45] {
+            for delay in [0.0, 0.003, 1.0] {
+                let mut sim = sample_sim(&table, &motor, 0.0);
+                sim.settings.integrator = integrator;
+                sim.recovery = Recovery { enabled: true, cd_s: 3.5, delay, main_cd_s: None, main_altitude: None };
+                let sm = sim.run(Descent::Parachute, false).unwrap().summary;
+                let td = sm.drogue_deploy_time.unwrap();
+                assert!((td - (sm.apogee_time + delay)).abs() < 1e-9, "{integrator:?} delay {delay}: {td} vs {}", sm.apogee_time + delay);
+            }
+        }
+        // never deployed: landed before apogee + delay
+        let mut sim = sample_sim(&table, &motor, 0.0);
+        sim.recovery = Recovery { enabled: true, cd_s: 3.5, delay: 5000.0, main_cd_s: None, main_altitude: None };
+        let sm = sim.run(Descent::Parachute, false).unwrap().summary;
+        assert_eq!(sm.drogue_deploy_time, None);
+        assert_eq!(sim.run(Descent::Ballistic, false).unwrap().summary.drogue_deploy_time, None);
     }
 
     #[test]

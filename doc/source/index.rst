@@ -45,3 +45,13 @@ IgnisYeet ドキュメント
    verification_aero
    limitations
    file_formats
+
+.. raw:: latex
+
+   \appendix
+
+.. toctree::
+   :maxdepth: 1
+   :caption: 付録
+
+   references

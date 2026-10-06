@@ -62,5 +62,15 @@ latex_elements = {
 \newcommand{\dd}{\mathrm{d}}
 \newcommand{\sgn}{\operatorname{sgn}}
 \renewcommand{\bibname}{参考文献}
+% The appendix chapter "参考文献" (references.rst) already gives the heading and the contents entry:
+% list the entries without the extra \chapter* and contents line of the bibliography environment.
+\makeatletter
+\renewenvironment{sphinxthebibliography}[1]{%
+  \list{\@biblabel{\@arabic\c@enumiv}}{\settowidth\labelwidth{\@biblabel{#1}}%
+    \leftmargin\labelwidth\advance\leftmargin\labelsep\usecounter{enumiv}%
+    \let\p@enumiv\@empty\renewcommand\theenumiv{\@arabic\c@enumiv}}%
+  \sloppy\clubpenalty4000\@clubpenalty\clubpenalty\widowpenalty4000\sfcode`\.\@m}%
+  {\def\@noitemerr{\@latex@warning{Empty `thebibliography' environment}}\endlist}
+\makeatother
 """,
 }

@@ -780,26 +780,31 @@ fn fnv1a(h: &mut u64, bytes: &[u8]) {
     }
 }
 
-fn aero_options(cfg: &Config) -> AeroOptions {
+/// Mach step of the aero table: `aero.general_mach_step` for a general Barrowman table, `aero.mach_step` otherwise.
+fn mach_step(cfg: &Config) -> f64 {
+    if cfg.aero.table_kind == aero::table::TableKind::General && cfg.aero.method == config::AeroMethod::Barrowman {
+        cfg.aero.general_mach_step
+    } else {
+        cfg.aero.mach_step
+    }
+}
+
+fn aero_options(cfg: &Config) -> Result<AeroOptions> {
     let a = &cfg.aero;
-    AeroOptions {
+    Ok(AeroOptions {
         mach_min: a.mach_min,
         mach_max: a.mach_max,
-        mach_step: if cfg.aero.table_kind == aero::table::TableKind::General && a.method == config::AeroMethod::Barrowman {
-            a.general_mach_step
-        } else {
-            a.mach_step
-        },
+        mach_step: mach_step(cfg),
         alpha_max_deg: a.alpha_max_deg,
         alpha_step_deg: a.alpha_step_deg,
         reference_altitude: cfg.launch.altitude,
-        atmosphere: cfg.atmosphere.build().unwrap_or_default(),
+        atmosphere: cfg.atmosphere.build()?,
         roughness: cfg.rocket.roughness,
         fin_le_rounded: cfg.rocket.fin_le == "rounded",
         fin_te_square: cfg.rocket.fin_te == "square",
         extra_cd: cfg.rocket.extra_cd,
         nozzle_exit_area: std::f64::consts::PI * (cfg.motor.nozzle_exit_diameter / 2.0).powi(2),
-    }
+    })
 }
 
 /// Version of the aerodynamic model and of the table layout. Bump it whenever a change of the code
@@ -852,7 +857,7 @@ fn source_hash(cfg: &Config) -> Result<String> {
         cant_deg: cfg.rocket.cant_deg(),
         aero: aero_inputs(cfg)?,
         atmosphere: &cfg.atmosphere,
-        opt: aero_options(cfg),
+        opt: aero_options(cfg)?,
         version: env!("CARGO_PKG_VERSION"),
         model_version: MODEL_VERSION,
     };
@@ -927,7 +932,7 @@ fn aero_table_for(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
         // External table without roll data: use the Barrowman roll terms of the current geometry.
         match geometry(cfg) {
             Ok(g) => {
-                let model = AeroModel::new(g, aero_options(cfg));
+                let model = AeroModel::new(g, aero_options(cfg)?);
                 if model.roll_terms(0.5) != (0.0, 0.0) {
                     t.set_roll_terms(|m| model.roll_terms(m));
                     eprintln!("note: the external aero table has no roll terms; cant forcing and roll damping were filled from Barrowman for the current fins");
@@ -1022,7 +1027,7 @@ fn aero_table_inner(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
     if cfg.aero.method == config::AeroMethod::Cfd {
         return cfd_table(cfg, g, hash, &path, start, sub);
     }
-    let model = AeroModel::new(g, aero_options(cfg));
+    let model = AeroModel::new(g, aero_options(cfg)?);
     let n_rows = aero_grid_len(cfg);
     let pb = u.bar(n_rows as u64, "Barrowman", BAR_T);
     pb.set_message("Mach rows of the analytic table");
@@ -1096,7 +1101,7 @@ fn adopt_aero_table(src: &Path, dest: &Path, hash: &str) -> Result<AeroTable> {
 
 fn aero_grid_len(cfg: &Config) -> usize {
     let a = &cfg.aero;
-    ((a.mach_max - a.mach_min.max(0.0)) / aero_options(cfg).mach_step).round().max(1.0) as usize + 1
+    ((a.mach_max - a.mach_min.max(0.0)) / mach_step(cfg)).round().max(1.0) as usize + 1
 }
 
 fn show_table(t: &AeroTable, elapsed: Option<std::time::Duration>, sub: Sub) {
@@ -1143,7 +1148,7 @@ fn cfd_table(cfg: &Config, g: Geometry, hash: String, path: &Path, start: std::t
     let built = cfd::build_table_with_progress(
         &g,
         &cfg.aero.cfd,
-        &aero_options(cfg),
+        &aero_options(cfg)?,
         &out_dir,
         hash,
         cfg.aero.extrapolation,
@@ -1213,7 +1218,7 @@ fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
         let g = geometry(cfg)?;
         let raw = if opt.surface == cfd::SurfaceKind::Stl { Some(raw_stl(cfg)?) } else { None };
         let t = std::time::Instant::now();
-        let m = cfd::mesh_only(&g, opt, &aero_options(cfg), &cfg.out_dir(), &cfd_budget(cfg), raw.as_deref())?;
+        let m = cfd::mesh_only(&g, opt, &aero_options(cfg)?, &cfg.out_dir(), &cfd_budget(cfg), raw.as_deref())?;
         let s = &m.stats;
         println!(
             "Mesh {} ({}): {} nodes, {} cells, {} wall triangles, {:.1?}",
@@ -1263,7 +1268,7 @@ fn panel_table(cfg: &Config, g: Geometry, hash: String, path: &Path, start: std:
         St::Columns { done, total } => pb.set_message(format!("filling Mach x alpha table {done}/{total}")),
         St::Done => pb.inc(1),
     };
-    let built = panel::build_table_with_progress(&g, &cfg.aero.panel, &aero_options(cfg), hash, cfg.aero.extrapolation, &progress);
+    let built = panel::build_table_with_progress(&g, &cfg.aero.panel, &aero_options(cfg)?, hash, cfg.aero.extrapolation, &progress);
     pb.finish_and_clear();
     let (table, report) = built?;
     table.save(path)?;
@@ -2887,6 +2892,16 @@ mod tests {
         assert!(w.len() == 1 && w[0].contains("wind angle of attack at rail exit is 21.8 deg") && w[0].contains("above 15 deg"), "{w:?}");
         cfg.wind.speed = 5.0; // 14.0 deg
         assert!(rail_exit_warnings(&cfg, &ok).is_empty());
+    }
+
+    #[test]
+    fn aero_options_reject_an_invalid_atmosphere() {
+        let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
+        assert!(aero_options(&cfg).is_ok());
+        cfg.atmosphere.model = sim::env::AtmosphereKind::Constant;
+        cfg.atmosphere.density = 0.0;
+        let e = aero_options(&cfg).unwrap_err().to_string();
+        assert!(e.starts_with("atmosphere.density must be finite and positive"), "{e}");
     }
 
     #[test]

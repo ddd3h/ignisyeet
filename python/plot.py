@@ -276,6 +276,10 @@ def plot_trajectory(out):
     if summ.get("apogee") is not None and summ.get("apogee_time") is not None:
         a.plot([summ["apogee_time"]], [summ["apogee"]], "o", color=SERIES[0], markersize=8, markerfacecolor=SURFACE, markeredgewidth=2)
         a.annotate(f"apogee {summ['apogee']:.0f} m", (summ["apogee_time"], summ["apogee"]), xytext=(6, -12), textcoords="offset points", color=INK2)
+    if _finite(summ.get("main_deploy_time")) and _finite(summ.get("main_deploy_altitude")):
+        # dual deploy: the main canopy opens on the way down (square marker, like the apogee circle)
+        a.plot([summ["main_deploy_time"]], [summ["main_deploy_altitude"]], "s", color=SERIES[1], markersize=8, markerfacecolor=SURFACE, markeredgewidth=2)
+        a.annotate(f"main {summ['main_deploy_altitude']:.0f} m", (summ["main_deploy_time"], summ["main_deploy_altitude"]), xytext=(6, 8), textcoords="offset points", color=INK2)
     if not_landed:
         a.text(0.97, 0.06, f"did not land within {summ.get('max_time', tr.t.max()):g} s", transform=a.transAxes, ha="right", color=SERIES[7])
     fig.tight_layout()

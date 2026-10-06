@@ -1055,6 +1055,9 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
         println!("  max speed       {:.1} m/s (Mach {:.2}), max q {:.1} kPa", s.max_speed, s.max_mach, s.max_dyn_pressure / 1000.0);
         println!("  min static margin {:.2} cal (free flight {:.2} cal)", static_margin_min(s), s.min_stability_cal);
         println!("  apogee          {:.1} m at {:.2} s", s.apogee, s.apogee_time);
+        if let (Some(t), Some(h)) = (s.main_deploy_time, s.main_deploy_altitude) {
+            println!("  main deploy     {h:.1} m at {t:.2} s");
+        }
         if landed {
             println!("  landing         {:.1} s, E {:.1} m, N {:.1} m ({:.6}, {:.6}), {:.1} m/s", s.landing_time, s.landing_east, s.landing_north, s.landing_lat, s.landing_lon, s.landing_speed);
         } else {

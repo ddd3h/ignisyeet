@@ -39,7 +39,7 @@ const LONG_VERSION: &str = concat!(
 Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke). License GPL-3.0-or-later: <https://www.gnu.org/licenses/>. This is free software; there is NO WARRANTY."
 )]
 struct Cli {
-    /// Only print errors and the paths of the written files.
+    /// Only print errors, warnings and the paths of the written files.
     #[arg(short, long, global = true)]
     quiet: bool,
     /// Do not draw progress bars and spinners (the styled summaries stay).
@@ -698,6 +698,11 @@ fn check_cg(cfg: &Config, length: f64) -> Result<()> {
 /// the nose tip, default the body length) must be at least the motor length and at most the body length.
 fn check_motor_position(cfg: &Config, length: f64, motor_length: f64) -> Result<()> {
     const TOL: f64 = 1e-3;
+    if motor_length > length + TOL {
+        anyhow::bail!(
+            "the motor ({motor_length:.4} m) is longer than the body ({length:.4} m): check motor.eng (the motor length in its header, in millimetres) and rocket.stl_scale"
+        );
+    }
     let a = cfg.motor.aft_x.unwrap_or(length);
     if a - motor_length < -TOL || a > length + TOL {
         anyhow::bail!(
@@ -2585,7 +2590,15 @@ mod tests {
         assert!(cfg.motor.aft_x.is_none());
         check_motor_position(&cfg, 1.0, 0.5).unwrap();
         let e = check_motor_position(&cfg, 0.4, 0.5).unwrap_err().to_string();
-        assert!(e.starts_with("motor.aft_x (default: the body length 0.4000 m) puts the motor outside the body"), "{e}");
+        assert!(e.starts_with("the motor (0.5000 m) is longer than the body (0.4000 m)"), "{e}");
+        assert!(!e.contains("must be between"), "{e}");
+        let e = check_motor_position(&cfg, 0.8, 0.5).map(|_| ()).and_then(|_| {
+            let mut c = load_sample(include_str!("../../../examples/sample.toml"));
+            c.motor.aft_x = Some(0.3);
+            check_motor_position(&c, 0.8, 0.5)
+        });
+        let e = e.unwrap_err().to_string();
+        assert!(e.starts_with("motor.aft_x = 0.3 m puts the motor outside the body") && e.contains("must be between 0.5000 and 0.8000 m"), "{e}");
     }
 
     #[test]

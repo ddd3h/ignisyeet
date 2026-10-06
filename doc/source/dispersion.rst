@@ -48,7 +48,14 @@
 積分がエラーで止まったケース（数値の発散など）は、計算全体を止めずに、失敗として記録する。
 ``dispersion.csv`` のそのケースの行は ``landed = false`` で着地の列が ``NaN`` になり、最後の列 ``error`` にエラーの文を書く（正常なケースでは空）。
 ``dispersion_meta.json`` の ``errored`` にこのケースの数を記録する（``failed`` はこれを含む）。
-警告には、最初の 3 ケースのエラーを風速・風向・降下モードとともに書き、残りは数だけを書く。終了ステータスは 3 である。
+警告には、最初の 3 ケースのエラーを風速・風向・降下モードとともに書き、残りは数だけを書く。
+エラーで止まったケースは、着地しなかったケースとは別に数え、警告の文も別である（``N of M wind-grid cases failed with an error (e.g. …): they are excluded from the landing distances, so the maximum landing distance is only a lower bound``。着地しなかったケースの文は ``N of M wind-grid cases did not land within sim.max_time = … s: …``）。
+終了ステータスは 3 である。
+すべてのケースがエラーで止まったときは、``dispersion.csv`` と ``dispersion_meta.json`` を書いたうえで、``all N wind-grid cases failed with an error (first: …); the results are in …`` というエラーで終了ステータス 1 になる。
+
+エラーで止まったケースは、``dispersion_meta.json`` の ``aero_table_range``\ （係数表の範囲外の引き出しの集計）と、その警告にも数えない。
+これらの集計は、完了したケースを同じ設定で飛ばし直して求めるので、エラーで止まったケースが途中まで進んだ分の引き出しは入らない。
+モンテカルロ法でも、エラーで止まったサンプルがあるときは、完了したサンプルだけを飛ばし直して集計する。
 
 .. _sec-wind-grid-result:
 
@@ -493,4 +500,6 @@ Google Earth での確認
 6. **警告と終了ステータスを確認する。**
    警告は ``-q`` でも表示し、``dispersion_meta.json`` と ``dispersion_summary.json`` の ``warnings`` に残る（:ref:`sec-config-checks`）。
    特に、着地しなかったケース、係数表の範囲外の引き出し、静安定余裕の不足、``power`` と ``log`` の風の上空への外挿を見る。
+   公称の飛翔（設定した風での弾道落下）が静的に不安定なときは、``dispersion`` は終了ステータス 3 で終わり、標準エラー出力に ``RESULTS NOT USABLE`` の行を書く。
+   このとき ``dispersion_meta.json`` と ``dispersion_summary.json`` の ``stable`` は ``false`` で、``static_margin_min_cal`` に最小の静安定余裕 [cal] が入る（:ref:`sec-file-dispersion`）。
    終了ステータスが 0 以外のときは、結果を保安の判断に使わない（:ref:`sec-exit-status`）。

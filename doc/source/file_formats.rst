@@ -462,7 +462,7 @@ CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surf
    * - ``static_margin_min_cal``
      - ``min_stability_cal`` と ``stability_at_rail_exit`` のうち小さいほう [cal]（結果パネルの ``min margin`` と同じ）。どちらも有限でなければ ``null``
    * - ``stable``
-     - ``static_margin_min_cal`` が 0 以上なら ``true``\ （静的に安定）、負なら ``false``。``null`` のときは ``true``。着地した飛翔は、静的に不安定でも終了コード 0 で終わるので、安定かどうかはこの項目で確かめる（:ref:`sec-exit-status`）
+     - ``static_margin_min_cal`` が 0 以上なら ``true``\ （静的に安定）、負なら ``false``。``null`` のときは ``true``。``false`` のとき、``sim`` は着地したかどうかにかかわらず終了ステータス 3 で終わる（:ref:`sec-exit-status`）
    * - ``drogue_deploy_time``
      - （ドローグ、または単一の）パラシュートが開いた時刻 [s]。開傘は、頂点の時刻に ``recovery.delay`` を足した時刻に、刻み幅によらず正確に起こる（:ref:`sec-integrators`）。弾道落下と、開傘する前に着地した飛翔では、この項目を書かない
    * - ``wind_scale``
@@ -517,7 +517,10 @@ CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surf
 
 ``mode = "wind_grid"`` が ``dispersion.csv`` と並べて書く。項目は、設定のハッシュ ``config_hash``\ （風の格子について、``mode`` と ``[dispersion.monte_carlo]`` を除いた設定から計算する）、
 飛翔の設定のハッシュ ``flight_config_hash``\ （``summary.json`` の ``config_hash`` と同じ計算で、``sim`` の結果と同じ設定かを確かめるのに使う）、
-ケース数 ``cases``、着地しなかったケースの数 ``failed``、そのうち積分がエラーで止まったケースの数 ``errored``、警告の文字列の配列 ``warnings``、係数表の範囲外の引き出しの集計 ``aero_table_range``\ （項目は :ref:`sec-file-summary` と同じ）である。
+ケース数 ``cases``、着地しなかったケースの数 ``failed``、そのうち積分がエラーで止まったケースの数 ``errored``、警告の文字列の配列 ``warnings``、係数表の範囲外の引き出しの集計 ``aero_table_range``\ （項目は :ref:`sec-file-summary` と同じ。エラーで止まったケースは数えない）、
+公称の飛翔の最小の静安定余裕 ``static_margin_min_cal`` [cal] と、それが 0 以上かを示す ``stable``\ （真偽値）である。
+公称の飛翔は、設定した風での弾道落下である。公称の飛翔が失敗して余裕が求まらないときは、どちらも ``null`` である。
+``stable`` が ``false`` のとき、``dispersion`` は終了ステータス 3 で終わる（:ref:`sec-exit-status`）。
 KML は、このファイルのハッシュが現在の設定と一致するときだけ ``dispersion.csv`` を読み込む。
 
 ``dispersion_mc.csv``
@@ -537,7 +540,8 @@ KML は、このファイルのハッシュが現在の設定と一致すると�
 ``dispersion_summary.json``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``mode = "monte_carlo"`` が書く。全体の項目はサンプル数 ``samples``、乱数の種 ``seed``、降下モードごとの配列 ``descents``、設定のハッシュ ``config_hash``\ （モンテカルロについて、``mode`` と風の格子の設定を除いた設定から計算する）、飛翔の設定のハッシュ ``flight_config_hash``\ （``summary.json`` の ``config_hash`` と同じ計算）、警告の配列 ``warnings``、係数表の範囲外の引き出しの集計 ``aero_table_range``\ （項目は :ref:`sec-file-summary` と同じ）である。
+``mode = "monte_carlo"`` が書く。全体の項目はサンプル数 ``samples``、乱数の種 ``seed``、降下モードごとの配列 ``descents``、設定のハッシュ ``config_hash``\ （モンテカルロについて、``mode`` と風の格子の設定を除いた設定から計算する）、飛翔の設定のハッシュ ``flight_config_hash``\ （``summary.json`` の ``config_hash`` と同じ計算）、警告の配列 ``warnings``、係数表の範囲外の引き出しの集計 ``aero_table_range``\ （項目は :ref:`sec-file-summary` と同じ。失敗したサンプルは数えない）、
+公称の飛翔の最小の静安定余裕 ``static_margin_min_cal`` [cal] と、それが 0 以上かを示す ``stable``\ （風の格子の ``dispersion_meta.json`` と同じ。公称の飛翔が失敗したときは ``null``）である。
 ``descents`` の各要素は、降下モード ``descent``、着地したサンプル数 ``n``、失敗数 ``failed``、そのうち着地しなかった数 ``not_landed``、着地点の平均と共分散行列、
 :math:`1\sigma` と :math:`3\sigma` の誤差楕円（長半径、短半径、長軸の方位）、最大着地距離 ``max_landing_distance`` とそのサンプル番号、
 着地距離のパーセンタイル ``landing_distance_p50`` ``landing_distance_p90`` ``landing_distance_p99``\ （着地したサンプルについて、線形補間で求める）、頂点高度の平均と標準偏差を持つ（:ref:`sec-mc`）。

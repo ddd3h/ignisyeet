@@ -184,23 +184,6 @@ fn key(a: f64, b: f64) -> (i64, i64) {
 /// Solved points of one Mach number completed by the mirror symmetries; keyed by `(alpha, beta)` in micro-degrees.
 fn complete(pts: &[(f64, f64, BodyCoeffs6)], shape: ShapeSymmetry, average: bool, offset: bool) -> BTreeMap<(i64, i64), BodyCoeffs6> {
     let mut pts = pts.to_vec();
-    // A shape that is mirror-symmetric about y = 0 has CY = Cl = Cn = 0 exactly for flow in the symmetry plane
-    // (beta = 0); with a z = 0 symmetry too, CZ = Cl = Cm = 0 at alpha = 0. Whatever the solver leaves there
-    // (symmetry-plane integration noise of a half domain) is removed, whatever the alpha mode.
-    if matches!(shape, ShapeSymmetry::Axisymmetric | ShapeSymmetry::PitchPlane) {
-        for p in pts.iter_mut().filter(|p| p.1 == 0.0) {
-            p.2.cy = 0.0;
-            p.2.cl = 0.0;
-            p.2.cn = 0.0;
-        }
-    }
-    if shape == ShapeSymmetry::Axisymmetric {
-        for p in pts.iter_mut().filter(|p| p.0 == 0.0) {
-            p.2.cz = 0.0;
-            p.2.cl = 0.0;
-            p.2.cm = 0.0;
-        }
-    }
     if offset && matches!(shape, ShapeSymmetry::Axisymmetric | ShapeSymmetry::PitchPlane) {
         if let Some(&(_, _, z)) = pts.iter().find(|p| p.0 == 0.0 && p.1 == 0.0) {
             for p in &mut pts {
@@ -213,6 +196,24 @@ fn complete(pts: &[(f64, f64, BodyCoeffs6)], shape: ShapeSymmetry, average: bool
                     p.2.cm -= z.cm;
                 }
             }
+        }
+    }
+    // A shape that is mirror-symmetric about y = 0 has CY = Cl = Cn = 0 exactly for flow in the symmetry plane
+    // (beta = 0); with a z = 0 symmetry too, CZ = Cl = Cm = 0 at alpha = 0. Whatever the solver leaves there
+    // (symmetry-plane integration noise of a half domain) is removed, whatever the alpha mode (after the offset
+    // correction, which needs the measured zero-angle values).
+    if matches!(shape, ShapeSymmetry::Axisymmetric | ShapeSymmetry::PitchPlane) {
+        for p in pts.iter_mut().filter(|p| p.1 == 0.0) {
+            p.2.cy = 0.0;
+            p.2.cl = 0.0;
+            p.2.cn = 0.0;
+        }
+    }
+    if shape == ShapeSymmetry::Axisymmetric {
+        for p in pts.iter_mut().filter(|p| p.0 == 0.0) {
+            p.2.cz = 0.0;
+            p.2.cl = 0.0;
+            p.2.cm = 0.0;
         }
     }
     let (mz, my) = match shape {

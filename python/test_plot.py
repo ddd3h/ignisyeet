@@ -251,6 +251,56 @@ class SkippedPlots(unittest.TestCase):
             self.assertFalse((out / "plots" / "dispersion_mc.png").exists())
 
 
+class ProfileWind(unittest.TestCase):
+    def write(self, out, name, obj):
+        (out / name).write_text(json.dumps(obj))
+
+    def test_dispersion_only_output_uses_wind_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self.assertFalse(plot.profile_wind(out))
+            self.write(out, "dispersion_meta.json", {"wind_model": "profile", "wind_scale": 1.0})
+            self.assertTrue(plot.profile_wind(out))
+            self.write(out, "dispersion_meta.json", {"wind_model": "power"})
+            # the study that wrote dispersion.csv decides, not a summary.json of another run
+            self.write(out, "summary.json", {"wind_model": "profile", "wind_scale": 1.0})
+            self.assertFalse(plot.profile_wind(out))
+
+    def test_monte_carlo_summary_and_older_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self.write(out, "dispersion_summary.json", {"wind_model": "profile"})
+            self.assertTrue(plot.profile_wind(out))
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self.write(out, "dispersion_meta.json", {"cases": 1})
+            self.write(out, "summary.json", {"wind_scale": 2.0})
+            self.assertTrue(plot.profile_wind(out))
+
+    def test_grid_legend_title(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            rows = []
+            for v in (5.0, 10.0):
+                for d in (0.0, 90.0, 180.0, 270.0):
+                    rows.append({"descent": "parachute", "wind_speed": v, "wind_direction_deg": d, "landing_east": v * np.sin(np.radians(d)), "landing_north": v * np.cos(np.radians(d)), "landing_distance": v, "apogee": 100.0, "landed": True})
+            pd.DataFrame(rows).to_csv(out / "dispersion.csv", index=False)
+            self.write(out, "dispersion_meta.json", {"wind_model": "profile", "wind_scale": 1.0})
+            titles = []
+            orig = plot.plt.Axes.legend
+
+            def spy(ax, *a, **k):
+                titles.append(k.get("title"))
+                return orig(ax, *a, **k)
+
+            plot.plt.Axes.legend = spy
+            try:
+                plot.plot_dispersion_grid(out)
+            finally:
+                plot.plt.Axes.legend = orig
+            self.assertTrue(any(t and t.startswith("profile mean speed") for t in titles), titles)
+
+
 class StaleOutputs(unittest.TestCase):
     def write(self, out, name, obj):
         (out / name).write_text(obj if isinstance(obj, str) else json.dumps(obj))

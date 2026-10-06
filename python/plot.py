@@ -534,15 +534,24 @@ def plot_dispersion(out):
 
 
 def profile_wind(out):
-    """True when the outputs come from a wind.model = "profile" run: summary.json / dispersion_meta.json carry `wind_scale`."""
-    for name in ("dispersion_meta.json", "summary.json"):
+    """True when the outputs come from a wind.model = "profile" run.
+
+    dispersion_meta.json, dispersion_summary.json and summary.json carry `wind_model`; the first file
+    that has it decides. A file without it counts as a profile run when it carries `wind_scale`.
+    """
+    for name in ("dispersion_meta.json", "dispersion_summary.json", "summary.json"):
         f = out / name
         if f.exists():
             try:
-                if "wind_scale" in json.loads(f.read_text()):
-                    return True
+                j = json.loads(f.read_text())
             except (OSError, ValueError):
-                pass
+                continue
+            if not isinstance(j, dict):
+                continue
+            if "wind_model" in j:
+                return j["wind_model"] == "profile"
+            if "wind_scale" in j:
+                return True
     return False
 
 

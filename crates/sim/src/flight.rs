@@ -721,6 +721,10 @@ impl<'a> Simulation<'a> {
         if !is_pos(dt) {
             bail!("sim.dt must be positive");
         }
+        let elev = self.launch.elevation_deg;
+        if !(elev > 0.0 && elev <= 90.0) {
+            bail!("launch.elevation_deg must be in (0, 90], found {elev}");
+        }
         if self.recovery.enabled {
             self.recovery.validate()?;
         }
@@ -2008,6 +2012,14 @@ mod tests {
     fn touchdown_needs_a_bracket() {
         assert!(crosses_ground(10.0, -10.0) && crosses_ground(10.0, 0.0));
         assert!(!crosses_ground(-1.0, -2.0) && !crosses_ground(0.0, -2.0) && !crosses_ground(1.0, 2.0));
+        // A rail at or below the horizon (or past the zenith) never gives a touchdown bracket: rejected.
+        let (table, motor) = vacuum_parts();
+        for elev in [0.0, -5.0, 90.5, f64::NAN] {
+            let mut sim = vacuum_sim(&table, &motor);
+            sim.launch.elevation_deg = elev;
+            let e = sim.run(Descent::Ballistic, false).err().expect("rejected").to_string();
+            assert!(e.contains("launch.elevation_deg must be in (0, 90]"), "{e}");
+        }
     }
 
     #[test]

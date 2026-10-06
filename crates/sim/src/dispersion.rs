@@ -2,7 +2,7 @@
 // Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Landing dispersion studies: wind speed x direction grid and Monte Carlo.
 
-use crate::flight::{AeroScale, Descent, Simulation, Summary};
+use crate::flight::{AeroScale, Descent, Launch, Simulation, Summary};
 use crate::motor::Motor;
 use anyhow::{bail, Result};
 use rand::SeedableRng;
@@ -41,9 +41,15 @@ pub struct MonteCarloConfig {
     pub cn_scale: f64,
     /// Relative: axial-force (drag) coefficient, power on and off.
     pub ca_scale: f64,
-    /// Absolute [deg]: launch rail elevation.
+    /// Absolute [deg]: rail pointing error. The rail axis is tilted away from its nominal
+    /// direction by two independent normal angles with this sigma, one in the vertical plane of
+    /// the rail (+ = towards higher elevation) and one perpendicular to it (+ = towards higher
+    /// azimuth), so the tilt is isotropic about the nominal axis at any elevation, vertical
+    /// included: the angle between the perturbed and the nominal axis is Rayleigh distributed
+    /// with this sigma.
     pub elevation_deg: f64,
-    /// Absolute [deg]: launch rail azimuth.
+    /// Absolute [deg]: azimuth setting error, a rotation of the (tilted) rail about the vertical.
+    /// It moves the axis sideways by sigma * cos(elevation) and does nothing to a vertical rail.
     pub azimuth_deg: f64,
     /// Absolute [m/s]: reference wind speed around the configured `[wind]` speed (clamped at 0).
     pub wind_speed: f64,
@@ -150,6 +156,9 @@ pub struct Perturbation {
     pub cg: f64,
     pub cn_scale: f64,
     pub ca_scale: f64,
+    /// Change of the rail elevation [deg] and of the rail azimuth [deg, in (-180, 180]] that the
+    /// rail tilt draws produce (see [`MonteCarloConfig::elevation_deg`]): the perturbed rail has
+    /// elevation `nominal + elevation_deg` and azimuth `nominal + azimuth_deg`.
     pub elevation_deg: f64,
     pub azimuth_deg: f64,
     pub wind_speed: f64,
@@ -180,15 +189,17 @@ fn factor(e: f64) -> f64 {
 impl Perturbation {
     /// Draws all perturbations of sample `index` from `ChaCha8Rng::seed_from_u64(seed + index)`.
     /// All normals are always drawn (in field order; the six dispersions of the roll and
-    /// asymmetry terms come after the original eleven), so switching one sigma on or off does not
-    /// change the draws of the others and old seeds reproduce the old samples.
-    pub fn draw(cfg: &MonteCarloConfig, index: usize) -> Self {
+    /// asymmetry terms come after the original eleven, the cross-plane rail tilt last), so
+    /// switching one sigma on or off does not change the draws of the others. The rail draws
+    /// (in-plane tilt, rotation about the vertical, cross-plane tilt) are turned into the
+    /// elevation and azimuth changes of the rail `launch` (see [`tilt_rail`]).
+    pub fn draw(cfg: &MonteCarloConfig, index: usize, launch: &Launch) -> Self {
         let mut rng = ChaCha8Rng::seed_from_u64(cfg.seed.wrapping_add(index as u64));
         let mut n = |sigma: f64| {
             let z: f64 = StandardNormal.sample(&mut rng);
             sigma * z + 0.0
         };
-        Self {
+        let mut p = Self {
             thrust_scale: n(cfg.thrust_scale),
             burn_time_scale: n(cfg.burn_time_scale),
             dry_mass: n(cfg.dry_mass),
@@ -209,7 +220,15 @@ impl Perturbation {
             cg_lateral_z: n(cfg.cg_lateral),
             cl_scale: n(cfg.cl_scale),
             clp_scale: n(cfg.clp_scale),
+        };
+        let cross = n(cfg.elevation_deg);
+        let (el, az) = tilt_rail(launch.elevation_deg, launch.azimuth_deg, p.elevation_deg, cross, p.azimuth_deg);
+        p.elevation_deg = el - launch.elevation_deg;
+        p.azimuth_deg = (az - launch.azimuth_deg + 180.0).rem_euclid(360.0) - 180.0;
+        if p.azimuth_deg == -180.0 {
+            p.azimuth_deg = 180.0;
         }
+        p
     }
 
     /// The perturbed thrust curve of `motor`.
@@ -244,7 +263,8 @@ impl Perturbation {
             s.thrust_line.misalignment_deg = y.hypot(z);
             s.thrust_line.misalignment_azimuth_deg = z.atan2(y).to_degrees();
         }
-        s.launch.elevation_deg += self.elevation_deg;
+        // Rounding must not lift a rail tilted from the vertical above 90 deg.
+        s.launch.elevation_deg = (s.launch.elevation_deg + self.elevation_deg).min(90.0);
         s.launch.azimuth_deg += self.azimuth_deg;
         if self.wind_speed != 0.0 || self.wind_direction_deg != 0.0 {
             // For a profile `speed` is the mean speed W: k = (W + delta) / W, clamped to >= 0.
@@ -261,6 +281,32 @@ impl Perturbation {
         s.recovery.main_cd_s = s.recovery.main_cd_s.map(|c| c * k);
         s
     }
+}
+
+/// Rail elevation and azimuth [deg] after tilting the rail axis (elevation `el`, azimuth `az`)
+/// by `d_in` in its vertical plane (+ = up; past the zenith the azimuth flips) and by `d_cross`
+/// perpendicular to that plane (+ = towards increasing azimuth), both [deg], as one rotation by
+/// `hypot(d_in, d_cross)` about the nominal axis' normal, then rotating it about the vertical by
+/// `d_az` [deg]. For small angles this is `el + d_in`, `az + d_cross / cos(el) + d_az`; for a
+/// vertical rail the in-plane direction is that of the nominal azimuth. The returned azimuth is
+/// not wrapped.
+pub fn tilt_rail(el: f64, az: f64, d_in: f64, d_cross: f64, d_az: f64) -> (f64, f64) {
+    let theta = d_in.hypot(d_cross);
+    if theta == 0.0 {
+        return (el, az + d_az);
+    }
+    let (se, ce) = el.to_radians().sin_cos();
+    let (sa, ca) = az.to_radians().sin_cos();
+    // Nominal axis (east, north, up), unit vectors towards higher elevation and higher azimuth.
+    let d0 = [ce * sa, ce * ca, se];
+    let ue = [-se * sa, -se * ca, ce];
+    let uc = [ca, -sa, 0.0];
+    let (st, ct) = theta.to_radians().sin_cos();
+    let (a, b) = (d_in / theta, d_cross / theta);
+    let d: [f64; 3] = std::array::from_fn(|i| ct * d0[i] + st * (a * ue[i] + b * uc[i]));
+    let el2 = d[2].clamp(-1.0, 1.0).asin().to_degrees();
+    let az2 = if d[0] == 0.0 && d[1] == 0.0 { az } else { d[0].atan2(d[1]).to_degrees() };
+    (el2, az2 + d_az)
 }
 
 /// One Monte Carlo run: a sample under one descent mode.
@@ -478,17 +524,20 @@ pub fn run_monte_carlo_with_progress(
     let rows: Vec<McRow> = (0..cfg.samples)
         .into_par_iter()
         .flat_map_iter(|i| {
-            let p = Perturbation::draw(cfg, i);
+            let p = Perturbation::draw(cfg, i, &base.launch);
             let motor = p.motor(base.motor);
             let sim = p.simulation(base, &motor);
+            let el = sim.launch.elevation_deg;
+            let invalid = !(el > 0.0 && el <= 90.0);
             modes
                 .iter()
                 .map(|&descent| {
-                    let result = match sim.run(descent, false) {
-                        Ok(r) if r.summary.landing_east.is_finite() && r.summary.landing_north.is_finite() => Ok(r.summary),
-                        Ok(_) => Err(NOT_LANDED.to_string()),
-                        Err(e) => Err(format!("{e:#}")),
-                    };
+                    let result =
+                        match if invalid { Err(anyhow::anyhow!("perturbed rail elevation {el:.3} deg is outside (0, 90]")) } else { sim.run(descent, false) } {
+                            Ok(r) if r.summary.landing_east.is_finite() && r.summary.landing_north.is_finite() => Ok(r.summary),
+                            Ok(_) => Err(NOT_LANDED.to_string()),
+                            Err(e) => Err(format!("{e:#}")),
+                        };
                     let row = McRow { sample: i, descent, perturbation: p, result };
                     progress(&row);
                     row
@@ -761,7 +810,7 @@ mod tests {
         let c = run_monte_carlo(&MonteCarloConfig { seed: 4, ..cfg.clone() }, &b, true).unwrap();
         assert_ne!(landings(&a), landings(&c));
         // sample i of seed s is sample i + 1 of seed s - 1: draws depend only on seed + index
-        assert_eq!(Perturbation::draw(&cfg, 1), Perturbation::draw(&MonteCarloConfig { seed: 2, ..cfg.clone() }, 2));
+        assert_eq!(Perturbation::draw(&cfg, 1, &b.launch), Perturbation::draw(&MonteCarloConfig { seed: 2, ..cfg.clone() }, 2, &b.launch));
     }
 
     #[test]
@@ -941,6 +990,7 @@ mod tests {
     #[test]
     fn old_seeds_reproduce_the_old_draws_and_new_sigmas_do_not_move_them() {
         let base = MonteCarloConfig { samples: 4, seed: 11, ..Default::default() };
+        let launch = Launch { latitude: 35.0, longitude: 139.0, altitude: 0.0, rail_length: 3.0, elevation_deg: 85.0, azimuth_deg: 270.0, roll_deg: 0.0 };
         let all = MonteCarloConfig {
             thrust_misalignment_deg: 0.3,
             thrust_offset: 0.002,
@@ -951,7 +1001,7 @@ mod tests {
             ..base.clone()
         };
         for i in 0..4 {
-            let (a, b) = (Perturbation::draw(&base, i), Perturbation::draw(&all, i));
+            let (a, b) = (Perturbation::draw(&base, i, &launch), Perturbation::draw(&all, i, &launch));
             // The first eleven draws are the original ones, independent of the new sigmas.
             assert_eq!(
                 (
@@ -988,7 +1038,7 @@ mod tests {
             );
         }
         // Frozen first draw of seed 11 (guards the draw order of the original eleven).
-        let p = Perturbation::draw(&base, 0);
+        let p = Perturbation::draw(&base, 0, &launch);
         let mut rng = ChaCha8Rng::seed_from_u64(11);
         let z: f64 = StandardNormal.sample(&mut rng);
         assert_eq!(p.thrust_scale, base.thrust_scale * z);
@@ -1145,5 +1195,80 @@ azimuth_deg = 0.0"#;
         assert!(toml::from_str::<Recovery>(r).is_ok());
         let e = toml::from_str::<Recovery>(&format!("{r}\ndeploy_altitude = 100.0")).unwrap_err().to_string();
         assert!(e.contains("deploy_altitude"), "{e}");
+    }
+
+    #[test]
+    fn rail_elevation_outside_the_valid_range_fails_the_sample() {
+        let (t, m) = (table(), motor());
+        let mut b = base(&t, &m);
+        b.launch.elevation_deg = 2.0;
+        let cfg = MonteCarloConfig { samples: 20, elevation_deg: 3.0, ..zero() };
+        let r = run_monte_carlo(&cfg, &b, true).unwrap();
+        let bad: Vec<&McRow> = r.rows.iter().filter(|x| x.result.as_ref().is_err_and(|e| e.contains("perturbed rail elevation"))).collect();
+        assert!(!bad.is_empty(), "no sample drew an elevation <= 0");
+        for x in &bad {
+            let el = 2.0 + x.perturbation.elevation_deg;
+            assert!(el <= 0.0, "{el}");
+            assert_eq!(x.result.as_ref().unwrap_err(), &format!("perturbed rail elevation {el:.3} deg is outside (0, 90]"));
+        }
+        assert!(r.rows.iter().any(|x| x.result.is_ok()));
+        assert_eq!(r.summary.descents[0].failed, bad.len() / 2);
+    }
+
+    #[test]
+    fn rail_tilt_rotates_the_axis() {
+        let close = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs() < 1e-9 && (a.1 - b.1).abs() < 1e-9;
+        // Vertical rail: an in-plane tilt leans it towards the back azimuth, a cross-plane tilt
+        // towards azimuth + 90 deg; both give the same elevation.
+        assert!(close(tilt_rail(90.0, 0.0, 1.0, 0.0, 0.0), (89.0, 180.0)), "{:?}", tilt_rail(90.0, 0.0, 1.0, 0.0, 0.0));
+        assert!(close(tilt_rail(90.0, 0.0, -1.0, 0.0, 0.0), (89.0, 0.0)));
+        assert!(close(tilt_rail(90.0, 0.0, 0.0, 1.0, 0.0), (89.0, 90.0)), "{:?}", tilt_rail(90.0, 0.0, 0.0, 1.0, 0.0));
+        // Inclined rail: in-plane adds to the elevation, the azimuth rotation adds to the azimuth.
+        assert!(close(tilt_rail(45.0, 30.0, 1.0, 0.0, 0.0), (46.0, 30.0)));
+        assert!(close(tilt_rail(45.0, 30.0, 0.0, 0.0, 2.0), (45.0, 32.0)));
+        // A small cross-plane tilt d changes the azimuth by d / cos(elevation) and the elevation
+        // only to second order; the angle between the axes is d.
+        let (el, az) = tilt_rail(45.0, 30.0, 0.0, 0.01, 0.0);
+        assert!((az - 30.0 - 0.01 / 45f64.to_radians().cos()).abs() < 1e-6 && (el - 45.0).abs() < 1e-5, "{el} {az}");
+        let dir = |el: f64, az: f64| {
+            let (se, ce) = el.to_radians().sin_cos();
+            let (sa, ca) = az.to_radians().sin_cos();
+            [ce * sa, ce * ca, se]
+        };
+        let (d0, d1) = (dir(45.0, 30.0), dir(el, az));
+        let ang = (d0[0] * d1[0] + d0[1] * d1[1] + d0[2] * d1[2]).clamp(-1.0, 1.0).acos().to_degrees();
+        assert!((ang - 0.01).abs() < 1e-9, "{ang}");
+    }
+
+    #[test]
+    fn rail_tilt_spread_is_isotropic_for_a_vertical_rail() {
+        // Vertical launch in calm air with only the rail tilt dispersed: the ballistic landing
+        // points spread equally in every direction.
+        let (t, m) = (table(), motor());
+        let mut b = base(&t, &m);
+        b.wind = Wind::from_config(&WindConfig { model: WindModel::Constant, speed: 0.0, ..Default::default() }).unwrap();
+        let cfg = MonteCarloConfig { samples: 200, elevation_deg: 2.0, azimuth_deg: 5.0, ..zero() };
+        let r = run_monte_carlo(&cfg, &b, false).unwrap();
+        let e = r.summary.descents[0].landing.ellipse_1sigma;
+        assert!(e.semi_minor > 0.7 * e.semi_major, "1-sigma ellipse {} x {} m", e.semi_major, e.semi_minor);
+        // The recorded elevation/azimuth changes reproduce the flown rail.
+        for row in r.rows.iter().take(5) {
+            let s = row.perturbation.simulation(&b, &m);
+            assert!(s.launch.elevation_deg <= 90.0 && s.launch.elevation_deg > 80.0);
+        }
+    }
+
+    #[test]
+    fn every_dispersion_run_reports_its_stability() {
+        let (t, m) = (table(), motor());
+        let b = base(&t, &m);
+        let r = run_monte_carlo(&MonteCarloConfig { samples: 4, ..Default::default() }, &b, true).unwrap();
+        for row in &r.rows {
+            let s = row.result.as_ref().unwrap();
+            assert!(s.min_stability_cal.is_finite() && s.stability_at_rail_exit.is_finite(), "{s:?}");
+        }
+        let dcfg = DispersionConfig { wind_speeds: vec![2.0], directions: 2, ..Default::default() };
+        let (_, sums) = run(&dcfg, &b, true).unwrap();
+        assert!(sums.iter().all(|s| s.min_stability_cal.is_finite() && s.stability_at_rail_exit.is_finite()));
     }
 }

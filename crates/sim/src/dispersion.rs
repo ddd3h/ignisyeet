@@ -469,7 +469,7 @@ pub fn run_monte_carlo_with_progress(
         }
     }
     if cfg.wind_speed != 0.0 || cfg.wind_direction_deg != 0.0 {
-        base.wind.check_scalable()?;
+        base.wind.check_scalable_for(false)?;
     }
     let mut modes = vec![Descent::Ballistic];
     if recovery_enabled {
@@ -561,6 +561,28 @@ pub fn run_wind_grid_detailed(
         })
         .collect();
     Ok((cases, results))
+}
+
+/// Flies again the wind-grid cases of `cases` without an entry in `errors`, discarding the results. Used
+/// after a study with failed cases to rebuild the shared aero-table lookup statistics from the
+/// runs that completed (a diverged run leaves out-of-range lookups behind that do not describe
+/// the flight): reset the statistics, then call this.
+pub fn replay_wind_grid_ok(base: &Simulation, cases: &[Case], errors: &[Option<String>]) {
+    cases.par_iter().zip(errors.par_iter()).filter(|(_, e)| e.is_none()).for_each(|(c, _)| {
+        let mut s = base.clone();
+        if let Ok(w) = base.wind.with_speed_direction(c.wind_speed, c.wind_direction_deg) {
+            s.wind = w;
+            let _ = s.run(c.descent, false);
+        }
+    });
+}
+
+/// [`replay_wind_grid_ok`] for Monte Carlo rows.
+pub fn replay_monte_carlo_ok(base: &Simulation, rows: &[McRow]) {
+    rows.par_iter().filter(|r| r.result.is_ok()).for_each(|r| {
+        let motor = r.perturbation.motor(base.motor);
+        let _ = r.perturbation.simulation(base, &motor).run(r.descent, false);
+    });
 }
 
 #[cfg(test)]
@@ -692,9 +714,35 @@ mod tests {
         let e = run_wind_grid_detailed(&DispersionConfig::default(), &b, false, &|_, _| {}).unwrap_err().to_string();
         assert!(e.contains("wind profile is calm") && e.contains("cannot be scaled for dispersion"), "{e}");
         let e = run_monte_carlo(&MonteCarloConfig { samples: 2, wind_speed: 1.0, ..zero() }, &b, false).unwrap_err().to_string();
-        assert!(e.contains("wind profile is calm"), "{e}");
+        assert!(e.contains("wind profile is calm") && e.contains("Monte Carlo") && !e.contains("wind grid"), "{e}");
         // without a wind sigma nothing is scaled, so the Monte Carlo study runs
         assert!(run_monte_carlo(&MonteCarloConfig { samples: 2, ..zero() }, &b, false).is_ok());
+    }
+
+    #[test]
+    fn replay_counts_only_the_completed_cases() {
+        let (t, m) = (table(), motor());
+        let b = base(&t, &m);
+        let cfg = DispersionConfig { wind_speeds: vec![2.0], directions: 4, ..Default::default() };
+        t.reset_out_of_range_stats();
+        let (cases, res) = run_wind_grid_detailed(&cfg, &b, false, &|_, _| {}).unwrap();
+        let full = t.out_of_range_stats().lookups;
+        assert!(full > 0);
+        let none: Vec<Option<String>> = vec![None; cases.len()];
+        t.reset_out_of_range_stats();
+        replay_wind_grid_ok(&b, &cases, &none);
+        assert_eq!(t.out_of_range_stats().lookups, full);
+        let mut half = none.clone();
+        half[0] = Some("diverged".into());
+        t.reset_out_of_range_stats();
+        replay_wind_grid_ok(&b, &cases, &half);
+        let part = t.out_of_range_stats().lookups;
+        assert!(part > 0 && part < full, "{part} {full}");
+        let all = vec![Some("x".to_string()); cases.len()];
+        t.reset_out_of_range_stats();
+        replay_wind_grid_ok(&b, &cases, &all);
+        assert_eq!(t.out_of_range_stats().lookups, 0);
+        assert_eq!(res.len(), cases.len());
     }
 
     fn landings(r: &McResult) -> Vec<(f64, f64)> {

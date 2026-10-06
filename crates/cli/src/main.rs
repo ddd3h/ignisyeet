@@ -32,8 +32,8 @@ const LONG_VERSION: &str = concat!(
     version,
     long_version = LONG_VERSION,
     about = "IgnisYeet by 西濱大将 (NISHIHAMA Daisuke): STL-based rocket aerodynamics, 6-DoF trajectory and landing dispersion",
-    after_help = "Exit status: 0 success (a flight that landed exits 0 even when it is statically unstable: check `stable` and `static_margin_min_cal` in summary.json); 1 error (invalid configuration, missing input, failed step); 2 usage error; \
-3 the run finished and wrote its outputs but the results are incomplete (a flight did not land within sim.max_time, or dispersion cases/samples failed or did not land).\n\n\
+    after_help = "Exit status: 0 success; 1 error (invalid configuration, missing input, failed step); 2 usage error; \
+3 the run finished and wrote its outputs but the results are incomplete or not usable (a flight did not land within sim.max_time, dispersion cases/samples failed or did not land, or the rocket is statically UNSTABLE: smallest static margin below 0 cal, see `stable` and `static_margin_min_cal` in summary.json).\n\n\
 Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke). License GPL-3.0-or-later: <https://www.gnu.org/licenses/>. This is free software; there is NO WARRANTY."
 )]
 struct Cli {
@@ -57,14 +57,14 @@ enum Cmd {
         #[arg(long)]
         force: bool,
     },
-    /// Run one 6-DoF flight with the configured wind (writes trajectory.csv, summary.json). Exits with status 3 when the rocket did not land within sim.max_time.
+    /// Run one 6-DoF flight with the configured wind (writes trajectory.csv, summary.json). Exits with status 3 when the rocket did not land within sim.max_time or is statically unstable (negative static margin).
     Sim {
         config: PathBuf,
         /// Override the descent mode.
         #[arg(long, value_parser = parse_descent)]
         descent: Option<Descent>,
     },
-    /// Landing dispersion: wind speed x direction grid (dispersion.csv) or Monte Carlo (dispersion_mc.csv, dispersion_summary.json). Exits with status 3 when any case or sample failed or did not land.
+    /// Landing dispersion: wind speed x direction grid (dispersion.csv) or Monte Carlo (dispersion_mc.csv, dispersion_summary.json). Exits with status 3 when any case or sample failed or did not land, or the nominal flight is statically unstable.
     Dispersion { config: PathBuf },
     /// Check that the CFD tools (SU2, MPI, gmsh) are installed and report their versions.
     CfdCheck {
@@ -130,6 +130,14 @@ fn cfd_budget(cfg: &Config) -> cfd::ResourceBudget {
 /// Exit status of a run that finished and wrote its outputs but whose results are incomplete.
 const EXIT_INCOMPLETE: i32 = 3;
 
+/// Start of the exit-status-3 message of a statically unstable flight.
+const NOT_USABLE: &str = "RESULTS NOT USABLE";
+
+/// The exit-status-3 message when the smallest static margin `margin` [cal] is negative.
+fn unstable_reason(margin: f64) -> Option<String> {
+    (margin.is_finite() && margin < 0.0).then(|| format!("{NOT_USABLE}: the rocket is statically UNSTABLE (min static margin {margin:.2} cal)"))
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     ui::init(cli.quiet, cli.no_progress);
@@ -179,7 +187,11 @@ fn main() -> Result<()> {
     }
     ui().finish();
     if let Some(why) = incomplete {
-        eprintln!("ignisyeet: INCOMPLETE RESULTS: {why} (exit status {EXIT_INCOMPLETE})");
+        if why.starts_with(NOT_USABLE) {
+            eprintln!("ignisyeet: {why} (exit status {EXIT_INCOMPLETE})");
+        } else {
+            eprintln!("ignisyeet: INCOMPLETE RESULTS: {why} (exit status {EXIT_INCOMPLETE})");
+        }
         std::process::exit(EXIT_INCOMPLETE);
     }
     Ok(())
@@ -321,6 +333,13 @@ fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: f64) -> Vec<String>
             w.push(format!("minimum static margin {m:.2} cal is below the recommended 1.5 cal (marginal)"));
         }
     }
+    w.extend(rail_exit_warnings(cfg, s));
+    let rec = &cfg.recovery;
+    if let (true, Some(_), Some(m)) = (rec.enabled, rec.main_cd_s, rec.main_altitude) {
+        if s.apogee.is_finite() && m >= s.apogee {
+            w.push(format!("recovery.main_altitude = {m} m is above the apogee ({:.0} m): the main opens together with the drogue", s.apogee));
+        }
+    }
     let wind = &cfg.wind;
     if wind.model == sim::WindModel::Profile {
         if let Some((bottom, top, _)) = wind_profile_extent(cfg) {
@@ -343,6 +362,38 @@ fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: f64) -> Vec<String>
             "apogee {:.0} m is above {WIND_VALID_HEIGHT:.0} m, the validity height of the {:?} wind profile: the profile is extrapolated there, and wind.speed = {} m/s is the speed at wind.ref_height = {} m, so the winds aloft and the landing point are model-dependent",
             s.apogee, wind.model, wind.speed, wind.ref_height
         ));
+    }
+    w
+}
+
+/// Rail exit speed [m/s] below which the launch is reported as too slow.
+const MIN_RAIL_EXIT_SPEED: f64 = 15.0;
+/// Wind angle of attack [deg] at rail exit above which the launch is reported as wind-sensitive.
+const MAX_RAIL_EXIT_WIND_ALPHA_DEG: f64 = 15.0;
+
+/// Warnings about the rail exit of a flight: a speed below 15 m/s, or a wind angle of attack
+/// atan(wind speed at the rail-exit height / rail exit speed) above 15 degrees (the configured wind).
+fn rail_exit_warnings(cfg: &Config, s: &Summary) -> Vec<String> {
+    let mut w = Vec::new();
+    let v = s.rail_exit_speed;
+    if !(v.is_finite() && v > 0.0) {
+        return w;
+    }
+    if v < MIN_RAIL_EXIT_SPEED {
+        w.push(format!(
+            "rail exit speed {v:.1} m/s is below {MIN_RAIL_EXIT_SPEED:.0} m/s: the fins have little authority at rail exit and the rocket is easily blown off the rail line; use a longer rail or a higher thrust-to-weight ratio"
+        ));
+    }
+    let h = cfg.launch.rail_length * cfg.launch.elevation_deg.to_radians().sin();
+    if let Ok(wind) = sim::Wind::from_config(&cfg.wind_config()) {
+        let u = wind.at(h);
+        let wind_speed = u.x.hypot(u.y);
+        let alpha = wind_speed.atan2(v).to_degrees();
+        if alpha > MAX_RAIL_EXIT_WIND_ALPHA_DEG {
+            w.push(format!(
+                "the wind angle of attack at rail exit is {alpha:.1} deg (wind {wind_speed:.1} m/s at {h:.1} m, rail exit speed {v:.1} m/s), above {MAX_RAIL_EXIT_WIND_ALPHA_DEG:.0} deg: the rocket will weathercock strongly off the rail"
+            ));
+        }
     }
     w
 }
@@ -412,6 +463,19 @@ fn check_cg(cfg: &Config, length: f64) -> Result<()> {
     let cg = cfg.rocket.cg_dry;
     if cg > length {
         anyhow::bail!("rocket.cg_dry = {cg} m is outside the body: it is measured aft of the nose tip and the body is {length:.4} m long (check rocket.stl_scale and the unit of cg_dry)");
+    }
+    Ok(())
+}
+
+/// An error when the motor does not lie inside the body: its aft end `motor.aft_x` (measured aft of
+/// the nose tip, default the body length) must be at least the motor length and at most the body length.
+fn check_motor_position(cfg: &Config, length: f64, motor_length: f64) -> Result<()> {
+    const TOL: f64 = 1e-3;
+    let Some(a) = cfg.motor.aft_x else { return Ok(()) };
+    if a - motor_length < -TOL || a > length + TOL {
+        anyhow::bail!(
+            "motor.aft_x = {a} m puts the motor outside the body: the motor is {motor_length:.4} m long and the body {length:.4} m, so motor.aft_x (the motor's aft end, measured aft of the nose tip) must be between {motor_length:.4} and {length:.4} m"
+        );
     }
     Ok(())
 }
@@ -996,6 +1060,7 @@ fn prepare(cfg: &Config) -> Result<Prepared> {
     let table = aero_table(cfg, false)?;
     check_cg(cfg, table.meta.length)?;
     let motor = load_motor(cfg)?;
+    check_motor_position(cfg, table.meta.length, motor.length)?;
     let motor_aft_x = cfg.motor.aft_x.unwrap_or(table.meta.length);
     let mut geometry_warnings = geometry_warnings(cfg);
     geometry_warnings.extend(motor.warnings());
@@ -1040,9 +1105,9 @@ fn default_descent(cfg: &Config) -> Descent {
 }
 
 /// Rough terminal speed [m/s] of a rocket of `mass` [kg] under a canopy of drag area `cd_s` [m^2] (sea-level
-/// density 1.1 kg/m^3 as the progress estimate and the plain summary use).
+/// density 1.225 kg/m^3 as the progress estimate and the plain summary use).
 pub(crate) fn chute_speed(mass: f64, cd_s: f64) -> f64 {
-    (2.0 * mass * 9.80665 / (1.1 * cd_s.max(1e-3))).sqrt()
+    (2.0 * mass * 9.80665 / (1.225 * cd_s.max(1e-3))).sqrt()
 }
 
 const SIM_T: &str = "  {spinner:.cyan} {prefix:<12.bold} {bar} {percent:>3}%  T+{simt:.cyan}  {elapsed:.dim}  ETA {eta_precise:.yellow}\n      {msg}";
@@ -1152,9 +1217,10 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
         u.print_panel(&view::flight_panel(s, descent, true));
     }
     print_warnings(&warnings);
+    let unstable = unstable_reason(static_margin_min(s));
     if landed {
         write_kml(cfg, kml::Parts { flight: Some(kml::Flight { samples: r.samples, summary: r.summary }), ..Default::default() }, false)?;
-        Ok(None)
+        Ok(unstable)
     } else {
         // The previous run's flight must not stay in the file: write it without the flight layer.
         if cfg.output.kml {
@@ -1163,7 +1229,7 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
                 println!("  KML written without the flight layer: the flight has no landing point");
             }
         }
-        Ok(Some(format!("the flight did not land within sim.max_time = {} s", cfg.sim.max_time)))
+        Ok(unstable.or_else(|| Some(format!("the flight did not land within sim.max_time = {} s", cfg.sim.max_time))))
     }
 }
 
@@ -1280,13 +1346,17 @@ impl FarthestLanding {
 }
 
 /// Warnings of the nominal configuration: body size, and stability, wind-model validity and landing of the nominal flight.
-fn nominal_warnings(cfg: &Config, p: &Prepared, base: &Simulation) -> Vec<String> {
+fn nominal_warnings(cfg: &Config, p: &Prepared, base: &Simulation) -> (Vec<String>, f64) {
     let mut w = p.geometry_warnings.clone();
     w.extend(size_warnings(cfg, p.table.meta.length, p.table.meta.ref_diameter));
     let ref_speed =
         if cfg.dispersion.mode == sim::DispersionMode::WindGrid { cfg.dispersion.wind_speeds.iter().copied().fold(0.0, f64::max) } else { cfg.wind.speed };
+    let mut margin = f64::NAN;
     match base.run(Descent::Ballistic, false) {
-        Ok(r) => w.extend(flight_warnings_at(cfg, &r.summary, ref_speed)),
+        Ok(r) => {
+            margin = static_margin_min(&r.summary);
+            w.extend(flight_warnings_at(cfg, &r.summary, ref_speed))
+        }
         Err(e) => w.push(format!("the nominal flight could not be simulated ({e:#}): stability and wind-model checks were skipped")),
     }
     if cfg.recovery.enabled {
@@ -1295,7 +1365,13 @@ fn nominal_warnings(cfg: &Config, p: &Prepared, base: &Simulation) -> Vec<String
             w.extend(parachute_warnings(cfg, &r.summary));
         }
     }
-    w
+    (w, margin)
+}
+
+/// `stable` and `static_margin_min_cal` of the nominal flight for the dispersion JSON files (null when the nominal flight failed).
+fn stability_json(margin: f64) -> serde_json::Value {
+    let m = margin.is_finite().then_some(margin);
+    serde_json::json!({ "stable": m.map(|m| m >= 0.0), "static_margin_min_cal": m })
 }
 
 /// Max landing distance line of one descent mode of the wind grid; `distances` are those of the cases that landed.
@@ -1315,9 +1391,9 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
     let u = ui();
     let p = prepare(cfg)?;
     let base = simulation(cfg, &p)?;
-    let mut warnings = nominal_warnings(cfg, &p, &base);
+    let (mut warnings, margin) = nominal_warnings(cfg, &p, &base);
     if cfg.dispersion.mode == sim::DispersionMode::MonteCarlo {
-        return run_monte_carlo(cfg, &p, &base, warnings);
+        return run_monte_carlo(cfg, &p, &base, warnings, margin);
     }
     let start = std::time::Instant::now();
     let total = sim::dispersion::wind_grid_runs(&cfg.dispersion, cfg.recovery.enabled);
@@ -1341,20 +1417,33 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
         }
     }
     let failed = results.iter().filter(|s| !s.landed()).count();
-    if failed > 0 {
+    let errored = errors.iter().flatten().count();
+    let not_landed = failed - errored;
+    if not_landed > 0 {
         warnings.push(format!(
-            "{failed} of {} wind-grid cases did not land within sim.max_time = {} s: they are excluded from the landing distances, so the maximum landing distance is only a lower bound",
+            "{not_landed} of {} wind-grid cases did not land within sim.max_time = {} s: they are excluded from the landing distances, so the maximum landing distance is only a lower bound",
             results.len(),
             cfg.sim.max_time
         ));
     }
+    if let Some(first) = errors.iter().flatten().next() {
+        warnings.push(format!(
+            "{errored} of {} wind-grid cases failed with an error (e.g. {first}): they are excluded from the landing distances, so the maximum landing distance is only a lower bound",
+            results.len()
+        ));
+    }
     warnings.extend(wind_grid_error_warnings(&cases, &errors));
     warnings.extend(wind_scale_warning(cfg, "wind grid", results.iter()));
+    if errored > 0 {
+        // Rebuild the lookup statistics from the cases that completed: a diverged state is not a flight.
+        p.table.reset_out_of_range_stats();
+        sim::dispersion::replay_wind_grid_ok(&base, &cases, &errors);
+    }
     warnings.extend(aero_range_warning(&p.table.out_of_range_stats()));
     let path = out_path(cfg, "dispersion.csv")?;
     write_wind_grid_csv(&path, &results, &errors)?;
-    let errored = errors.iter().flatten().count();
-    let meta = serde_json::json!({ "config_hash": run_hash(cfg, RunKind::WindGrid), "flight_config_hash": run_hash(cfg, RunKind::Flight), "cases": results.len(), "failed": failed, "errored": errored, "warnings": warnings, "aero_table_range": aero_range_json(&p.table.out_of_range_stats()) });
+    let mut meta = serde_json::json!({ "config_hash": run_hash(cfg, RunKind::WindGrid), "flight_config_hash": run_hash(cfg, RunKind::Flight), "cases": results.len(), "failed": failed, "errored": errored, "warnings": warnings, "aero_table_range": aero_range_json(&p.table.out_of_range_stats()) });
+    meta.as_object_mut().unwrap().extend(stability_json(margin).as_object().unwrap().clone());
     std::fs::write(out_path(cfg, kml::WIND_GRID_META)?, serde_json::to_string_pretty(&meta)?)?;
     u.done_line("Wind grid", &format!("{} cases, {failed} failed", results.len()), start.elapsed());
     if u.plain() {
@@ -1369,7 +1458,14 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
         u.print_panel(&view::wind_grid_panel(&cases, &results, start.elapsed()));
     }
     print_warnings(&warnings);
-    let incomplete = (failed > 0).then(|| format!("{failed} of {} wind-grid cases did not land", results.len()));
+    let incomplete = unstable_reason(margin).or_else(|| (failed > 0).then(|| format!("{failed} of {} wind-grid cases did not land", results.len())));
+    if errored == results.len() {
+        anyhow::bail!(
+            "all {errored} wind-grid cases failed with an error (first: {}); the results are in {}",
+            errors.iter().flatten().next().map_or("", |e| e.as_str()),
+            path.display()
+        );
+    }
     let (cases, results): (Vec<_>, Vec<_>) = cases.into_iter().zip(results).filter(|(_, s)| s.landed()).unzip();
     if results.is_empty() {
         if u.mode != ui::Mode::Quiet {
@@ -1457,7 +1553,7 @@ fn descent_name(d: Descent) -> &'static str {
     }
 }
 
-fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: Vec<String>) -> Result<Option<String>> {
+fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: Vec<String>, margin: f64) -> Result<Option<String>> {
     let u = ui();
     let start = std::time::Instant::now();
     let mc = &cfg.dispersion.monte_carlo;
@@ -1483,6 +1579,11 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
         ));
     }
     warnings.extend(wind_scale_warning(cfg, "Monte Carlo sample", r.rows.iter().filter_map(|row| row.result.as_ref().ok())));
+    if r.rows.iter().any(|x| x.result.as_ref().err().is_some_and(|e| e != sim::dispersion::NOT_LANDED)) {
+        // Rebuild the lookup statistics from the runs that completed: a diverged state is not a flight.
+        p.table.reset_out_of_range_stats();
+        sim::dispersion::replay_monte_carlo_ok(base, &r.rows);
+    }
     let range = p.table.out_of_range_stats();
     warnings.extend(aero_range_warning(&range));
     let path = out_path(cfg, "dispersion_mc.csv")?;
@@ -1494,6 +1595,7 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
     json["flight_config_hash"] = run_hash(cfg, RunKind::Flight).into();
     json["warnings"] = serde_json::json!(warnings);
     json["aero_table_range"] = aero_range_json(&range);
+    json.as_object_mut().unwrap().extend(stability_json(margin).as_object().unwrap().clone());
     std::fs::write(&spath, serde_json::to_string_pretty(&json)?)?;
     u.done_line("Monte Carlo", &format!("{} samples x {} descent modes", r.summary.samples, r.summary.descents.len()), start.elapsed());
     if u.plain() {
@@ -1559,7 +1661,7 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
             ui::Mode::Quiet => eprintln!("{msg}"),
         }
     }
-    Ok((failed > 0).then(|| format!("{failed} Monte Carlo runs did not land or failed; the statistics are incomplete")))
+    Ok(unstable_reason(margin).or_else(|| (failed > 0).then(|| format!("{failed} Monte Carlo runs did not land or failed; the statistics are incomplete"))))
 }
 
 fn write_monte_carlo_csv(path: &Path, rows: &[sim::dispersion::McRow]) -> Result<()> {
@@ -1859,6 +1961,71 @@ mod tests {
         let g = geometry(&cfg).unwrap();
         c.rocket.cg_dry = g.length + 0.5;
         assert!(geometry(&c).unwrap_err().to_string().contains("rocket.cg_dry"));
+    }
+
+    #[test]
+    fn motor_must_lie_inside_the_body() {
+        let mut cfg = sample_config("aftx");
+        let len = prepare(&cfg).unwrap().table.meta.length;
+        assert!(prepare(&cfg).is_ok());
+        cfg.motor.aft_x = Some(len);
+        assert!(prepare(&cfg).is_ok());
+        cfg.motor.aft_x = Some(0.2);
+        let e = prepare(&cfg).err().unwrap().to_string();
+        assert!(e.contains("motor.aft_x = 0.2 m") && e.contains("outside the body") && e.contains(&format!("{len:.4}")), "{e}");
+        cfg.motor.aft_x = Some(10.0);
+        assert!(prepare(&cfg).err().unwrap().to_string().contains("motor.aft_x = 10 m"));
+        let _ = std::fs::remove_dir_all(&cfg.output.dir);
+    }
+
+    #[test]
+    fn unstable_flight_is_not_usable() {
+        assert!(unstable_reason(1.5).is_none() && unstable_reason(0.0).is_none() && unstable_reason(f64::NAN).is_none());
+        let m = unstable_reason(-0.234).unwrap();
+        assert_eq!(m, "RESULTS NOT USABLE: the rocket is statically UNSTABLE (min static margin -0.23 cal)");
+        let j = stability_json(-0.5);
+        assert_eq!((j["stable"].as_bool(), j["static_margin_min_cal"].as_f64()), (Some(false), Some(-0.5)));
+        assert_eq!(stability_json(2.0)["stable"].as_bool(), Some(true));
+        assert!(stability_json(f64::NAN)["stable"].is_null());
+        // end to end: the sample stays usable, a CG far aft does not
+        let mut cfg = sample_config("unstable");
+        assert!(run_sim(&cfg, Some(Descent::Parachute)).unwrap().is_none());
+        cfg.rocket.cg_dry = prepare(&cfg).unwrap().table.meta.length * 0.97;
+        let why = run_sim(&cfg, Some(Descent::Parachute)).unwrap().expect("unstable flight must be incomplete");
+        assert!(why.starts_with("RESULTS NOT USABLE") && why.contains("UNSTABLE"), "{why}");
+        let (_, margin) = nominal_warnings(&cfg, &prepare(&cfg).unwrap(), &simulation(&cfg, &prepare(&cfg).unwrap()).unwrap());
+        assert!(margin < 0.0);
+        let _ = std::fs::remove_dir_all(&cfg.output.dir);
+    }
+
+    #[test]
+    fn dual_deploy_main_above_apogee_warns() {
+        let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
+        let ok = sim::Summary { min_stability_cal: 2.0, stability_at_rail_exit: 2.0, apogee: 500.0, ..sample_summary() };
+        cfg.recovery.enabled = true;
+        cfg.recovery.main_cd_s = Some(8.0);
+        cfg.recovery.main_altitude = Some(300.0);
+        assert!(!flight_warnings(&cfg, &ok).iter().any(|w| w.contains("main_altitude")));
+        cfg.recovery.main_altitude = Some(500.0);
+        let w = flight_warnings(&cfg, &ok);
+        assert!(w.iter().any(|w| w == "recovery.main_altitude = 500 m is above the apogee (500 m): the main opens together with the drogue"), "{w:?}");
+    }
+
+    #[test]
+    fn rail_exit_warnings_for_speed_and_wind_angle() {
+        let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
+        let ok = sim::Summary { min_stability_cal: 2.0, stability_at_rail_exit: 2.0, apogee: 500.0, ..sample_summary() };
+        assert!(rail_exit_warnings(&cfg, &ok).is_empty());
+        let slow = sim::Summary { rail_exit_speed: 12.0, ..ok.clone() };
+        let w = rail_exit_warnings(&cfg, &slow);
+        assert!(w.iter().any(|w| w.starts_with("rail exit speed 12.0 m/s is below 15 m/s")), "{w:?}");
+        // 8 m/s of wind at every height against 20 m/s: atan(0.4) = 21.8 deg
+        cfg.wind.model = sim::WindModel::Constant;
+        cfg.wind.speed = 8.0;
+        let w = rail_exit_warnings(&cfg, &ok);
+        assert!(w.len() == 1 && w[0].contains("wind angle of attack at rail exit is 21.8 deg") && w[0].contains("above 15 deg"), "{w:?}");
+        cfg.wind.speed = 5.0; // 14.0 deg
+        assert!(rail_exit_warnings(&cfg, &ok).is_empty());
     }
 
     #[test]

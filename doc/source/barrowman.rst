@@ -409,6 +409,8 @@ OpenRocket のフィンのモデルも、フィンの迎角を失速角 20° で
 とする。これは :eq:`eq-cp-sum` を、本章の部品の式で書いたものである。
 :math:`\alpha=0` では :math:`C_N=0` で\ :eq:`eq-xcp-total` が 0/0 になるので、表には :math:`\alpha\to0` の極限
 :math:`(S_1^{\mathrm{body}}+C_{N\alpha}^{\mathrm{fins}}x_f)/(S_0^{\mathrm{body}}+C_{N\alpha}^{\mathrm{fins}})` を書き込む。
+フィンがなく、尾部が点に閉じた胴体では、胴体の法線力傾斜の和 :math:`S_0^{\mathrm{body}}` が 0 になり、この極限も 0/0 になる。
+このときは、迎角 0 の圧力中心を胴体だけの圧力中心と同じくノーズ先端（:math:`x=0`）に置き、表のすべての値を有限に保つ。
 法線力傾斜 :math:`C_{N\alpha}` は :math:`\alpha=10^{-4}` rad での差分で求める。
 
 サンプル機体の結果を :numref:`fig-aero-cna-xcp` と :numref:`fig-aero-cn-alpha` に示す。

@@ -140,6 +140,13 @@ impl Motor {
         self.curve.last().unwrap().0
     }
 
+    /// End of the thrust [s]: the last thrust-curve knot after which the thrust stays zero (the
+    /// curve end when it ends with thrust; a trailing zero-thrust stretch does not count).
+    pub fn thrust_end(&self) -> f64 {
+        let c = &self.curve;
+        (1..c.len()).rev().find(|&i| c[i].1 > 0.0 || c[i - 1].1 > 0.0).map_or(c[0].0, |i| c[i].0)
+    }
+
     /// First thrust-curve knot later than `t` (by more than 1e-9 s); None from the last knot on.
     pub fn next_knot(&self, t: f64) -> Option<f64> {
         self.curve.iter().map(|p| p.0).find(|&k| k > t + 1e-9)
@@ -238,6 +245,9 @@ mod tests {
         assert!((p.burn_time() - 1.65).abs() < 1e-12 && (p.total_impulse() - 110.0).abs() < 1e-9);
         assert!((p.thrust(0.5 * 1.5) - 110.0 / 1.5).abs() < 1e-9 && p.propellant_mass == m.propellant_mass);
         assert!((m.propellant_left(0.55) - 0.5).abs() < 1e-9);
+        assert_eq!(m.thrust_end(), 1.1);
+        assert_eq!(Motor::new("z".into(), 0.05, 0.3, 1.0, vec![(0.0, 10.0), (1.0, 10.0), (1.5, 0.0), (3.0, 0.0)]).thrust_end(), 1.5);
+        assert_eq!(Motor::new("z".into(), 0.05, 0.3, 1.0, vec![(0.0, 10.0), (1.0, 10.0)]).thrust_end(), 1.0);
     }
 
     #[test]

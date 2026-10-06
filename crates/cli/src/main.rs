@@ -574,6 +574,12 @@ fn parachute_warnings(cfg: &Config, s: &Summary) -> Vec<String> {
     }
     let dual = cfg.recovery.main_cd_s.is_some() && cfg.recovery.main_altitude.is_some();
     let first = if dual { "drogue" } else { "parachute" };
+    if let (Some(d), Some(t)) = (s.deploy_delayed, s.drogue_deploy_time) {
+        w.push(format!(
+            "the motor still burns at apogee + recovery.delay (t = {:.2} s, thrust {:.1} N): the {first} deployment is delayed to burnout at {t:.2} s",
+            d.nominal_time, d.thrust
+        ));
+    }
     w.extend(deploy_warning(first, s.drogue_deploy_speed, s.drogue_deploy_q, "recovery.delay"));
     if dual {
         w.extend(deploy_warning("main", s.main_deploy_speed, s.main_deploy_q, "recovery.main_altitude"));
@@ -2460,6 +2466,7 @@ mod tests {
             main_deploy_time: None,
             main_deploy_altitude: None,
             drogue_deploy_time: None,
+            deploy_delayed: None,
             drogue_deploy_speed: None,
             drogue_deploy_q: None,
             main_deploy_speed: None,
@@ -3255,6 +3262,14 @@ mod tests {
         );
         cfg.recovery.main_cd_s = None;
         cfg.recovery.main_altitude = None;
+        // A deployment delayed to burnout.
+        let delayed =
+            sim::Summary { drogue_deploy_time: Some(12.5), deploy_delayed: Some(sim::flight::DeployDelay { nominal_time: 11.25, thrust: 42.0 }), ..ok.clone() };
+        assert_eq!(
+            parachute_warnings(&cfg, &delayed),
+            vec!["the motor still burns at apogee + recovery.delay (t = 11.25 s, thrust 42.0 N): the parachute deployment is delayed to burnout at 12.50 s"
+                .to_string()]
+        );
         // ballistic runs and disabled recovery are not judged, unlanded runs only for the deployment
         assert!(parachute_warnings(&cfg, &sim::Summary { descent: Descent::Ballistic, ..never.clone() }).is_empty());
         assert!(parachute_warnings(&cfg, &unlanded(never.clone())).is_empty());

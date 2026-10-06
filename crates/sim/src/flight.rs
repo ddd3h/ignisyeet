@@ -416,6 +416,11 @@ pub struct Summary {
     /// landed (or ended) before apogee + `recovery.delay`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drogue_deploy_time: Option<f64>,
+    /// Parachute descent whose deployment instant (apogee + `recovery.delay`) came while the motor
+    /// still burned: the deployment waited for burnout, the end of the thrust (`drogue_deploy_time`).
+    /// None when the deployment was not delayed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deploy_delayed: Option<DeployDelay>,
     /// Airspeed [m/s] at the (first) parachute deployment.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drogue_deploy_speed: Option<f64>,
@@ -471,6 +476,7 @@ impl Summary {
             main_deploy_time: None,
             main_deploy_altitude: None,
             drogue_deploy_time: None,
+            deploy_delayed: None,
             drogue_deploy_speed: None,
             drogue_deploy_q: None,
             main_deploy_speed: None,
@@ -511,6 +517,15 @@ impl Summary {
             Stability::Stable
         }
     }
+}
+
+/// Parachute deployment moved from apogee + `recovery.delay` to burnout, see [`Summary::deploy_delayed`].
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct DeployDelay {
+    /// Apogee + `recovery.delay` [s], when the parachute would have deployed.
+    pub nominal_time: f64,
+    /// Thrust [N] at `nominal_time`.
+    pub thrust: f64,
 }
 
 /// Static-stability verdict of a flight, see [`Summary::stability`].
@@ -981,6 +996,7 @@ impl<'a> Simulation<'a> {
             main_deploy_time: None,
             main_deploy_altitude: None,
             drogue_deploy_time: None,
+            deploy_delayed: None,
             drogue_deploy_speed: None,
             drogue_deploy_q: None,
             main_deploy_speed: None,
@@ -1160,6 +1176,15 @@ impl<'a> Simulation<'a> {
                 }
                 sum.apogee_time = t_apo;
                 deploy_at = t_apo + self.recovery.delay;
+                let thrust_end = self.motor.thrust_end();
+                if descent == Descent::Parachute && deploy_at < thrust_end {
+                    // The motor still burns at apogee + delay: a parachute opened under thrust is
+                    // not modelled (the parachute phase has no thrust and the propellant would keep
+                    // burning off), so the deployment waits for the end of the thrust, a
+                    // thrust-curve knot and hence a step limit.
+                    sum.deploy_delayed = Some(DeployDelay { nominal_time: deploy_at, thrust: self.motor.thrust(deploy_at) });
+                    deploy_at = thrust_end;
+                }
             }
 
             // Events inside the step, handled earliest first; the touchdown wins a tie, and an
@@ -2526,6 +2551,36 @@ mod tests {
             let e = sim.run(Descent::Ballistic, false).err().expect("rejected").to_string();
             assert!(e.contains("launch.elevation_deg must be in (0, 90]"), "{e}");
         }
+    }
+
+    #[test]
+    fn deployment_waits_for_burnout_when_the_motor_still_burns() {
+        // 300 N for 2 s, then a weak 70 N tail (below the weight of ~100 N) to 20 s: the apogee
+        // (~16 s) comes while the motor still burns.
+        let (table, _) = vacuum_parts();
+        let motor = Motor::new("tail".into(), 0.05, 0.3, 1.0, vec![(0.0, 300.0), (2.0, 300.0), (2.01, 70.0), (19.99, 70.0), (20.0, 0.0)]);
+        let mut sim = vacuum_sim(&table, &motor);
+        sim.recovery = Recovery { enabled: true, cd_s: 1e-3, delay: 1.0, main_cd_s: None, main_altitude: None };
+        let r = sim.run(Descent::Parachute, true).unwrap();
+        let s = &r.summary;
+        assert!(s.apogee_time + 1.0 < motor.burn_time(), "apogee {} not during the burn", s.apogee_time);
+        // Deployment at burnout, not at apogee + delay; the delay is recorded with the thrust then.
+        assert!((s.drogue_deploy_time.unwrap() - motor.burn_time()).abs() < 1e-9, "{:?}", s.drogue_deploy_time);
+        let d = s.deploy_delayed.expect("delay recorded");
+        assert!((d.nominal_time - (s.apogee_time + 1.0)).abs() < 1e-9 && (d.thrust - 70.0).abs() < 1e-9, "{d:?}");
+        // Free flight with thrust up to burnout, the parachute phase without thrust or propellant left.
+        for smp in &r.samples {
+            if smp.phase == Phase::Parachute {
+                assert!(smp.t >= motor.burn_time() - 1e-9 && smp.thrust == 0.0 && (smp.mass - VAC_M).abs() < 1e-9, "{smp:?}");
+            } else if smp.t > 2.1 && smp.t < 19.9 {
+                assert!((smp.thrust - 70.0).abs() < 1e-9, "{smp:?}");
+            }
+        }
+        // A delay that ends after burnout is unchanged and not recorded; ballistic runs neither.
+        sim.recovery.delay = 7.0;
+        let s = sim.run(Descent::Parachute, false).unwrap().summary;
+        assert!(s.deploy_delayed.is_none() && (s.drogue_deploy_time.unwrap() - (s.apogee_time + 7.0)).abs() < 1e-9, "{s:?}");
+        assert!(sim.run(Descent::Ballistic, false).unwrap().summary.deploy_delayed.is_none());
     }
 
     #[test]

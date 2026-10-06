@@ -167,8 +167,19 @@ pub struct Recovery {
 }
 
 impl Recovery {
-    /// Checks the dual-deploy fields (both or neither, positive and finite).
+    /// Checks an enabled recovery: drag area positive and finite, delay non-negative and finite,
+    /// the dual-deploy fields both or neither, positive and finite. A disabled recovery is not
+    /// flown and passes.
     pub fn validate(&self) -> Result<()> {
+        if !self.enabled {
+            return Ok(());
+        }
+        if !(self.cd_s.is_finite() && self.cd_s > 0.0) {
+            bail!("recovery.cd_s must be positive and finite when recovery.enabled = true, got {}", self.cd_s);
+        }
+        if !(self.delay.is_finite() && self.delay >= 0.0) {
+            bail!("recovery.delay must be non-negative and finite, got {}", self.delay);
+        }
         match (self.main_cd_s, self.main_altitude) {
             (None, None) => Ok(()),
             (Some(c), Some(a)) => {
@@ -775,9 +786,10 @@ impl<'a> Simulation<'a> {
         if !(elev > 0.0 && elev <= 90.0) {
             bail!("launch.elevation_deg must be in (0, 90], found {elev}");
         }
-        if self.recovery.enabled {
-            self.recovery.validate()?;
+        if descent == Descent::Parachute && !self.recovery.enabled {
+            bail!("the parachute descent needs recovery.enabled = true (with recovery disabled there is no parachute to deploy); fly the ballistic descent or enable [recovery]");
         }
+        self.recovery.validate()?;
         self.check_inertia()?;
         let stepper = Stepper::new(self.settings.integrator, self.settings.attitude);
         let adaptive = stepper.adaptive();
@@ -1766,6 +1778,30 @@ mod tests {
         let table = AeroTable::from_fn(meta, |_, _| AeroCoeffs { xcp: 0.5, cl_delta, clp, ..Default::default() });
         let (_, motor) = vacuum_parts();
         check_steady_roll(&roll_sim(&table, &motor, 2.0), cl_delta * 2.0f64.to_radians(), clp);
+    }
+
+    #[test]
+    fn parachute_descent_needs_recovery_enabled() {
+        let (table, motor) = sample_parts();
+        let mut sim = sample_sim(&table, &motor, 0.0);
+        sim.recovery.enabled = false;
+        let e = format!("{:#}", sim.run(Descent::Parachute, false).err().expect("parachute descent without recovery accepted"));
+        assert!(e.contains("the parachute descent needs recovery.enabled = true"), "{e}");
+        assert!(sim.run(Descent::Ballistic, false).is_ok());
+        // With recovery enabled the drag area must be positive and finite.
+        sim.recovery.enabled = true;
+        for cd_s in [0.0, -1.0, f64::NAN] {
+            sim.recovery.cd_s = cd_s;
+            let e = format!("{:#}", sim.run(Descent::Parachute, false).err().expect("bad cd_s accepted"));
+            assert!(e.contains("recovery.cd_s must be positive and finite"), "{e}");
+        }
+        sim.recovery.cd_s = 3.5;
+        sim.recovery.delay = -1.0;
+        let e = format!("{:#}", sim.run(Descent::Parachute, false).err().expect("negative delay accepted"));
+        assert!(e.contains("recovery.delay must be non-negative and finite"), "{e}");
+        // A disabled recovery is not validated (its fields are unused).
+        sim.recovery = Recovery { enabled: false, cd_s: 0.0, delay: 0.0, main_cd_s: None, main_altitude: None };
+        assert!(sim.recovery.validate().is_ok());
     }
 
     #[test]

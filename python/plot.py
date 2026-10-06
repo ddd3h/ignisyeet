@@ -230,7 +230,8 @@ def plot_trajectory(out):
     ax.set_xlabel("East [m]")
     ax.set_ylabel("North [m]")
     ax.set_zlabel("Up [m]")
-    ax.set_title(f"Trajectory ({summ.get('descent', '')})")
+    not_landed = summ.get("landed") is False
+    ax.set_title(f"Trajectory ({summ.get('descent', '')})" + ("  -  did not land" if not_landed else ""))
     ax.legend(loc="upper left")
     save(fig, out, "trajectory_3d.png")
 
@@ -262,10 +263,12 @@ def plot_trajectory(out):
         ax.plot(data.t, data[col], color=SERIES[0])
         ax.set_title(title)
         ax.set_xlabel("t [s]")
-    if summ:
-        a = axs[0, 0]
+    a = axs[0, 0]
+    if summ.get("apogee") is not None and summ.get("apogee_time") is not None:
         a.plot([summ["apogee_time"]], [summ["apogee"]], "o", color=SERIES[0], markersize=8, markerfacecolor=SURFACE, markeredgewidth=2)
         a.annotate(f"apogee {summ['apogee']:.0f} m", (summ["apogee_time"], summ["apogee"]), xytext=(6, -12), textcoords="offset points", color=INK2)
+    if not_landed:
+        a.text(0.97, 0.06, f"did not land within {summ.get('max_time', tr.t.max()):g} s", transform=a.transAxes, ha="right", color=SERIES[7])
     fig.tight_layout()
     save(fig, out, "trajectory.png")
 
@@ -287,20 +290,36 @@ def plot_dispersion_mc(out):
     modes = [m for m in ("ballistic", "parachute") if m in stats]
     fig, axs = plt.subplots(1, len(modes), figsize=(6.4 * len(modes), 5.6), squeeze=False)
     for ax, mode in zip(axs[0], modes):
-        s = d[(d.descent == mode) & (d.status == "ok")]
+        s = d[(d.descent == mode) & (d.status == "ok")].dropna(subset=["landing_east", "landing_north"])
         st = stats[mode]
-        ax.scatter(s.landing_east, s.landing_north, s=6, color=SERIES[0], alpha=0.35, linewidths=0, label=f"landing points (n = {st['n']})")
-        for k, ls in ((1, "-"), (3, "--")):
-            e = st[f"ellipse_{k}sigma"]
-            x, y = ellipse_xy(st["mean_east"], st["mean_north"], e["semi_major"], e["semi_minor"], e["major_axis_bearing_deg"])
-            ax.plot(x, y, color=SERIES[1], linestyle=ls, linewidth=1.5, label=f"{k}σ ellipse")
-        ax.plot([st["mean_east"]], [st["mean_north"]], marker="+", color=SERIES[1], markersize=11, markeredgewidth=2, linestyle="none", label="mean")
+        ax.scatter(s.landing_east, s.landing_north, s=6, color=SERIES[0], alpha=0.35, linewidths=0, label=f"landing points (n = {st.get('n', len(s))})")
+        if st.get("mean_east") is not None and st.get("mean_north") is not None:
+            for k, ls in ((1, "-"), (3, "--")):
+                e = st[f"ellipse_{k}sigma"]
+                x, y = ellipse_xy(st["mean_east"], st["mean_north"], e["semi_major"], e["semi_minor"], e["major_axis_bearing_deg"])
+                ax.plot(x, y, color=SERIES[1], linestyle=ls, linewidth=1.5, label=f"{k}σ ellipse")
+            ax.plot([st["mean_east"]], [st["mean_north"]], marker="+", color=SERIES[1], markersize=11, markeredgewidth=2, linestyle="none", label="mean")
         ax.plot([0], [0], marker="*", color=INK, markersize=12, linestyle="none", label="launch site")
         ax.set_aspect("equal", adjustable="datalim")
         ax.set_xlabel("East [m]")
         ax.set_ylabel("North [m]")
-        ax.set_title(f"Monte Carlo landing dispersion — {mode} ({st['failed']} failed)")
+        failed = st.get("failed", 0)
+        ax.set_title(f"Monte Carlo landing dispersion — {mode}" + (f" ({failed} failed or not landed)" if failed else ""))
         ax.legend(loc="best")
+        lines = []
+        if not st.get("n"):
+            lines.append("no sample landed")
+        far = st.get("max_landing_distance")
+        if far is not None:
+            ge = "≥ " if st.get("max_landing_distance_is_lower_bound") else ""
+            lines.append(f"max distance {ge}{far:.0f} m")
+        pct = [st.get(f"landing_distance_p{q}") for q in (50, 90, 99)]
+        if all(v is not None for v in pct):
+            lines.append("P50 / P90 / P99: " + " / ".join(f"{v:.0f}" for v in pct) + " m")
+        if st.get("complete") is False:
+            lines.append("statistics incomplete")
+        if lines:
+            ax.text(0.02, 0.02, "\n".join(lines), transform=ax.transAxes, fontsize=8, color=INK2, va="bottom")
     fig.tight_layout()
     save(fig, out, "dispersion_mc.png")
 
@@ -315,6 +334,11 @@ def plot_dispersion(out):
 def plot_dispersion_grid(out):
     d = pd.read_csv(out / "dispersion.csv")
     modes = [m for m in ("ballistic", "parachute") if (d.descent == m).any()]
+    n_failed = {}
+    if "landed" in d.columns:
+        ok = d.landed.astype(str).str.lower().isin(["true", "1"]) & d.landing_east.notna()
+        n_failed = d[~ok].descent.value_counts().to_dict()
+        d = d[ok]
     fig, axs = plt.subplots(1, len(modes), figsize=(7.2 * len(modes), 6), squeeze=False)
     speeds = sorted(d.wind_speed.unique())
     colors = dict(zip(speeds, seq_colors(len(speeds))))
@@ -322,6 +346,8 @@ def plot_dispersion_grid(out):
         s = d[d.descent == mode]
         for v in speeds:
             r = s[s.wind_speed == v].sort_values("wind_direction_deg")
+            if r.empty:
+                continue
             e = np.append(r.landing_east.values, r.landing_east.values[:1])
             n = np.append(r.landing_north.values, r.landing_north.values[:1])
             ax.plot(e, n, "-o", color=colors[v], markersize=4, linewidth=1.5, label=f"{v:g} m/s")
@@ -329,8 +355,12 @@ def plot_dispersion_grid(out):
         ax.set_aspect("equal", adjustable="datalim")
         ax.set_xlabel("East [m]")
         ax.set_ylabel("North [m]")
-        far = s.landing_distance.max()
-        ax.set_title(f"Landing dispersion — {mode} (max {far:.0f} m)")
+        failed = n_failed.get(mode, 0)
+        if s.empty:
+            ax.set_title(f"Landing dispersion — {mode}: no case landed ({failed} failed)")
+        else:
+            far = s.landing_distance.max()
+            ax.set_title(f"Landing dispersion — {mode} (max {'≥ ' if failed else ''}{far:.0f} m" + (f", {failed} did not land)" if failed else ")"))
         ax.legend(title="wind speed", loc="upper left", bbox_to_anchor=(1.01, 1.0))
     fig.tight_layout()
     save(fig, out, "dispersion.png")

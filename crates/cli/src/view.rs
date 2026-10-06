@@ -276,16 +276,15 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
             sim::WindModel::Log => format!("{s}ref {} m, z0 = {} m", w.ref_height, w.roughness_length),
             sim::WindModel::Profile => format!("{s}{}", w.profile.as_ref().map(|p| short_path(&cfg.resolve(p))).unwrap_or_default()),
         };
-        p.row(
-            "wind",
-            format!(
-                "{}{s}{} from {}{}",
-                style(name(&w.model)).bold(),
-                val(format!("{:.1}", w.speed), "m/s"),
-                val(format!("{:.0}", w.direction_deg), "deg"),
-                detail
-            ),
-        );
+        // For a profile, wind.speed / direction_deg are not used: show the mean-wind targets (or the table as is).
+        let speed_dir = if w.model == sim::WindModel::Profile {
+            let sp = w.profile_mean_speed.map(|v| val(format!("{v:.1}"), "m/s")).unwrap_or_else(|| "table speeds".to_string());
+            let dir = w.profile_mean_direction_deg.map(|v| val(format!("{v:.0}"), "deg")).unwrap_or_else(|| "table directions".to_string());
+            format!("mean {sp} from {dir}")
+        } else {
+            format!("{} from {}", val(format!("{:.1}", w.speed), "m/s"), val(format!("{:.0}", w.direction_deg), "deg"))
+        };
+        p.row("wind", format!("{}{s}{}{}", style(name(&w.model)).bold(), speed_dir, detail));
 
         p.section("Integration");
         let c = &cfg.sim;

@@ -166,6 +166,35 @@ fn transonic_continuity() {
     println!("max step change over 0.02 Mach: CN {:.3}, CA {:.3}", max_cn, max_ca);
 }
 
+/// The transonic band blends the normal force and its nose moment and keeps them, and the
+/// zero-angle slope with its moment, between the values at the band edges; the centre of pressure
+/// is their ratio.
+#[test]
+fn transonic_band_is_consistent_and_does_not_overshoot() {
+    let g = geometry(&SampleRocket::default());
+    let aero = AeroOptions { mach_min: 0.8, mach_max: 1.2, mach_step: 0.02, alpha_max_deg: 6.0, alpha_step_deg: 1.0, ..Default::default() };
+    let opt = PanelOptions { subsonic_machs: vec![0.0, 0.3, 0.6, 0.8], ..coarse() };
+    let (t, _) = build_table(&g, &opt, &aero, "t".into(), Extrapolation::Linear).unwrap();
+    let between = |v: f64, a: f64, b: f64| {
+        let tol = 1e-9 * (1.0 + a.abs() + b.abs());
+        v >= a.min(b) - tol && v <= a.max(b) + tol
+    };
+    for &m in t.meta.machs.iter().filter(|&&m| m > 0.8 + 1e-9 && m < 1.2 - 1e-9) {
+        for &deg in &t.meta.alphas_deg {
+            let a = deg.to_radians();
+            let (c, lo, hi) = (t.lookup(m, a), t.lookup(0.8, a), t.lookup(1.2, a));
+            assert!(between(c.cna, lo.cna, hi.cna), "cna at M={m}: {} not in [{}, {}]", c.cna, lo.cna, hi.cna);
+            if deg == 0.0 {
+                // zero-angle centre of pressure: the blended slope moment over the blended slope
+                assert!(between(c.cna * c.xcp, lo.cna * lo.xcp, hi.cna * hi.xcp), "slope moment at M={m}");
+                continue;
+            }
+            assert!(between(c.cn, lo.cn, hi.cn), "CN at M={m}, alpha {deg}: {} not in [{}, {}]", c.cn, lo.cn, hi.cn);
+            assert!(between(c.cn * c.xcp, lo.cn * lo.xcp, hi.cn * hi.xcp), "moment at M={m}, alpha {deg}");
+        }
+    }
+}
+
 #[test]
 fn table_is_finite() {
     let g = geometry(&SampleRocket::default());

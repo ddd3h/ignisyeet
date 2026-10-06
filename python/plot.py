@@ -134,10 +134,34 @@ def axisymmetric_view(t):
     return t[(t.beta_deg == 0) & (t.alpha_deg >= 0)].assign(cn=lambda r: -r.cz)
 
 
+def general_totals(t, out):
+    """Per-Mach cd_off, cd_on, cna and xcp of a general table (beta = 0 view with cz, cm, cx_on, cx_off).
+
+    CD0 is -CX at alpha = 0; CNα and Xcp come from the smallest positive angle of attack
+    (CNα = |CZ| / alpha, Xcp = CM * D / CZ with D the reference diameter of the sidecar), as in `ignisyeet aero`.
+    """
+    z = t[t.alpha_deg == 0].sort_values("mach").set_index("mach")
+    d = pd.DataFrame({"mach": z.index, "cd_off": -z.cx_off.to_numpy(), "cd_on": -z.cx_on.to_numpy()}).set_index("mach")
+    pos = t[t.alpha_deg > 0]
+    if len(pos):
+        a = pos.alpha_deg.min()
+        r = pos[pos.alpha_deg == a].sort_values("mach").set_index("mach")
+        diameter = json.loads((out / "aero_table.json").read_text()).get("ref_diameter") if (out / "aero_table.json").exists() else None
+        d["cna"] = r.cz.abs() / np.radians(a)
+        d["xcp"] = (r.cm * diameter / r.cz) if diameter else np.nan
+    else:
+        d["cna"] = np.nan
+        d["xcp"] = np.nan
+    return d.reset_index()
+
+
 def plot_aero(out):
     t = axisymmetric_view(pd.read_csv(out / "aero_table.csv"))
     if (out / "aero_drag.csv").exists():
         d = pd.read_csv(out / "aero_drag.csv")
+    elif "cx_off" in t.columns:
+        # General table (sideslip, STL or external): coefficients are CX/CY/CZ; there is no drag breakdown file.
+        d = general_totals(t, out)
     else:
         # CFD tables have no per-Mach drag file (no component breakdown): the alpha = 0 rows give the totals.
         d = t[t.alpha_deg == 0].sort_values("mach").rename(columns={"ca_off": "cd_off", "ca_on": "cd_on"})
@@ -439,6 +463,18 @@ def plot_aero_compare(out, other):
     save(fig, out, "aero_compare.png")
 
 
+def last_sim_failure(out):
+    """The error message when summary.json is the failure marker `{"failed": true, "error": ...}` of a failed sim run, else None."""
+    f = out / "summary.json"
+    if not f.exists():
+        return None
+    try:
+        j = json.loads(f.read_text())
+    except ValueError:
+        return None
+    return str(j.get("error", "unknown error")) if j.get("failed") is True else None
+
+
 def warn_stale(out):
     """Warn (stderr) when a dispersion output belongs to another flight configuration than summary.json.
 
@@ -470,12 +506,18 @@ def main():
     a = ap.parse_args()
     if not a.out_dir.is_dir():
         sys.exit(f"error: output directory {a.out_dir} not found; run the ignisyeet commands first")
-    warn_stale(a.out_dir)
+    failed = last_sim_failure(a.out_dir)
+    if failed is not None and a.what == "trajectory":
+        sys.exit(f"error: the last sim run failed: {failed}; not plotting the old trajectory")
+    if failed is None:
+        warn_stale(a.out_dir)
     names = list(PLOTS) if a.what == "all" else [a.what]
     plotted = 0
     for name in names:
         req = REQUIRES[name] if isinstance(REQUIRES[name], tuple) else (REQUIRES[name],)
-        if any((a.out_dir / r).exists() for r in req):
+        if name == "trajectory" and failed is not None:
+            print(f"skip trajectory: the last sim run failed: {failed}; not plotting the old trajectory")
+        elif any((a.out_dir / r).exists() for r in req):
             before = SAVED
             PLOTS[name](a.out_dir)
             if SAVED > before:

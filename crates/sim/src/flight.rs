@@ -405,6 +405,11 @@ struct Ctx {
     rail: Vec3,
     /// Drag area Cd*S of the canopy currently deployed (drogue, then main) [m^2].
     cd_s: std::cell::Cell<f64>,
+    /// Thrust-curve segment of the current step ([`Motor::segment_after`] at the step start;
+    /// steps end at knots). The thrust is its linear piece throughout the step, and the
+    /// power-on/off axial coefficient does not switch inside a step, so no stage of a step that
+    /// ends at a knot (burnout) sees the next segment.
+    segment: std::cell::Cell<Option<usize>>,
 }
 
 impl<'a> Simulation<'a> {
@@ -501,7 +506,9 @@ impl<'a> Simulation<'a> {
     /// State derivative. The frame supplies gravity, the apparent (Coriolis/centrifugal)
     /// accelerations, the local vertical for height and the ENU basis for the wind.
     fn deriv(&self, cx: &Ctx, t: f64, s: &State, phase: Phase) -> (State, Aux) {
-        let thrust = self.motor.thrust(t);
+        let seg = cx.segment.get();
+        let thrust = self.motor.thrust_on_segment(t, seg);
+        let powered = self.motor.segment_powered(seg);
         let ms = self.mass_at(t);
         let (mass, x_cg) = (ms.m, ms.x_cg);
         let fr = &cx.frame;
@@ -519,10 +526,10 @@ impl<'a> Simulation<'a> {
                 let mach = v.abs() / atm.sound_speed;
                 let (ca, x_cp) = if self.table.kind() == TableKind::General {
                     let c = self.lookup6(mach, 0.0, 0.0);
-                    (-(if thrust > 0.0 { c.cx_on } else { c.cx_off }), self.eff_xcp(&c, mach).unwrap_or(f64::NAN))
+                    (-(if powered { c.cx_on } else { c.cx_off }), self.eff_xcp(&c, mach).unwrap_or(f64::NAN))
                 } else {
                     let c = self.lookup(mach, 0.0);
-                    (if thrust > 0.0 { c.ca_on } else { c.ca_off }, c.xcp)
+                    (if powered { c.ca_on } else { c.ca_off }, c.xcp)
                 };
                 let qd = 0.5 * atm.density * v * v;
                 let mut a = (thrust * self.thrust_line.direction().x - ca * qd * s_ref * v.signum()) / mass + g.dot(d);
@@ -573,7 +580,7 @@ impl<'a> Simulation<'a> {
                         let c = self.lookup6(mach, alpha_g, beta_g);
                         let qd = 0.5 * atm.density * v * v;
                         let qs = qd * s_ref;
-                        let cx = if thrust > 0.0 { c.cx_on } else { c.cx_off };
+                        let cx = if powered { c.cx_on } else { c.cx_off };
                         let f_aero = Vec3::new(cx, c.cy, c.cz) * qs;
                         f_body += f_aero;
                         // The tabulated `cl` already holds the forcing at the reference cant for the
@@ -596,7 +603,7 @@ impl<'a> Simulation<'a> {
                         let mach = v / atm.sound_speed;
                         let c = self.lookup(mach, alpha_eff);
                         let qd = 0.5 * atm.density * v * v;
-                        let ca = if thrust > 0.0 { c.ca_on } else { c.ca_off };
+                        let ca = if powered { c.ca_on } else { c.ca_off };
                         let axial = Vec3::new(-ca * qd * s_ref * ub.x.signum(), 0.0, 0.0);
                         f_body += axial;
                         let mut f_aero = axial;
@@ -714,6 +721,10 @@ impl<'a> Simulation<'a> {
         if !is_pos(dt) {
             bail!("sim.dt must be positive");
         }
+        let elev = self.launch.elevation_deg;
+        if !(elev > 0.0 && elev <= 90.0) {
+            bail!("launch.elevation_deg must be in (0, 90], found {elev}");
+        }
         if self.recovery.enabled {
             self.recovery.validate()?;
         }
@@ -723,7 +734,7 @@ impl<'a> Simulation<'a> {
             bail!("sim.rtol, sim.atol and sim.output_interval must be positive for the adaptive integrators (rk45, dop853)");
         }
         let frame = Frame::new(&self.earth, &self.launch);
-        let cx = Ctx { frame, rail: frame.from_launch_enu(self.rail_dir_enu()), cd_s: Default::default() };
+        let cx = Ctx { frame, rail: frame.from_launch_enu(self.rail_dir_enu()), cd_s: Default::default(), segment: Default::default() };
         let mut s = State { pos: frame.origin(), vel: Vec3::ZERO, q: self.initial_attitude(&frame), w: Vec3::ZERO };
         cx.cd_s.set(self.recovery.cd_s);
         let main = if self.recovery.enabled { self.recovery.main() } else { None };
@@ -770,8 +781,15 @@ impl<'a> Simulation<'a> {
         // Derivative at (t, s) carried over from the previous step (first-same-as-last).
         let mut fsal: Option<(State, Aux)> = None;
         let mut loc = frame.local(s.pos);
+        let max_time = self.settings.max_time;
 
         loop {
+            // The thrust-curve segment is fixed per step; a new one invalidates the carried derivative.
+            let seg = self.motor.segment_after(t);
+            if seg != cx.segment.get() {
+                cx.segment.set(seg);
+                fsal = None;
+            }
             let mut f = |tt: f64, st: &State| {
                 evals.set(evals.get() + 1);
                 self.deriv(&cx, tt, st, phase)
@@ -794,29 +812,34 @@ impl<'a> Simulation<'a> {
             if phase == Phase::Free && !past_apogee && aux.airspeed > 10.0 {
                 sum.min_stability_cal = sum.min_stability_cal.min((aux.x_cp - aux.x_cg) / ref_d);
             }
-            if t > self.settings.max_time {
+            if t >= max_time - 1e-9 {
                 break;
             }
             if phase == Phase::Rail && t > burn && s.vel.dot(cx.rail) <= 0.0 {
                 bail!("rocket never left the launch rail (thrust too low?)");
             }
 
+            // Latest end of this step: sim.max_time, the next thrust-curve knot (burnout included)
+            // and the parachute deployment instant. A step trimmed to one of them ends on it exactly.
+            let mut limit = max_time;
+            if let Some(tk) = self.motor.next_knot(t) {
+                limit = limit.min(tk);
+            }
+            if descent == Descent::Parachute && phase == Phase::Free && deploy_at > t + 1e-12 {
+                limit = limit.min(deploy_at);
+            }
             let prev = s;
-            let h;
+            let t0 = t;
+            let hh;
             let mut next_fsal = None;
             if !adaptive {
-                // The step that reaches the parachute deployment instant is shortened to end on it.
-                let mut hh = dt;
-                if descent == Descent::Parachute && phase == Phase::Free && deploy_at > t + 1e-12 {
-                    hh = dt.min(deploy_at - t);
-                }
-                h = hh;
-                s = stepper.step(&mut f, t, &s, &k1, hh, 0.0, 0.0, phase == Phase::Free).y;
+                hh = dt.min(limit - t0);
+                s = stepper.step(&mut f, t0, &s, &k1, hh, 0.0, 0.0, phase == Phase::Free).y;
             } else {
                 // Largest allowed step: output interval, 0.05 s on the rail and during the burn,
-                // trimmed to thrust-curve knots and to the parachute deployment instant.
+                // trimmed to the limit above.
                 let mut hmax = self.settings.output_interval;
-                if phase == Phase::Rail || t < burn {
+                if phase == Phase::Rail || t0 < burn {
                     hmax = hmax.min(0.05);
                 }
                 if phase == Phase::Rail {
@@ -828,33 +851,27 @@ impl<'a> Simulation<'a> {
                         hmax = hmax.min((-v + (v * v + 2.0 * a * remaining).sqrt()) / a + 1e-6);
                     }
                 }
-                if t < burn {
-                    if let Some(&(tk, _)) = self.motor.curve.iter().find(|p| p.0 > t + 1e-9) {
-                        hmax = hmax.min(tk - t);
-                    }
-                }
-                if descent == Descent::Parachute && phase == Phase::Free && deploy_at > t + 1e-12 {
-                    hmax = hmax.min(deploy_at - t);
-                }
-                let mut hh = h_ctrl.min(hmax);
+                hmax = hmax.min(limit - t0);
+                let mut h_try = h_ctrl.min(hmax);
                 let mut rejected = false;
                 loop {
-                    let st = stepper.step(&mut f, t, &s, &k1, hh, self.settings.rtol, self.settings.atol, phase == Phase::Free);
+                    let st = stepper.step(&mut f, t0, &s, &k1, h_try, self.settings.rtol, self.settings.atol, phase == Phase::Free);
                     let fac = stepper.factor(st.err);
                     if st.err <= 1.0 {
                         s = st.y;
                         next_fsal = st.next;
                         // A step trimmed by a limit must not shrink the controller's step.
-                        h_ctrl = if hh < h_ctrl && !rejected { h_ctrl.max(hh * fac) } else { hh * fac };
+                        h_ctrl = if h_try < h_ctrl && !rejected { h_ctrl.max(h_try * fac) } else { h_try * fac };
                         break;
                     }
                     rejected = true;
-                    hh *= fac;
-                    integrator::check_min_step(hh, t)?;
+                    h_try *= fac;
+                    integrator::check_min_step(h_try, t0)?;
                 }
-                h = hh;
+                hh = h_try;
             }
-            t += h;
+            t = if hh >= limit - t0 { limit } else { t0 + hh };
+            let h = t - t0;
             if !finite_state(&s) {
                 bail!("integration diverged at t = {t:.4} s; reduce sim.dt or tighten rtol/atol, or check the aero table and mass properties");
             }
@@ -870,19 +887,27 @@ impl<'a> Simulation<'a> {
             let loc_prev = loc;
             loc = frame.local(s.pos);
 
-            let before = phase;
-            if phase == Phase::Rail && (s.pos - frame.origin()).dot(cx.rail) >= self.launch.rail_length {
-                phase = Phase::Free;
-                // The step overshoots the rail end: interpolate the crossing linearly.
-                let (d0, d1) = ((prev.pos - frame.origin()).dot(cx.rail), (s.pos - frame.origin()).dot(cx.rail));
-                let fe = if d1 > d0 { ((self.launch.rail_length - d0) / (d1 - d0)).clamp(0.0, 1.0) } else { 1.0 };
-                let se = lerp_state(&prev, &s, fe);
-                let te = t - h + fe * h;
-                sum.rail_exit_time = te;
-                sum.rail_exit_speed = se.vel.norm();
-                let (_, aux) = self.deriv(&cx, te, &se, phase);
-                sum.stability_at_rail_exit = (aux.x_cp - aux.x_cg) / ref_d;
+            if phase == Phase::Rail {
+                let along = |p: Vec3| (p - frame.origin()).dot(cx.rail) - self.launch.rail_length;
+                if along(s.pos) >= 0.0 {
+                    // The step overshoots the rail end: find the crossing on the cubic Hermite
+                    // interpolant of the step (exact for constant acceleration) and restart the
+                    // integration there in free flight.
+                    let fe = bisect(|f| along(hermite_pos(&prev, &s, h, f)), along(prev.pos));
+                    s = State { pos: hermite_pos(&prev, &s, h, fe), ..lerp_state(&prev, &s, fe) };
+                    t = t0 + fe * h;
+                    loc = frame.local(s.pos);
+                    phase = Phase::Free;
+                    sum.rail_exit_time = t;
+                    sum.rail_exit_speed = s.vel.norm();
+                    let (_, aux) = self.deriv(&cx, t, &s, phase);
+                    sum.stability_at_rail_exit = (aux.x_cp - aux.x_cg) / ref_d;
+                } else {
+                    fsal = next_fsal;
+                }
+                continue;
             }
+
             if loc.height > sum.apogee {
                 sum.apogee = loc.height;
                 sum.apogee_time = t;
@@ -891,12 +916,12 @@ impl<'a> Simulation<'a> {
                 sum.apogee_north = enu.y;
             }
             let (vz_prev, vz) = (prev.vel.dot(loc_prev.up), s.vel.dot(loc.up));
-            if phase != Phase::Rail && !past_apogee && vz_prev > 0.0 && vz <= 0.0 {
+            if !past_apogee && vz_prev > 0.0 && vz <= 0.0 {
                 past_apogee = true;
                 // Zero crossing of the vertical velocity (linear within the step); the apogee
                 // position is the cubic Hermite interpolant of the step at that instant.
                 let fa = vz_prev / (vz_prev - vz);
-                let t_apo = t - h + h * fa;
+                let t_apo = t0 + h * fa;
                 let p = hermite_pos(&prev, &s, h, fa);
                 let h_apo = frame.local(p).height;
                 if h_apo >= sum.apogee {
@@ -908,64 +933,31 @@ impl<'a> Simulation<'a> {
                 sum.apogee_time = t_apo;
                 deploy_at = t_apo + self.recovery.delay;
             }
-            if descent == Descent::Parachute && phase == Phase::Free && t >= deploy_at - 1e-12 {
-                // The step overshot the deployment instant (delay shorter than the step past
-                // apogee): go back to it (cubic Hermite position, linear velocity) first.
-                let back = deploy_at < t - 1e-12 && deploy_at > t - h;
-                if back {
-                    let fd = (deploy_at - (t - h)) / h;
-                    let pd = hermite_pos(&prev, &s, h, fd);
-                    s = State { pos: pd, ..lerp_state(&prev, &s, fd) };
-                    t = deploy_at;
-                    loc = frame.local(s.pos);
+
+            // Events inside the step, handled earliest first; the touchdown wins a tie, and an
+            // event after the touchdown does not happen.
+            // Touchdown: zero of the height on the cubic Hermite interpolant of the step.
+            let f_ground = crosses_ground(loc_prev.height, loc.height).then(|| bisect(|f| -frame.local(hermite_pos(&prev, &s, h, f)).height, -loc_prev.height));
+            let f_deploy = (descent == Descent::Parachute && phase == Phase::Free && deploy_at <= t + 1e-12).then(|| ((deploy_at - t0) / h).clamp(0.0, 1.0));
+            let f_main = match main {
+                Some((_, main_alt)) if main_pending && phase == Phase::Parachute && loc_prev.height > main_alt && loc.height <= main_alt => {
+                    // Crossing of the main altitude on the cubic Hermite interpolant of the step.
+                    Some(bisect(|f| main_alt - frame.local(hermite_pos(&prev, &s, h, f)).height, main_alt - loc_prev.height))
                 }
-                phase = Phase::Parachute;
-                sum.drogue_deploy_time = Some(t);
-                cx.cd_s.set(self.recovery.cd_s);
-                if let Some((main_cd_s, main_alt)) = main {
-                    if loc.height <= main_alt {
-                        // Already below the main altitude: the main deploys at once.
-                        cx.cd_s.set(main_cd_s);
-                        sum.main_deploy_time = Some(t);
-                        sum.main_deploy_altitude = Some(loc.height);
-                    } else {
-                        main_pending = true;
-                    }
-                }
-                if back {
-                    continue;
-                }
-            } else if main_pending && phase == Phase::Parachute && loc_prev.height > main.unwrap().1 && loc.height <= main.unwrap().1 {
-                // Descent through the main altitude inside this step: go back to the crossing
-                // (cubic Hermite position, linear velocity) and continue with the main's drag area.
-                let (main_cd_s, main_alt) = main.unwrap();
-                let fm = (loc_prev.height - main_alt) / (loc_prev.height - loc.height);
-                let tc = t - h + fm * h;
-                let pc = hermite_pos(&prev, &s, h, fm);
-                s = State { pos: pc, ..lerp_state(&prev, &s, fm) };
-                t = tc;
-                loc = frame.local(s.pos);
-                cx.cd_s.set(main_cd_s);
-                main_pending = false;
-                sum.main_deploy_time = Some(tc);
-                sum.main_deploy_altitude = Some(main_alt);
-                continue;
-            }
-            if phase == before {
-                fsal = next_fsal;
-            }
-            if phase != Phase::Rail && loc.height <= 0.0 && t > sum.rail_exit_time {
-                let f = loc_prev.height / (loc_prev.height - loc.height);
-                let p = prev.pos + (s.pos - prev.pos) * f;
+                _ => None,
+            };
+            let f_event = f_deploy.or(f_main);
+            if let Some(f) = f_ground.filter(|&g| f_event.is_none_or(|e| g <= e)) {
+                let p = hermite_pos(&prev, &s, h, f);
                 let enu = frame.position_to_launch_enu(p);
                 let (lat, lon, _) = frame.lla(p);
-                sum.landing_time = t - h + f * h;
+                sum.landing_time = t0 + f * h;
                 sum.landing_east = enu.x;
                 sum.landing_north = enu.y;
                 sum.landing_lat = lat;
                 sum.landing_lon = lon;
                 sum.landing_distance = enu.x.hypot(enu.y);
-                // Full touchdown state: linear interpolation between the last two states.
+                // Full touchdown state: Hermite position, the rest linear between the last two states.
                 let st = State { pos: p, ..lerp_state(&prev, &s, f) };
                 sum.landing_speed = st.vel.norm();
                 if want_samples {
@@ -983,6 +975,37 @@ impl<'a> Simulation<'a> {
                 }
                 break;
             }
+            if let Some(fe) = f_event {
+                // Go back to the event instant (cubic Hermite position, linear velocity) unless
+                // the step ends on it, and continue from there with the new drag area.
+                if fe < 1.0 {
+                    s = State { pos: hermite_pos(&prev, &s, h, fe), ..lerp_state(&prev, &s, fe) };
+                    t = if f_deploy.is_some() { deploy_at } else { t0 + fe * h };
+                    loc = frame.local(s.pos);
+                }
+                if f_deploy.is_some() {
+                    phase = Phase::Parachute;
+                    sum.drogue_deploy_time = Some(t);
+                    cx.cd_s.set(self.recovery.cd_s);
+                    if let Some((main_cd_s, main_alt)) = main {
+                        if loc.height <= main_alt {
+                            // Already below the main altitude: the main deploys at once.
+                            cx.cd_s.set(main_cd_s);
+                            sum.main_deploy_time = Some(t);
+                            sum.main_deploy_altitude = Some(loc.height);
+                        } else {
+                            main_pending = true;
+                        }
+                    }
+                } else if let Some((main_cd_s, _)) = main {
+                    cx.cd_s.set(main_cd_s);
+                    main_pending = false;
+                    sum.main_deploy_time = Some(t);
+                    sum.main_deploy_altitude = Some(loc.height);
+                }
+                continue;
+            }
+            fsal = next_fsal;
         }
         if !sum.min_stability_cal.is_finite() {
             sum.min_stability_cal = f64::NAN;
@@ -999,6 +1022,27 @@ const MAX_ALTITUDE: f64 = 1.0e6;
 fn hermite_pos(a: &State, b: &State, h: f64, f: f64) -> Vec3 {
     let (f2, f3) = (f * f, f * f * f);
     a.pos * (2.0 * f3 - 3.0 * f2 + 1.0) + a.vel * (h * (f3 - 2.0 * f2 + f)) + b.pos * (-2.0 * f3 + 3.0 * f2) + b.vel * (h * (f3 - f2))
+}
+
+/// Whether a step from height `h0` to `h1` reaches the ground: needs the bracket `h0 > 0 >= h1`.
+fn crosses_ground(h0: f64, h1: f64) -> bool {
+    h0 > 0.0 && h1 <= 0.0
+}
+
+/// Root in [0, 1] of `g`, increasing through zero over the step: `g(0) = g0 < 0 <= g(1)`.
+/// Bisection to 2^-52 of the step; returns the end of the final bracket where `g >= 0`.
+fn bisect(g: impl Fn(f64) -> f64, g0: f64) -> f64 {
+    debug_assert!(g0 < 0.0);
+    let (mut lo, mut hi) = (0.0f64, 1.0f64);
+    for _ in 0..52 {
+        let mid = 0.5 * (lo + hi);
+        if g(mid) < 0.0 {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    hi
 }
 
 fn finite_state(s: &State) -> bool {
@@ -1094,7 +1138,12 @@ mod tests {
         let mut sim = vacuum_sim(&table, &motor);
         sim.fin_cant_deg = fin_cant;
         let frame = Frame::new(&sim.earth, &sim.launch);
-        let cx = Ctx { frame, rail: frame.from_launch_enu(sim.rail_dir_enu()), cd_s: Default::default() };
+        let cx = Ctx {
+            frame,
+            rail: frame.from_launch_enu(sim.rail_dir_enu()),
+            cd_s: Default::default(),
+            segment: std::cell::Cell::new(sim.motor.segment_after(10.0)),
+        };
         let q = sim.initial_attitude(&frame);
         let x_b = q.to_mat().col(0);
         let s = State { pos: frame.origin(), vel: x_b * (50.0 * sign), q, w: Vec3::ZERO };
@@ -1159,7 +1208,7 @@ mod tests {
             sim.recovery = Recovery { enabled: true, cd_s: 0.4, delay: 1.0, main_cd_s: Some(4.0), main_altitude: Some(300.0) };
             let r = sim.run(Descent::Parachute, true).unwrap();
             let sm = &r.summary;
-            assert_eq!(sm.main_deploy_altitude, Some(300.0));
+            assert!((sm.main_deploy_altitude.unwrap() - 300.0).abs() < 1e-6);
             let tm = sm.main_deploy_time.unwrap();
             assert!(tm > sm.apogee_time + 1.0 && tm < sm.landing_time);
             // Just above the main altitude the drogue is at its terminal speed ...
@@ -1702,7 +1751,12 @@ mod tests {
 
     /// Integrates the torque-free rotation of a state with the given integrator.
     fn spin_free(sim: &Simulation, i: IntegratorKind, at: AttitudeKind, w0: Vec3, tend: f64) -> (State, Vec3, f64) {
-        let cx = Ctx { frame: Frame::new(&sim.earth, &sim.launch), rail: Vec3::new(0.0, 0.0, 1.0), cd_s: Default::default() };
+        let cx = Ctx {
+            frame: Frame::new(&sim.earth, &sim.launch),
+            rail: Vec3::new(0.0, 0.0, 1.0),
+            cd_s: Default::default(),
+            segment: std::cell::Cell::new(sim.motor.segment_after(100.0)),
+        };
         let stepper = Stepper::new(i, at);
         let t0 = 100.0; // after burnout: no thrust, no propellant
         let mut s = State { pos: cx.frame.origin(), vel: Vec3::ZERO, q: Quat::IDENTITY, w: w0 };
@@ -1765,7 +1819,12 @@ mod tests {
         let aligned = vacuum_sim(&table, &motor);
         let mut mis = aligned.clone();
         mis.thrust_line = ThrustLine { misalignment_deg: 2.0, misalignment_azimuth_deg: 90.0, offset: [0.0, 0.0] };
-        let cx = Ctx { frame: Frame::new(&aligned.earth, &aligned.launch), rail: Vec3::new(0.0, 0.0, 1.0), cd_s: Default::default() };
+        let cx = Ctx {
+            frame: Frame::new(&aligned.earth, &aligned.launch),
+            rail: Vec3::new(0.0, 0.0, 1.0),
+            cd_s: Default::default(),
+            segment: std::cell::Cell::new(aligned.motor.segment_after(1.0)),
+        };
         let s = State { pos: cx.frame.origin(), vel: Vec3::ZERO, q: Quat::IDENTITY, w: Vec3::ZERO };
         let (a, _) = aligned.deriv(&cx, 1.0, &s, Phase::Free);
         let (b, _) = mis.deriv(&cx, 1.0, &s, Phase::Free);
@@ -1789,7 +1848,12 @@ mod tests {
         let (table, motor) = vacuum_parts();
         let mut sim = vacuum_sim(&table, &motor);
         sim.thrust_line = ThrustLine { misalignment_deg: 0.0, misalignment_azimuth_deg: 0.0, offset: [0.01, 0.0] };
-        let cx = Ctx { frame: Frame::new(&sim.earth, &sim.launch), rail: Vec3::new(0.0, 0.0, 1.0), cd_s: Default::default() };
+        let cx = Ctx {
+            frame: Frame::new(&sim.earth, &sim.launch),
+            rail: Vec3::new(0.0, 0.0, 1.0),
+            cd_s: Default::default(),
+            segment: std::cell::Cell::new(sim.motor.segment_after(1.0)),
+        };
         let s = State { pos: cx.frame.origin(), vel: Vec3::ZERO, q: Quat::IDENTITY, w: Vec3::ZERO };
         let (b, _) = sim.deriv(&cx, 1.0, &s, Phase::Free);
         // (r_n - r_cg) x (T, 0, 0) with r_n - r_cg = (-lever, 0.01, 0): z component = -0.01 T.
@@ -1827,5 +1891,157 @@ mod tests {
         assert!((q1.col(0) - q0.col(0)).norm() < 1e-12);
         assert!((q1.col(1) - q0.col(2)).norm() < 1e-12);
         assert!((q1.col(2) - q0.col(1) * -1.0).norm() < 1e-12);
+    }
+
+    // ---- event handling: rail exit, competing events, max_time, thrust knots ----
+
+    /// Vacuum sim with constant gravity (exact constant-acceleration phases for RK4).
+    fn vacuum_const_g<'a>(table: &'a AeroTable, motor: &'a Motor, elev: f64, dt: f64) -> Simulation<'a> {
+        let mut sim = vacuum_sim(table, motor);
+        sim.launch = launch(elev);
+        sim.earth.gravity = GravityModel::Constant;
+        sim.settings.dt = dt;
+        sim
+    }
+
+    #[test]
+    fn free_flight_restarts_at_the_interpolated_rail_exit() {
+        // Inclined rail in vacuum: on the rail a = F/m - g sin(e) along d; after the exit the
+        // full gravity acts. Both phases are constant-acceleration, so RK4 is exact when the free
+        // flight starts at the rail-exit instant (and not at the end of the overshooting step).
+        let (table, motor) = vacuum_parts();
+        let elev = 60f64;
+        let sim = vacuum_const_g(&table, &motor, elev, 0.05);
+        let r = sim.run(Descent::Ballistic, true).unwrap();
+        let (se, ce) = elev.to_radians().sin_cos();
+        let a_r = VAC_F / VAC_M - G0 * se;
+        let te = (2.0 * 3.0 / a_r).sqrt();
+        let ve = a_r * te;
+        assert!((r.summary.rail_exit_time - te).abs() < 1e-9, "exit {} vs {te}", r.summary.rail_exit_time);
+        assert!((r.summary.rail_exit_speed - ve).abs() < 1e-9, "exit speed {} vs {ve}", r.summary.rail_exit_speed);
+        let mut checked = 0;
+        for smp in r.samples.iter().filter(|s| s.phase == Phase::Free && s.t > te + 1e-6 && s.t < VAC_BURN - 1e-6) {
+            let tau = smp.t - te;
+            let along = 3.0 + ve * tau + 0.5 * VAC_F / VAC_M * tau * tau;
+            let (north, up) = (along * ce, along * se - 0.5 * G0 * tau * tau);
+            assert!((smp.north - north).abs() < 1e-7 && (smp.up - up).abs() < 1e-7, "t {}: ({}, {}) vs ({north}, {up})", smp.t, smp.north, smp.up);
+            checked += 1;
+        }
+        assert!(checked > 5);
+    }
+
+    /// Vertical vacuum flight: apogee and touchdown times of the analytic solution.
+    fn vacuum_times() -> (f64, f64) {
+        let a = VAC_F / VAC_M - G0;
+        let (v, h) = (a * VAC_BURN, 0.5 * a * VAC_BURN * VAC_BURN);
+        let apo = h + v * v / (2.0 * G0);
+        let t_apo = VAC_BURN + v / G0;
+        (t_apo, t_apo + (2.0 * apo / G0).sqrt())
+    }
+
+    #[test]
+    fn touchdown_before_deployment_in_the_same_step_wins() {
+        // dt = 10 s puts the apogee and the touchdown into one step; the deployment instant
+        // (apogee + delay) lies after the touchdown inside that step: no deployment.
+        let (table, motor) = vacuum_parts();
+        let mut sim = vacuum_const_g(&table, &motor, 90.0, 10.0);
+        let (t_apo, t_land) = vacuum_times();
+        sim.recovery = Recovery { enabled: true, cd_s: 1e-4, delay: t_land - t_apo + 0.1, main_cd_s: None, main_altitude: None };
+        let s = sim.run(Descent::Parachute, false).unwrap().summary;
+        assert_eq!(s.drogue_deploy_time, None);
+        assert!((s.apogee_time - t_apo).abs() < 1e-9, "apogee {} vs {t_apo}", s.apogee_time);
+        assert!((s.landing_time - t_land).abs() < 1e-9, "landing {} vs {t_land}", s.landing_time);
+        // Deployment before the touchdown in the same step still deploys (a tiny canopy keeps the
+        // 10 s step stable).
+        sim.recovery.delay = t_land - t_apo - 1.0;
+        let s = sim.run(Descent::Parachute, false).unwrap().summary;
+        assert!((s.drogue_deploy_time.unwrap() - (t_apo + sim.recovery.delay)).abs() < 1e-9);
+        assert!(s.landing_time > s.drogue_deploy_time.unwrap());
+    }
+
+    #[test]
+    fn no_landing_is_accepted_after_max_time() {
+        let (table, motor) = vacuum_parts();
+        let (_, t_land) = vacuum_times();
+        for (integrator, dt) in [(IntegratorKind::Rk4, 0.5), (IntegratorKind::Rk45, 0.002)] {
+            let mut sim = vacuum_const_g(&table, &motor, 90.0, dt);
+            sim.settings.integrator = integrator;
+            sim.settings.output_interval = 2.0;
+            sim.settings.max_time = t_land - 0.01;
+            let r = sim.run(Descent::Ballistic, true).unwrap();
+            assert!(!r.summary.landed(), "{integrator:?}: landed at {} after max_time {}", r.summary.landing_time, sim.settings.max_time);
+            assert!(r.samples.iter().all(|s| s.t <= sim.settings.max_time + 1e-9));
+            sim.settings.max_time = t_land + 0.01;
+            let s = sim.run(Descent::Ballistic, false).unwrap().summary;
+            assert!(s.landed() && s.landing_time <= sim.settings.max_time, "{integrator:?}");
+        }
+    }
+
+    #[test]
+    fn fixed_steps_resolve_a_short_thrust_spike() {
+        // 10 N s in 0.02 s; with dt = 0.05 every RK4 stage of the first step missed it.
+        let (table, _) = vacuum_parts();
+        let motor = Motor::new("spike".into(), 0.05, 0.3, 0.0, vec![(0.0, 0.0), (0.01, 1000.0), (0.02, 0.0), (1.0, 0.0)]);
+        let mut sim = vacuum_const_g(&table, &motor, 90.0, 0.0005);
+        sim.mass = MassProperties::axisymmetric(1.0, 0.5, 0.01, 1.0);
+        let fine = sim.run(Descent::Ballistic, false).unwrap().summary;
+        // Impulse 10 N s on 1 kg, minus gravity during the spike: apogee about v^2 / 2g.
+        assert!((fine.apogee / (9.9f64.powi(2) / (2.0 * G0)) - 1.0).abs() < 0.02, "fine apogee {}", fine.apogee);
+        sim.settings.dt = 0.05;
+        let coarse = sim.run(Descent::Ballistic, false).unwrap().summary;
+        // Not exact: at t = 0 the rail holds the rocket (thrust below weight), which the first
+        // RK4 stage of a 0.01 s step sees for the whole step (~0.3 % of the apogee).
+        assert!((coarse.apogee - fine.apogee).abs() < 1e-2 * fine.apogee, "coarse {} vs fine {}", coarse.apogee, fine.apogee);
+    }
+
+    #[test]
+    fn dop853_tight_tolerance_through_burnout() {
+        // The sample motor ends at full thrust: the power-on/off axial coefficient switches at
+        // burnout. A step ending exactly at burnout must see the power-on side throughout.
+        let (table, motor) = sample_parts();
+        let mut b = sample_sim(&table, &motor, 0.0);
+        b.settings.rtol = 1e-11;
+        b.settings.atol = 1e-11;
+        for i in [IntegratorKind::Rk45, IntegratorKind::Dop853] {
+            let r = with(&b, i, AttitudeKind::Normalize).run(Descent::Ballistic, false);
+            assert!(r.is_ok(), "{i:?}: {:#}", r.err().unwrap());
+        }
+    }
+
+    #[test]
+    fn touchdown_needs_a_bracket() {
+        assert!(crosses_ground(10.0, -10.0) && crosses_ground(10.0, 0.0));
+        assert!(!crosses_ground(-1.0, -2.0) && !crosses_ground(0.0, -2.0) && !crosses_ground(1.0, 2.0));
+        // A rail at or below the horizon (or past the zenith) never gives a touchdown bracket: rejected.
+        let (table, motor) = vacuum_parts();
+        for elev in [0.0, -5.0, 90.5, f64::NAN] {
+            let mut sim = vacuum_sim(&table, &motor);
+            sim.launch.elevation_deg = elev;
+            let e = sim.run(Descent::Ballistic, false).err().expect("rejected").to_string();
+            assert!(e.contains("launch.elevation_deg must be in (0, 90]"), "{e}");
+        }
+    }
+
+    #[test]
+    fn main_deployment_state_is_at_the_main_altitude() {
+        let (table, motor) = sample_parts();
+        let mut sim = sample_sim(&table, &motor, 0.0);
+        sim.settings.dt = 0.05;
+        // A large drogue opening 8 s after apogee decelerates hard; the main altitude is crossed
+        // shortly after, while the speed still changes quickly within a step.
+        sim.recovery = Recovery { enabled: true, cd_s: 2.0, delay: 8.0, main_cd_s: None, main_altitude: None };
+        let r = sim.run(Descent::Parachute, true).unwrap();
+        let td = r.summary.drogue_deploy_time.unwrap();
+        let h_d = r.samples.iter().rfind(|s| s.t <= td).unwrap().up;
+        let main_alt = h_d - 40.0;
+        sim.recovery.main_cd_s = Some(8.0);
+        sim.recovery.main_altitude = Some(main_alt);
+        sim.settings.output_interval = 1e-9; // a sample at every step start, also at the deployment
+        let r = sim.run(Descent::Parachute, true).unwrap();
+        let tm = r.summary.main_deploy_time.unwrap();
+        let at = r.samples.iter().find(|s| (s.t - tm).abs() < 1e-12).expect("sample at the main deployment");
+        let alt = r.summary.main_deploy_altitude.unwrap();
+        assert!((at.up - main_alt).abs() < 1e-6, "state height {} vs main altitude {main_alt}", at.up);
+        assert!((alt - at.up).abs() < 1e-9, "reported {alt} vs state {}", at.up);
     }
 }

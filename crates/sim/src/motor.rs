@@ -140,6 +140,40 @@ impl Motor {
         self.curve.last().unwrap().0
     }
 
+    /// First thrust-curve knot later than `t` (by more than 1e-9 s); None from the last knot on.
+    pub fn next_knot(&self, t: f64) -> Option<f64> {
+        self.curve.iter().map(|p| p.0).find(|&k| k > t + 1e-9)
+    }
+
+    /// Index `i` of the thrust-curve segment `[t_i, t_i+1]` that the motor is in just after `t`
+    /// (a knot within 1e-9 s counts as passed, as in [`next_knot`](Self::next_knot)); None from
+    /// burnout on.
+    pub fn segment_after(&self, t: f64) -> Option<usize> {
+        if t + 1e-9 >= self.burn_time() {
+            return None;
+        }
+        Some(self.curve.partition_point(|p| p.0 <= t + 1e-9).saturating_sub(1).min(self.curve.len() - 2))
+    }
+
+    /// Thrust at `t` on the linear piece of segment `seg` (the piece is used slightly beyond its
+    /// knots too, clamped at 0), 0 for None. With `seg = segment_after(t0)` this is the thrust
+    /// over a step starting at `t0` that ends at the next knot: at the knot it is the left limit.
+    pub fn thrust_on_segment(&self, t: f64, seg: Option<usize>) -> f64 {
+        match seg {
+            None => 0.0,
+            Some(i) => {
+                let ((t0, f0), (t1, f1)) = (self.curve[i], self.curve[i + 1]);
+                (f0 + (f1 - f0) * (t - t0) / (t1 - t0)).max(0.0)
+            }
+        }
+    }
+
+    /// Whether the motor thrusts inside segment `seg` (the thrust is linear between knots, so
+    /// it is positive inside when either end is).
+    pub fn segment_powered(&self, seg: Option<usize>) -> bool {
+        seg.is_some_and(|i| self.curve[i].1 > 0.0 || self.curve[i + 1].1 > 0.0)
+    }
+
     pub fn total_impulse(&self) -> f64 {
         *self.cumulative.last().unwrap()
     }

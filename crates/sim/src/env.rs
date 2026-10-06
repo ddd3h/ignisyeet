@@ -142,6 +142,9 @@ pub fn parse_wind_profile(text: &str) -> Result<Vec<ProfilePoint>> {
         if !(0.0..=360.0).contains(&v[2]) {
             bail!("wind profile direction must be between 0 and 360 degrees (row \"{l}\")");
         }
+        if v[0] < 0.0 {
+            bail!("wind profile altitude must be ≥ 0 m above the launch site (row \"{l}\"): drop levels below the launch site and add a 0 m row");
+        }
         if let Some(p) = pts.last() {
             if v[0] <= p.height {
                 bail!("wind profile altitudes must be strictly ascending (row \"{l}\")");
@@ -181,8 +184,10 @@ impl Wind {
                 if !is_pos(c.roughness_length) {
                     bail!("wind.roughness_length must be positive");
                 }
-                if c.roughness_length >= c.ref_height {
-                    bail!("wind.roughness_length ({}) must be smaller than wind.ref_height ({})", c.roughness_length, c.ref_height);
+                // The blend height is raised to at least 2 z0 (see `with_profile`) and must stay below
+                // ref_height, where the configured speed applies.
+                if 2.0 * c.roughness_length >= c.ref_height {
+                    bail!("wind.roughness_length ({}) must be smaller than half of wind.ref_height ({}) for the log profile", c.roughness_length, c.ref_height);
                 }
             }
             WindModel::Profile => {
@@ -365,15 +370,27 @@ impl Wind {
     }
 
     /// Cubic Hermite blend of the power/log speed profile on `[0, ground_blend_height]`. The value
-    /// and slope match the model at the blend height `h_b`; at the ground the speed is zero with
-    /// bounded slope `w(h_b) / h_b`.
+    /// matches the model at the blend height `h_b`; at the ground the speed is zero with bounded
+    /// slope `w(h_b) / h_b`. The end slopes (in units of `w(h_b) / h_b`) are `alpha = 1` at the
+    /// ground and `beta = h_b w'(h_b) / w(h_b)` at `h_b`; when `alpha^2 + beta^2 > 9` (a log
+    /// profile with `h_b` close to `z0`) both are scaled onto that circle (Fritsch-Carlson), which
+    /// keeps the blend monotonic and non-negative at the cost of a slope kink at `h_b`. Otherwise
+    /// (every power law with exponent >= 0.36, every log profile with `h_b >= 1.43 z0`) the blend is
+    /// the plain C1 Hermite curve.
     fn blend_shape(&self, h: f64) -> f64 {
         let hb = self.ground_blend_height;
         let wb = self.model_shape(hb);
         let d1 = self.model_shape_deriv(hb);
         let t = h / hb;
         let (t2, t3) = (t * t, t * t * t);
-        wb * (-t3 + t2 + t) + hb * d1 * (t3 - t2)
+        let beta = hb * d1 / wb;
+        let r2 = 1.0 + beta * beta;
+        if r2 <= 9.0 {
+            return wb * (-t3 + t2 + t) + hb * d1 * (t3 - t2);
+        }
+        let tau = 3.0 / r2.sqrt();
+        // Hermite basis: h10 = t^3 - 2t^2 + t (slope at 0), h01 = -2t^3 + 3t^2, h11 = t^3 - t^2.
+        wb * (tau * (t3 - 2.0 * t2 + t) + (-2.0 * t3 + 3.0 * t2) + tau * beta * (t3 - t2))
     }
 
     /// Wind velocity at height `h` above ground.
@@ -854,5 +871,57 @@ mod tests {
         let along = gm.dot(north);
         assert!(along < -0.01 && along > -0.02, "{along}"); // ~ -3 J2 g sin cos (Re/r)^2
         assert!(gm.y.abs() < 1e-12);
+    }
+
+    #[test]
+    fn ground_blend_is_non_negative_and_monotonic() {
+        // Log profile with the blend just above z0: the model slope at h_b is steep
+        // (h_b w'(h_b) / w(h_b) = 1 / ln(1.1) = 10.5) and the plain cubic Hermite undershot to
+        // -0.142 m/s at 0.055 m.
+        let mut c = cfg(WindModel::Log);
+        c.speed = 10.0;
+        c.direction_deg = 0.0;
+        c.ref_height = 10.0;
+        c.roughness_length = 0.1;
+        c.ground_blend_height = 0.11;
+        let w = Wind::from_config(&c).unwrap();
+        let speed = |h: f64| -w.at(h).y;
+        let hb = w.ground_blend_height;
+        let mut prev = 0.0;
+        for i in 0..=1000 {
+            let h = hb * i as f64 / 1000.0;
+            let v = speed(h);
+            assert!(v >= 0.0 && v >= prev - 1e-15, "h {h}: {v} after {prev}");
+            prev = v;
+        }
+        assert!(speed(0.055) >= 0.0);
+        assert!((speed(hb - 1e-12) - speed(hb)).abs() < 1e-9, "value continuity at h_b");
+        // A power law (gentle slope at h_b) keeps the C1 blend: unchanged.
+        let w = blent(WindModel::Power);
+        let hb = w.ground_blend_height;
+        let (wb, d1) = (w.model_shape(hb), w.model_shape_deriv(hb));
+        let t: f64 = 0.3;
+        let plain = w.speed * (wb * (-t.powi(3) + t * t + t) + hb * d1 * (t.powi(3) - t * t));
+        assert!((w.at(0.3 * hb).norm() - plain).abs() <= 1e-14 * plain, "{} vs {plain}", w.at(0.3 * hb).norm());
+    }
+
+    #[test]
+    fn log_profile_needs_twice_the_roughness_below_the_reference_height() {
+        let mut c = cfg(WindModel::Log);
+        c.ref_height = 10.0;
+        c.roughness_length = 6.0;
+        c.ground_blend_height = 1.0;
+        let e = Wind::from_config(&c).unwrap_err().to_string();
+        assert!(e.contains("must be smaller than half of wind.ref_height"), "{e}");
+        c.roughness_length = 4.9;
+        assert!(Wind::from_config(&c).is_ok());
+    }
+
+    #[test]
+    fn wind_profile_rejects_levels_below_the_launch_site() {
+        let e = parse_wind_profile("altitude_m,speed,direction_deg\n-30,3,270\n0,4,270\n500,8,280\n").unwrap_err().to_string();
+        assert!(e.contains("wind profile altitude must be ≥ 0 m above the launch site (row \"-30,3,270\")"), "{e}");
+        assert!(e.contains("drop levels below the launch site and add a 0 m row"), "{e}");
+        assert!(parse_wind_profile("altitude_m,speed,direction_deg\n0,4,270\n500,8,280\n").is_ok());
     }
 }

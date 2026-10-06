@@ -755,7 +755,7 @@ show_plan() {
     [ "$INSTALL_UV" = 1 ] && p "install ${CYAN}uv${RESET} (astral.sh installer)"
     p "cargo build --release"
     [ "$WANT_TEST" = 1 ] && p "cargo test --release"
-    if [ "$USE_UV" = 1 ]; then p "uv sync --frozen --project $DEV_DIR/python (plotting); uv sync --project $DEV_DIR/doc (Sphinx)"
+    if [ "$USE_UV" = 1 ]; then p "uv sync --frozen --project $(tilde "$DEV_DIR")/python (plotting); uv sync --project $(tilde "$DEV_DIR")/doc (Sphinx)"
     else p "venv + pip: .venv with python/requirements.txt constrained by scripts/plot-constraints.txt, then doc/requirements.txt"; fi
     if [ -n "$DOC_MISSING_NAMES" ]; then p "documentation tools missing (${DOC_MISSING_NAMES}); the exact install command is printed at the end"
     else p "documentation tools: ${GREEN}all found${RESET}"; fi

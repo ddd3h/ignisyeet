@@ -30,7 +30,7 @@
    * - ``sim::env``
      - 風モデル（一定・べき法則・対数則・高度別の表）、地面付近の接続（連続性・傾き・上空で不変・設定の検証）、表の検証、:math:`J_2` 重力の大きさと向き、平面地球での :math:`J_2` の拒否
    * - ``sim::frame``
-     - ECEF 座標系の幾何（高さ、ENU の往復、重力の向きと大きさ、遠心加速度、Coriolis 加速度の向き）
+     - ECEF 座標系の幾何（高さ、ENU の往復、重力の向きと大きさ、遠心加速度、Coriolis 加速度の向き）。有効重力（``constant`` と ``inverse_square``）では、万有引力に遠心項を加えた正味の重力が有効重力に等しく、高度 0、2、20、80 km で水平成分が東・北とも :math:`2\times10^{-4}\ \mathrm{m/s^2}` 未満であること（``ecef_net_gravity_has_no_horizontal_residual``）
    * - ``sim::integrator``
      - 調和振動子による ``rk4`` と ``rk45`` の収束
    * - ``sim::dop853``
@@ -39,12 +39,21 @@
      - 指数写像と対数写像の往復、:math:`\mathrm{dexp}` と逆写像の数値微分との一致、自由剛体での収束次数・ノルム・保存量、通常の方法との比較、埋め込み誤差の合成
    * - ``sim::dispersion``
      - 乱数の再現性、標準偏差 0 での公称飛翔との一致、風向のばらつき、共分散・誤差楕円、失敗サンプル、ばらつきの反映、
-       ロールと非対称の標準偏差が最初の 11 項目の乱数を動かさないことと、6 項目の反映
+       ロールと非対称の標準偏差が最初の 11 項目の乱数を動かさないことと、6 項目の反映。
+       パーセンタイルの線形補間（``percentiles_interpolate``）、着地しないサンプルが統計を不完全にし最大着地距離を下限にすること（``non_landing_samples_make_statistics_incomplete``）、
+       短い ``max_time`` で着地なしの要約になること（``short_max_time_gives_unlanded_summaries``）、6 項目の標準偏差の検査（``new_monte_carlo_sigmas_are_validated``）
    * - ``ignisyeet``\ （``cli``）
      - 設定ファイルの読み込み（ロール・慣性テンソル・推力の傾き・``table_kind`` の項目を含む）、未知のセクションの拒否、モード間の整合性、外部係数表の読み込み、
        ロール項のない外部表への補完、
        一般表でのサンプルの頂点高度、カントによるロールとジオメトリへの反映、
-       モンテカルロ CSV の列数
+       モンテカルロ CSV の列数。
+       範囲外と有限でない数値の拒否（``rejects_out_of_range_and_non_finite_numbers``、``rejects_bad_motor_and_monte_carlo_values``）、既定の ``max_time`` が 3600 s であること（``default_max_time_is_one_hour``）、
+       キャッシュキーが使わないブロックと CFD の資源の項目を無視し、モデルの版を含むこと（``cache_key_ignores_unused_blocks_and_cfd_resources_but_not_the_model``、``model_version_is_part_of_the_cache_key``）、
+       設定のハッシュが出力先と資源に依存しないこと（``run_hash_follows_the_configuration_but_not_output_or_resources``）、
+       静安定余裕・風モデルの外挿・着地しないことの警告（``stability_wind_and_landing_warnings``）、大きさの警告と機体外の重心（``implausible_size_and_cg_outside_the_body``）、
+       ``summary.json`` の着地・ハッシュ・警告（``summary_json_records_landing_hash_and_warnings``）、風の格子の最大着地距離の表示（``wind_grid_line_marks_failures``）、
+       サンプルの飛翔が着地して警告が一つであること（``sample_flight_lands_and_warns_about_the_extrapolated_wind``）、
+       KML が古い出力と着地しなかったケースを除くこと（``stale_outputs_are_skipped``、``unlanded_wind_grid_rows_are_left_out``）
    * - ``sim::geo``
      - 測地座標と ECEF の往復変換、ENU の北方向 1 km の緯度差
    * - ``sim::flight``
@@ -58,6 +67,14 @@
 :numref:`tbl-geometry` の精度（フィン寸法の誤差 1 mm 以内）で設計値を復元できる。
 ノーズの向き（どちらの端がノーズか）も正しく判定される。円錐ノーズ・3 枚フィン・後端から離れたフィンの組合せでも、
 接合部の半頂角 :math:`\arctan(R/L_n)`、体積比 1/3、フィンの位置を正しく求められることを確かめている。
+向きの判定と警告については、次のテストで確かめている。
+
+* ``hemispherical_nose_with_long_boattail_is_oriented_correctly``：半球ノーズと長いボートテールの機体（端の半径だけでは向きが決まりにくい形）を、メッシュの向きにかかわらず正しい向きに抽出し、警告が出ない。
+* ``reversed_sample_rocket_is_flipped_automatically``：逆向きのサンプル機体を自動で反転する。
+* ``launch_lug_does_not_disturb_nose_or_fins``：ランチラグ（短い突起）が基準半径、ノーズ、フィンの検出に影響しない。
+* ``protruding_nozzle_keeps_nose_detection_and_warns``：突き出したノズルがあってもノーズを検出でき、底面半径の警告が出る。
+* ``plausible_rocket_has_no_warnings_and_odd_proportions_warn``：標準的な機体には警告がなく、寸詰まりの機体には全長と直径の比の警告が出る。
+* ``explicit_nose_direction_is_respected_and_forward_fins_warn``：``nose_direction`` の指定は覆されず、フィンが前半にあれば警告が出る。
 
 空力モデル
 ----------
@@ -195,7 +212,7 @@ ECEF 座標での積分
 ~~~~~~~~~~~~~~~~~
 
 * **座標系の幾何**：射点の高さは 0（:math:`10^{-4}` m 未満）、射点の真上 1 km の点の高さは 1 km（誤差 :math:`10^{-3}` m 未満）で、
-  射点の ENU への往復で :math:`10^{-6}` m 以内に戻る。逆 2 乗則の重力の大きさは :math:`g_0\left(R_\oplus/(R_\oplus+h_0)\right)^2`
+  射点の ENU への往復で :math:`10^{-6}` m 以内に戻る。逆 2 乗則の有効重力（万有引力に遠心項を加えた正味の重力）の大きさは :math:`g_0\left(R_\oplus/(R_\oplus+h_0)\right)^2`
   （:math:`10^{-9}` m/s\ :sup:`2` 以内）で、向きは測地的な下向きである。
   北緯 34.7° の射点での遠心加速度の大きさは約 0.0277 m/s\ :sup:`2`\ （:math:`\Omega_\oplus^2R\cos\phi`）で、
   上昇する物体の Coriolis 加速度は西向きの成分を持つ。

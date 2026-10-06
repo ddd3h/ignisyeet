@@ -157,6 +157,7 @@ Barrowman 法やパネル法だけを使うなら要らない。既定は ``n``\
 終わった手順には緑のチェックと所要時間が付く。
 詳しい出力はすべて ``~/.local/share/ignisyeet/install.log`` に記録される。
 作図用環境の作成は、初回はライブラリ（numpy、pandas、matplotlib）の取得のため、数十秒かかることがある。
+ライブラリの版は、リリースに含まれる ``uv.lock``\ （uv を使う場合）または ``plot-constraints.txt``\ （pip を使う場合）で固定してある。
 
 .. _fig-screen-install-progress:
 
@@ -241,7 +242,7 @@ developer の場合
 
 * git でリポジトリを取得する（既存の clone があれば再利用し、変更がなければ ``git pull`` する）。
 * ``cargo`` がなければ ``rustup`` を入れ、``cargo build --release`` と ``cargo test --release`` を実行する（テストは実行するか尋ねられる）。
-* ``python/`` と ``doc/`` の環境を ``uv sync`` で作る。
+* ``python/`` の環境を ``uv sync --frozen``\ （``uv.lock`` の版をそのまま使う）、``doc/`` の環境を ``uv sync`` で作る。uv がなければ、``scripts/plot-constraints.txt`` で版を固定して ``pip`` で入れる。
 * TeX Live、dvisvgm、mutool、inkscape、IPAex フォントのうち足りないものは、
   実行すべき ``apt`` または ``brew`` のコマンドを表示する（``sudo`` はインストーラ自身は実行しない）。
 
@@ -259,7 +260,9 @@ CFD ツールについて
 ^^^^^^^^^^^^^^^^^^
 
 どちらの役割でも、CFD ツール（SU2、gmsh、Open MPI）を任意で入れられる（手順 4）。
-x86_64 の Linux で AVX-512 のない CPU では、SU2 8.5.0 のパッケージが異常終了するため、SU2 を 8.3.0 に固定する。
+CFD 環境のパッケージは、すべてのプラットフォームで SU2 8.3.0、gmsh 4.15.2（python-gmsh も同じ版）、Open MPI 5、Python 3.10 に固定する。
+SU2 8.5.0 のパッケージは AVX-512 のない CPU で異常終了するため、8.3.0 を使う。
+micromamba を新たに入れる場合は、版 2.9.0 を取得する。
 インストール後に、設定ファイルの ``[aero.cfd] prefix`` に書く値（または環境変数 ``IGNISYEET_CFD_PREFIX``）を表示する。
 
 オプション
@@ -283,11 +286,11 @@ x86_64 の Linux で AVX-512 のない CPU では、SU2 8.5.0 のパッケージ
    * - ``--cfd`` ``--no-cfd``
      - CFD ツールを入れる、入れない
    * - ``--version vX.Y.Z``
-     - 入れるリリース（既定は最新）。developer ではチェックアウトするタグ
+     - 入れるリリース（既定は最新）。developer ではチェックアウトするタグ。形式は ``vX.Y.Z`` に限り、``v`` のない値や他の形式はエラーにする
    * - ``--prefix DIR``
-     - インストール先（既定は ``~/.local``）
+     - インストール先（既定は ``~/.local``）。相対パスや ``~`` で始まるパスは、起動時に絶対パスへ直す（リンクが壊れないようにするため）
    * - ``--dir DIR``
-     - developer の clone 先（既定は実行した clone、なければ ``~/ignisyeet``）
+     - developer の clone 先（既定は実行した clone、なければ ``~/ignisyeet``）。``--prefix`` と同様に絶対パスへ直す
    * - ``--add-path``
      - ``PATH`` の行をシェルの設定ファイルに、尋ねずに追記する
    * - ``--force``
@@ -382,8 +385,8 @@ user では最新のリリースが取得され、``current`` のリンクが新
    インストーラは再実行しても安全なので、原因を取り除いてからもう一度実行する。
 
 CFD ツールで SU2 が異常終了する（AVX-512 のない CPU）
-   x86_64 の Linux で AVX-512 のない CPU では、SU2 8.5.0 が異常終了する。
-   インストーラはこれを検出して 8.3.0 に固定するが、すでに作成された環境を使っているときは、画面に出る再作成のコマンドで作り直す。
+   AVX-512 のない CPU では、SU2 8.5.0 が異常終了する。
+   インストーラが作る環境は SU2 8.3.0 に固定しているが、別の版がすでに入った環境を使っているときは、画面に出る再作成のコマンドで作り直す。
 
 リリースとバージョン
 ~~~~~~~~~~~~~~~~~~~~
@@ -391,6 +394,11 @@ CFD ツールで SU2 が異常終了する（AVX-512 のない CPU）
 IgnisYeet のバージョンは ``Cargo.toml`` の ``[workspace.package] version``\ （``ignisyeet --version`` で表示される値）で決まり、
 GitHub では同じ番号のタグ ``vX.Y.Z`` と GitHub Release で管理する。インストーラの user は、
 ``--version`` を指定しなければ最新のリリースを入れる。
+
+push とプルリクエストでは、ワークフロー ``ci.yml`` が ``cargo build --release --locked`` と ``cargo test --release --locked`` を実行し、
+例題で ``geom``、``aero``、``sim`` を通しで動かして確かめる（clippy、rustfmt、ShellCheck は助言のみで、失敗してもジョブは落ちない）。
+ワークフローが使う Action は、コミットの SHA で固定している。
+Rust のツールチェーンは ``rust-toolchain.toml``\ （stable、rustfmt と clippy を含む）で指定し、``Cargo.toml`` の ``rust-version`` が必要な最低の版を定める。
 
 タグ ``v*`` を push すると、GitHub Actions のワークフロー ``release.yml`` が次の処理を行う。
 
@@ -418,8 +426,9 @@ GitHub では同じ番号のタグ ``vX.Y.Z`` と GitHub Release で管理する
         - 実行する
 
 #. ``scripts/package-release.sh`` で ``ignisyeet-<バージョン>-<ターゲット>.tar.gz`` と SHA-256 を作る。
-   中身はバイナリ（``bin/ignisyeet``）、例題、作図スクリプト（``python/plot.py`` と依存関係の一覧）、
+   中身はバイナリ（``bin/ignisyeet``）、例題、作図スクリプト（``python/plot.py`` と、依存関係の一覧および固定した版 ``uv.lock`` ``plot-constraints.txt``）、
    ``LICENSE``、``NOTICE``、``CITATION.cff``、``README.md`` である。
+   アーカイブは GNU tar で、ファイルの順序、時刻（``SOURCE_DATE_EPOCH``、既定は 0）、所有者を固定して作る。macOS のビルドでは ``gnu-tar`` を入れる。
 #. GitHub Release を作り、すべての配布物、チェックサム、``install.sh`` を添付する。
    リリースノートは前のタグからのコミットを Conventional Commits の種類（feat、fix、docs など）ごとにまとめて作る。
 
@@ -460,6 +469,9 @@ GitHub では同じ番号のタグ ``vX.Y.Z`` と GitHub Release で管理する
    ./target/release/ignisyeet dispersion examples/sample.toml   # 落下分散を計算する
    uv run --project python python/plot.py all examples/out      # 図を描く
 
+``make`` が図を読む出力ディレクトリ（``OUT``）は、設定ファイルの ``[output] dir``\ （設定ファイルのあるディレクトリからの相対パス。絶対パスならそのまま、未指定なら ``out``）から決まる。
+``OUT=...`` で上書きもできる。
+
 ``python/plot.py`` は ``geometry`` ``aero`` ``trajectory`` ``dispersion`` のいずれかを選んで描くこともできる。
 ``dispersion`` は ``dispersion.csv`` があれば風の格子の図（``dispersion.png``）を、
 ``dispersion_mc.csv`` と ``dispersion_summary.json`` があればモンテカルロの図（``dispersion_mc.png``）を描く（両方あれば両方描く）。
@@ -473,7 +485,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
 .. code-block:: sh
 
    python3 -m venv .venv && . .venv/bin/activate
-   pip install -r python/requirements.txt
+   pip install -r python/requirements.txt -c scripts/plot-constraints.txt
    python python/plot.py all examples/out
    # make 経由なら: make plot PLOT="python python/plot.py"
 
@@ -603,16 +615,97 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - 空力係数表 ``aero_table.csv`` を作る。入力（STL と空力関係の設定）が前回と同じなら保存済みの表を使う。
        ``--force`` を付けると必ず作り直す。
    * - ``sim <config> [--descent ballistic|parachute]``
-     - 設定した風で 1 回飛翔させ、``trajectory.csv`` と ``summary.json`` を書き出す。
+     - 設定した風で 1 回飛翔させ、``trajectory.csv`` と ``summary.json`` を書き出す。``sim.max_time`` までに着地しなかったときは、結果を書いたうえで終了ステータス 3 で終わる（:ref:`sec-exit-status`）。
    * - ``dispersion <config>``
-     - ``dispersion.mode`` に従って落下分散を並列に計算する。``"wind_grid"`` では風速 × 風向の全ケースを計算して ``dispersion.csv`` を、
+     - ``dispersion.mode`` に従って落下分散を並列に計算する。``"wind_grid"`` では風速 × 風向の全ケースを計算して ``dispersion.csv`` と ``dispersion_meta.json`` を、
        ``"monte_carlo"`` では各サンプルの結果 ``dispersion_mc.csv`` と統計 ``dispersion_summary.json`` を書き出す。
+       着地しなかったケースや失敗したケースがあるときは、結果を書いたうえで終了ステータス 3 で終わる。
+   * - ``cfd-check <config> [--mesh]``
+     - CFD に必要なツール（SU2、MPI、gmsh。``surface = "stl"`` では manifold3d も）の有無と版、ケース数を表示する。``--mesh`` は壁面のメッシュも作って品質を表示する（:doc:`cfd`）。
+       必要なツールが足りないときは終了ステータス 1 で終わる。
    * - ``sample-stl <path>``
      - 付属のサンプル機体の STL（mm 単位、ノーズ +z 向き）を書き出す。
 
 ``sim`` と ``dispersion`` は、係数表がない場合や入力が変わった場合に自動で ``aero`` を実行する。
 入力の同一性は、STL の内容と設定値から計算したハッシュ値（FNV-1a）で判定する。
-プログラム本体を更新したときは、係数の計算方法が変わっている可能性があるので ``aero --force`` を実行してほしい。
+ハッシュには、プログラムの版と、空力モデルの版（係数の計算方法が変わると上げる内部の番号）も入るので、計算方法が変わった版では保存済みの表を使わずに作り直す。
+空力に使わない設定は、ハッシュに入れない。選んでいない手法のブロック（``method = "barrowman"`` のときの ``[aero.panel]`` と ``[aero.cfd]`` など）、
+外部の係数表の指定、``method = "cfd"`` の資源とパスの項目（``prefix`` ``su2`` ``mpi`` ``ranks_per_case`` ``parallel_cases`` ``timeout_minutes`` ``workdir``）である。
+これらを変えても表は作り直さない。
+
+.. _sec-config-checks:
+
+設定の検査と警告
+----------------
+
+設定ファイルは読み込み時に検査し、不正な値は項目名を示してエラー（終了ステータス 1）にする。
+有限でない値（``nan`` や ``inf``）は、すべての数値項目で受け付けない。主な範囲は次のとおりである。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 60
+
+   * - 項目
+     - 条件
+   * - ``launch.latitude`` / ``launch.longitude``
+     - :math:`-90` から :math:`90` / :math:`-180` から :math:`180`
+   * - ``launch.elevation_deg``
+     - :math:`0 <` 値 :math:`\le 90`
+   * - ``launch.rail_length``、``rocket.stl_scale``、``rocket.dry_mass``、``rocket.ixx_dry`` ``iyy_dry`` ``izz_dry``
+     - 正
+   * - ``rocket.cg_dry``
+     - 0 以上（ノーズ先端から後方に測る）
+   * - ``rocket.roughness``、``rocket.extra_cd``、``recovery.cd_s``、``recovery.delay``、``wind.speed``
+     - 0 以上
+   * - ``aero.mach_min`` と ``aero.mach_max``
+     - ``mach_min`` は 0 以上、``mach_max`` は ``mach_min`` より大きい
+   * - ``aero.mach_step``、``aero.alpha_max_deg``、``aero.alpha_step_deg``、``aero.general_mach_step``
+     - 正
+   * - ``aero.n_slices``
+     - 1 以上
+   * - ``wind.ref_height``、``wind.exponent``、``wind.roughness_length``、``wind.ground_blend_height``
+     - 正
+   * - ``sim.dt``、``sim.max_time``、``sim.output_interval``、``sim.rtol``、``sim.atol``
+     - 正
+   * - ``dispersion.wind_speeds`` の各要素、``[dispersion.monte_carlo]`` の各標準偏差
+     - 0 以上
+
+さらに、形状を抽出したあとで、乾燥重心 ``rocket.cg_dry`` が機体の全長より後方にあるとエラーにする（``stl_scale`` や ``cg_dry`` の単位の誤りを、飛翔計算の前に見つけるためである）。
+
+エラーにはしないが疑わしい点は、警告として表示する。警告は ``-q`` を含むすべての出力モードで出す。
+プレーンモードと端末の表示では標準出力に、``-q`` では標準エラー出力に ``warning:`` の行で書く。
+``sim`` では ``summary.json`` の ``warnings`` にも、``dispersion`` では ``dispersion_meta.json`` と ``dispersion_summary.json`` の ``warnings`` にも同じ文を残す。
+警告の内容は次のとおりである。
+
+* 機体の大きさが、全長 0.1 から 30 m、直径 0.005 から 3 m の範囲を外れている（``rocket.stl_scale`` の誤りが疑われる。mm 単位の STL なら ``0.001``）。``geom`` でも表示する。
+* 静安定余裕（飛翔中の最小値とランチャ離脱時の値の小さいほう）が、0 cal 未満（圧力中心が重心より前にあり不安定）、0 以上 1.0 cal 未満（不安定）、1.0 cal 以上 1.5 cal 未満（推奨の 1.5 cal を下回る）である。
+* 風のモデルが ``power`` または ``log`` で、頂点が地上 1000 m を超える。これらのプロファイルは基準高さ ``wind.ref_height`` の風速 ``wind.speed`` を上空に外挿するので、上空の風と着地点はモデル依存になる（実際の予測には ``model = "profile"`` を使う）。
+* ``sim.max_time`` までに着地しない。
+* 形状の抽出結果の疑わしい点（:ref:`sec-geometry-warnings`）。
+
+.. _sec-exit-status:
+
+終了ステータス
+--------------
+
+.. list-table::
+   :header-rows: 1
+   :widths: 15 85
+
+   * - 値
+     - 意味
+   * - 0
+     - 成功
+   * - 1
+     - エラー（不正な設定、入力ファイルがない、処理の失敗、``cfd-check`` で必要なツールが足りない、など）
+   * - 2
+     - コマンドラインの使い方の誤り
+   * - 3
+     - 出力は書いたが、結果が不完全である。``sim`` で ``sim.max_time`` までに着地しなかったとき、``dispersion`` で着地しなかった、または失敗したケース・サンプルがあるとき。
+       標準エラー出力に ``INCOMPLETE RESULTS`` の行を書く
+
+着地しなかった飛翔は、着地点が存在しない。``summary.json`` の ``landed`` が ``false`` になり、着地に関する項目は ``null`` になる（:ref:`sec-file-summary`）。
+着地しなかった結果は KML に入れない。
 
 設定ファイル
 ------------
@@ -835,7 +928,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - フィン判定のしきい値（最大胴体半径に対する比）
    * - ``extrapolation``
      - ``"linear"``
-     - 表の範囲外の扱い: ``"linear"`` （線形外挿）または ``"clamp"`` （端の値で一定）
+     - 迎角と横滑り角が表の範囲外のときの扱い: ``"linear"`` （線形外挿。符号と範囲を制限する）または ``"clamp"`` （端の値で一定）。Mach 数は、この値にかかわらず端の値で一定（:ref:`sec-aero-interp`）
    * - ``table_kind``
      - ``"axisymmetric"``
      - 飛翔計算に使う係数表の種類。``"axisymmetric"`` （全迎角の軸対称表）または ``"general"`` （迎角と横滑り角の 6 成分の一般表。:ref:`sec-aero-table`）
@@ -1100,8 +1193,8 @@ CFD の準備は ``ignisyeet cfd-check 設定ファイル [--mesh]`` で確か�
      - ``1e-7`` / ``1e-6``
      - ``rk45``・``dop853`` の相対許容誤差・絶対許容誤差（いずれも正）
    * - ``max_time``
-     - ``1200``
-     - 計算を打ち切る時刻 [s]
+     - ``3600``
+     - 計算を打ち切る時刻 [s]（正）。この時刻までに着地しなかった飛翔は着地に失敗したものとして扱い、``sim`` は警告して終了ステータス 3 で終わる。落下分散では、そのケースとサンプルを失敗に数える（:doc:`dispersion`）
    * - ``output_interval``
      - ``0.05``
      - ``trajectory.csv`` に書き出す間隔 [s]。``rk45``・``dop853`` では刻み幅の上限でもある（正）
@@ -1256,15 +1349,17 @@ STL からの形状抽出と空力モデルの計算は行わず、``sim`` と `
    * - ``trajectory.csv``
      - 飛翔の時刻歴（位置、速度、Mach 数、迎角、質量、重心、圧力中心、安定余裕、姿勢、角速度など。:ref:`sec-file-trajectory`）
    * - ``summary.json``
-     - ランチャ離脱速度、最大 Mach 数、最大動圧、頂点、最小安定余裕、着地点など
+     - ランチャ離脱速度、最大 Mach 数、最大動圧、頂点、最小安定余裕、着地点など。着地の有無 ``landed``、``max_time``、設定のハッシュ ``config_hash``、警告 ``warnings`` も入る（:ref:`sec-file-summary`）
    * - ``ignisyeet.kml``
      - ``kml = true`` のとき ``sim`` と ``dispersion`` が書き出す、Google Earth 用の KML ファイル 1 つ。射点、飛翔経路（段階ごとに色分け）とイベントの印、風の格子の着地点の輪郭、モンテカルロの着地点と誤差楕円をフォルダに分けて収める（:ref:`sec-kml`）
    * - ``dispersion.csv``
-     - ``mode = "wind_grid"``。風の各ケースの着地点、頂点、飛行時間など
+     - ``mode = "wind_grid"``。風の各ケースの着地点、頂点、飛行時間など。着地したかを示す ``landed`` の列もある
+   * - ``dispersion_meta.json``
+     - ``mode = "wind_grid"``。``dispersion.csv`` に付く、設定のハッシュ ``config_hash``、ケース数 ``cases``、失敗数 ``failed``、警告 ``warnings``\ （:ref:`sec-file-dispersion`）
    * - ``dispersion_mc.csv``
      - ``mode = "monte_carlo"``。サンプルごと・降下モードごとの 1 行（ばらつき、基準風、着地点、頂点など。失敗した行は結果の列が空欄になる）
    * - ``dispersion_summary.json``
-     - ``mode = "monte_carlo"``。降下モードごとの着地点の統計と誤差楕円、最大着地距離、頂点高度の平均と標準偏差
+     - ``mode = "monte_carlo"``。降下モードごとの着地点の統計と誤差楕円、最大着地距離、着地距離のパーセンタイル、頂点高度の平均と標準偏差、統計が完全か（``complete``）、設定のハッシュ、警告
 
 .. _sec-kml:
 
@@ -1280,7 +1375,12 @@ KML は地理情報を記述する XML 形式で、OGC の標準（KML 2.2 :cite
 そのコマンドで計算した結果に加え、同じ出力先ディレクトリにある他の結果（``trajectory.csv`` と ``summary.json``、``dispersion.csv``、``dispersion_mc.csv`` と ``dispersion_summary.json``）を読み戻して、1 つにまとめる。
 該当するファイルがなければ、そのフォルダは作らない（読めないファイルがあるときは、そのフォルダを省いたことを端末に表示する）。
 したがって、``sim`` のあとに ``dispersion`` を実行すれば、飛翔経路と落下分散を同じ画面で重ねて見られる。
-読み戻す結果は、以前に同じディレクトリへ書いたものである。設定を変えたときは、``sim`` と ``dispersion`` の両方を実行し直すこと。
+読み戻す結果は、同じディレクトリに書いた、前の実行のものである。
+読み戻すのは、設定のハッシュ（``config_hash``）が現在の設定と一致するものだけである。ハッシュは出力先と計算資源（``[output]`` と ``[resources]``）を除く設定と、STL、モータ、風、外部の係数表の内容から計算する。
+``summary.json`` と ``dispersion_meta.json``、``dispersion_summary.json`` にあるハッシュが現在の設定と違う（またはハッシュがない）ときは、その結果は古いものとして KML に入れず、警告を表示する。
+ハッシュは、飛翔は ``dispersion`` の設定を除き、風の格子は ``mode`` とモンテカルロの設定を除き、モンテカルロは ``mode`` と風の格子の設定を除いて計算する。
+したがって、設定を変えたときは、``sim`` と ``dispersion`` の両方を実行し直せば、新しい結果だけが入る。
+着地しなかった飛翔と、着地しなかった風のケースは KML に入れない（風の格子で着地したケースが一つもなければ、そのフォルダは作らない）。モンテカルロでは、着地したサンプルだけを入れる。
 
 ``Launch site``
    射点を示す白いピンで、地面に固定して表示する（射角・方位・レール長を説明欄に載せる）。
@@ -1301,7 +1401,7 @@ KML は地理情報を記述する XML 形式で、OGC の標準（KML 2.2 :cite
 
 ``Dispersion – Monte Carlo``
    モンテカルロの結果（``dispersion_mc.csv`` と ``dispersion_summary.json``）があるときに入る。降下モードごとのフォルダに、平均着地点（Mean landing）、:math:`1\sigma` と :math:`3\sigma` の誤差楕円（:eq:`eq-mc-stat` の共分散から作る 72 頂点の閉じた折れ線で、塗りつぶさない）、
-   各サンプルの着地点（``Landing points`` フォルダ）が入る。失敗したサンプルは含まない。
+   各サンプルの着地点（``Landing points`` フォルダ）が入る。失敗したサンプルと着地しなかったサンプルは含まない。
 
 落下分散の図形はすべて地面に固定して描く。
 

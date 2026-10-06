@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 /// tensor `I = [[Ixx, Ixy, Ixz], [Ixy, Iyy, Iyz], [Ixz, Iyz, Izz]]` about the dry CG, so
 /// `Ixy = -∫ x y dm` (the classical product of inertia with a minus sign).
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct MassProperties {
     /// Mass without propellant (including the empty motor casing) [kg].
     pub dry_mass: f64,
@@ -83,7 +83,7 @@ pub struct MassState {
 /// The thrust direction in body axes is `(cos e, sin e cos f, sin e sin f)` with `e` the
 /// misalignment and `f` its azimuth from +y_b towards +z_b.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct ThrustLine {
     pub misalignment_deg: f64,
     pub misalignment_azimuth_deg: f64,
@@ -104,6 +104,7 @@ impl ThrustLine {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Launch {
     pub latitude: f64,
     pub longitude: f64,
@@ -120,6 +121,7 @@ pub struct Launch {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Recovery {
     pub enabled: bool,
     /// Parachute drag area Cd*S [m^2].
@@ -129,6 +131,7 @@ pub struct Recovery {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Settings {
     pub dt: f64,
     pub max_time: f64,
@@ -475,6 +478,10 @@ impl<'a> Simulation<'a> {
                     let beta = (ub.y / v).clamp(-1.0, 1.0).asin();
                     let d_ref = self.table.meta.ref_diameter;
                     let d_cant = (self.fin_cant_deg - self.table.meta.fin_cant_ref_deg).to_radians();
+                    // Cant forcing follows the flow direction: in tail-first flow (ub.x < 0) the fins
+                    // see the flow from behind and the whole cant roll moment (the reference cant
+                    // contained in the table and the perturbation `d_cant`) reverses sign.
+                    let sgn = if ub.x >= 0.0 { 1.0 } else { -1.0 };
                     let p_hat = s.w.x * d_ref / (2.0 * v);
                     if self.table.kind() == TableKind::General {
                         // Six body-axis coefficients of (alpha, beta); no tail-first mirroring.
@@ -486,7 +493,10 @@ impl<'a> Simulation<'a> {
                         let cx = if thrust > 0.0 { c.cx_on } else { c.cx_off };
                         let f_aero = Vec3::new(cx, c.cy, c.cz) * qs;
                         f_body += f_aero;
-                        let cl = c.cl + c.cl_delta * d_cant + c.clp * p_hat;
+                        // The tabulated `cl` already holds the forcing at the reference cant for the
+                        // given body-axis flow direction; the cant perturbation follows the same
+                        // flow-direction convention as in the axisymmetric branch.
+                        let cl = c.cl + c.cl_delta * d_cant * sgn + c.clp * p_hat;
                         // Table moments are about the nose tip; transfer to the CG at (-x_cg, y, z).
                         m_body += Vec3::new(cl, c.cm, c.cn) * (qs * d_ref) + Vec3::new(x_cg, -ms.cg_lat[0], -ms.cg_lat[1]).cross(f_aero);
                         // Rate damping about the CG from the sums about the nose; the lateral CG
@@ -518,8 +528,7 @@ impl<'a> Simulation<'a> {
                     m_body += Vec3::new(0.0, s.w.y, s.w.z) * (-qd * s_ref * k / v);
                     // Roll: the tabulated forcing at the reference cant (zero for a rocket without
                     // cant), the change of cant and the roll damping.
-                    let sgn = if ub.x >= 0.0 { 1.0 } else { -1.0 };
-                    let cl = c.cl_delta * (self.table.meta.fin_cant_ref_deg.to_radians() * sgn + d_cant) + c.clp * p_hat;
+                    let cl = c.cl_delta * (self.table.meta.fin_cant_ref_deg.to_radians() + d_cant) * sgn + c.clp * p_hat;
                     m_body += Vec3::new(qd * s_ref * d_ref * cl, 0.0, 0.0);
                     if ms.cg_lat != [0.0, 0.0] {
                         // The aerodynamic force acts on the axis; the CG is off it.
@@ -744,17 +753,25 @@ impl<'a> Simulation<'a> {
                 }
                 h = hh;
             }
-            max_qerr = max_qerr.max((crate::lie::quat_norm(s.q) - 1.0).abs());
             t += h;
+            if !finite_state(&s) {
+                bail!("integration diverged at t = {t:.4} s; reduce sim.dt or tighten rtol/atol");
+            }
+            max_qerr = max_qerr.max((crate::lie::quat_norm(s.q) - 1.0).abs());
             let loc_prev = loc;
             loc = frame.local(s.pos);
 
             let before = phase;
             if phase == Phase::Rail && (s.pos - frame.origin()).dot(cx.rail) >= self.launch.rail_length {
                 phase = Phase::Free;
-                sum.rail_exit_time = t;
-                sum.rail_exit_speed = s.vel.norm();
-                let (_, aux) = self.deriv(&cx, t, &s, phase);
+                // The step overshoots the rail end: interpolate the crossing linearly.
+                let (d0, d1) = ((prev.pos - frame.origin()).dot(cx.rail), (s.pos - frame.origin()).dot(cx.rail));
+                let fe = if d1 > d0 { ((self.launch.rail_length - d0) / (d1 - d0)).clamp(0.0, 1.0) } else { 1.0 };
+                let se = lerp_state(&prev, &s, fe);
+                let te = t - h + fe * h;
+                sum.rail_exit_time = te;
+                sum.rail_exit_speed = se.vel.norm();
+                let (_, aux) = self.deriv(&cx, te, &se, phase);
                 sum.stability_at_rail_exit = (aux.x_cp - aux.x_cg) / ref_d;
             }
             if loc.height > sum.apogee {
@@ -789,10 +806,12 @@ impl<'a> Simulation<'a> {
                 sum.landing_lat = lat;
                 sum.landing_lon = lon;
                 sum.landing_distance = enu.x.hypot(enu.y);
-                sum.landing_speed = s.vel.norm();
+                // Full touchdown state: linear interpolation between the last two states.
+                let st = State { pos: p, ..lerp_state(&prev, &s, f) };
+                sum.landing_speed = st.vel.norm();
                 if want_samples {
-                    let (_, aux) = self.deriv(&cx, t, &s, phase);
-                    let mut last = self.sample(&cx, sum.landing_time, &State { pos: p, ..s }, phase, &aux);
+                    let (_, aux) = self.deriv(&cx, sum.landing_time, &st, phase);
+                    let mut last = self.sample(&cx, sum.landing_time, &st, phase, &aux);
                     if frame.is_flat() {
                         last.up = 0.0;
                     }
@@ -810,6 +829,21 @@ impl<'a> Simulation<'a> {
             sum.min_stability_cal = f64::NAN;
         }
         Ok(SimResult { samples, summary: sum, evals: evals.get(), max_quat_norm_error: max_qerr })
+    }
+}
+
+fn finite_state(s: &State) -> bool {
+    [s.pos.x, s.pos.y, s.pos.z, s.vel.x, s.vel.y, s.vel.z, s.q.w, s.q.x, s.q.y, s.q.z, s.w.x, s.w.y, s.w.z].iter().all(|v| v.is_finite())
+}
+
+/// Linear interpolation between two states (`f` = 0 gives `a`); the quaternion is renormalised.
+fn lerp_state(a: &State, b: &State, f: f64) -> State {
+    let l = |x: f64, y: f64| x + (y - x) * f;
+    State {
+        pos: a.pos + (b.pos - a.pos) * f,
+        vel: a.vel + (b.vel - a.vel) * f,
+        q: Quat { w: l(a.q.w, b.q.w), x: l(a.q.x, b.q.x), y: l(a.q.y, b.q.y), z: l(a.q.z, b.q.z) }.normalized(),
+        w: a.w + (b.w - a.w) * f,
     }
 }
 
@@ -871,6 +905,82 @@ mod tests {
             thrust_line: ThrustLine::default(),
             fin_cant_deg: 0.0,
         }
+    }
+
+    /// Cant forcing `aux.cl` at 50 m/s along (`sign` = +1) or against (-1) the body axis.
+    fn cant_forcing(ref_cant: f64, fin_cant: f64, sign: f64) -> f64 {
+        let meta = TableMeta {
+            source_hash: String::new(),
+            ref_area: 0.01,
+            ref_diameter: 0.1,
+            length: 1.0,
+            machs: vec![0.0, 5.0],
+            alphas_deg: vec![0.0, 90.0],
+            extrapolation: Extrapolation::Clamp,
+            fin_cant_ref_deg: ref_cant,
+            ..Default::default()
+        };
+        let table = AeroTable::from_fn(meta, |_, _| AeroCoeffs { xcp: 0.5, cl_delta: 2.0, ..Default::default() });
+        let (_, motor) = vacuum_parts();
+        let mut sim = vacuum_sim(&table, &motor);
+        sim.fin_cant_deg = fin_cant;
+        let frame = Frame::new(&sim.earth, &sim.launch);
+        let cx = Ctx { frame, rail: frame.from_launch_enu(sim.rail_dir_enu()) };
+        let q = sim.initial_attitude(&frame);
+        let x_b = q.to_mat().col(0);
+        let s = State { pos: frame.origin(), vel: x_b * (50.0 * sign), q, w: Vec3::ZERO };
+        sim.deriv(&cx, 10.0, &s, Phase::Free).1.cl
+    }
+
+    #[test]
+    fn cant_forcing_reverses_in_tail_first_flow() {
+        let k = 2.0 * 3f64.to_radians();
+        assert!((cant_forcing(0.0, 3.0, 1.0) - k).abs() < 1e-12);
+        // Tail-first: the whole cant forcing (also the perturbation) changes sign.
+        assert!((cant_forcing(0.0, 3.0, -1.0) + k).abs() < 1e-12);
+        assert!((cant_forcing(2.0, 3.0, -1.0) + k).abs() < 1e-12);
+        assert!((cant_forcing(2.0, 3.0, 1.0) - k).abs() < 1e-12);
+    }
+
+    #[test]
+    fn diverging_integration_is_an_error() {
+        let g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
+        let model = AeroModel::new(g, AeroOptions::default());
+        let table = AeroTable::build(&model, String::new(), Extrapolation::Linear);
+        let (_, motor) = sample_parts();
+        let mut sim = sample_sim(&table, &motor, 0.0);
+        // A far too coarse RK4 step blows the attitude dynamics up (the sample rocket at dt = 0.2 s does).
+        let e = [0.2, 0.5, 1.0, 2.0]
+            .iter()
+            .find_map(|&dt| {
+                sim.settings.dt = dt;
+                sim.run(Descent::Ballistic, false).err()
+            })
+            .expect("no step size diverged")
+            .to_string();
+        assert!(e.contains("integration diverged at t =") && e.contains("reduce sim.dt"), "{e}");
+    }
+
+    #[test]
+    fn touchdown_and_rail_exit_are_interpolated() {
+        let (table, motor) = vacuum_parts();
+        // Vacuum, vertical: touchdown speed equals the launch-apogee drop exactly; coarse dt must not matter.
+        let mut sim = vacuum_sim(&table, &motor);
+        let a = VAC_F / VAC_M - G0;
+        let v_burn = a * VAC_BURN;
+        let h_burn = 0.5 * a * VAC_BURN * VAC_BURN;
+        let apogee = h_burn + v_burn * v_burn / (2.0 * G0);
+        let v_land = (2.0 * G0 * apogee).sqrt();
+        // Rail exit: constant acceleration a over 3 m.
+        let v_rail = (2.0 * a * 3.0).sqrt();
+        sim.settings.dt = 0.01;
+        let r = sim.run(Descent::Ballistic, true).unwrap();
+        assert!((r.summary.rail_exit_speed - v_rail).abs() < 0.01, "rail {} vs {v_rail}", r.summary.rail_exit_speed);
+        assert!((r.summary.landing_speed - v_land).abs() / v_land < 2e-3, "landing {} vs {v_land}", r.summary.landing_speed);
+        let last = r.samples.last().unwrap();
+        assert!((last.t - r.summary.landing_time).abs() < 1e-12 && last.up.abs() < 1e-9);
+        let vl = (last.vel_e.powi(2) + last.vel_n.powi(2) + last.vel_u.powi(2)).sqrt();
+        assert!((vl - r.summary.landing_speed).abs() < 1e-9);
     }
 
     #[test]

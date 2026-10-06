@@ -657,12 +657,19 @@ impl AeroTable {
 
     /// Coefficients at Mach `m` and total angle of attack `alpha` [rad] (≥ 0) of an axisymmetric table.
     ///
+    /// The fields are interpolated bilinearly; the centre of pressure is not interpolated itself:
+    /// the normal force CN and the nose moment CN x_cp are, and `xcp` = moment / CN, so the
+    /// moment the flight applies (CN x_cp) is the interpolated moment, as in a general table
+    /// expanded on the same grid. Where the interpolated CN is zero (zero angle of attack) `xcp`
+    /// is the ratio of the interpolated zero-angle slopes, (CNa x_cp) / CNa; with CNa zero as well
+    /// the tabulated `xcp` is interpolated.
+    ///
     /// Extrapolation rules: Mach is always held at the grid edge (transonic/supersonic trends do not
     /// continue linearly beyond the table); alpha continues linearly with the
     /// [`Extrapolation::Linear`] option (a descending rocket needs large angles) and is held with
     /// `Clamp`. Linearly extrapolated values are bounded: they keep the sign of the edge value
-    /// (CN, CA), CNa and the damping sums stay non-negative, `cl_delta` keeps its sign, the
-    /// centre of pressure stays inside the body and the roll damping is never positive.
+    /// (CN, the nose moment, CA), CNa and the damping sums stay non-negative, `cl_delta` keeps its
+    /// sign, the centre of pressure stays inside the body and the roll damping is never positive.
     /// Lookups outside the grid (above the last angle node or below the first) are counted, see
     /// [`out_of_range_stats`](Self::out_of_range_stats).
     ///
@@ -681,15 +688,27 @@ impl AeroTable {
         let na = self.meta.alphas_deg.len();
         let at = |ii: usize, jj: usize| &data[ii * na + jj];
         let (i1, j1) = ((i + 1).min(self.meta.machs.len() - 1), (j + 1).min(na - 1));
+        // Bilinear interpolation of the table fields; the centre-of-pressure field (3) is replaced by
+        // the nose moment CN x_cp, and an extra field holds the zero-angle moment slope CNa x_cp.
         let interp = |ta: f64| {
-            let mut out = [0.0; N_FIELDS];
+            let mut out = [0.0; N_FIELDS + 1];
             for (k, o) in out.iter_mut().enumerate() {
-                let (v00, v01, v10, v11) = (at(i, j)[k], at(i, j1)[k], at(i1, j)[k], at(i1, j1)[k]);
+                let f = |r: &[f64; N_FIELDS]| match k {
+                    3 => r[0] * r[3],
+                    N_FIELDS => r[4] * r[3],
+                    _ => r[k],
+                };
+                let (v00, v01, v10, v11) = (f(at(i, j)), f(at(i, j1)), f(at(i1, j)), f(at(i1, j1)));
                 let a0 = v00 + (v01 - v00) * ta;
                 let a1 = v10 + (v11 - v10) * ta;
                 *o = a0 + (a1 - a0) * tm;
             }
             out
+        };
+        // Plain interpolation of the tabulated x_cp; only used when neither CN nor CNa gives a ratio.
+        let xcp_plain = |ta: f64| {
+            let (a0, a1) = (at(i, j)[3] + (at(i, j1)[3] - at(i, j)[3]) * ta, at(i1, j)[3] + (at(i1, j1)[3] - at(i1, j)[3]) * ta);
+            a0 + (a1 - a0) * tm
         };
         let mut out = interp(ta);
         let extrapolated = !(0.0..=1.0).contains(&ta);
@@ -699,17 +718,27 @@ impl AeroTable {
         }
         if extrapolated {
             let edge = interp(ta.clamp(0.0, 1.0));
-            // cn, ca_on, ca_off, cna, damping sums and cl_delta keep the sign of the edge value.
-            for k in [0, 1, 2, 4, 5, 6, 7, 8] {
+            // cn, the nose moment, ca_on, ca_off, cna, the damping sums, cl_delta and the moment
+            // slope keep the sign of the edge value.
+            for k in [0, 1, 2, 3, 4, 5, 6, 7, 8, N_FIELDS] {
                 out[k] = keep_sign(out[k], edge[k]);
             }
             for k in [4, 5, 6, 7] {
                 out[k] = out[k].max(0.0);
             }
-            if self.meta.length > 0.0 {
-                out[3] = out[3].clamp(0.0, self.meta.length);
-            }
         }
+        // x_cp = moment / CN; at zero normal force (zero angle) the ratio of the slopes CNa x_cp / CNa.
+        let mut xcp = if out[0] != 0.0 {
+            out[3] / out[0]
+        } else if out[4] != 0.0 {
+            out[N_FIELDS] / out[4]
+        } else {
+            xcp_plain(ta)
+        };
+        if extrapolated && self.meta.length > 0.0 {
+            xcp = xcp.clamp(0.0, self.meta.length);
+        }
+        out[3] = xcp;
         AeroCoeffs {
             cn: out[0],
             ca_on: out[1].max(0.0),
@@ -805,21 +834,20 @@ impl AeroTable {
     ///
     /// The slopes are central differences at +-delta, delta = the smaller of 0.5 deg and the
     /// smallest nonzero grid angle of that axis (both give the slope of the interpolated table
-    /// at zero when the grid holds zero). An axisymmetric table returns its tabulated centre of
-    /// pressure at zero angle of attack in both planes, `(x_cp(m, 0) - x_cg) / d`; a general
-    /// table expanded from it gives the same value on its Mach nodes when x_cp does not vary
-    /// within the first angle cell. Pitch-yaw coupling is not considered. The lookups are
-    /// not counted in the range statistics.
+    /// at zero when the grid holds zero). An axisymmetric table uses its zero-angle slopes in both
+    /// planes: `S = -CNa`, `R = CNa (x_cp(m, 0) - x_cg) / d` with `x_cp(m, 0)` the ratio of the
+    /// interpolated moment slope CNa x_cp to CNa (see [`lookup`](Self::lookup)), so the margin is
+    /// `(x_cp(m, 0) - x_cg) / d` for `CNa > 0`, unknown for `CNa = 0`, `R / |CNa|` (unstable) for
+    /// `CNa < 0` with a destabilising moment and unknown for `CNa < 0` with a restoring one. A
+    /// general table expanded from it gives the same value when x_cp does not vary within the
+    /// first angle cell. Pitch-yaw coupling is not considered. The lookups are not counted in the
+    /// range statistics.
     pub fn static_margins(&self, m: f64, x_cg: f64) -> StaticMargins {
         let d = self.meta.ref_diameter;
-        if self.meta.kind == TableKind::Axisymmetric {
-            let mg = (self.lookup_rec(m, 0.0, false).xcp - x_cg) / d;
-            return StaticMargins { pitch: mg, yaw: mg, unknown: None };
-        }
-        let delta = |axis: &[f64]| axis.iter().map(|a| a.abs()).filter(|a| *a > 1e-9).fold(0.5f64, f64::min).to_radians();
-        let (da, db) = (delta(&self.meta.alphas_deg), delta(&self.meta.betas_deg));
         let mut unknown = Vec::new();
-        let mut plane = |s: f64, r: f64, what: &str| {
+        // `s`: normal-force slope (physical sign negative), `r`: restoring derivative; `wrong` names
+        // the unphysical sign of the slope as the table states it.
+        let mut plane = |s: f64, r: f64, what: &str, wrong: &str| {
             if s.abs() <= 1e-12 {
                 unknown.push(format!("the {what} is zero at Mach {m:.2}"));
                 f64::NAN
@@ -827,17 +855,26 @@ impl AeroTable {
                 r / s.abs()
             } else {
                 unknown.push(format!(
-                    "the {what} is positive at Mach {m:.2} (the normal force points along the crossflow, a restoring moment cannot be expressed as a margin; check the sign convention of the table)"
+                    "the {what} is {wrong} at Mach {m:.2} (the normal force points along the crossflow, a restoring moment cannot be expressed as a margin; check the sign convention of the table)"
                 ));
                 f64::NAN
             }
         };
+        if self.meta.kind == TableKind::Axisymmetric {
+            // Zero-angle slopes: dCz/dalpha = -CNa, -dCm_cg/dalpha = (CNa x_cp - CNa x_cg) / d (x_cp is
+            // the ratio of the interpolated moment slope to CNa, see `lookup`).
+            let c = self.lookup_rec(m, 0.0, false);
+            let mg = plane(-c.cna, c.cna * (c.xcp - x_cg) / d, "normal-force slope CNa", "negative");
+            return StaticMargins { pitch: mg, yaw: mg, unknown: (!unknown.is_empty()).then(|| unknown.join("; ")) };
+        }
+        let delta = |axis: &[f64]| axis.iter().map(|a| a.abs()).filter(|a| *a > 1e-9).fold(0.5f64, f64::min).to_radians();
+        let (da, db) = (delta(&self.meta.alphas_deg), delta(&self.meta.betas_deg));
         let (p, n) = (self.lookup6_rec(m, da, 0.0, false), self.lookup6_rec(m, -da, 0.0, false));
         let dcz = p.cz - n.cz;
-        let pitch = plane(dcz, -((p.cm - n.cm) - x_cg / d * dcz), "pitch normal-force slope dCz/dalpha");
+        let pitch = plane(dcz, -((p.cm - n.cm) - x_cg / d * dcz), "pitch normal-force slope dCz/dalpha", "positive");
         let (p, n) = (self.lookup6_rec(m, 0.0, db, false), self.lookup6_rec(m, 0.0, -db, false));
         let dcy = p.cy - n.cy;
-        let yaw = plane(dcy, (p.cn - n.cn) + x_cg / d * dcy, "yaw normal-force slope dCy/dbeta");
+        let yaw = plane(dcy, (p.cn - n.cn) + x_cg / d * dcy, "yaw normal-force slope dCy/dbeta", "positive");
         StaticMargins { pitch, yaw, unknown: (!unknown.is_empty()).then(|| unknown.join("; ")) }
     }
 
@@ -1143,22 +1180,29 @@ mod tests {
             alphas_deg: vec![0.0, 2.0, 4.0, 10.0],
             ..Default::default()
         };
-        let t = AeroTable::from_fn(meta, |m, a| AeroCoeffs { cn: 0.2 * a * (1.0 + m), xcp: 1.1 - 0.1 * m, ca_on: 0.5, ca_off: 0.6, ..Default::default() });
+        let t = AeroTable::from_fn(meta, |m, a| AeroCoeffs {
+            cn: 0.2 * a * (1.0 + m),
+            cna: 0.2f64.to_degrees() * (1.0 + m),
+            xcp: 1.1 - 0.1 * m,
+            ca_on: 0.5,
+            ca_off: 0.6,
+            ..Default::default()
+        });
         let g = t.to_general(angle_axis(180.0, 30.0, 2.0, 10.0), angle_axis(90.0, 30.0, 2.0, 10.0));
         t.reset_out_of_range_stats();
         g.reset_out_of_range_stats();
-        // On the Mach nodes (and beyond the grid, where Mach is held); between nodes the general
-        // table interpolates Cm and Cz separately, the axisymmetric one their ratio x_cp.
-        for (m, x_cg) in [(0.0, 0.8), (0.5, 0.9), (1.0, 1.2), (1.4, 0.7)] {
+        // On and between the Mach nodes (and beyond the grid, where Mach is held): both interpolate
+        // the normal force and the nose moment, not their ratio x_cp.
+        for (m, x_cg) in [(0.0, 0.8), (0.5, 0.9), (1.0, 1.2), (1.4, 0.7), (0.25, 0.9), (0.8, 1.0)] {
             let StaticMargins { pitch: ap, yaw: ay, .. } = t.static_margins(m, x_cg);
             let StaticMargins { pitch: gp, yaw: gy, .. } = g.static_margins(m, x_cg);
             let before = (t.lookup(m, 0.0).xcp - x_cg) / 0.1;
-            assert_eq!((ap, ay), (before, before));
+            assert!((ap - before).abs() < 1e-12 && (ay - before).abs() < 1e-12, "{ap} {ay} {before}");
             assert!((gp - before).abs() < 1e-9 && (gy - before).abs() < 1e-9, "{gp} {gy} {before}");
         }
         // The margins are not counted in the range statistics (only the explicit lookups are).
         assert_eq!(g.out_of_range_stats().lookups, 0);
-        assert_eq!(t.out_of_range_stats().lookups, 4);
+        assert_eq!(t.out_of_range_stats().lookups, 6);
         // The sample rocket, whose centre of pressure varies with alpha: the slopes over the first
         // 2 deg cell of the expanded grid give the centre of pressure at 2 deg.
         let (s, _) = table(Extrapolation::Linear);
@@ -1522,5 +1566,65 @@ mod tests {
         let w = back.sanity_warnings();
         assert_eq!(w, vec!["aero table: ca_off at Mach 0.3, alpha 0 is -1.00 (negative axial force / thrust-like drag)".to_string()]);
         let _ = std::fs::remove_dir_all(dir);
+    }
+
+    fn two_cell_table() -> AeroTable {
+        // Zero-angle rows: CNa 1 and 3 /rad with x_cp 1 and 3 m; 10 deg: (CN, x_cp) = (1, 1) and (2, 1.5);
+        // 20 deg: (3, 3) and (4, 2).
+        let meta = TableMeta { ref_area: 0.01, ref_diameter: 0.1, length: 4.0, machs: vec![0.0, 1.0], alphas_deg: vec![0.0, 10.0, 20.0], ..Default::default() };
+        AeroTable::from_fn(meta, |m, a| {
+            let (cn, xcp, cna) = match (m == 0.0, a as i32) {
+                (true, 0) => (0.0, 1.0, 1.0),
+                (false, 0) => (0.0, 3.0, 3.0),
+                (true, 10) => (1.0, 1.0, 1.0),
+                (false, 10) => (2.0, 1.5, 3.0),
+                (true, _) => (3.0, 3.0, 1.0),
+                (false, _) => (4.0, 2.0, 3.0),
+            };
+            AeroCoeffs { cn, xcp, cna, ca_on: 0.5, ca_off: 0.6, ..Default::default() }
+        })
+    }
+
+    #[test]
+    fn axisymmetric_lookup_interpolates_the_nose_moment() {
+        let t = two_cell_table();
+        // Between (CN, x_cp) = (1, 1) and (3, 3): CN 2 and nose moment (1 + 9) / 2 = 5, so x_cp = 2.5.
+        let c = t.lookup(0.0, 15f64.to_radians());
+        assert!((c.cn - 2.0).abs() < 1e-12 && (c.cn * c.xcp - 5.0).abs() < 1e-12, "{c:?}");
+        // Bilinear in Mach as well: CN = (1 + 2 + 3 + 4) / 4, moment = (1 + 3 + 9 + 8) / 4.
+        let c = t.lookup(0.5, 15f64.to_radians());
+        assert!((c.cn - 2.5).abs() < 1e-12 && (c.cn * c.xcp - 21.0 / 4.0).abs() < 1e-12, "{c:?}");
+        // At zero angle the centre of pressure is the ratio of the interpolated slopes:
+        // (1 * 1 + 3 * 3) / (1 + 3) = 2.5 at Mach 0.5.
+        let c = t.lookup(0.5, 0.0);
+        assert!((c.xcp - 2.5).abs() < 1e-12 && (c.cna - 2.0).abs() < 1e-12, "{c:?}");
+        // The general expansion on the same grid gives the same moment off the nodes.
+        let g = t.to_general(vec![-20.0, -10.0, 0.0, 10.0, 20.0], vec![-20.0, -10.0, 0.0, 10.0, 20.0]);
+        for (m, a) in [(0.3, 4.0), (0.5, 15.0), (0.8, 13.0)] {
+            let (c6, a6) = (g.lookup6(m, f64::to_radians(a), 0.0), t.lookup6(m, f64::to_radians(a), 0.0));
+            assert!((c6.cz - a6.cz).abs() < 1e-12 && (c6.cm - a6.cm).abs() < 1e-12, "M {m} a {a}: {c6:?} vs {a6:?}");
+        }
+    }
+
+    #[test]
+    fn axisymmetric_static_margins_follow_the_sign_of_the_normal_force_slope() {
+        let meta = TableMeta { ref_area: 0.01, ref_diameter: 0.1, length: 1.5, machs: vec![0.0, 1.0], alphas_deg: vec![0.0, 10.0], ..Default::default() };
+        let mk = |k: f64| {
+            AeroTable::from_fn(meta.clone(), move |_, a| AeroCoeffs { cn: k * a.to_radians(), cna: k, xcp: 1.2, ca_on: 0.5, ca_off: 0.6, ..Default::default() })
+        };
+        // Physical slope: (x_cp - x_cg) / d.
+        let m = mk(2.0).static_margins(0.5, 0.9);
+        assert!((m.pitch - 3.0).abs() < 1e-9 && (m.yaw - 3.0).abs() < 1e-9 && m.unknown.is_none(), "{m:?}");
+        // Zero slope: unknown.
+        let m = mk(0.0).static_margins(0.5, 0.9);
+        assert!(m.pitch.is_nan() && m.yaw.is_nan(), "{m:?}");
+        assert!(m.unknown.unwrap().contains("normal-force slope CNa is zero at Mach 0.50"));
+        // Negative slope with x_cp aft of the CG: the moment is destabilising, -3 cal.
+        let m = mk(-2.0).static_margins(0.5, 0.9);
+        assert!((m.pitch + 3.0).abs() < 1e-9 && (m.yaw + 3.0).abs() < 1e-9 && m.unknown.is_none(), "{m:?}");
+        // Negative slope with x_cp ahead of the CG: restoring, but no margin can be given.
+        let m = mk(-2.0).static_margins(0.5, 1.4);
+        assert!(m.pitch.is_nan() && m.yaw.is_nan(), "{m:?}");
+        assert!(m.unknown.unwrap().contains("normal-force slope CNa is negative at Mach 0.50"));
     }
 }

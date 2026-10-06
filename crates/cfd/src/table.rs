@@ -10,7 +10,8 @@
 //! `CN` and the moment start at `(0, 0)` with these slopes, so the slope, the damping sums and the
 //! tabulated rows describe one curve. Failed cases
 //! (`coeffs = None`) are simply left out of their column. Across Mach number every quantity is then
-//! interpolated with PCHIP on the table's Mach grid (edge values held), so a failed
+//! interpolated with PCHIP on the table's Mach grid (edge values held; `xcp(0)` as the ratio of the
+//! interpolated moment slope `CNa xcp(0)` to `CNa`), so a failed
 //! interior Mach column is bridged by its neighbours; a failed first or last Mach column cannot be
 //! bridged and is an error. Finally hybrid viscous terms ([`crate::forces::hybrid_axial`]) are
 //! added and the pitch-damping sums are scaled to the CFD slope and centroid.
@@ -352,7 +353,10 @@ pub fn build_from_points_roll(
 
     let mx: Vec<f64> = cols.iter().map(|c| c.mach).collect();
     let across = |f: &dyn Fn(&Column) -> f64| Pchip::new(mx.clone(), cols.iter().map(f).collect());
+    // The zero-angle centre of pressure is the ratio of the interpolated slopes (moment slope
+    // CNa xcp0 over CNa), as the nonzero-angle rows divide the interpolated moment by CN.
     let cna_p = across(&|c| c.cna);
+    let ma_p = across(&|c| c.cna * c.xcp0);
     let x0_p = across(&|c| c.xcp0);
     let per_alpha =
         |sel: fn(&Column) -> &Vec<f64>| -> Vec<Pchip> { (0..alphas.len()).map(|j| Pchip::new(mx.clone(), cols.iter().map(|c| sel(c)[j]).collect())).collect() };
@@ -360,7 +364,8 @@ pub fn build_from_points_roll(
 
     let mut rows: Vec<Vec<AeroCoeffs>> = Vec::with_capacity(machs.len());
     for &m in &machs {
-        let (cna, xcp0) = (cna_p.eval(m, false), x0_p.eval(m, false));
+        let cna = cna_p.eval(m, false);
+        let xcp0 = if cna.abs() > 1e-9 { ma_p.eval(m, false) / cna } else { x0_p.eval(m, false) };
         let damp = scale_damping(model.damping_sums(m), cna, xcp0);
         let (cl_delta, _) = model.roll_terms(m);
         let clp = crate::general::clp_at(roll, model, m);
@@ -499,6 +504,27 @@ mod tests {
         assert!(((c.mom[1] / h).to_degrees() / interp - 1.1).abs() < 1e-6);
         // The nodes stay on the data.
         assert!((c.cn[2] - 2.0).abs() < 1e-12 && (c.cn[3] - 3.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn zero_angle_centre_of_pressure_follows_the_interpolated_moment_across_mach() {
+        // CN = k a with k = 2 (Mach 1) and 6 (Mach 2), x_cp = 1 and 2 m: at Mach 1.5 the interpolated
+        // slope is 4 and the moment slope (2 + 12) / 2 = 7, so x_cp(0) = 1.75 as at the nonzero angles.
+        let m = model();
+        let pts: Vec<SolvedPoint> = [(1.0, 2.0, 1.0), (2.0, 6.0, 2.0)]
+            .iter()
+            .flat_map(|&(mach, k, x)| {
+                ALPHAS.iter().map(move |&a| {
+                    let cn = k * f64::to_radians(a);
+                    SolvedPoint { mach, alpha_deg: a, coeffs: Some(BodyCoeffs { cn, ca: 0.3, mom: cn * x }) }
+                })
+            })
+            .collect();
+        let (t, _) = build_from_points(&pts, &m, FlowModel::Rans, "h".into(), Extrapolation::Linear).unwrap();
+        let (c0, c2) = (t.lookup(1.5, 0.0), t.lookup(1.5, 2f64.to_radians()));
+        assert!((c0.cna - 4.0).abs() < 1e-9, "cna {}", c0.cna);
+        assert!((c0.xcp - 1.75).abs() < 1e-9 && (c2.xcp - 1.75).abs() < 1e-9, "x_cp(0) {} x_cp(2 deg) {}", c0.xcp, c2.xcp);
+        assert!((c0.damp[1] / c0.damp[0] - 1.75).abs() < 1e-9);
     }
 
     #[test]

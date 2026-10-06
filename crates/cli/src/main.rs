@@ -451,12 +451,12 @@ pub(crate) fn static_margin_min(s: &Summary) -> f64 {
 }
 
 fn flight_warnings(cfg: &Config, s: &Summary) -> Vec<String> {
-    flight_warnings_at(cfg, s, cfg.wind.speed)
+    flight_warnings_at(cfg, s, None)
 }
 
-/// [`flight_warnings`] for a run whose largest reference wind speed is `wind_speed` [m/s]: the extrapolation
-/// of the wind profile only matters when there is wind.
-fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: f64) -> Vec<String> {
+/// [`flight_warnings`] for a run whose largest reference wind speed is `wind_speed` [m/s] (None: the configured
+/// wind as flown; see [`rail_exit_warnings_at`]): the extrapolation of the wind profile only matters when there is wind.
+fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: Option<f64>) -> Vec<String> {
     let mut w = Vec::new();
     if !s.landed() {
         w.push(format!(
@@ -507,7 +507,7 @@ fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: f64) -> Vec<String>
     }
     w.extend(parachute_warnings(cfg, s));
     // the profile model takes its speed from the table, not from wind.speed
-    let wind_speed = if wind.model == sim::WindModel::Profile { s.wind_speed } else { wind_speed };
+    let wind_speed = if wind.model == sim::WindModel::Profile { s.wind_speed } else { wind_speed.unwrap_or(wind.speed) };
     if matches!(wind.model, sim::WindModel::Power | sim::WindModel::Log) && wind_speed != 0.0 && s.apogee > WIND_VALID_HEIGHT {
         w.push(format!(
             "apogee {} m is above {WIND_VALID_HEIGHT:.0} m, the validity height of the {:?} wind profile: the profile is extrapolated there, and wind.speed = {} m/s is the speed at wind.ref_height = {} m, so the winds aloft and the landing point are model-dependent",
@@ -526,12 +526,14 @@ const MAX_RAIL_EXIT_WIND_ALPHA_DEG: f64 = 15.0;
 /// atan(wind speed at the rail-exit height / rail exit speed) above 15 degrees (the configured wind).
 #[cfg(test)]
 fn rail_exit_warnings(cfg: &Config, s: &Summary) -> Vec<String> {
-    rail_exit_warnings_at(cfg, s, cfg.wind.speed)
+    rail_exit_warnings_at(cfg, s, None)
 }
 
-/// [`rail_exit_warnings`] for the reference wind speed `wind_speed` [m/s] instead of `wind.speed` (the largest
-/// wind-grid speed, or the nominal speed plus two sigma for Monte Carlo).
-fn rail_exit_warnings_at(cfg: &Config, s: &Summary, wind_speed: f64) -> Vec<String> {
+/// [`rail_exit_warnings`] for the reference wind speed `wind_speed` [m/s] (the largest wind-grid speed, or the
+/// nominal speed plus two sigma for Monte Carlo, see [`reference_wind_speed`]); None: the configured wind as flown.
+/// The reference wind is the configured wind with that speed as the dispersion cases fly it
+/// ([`sim::Wind::with_speed_direction`]): a wind profile is scaled to that mean speed.
+fn rail_exit_warnings_at(cfg: &Config, s: &Summary, wind_speed: Option<f64>) -> Vec<String> {
     let mut w = Vec::new();
     let v = s.rail_exit_speed;
     if !(v.is_finite() && v > 0.0) {
@@ -544,11 +546,11 @@ fn rail_exit_warnings_at(cfg: &Config, s: &Summary, wind_speed: f64) -> Vec<Stri
         ));
     }
     let h = cfg.launch.rail_length * cfg.launch.elevation_deg.to_radians().sin();
-    let mut wind_cfg = cfg.wind_config();
-    if wind_speed != cfg.wind.speed {
-        wind_cfg.speed = wind_speed;
-    }
-    if let Ok(wind) = sim::Wind::from_config(&wind_cfg) {
+    let wind = sim::Wind::from_config(&cfg.wind_config()).and_then(|w| match wind_speed {
+        Some(v) if v != w.speed => w.with_speed_direction(v, w.direction_deg),
+        _ => Ok(w),
+    });
+    if let Ok(wind) = wind {
         let u = wind.at(h);
         let wind_speed = u.x.hypot(u.y);
         let alpha = wind_speed.atan2(v).to_degrees();
@@ -1766,20 +1768,34 @@ impl FarthestLanding {
     }
 }
 
+/// Largest reference wind speed of a dispersion study [m/s]: the largest wind-grid speed, or for Monte Carlo the
+/// nominal speed plus two sigma of the wind-speed perturbation. For a wind profile the speeds are mean speeds of the
+/// scaled profile and the nominal speed is the mean of the profile as flown (`wind.speed` is ignored).
+fn reference_wind_speed(cfg: &Config) -> f64 {
+    match cfg.dispersion.mode {
+        sim::DispersionMode::WindGrid => cfg.dispersion.wind_speeds.iter().copied().fold(0.0, f64::max),
+        sim::DispersionMode::MonteCarlo => {
+            let nominal = if cfg.wind.model == sim::WindModel::Profile {
+                sim::Wind::from_config(&cfg.wind_config()).map_or(cfg.wind.speed, |w| w.speed)
+            } else {
+                cfg.wind.speed
+            };
+            nominal + 2.0 * cfg.dispersion.monte_carlo.wind_speed
+        }
+    }
+}
+
 /// Warnings of the nominal configuration: body size, and stability, wind-model validity and landing of the nominal flight.
 /// Also returns the summary of the nominal ballistic flight (None when it failed).
 fn nominal_warnings(cfg: &Config, p: &Prepared, base: &Simulation) -> (Vec<String>, Option<Summary>) {
     let mut w = p.geometry_warnings.clone();
     w.extend(size_warnings(cfg, p.table.meta.length, p.table.meta.ref_diameter));
     w.extend(grid_warnings(cfg));
-    let ref_speed = match cfg.dispersion.mode {
-        sim::DispersionMode::WindGrid => cfg.dispersion.wind_speeds.iter().copied().fold(0.0, f64::max),
-        sim::DispersionMode::MonteCarlo => cfg.wind.speed + 2.0 * cfg.dispersion.monte_carlo.wind_speed,
-    };
+    let ref_speed = reference_wind_speed(cfg);
     let mut nominal = None;
     match base.run(Descent::Ballistic, false) {
         Ok(r) => {
-            w.extend(flight_warnings_at(cfg, &r.summary, ref_speed));
+            w.extend(flight_warnings_at(cfg, &r.summary, Some(ref_speed)));
             nominal = Some(r.summary);
         }
         Err(e) => w.push(format!("the nominal flight could not be simulated ({e:#}): stability and wind-model checks were skipped")),
@@ -2362,6 +2378,39 @@ mod tests {
     use super::*;
 
     #[test]
+    fn makefile_reads_indented_and_quoted_output_dirs() {
+        // Skipped where make is not installed.
+        if std::process::Command::new("make").arg("--version").output().is_err() {
+            return;
+        }
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let dir = std::env::temp_dir().join(format!("ignisyeet_makefile_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cases = [
+            ("[rocket]\nx = 1\n  [ output ]  # c\n  \"dir\" = \"res dir\"\n", "res dir"),
+            ("[output]\ndir='lit'\n", "lit"),
+            ("[output]\n\tdir\t= \"/abs/x\"   # comment\n", "/abs/x"),
+            ("[output]\nkml = true\n[wind]\ndir = \"no\"\n", "out"),
+            ("[output.sub]\ndir = \"no\"\n", "out"),
+        ];
+        for (i, (text, want)) in cases.iter().enumerate() {
+            let cfg = dir.join(format!("c{i}.toml"));
+            std::fs::write(&cfg, text).unwrap();
+            let out = std::process::Command::new("make")
+                .args(["-s", "--no-print-directory", "-f"])
+                .arg(root.join("Makefile"))
+                .args(["--eval", "show: ; @echo \"$(OUT)\"", "show"])
+                .arg(format!("CONFIG={}", cfg.display()))
+                .output()
+                .unwrap();
+            let got = String::from_utf8_lossy(&out.stdout).trim_end().to_string();
+            let want = if want.starts_with('/') { want.to_string() } else { format!("{}/{want}", dir.display()) };
+            assert_eq!(got, want, "{text}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn table_method_loads_external_table() {
         let dir = std::env::temp_dir().join("ignisyeet_cli_table_test");
         std::fs::create_dir_all(&dir).unwrap();
@@ -2607,11 +2656,11 @@ mod tests {
         cfg.wind.model = sim::WindModel::Constant;
         cfg.wind.speed = 2.0;
         let ok = sim::Summary { rail_exit_speed: 20.0, ..summary_with_margin(2.0) };
-        assert!(rail_exit_warnings_at(&cfg, &ok, 2.0).is_empty());
+        assert!(rail_exit_warnings_at(&cfg, &ok, Some(2.0)).is_empty());
         // 7 m/s against 20 m/s: atan(0.35) = 19.3 deg
-        let w = rail_exit_warnings_at(&cfg, &ok, 7.0);
+        let w = rail_exit_warnings_at(&cfg, &ok, Some(7.0));
         assert!(w.len() == 1 && w[0].contains("wind angle of attack at rail exit is 19.3 deg (wind 7.0 m/s"), "{w:?}");
-        assert!(flight_warnings_at(&cfg, &ok, 7.0).iter().any(|w| w.contains("wind angle of attack at rail exit")));
+        assert!(flight_warnings_at(&cfg, &ok, Some(7.0)).iter().any(|w| w.contains("wind angle of attack at rail exit")));
         assert!(!flight_warnings(&cfg, &ok).iter().any(|w| w.contains("wind angle of attack")));
     }
 
@@ -2894,8 +2943,8 @@ mod tests {
         assert_eq!(run_sim(&cfg, Some(Descent::Ballistic)).unwrap(), None);
         let j = summary(&cfg);
         assert_eq!((j["aero_table_range"]["angle_beyond"].as_u64(), j["aero_table_range"]["angles_in_range"].as_bool()), (Some(0), Some(true)));
-        let ok_distance = j["landing_distance"].as_f64().unwrap();
-        // Table up to 30 deg: the extrapolated coefficients trim at a large angle; the run is not usable.
+        // Table up to 30 deg: the descent uses linearly extrapolated coefficients; the run is flagged as not usable
+        // whatever landing point they give.
         cfg.aero.alpha_max_deg = 30.0;
         let why = run_sim(&cfg, Some(Descent::Ballistic)).unwrap().expect("lookups beyond the angle range must be reported");
         assert!(
@@ -2905,7 +2954,7 @@ mod tests {
         assert!(why.ends_with("the descent uses extrapolated coefficients; build the table up to 90 deg"), "{why}");
         let j = summary(&cfg);
         assert_eq!(j["aero_table_range"]["angles_in_range"].as_bool(), Some(false));
-        assert!(j["landing_distance"].as_f64().unwrap() > 2.0 * ok_distance, "the extrapolated descent drifts far: {j}");
+        assert!(j["aero_table_range"]["angle_beyond"].as_u64().unwrap() > 0, "{j}");
         let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 
@@ -3057,6 +3106,29 @@ mod tests {
         cfg.recovery.main_altitude = Some(500.0);
         let w = flight_warnings(&cfg, &ok);
         assert!(w.iter().any(|w| w == "recovery.main_altitude = 500 m is above the apogee (500 m): the main opens together with the drogue"), "{w:?}");
+    }
+
+    #[test]
+    fn rail_exit_wind_warning_scales_a_wind_profile_to_the_reference_speed() {
+        let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
+        cfg.wind.model = sim::WindModel::Profile;
+        cfg.wind.profile = Some("wind_profile_example.csv".into());
+        let wind = sim::Wind::from_config(&cfg.wind_config()).unwrap();
+        let h = cfg.launch.rail_length * cfg.launch.elevation_deg.to_radians().sin();
+        // Reference speed 5 W: the profile scaled by 5, as the wind-grid case of that speed flies it.
+        let reference = 5.0 * wind.speed;
+        let u = wind.with_speed_direction(reference, wind.direction_deg).unwrap().at(h);
+        let expect = u.x.hypot(u.y);
+        let ok = sim::Summary { rail_exit_speed: 20.0, ..summary_with_margin(2.0) };
+        let w = rail_exit_warnings_at(&cfg, &ok, Some(reference));
+        assert!(w.len() == 1 && w[0].contains(&format!("(wind {expect:.1} m/s at {h:.1} m")), "{w:?}");
+        // The nominal flight flies the profile as it is (wind.speed is ignored for profiles).
+        cfg.wind.speed = 50.0;
+        assert!(rail_exit_warnings(&cfg, &ok).is_empty());
+        // Monte Carlo: the reference is the profile mean plus two sigma of the wind-speed perturbation.
+        cfg.dispersion.mode = sim::DispersionMode::MonteCarlo;
+        cfg.dispersion.monte_carlo.wind_speed = 1.5;
+        assert!((reference_wind_speed(&cfg) - (wind.speed + 3.0)).abs() < 1e-12);
     }
 
     #[test]
@@ -3324,7 +3396,7 @@ mod tests {
         let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
         let high = sim::Summary { min_stability_cal: 2.0, stability_at_rail_exit: 2.0, apogee: 4440.7, ..sample_summary() };
         assert!(!flight_warnings(&cfg, &high).is_empty());
-        assert!(flight_warnings_at(&cfg, &high, 0.0).is_empty());
+        assert!(flight_warnings_at(&cfg, &high, Some(0.0)).is_empty());
         cfg.wind.speed = 0.0;
         assert!(flight_warnings(&cfg, &high).is_empty());
     }
@@ -3446,7 +3518,7 @@ mod tests {
         let (r, _) = fly_sample(&cfg, &p, Descent::Parachute);
         let s = &r.summary;
         assert!((s.apogee - 4440.7).abs() < 0.05 && (s.apogee_time - 26.11).abs() < 0.005, "{} at {}", s.apogee, s.apogee_time);
-        assert!((s.landing_east + 654.8).abs() < 0.05 && (s.landing_north + 7707.9).abs() < 0.05, "{} {}", s.landing_east, s.landing_north);
+        assert!((s.landing_east + 654.7).abs() < 0.05 && (s.landing_north + 7708.1).abs() < 0.05, "{} {}", s.landing_east, s.landing_north);
         let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 

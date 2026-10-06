@@ -1298,8 +1298,7 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
         println!("Flight ({descent:?}, wind {:.1} m/s from {:.0} deg)", s.wind_speed, s.wind_direction_deg);
         println!("  rail exit       {:.2} s, {:.1} m/s, stability {:.2} cal", s.rail_exit_time, s.rail_exit_speed, s.stability_at_rail_exit);
         println!("  max speed       {:.1} m/s (Mach {:.2}), max q {:.1} kPa", s.max_speed, s.max_mach, s.max_dyn_pressure / 1000.0);
-        let free = if s.min_stability_cal.is_finite() { format!("{:.2} cal", s.min_stability_cal) } else { "n/a (airspeed < 10 m/s)".to_string() };
-        println!("  min static margin {:.2} cal (free flight {free})", static_margin_min(s));
+        println!("  min static margin {:.2} cal (free flight {})", static_margin_min(s), free_flight_margin_text(s));
         if let Some(m) = &axis {
             println!(
                 "  pitch / yaw     {:.2} cal / {:.2} cal (general aero table: smallest margin in each plane)",
@@ -1339,6 +1338,16 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
             }
         }
         Ok(unstable.or_else(|| Some(format!("the flight did not land within sim.max_time = {} s", cfg.sim.max_time))))
+    }
+}
+
+/// The free-flight minimum static margin for the plain summary; it has none when the airspeed never
+/// exceeded 10 m/s before apogee.
+fn free_flight_margin_text(s: &Summary) -> String {
+    if s.min_stability_cal.is_finite() {
+        format!("{:.2} cal", s.min_stability_cal)
+    } else {
+        "n/a (airspeed < 10 m/s)".to_string()
     }
 }
 
@@ -2379,6 +2388,13 @@ mod tests {
         cfg.recovery.enabled = false;
         assert_eq!(check_descent_override(&cfg, Some(Descent::Parachute)).unwrap_err().to_string(), "--descent parachute needs recovery.enabled = true");
         assert!(check_descent_override(&cfg, Some(Descent::Ballistic)).is_ok() && check_descent_override(&cfg, None).is_ok());
+    }
+
+    #[test]
+    fn free_flight_margin_without_fast_flight_is_not_a_number() {
+        let s = sim::Summary { min_stability_cal: f64::NAN, ..sample_summary() };
+        assert_eq!(free_flight_margin_text(&s), "n/a (airspeed < 10 m/s)");
+        assert_eq!(free_flight_margin_text(&sim::Summary { min_stability_cal: 1.234, ..sample_summary() }), "1.23 cal");
     }
 
     #[test]

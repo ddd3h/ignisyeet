@@ -474,8 +474,9 @@ pub fn percentile(sorted: &[f64], q: f64) -> f64 {
     }
 }
 
-/// Statistics over the successful rows of each descent mode present in `rows`.
-pub fn summarize(rows: &[McRow], samples: usize, seed: u64) -> McSummary {
+/// Statistics over the successful rows of each descent mode present in `rows`; `samples`, `seed`
+/// and `truncate_sigma` (the bound of the clipped draws, None: untruncated) are recorded as given.
+pub fn summarize(rows: &[McRow], samples: usize, seed: u64, truncate_sigma: Option<f64>) -> McSummary {
     let mut modes: Vec<Descent> = Vec::new();
     for r in rows {
         if !modes.contains(&r.descent) {
@@ -520,7 +521,7 @@ pub fn summarize(rows: &[McRow], samples: usize, seed: u64) -> McSummary {
             }
         })
         .collect();
-    McSummary { samples, seed, truncate_sigma: None, descents }
+    McSummary { samples, seed, truncate_sigma, descents }
 }
 
 /// Monte Carlo landing dispersion around `base`. Every sample draws its own perturbations (see
@@ -566,6 +567,9 @@ pub fn run_monte_carlo_with_progress(
             bail!("dispersion.monte_carlo.{name} must be a finite number >= 0 (1-sigma), found {v}");
         }
     }
+    if let Some(k) = cfg.truncate_sigma.filter(|k| !(k.is_finite() && *k > 0.0)) {
+        bail!("dispersion.monte_carlo.truncate_sigma must be a finite number > 0 (the bound of the clipped draws in sigma, e.g. 3.0), found {k}");
+    }
     if cfg.wind_speed != 0.0 || cfg.wind_direction_deg != 0.0 {
         base.wind.check_scalable_for(false)?;
     }
@@ -597,7 +601,7 @@ pub fn run_monte_carlo_with_progress(
                 .collect::<Vec<_>>()
         })
         .collect();
-    let summary = McSummary { truncate_sigma: cfg.truncate_sigma, ..summarize(&rows, cfg.samples, cfg.seed) };
+    let summary = summarize(&rows, cfg.samples, cfg.seed, cfg.truncate_sigma);
     Ok(McResult { rows, summary })
 }
 
@@ -1188,7 +1192,7 @@ mod tests {
             mk(3, Err(NOT_LANDED.to_string())),
             mk(4, Err("never left the rail".to_string())),
         ];
-        let st = &summarize(&rows, 5, 1).descents[0];
+        let st = &summarize(&rows, 5, 1, None).descents[0];
         assert_eq!((st.failed, st.not_landed, st.landing.n), (2, 1, 3));
         assert!(!st.complete && st.max_landing_distance_is_lower_bound);
         assert_eq!(st.max_landing_distance, 300.0);
@@ -1196,11 +1200,11 @@ mod tests {
         // Three landed samples: no P99.9.
         assert_eq!(st.landing_distance_p999, None);
         let many: Vec<McRow> = (0..1000).map(|i| mk(i, Ok(landed_summary(i as f64)))).collect();
-        let st = &summarize(&many, 1000, 1).descents[0];
+        let st = &summarize(&many, 1000, 1, None).descents[0];
         assert!((st.landing_distance_p999.unwrap() - 998.001).abs() < 1e-6, "{:?}", st.landing_distance_p999);
-        let few = summarize(&many[..999], 999, 1);
+        let few = summarize(&many[..999], 999, 1, None);
         assert_eq!(few.descents[0].landing_distance_p999, None);
-        let all = summarize(&rows[..3], 3, 1);
+        let all = summarize(&rows[..3], 3, 1, None);
         assert!(all.descents[0].complete && !all.descents[0].max_landing_distance_is_lower_bound);
     }
 
@@ -1212,11 +1216,11 @@ mod tests {
         assert_eq!((st1.mean_east, st1.mean_north), (3.0, 4.0));
         assert!(st1.covariance[0][0].is_nan() && st1.ellipse_3sigma.semi_major.is_nan() && st1.ellipse_1sigma.semi_minor.is_nan());
         let mk = |sample, result| McRow { sample, descent: Descent::Ballistic, perturbation: Perturbation::default(), result };
-        let none = summarize(&[mk(0, Err("never left the rail".into()))], 1, 1);
+        let none = summarize(&[mk(0, Err("never left the rail".into()))], 1, 1, None);
         let d = &none.descents[0];
         assert!(d.apogee_mean.is_nan() && d.apogee_std.is_nan() && d.landing.ellipse_1sigma.semi_major.is_nan());
         assert!(serde_json::to_string(d).unwrap().contains("\"apogee_std\":null"));
-        let one = summarize(&[mk(0, Ok(landed_summary(100.0)))], 1, 1);
+        let one = summarize(&[mk(0, Ok(landed_summary(100.0)))], 1, 1, None);
         assert!(one.descents[0].apogee_mean.is_finite() && one.descents[0].apogee_std.is_nan());
     }
 
@@ -1459,6 +1463,22 @@ azimuth_deg = 0.0"#;
             let s = row.perturbation.simulation(&b, &m);
             assert!(s.launch.elevation_deg <= 90.0 && s.launch.elevation_deg > 80.0);
         }
+    }
+
+    #[test]
+    fn monte_carlo_validates_and_reports_truncate_sigma() {
+        let (t, m) = (table(), motor());
+        let b = base(&t, &m);
+        for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            let cfg = MonteCarloConfig { samples: 1, truncate_sigma: Some(bad), ..Default::default() };
+            let e = run_monte_carlo(&cfg, &b, false).err().map(|e| e.to_string()).unwrap_or_default();
+            assert!(e.contains("dispersion.monte_carlo.truncate_sigma must be a finite number > 0"), "{bad}: {e}");
+        }
+        let r = run_monte_carlo(&MonteCarloConfig { samples: 2, truncate_sigma: Some(2.5), ..Default::default() }, &b, false).unwrap();
+        assert_eq!(r.summary.truncate_sigma, Some(2.5));
+        // summarize() carries the bound it is given.
+        assert_eq!(summarize(&r.rows, 2, 1, Some(2.5)).truncate_sigma, Some(2.5));
+        assert_eq!(summarize(&r.rows, 2, 1, None).truncate_sigma, None);
     }
 
     #[test]

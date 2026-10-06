@@ -1073,7 +1073,7 @@ mod tests {
         crate::write_wind_grid_csv(&dir.join("dispersion.csv"), &w.results, &vec![None; w.results.len()]).unwrap();
         std::fs::write(dir.join(WIND_GRID_META), serde_json::json!({ "config_hash": H }).to_string()).unwrap();
         crate::write_monte_carlo_csv(&dir.join("dispersion_mc.csv"), &m.rows).unwrap();
-        let mc_summary = sim::dispersion::summarize(&m.rows, m.rows.len(), 1);
+        let mc_summary = sim::dispersion::summarize(&m.rows, m.rows.len(), 1, None);
         std::fs::write(dir.join("dispersion_summary.json"), serde_json::to_string_pretty(&with_hash(&mc_summary, H)).unwrap()).unwrap();
 
         let lf = load_flight(&dir, H).unwrap().unwrap();
@@ -1123,7 +1123,7 @@ mod tests {
         crate::write_trajectory(&dir.join("trajectory.csv"), &f.samples).unwrap();
         crate::write_wind_grid_csv(&dir.join("dispersion.csv"), &w.results, &vec![None; w.results.len()]).unwrap();
         crate::write_monte_carlo_csv(&dir.join("dispersion_mc.csv"), &m.rows).unwrap();
-        let mc_summary = sim::dispersion::summarize(&m.rows, m.rows.len(), 1);
+        let mc_summary = sim::dispersion::summarize(&m.rows, m.rows.len(), 1, None);
         // No hash at all (older output): stale.
         std::fs::write(dir.join("summary.json"), serde_json::to_string(&f.summary).unwrap()).unwrap();
         std::fs::write(dir.join("dispersion_summary.json"), serde_json::to_string(&mc_summary).unwrap()).unwrap();

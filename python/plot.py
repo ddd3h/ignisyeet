@@ -393,7 +393,7 @@ def plot_trajectory(out):
         ("airspeed", "Airspeed [m/s]", body),
         ("mach", "Mach", body),
         ("alpha_deg", "Angle of attack [deg]", free),
-        ("stability_cal", "CP–CG separation at the flown α [cal] (ascent)", asc),
+        ("stability_cal", "CP–CG at flown α [cal], ascent", asc),
         ("dyn_pressure", "Dynamic pressure [Pa]", body),
         ("thrust", "Thrust [N]", body[body.t <= body.t[body.thrust > 0].max() * 1.2] if (body.thrust > 0).any() else body),
         ("mass", "Mass [kg]", body),

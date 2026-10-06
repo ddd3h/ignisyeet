@@ -516,7 +516,7 @@ class Usability(unittest.TestCase):
 
     def test_stability_panel_is_the_cp_cg_separation_off_the_rail(self):
         src = (HERE / "plot.py").read_text()
-        self.assertIn("CP–CG separation at the flown α [cal]", src)
+        self.assertIn("CP–CG at flown α [cal]", src)
         self.assertNotIn('"Static margin [cal] (ascent)"', src)
 
     def test_trajectory_plots_show_the_banner(self):

@@ -287,7 +287,8 @@ pub struct PointStats {
 }
 
 /// Mean, sample covariance (n - 1) and k-sigma error ellipses of (east, north) points.
-/// With no points everything is NaN; with one point the covariance is zero.
+/// The mean needs one point; the covariance and the ellipses need two. Statistics without enough
+/// points are NaN (null in the JSON output).
 pub fn landing_statistics(points: &[(f64, f64)]) -> PointStats {
     let n = points.len();
     let nf = n as f64;
@@ -298,11 +299,13 @@ pub fn landing_statistics(points: &[(f64, f64)]) -> PointStats {
         sen += (e - me) * (v - mn);
         snn += (v - mn) * (v - mn);
     }
-    let d = if n > 1 { nf - 1.0 } else { 1.0 };
+    let d = if n > 1 { nf - 1.0 } else { f64::NAN };
     let (a, b, c) = (see / d, sen / d, snn / d);
     let half = 0.5 * (a + c);
     let r = (0.25 * (a - c) * (a - c) + b * b).sqrt();
-    let (l1, l2) = ((half + r).max(0.0), (half - r).max(0.0));
+    // f64::max would turn NaN into 0, so the n < 2 case is handled explicitly.
+    let clip = |x: f64| if x.is_nan() { x } else { x.max(0.0) };
+    let (l1, l2) = (clip(half + r), clip(half - r));
     // Major axis at angle theta from east (counter-clockwise) -> bearing clockwise from north.
     let theta = 0.5 * (2.0 * b).atan2(a - c);
     let bearing = (90.0 - theta.to_degrees()).rem_euclid(180.0);
@@ -392,7 +395,7 @@ pub fn summarize(rows: &[McRow], samples: usize, seed: u64) -> McSummary {
             let failed = mine.len() - ok.len();
             let nf = ok.len() as f64;
             let am = ok.iter().map(|(_, s)| s.apogee).sum::<f64>() / nf;
-            let var = ok.iter().map(|(_, s)| (s.apogee - am).powi(2)).sum::<f64>() / if ok.len() > 1 { nf - 1.0 } else { 1.0 };
+            let var = ok.iter().map(|(_, s)| (s.apogee - am).powi(2)).sum::<f64>() / if ok.len() > 1 { nf - 1.0 } else { f64::NAN };
             DescentStats {
                 descent: m,
                 failed,
@@ -832,6 +835,22 @@ mod tests {
     }
 
     #[test]
+    fn too_few_samples_give_nan_statistics() {
+        let st0 = landing_statistics(&[]);
+        assert!(st0.mean_east.is_nan() && st0.covariance[0][0].is_nan() && st0.ellipse_1sigma.semi_major.is_nan());
+        let st1 = landing_statistics(&[(3.0, 4.0)]);
+        assert_eq!((st1.mean_east, st1.mean_north), (3.0, 4.0));
+        assert!(st1.covariance[0][0].is_nan() && st1.ellipse_3sigma.semi_major.is_nan() && st1.ellipse_1sigma.semi_minor.is_nan());
+        let mk = |sample, result| McRow { sample, descent: Descent::Ballistic, perturbation: Perturbation::default(), result };
+        let none = summarize(&[mk(0, Err("never left the rail".into()))], 1, 1);
+        let d = &none.descents[0];
+        assert!(d.apogee_mean.is_nan() && d.apogee_std.is_nan() && d.landing.ellipse_1sigma.semi_major.is_nan());
+        assert!(serde_json::to_string(d).unwrap().contains("\"apogee_std\":null"));
+        let one = summarize(&[mk(0, Ok(landed_summary(100.0)))], 1, 1);
+        assert!(one.descents[0].apogee_mean.is_finite() && one.descents[0].apogee_std.is_nan());
+    }
+
+    #[test]
     fn short_max_time_gives_unlanded_summaries() {
         let (t, m) = (table(), motor());
         let mut b = base(&t, &m);
@@ -859,5 +878,23 @@ mod tests {
             let e = run_monte_carlo(&c, &b, false).err().unwrap().to_string();
             assert!(e.contains(name), "{name}: {e}");
         }
+    }
+
+    #[test]
+    fn unknown_config_keys_are_rejected() {
+        use crate::flight::{Launch, Recovery};
+        let l = r#"latitude = 1.0
+longitude = 2.0
+altitude = 0.0
+rail_length = 3.0
+elevation_deg = 85.0
+azimuth_deg = 0.0"#;
+        assert!(toml::from_str::<Launch>(l).is_ok());
+        let e = toml::from_str::<Launch>(&format!("{l}\nrol_deg = 5.0")).unwrap_err().to_string();
+        assert!(e.contains("rol_deg"), "{e}");
+        let r = "enabled = true\ncd_s = 1.0\ndelay = 1.0";
+        assert!(toml::from_str::<Recovery>(r).is_ok());
+        let e = toml::from_str::<Recovery>(&format!("{r}\ndeploy_altitude = 100.0")).unwrap_err().to_string();
+        assert!(e.contains("deploy_altitude"), "{e}");
     }
 }

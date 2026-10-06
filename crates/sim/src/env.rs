@@ -139,6 +139,9 @@ pub fn parse_wind_profile(text: &str) -> Result<Vec<ProfilePoint>> {
         if v[1] < 0.0 {
             bail!("wind profile speed must not be negative (row \"{l}\")");
         }
+        if !(0.0..=360.0).contains(&v[2]) {
+            bail!("wind profile direction must be between 0 and 360 degrees (row \"{l}\")");
+        }
         if let Some(p) = pts.last() {
             if v[0] <= p.height {
                 bail!("wind profile altitudes must be strictly ascending (row \"{l}\")");
@@ -267,9 +270,21 @@ impl Wind {
     /// Ok when this wind can be scaled to another speed for a dispersion study: always, except for
     /// a calm `profile` (mean speed below [`CALM_PROFILE_SPEED`]).
     pub fn check_scalable(&self) -> Result<()> {
+        self.check_scalable_for(true)
+    }
+
+    /// [`check_scalable`](Self::check_scalable) with the error worded for the wind grid (`grid`)
+    /// or for the Monte Carlo wind perturbations.
+    pub fn check_scalable_for(&self, grid: bool) -> Result<()> {
         if self.model == WindModel::Profile && self.speed < CALM_PROFILE_SPEED {
+            if grid {
+                bail!(
+                    "wind profile is calm (mean speed {:.3} m/s): it cannot be scaled for dispersion; use wind.model = \"constant\"/\"power\" for a wind grid",
+                    self.speed
+                );
+            }
             bail!(
-                "wind profile is calm (mean speed {:.3} m/s): it cannot be scaled for dispersion; use wind.model = \"constant\"/\"power\" for a wind grid",
+                "wind profile is calm (mean speed {:.3} m/s): the Monte Carlo wind perturbations cannot be applied to it; set dispersion.monte_carlo.wind_speed and wind_direction_deg to 0, or use a profile with wind",
                 self.speed
             );
         }
@@ -803,6 +818,10 @@ mod tests {
         assert!(parse_wind_profile("alt,speed,dir\n0,1,0\n").unwrap_err().to_string().contains("header"));
         assert!(parse_wind_profile("altitude_m,speed,direction_deg\n").is_err());
         assert!(parse_wind_profile("altitude_m,speed,direction_deg\n0,x,0\n").is_err());
+        let e = parse_wind_profile("altitude_m,speed,direction_deg\n0,1,400\n").unwrap_err().to_string();
+        assert!(e.contains("between 0 and 360") && e.contains("0,1,400"), "{e}");
+        assert!(parse_wind_profile("altitude_m,speed,direction_deg\n0,1,-1\n").is_err());
+        assert!(parse_wind_profile("altitude_m,speed,direction_deg\n0,1,0\n100,1,360\n").is_ok());
         let mut c = cfg(WindModel::Profile);
         assert!(Wind::from_config(&c).unwrap_err().to_string().contains("wind.profile"));
         c.profile = Some("/nonexistent/wind.csv".into());

@@ -437,12 +437,26 @@ impl Config {
         if a.alpha_max_deg > 180.0 {
             bail!("aero.alpha_max_deg = {} is outside (0, 180]", a.alpha_max_deg);
         }
-        let n_mach = ((a.mach_max - a.mach_min) / a.mach_step).round().max(1.0) + 1.0;
+        // The Mach step the table is really built with (see `aero_options`).
+        let general = a.table_kind == aero::table::TableKind::General;
+        let step = if general && a.method == AeroMethod::Barrowman { a.general_mach_step } else { a.mach_step };
+        let step_key = if general && a.method == AeroMethod::Barrowman { "aero.general_mach_step" } else { "aero.mach_step" };
+        let n_mach = ((a.mach_max - a.mach_min) / step).round().max(1.0) + 1.0;
         let n_alpha = (a.alpha_max_deg / a.alpha_step_deg).round().max(1.0) * 2.0 + 1.0;
-        if n_mach * n_alpha > MAX_AERO_GRID_POINTS {
+        let mut points = n_mach * n_alpha;
+        let mut what = format!("{n_mach} Mach x {n_alpha} alpha");
+        if general && a.method == AeroMethod::Barrowman {
+            let (alphas, betas) = crate::general_axes();
+            points = points.max(n_mach * (alphas.len() * betas.len()) as f64);
+            what = format!(
+                "{n_mach} Mach x {n_alpha} alpha (axisymmetric table), then {n_mach} Mach x {} alpha x {} beta (general table)",
+                alphas.len(),
+                betas.len()
+            );
+        }
+        if points > MAX_AERO_GRID_POINTS {
             bail!(
-                "the aero table grid would have about {:.3e} points ({n_mach} Mach x {n_alpha} alpha; at most {MAX_AERO_GRID_POINTS:e}): increase aero.mach_step / aero.alpha_step_deg or reduce aero.mach_max / aero.alpha_max_deg",
-                n_mach * n_alpha
+                "the aero table grid would have about {points:.3e} points ({what}; at most {MAX_AERO_GRID_POINTS:e}): increase {step_key} / aero.alpha_step_deg or reduce aero.mach_max / aero.alpha_max_deg"
             );
         }
         if a.n_slices < MIN_SLICES {
@@ -455,7 +469,7 @@ impl Config {
 
         let w = &self.wind;
         non_negative("wind.speed", w.speed)?;
-        finite("wind.direction_deg", w.direction_deg)?;
+        range("wind.direction_deg", w.direction_deg, 0.0, 360.0)?;
         positive("wind.ref_height", w.ref_height)?;
         positive("wind.exponent", w.exponent)?;
         positive("wind.roughness_length", w.roughness_length)?;
@@ -471,6 +485,18 @@ impl Config {
         }
         positive("sim.max_time", s.max_time)?;
         positive("sim.output_interval", s.output_interval)?;
+        if s.output_interval < MIN_OUTPUT_INTERVAL {
+            bail!(
+                "sim.output_interval = {} s is too small (>= {MIN_OUTPUT_INTERVAL} s): it would write an enormous trajectory and limit the adaptive step",
+                s.output_interval
+            );
+        }
+        if s.max_time / s.output_interval > MAX_OUTPUT_ROWS {
+            bail!(
+                "sim.max_time / sim.output_interval = {:.3e} output rows is too many (at most {MAX_OUTPUT_ROWS:e}): increase sim.output_interval",
+                s.max_time / s.output_interval
+            );
+        }
         if s.output_interval > s.max_time {
             bail!("sim.output_interval = {} s exceeds sim.max_time = {} s", s.output_interval, s.max_time);
         }
@@ -647,6 +673,9 @@ const MAX_TOL: f64 = 1e-3;
 const MACH_LIMIT: f64 = 10.0;
 /// Largest accepted number of aero table grid points.
 const MAX_AERO_GRID_POINTS: f64 = 1e6;
+/// Smallest sim.output_interval [s] and largest number of output rows (max_time / output_interval).
+const MIN_OUTPUT_INTERVAL: f64 = 1e-4;
+const MAX_OUTPUT_ROWS: f64 = 1e7;
 const MAX_DIRECTIONS: usize = 360;
 const MAX_WIND_SPEEDS: usize = 100;
 const MAX_WIND_GRID_CASES: usize = 100_000;
@@ -788,6 +817,30 @@ mod tests {
         // Products too large for a positive definite tensor.
         let bad = sample.replace("iyy_dry = 1.5 ", "iyy_dry = 1.5\nixy_dry = 1.6 #");
         assert!(parse(&bad).unwrap_err().to_string().contains("positive definite"));
+    }
+
+    #[test]
+    fn wind_direction_is_range_checked() {
+        let sample = include_str!("../../../examples/sample.toml");
+        let at = |d: &str| sample.replace("direction_deg = 0.0 ", &format!("direction_deg = {d} #"));
+        assert!(parse(&at("400.0")).unwrap_err().to_string().contains("wind.direction_deg must be between 0 and 360, found 400"));
+        assert!(parse(&at("-10.0")).unwrap_err().to_string().contains("wind.direction_deg"));
+        assert!(parse(&at("360.0")).is_ok());
+    }
+
+    #[test]
+    fn effective_mach_step_and_output_interval_are_capped() {
+        let sample = include_str!("../../../examples/sample.toml");
+        let general = sample.replace("extrapolation = \"linear\" ", "table_kind = \"general\"\ngeneral_mach_step = 1e-6\nextrapolation = \"linear\" ");
+        let e = parse(&general).unwrap_err().to_string();
+        assert!(e.contains("aero table grid") && e.contains("aero.general_mach_step"), "{e}");
+        assert!(parse(&general.replace("general_mach_step = 1e-6", "general_mach_step = 0.1")).is_ok());
+        // an axisymmetric table does not use the general step
+        assert!(parse(sample).is_ok());
+        let e = sample_with("output_interval = 0.05", "output_interval = 1e-9").unwrap_err().to_string();
+        assert!(e.contains("sim.output_interval") && e.contains("too small"), "{e}");
+        let e = sample_with("output_interval = 0.05", "output_interval = 0.0002").unwrap_err().to_string();
+        assert!(e.contains("output rows"), "{e}");
     }
 
     #[test]

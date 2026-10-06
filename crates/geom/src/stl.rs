@@ -18,13 +18,14 @@ pub fn parse_stl(bytes: &[u8]) -> Result<Vec<Triangle>> {
         let n = u32::from_le_bytes(bytes[80..84].try_into().unwrap()) as usize;
         bytes.len() == 84 + 50 * n
     };
-    let looks_ascii = bytes.starts_with(b"solid") && std::str::from_utf8(&bytes[..bytes.len().min(1024)]).map(|s| s.contains("facet")).unwrap_or(false);
-    let tris = if is_binary_size && !looks_ascii {
+    // Binary exporters often start the 80-byte header with "solid" too: a file of the exact binary
+    // size is binary unless it is a complete ASCII STL (valid UTF-8 with "facet" and "endsolid").
+    let ascii_text = if bytes.starts_with(b"solid") { std::str::from_utf8(bytes).ok() } else { None };
+    let complete_ascii = ascii_text.is_some_and(|t| t.contains("facet") && t.contains("endsolid"));
+    let tris = if is_binary_size && !complete_ascii {
         parse_binary(bytes)?
-    } else if looks_ascii {
+    } else if ascii_text.is_some() {
         parse_ascii(bytes)?
-    } else if is_binary_size {
-        parse_binary(bytes)?
     } else if bytes.len() >= 84 {
         let n = u32::from_le_bytes(bytes[80..84].try_into().unwrap()) as usize;
         bail!(
@@ -122,6 +123,27 @@ mod tests {
         let ascii = b"solid t\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex NaN 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid t\n";
         let e = parse_stl(ascii).unwrap_err().to_string();
         assert!(e.contains("triangle 1"), "{e}");
+    }
+
+    #[test]
+    fn binary_stl_with_a_solid_header_is_read_as_binary() {
+        // Exporters write "solid <name>" (even "facet") into the 80-byte header of binary files.
+        // Coordinates 0 and 2 (0x40000000) keep every byte valid ASCII.
+        let tri = [Vec3::new(0.0, 0.0, 0.0), Vec3::new(2.0, 0.0, 0.0), Vec3::new(0.0, 2.0, 0.0)];
+        let mut b = vec![b' '; 80];
+        let tag = b"solid part exported with facet normals";
+        b[..tag.len()].copy_from_slice(tag);
+        b.extend_from_slice(&1u32.to_le_bytes());
+        for v in std::iter::once(Vec3::new(0.0, 0.0, 0.0)).chain(tri) {
+            for c in [v.x, v.y, v.z] {
+                b.extend_from_slice(&(c as f32).to_le_bytes());
+            }
+        }
+        b.extend_from_slice(&[0, 0]);
+        assert_eq!(parse_stl(&b).unwrap(), vec![tri]);
+        // An ASCII file is still ASCII, also without a trailing newline.
+        let ascii = b"solid t\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 2 0 0\nvertex 0 2 0\nendloop\nendfacet\nendsolid t";
+        assert_eq!(parse_stl(ascii).unwrap(), vec![tri]);
     }
 
     #[test]

@@ -378,7 +378,7 @@ fn check_cg(cfg: &Config, length: f64) -> Result<()> {
 
 fn load_motor(cfg: &Config) -> Result<Motor> {
     let eng = cfg.resolve(&cfg.motor.eng);
-    let mut motor = Motor::load(&eng)?;
+    let mut motor = Motor::load(&eng).with_context(|| format!("cannot read motor file {}", eng.display()))?;
     if let Some(m) = cfg.motor.propellant_mass {
         motor.propellant_mass = m;
     }

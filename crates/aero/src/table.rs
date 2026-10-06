@@ -645,6 +645,11 @@ impl AeroTable {
     ///
     /// Panics for a general table; use [`lookup6`](Self::lookup6).
     pub fn lookup(&self, m: f64, alpha: f64) -> AeroCoeffs {
+        self.lookup_rec(m, alpha, true)
+    }
+
+    /// [`lookup`](Self::lookup); counts the lookup in the range statistics only when `rec` is set.
+    fn lookup_rec(&self, m: f64, alpha: f64, rec: bool) -> AeroCoeffs {
         let TableData::Axisymmetric(data) = &self.data else { panic!("lookup() on a general aero table") };
         let clamp = self.meta.extrapolation == Extrapolation::Clamp;
         let (i, tm) = locate(&self.meta.machs, m, true);
@@ -666,7 +671,9 @@ impl AeroTable {
         let mut out = interp(ta);
         let extrapolated = !(0.0..=1.0).contains(&ta);
         let beyond = self.meta.alphas_deg.last().is_some_and(|&last| alpha_deg > last + 1e-9);
-        self.record(m, alpha_deg, beyond);
+        if rec {
+            self.record(m, alpha_deg, beyond);
+        }
         if extrapolated {
             let edge = interp(ta.clamp(0.0, 1.0));
             // cn, ca_on, ca_off, cna, damping sums and cl_delta keep the sign of the edge value.
@@ -697,13 +704,18 @@ impl AeroTable {
     /// General tables are interpolated trilinearly; axisymmetric tables are expanded from the
     /// total angle (see [`expand_axisymmetric`]).
     pub fn lookup6(&self, m: f64, alpha: f64, beta: f64) -> Coeffs6 {
+        self.lookup6_rec(m, alpha, beta, true)
+    }
+
+    /// [`lookup6`](Self::lookup6); counts the lookup in the range statistics only when `rec` is set.
+    fn lookup6_rec(&self, m: f64, alpha: f64, beta: f64, rec: bool) -> Coeffs6 {
         let data = match &self.data {
             TableData::General(d) => d,
             TableData::Axisymmetric(_) => {
                 let [u, v, w] = airspeed_direction(alpha, beta);
                 let total = v.hypot(w).atan2(u);
                 let eff = total.min(std::f64::consts::PI - total);
-                return expand_axisymmetric(&self.lookup(m, eff), alpha, beta, self.meta.ref_diameter, self.meta.fin_cant_ref_deg.to_radians());
+                return expand_axisymmetric(&self.lookup_rec(m, eff, rec), alpha, beta, self.meta.ref_diameter, self.meta.fin_cant_ref_deg.to_radians());
             }
         };
         let clamp = self.meta.extrapolation == Extrapolation::Clamp;
@@ -714,7 +726,9 @@ impl AeroTable {
         let (k, tb) = locate(&self.meta.betas_deg, beta.to_degrees(), clamp);
         let extrapolated = !(0.0..=1.0).contains(&ta) || !(0.0..=1.0).contains(&tb);
         let beyond = |g: &[f64], x: f64| g.len() >= 2 && (x < g[0] - 1e-9 || x > g[g.len() - 1] + 1e-9);
-        self.record(m, alpha.to_degrees(), beyond(&self.meta.alphas_deg, alpha.to_degrees()) || beyond(&self.meta.betas_deg, beta.to_degrees()));
+        if rec {
+            self.record(m, alpha.to_degrees(), beyond(&self.meta.alphas_deg, alpha.to_degrees()) || beyond(&self.meta.betas_deg, beta.to_degrees()));
+        }
         let (i1, j1, k1) = ((i + 1).min(self.meta.machs.len() - 1), (j + 1).min(na - 1), (k + 1).min(nb - 1));
         let at = |ii: usize, jj: usize, kk: usize| &data[(ii * na + jj) * nb + kk];
         let interp = |ta: f64, tb: f64| {
@@ -743,6 +757,42 @@ impl AeroTable {
         }
         out[8] = out[8].min(0.0);
         Coeffs6::from_arr(out)
+    }
+
+    /// Static margins [cal] in pitch and yaw at Mach `m` for a CG `x_cg` aft of the nose tip [m];
+    /// positive is stable (centre of pressure aft of the CG).
+    ///
+    /// With the moments about the CG, Cm_cg = Cm - (x_cg / d) Cz and Cn_cg = Cn + (x_cg / d) Cy,
+    /// the margins are the small-angle slopes of the table:
+    ///
+    /// * pitch (beta = 0): `x_cp,pitch / d = (dCm/dalpha) / (dCz/dalpha)`, so
+    ///   `(dCm_cg/dalpha) / (dCz/dalpha) = x_cp,pitch / d - x_cg / d`;
+    /// * yaw (alpha = 0): `x_cp,yaw / d = -(dCn/dbeta) / (dCy/dbeta)`, so
+    ///   `-(dCn_cg/dbeta) / (dCy/dbeta) = x_cp,yaw / d - x_cg / d`.
+    ///
+    /// The slopes are central differences at +-delta, delta = the smaller of 0.5 deg and the
+    /// smallest nonzero grid angle of that axis (both give the slope of the interpolated table
+    /// at zero when the grid holds zero). An axisymmetric table returns its tabulated centre of
+    /// pressure at zero angle of attack in both planes, `(x_cp(m, 0) - x_cg) / d`; a general
+    /// table expanded from it gives the same value on its Mach nodes when x_cp does not vary
+    /// within the first angle cell. NaN for a
+    /// plane without a normal-force slope. Pitch-yaw coupling is not considered. The lookups are
+    /// not counted in the range statistics.
+    pub fn static_margins(&self, m: f64, x_cg: f64) -> (f64, f64) {
+        let d = self.meta.ref_diameter;
+        if self.meta.kind == TableKind::Axisymmetric {
+            let mg = (self.lookup_rec(m, 0.0, false).xcp - x_cg) / d;
+            return (mg, mg);
+        }
+        let delta = |axis: &[f64]| axis.iter().map(|a| a.abs()).filter(|a| *a > 1e-9).fold(0.5f64, f64::min).to_radians();
+        let (da, db) = (delta(&self.meta.alphas_deg), delta(&self.meta.betas_deg));
+        let (p, n) = (self.lookup6_rec(m, da, 0.0, false), self.lookup6_rec(m, -da, 0.0, false));
+        let dcz = p.cz - n.cz;
+        let pitch = if dcz.abs() > 1e-12 { (p.cm - n.cm) / dcz - x_cg / d } else { f64::NAN };
+        let (p, n) = (self.lookup6_rec(m, 0.0, db, false), self.lookup6_rec(m, 0.0, -db, false));
+        let dcy = p.cy - n.cy;
+        let yaw = if dcy.abs() > 1e-12 { -(p.cn - n.cn) / dcy - x_cg / d } else { f64::NAN };
+        (pitch, yaw)
     }
 
     /// Sanity warnings for a table that was not built by this program: a negative axial force
@@ -1007,6 +1057,62 @@ mod tests {
         }
         let _ = std::fs::remove_file(&p);
         let _ = std::fs::remove_file(p.with_extension("json"));
+    }
+
+    #[test]
+    fn static_margins_of_an_axisymmetric_expansion_equal_the_axisymmetric_margin() {
+        // Centre of pressure independent of alpha: the expansion gives the same margin exactly.
+        let meta = TableMeta {
+            ref_area: 0.01,
+            ref_diameter: 0.1,
+            length: 1.5,
+            machs: vec![0.0, 0.5, 1.0],
+            alphas_deg: vec![0.0, 2.0, 4.0, 10.0],
+            ..Default::default()
+        };
+        let t = AeroTable::from_fn(meta, |m, a| AeroCoeffs { cn: 0.2 * a * (1.0 + m), xcp: 1.1 - 0.1 * m, ca_on: 0.5, ca_off: 0.6, ..Default::default() });
+        let g = t.to_general(angle_axis(180.0, 30.0, 2.0, 10.0), angle_axis(90.0, 30.0, 2.0, 10.0));
+        t.reset_out_of_range_stats();
+        g.reset_out_of_range_stats();
+        // On the Mach nodes (and beyond the grid, where Mach is held); between nodes the general
+        // table interpolates Cm and Cz separately, the axisymmetric one their ratio x_cp.
+        for (m, x_cg) in [(0.0, 0.8), (0.5, 0.9), (1.0, 1.2), (1.4, 0.7)] {
+            let (ap, ay) = t.static_margins(m, x_cg);
+            let (gp, gy) = g.static_margins(m, x_cg);
+            let before = (t.lookup(m, 0.0).xcp - x_cg) / 0.1;
+            assert_eq!((ap, ay), (before, before));
+            assert!((gp - before).abs() < 1e-9 && (gy - before).abs() < 1e-9, "{gp} {gy} {before}");
+        }
+        // The margins are not counted in the range statistics (only the explicit lookups are).
+        assert_eq!(g.out_of_range_stats().lookups, 0);
+        assert_eq!(t.out_of_range_stats().lookups, 4);
+        // The sample rocket, whose centre of pressure varies with alpha: the slopes over the first
+        // 2 deg cell of the expanded grid give the centre of pressure at 2 deg.
+        let (s, _) = table(Extrapolation::Linear);
+        let sg = s.to_general(angle_axis(180.0, 30.0, 2.0, 10.0), angle_axis(90.0, 30.0, 2.0, 10.0));
+        let before = (s.lookup(0.5, 2f64.to_radians()).xcp - 0.9) / s.meta.ref_diameter;
+        let (p, y) = sg.static_margins(0.5, 0.9);
+        assert!((p - y).abs() < 1e-9 && (p - before).abs() < 1e-9, "{p} {y} {before}");
+    }
+
+    #[test]
+    fn static_margins_separate_pitch_and_yaw() {
+        // Pitch centre of pressure 1.2 m, yaw 0.6 m aft of the nose; CG at 0.9 m, d = 0.1 m.
+        let meta = TableMeta {
+            ref_area: 0.01,
+            ref_diameter: 0.1,
+            length: 1.5,
+            machs: vec![0.0, 1.0],
+            alphas_deg: vec![-10.0, -1.0, 0.0, 1.0, 10.0],
+            betas_deg: vec![-10.0, 0.0, 10.0],
+            ..Default::default()
+        };
+        let g = AeroTable::general_from_fn(meta, |_, a, b| {
+            let (cz, cy) = (-0.2 * a, -0.15 * b);
+            Coeffs6 { cx_on: -0.5, cx_off: -0.6, cz, cy, cm: 1.2 * cz / 0.1, cn: -0.6 * cy / 0.1, ..Default::default() }
+        });
+        let (p, y) = g.static_margins(0.5, 0.9);
+        assert!((p - 3.0).abs() < 1e-9 && (y + 3.0).abs() < 1e-9, "{p} {y}");
     }
 
     #[test]

@@ -17,7 +17,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           toolchain: 1.87.0
+      # rust-toolchain.toml pins the development toolchain; override it to build with the MSRV.
       - run: cargo build --locked
+        env:
+          RUSTUP_TOOLCHAIN: 1.87.0
 
   check:
     runs-on: ubuntu-latest

@@ -38,11 +38,11 @@ Detailed documentation with equations, figures, and verification is available in
 - **Three aerodynamic models**: Barrowman method (including Niskanen's supersonic and drag extensions), panel method (Morino method for subsonic, local-inclination method for supersonic), and external coefficient tables (e.g. from CFD)
 - **Six-component quasi-steady aerodynamics**: the coefficient table is either axisymmetric (CN, CA, center of pressure, damping sums, roll terms as a function of Mach number and total angle of attack) or general (CX, CY, CZ, Cl, Cm, Cn as a function of Mach number, angle of attack alpha and sideslip beta; made by `aero.table_kind = "general"`, by CFD with `surface = "stl"` or sideslip cases, or supplied as an external table). Roll comes from the fin cant forcing (`fin_cant_deg`, `fin_override.cant_deg`) and the roll damping Clp. The rigid-body motion is full 6-DoF, but the aerodynamics are quasi-steady with diagonal rate damping (Clp, Cmq, Cnr); cross derivatives (for example Clq or Cmp) are not modelled
 - **CFD mode** (`aero.method = "cfd"`): an optional fourth route that meshes the geometry with gmsh and solves a steady (Mach, angle of attack, optionally sideslip) matrix with SU2 (Euler by default, Roe/MUSCL scheme, parallel MPI cases with warm starts, resume and an early stop on converged forces). The solved points are interpolated onto the same coefficient table, so the flight simulation is unchanged. The wall is either rebuilt from the extracted body and fins as an OpenCASCADE solid (`surface = "cad"`, alias `"panel_mesh"`) or taken **directly from the STL** (`surface = "stl"`): the shells are repaired, united with Manifold into one solid and remeshed, and a fidelity report states how far the CFD wall is from the input. The CFD wall is close to, but not identical to, the input STL (shell union, remeshing, and for Euler the base treatment `base_treatment = "fairing"` or `"flat"`). Mirror symmetry of the STL is verified before a half or quarter domain is used; otherwise the full domain is solved. Sideslip cases (`betas_deg`) and roll-damping cases (`roll_damping`) give a six-component table. It needs SU2 8.3.0, gmsh, Open MPI and, for `surface = "stl"`, manifold3d (for example from conda-forge and pip; check with `ignisyeet cfd-check <config>`), and takes tens of minutes for a small matrix; see [CFD chapter](https://www.ddd3h.com/ignisyeet/cfd.html). The RANS option is unverified and should not be relied on. The results are cross-checks against the other methods, not validation against measurements (see [CFD](#cfd))
-- **Cached coefficient table**: not recomputed if the inputs are unchanged; interpolated inside the range and linearly extrapolated or clamped outside it
+- **Cached coefficient table**: not recomputed if the inputs are unchanged (the cache key includes the program version and a model version, and ignores settings that do not change the coefficients, such as unused method blocks and CFD resource and path settings); interpolated inside the range. Mach number is always held at the table edge; angle of attack and sideslip beyond the table are extrapolated linearly (or clamped, `extrapolation = "clamp"`) with bounds that keep signs and ranges physical
 - **6-DoF flight**: flat Earth (local ENU) and rotating Earth (ECEF, with Coriolis and centrifugal forces); constant, inverse-square, and J2 gravity; full inertia tensor (products of inertia), lateral CG offset, thrust misalignment and nozzle offset, and launch roll about the rail axis
 - **Atmosphere and wind models**: US Standard Atmosphere 1976 (with optional temperature offset) and a constant atmosphere; constant, power-law, logarithmic, and altitude-table winds
 - **Integrators**: fixed-step RK4 and adaptive-step RK45 (Dormand-Prince) and DOP853; attitude propagation by quaternion renormalization or a Lie-group (RKMK) update
-- **Landing dispersion**: a wind grid (speed x direction) and Monte Carlo sampling (1-sigma and 3-sigma error ellipses), computed in parallel and evaluated for both ballistic descent and parachute descent. Monte Carlo perturbs thrust, burn time, dry mass, CG, CN, CA, rail angles, wind and parachute, and optionally thrust misalignment, nozzle offset, fin cant, lateral CG, roll moment (Cl) and roll damping (Clp)
+- **Landing dispersion**: a wind grid (speed x direction) and Monte Carlo sampling (1-sigma and 3-sigma error ellipses, P50/P90/P99 of the landing distance), computed in parallel and evaluated for both ballistic descent and parachute descent. Cases and samples that do not land within `sim.max_time` count as failed: the statistics are flagged incomplete, the maximum landing distance is reported as a lower bound, and the exit status is 3. Monte Carlo perturbs thrust, burn time, dry mass, CG, CN, CA, rail angles, wind and parachute, and optionally thrust misalignment, nozzle offset, fin cant, lateral CG, roll moment (Cl) and roll damping (Clp)
 - **KML output**: launch site, flight path, and landing-point distributions overlaid in Google Earth
 - **Readable terminal output**: configuration summary, progress bars with ETA, and result panels in color (plain output is selected automatically when piped)
 - **Sphinx documentation**: Japanese documentation (HTML and PDF)
@@ -129,8 +129,10 @@ The figures below are for the bundled sample rocket (Euler, 2 mm surface mesh). 
 What the CFD results are, and are not:
 
 - **Cross-checks only.** The CFD in direct-STL mode and the CFD on the rebuilt geometry differ by 5 to 9 % in CN. For the roll damping at M = 0.8, Clp is -19.4 (STL CFD) and -21.0 (rebuilt CFD) against -29.9 from the Barrowman method. These are comparisons between methods, not validation against measurements; no comparison with a real rocket has been made.
-- **Euler (inviscid).** Skin friction, base drag and fin-edge drag are not obtained from CFD and are added from the Barrowman model. The CFD wall is close to, but not identical to, the input STL; read the fidelity report before using a result. With the Euler solver an STL needs an explicit `base_treatment`: `"fairing"` adds a conical tail fairing behind the flat base (this changes the input shape), `"flat"` keeps the shape but may not converge (it did not for the sample STL).
+- **Euler (inviscid).** Skin friction and base drag are not obtained from CFD and are added from the Barrowman model, as is the fin-edge drag for `surface = "cad"`; with `surface = "stl"` the fin faces are part of the CFD wall, so the fin-edge term is not added. The CFD wall is close to, but not identical to, the input STL; read the fidelity report before using a result. With the Euler solver an STL needs an explicit `base_treatment`: `"fairing"` adds a conical tail fairing behind the flat base (this changes the input shape), `"flat"` keeps the shape but may not converge (it did not for the sample STL).
 - **RANS is unverified** and gmsh 4.15 cannot build the boundary-layer prism layers on the OpenCASCADE surfaces; use the default Euler model.
+- **Mesh convergence is not established.** At M = 2 the normal-force coefficient CN is still rising on the finest meshes (0.9188 at 2 mm, 0.9259 at 1.8 mm), so the data are not in the asymptotic range; at M = 0.8 it does not converge monotonically (1.2259 at 3.5 mm, 1.2021 at 1.8 mm). The default 2 mm differs from the 1.8 mm result by 0.6 % (M = 0.8) and 0.8 % (M = 2).
+- **No Mach extrapolation.** CFD tables are held at the values of the highest (lowest) solved Mach number beyond the solved range; `cfd_report.json` records `mach_clamped_above` / `mach_clamped_below` and a warning is issued.
 - **Quasi-steady.** Pitch and yaw damping are not obtained from the steady solutions: the damping sums of the Barrowman (or panel) model are rescaled to the CFD normal-force slope and centre of pressure. Clp comes from the rotating-frame runs when `roll_damping` is on (otherwise from the Barrowman model); cross derivatives are not modelled. Outside the solved (alpha, beta) range of a general table the values come from the model, not from CFD.
 - Tested on Linux with conda-forge SU2 8.3.0, gmsh 4.15.2, Open MPI 5.0.11 and manifold3d 3.5.4; other environments have not been tested.
 
@@ -161,7 +163,7 @@ The installer asks whether you are a **user** or a **developer**, shows which to
 | user | The release binary for your platform (sha256 verified) in `~/.local/bin`, the examples and `python/plot.py` in `~/.local/share/ignisyeet/<version>` (with a `current` link), a plotting environment (uv, or `venv` + pip), and an `ignisyeet-plot` command. No documentation tools. |
 | developer | A git clone (default `~/ignisyeet`, or the clone you run it from), Rust via rustup if `cargo` is missing, uv, `cargo build --release`, `cargo test --release`, the `python/` and `doc/` environments. Missing documentation tools (TeX Live, dvisvgm, mutool, inkscape, IPAex fonts) are listed with the exact `apt` / `brew` command; the installer never runs `sudo`. |
 
-Both roles can additionally install the CFD tools (SU2, gmsh, Open MPI from conda-forge, about 3 GB, plus manifold3d from pip for `surface = "stl"`) into a conda environment named `ignisyeet-cfd`. An existing micromamba/mamba/conda and an existing environment are reused. On x86_64 Linux CPUs without AVX-512, SU2 is pinned to 8.3.0 because the 8.5.0 package crashes there. The installer prints the `[aero.cfd] prefix` value to put in your configuration (or `IGNISYEET_CFD_PREFIX`).
+Both roles can additionally install the CFD tools (SU2, gmsh, Open MPI from conda-forge, about 3 GB, plus manifold3d from pip for `surface = "stl"`) into a conda environment named `ignisyeet-cfd`. The versions are pinned on all platforms (SU2 8.3.0, gmsh 4.15.2, Open MPI 5, Python 3.10; micromamba 2.9.0 when it has to be installed) because the SU2 8.5.0 package crashes on CPUs without AVX-512. An existing micromamba/mamba/conda and an existing environment are reused. The plotting environment is installed from the locked versions (`uv.lock`, or `scripts/plot-constraints.txt` with pip). The installer prints the `[aero.cfd] prefix` value to put in your configuration (or `IGNISYEET_CFD_PREFIX`).
 
 Options are given after `bash -s --`:
 
@@ -173,7 +175,7 @@ curl -fsSL https://raw.githubusercontent.com/ddd3h/ignisyeet/main/install.sh | b
 |---|---|
 | `--user` / `--developer` | Choose the role without asking |
 | `--cfd` / `--no-cfd` | Install or skip the optional CFD tools |
-| `--version vX.Y.Z` | Release to install (default: the latest GitHub release); developer: tag to check out |
+| `--version vX.Y.Z` | Release to install (default: the latest GitHub release); developer: tag to check out. Only the form `vX.Y.Z` is accepted |
 | `--prefix DIR` | Install prefix (default `~/.local`) |
 | `--dir DIR` | Developer clone location |
 | `--no-test` | Developer: skip `cargo test` |
@@ -188,7 +190,9 @@ Every option also has an environment variable (`IGNISYEET_VERSION`, `IGNISYEET_P
 
 Releases are published on GitHub as `ignisyeet-<version>-<target>.tar.gz` with a `.sha256` file; the installer verifies the checksum before installing, and you can check it by hand with `sha256sum -c ignisyeet-<version>-<target>.tar.gz.sha256`. To read the script before running it, download it first: `curl -fsSLO https://raw.githubusercontent.com/ddd3h/ignisyeet/main/install.sh && bash install.sh`.
 
-A release is made by pushing a tag equal to the workspace version (`git tag v0.3.0 && git push origin v0.3.0`); the `release` workflow builds the four platform archives and creates the GitHub Release.
+`--prefix` and `--dir` are made absolute at start-up (relative paths would give broken symlinks).
+
+A release is made by pushing a tag equal to the workspace version (`git tag v0.3.0 && git push origin v0.3.0`); the `release` workflow builds the four platform archives (GNU tar, reproducible ordering and timestamps) and creates the GitHub Release. The `ci` workflow builds and tests the workspace (`--locked`) and runs `geom`, `aero` and `sim` on the sample for every push and pull request; its clippy, rustfmt and ShellCheck steps are advisory.
 
 ### Building from source
 
@@ -227,7 +231,7 @@ python python/plot.py all examples/out
 # via make: make plot PLOT="python python/plot.py"
 ```
 
-`sim` and `dispersion` run `aero` automatically when there is no coefficient table, or when the STL or the aerodynamic settings have changed. After updating the program itself, rebuild the table with `aero --force`.
+`sim` and `dispersion` run `aero` automatically when there is no coefficient table, or when the STL or the aerodynamic settings have changed. The table is also rebuilt when the program version or the model version changes; `aero --force` rebuilds it unconditionally.
 
 ## Commands
 
@@ -239,9 +243,9 @@ ignisyeet [-q|--quiet] [--no-progress] <command> ...
 |---|---|
 | `geom <config>` | Extracts the geometry from the STL and writes `geometry.json` and `profile.csv` |
 | `aero <config> [--force]` | Builds the aerodynamic coefficient table. If the inputs are the same as last time, the stored table is used; `--force` always rebuilds it |
-| `sim <config> [--descent ballistic\|parachute]` | Flies once with the configured wind and writes `trajectory.csv` and `summary.json` |
-| `dispersion <config>` | Computes the landing dispersion in parallel according to `dispersion.mode` |
-| `cfd-check <config> [--mesh]` | Checks that SU2, MPI and gmsh (and manifold3d for `surface = "stl"`) are installed, reports their versions and the number of CFD cases; `--mesh` also exports the wall surface, builds the volume mesh and reports node/cell counts and quality (and the STL fidelity for `surface = "stl"`) |
+| `sim <config> [--descent ballistic\|parachute]` | Flies once with the configured wind and writes `trajectory.csv` and `summary.json`; exits with status 3 when the rocket does not land within `sim.max_time` |
+| `dispersion <config>` | Computes the landing dispersion in parallel according to `dispersion.mode`; exits with status 3 when cases or samples fail or do not land |
+| `cfd-check <config> [--mesh]` | Checks that SU2, MPI and gmsh (and manifold3d for `surface = "stl"`) are installed (exit status 1 if a required tool is missing), reports their versions and the number of CFD cases; `--mesh` also exports the wall surface, builds the volume mesh and reports node/cell counts and quality (and the STL fidelity for `surface = "stl"`) |
 | `sample-stl <path>` | Writes the STL of the bundled sample rocket (tangent ogive, four trapezoidal fins, in mm, nose pointing +z) |
 
 | Global option | Description |
@@ -250,6 +254,10 @@ ignisyeet [-q|--quiet] [--no-progress] <command> ...
 | `--no-progress` | Does not draw progress bars and spinners (the boxed summaries are still shown) |
 
 `--version` prints the version together with the copyright and license notice.
+
+**Exit status.** 0 success; 1 error (invalid configuration, missing input, failed step, missing CFD tools); 2 usage error; 3 the run finished and wrote its outputs but the results are incomplete (a flight did not land within `sim.max_time`, or dispersion cases or samples failed or did not land; a line `INCOMPLETE RESULTS` is printed to stderr).
+
+**Validation and warnings.** Every numeric configuration key is range-checked and non-finite values (`nan`, `inf`) are rejected; the error names the key. The dry CG `rocket.cg_dry` must lie inside the body (an error otherwise). Warnings are printed in every output mode (stderr with `-q`) and stored in `summary.json` (`warnings`), `dispersion_meta.json` and `dispersion_summary.json`: a body size outside 0.1 to 30 m in length or 0.005 to 3 m in diameter (check `rocket.stl_scale`), a static margin below 0 cal (centre of pressure ahead of the CG), below 1.0 cal (unstable) or below 1.5 cal (marginal), an apogee above 1000 m with the `power` or `log` wind model (the profile is extrapolated there), a flight that does not land, and the geometry findings listed in `geometry.json` (`warnings`: orientation decided from the end radii only, forward fins, odd proportions, short or long nose, protruding nozzle, large fin span, a short protrusion ignored in the reference radius).
 
 When stdout is redirected to a pipe or a file, the output is plain line-based text without colors or boxes. The environment variable `NO_COLOR` disables colors, and `TERM=dumb` disables colors and Unicode symbols.
 
@@ -277,7 +285,7 @@ Configuration is written in TOML. Relative paths are resolved against **the dire
 | `[earth]` | `model` (`flat`, `ecef`), `gravity` (`constant`, `inverse_square`, `j2`; `j2` requires `ecef`) |
 | `[atmosphere]` | `model` (`us1976`, `constant`), `temperature_offset`, constant-atmosphere `density`, `sound_speed`, `viscosity` |
 | `[wind]` | `model` (`constant`, `power`, `log`, `profile`), wind speed, wind direction (the direction the wind comes from), reference height, power-law exponent, roughness length, ground blend height `ground_blend_height` (cubic blend to zero near the ground for the `power` and `log` models), altitude table `profile` |
-| `[sim]` | `integrator` (`rk4`, `rk45`, `dop853`), `attitude` (`normalize`, `lie_group`), `dt`, `rtol`, `atol`, `max_time`, `output_interval`, `descent` |
+| `[sim]` | `integrator` (`rk4`, `rk45`, `dop853`), `attitude` (`normalize`, `lie_group`), `dt`, `rtol`, `atol`, `max_time` (default 3600 s; a run that has not landed by then is reported as a failure), `output_interval`, `descent` |
 | `[dispersion]` | `mode` (`wind_grid`, `monte_carlo`), `wind_speeds`, `directions` |
 | `[dispersion.monte_carlo]` | `samples`, `seed`, and 1-sigma values for thrust, burn time, dry mass, center of gravity, CN, CA, elevation, azimuth, wind, and parachute; optionally `thrust_misalignment_deg`, `thrust_offset`, `fin_cant_deg`, `cg_lateral`, `cl_scale`, `clp_scale` |
 
@@ -292,10 +300,10 @@ The output directory is `output.dir` (`examples/out/` in the sample).
 | `aero_drag.csv` | Breakdown of zero-lift drag (total only for the panel method), and the Mach dependence of CNalpha and Xcp (not written for `method = "cfd"`) |
 | `cfd_cases.csv`, `cfd_report.json` | `method = "cfd"` only: one row per solved case (status, iterations, residuals, coefficients including the six components) and the run summary (failed and unconverged cases, mesh size, timing, domain and symmetry used, roll-damping source, STL fidelity). Case data and the mesh are cached in `<output.dir>/<workdir>/` (default `cfd/`); for `surface = "stl"` the mesh directory also holds `repair_report.json`, `union_report.json` and `stl_fidelity.json` |
 | `panel_cp.csv` | Surface panels and Cp (angle of attack 4 degrees) when `method = "panel"` |
-| `trajectory.csv`, `summary.json` | Time history and main results of a single flight |
-| `dispersion.csv` | Landing points of all wind-grid cases (ballistic and parachute descent) |
-| `dispersion_mc.csv`, `dispersion_summary.json` | Perturbations and landing point of each Monte Carlo sample, and for each descent mode the mean, covariance, and 1-sigma and 3-sigma error ellipses |
-| `ignisyeet.kml` | A single KML file for Google Earth. Folders are `Launch site`, `Flight`, `Dispersion – wind grid`, and `Dispersion – Monte Carlo` (lines only). `sim` and `dispersion` update it while merging each other's results |
+| `trajectory.csv`, `summary.json` | Time history and main results of a single flight. `summary.json` also has `landed`, `max_time`, `config_hash` and `warnings`; the landing fields are `null` when the flight did not land |
+| `dispersion.csv`, `dispersion_meta.json` | Landing points of all wind-grid cases (ballistic and parachute descent), with a `landed` column; the sidecar holds `config_hash`, `cases`, `failed` and `warnings` |
+| `dispersion_mc.csv`, `dispersion_summary.json` | Perturbations and landing point of each Monte Carlo sample, and for each descent mode the mean, covariance, 1-sigma and 3-sigma error ellipses, P50/P90/P99 of the landing distance (`landing_distance_p50`, `_p90`, `_p99`), `failed`, `not_landed`, `complete` and `max_landing_distance_is_lower_bound`; plus `config_hash` and `warnings` |
+| `ignisyeet.kml` | A single KML file for Google Earth. Folders are `Launch site`, `Flight`, `Dispersion – wind grid`, and `Dispersion – Monte Carlo` (lines only). `sim` and `dispersion` update it while merging each other's results; only results whose `config_hash` matches the current configuration are merged (stale ones are left out with a warning), and flights or cases that did not land are left out |
 | `plots/*.png` | Figures drawn by `python/plot.py` |
 
 ## Plotting
@@ -372,7 +380,9 @@ The main things checked by the tests are as follows (details in [Verification](h
 - **Aerodynamics cross-checks**: the roll-damping and sideslip signs of the CFD agree with the expanded axisymmetric table, subsonic CFD and panel-method coefficients agree closely, and the direct-STL CFD is compared with the rebuilt-geometry CFD (see [CFD](#cfd)). These are comparisons between methods, not validation against measurements
 - **Rigid-body details**: moment about the CG from a nozzle offset, thrust misalignment, products of inertia, and launch roll are covered by unit tests
 - **Environment and coordinates**: literature values of the standard atmosphere, hydrostatic equilibrium, J2 gravity, round-trip conversion between geodetic coordinates and ECEF
-- **Monte Carlo**: reproducibility of random numbers, agreement with the nominal flight at zero standard deviation, covariance and error ellipses
+- **Monte Carlo**: reproducibility of random numbers, agreement with the nominal flight at zero standard deviation, covariance and error ellipses, percentiles, incomplete statistics when samples do not land
+- **Configuration and outputs**: range and non-finite checks, the warnings, the cache key and the configuration hash, stale outputs left out of the KML
+- **Aerodynamic table lookups**: Mach clamped at the table edge, bounded extrapolation in angle of attack, out-of-range lookups counted
 
 ## Directory layout
 

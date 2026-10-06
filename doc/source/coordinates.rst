@@ -333,7 +333,7 @@ ECEF 座標系は地球の自転ベクトル :math:`\bm{\Omega}=(0,0,\Omega_\opl
    \dot{\bm{v}} = \frac{1}{m}\,R(\bm{q})\left(\bm{F}_T+\bm{F}_A\right)_b + \bm{g}(\bm{r})
    - 2\,\bm{\Omega}\times\bm{v} - \bm{\Omega}\times(\bm{\Omega}\times\bm{r})
 
-となる。右辺の第 1 項が推力と空気力、第 2 項が重力（遠心力を含まない万有引力のみ。:ref:`sec-gravity`）、第 3 項が Coriolis 加速度、第 4 項が遠心加速度である :cite:`goldstein`\ （:numref:`fig-ecef-rotating`）。ランチャ上の運動（:eq:`eq-rail`）も同じ加速度を使う。
+となる。右辺の第 1 項が推力と空気力、第 2 項が重力 :math:`\bm{g}(\bm{r})`\ （遠心力を含まない万有引力のみ。:ref:`sec-ecef-gravity`）、第 3 項が Coriolis 加速度、第 4 項が遠心加速度である :cite:`goldstein`\ （:numref:`fig-ecef-rotating`）。ランチャ上の運動（:eq:`eq-rail`）も同じ加速度を使う。
 
 .. _fig-ecef-rotating:
 
@@ -387,9 +387,26 @@ ECEF に対する角速度 :math:`\bm{\omega}` に、自転ベクトルを機体
 * **局所の東・北・天頂** :math:`\bm{e}_E,\bm{e}_N,\bm{e}_U`\ （:eq:`eq-enu-basis` を現在の :math:`(\phi,\lambda)` で評価する）。
 * **風**：高度 :math:`z` での風速（:ref:`sec-wind`）の水平成分を :math:`\bm{w}=w_E\bm{e}_E+w_N\bm{e}_N` として ECEF 座標に直し、
   対気速度を :math:`\bm{v}_a=\bm{v}-\bm{w}` とする。鉛直成分は 0 である。
-* **重力**：``inverse_square`` と ``constant`` では、大きさは平面地球モードと同じで（それぞれ :math:`g_0(R_\oplus/(R_\oplus+h_0+z))^2` と :math:`g_0`）、
-  向きを現在位置の測地的な下向き :math:`-\bm{e}_U` にとる。``j2`` では :ref:`sec-gravity` の\ :eq:`eq-j2` を ECEF 位置で評価した
-  ベクトルをそのまま使う（水平成分を含む）。
+* **重力**：:ref:`sec-ecef-gravity` に述べる。
+
+.. _sec-ecef-gravity:
+
+重力と遠心力
+~~~~~~~~~~~~
+
+:eq:`eq-ecef-accel` の :math:`\bm{g}(\bm{r})` は万有引力であり、遠心加速度 :math:`-\bm{\Omega}\times(\bm{\Omega}\times\bm{r})` は第 4 項で別に加わる。
+一方、``inverse_square`` と ``constant`` が与える大きさ（それぞれ :math:`g_0(R_\oplus/(R_\oplus+h_0+z))^2` と :math:`g_0`）は、平面地球モードと同じ **有効重力** :math:`\bm{g}_{\mathrm{eff}}` で、
+向きを現在位置の測地的な下向き :math:`-\bm{e}_U` にとる。有効重力はすでに遠心力を含んでいる。
+そこで ECEF モードでは、この有効重力から、第 2 項に入れる万有引力を
+
+.. math::
+   :label: eq-g-effective
+
+   \bm{g}(\bm{r}) = \bm{g}_{\mathrm{eff}}(\bm{r}) + \bm{\Omega}\times(\bm{\Omega}\times\bm{r})
+
+として作る。第 4 項の :math:`-\bm{\Omega}\times(\bm{\Omega}\times\bm{r})` を足すと、正味の加速度は :math:`\bm{g}_{\mathrm{eff}}` に等しくなる。
+これにより、遠心力を二重に数えることがなく、静止した機体の正味の重力は鉛直下向きだけになる（水平成分は、高度 0 から 80 km で、東・北方向とも :math:`2\times10^{-4}\ \mathrm{m/s^2}` より小さいことをテストで確かめている）。
+``j2`` では :eq:`eq-j2` を ECEF 位置で評価したベクトルをそのまま :math:`\bm{g}(\bm{r})` に使い、補正はしない。このとき正味の重力は、水平成分（赤道向き）をわずかに持つ。
 
 着地と出力
 ~~~~~~~~~~

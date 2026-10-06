@@ -2367,9 +2367,9 @@ mod tests {
                 a.summary.apogee, b.summary.apogee, a.summary.landing_east, a.summary.landing_north, b.summary.landing_east, b.summary.landing_north
             );
             assert!((a.summary.apogee - b.summary.apogee).abs() < 0.5, "wind {wind} apogee");
-            // The general table's margin is the small-angle slope over its first 2 deg cell, the
-            // axisymmetric one the tabulated centre of pressure at alpha = 0: compare the general
-            // margin with its definition along the axisymmetric flight.
+            // Both margins are small-angle slopes over the first angle cell, 2 deg for the general
+            // table and 1 deg for the axisymmetric one, so they differ by the grid resolution:
+            // compare the general margin with its definition along the axisymmetric flight.
             let reference = a
                 .samples
                 .iter()

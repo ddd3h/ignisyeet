@@ -299,8 +299,29 @@ pub fn dense_solve_bytes(n: usize) -> u64 {
     16 * n * n + 64 * n
 }
 
-/// Fails when the dense solve of `n` panels exceeds `limit`.
+/// Physical memory of the machine [bytes] (`MemTotal` in /proc/meminfo); `None` where it is not available.
+fn physical_memory() -> Option<u64> {
+    let text = std::fs::read_to_string("/proc/meminfo").ok()?;
+    let line = text.lines().find(|l| l.starts_with("MemTotal:"))?;
+    let kb: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
+    Some(kb * 1024)
+}
+
+/// Fails when the dense solve of `n` panels exceeds `limit`, or, without a limit, the physical memory.
 pub fn check_memory(n: usize, limit: Option<u64>) -> Result<()> {
+    if limit.is_none() {
+        if let Some(total) = physical_memory() {
+            let need = dense_solve_bytes(n);
+            if need > total {
+                bail!(
+                    "the panel method needs about {:.2} GB for {n} panels (dense matrix), more than the {:.2} GB of memory of this machine; \
+                     use coarser panel settings (body_axial, body_circ, fin_chord, fin_span)",
+                    need as f64 / 1e9,
+                    total as f64 / 1e9
+                );
+            }
+        }
+    }
     if let Some(limit) = limit {
         let need = dense_solve_bytes(n);
         if need > limit {

@@ -257,6 +257,11 @@ fn memory_estimate_and_check() {
     assert!(check_memory(1000, Some(17_000_000)).is_ok());
     let e = check_memory(10_000, Some(1_000_000_000)).unwrap_err().to_string();
     assert!(e.contains("coarser") && e.contains("resources.memory_gb"), "{e}");
+    // Without a budget, a solve larger than the machine's memory (10^7 panels: 1.6 PB) fails cleanly.
+    if std::path::Path::new("/proc/meminfo").exists() {
+        let e = check_memory(10_000_000, None).unwrap_err().to_string();
+        assert!(e.contains("memory of this machine"), "{e}");
+    }
 }
 
 #[test]

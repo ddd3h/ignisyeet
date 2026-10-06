@@ -22,8 +22,25 @@ pub struct Motor {
 
 impl Motor {
     pub fn load(path: &Path) -> Result<Self> {
-        let text = std::fs::read_to_string(path).with_context(|| format!("cannot read motor file {}", path.display()))?;
-        Self::parse(&text).with_context(|| format!("invalid motor file {}", path.display()))
+        // No path context here: the caller names the file once ("cannot read motor file ...").
+        let text = std::fs::read_to_string(path)?;
+        Self::parse(&text)
+    }
+
+    /// Non-fatal oddities of the thrust curve, for the caller to show to the user.
+    pub fn warnings(&self) -> Vec<String> {
+        let mut w = Vec::new();
+        let last = self.curve.last().unwrap().1;
+        if self.curve.len() == 2 && self.curve[0].1 == 0.0 {
+            w.push("the thrust curve has a single point: the thrust ramps linearly from 0 N at t = 0".to_string());
+        }
+        if last != 0.0 {
+            w.push(format!("thrust curve ends at {last} N instead of 0 N: the motor is cut off abruptly"));
+        }
+        if self.burn_time() < 0.05 {
+            w.push(format!("burn time {:.3} s is shorter than 0.05 s: the motor is an impulse; check the time column", self.burn_time()));
+        }
+        w
     }
 
     /// Parse and validate a RASP .eng file. Errors name the (1-based) line.
@@ -31,6 +48,8 @@ impl Motor {
     /// The header's total-mass field is parsed and checked (>= propellant mass) and stored in
     /// [`Motor::total_mass`]; the flight model uses the rocket's dry mass plus the propellant mass.
     pub fn parse(text: &str) -> Result<Self> {
+        // A UTF-8 byte order mark (Excel "CSV UTF-8", some Windows editors) is not part of the header.
+        let text = text.strip_prefix('\u{feff}').unwrap_or(text);
         let mut lines = text.lines().enumerate().map(|(i, l)| (i + 1, l.trim())).filter(|(_, l)| !l.is_empty() && !l.starts_with(';'));
         let (hn, hl) = lines.next().context("empty .eng file")?;
         let header: Vec<&str> = hl.split_whitespace().collect();
@@ -130,6 +149,10 @@ impl Motor {
     }
 
     pub fn thrust(&self, t: f64) -> f64 {
+        // A curve whose first node is (0, F) has its full thrust from ignition on.
+        if t == 0.0 {
+            return self.curve[0].1;
+        }
         match self.segment(t) {
             Some((i, s)) => self.curve[i].1 + (self.curve[i + 1].1 - self.curve[i].1) * s,
             None => 0.0,
@@ -176,6 +199,24 @@ mod tests {
         assert!((p.burn_time() - 1.65).abs() < 1e-12 && (p.total_impulse() - 110.0).abs() < 1e-9);
         assert!((p.thrust(0.5 * 1.5) - 110.0 / 1.5).abs() < 1e-9 && p.propellant_mass == m.propellant_mass);
         assert!((m.propellant_left(0.55) - 0.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn thrust_at_ignition_warnings_and_bom() {
+        let m = Motor::parse("\u{feff}X 54 400 0 1.0 2.0 T\n0.0 50\n0.5 100\n1.0 0\n").unwrap();
+        assert_eq!(m.thrust(0.0), 50.0);
+        assert_eq!(m.thrust(-1.0), 0.0);
+        assert!((m.thrust(0.25) - 75.0).abs() < 1e-12);
+        let ramp = Motor::parse("X 54 400 0 1.0 2.0 T\n0.0 0\n0.5 100\n1.0 0\n").unwrap();
+        assert_eq!(ramp.thrust(0.0), 0.0);
+        assert!(ramp.warnings().is_empty());
+        let cut = Motor::parse("X 54 400 0 1.0 2.0 T\n0.1 100\n1.0 20\n").unwrap();
+        assert!(cut.warnings().iter().any(|w| w.contains("ends at 20 N instead of 0 N")));
+        let single = Motor::parse("X 54 400 0 1.0 2.0 T\n0.03 100\n").unwrap();
+        let w = single.warnings();
+        assert!(w.iter().any(|w| w.contains("single point")) && w.iter().any(|w| w.contains("shorter than 0.05 s")), "{w:?}");
+        let e = format!("{:#}", Motor::load(std::path::Path::new("nope.eng")).unwrap_err());
+        assert!(!e.contains("nope.eng"), "{e}");
     }
 
     #[test]

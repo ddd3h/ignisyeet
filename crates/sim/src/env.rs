@@ -105,6 +105,8 @@ pub struct Wind {
 
 /// Parses a wind profile CSV (`altitude_m,speed,direction_deg`, ascending altitude above ground).
 pub fn parse_wind_profile(text: &str) -> Result<Vec<ProfilePoint>> {
+    // A UTF-8 byte order mark (Excel "CSV UTF-8") is not part of the header.
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let mut lines = text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#'));
     let header = lines.next().context("wind profile is empty")?;
     let cols: Vec<String> = header.split(',').map(|c| c.trim().to_ascii_lowercase()).collect();
@@ -659,6 +661,7 @@ mod tests {
     #[test]
     fn profile_validation() {
         assert!(parse_wind_profile("altitude_m,speed,direction_deg\n0,1,0\n0,2,0\n").unwrap_err().to_string().contains("ascending"));
+        assert_eq!(parse_wind_profile("\u{feff}altitude_m,speed,direction_deg\n0,1,0\n100,2,90\n").unwrap().len(), 2);
         assert!(parse_wind_profile("alt,speed,dir\n0,1,0\n").unwrap_err().to_string().contains("header"));
         assert!(parse_wind_profile("altitude_m,speed,direction_deg\n").is_err());
         assert!(parse_wind_profile("altitude_m,speed,direction_deg\n0,x,0\n").is_err());

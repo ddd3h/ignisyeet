@@ -445,11 +445,16 @@ pub fn build_general(inp: &GeneralInput) -> Result<(AeroTable, GeneralFill)> {
         let v: Vec<(f64, f64)> = cols.iter().filter_map(|c| f(&c.slopes).map(|x| (c.mach, x))).collect();
         (!v.is_empty()).then(|| Pchip::new(v.iter().map(|p| p.0).collect(), v.iter().map(|p| p.1).collect()))
     };
+    // The damping centroid is the ratio of the interpolated moment slope CNa x_cp to CNa (not the
+    // interpolated x_cp), consistent with the interpolated forces and moments of the rows.
     let cna_p = across(&|s| Some(s.cna_pitch)).unwrap();
+    let ma_p = across(&|s| Some(s.cna_pitch * s.xcp_pitch)).unwrap();
     let x_p = across(&|s| Some(s.xcp_pitch)).unwrap();
     let cna_y = across(&|s| s.cna_yaw);
+    let ma_y = across(&|s| s.cna_yaw.zip(s.xcp_yaw).map(|(c, x)| c * x));
     let x_y = across(&|s| s.xcp_yaw);
     fill.yaw_from_pitch = cna_y.is_none() || x_y.is_none();
+    let centroid = |cna: f64, ma: &Pchip, x: &Pchip, m: f64| if cna.abs() > 1e-9 { ma.eval(m, false) / cna } else { x.eval(m, false) };
 
     let (na, nb) = (alphas.len(), betas.len());
     let nm = machs.len();
@@ -482,9 +487,13 @@ pub fn build_general(inp: &GeneralInput) -> Result<(AeroTable, GeneralFill)> {
         .iter()
         .map(|&m| {
             let sums = model.damping_sums(m);
-            let sq = scale_damping(sums, cna_p.eval(m, false), x_p.eval(m, false));
-            let sr = match (&cna_y, &x_y) {
-                (Some(c), Some(x)) => scale_damping(sums, c.eval(m, false), x.eval(m, false)),
+            let cna = cna_p.eval(m, false);
+            let sq = scale_damping(sums, cna, centroid(cna, &ma_p, &x_p, m));
+            let sr = match (&cna_y, &ma_y, &x_y) {
+                (Some(c), Some(ma), Some(x)) => {
+                    let cna = c.eval(m, false);
+                    scale_damping(sums, cna, centroid(cna, ma, x, m))
+                }
                 _ => sq,
             };
             (m, sq, sr, clp_at(&fill.clp, model, m))
@@ -652,6 +661,45 @@ mod tests {
         assert!(!fill.yaw_from_pitch);
         let c = t.lookup6(1.0, 0.0, 0.0);
         assert!((c.sq[0] - 2.3).abs() < 0.02 && (c.sq[1] / c.sq[0] - 1.05).abs() < 0.01 && (c.sr[0] - c.sq[0]).abs() < 0.02);
+    }
+
+    #[test]
+    fn damping_centroid_follows_the_interpolated_moment_slope_across_mach() {
+        // CN = k * total angle with k = 2 (Mach 1) and 6 (Mach 2), x_cp = 1 and 2 m: at Mach 1.5 the
+        // interpolated slope is 4 and the moment slope (2 + 12) / 2 = 7, so the damping centroid
+        // S1 / S0 is 1.75 m in pitch and yaw.
+        let m = model();
+        let field = |mach: f64, a: f64, b: f64| {
+            let (k, xcp) = if mach == 1.0 { (2.0, 1.0) } else { (6.0, 2.0) };
+            let (ar, br) = (f64::to_radians(a), f64::to_radians(b));
+            let (cy, cz) = (-k * br.sin(), -k * ar.sin());
+            BodyCoeffs6 { cx: -0.3, cy, cz, cl: 0.0, cm: xcp * cz / 0.1, cn: -xcp * cy / 0.1 }
+        };
+        let mut points = Vec::new();
+        for &mach in &[1.0, 2.0] {
+            for &a in &[0.0, 2.0, 4.0, 8.0] {
+                for &b in &[0.0, 2.0, 4.0, 8.0] {
+                    points.push(SolvedPoint6 { mach, alpha_deg: a, beta_deg: b, coeffs: Some(field(mach, a, b)) });
+                }
+            }
+        }
+        let inp = GeneralInput {
+            points: &points,
+            roll: &[],
+            model: &m,
+            flow: FlowModel::Rans,
+            source_hash: "h".into(),
+            extrapolation: Extrapolation::Linear,
+            shape: ShapeSymmetry::Axisymmetric,
+            average: true,
+            offset: false,
+            mach_step: 0.25,
+            fin_cant_ref_deg: 0.0,
+            fin_edges_in_cfd: false,
+        };
+        let (t, _) = build_general(&inp).unwrap();
+        let c = t.lookup6(1.5, 0.0, 0.0);
+        assert!((c.sq[1] / c.sq[0] - 1.75).abs() < 1e-3 && (c.sr[1] / c.sr[0] - 1.75).abs() < 1e-3, "{c:?}");
     }
 
     #[test]

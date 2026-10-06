@@ -351,8 +351,12 @@
 * 終了ステータス 3 で終わり、標準エラー出力に ``RESULTS NOT USABLE: N of M Monte Carlo samples (ballistic) are statically UNSTABLE (min static margin down to X cal): increase the static margin or reduce the CG/aero sigmas`` の形の行を書く。
   風の格子の末尾は ``increase the static margin`` である。降下モードが複数あるときは、モードごとの節を ``;`` でつなぐ。公称の飛翔が不安定なときは、その文のほうを優先する（:ref:`sec-exit-status`）。
 * ``dispersion_meta.json``\ （風の格子）と ``dispersion_summary.json``\ （モンテカルロ）の ``unstable``\ （降下モードごとの数）と ``unstable_min_static_margin_cal``\ （降下モードごとの最小の余裕）に残す。
-* ``dispersion.csv`` と ``dispersion_mc.csv`` の最後の列 ``stable`` は、その行の飛翔が静的に安定なら ``true``、不安定なら ``false``、余裕が求まらない行（失敗したケースなど）では空である。
+* ``dispersion.csv`` と ``dispersion_mc.csv`` の最後の列 ``stable`` は、その行の飛翔が静的に安定なら ``true``、不安定なら ``false``、判定できない行と失敗した行では空である。
   ``false`` の行だけを取り出すと、不安定になった条件が分かる。
+
+一般表で、ケースやサンプルの静安定余裕が求まらない（法線力の傾きが 0 か物理的でない符号の面がある。:ref:`sec-static-margin-general`）ときは、そのケースの静的な安定は判定できない。
+判定できないケースとサンプルも降下モードごとに数えて統計に残し、警告に ``N of M Monte Carlo samples (ballistic): static stability could not be evaluated (first: …)`` の形の文（括弧内は最初のケースの理由）を書いて、終了ステータス 3 で終わる。
+数は ``dispersion_meta.json`` と ``dispersion_summary.json`` の ``stability_unknown_runs`` に残る。
 
 不安定なケースが出たときは、静安定余裕を増やすか（フィンを大きくする、重心を前へ寄せる）、重心や空力係数の標準偏差を見直す。
 終了ステータスが 3 の結果は、保安の判断に使わない。
@@ -427,7 +431,8 @@
    ``samples``、``seed`` と、降下モードごとの ``descents`` の配列、設定のハッシュ ``config_hash``、警告 ``warnings``。各要素に ``descent``、``failed``、``not_landed``、``complete``、
    ``max_landing_distance_is_lower_bound``、``landing_distance_p50`` ``landing_distance_p90`` ``landing_distance_p99``、``n``、``mean_east``、``mean_north``、
    ``covariance``\ （:math:`[[a,b],[b,c]]`）、``ellipse_1sigma`` と ``ellipse_3sigma``\ （``semi_major``、``semi_minor``、``major_axis_bearing_deg``）、
-   ``max_landing_distance``、``max_landing_distance_sample``、``apogee_mean``、``apogee_std`` を持つ。降下モードごとの静的に不安定なサンプルの数 ``unstable`` と最小の静安定余裕 ``unstable_min_static_margin_cal`` もある（:ref:`sec-file-dispersion`）。
+   ``max_landing_distance``、``max_landing_distance_sample``、``apogee_mean``、``apogee_std`` を持つ。降下モードごとの静的に不安定なサンプルの数 ``unstable`` と最小の静安定余裕 ``unstable_min_static_margin_cal``、判定できないサンプルの数 ``stability_unknown_runs``、
+   公称の風（``wind_model``、``wind_speed``、``wind_direction_deg``、``profile`` では ``wind_scale``）もある（:ref:`sec-file-dispersion`）。
 
 ``dispersion.csv``\ （``mode = "wind_grid"``）
    ケースごとの結果で、列 ``landed`` が着地したかを、最後の列 ``stable`` が静的に安定かを示す。``dispersion_meta.json`` に設定のハッシュ、ケース数、失敗数、降下モードごとの不安定なケースの数、警告を書く（:ref:`sec-file-dispersion`）。
@@ -528,85 +533,253 @@ Google Earth での確認
 どの計算の最大着地距離も、**計算した条件（風速、風向、サンプル）の中での最大値** である。計算していない条件の着地点は、これより遠くなりうる。
 以下の手順は、遠い着地点を取りこぼさないように、条件の組合せを広げていくものである。最後に、すべての最大値の最大に余裕を足して半径とする。
 
+手順は、一つの設定ファイル（ここでは ``examples/sample.toml``）を書き換えずに、コマンドラインの ``--set``、``--out``、``--aero-table``\ （:ref:`sec-cli-overrides`）で条件を変えて実行する。
+コマンドはリポジトリの最上位のディレクトリで実行し、結果は ``runs/`` の下に計算ごとに分けて書く。
+高度別の風の表は ``wind.profile`` で与える。例の ``examples/wind_profile_example.csv`` は書式を示す架空の表なので、実際には当日の予報や観測の表に置き換える。
+``profile`` では ``[wind]`` の ``speed`` と ``direction_deg`` は使われない。表の風を変えるときは、``wind.profile_mean_speed`` と ``wind.profile_mean_direction_deg`` で表全体を拡大・回転する（:ref:`sec-wind-scaling`）。
+サンプルの設定ファイルは ``speed`` と ``direction_deg`` を書いているので、以下のコマンドでは、使わないことを知らせる警告（``wind.speed is ignored for wind.model = "profile"; …``）が毎回出る。結果には影響しない。
+自分の設定ファイルで ``profile`` を使うときは、``[wind]`` からこの 2 つを消しておく。
+
+.. code-block:: sh
+
+   P="--set wind.model=profile --set wind.profile=wind_profile_example.csv"
+
+0. **係数表を作り、表の平均風を確かめる。**
+   空力の手法ごとに係数表を一度だけ作り、以後の計算は ``--aero-table`` でそれを使う（手順 6 のため、部品積み上げ法とパネル法の両方を作る）。
+   表の平均風速 :math:`W` と平均風の風向 :math:`\Psi`\ （:ref:`sec-wind-profile`）は、``sim`` の ``summary.json`` の ``wind_speed`` と ``wind_direction_deg`` に出る。
+
+   .. code-block:: sh
+
+      for m in barrowman panel; do
+        ignisyeet aero examples/sample.toml --set aero.method=$m --out runs/aero_$m
+      done
+      ignisyeet sim examples/sample.toml $P --aero-table runs/aero_barrowman --out runs/nominal
+
+   例の表では :math:`W=11.89` m/s、:math:`\Psi=220.2^\circ` である。
+
 1. **風の格子を、打上げ可能な風速の上限まで、36 方位以上で計算する。**
    ``dispersion.wind_speeds`` は、打上げを中止する風速（ランチ風速の上限）までを含め、``directions`` は 36 以上（10° 間隔以下）にする。
-   風は、当日の実測または予報の高度別の表（``wind.model = "profile"``、書式は :ref:`sec-wind-profile`、例は ``examples/wind_profile_example.csv``）で与える。
-   ``power`` と ``log`` は地上の基準風速を上空へ外挿するので、上空の風が強い日の着地点を過小にも過大にも見積もる（:ref:`sec-wind`）。
+   ``power`` と ``log`` は地上の基準風速を上空へ外挿するので、上空の風が強い日の着地点を過小にも過大にも見積もる（:ref:`sec-wind`）。保安の検討には高度別の表を使う。
    ``wind_speeds`` の意味は風モデルで異なる。
 
    * ``constant``、``power``、``log``：``wind.ref_height``\ （既定 2 m）での風速である。団体が風速の上限を測る高さ（地上 2 m、10 m など）に合わせて ``ref_height`` を設定し、その高さでの上限までを含める。
    * ``profile``：表の **平均風速** :math:`W` である（地上の風速ではない）。表の形はそのままに、全体を :math:`k=v/W` 倍にする（:ref:`sec-wind-scaling`）。
      団体の上限 :math:`V_{\mathrm{lim}}`\ （測る高さ :math:`h_{\mathrm{lim}}` での風速）を表に当てはめるには、表のその高さの風速 :math:`w(h_{\mathrm{lim}})` を読み、
-     上限の風速に当たる格子の風速を :math:`v_{\max}=W\,V_{\mathrm{lim}}/w(h_{\mathrm{lim}})` とする。:math:`W` は ``ignisyeet sim`` の結果（``summary.json`` の ``wind_speed``）に出る。
+     上限の風速に当たる格子の風速を :math:`v_{\max}=W\,V_{\mathrm{lim}}/w(h_{\mathrm{lim}})` とする。
      格子には :math:`v=W`\ （表そのまま、:math:`k=1`）と :math:`v_{\max}` までの値を入れる。
      :math:`k` が 3 を超える、または 1/3 を下回る風速があると警告が出る。表の形を保った拡大が現実的でないので、上限の風速を与えた着地点の上空の風速を確かめ（``wind_scale`` と警告に出る上空の風速）、
      ふさわしくなければ、上限の風速ごとに別の表を用意する。
 
+   例として、上限を地上 2 m で 7 m/s とする。例の表の 2 m の風速は 0 m と 10 m の行の補間で :math:`w(2\ \mathrm{m})=3.04` m/s なので、:math:`v_{\max}=11.89\times7/3.04=27.4` m/s である。
+   格子には、地上 2 m で 2、4、5、6、7 m/s に当たる 7.8、15.6、19.6、23.5、27.4 m/s と、:math:`W` そのものの 11.9 m/s を入れる（:math:`k=0.66` から 2.3）。
+
+   .. code-block:: sh
+
+      for m in barrowman panel; do
+        ignisyeet dispersion examples/sample.toml $P --set aero.method=$m --aero-table runs/aero_$m \
+            --set 'dispersion.wind_speeds=[7.8, 11.9, 15.6, 19.6, 23.5, 27.4]' --set dispersion.directions=36 \
+            --out runs/grid_$m
+      done
+
 2. **格子を細かくして、最大値が変わらないことを確かめる。**
-   方位を 2 倍（36 から 72 など）にした格子と比べ、さらに最大となったケースの風速と風向の近くを細かくした格子（風速の刻みを小さくし、方位を 360 まで増やす）でも計算する。
+   方位を増やした格子（72、360 など）と比べ、さらに最大となったケースの風速と風向の近くを細かくした格子（風速の刻みを小さくし、方位を 360 まで増やす）でも計算する。
    最大値が変わる間は細かくし、最も大きい値を使う。最大は風速の上限で起きるとは限らない。弾道落下では、途中の風速で最も遠くなることがある。
    多角形と KML の輪郭は着地点を直線で結んだ近似で、方位が粗いと着地点が輪郭の外に出る（:ref:`sec-wind-grid-result`）。保安域は、輪郭ではなく最大着地距離の円か、細かい格子の外側の包絡で考える。
 
+   .. code-block:: sh
+
+      for m in barrowman panel; do
+        ignisyeet dispersion examples/sample.toml $P --set aero.method=$m --aero-table runs/aero_$m \
+            --set 'dispersion.wind_speeds=[7.8, 11.9, 15.6, 19.6, 23.5, 27.4]' --set dispersion.directions=360 \
+            --out runs/grid360_$m
+      done
+
+   最も遠いケースの風速と風向は、``dispersion.csv`` の ``landing_distance`` が最大の行の ``wind_speed`` と ``wind_direction_deg`` である（降下モードごとに読む）。
+
 3. **機体のばらつきを、最も遠くなる風で飛ばす。**
-   降下モードごとに、手順 1 と 2 の格子で最も遠くなったケースの風速と風向を ``[wind]`` の ``speed`` と ``direction_deg`` に入れ、``mode = "monte_carlo"`` で計算する。
+   降下モードと空力の手法ごとに、手順 1 と 2 で最も遠くなったケースの風を公称の風にして、``mode = "monte_carlo"`` で計算する。
+   ``profile`` では、そのケースの風速と風向を ``wind.profile_mean_speed`` と ``wind.profile_mean_direction_deg`` に与える。表はそのケースと同じ倍率と角度で拡大・回転され、公称の飛翔は格子のそのケースと同じ風になる。
+   ``[wind]`` の ``speed`` と ``direction_deg`` は ``profile`` では使われないので、これらを変えても表の風は変わらない。
    風は格子で調べたので、``wind_speed`` と ``wind_direction_deg`` の標準偏差は 0 にし、推力、質量、空力係数、レールの向きなどの機体のばらつきだけを与える。
    機体のばらつきで最も遠くなる風向がずれることがあるので、上限の風速でほかの風向（たとえば 30° ごと）も計算する。
    風の格子は公称の機体だけを飛ばすので、機体のばらつきと強い風が重なった着地点は、この手順でしか出ない。
+   サンプル数は :math:`10^4` 以上にし、最大値がサンプル数で変わることに注意する（下の「サンプル数と最大値」）。
+
+   .. code-block:: sh
+
+      MC="--set dispersion.mode=monte_carlo --set dispersion.monte_carlo.samples=10000
+          --set dispersion.monte_carlo.wind_speed=0 --set dispersion.monte_carlo.wind_direction_deg=0"
+      # 例：パネル法の弾道落下が最も遠くなった風（27.4 m/s、4°）
+      ignisyeet dispersion examples/sample.toml $P $MC --set aero.method=panel --aero-table runs/aero_panel \
+          --set wind.profile_mean_speed=27.4 --set wind.profile_mean_direction_deg=4 --out runs/mc_worst_panel_ballistic
+      # 上限の風速で 30° ごとの風向
+      for m in barrowman panel; do
+        for d in 0 30 60 90 120 150 180 210 240 270 300 330; do
+          ignisyeet dispersion examples/sample.toml $P $MC --set aero.method=$m --aero-table runs/aero_$m \
+              --set wind.profile_mean_speed=27.4 --set wind.profile_mean_direction_deg=$d --out runs/mc_${m}_$d
+        done
+      done
+
+   ``dispersion_summary.json`` の ``wind_speed``、``wind_direction_deg``、``wind_scale`` で、公称の風が意図した値になったことを確かめる。
 
 4. **予報の風でモンテカルロ解析を行い、標準偏差の根拠を残す。**
-   ``[wind]`` を当日の予報の風にして、風のばらつき（予報の誤差）も含めて計算する。
+   当日の予報の表そのものを公称の風にして、風のばらつき（予報の誤差）も含めて計算する。``profile`` の風速の標準偏差は平均風速 :math:`W` の周りの揺らぎで、表全体を拡大する（:ref:`sec-wind-scaling`）。
    標準偏差は利用者が決める値で、既定値は目安にすぎない（:ref:`sec-mc`）。推力は燃焼試験のばらつき、空力係数は手法どうしの差（:ref:`sec-lim-aero`）、風は予報の誤差のように、根拠を決めて設定する。
-   手順 3 と 4 では、サンプル数を :math:`10^4` 以上にする。1000 サンプルの P99 は、上位 10 個ほどの点で決まり、乱数の種を変えると変わる。
+
+   .. code-block:: sh
+
+      for m in barrowman panel; do
+        ignisyeet dispersion examples/sample.toml $P --set aero.method=$m --aero-table runs/aero_$m \
+            --set dispersion.mode=monte_carlo --set dispersion.monte_carlo.samples=10000 --out runs/mc_forecast_$m
+      done
 
 5. **回収系の故障を飛ばす。**
    弾道落下（パラシュートが開かない場合）は、手順 1〜4 で常に計算されるので、その最大値を含める。
    二段開傘（``main_cd_s`` と ``main_altitude``。:ref:`sec-dual-deploy`）では、さらに次の 2 つを、手順 1 と 2 の格子（できれば手順 3 も）で計算する。
 
    * **メインが頂点で開く**：``main_altitude`` を頂点より高くする（例えば 100000）。メインがドローグと同時に開き、``recovery.main_altitude = … m is above the apogee`` の警告が出る。
-   * **メインが開かず、ドローグだけで降りる**：``main_cd_s`` と ``main_altitude`` を消す。
+   * **メインが開かず、ドローグだけで降りる**：``main_cd_s`` と ``main_altitude`` を指定しない。
+
+   ``--set`` は項目を消せないので、二段開傘の 2 項目は元の設定ファイルに書かず、正常な開傘とメインが頂点で開く場合にだけ ``--set`` で加える。
+   次は、単一のパラシュートのサンプルをドローグ 0.5 m\ :sup:`2`、高度 300 m でメイン 8 m\ :sup:`2` に変えた例である（``G`` は手順 1 の格子）。
+
+   .. code-block:: sh
+
+      G="--set dispersion.wind_speeds=[7.8,11.9,15.6,19.6,23.5,27.4] --set dispersion.directions=36"
+      D="--set recovery.cd_s=0.5"
+      M="--set recovery.main_cd_s=8"
+      ignisyeet dispersion examples/sample.toml $P $G $D $M --set recovery.main_altitude=300    --aero-table runs/aero_barrowman --out runs/dual_normal
+      ignisyeet dispersion examples/sample.toml $P $G $D $M --set recovery.main_altitude=100000 --aero-table runs/aero_barrowman --out runs/dual_main_at_apogee
+      ignisyeet dispersion examples/sample.toml $P $G $D                                       --aero-table runs/aero_barrowman --out runs/dual_drogue_only
 
    風による流されは、降下時間が長いほど大きい。メインが頂点で開くと降下時間が最も長く、着地点は風下へ最も遠い。
    ドローグだけの降下は、ドローグの抗力面積が小さく降下が速ければ、正常な二段開傘より **近く** に落ちる（着地速度は大きい）。
    ドローグが大きく降下が遅ければ遠くなるので、どちらになるかは降下時間による。思い込みで除かず、計算して大きいほうを取る。
+   パラシュートが開くときの対気速度と動圧は ``summary.json`` の ``drogue_deploy_speed`` ``drogue_deploy_q`` ``main_deploy_speed`` ``main_deploy_q`` に出る。
+   50 m/s または 2 kPa を超える開傘には警告が出る（:ref:`sec-config-checks`）。着地点はパラシュートが壊れないものとして計算しているので、この警告が出る開傘は、パラシュートが壊れて弾道落下に近い降下になりうるものとして扱う。
 
 6. **空力の手法の違いを含める。**
    空力係数は実測と比較しておらず（:ref:`sec-lim-aero`）、手法の差は最大着地距離に大きく効く。
-   ``aero.method = "barrowman"`` と ``"panel"`` の両方で手順 1〜3 を計算し、大きいほうの最大値を使う。
+   上のコマンドのように、``aero.method = "barrowman"`` と ``"panel"`` の両方で手順 1〜4 を計算し、大きいほうの最大値を使う。
    公称の飛翔の着地点の差（サンプルの弾道落下で約 66 m）は小さくても、風の格子とモンテカルロの最大値の差は大きくなりうる。
+   ``cn_scale`` の標準偏差は一つの手法の中の不確かさで、手法の差はこの手順で含める。
 
-7. **半径は、すべての最大値の最大に余裕を足した値とする。**
+7. **終了ステータスと警告を確かめ、半径を決める。**
+   各コマンドの終了ステータスが 0 であることを確かめる（直後の ``echo $?``）。終了ステータスが 0 以外の結果は保安の判断に使わない（:ref:`sec-exit-status`）。
+   着地しなかったケース、失敗したケース、静的に不安定なケースや安定を判定できないケース、係数表の迎角の範囲外の引き出しがあると、終了ステータス 3 になり、標準エラー出力に ``INCOMPLETE RESULTS`` または ``RESULTS NOT USABLE`` の行が出る。
+   失敗や着地しないケースがあるときの最大着地距離は下限である（:ref:`sec-wind-grid-failed`）。
+   警告は ``-q`` でも表示し、``dispersion_meta.json`` と ``dispersion_summary.json`` の ``warnings`` に残る（:ref:`sec-config-checks`）。開傘の速さ、静安定余裕の不足、``power`` と ``log`` の風の上空への外挿、表の拡大率も見る。
+   各計算の最大着地距離は、風の格子では ``dispersion.csv``、モンテカルロ解析では ``dispersion_summary.json`` の ``max_landing_distance`` にある。次のようにまとめて読める。
+
+   .. code-block:: sh
+
+      python3 - <<'EOF'
+      import csv, glob, json
+      for f in sorted(glob.glob("runs/*/dispersion.csv")):
+          rows = [r for r in csv.DictReader(open(f)) if r["landed"] == "true"]
+          for d in ("ballistic", "parachute"):
+              v = [float(r["landing_distance"]) for r in rows if r["descent"] == d]
+              if v:
+                  print(f, d, max(v))
+      for f in sorted(glob.glob("runs/*/dispersion_summary.json")):
+          for d in json.load(open(f))["descents"]:
+              print(f, d["descent"], d["max_landing_distance"], d["landing_distance_p99"], d["complete"])
+      EOF
+
+   半径は、すべての最大値の最大に余裕を足した値とする。
 
    .. math::
 
       R = \max\bigl(\text{手順 1〜6 のすべての計算の、弾道落下とパラシュート降下の最大着地距離}\bigr) + \text{余裕}
 
-   失敗や着地しないケースがあるときの最大着地距離は下限なので、使わない（:ref:`sec-wind-grid-failed`）。
    余裕には、風は定常で突風や乱流を含まないこと、地形を考えず着地を射点標高の面で判定すること（:doc:`limitations`）、空力係数が未検証であることを見込む。余裕の大きさは利用者が決める。
 
-8. **警告と終了ステータスを確認する。**
-   警告は ``-q`` でも表示し、``dispersion_meta.json`` と ``dispersion_summary.json`` の ``warnings`` に残る（:ref:`sec-config-checks`）。
-   特に、着地しなかったケース、係数表の範囲外の引き出し、静安定余裕の不足、``power`` と ``log`` の風の上空への外挿を見る。
-   公称の飛翔（設定した風での弾道落下）が静的に不安定なときは、``dispersion`` は終了ステータス 3 で終わり、標準エラー出力に ``RESULTS NOT USABLE`` の行を書く。
-   このとき ``dispersion_meta.json`` と ``dispersion_summary.json`` の ``stable`` は ``false`` で、``static_margin_min_cal`` に最小の静安定余裕 [cal] が入る（:ref:`sec-file-dispersion`）。
-   終了ステータスが 0 以外のときは、結果を保安の判断に使わない（:ref:`sec-exit-status`）。
+サンプル数と最大値
+~~~~~~~~~~~~~~~~~~
+
+モンテカルロ解析の最大着地距離は、サンプル数とともに大きくなる。
+ばらつきは正規分布で、その裾には上限がないので、サンプルを増やすほど極端な値（たとえば標準偏差の 4〜5 倍の軸力の減少）を引くからである。
+サンプル :math:`i` の値は ``seed + i`` だけで決まるので（:ref:`sec-mc`）、サンプル数を増やした計算は少ない計算のサンプルをすべて含み、最大値は減ることがない。
+一方、P99 などのパーセンタイルはサンプル数とともに一定の値に収まる。
+:numref:`tbl-safety-samples` に、サンプル（``power`` の風）の手順 3 の 2 つのケースで、サンプル数を変えた結果を示す。P99.9 は ``dispersion_mc.csv`` の ``landing_distance`` から :eq:`eq-mc-percentile` で求めた値である。
+
+.. _tbl-safety-samples:
+
+.. list-table:: サンプル数と着地距離 [m]（サンプル、``power`` の風、手順 3 の機体のばらつきだけ、``seed = 1``。弾道落下はパネル法で 4.25 m/s、90°、パラシュート降下は部品積み上げ法で 7 m/s、90°）
+   :header-rows: 1
+   :widths: 16 14 14 14 14 14 14
+
+   * - サンプル数
+     - 弾道落下 P99
+     - 弾道落下 P99.9
+     - 弾道落下 最大
+     - パラシュート降下 P99
+     - パラシュート降下 P99.9
+     - パラシュート降下 最大
+   * - :math:`10^3`
+     - 3915.7
+     - 4552.5
+     - 4826.3
+     - 20265.2
+     - 24164.2
+     - 28928.2
+   * - :math:`10^4`
+     - 3906.1
+     - 4503.8
+     - 5000.6
+     - 20151.6
+     - 23085.7
+     - 28928.2
+   * - :math:`4\times10^4`
+     - 3897.9
+     - 4421.0
+     - 5221.1
+     - 20105.9
+     - 23236.4
+     - 28928.2
+   * - :math:`10^5`
+     - 3910.1
+     - 4454.5
+     - 7673.6
+     - 20183.5
+     - 23271.9
+     - 36276.8
+
+P99 と P99.9 は :math:`10^3` から :math:`10^5` サンプルで数 % しか変わらないが、最大値は :math:`10^5` サンプルで大きく増える。
+:math:`10^5` サンプルのパラシュート降下の最大（61243 番）は、軸力の倍率が 0.28（``ca_scale`` の :math:`-0.72`、標準偏差 0.15 の 4.8 倍）で頂点が 10937 m まで上がった飛翔である。
+したがって、次のようにする。
+
+* サンプル数は :math:`10^4` 以上にし、P99 と P99.9 と最大値をあわせて報告する。P99.9 は :math:`10^4` サンプルでは上位 10 個ほどの点で決まる。
+* サンプル数を 2〜4 倍にした計算と比べて、P99 と P99.9 が変わらないことを確かめる。最大値は収まらないので、サンプル数とともに記録する。
+* 最大値を決めている飛翔（``max_landing_distance_sample`` の行）のばらつきを ``dispersion_mc.csv`` で見て、その組合せが起こりうるものかを判断する。正規分布の遠い裾が現実的でない量は、標準偏差の根拠とあわせて見直す。
+
+最悪の重ね合わせ
+~~~~~~~~~~~~~~~~
+
+手順 3 と 5 は、上限の風、機体のばらつきの裾、回収系の故障という、それぞれ起こりにくい条件を重ねる。
+同時に起こる確率は小さく、得られる半径は意図して保守的なものである。どの条件までを重ねるか（たとえば上限の風とメインが頂点で開く故障を同時に考えるか）は、打上げを行う団体が決める。
+重ねた結果の半径は、頂点高度の数倍になりうる（下の計算例では、頂点高度約 4.4 km に対してパラシュート降下の最大が 28.9 km）。
 
 設定のそろえ方
 ~~~~~~~~~~~~~~
 
-``sim``、風の格子、モンテカルロ解析は、``[sim]`` を含む設定（``[dispersion]``、``[output]``、``[resources]`` を除く）を同じにして、同じ出力先で実行する。
+``sim``、風の格子、モンテカルロ解析は、``[sim]`` を含む設定（``[dispersion]``、``[output]``、``[resources]`` を除く）を同じにする。
 KML は、設定のハッシュが現在の設定と一致する結果だけをまとめるので（:ref:`sec-kml`）、積分法などが違うと、飛翔経路・風の格子・モンテカルロの層が 1 つの KML にそろわない。
-手順 3 と 6 は ``[wind]`` や ``[aero]`` を変えるので、出力先を分ける（それぞれの KML は別になる）。どの計算も、積分法などの ``[sim]`` の設定はそろえる。
+上の手順は計算ごとに ``--out`` で出力先を分けるので、KML も計算ごとに別になる。``--set`` で変えた値はハッシュに入るので、同じ出力先で ``sim`` と ``dispersion`` をそろえるときは、同じ ``--set`` を与える。
+どの計算も、積分法などの ``[sim]`` の設定はそろえる。
 
 計算例
 ~~~~~~
 
 サンプル（射角 85°、射方位 270°）について、手順 1〜6 を計算した結果を :numref:`tbl-safety-example` に示す。
-どの計算も ``examples/sample.toml`` の ``integrator`` を ``"rk45"`` に変え、それ以外の ``[sim]`` はファイルのままにした。モンテカルロ解析は :math:`10^4` サンプル、``seed = 1``、標準偏差はファイルの値である（手順 3 では風の標準偏差を 0 にした）。
-再現できるように、手順 1 の ``profile`` ではなくサンプル設定の ``power`` の風（風速は地上 2 m）で計算している。実際の手順では、当日の予報の高度別の表を使う。
+この表は、再現できるように、高度別の表ではなくサンプル設定の ``power`` の風（風速は地上 2 m、上限 7 m/s）で計算した。実際の手順では、当日の予報の高度別の表を使う。
+コマンドは上の手順から ``$P`` を除き、``--set sim.integrator=rk45`` を加えたもので、格子は ``dispersion.wind_speeds=[1,2,3,4,5,6,7]``、
+手順 3 の風は ``--set wind.speed=7 --set wind.direction_deg=270`` のように ``[wind]`` の ``speed`` と ``direction_deg`` で与える（``power`` ではこの 2 つが基準風である）。
+モンテカルロ解析は :math:`10^4` サンプル、``seed = 1``、標準偏差はファイルの値である（手順 3 では風の標準偏差を 0 にした）。
 
 .. _tbl-safety-example:
 
-.. list-table:: 保安距離の計算例（サンプル、最大着地距離 [m]。括弧内はその風速と風向）
+.. list-table:: 保安距離の計算例（サンプル、``power`` の風、最大着地距離 [m]。括弧内はその風速と風向）
    :header-rows: 1
    :widths: 46 27 27
    :class: longtable
@@ -620,9 +793,9 @@ KML は、設定のハッシュが現在の設定と一致する結果だけを�
    * - 手順 1：同、パネル法
      - 2861.2（4 m/s、90°）
      - 13496.6（7 m/s、90°）
-   * - 手順 2：細分した格子（3〜5 m/s を 0.25 m/s 刻み、360 方位）、パネル法
+   * - 手順 2：細分した格子（3〜5 m/s を 0.25 m/s 刻み、5〜7 m/s を 0.5 m/s 刻み、360 方位）、パネル法
      - 2943.2（4.25 m/s、90°）
-     - —
+     - 13496.6（7 m/s、90°）
    * - 手順 3：7 m/s、30° ごとの 12 風向、機体のばらつきだけ、部品積み上げ法
      - 3994.9（270°）
      - 28928.2（90°）
@@ -652,8 +825,62 @@ KML は、設定のハッシュが現在の設定と一致する結果だけを�
 したがって、半径は :math:`\max(5000.6,\ 28928.2)=28928.2` m に余裕を足した値になる。
 余裕を 10 % とみなせば :math:`28928.2\times1.1\approx31821` m である（10 % は計算例であり、推奨値ではない）。
 手順 3 を省くと（予報の風の周りのモンテカルロ解析と、7 m/s までの格子だけでは）最大は 19119.0 m で、手順 3 を含めた値の約 2/3 にとどまる。
+この最大値は :math:`10^4` サンプルでの値で、サンプル数を増やすと大きくなる（:numref:`tbl-safety-samples`）。
 
-二段開傘の故障の例として、サンプルの回収系をドローグ 0.5 m\ :sup:`2`、高度 300 m でメイン 8 m\ :sup:`2` に変えた機体の、手順 1 の格子（部品積み上げ法）でのパラシュート降下の最大着地距離を :numref:`tbl-safety-dual` に示す。
+高度別の表の例として、上の手順のコマンド（``examples/wind_profile_example.csv``、地上 2 m で 7 m/s を上限とする格子 7.8〜27.4 m/s）で手順 1〜3 を計算した結果を :numref:`tbl-safety-profile` に示す（``--set sim.integrator=rk45`` を加えた）。
+
+.. _tbl-safety-profile:
+
+.. list-table:: 高度別の表での手順 1〜3 の計算例（``examples/wind_profile_example.csv``、最大着地距離 [m]。括弧内は平均風速と平均風の風向。手順 3 は :math:`10^4` サンプル、機体のばらつきだけ）
+   :header-rows: 1
+   :widths: 46 27 27
+   :class: longtable
+
+   * - 計算
+     - 弾道落下
+     - パラシュート降下
+   * - 手順 1：風の格子（7.8〜27.4 m/s、36 方位）、部品積み上げ法
+     - 2890.8（27.4 m/s、110°）
+     - 10566.0（27.4 m/s、130°）
+   * - 手順 1：同、パネル法
+     - 2832.8（27.4 m/s、120°）
+     - 10001.4（27.4 m/s、140°）
+   * - 手順 2：360 方位、部品積み上げ法
+     - 2891.5（27.4 m/s、113°）
+     - 10566.1（27.4 m/s、131°）
+   * - 手順 2：同、パネル法
+     - 2834.4（27.4 m/s、4°）
+     - 10001.4（27.4 m/s、139°）
+   * - 手順 3：部品積み上げ法の弾道落下の最悪の風（27.4 m/s、113°）
+     - 5227.2
+     - 23963.2
+   * - 手順 3：部品積み上げ法のパラシュート降下の最悪の風（27.4 m/s、131°）
+     - 5056.8
+     - 23738.3
+   * - 手順 3：パネル法の弾道落下の最悪の風（27.4 m/s、4°）
+     - 3713.5
+     - 20892.3
+   * - 手順 3：パネル法のパラシュート降下の最悪の風（27.4 m/s、139°）
+     - 4794.6
+     - 20549.4
+   * - 手順 3：27.4 m/s、30° ごとの 12 風向、部品積み上げ法
+     - 5271.8（90°）
+     - 24406.6（30°）
+   * - 手順 3：同、パネル法
+     - 5043.3（90°）
+     - 21117.4（60°）
+   * - 最大
+     - 5271.8
+     - 24406.6
+
+格子では、どちらの降下モードも上限の 27.4 m/s で最も遠く、平均風の風向が南東（110〜140°）のときに最大になる。パネル法の弾道落下は、360 方位にすると 120° 付近と 4° 付近の二つの山がほぼ同じ高さになり、最大の風向が 4° に移る。
+この風で機体のばらつきを与えると、弾道落下の最大は 3713.5 m だが、パラシュート降下の最悪の風（139°）では弾道落下が 4794.6 m になり、30° ごとの風向では 90° で 5043.3 m になる。
+格子で最も遠い風向が、機体のばらつきを与えたときにも最も遠いとは限らないので、ほかの風向も計算する。
+パラシュート降下の最大は、部品積み上げ法の 30° の 24406.6 m で、格子の最大 10566.1 m の約 2.3 倍である（最も遠いのは ``power`` の例と同じ 830 番のサンプル）。
+これらの計算では、モンテカルロ解析の ``wind_scale`` が 2.31（:math:`27.4/11.89`）で、公称の風が格子の 27.4 m/s のケースと同じであることを ``dispersion_summary.json`` で確かめた。
+
+二段開傘の故障の例として、サンプルの回収系をドローグ 0.5 m\ :sup:`2`、高度 300 m でメイン 8 m\ :sup:`2` に変えた機体の、手順 1 の格子（``power`` の風、1〜7 m/s、部品積み上げ法）でのパラシュート降下の最大着地距離を :numref:`tbl-safety-dual` に示す。
+コマンドは手順 5 のものから ``$P`` を除き、格子を ``power`` の 1〜7 m/s にして ``--set sim.integrator=rk45`` を加えたものである。
 
 .. _tbl-safety-dual:
 
@@ -676,3 +903,4 @@ KML は、設定のハッシュが現在の設定と一致する結果だけを�
 
 公称の着地の時刻は、北風 4 m/s での ``sim`` の値である。ドローグだけの降下は正常な開傘より約 55 s 早く着地し、最大着地距離も短い（着地速度は 17.0 m/s で、15 m/s を超える警告が出る）。
 メインが頂点で開くと降下時間は約 3 倍になり、最大着地距離は 21624.4 m で、この機体ではこれが半径を決める。
+どの場合もドローグは頂点の 1 s 後に 28.4 m/s、動圧 0.32 kPa で開き、正常な開傘のメインは 16.3 m/s、0.16 kPa で開く（``sim`` の ``deploy`` と ``main deploy`` の行）。開傘の速さの警告は出ない。

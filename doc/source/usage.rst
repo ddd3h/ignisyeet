@@ -113,7 +113,7 @@ developer
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 インストーラは、すでに入っているツール（cargo、uv、python3、git、conda や micromamba、既存の ``ignisyeet-cfd`` 環境、SU2、gmsh など）を検出して
-一覧にする（``Environment``）。続けて、CFD ツール（SU2、gmsh、Open MPI。conda-forge から約 3 GB）を入れるかを尋ねられる
+一覧にする（``Environment``）。続けて、CFD ツール（SU2、gmsh、Open MPI。conda-forge から約 3 GB。STL の壁面に使う manifold3d 3.5.4 は pip から）を入れるかを尋ねられる
 （:numref:`fig-screen-install-cfd`）。これは CFD による空力計算（:doc:`cfd` を参照）で使う任意の部品で、
 Barrowman 法やパネル法だけを使うなら要らない。既定は ``n``\ （入れない）である。
 既存の micromamba、mamba、conda と既存の ``ignisyeet-cfd`` 環境があればそれを使い、すでに SU2 が見つかっているときは質問しない。
@@ -284,7 +284,7 @@ micromamba を新たに入れる場合は、版 2.9.0 を取得する。
    * - ``--user`` ``--developer``
      - 役割を尋ねずに指定する
    * - ``--cfd`` ``--no-cfd``
-     - CFD ツールを入れる、入れない
+     - CFD ツール（SU2、gmsh、Open MPI と manifold3d 3.5.4）を入れる、入れない
    * - ``--version vX.Y.Z``
      - 入れるリリース（既定は最新）。developer ではチェックアウトするタグ。形式は ``vX.Y.Z`` に限り、``v`` のない値や他の形式はエラーにする
    * - ``--prefix DIR``
@@ -428,26 +428,15 @@ CFD 以外の部分は Windows でも ``cargo check`` が通るが、インス�
 ``make`` が図を読む出力ディレクトリ（``OUT``）は、設定ファイルの ``[output] dir``\ （設定ファイルのあるディレクトリからの相対パス。絶対パスならそのまま、未指定なら ``out``）から決まる。
 ``OUT=...`` で上書きもできる。``[output] dir`` は、基本文字列（``"..."``）でもリテラル文字列（``'...'``）でも読める。
 
-``sim`` や ``dispersion`` が終了ステータス 3（結果は書いたが不完全。:ref:`sec-exit-status`）で終わっても、``make all`` は作図まで進める。
-作図のあと、``make: results are INCOMPLETE or NOT USABLE (exit status 3): see the lines above`` のメッセージ（この 3 は ``ignisyeet`` の終了ステータス）を出して失敗する。
-静的に不安定な結果（``RESULTS NOT USABLE``）も、このメッセージで知らせる。
-``make`` 自体の終了ステータスは、GNU make の規則で 2 になる。
-ステータス 3 以外の失敗では、その場で止まる。
-
-``python/plot.py`` は、出力ディレクトリがないとき、また描くものが一つもないときは、エラーを表示して終了ステータス 1 で終わる。
-``all`` では、実際に図を書いたものだけを数える。個別の図（``geometry`` など）を選んで何も描けなかったときも、``nothing to plot for …`` というエラーで終了ステータス 1 になる。
-``profile.csv`` がないと、形状の図は ``skip geometry: profile.csv not found (run `ignisyeet geom` again)`` と表示して描かない。
+飛翔経路の図の高度は、``summary.json`` の頂点高度と同じ定義の、射点からの高さである。
+平面の地球（``earth.model = "flat"``）では積分した高さ ``up``\ （とその時間変化 ``vel_u``）を使う。``trajectory.csv`` の ``alt`` は接平面の位置から換算した値で、地球の丸みの分（射点からの水平距離 :math:`s` に対して約 :math:`s^2/2R`。14 km で 16 m）だけ高くなるからである。
+``earth.model = "ecef"`` では、測地高度 ``alt`` から射点の高度（最初の行の ``alt``）を引いた値とその時間変化を使う（接平面の座標 ``up`` は、射点から離れるほど本当の高さより低くなる）。
+どちらの地球モデルかは ``summary.json`` の ``earth_model`` で決める。``earth_model`` のない ``summary.json`` では着地の行から判定し（平面の地球では着地の行の ``up`` がちょうど 0）、判定できなければ ``"flat"`` とする。上昇中の判定にも、この高さの時間変化を使う。
 ``method = "cfd"`` の出力には ``aero_drag.csv`` がない（:ref:`sec-file-drag`）ので、空力の図は、``aero_table.csv`` の迎角 0 の行から求めた全体の抗力係数で描く（抗力の内訳は含まない）。
 一般表（``aero_table.csv`` が :math:`C_X` などの 6 成分の列を持つ）でも ``aero_drag.csv`` がない。このときは横滑り角 0 の面で、:math:`C_D=-C_X`、:math:`C_{N\alpha}=|C_Z|/\alpha`\ （最小の正の迎角）、:math:`x_{cp}=C_m\,d/C_Z`\ （:math:`d` は ``aero_table.json`` の基準直径）を Mach 数ごとに求めて描く。
-``sim`` が失敗した出力ディレクトリ（``summary.json`` が失敗の印）では、``python/plot.py trajectory`` は ``error: the last sim run failed: …; not plotting the old trajectory`` で終了ステータス 1 になり、
-``all`` は ``skip trajectory: the last sim run failed: …`` と表示して、飛翔経路の図だけを描かない（古い結果を描かない）。
-``dispersion_mc.csv`` があって ``dispersion_summary.json`` がないときは、``skip dispersion_mc: dispersion_summary.json not found (run `ignisyeet dispersion` again)`` と表示して、モンテカルロの図を描かない。
-``summary.json`` の ``config_hash`` と、``dispersion_meta.json`` と ``dispersion_summary.json`` の ``flight_config_hash`` のうち、存在するものどうしを比べ、どれか 2 つが違えば、ファイル名とハッシュを並べた警告（``… were written for different flight configurations (…); rerun `ignisyeet sim` and `ignisyeet dispersion` before reading the plots together``）を標準エラー出力に出す。
-``summary.json`` がなくても、2 つの落下分散の結果どうしを比べる。読めないファイルと、``flight_config_hash`` のない落下分散のファイルも警告する。
-飛翔経路の図の高度は、``trajectory.csv`` の測地高度 ``alt`` から射点の高度（最初の行の ``alt``）を引いた値で、``summary.json`` の頂点高度と同じ定義である（``earth.model = "ecef"`` では接平面の座標 ``up`` と違う）。上昇中の判定にも、この高度の時間変化を使う。
 パネル法の圧力係数の図（``panel``）では、``panel_cp.csv`` のフィンのパネルから、機軸から最も遠い点の方位にあるフィンを選んで描く。フィンのパネルがなければ胴体だけを描く。
 風の格子の図では、風速ごとの線を、外側（風速が大きい）から順に並ぶ凡例とともに、viridis から取った区別しやすい色で描く。
-``wind.model = "profile"`` の結果では、凡例の見出しが ``profile mean speed (outermost first)`` になる（それ以外は ``wind speed (outermost first)``）。
+``wind.model = "profile"`` の結果では、凡例の見出しが ``profile mean speed (outermost first)`` になる（それ以外は ``wind speed (outermost first)``）。風モデルは ``dispersion_meta.json``、``dispersion_summary.json``、``summary.json`` の順に、最初に ``wind_model`` を持つファイルで決める（``wind_model`` のないファイルは、``wind_scale`` があれば ``profile`` とみなす）。
 二段開傘の飛翔では、軌跡の図にメインの開傘の位置を四角の印で示す。
 
 ``python/plot.py`` は ``geometry`` ``aero`` ``trajectory`` ``dispersion`` のいずれかを選んで描くこともできる。
@@ -469,6 +458,30 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
 
 自分の機体で計算するときは、``examples/sample.toml`` をコピーして編集し、
 ``make all CONFIG=path/to/rocket.toml`` とすればよい。
+
+.. _sec-run-troubleshooting:
+
+うまくいかないとき
+~~~~~~~~~~~~~~~~~~
+
+``sim`` や ``dispersion`` が終了ステータス 3（結果は書いたが不完全。:ref:`sec-exit-status`）で終わっても、``make all`` は作図まで進める。
+作図のあと、``make: results are INCOMPLETE or NOT USABLE (exit status 3): see the lines above`` のメッセージ（この 3 は ``ignisyeet`` の終了ステータス）を出して失敗する。
+静的に不安定な結果（``RESULTS NOT USABLE``）も、このメッセージで知らせる。
+``make`` 自体の終了ステータスは、GNU make の規則で 2 になる。
+ステータス 3 以外の失敗では、その場で止まる。
+
+``python/plot.py`` は、出力ディレクトリがないとき、また描くものが一つもないときは、エラーを表示して終了ステータス 1 で終わる。
+``all`` では、実際に図を書いたものだけを数える。個別の図（``geometry`` など）を選んで何も描けなかったときも、``nothing to plot for …`` というエラーで終了ステータス 1 になる。
+``profile.csv`` がないと、形状の図は ``skip geometry: profile.csv not found (run `ignisyeet geom` again)`` と表示して描かない。
+
+``sim`` が失敗した出力ディレクトリ（``summary.json`` が失敗の印）では、``python/plot.py trajectory`` は ``error: the last sim run failed: …; not plotting the old trajectory`` で終了ステータス 1 になり、
+``all`` は ``skip trajectory: the last sim run failed: …`` と表示して、飛翔経路の図だけを描かない（古い結果を描かない）。
+``dispersion_mc.csv`` があって ``dispersion_summary.json`` がないときは、``skip dispersion_mc: dispersion_summary.json not found (run `ignisyeet dispersion` again)`` と表示して、モンテカルロの図を描かない。
+描かなかった図の PNG が ``plots/`` に残っていると（前の実行で書いたもの）、今の結果の図と取り違えないように消し、``removed <パス> (plot skipped; the file was from an earlier run)`` と表示する。
+``sim`` が失敗したときは ``ignisyeet.kml`` も、飛翔の層を除いて書き直す（:ref:`sec-exit-status`）。
+
+``summary.json`` の ``config_hash`` と、``dispersion_meta.json`` と ``dispersion_summary.json`` の ``flight_config_hash`` のうち、存在するものどうしを比べ、どれか 2 つが違えば、ファイル名とハッシュを並べた警告（``… were written for different flight configurations (…); rerun `ignisyeet sim` and `ignisyeet dispersion` before reading the plots together``）を標準エラー出力に出す。
+``summary.json`` がなくても、2 つの落下分散の結果どうしを比べる。読めないファイルと、``flight_config_hash`` のない落下分散のファイルも警告する。
 
 端末の表示
 ----------
@@ -526,11 +539,15 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
    ``sim`` の完了画面。結果パネル、書き出したファイルの一覧、所要時間が並ぶ。
 
 二段開傘（``recovery.main_cd_s``）のときは、結果パネルにメインの開傘の高さと時刻の行（``main deploy``）を加え、設定パネルにはメインの抗力面積と開傘高度、ドローグとメインの終端降下速度（海面、乾燥質量）を示す。
+プレーンモードでは、パラシュート（二段開傘ではドローグ）が開いた時刻、そのときの対気速度と動圧を ``deploy          27.11 s, 28.4 m/s, q 0.32 kPa`` の形の行に示し（サンプルの値）、``main deploy`` の行にもメインが開いたときの対気速度と動圧を添える。どちらも ``summary.json`` に残る（:ref:`sec-file-summary`）。
+飛翔が推力曲線の終わりより前に終わったとき（``sim.max_time`` で打ち切ったときなど）は、燃焼終了の行（``burnout``）に ``not reached (the flight ended before the end of the thrust curve)`` と示し、``summary.json`` の ``burnout_time`` は ``null`` にする。
+``wind.model = "profile"`` の設定パネルの風の行は、``wind.speed`` と ``wind.direction_deg``\ （``profile`` では使わない）ではなく、``mean 15.6 m/s from 270 deg`` の形で ``wind.profile_mean_speed`` と ``wind.profile_mean_direction_deg``\ （:ref:`sec-wind-scaling`）を示す。指定のない側は ``table speeds``、``table directions`` と書く（表のまま）。
 パラシュートを使う設定の設定パネルには、終端降下速度の見積り（``terminal speed``）が並ぶ。
 これは :math:`\sqrt{2mg/(\rho\,C_DS)}` に海面の標準密度 :math:`\rho=1.225\ \mathrm{kg/m^3}` と乾燥質量 :math:`m` を入れた値で、サンプルでは 6.0 m/s である。
 飛翔の計算結果ではなく簡易な見積りなので、着地速度（地面に対する速さで、横方向の速度を含む。サンプルでは 7.1 m/s）とは一致しない。
 結果パネルの静安定余裕の行（``min margin``）には、自由飛行中の最小値とランチャ離脱時の値の小さいほうを示す。自由飛行中の最小値は、ランチャ離脱の時刻（自由飛行はここから始まる）から頂点までのうち対気速度が 10 m/s を超える間の値で、ランチャ離脱の時刻の値を含む。プレーンモードでは ``min static margin X cal (free flight Y cal)`` の 1 行で、自由飛行中の最小値 ``Y`` も添える。対気速度が頂点まで 10 m/s を超えなかったときは、``Y cal`` の代わりに ``n/a (airspeed < 10 m/s)`` と書く。
 一般表（6 成分の表）では、続けて ``pitch / yaw     X cal / Y cal (general aero table: smallest margin in each plane)`` の行に、ピッチとヨーの面ごとの最小の余裕を示す（:ref:`sec-static-margin-general`）。
+静安定余裕が求まらなかった面があるときは（:ref:`sec-static-margin-general`）、警告 ``static stability could not be evaluated (…): the results are not usable until it is`` を出し、終了ステータス 3 で終わる（:ref:`sec-exit-status`）。
 
 結果パネルの静安定余裕には判定の印が付く。
 
@@ -604,12 +621,12 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - 空力係数表 ``aero_table.csv`` を作る。入力（STL と空力関係の設定）が前回と同じなら保存済みの表を使う。
        ``--force`` を付けると、保存済みの表が設定と一致していても作り直す（``aero.method = "table"`` では効果がない）。
    * - ``sim <config> [--descent ballistic|parachute]``
-     - 設定した風で 1 回飛翔させ、``trajectory.csv`` と ``summary.json`` を書き出す。``sim.max_time`` までに着地しなかったとき、または静的に不安定なときは、結果を書いたうえで終了ステータス 3 で終わる（:ref:`sec-exit-status`）。
-       実行の最初に、出力先の古い ``trajectory.csv`` と ``summary.json`` を消す。実行がエラーで終わったときは、``summary.json`` に失敗の印 ``{"failed": true, "error": "…"}`` だけを書く（:ref:`sec-file-summary`）。
+     - 設定した風で 1 回飛翔させ、``trajectory.csv`` と ``summary.json`` を書き出す。``sim.max_time`` までに着地しなかったとき、静的に不安定なとき、静的な安定を判定できなかったとき、係数表の迎角の範囲を超えて引いたときは、結果を書いたうえで終了ステータス 3 で終わる（:ref:`sec-exit-status`）。
+       実行の最初に、出力先の古い ``trajectory.csv`` と ``summary.json`` を消す。実行がエラーで終わったときは、``summary.json`` に失敗の印 ``{"failed": true, "error": "…"}`` だけを書き、``ignisyeet.kml`` があれば飛翔の層を除いて書き直す（:ref:`sec-file-summary`）。
    * - ``dispersion <config>``
      - ``dispersion.mode`` に従って落下分散を並列に計算する（保安距離の検討の手順は :ref:`sec-dispersion-safety`）。``"wind_grid"`` では風速 × 風向の全ケースを計算して ``dispersion.csv`` と ``dispersion_meta.json`` を、
        ``"monte_carlo"`` では各サンプルの結果 ``dispersion_mc.csv`` と統計 ``dispersion_summary.json`` を書き出す。
-       着地しなかったケースや失敗したケースがあるとき、公称の飛翔が静的に不安定なとき、または静的に不安定なケースやサンプルがあるときは、結果を書いたうえで終了ステータス 3 で終わる。
+       着地しなかったケースや失敗したケースがあるとき、公称の飛翔が静的に不安定か安定を判定できないとき、静的に不安定なケースやサンプル、安定を判定できないケースやサンプルがあるとき、係数表の迎角の範囲を超えて引いたときは、結果を書いたうえで終了ステータス 3 で終わる。
        風の格子のすべてのケースが積分のエラーで止まったときは、``dispersion.csv`` などを書いたうえで終了ステータス 1 で終わる（:ref:`sec-wind-grid-failed`）。
    * - ``cfd-check <config> [--mesh]``
      - CFD に必要なツール（SU2、MPI、gmsh。``surface = "stl"`` では manifold3d も）の有無と版、ケース数を表示する。``--mesh`` は壁面のメッシュも作って品質を表示する（:doc:`cfd`）。
@@ -617,12 +634,49 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
    * - ``sample-stl <path>``
      - 付属のサンプル機体の STL（mm 単位、ノーズ +z 向き）を書き出す。
 
+``geom``、``aero``、``sim``、``dispersion`` は、設定ファイルを書き換えずに設定を変えるオプション ``--set`` と ``--out`` を、``aero``、``sim``、``dispersion`` は係数表を使い回すオプション ``--aero-table`` を受け付ける（:ref:`sec-cli-overrides`）。
+
 ``sim`` と ``dispersion`` は、係数表がない場合や入力が変わった場合に自動で ``aero`` を実行する。
 入力の同一性は、STL の内容と設定値から計算したハッシュ値（FNV-1a）で判定する。
 ハッシュには、プログラムの版と、空力モデルの版（係数の計算方法が変わると上げる内部の番号）も入るので、計算方法が変わった版では保存済みの表を使わずに作り直す。
 空力に使わない設定は、ハッシュに入れない。選んでいない手法のブロック（``method = "barrowman"`` のときの ``[aero.panel]`` と ``[aero.cfd]`` など）、
 外部の係数表の指定、``method = "cfd"`` の資源とパスの項目（``prefix`` ``su2`` ``mpi`` ``ranks_per_case`` ``parallel_cases`` ``timeout_minutes`` ``workdir``）である。
 これらを変えても表は作り直さない。
+
+.. _sec-cli-overrides:
+
+コマンドラインでの設定の変更
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+保安距離の検討（:ref:`sec-dispersion-safety`）のように、一つの設定ファイルから風や空力の手法だけを変えた計算を何度も行うときは、設定ファイルを書き換えずに、コマンドラインで設定を変える。
+
+``--set KEY=VALUE``
+   設定の項目 ``KEY`` を ``VALUE`` に変える（``geom``、``aero``、``sim``、``dispersion``）。``KEY`` は TOML のキーを ``.`` でつないだもの（``wind.profile_mean_speed``、``aero.panel.body_axial``）で、ない表は作る。
+   ``VALUE`` は TOML の値として読む（``15.6``、``true``、``[5.0, 10.0]``、``"monte_carlo"``）。TOML の値として読めない語は文字列とみなすので、``wind.model=profile`` に引用符はいらない。
+   数や真偽値に読める文字列は ``'"..."'`` のように引用符で囲む。何度でも指定でき、指定した順に設定ファイルの内容へ上書きしてから、ファイルと同じ検査（未知のキー、型、範囲）を行う。
+   検査でエラーになると、メッセージは ``invalid config <ファイル> with the --set overrides`` で始まる。
+   ``KEY=VALUE`` の形でないと ``--set …: expected KEY=VALUE``、キーに空の部分があると ``--set …: invalid key "…" (expected a dotted path such as wind.speed)``、表でない項目の下にキーを作ろうとすると ``--set …: wind.model is not a table`` の形のエラーになる。
+   値の中の相対パス（``wind.profile`` など）は、ファイルの中と同じく設定ファイルのディレクトリから解釈する。
+   ``--set`` で変えた値は設定のハッシュ（``config_hash`` と係数表のキャッシュのキー）に入る。同じ値をファイルに書いた場合と同じハッシュになる。
+   ``--set`` は項目を消せない。省略した場合と同じにしたい項目（二段開傘の ``recovery.main_cd_s`` と ``main_altitude`` など）は、元の設定ファイルに書かず、必要な計算でだけ ``--set`` で加える。
+
+``--out DIR``
+   出力先を ``output.dir`` の代わりに ``DIR`` にする（``geom``、``aero``、``sim``、``dispersion``）。相対パスは、設定ファイルのディレクトリではなく **現在のディレクトリ** から解釈する。出力先は設定のハッシュに入らない。
+
+``--aero-table PATH``
+   別の出力先で作った係数表 ``PATH``\ （``aero_table.csv``、またはそれを含むディレクトリ）を使う（``aero``、``sim``、``dispersion``）。
+   表は、この設定と同じ機体と空力の設定で作ったもの（キャッシュのキーが同じもの）でなければならない。違えば
+   ``--aero-table: … was built for another rocket or other aero settings (cache key … vs … of this configuration); build it for this configuration with `ignisyeet aero` or leave out --aero-table``
+   のエラーで止まる。読めなければ ``--aero-table: cannot load aero table …`` のエラーになる。
+   表と付随の JSON、同じディレクトリにある ``geometry.json``、``profile.csv``、``aero_drag.csv``、``panel_cp.csv``、``cfd_report.json``、``cfd_cases.csv`` を出力先に写し（CSV の表は最後に写す）、以後はその出力先のキャッシュとして使う。
+   ``aero.method = "table"`` とは併用できず（``--aero-table cannot be used with aero.method = "table": the table is aero.table``）、``aero --force`` とも併用できない（``--aero-table and --force cannot be used together``）。
+   パネル法や CFD の表を一度だけ作り、風だけを変えた多くの計算で使うときに、表を作り直す時間を省ける。
+
+.. code-block:: sh
+
+   ignisyeet aero examples/sample.toml --set aero.method=panel --out runs/aero_panel
+   ignisyeet sim  examples/sample.toml --set aero.method=panel --aero-table runs/aero_panel \
+       --set wind.speed=7 --set wind.direction_deg=90 --out runs/sim_panel_7ms
 
 .. _sec-config-checks:
 
@@ -670,8 +724,13 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
        軸対称の表（Mach 数 × 迎角）と一般表（Mach 数 × 迎角 × 横滑り角）のうち、点の多いほうで判定する（メッセージは ``the aero table grid would have about … points``）
    * - ``aero.n_slices``
      - 20 以上 10000 以下（形状抽出に必要な断面の数）
-   * - ``wind.ref_height``、``wind.exponent``、``wind.roughness_length``、``wind.ground_blend_height``
+   * - ``wind.ref_height``
      - 正
+   * - ``wind.exponent``、``wind.roughness_length``、``wind.ground_blend_height``
+     - 正。そのモデルが使う項目だけを検査する（``exponent`` は ``power``、``roughness_length`` は ``log``、``ground_blend_height`` は ``power`` と ``log``）。使わないモデルでは、どの値でもエラーにしない
+   * - ``wind.profile_mean_speed`` / ``wind.profile_mean_direction_deg``
+     - ``model = "profile"`` のときだけ指定できる（ほかのモデルでは ``wind.profile_mean_speed only applies to wind.model = "profile" (the model is "power"); set wind.speed / wind.direction_deg instead`` の形のエラー）。
+       ``profile_mean_speed`` は有限で 0 以上（``wind.profile_mean_speed must be a finite number >= 0, found …``）、``profile_mean_direction_deg`` は 0 以上 360 以下（``wind.profile_mean_direction_deg must be between 0 and 360, found …``）
    * - ``wind.roughness_length``\ （``model = "log"``）
      - ``wind.ref_height`` の半分より小さい
    * - ``sim.dt``、``sim.max_time``、``sim.output_interval``、``sim.rtol``、``sim.atol``
@@ -736,11 +795,14 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 
 * 機体の直径が 0.005 から 3 m の範囲を外れている（``rocket.stl_scale`` の誤りが疑われる。mm 単位の STL なら ``0.001``）。``geom`` でも表示する。全長の範囲外は、STL から作る機体ではエラーである（上記）。``method = "table"`` の外部の表では、表の ``length`` と ``ref_diameter`` について、全長 0.1 から 20 m、直径 0.005 から 3 m の範囲外を警告にする。
 * 静安定余裕（自由飛行中の最小値とランチャ離脱時の値の小さいほう。自由飛行中の最小値は、ランチャ離脱の時刻から頂点までのうち対気速度が 10 m/s を超える間に、積分のステップの始端ごとに測った値で、ランチャ離脱の時刻を含む）が、0 cal 未満（``UNSTABLE``。圧力中心が重心より前にある）、0 以上 1.0 cal 未満（``low static margin``。不安定とは呼ばない）、1.0 cal 以上 1.5 cal 未満（``marginal``。推奨の 1.5 cal を下回る）である。
+  静安定余裕を求められなかった（一般表で法線力の傾きが 0 か物理的でない向きの面がある。:ref:`sec-static-margin-general`）ときは、``static stability could not be evaluated (…): the results are not usable until it is`` の形で理由を示す（終了ステータス 3。:ref:`sec-exit-status`）。
 * 風のモデルが ``profile`` で、頂点が表の最上端の高度より高い（``apogee … m is above the top of the wind profile (… m): the wind above … m is held at the top value``）。表より上の風は最上端の値で一定になる。
 * 風のモデルが ``power`` または ``log`` で、頂点が地上 1000 m を超え、風速が 0 でない（``dispersion`` の風の格子では、最大の風速が 0 でないとき）。判定に使う風速は、実際にその飛翔で使う基準風速である（``profile`` では ``wind.speed`` ではなく表から求めた値）。これらのプロファイルは基準高さ ``wind.ref_height`` の風速 ``wind.speed`` を上空に外挿するので、上空の風と着地点はモデル依存になる（実際の予測には ``model = "profile"`` を使う）。
 * 風のモデルが ``profile`` で、表の最下行が地上 0 m より上にある（``the wind profile starts at … m: the wind below is held at the lowest row``）。
+* 風のモデルが ``profile`` なのに、設定ファイル（または ``--set``）に ``wind.speed`` や ``wind.direction_deg`` が書いてある。``profile`` ではこれらを使わないので、``wind.speed is ignored for wind.model = "profile"; use wind.profile_mean_speed to scale the profile`` と ``wind.direction_deg is ignored for wind.model = "profile"; use wind.profile_mean_direction_deg to rotate the profile`` を出す（:ref:`sec-wind-scaling`）。書いていない（既定値のままの）ときは出さない。設定の読み込み時に表示する警告で、``summary.json`` などの ``warnings`` には入らない。
 * 風のモデルが ``profile`` の風の格子またはモンテカルロ解析で、表の拡大率 :math:`k`\ （:ref:`sec-wind-scaling`）が 3 を超えるか 1/3 を下回るケースがある。最も極端なケースの拡大率と、表の風速の最大値を拡大した値を示す（``wind profile scaled by a factor of … (wind grid … m/s vs profile mean … m/s): winds aloft up to … m/s``。倍率は 1 以上なら小数 1 桁、1 未満なら 2 桁で示す。モンテカルロ解析では ``wind grid`` が ``Monte Carlo sample`` になる）。
 * パラシュート降下が着地した飛翔（``sim`` と、``dispersion`` の公称の飛翔）で、開傘しないまま着地した（``parachute descent landed at … m/s: the parachute did not deploy before landing (recovery.delay = … s)``）か、着地速度が 15 m/s を超える（``… which is above 15 m/s: check recovery.cd_s``）。
+* パラシュート降下の飛翔（``sim`` と、``dispersion`` の公称の飛翔。着地しなかった飛翔も含む）で、パラシュートが開いたときの対気速度が 50 m/s を超えるか、動圧が 2 kPa を超える（``the parachute opens at 129 m/s (q = 7.2 kPa): a canopy is unlikely to survive; the landing point assumes it does - check recovery.delay`` の形。数は例）。一般の模型ロケットのパラシュートは頂点付近での開傘（動圧は数百 Pa）を前提に作られているので、この速さでは壊れるおそれがあるが、着地点はパラシュートが壊れないものとして計算している。二段開傘では ``the parachute`` の代わりに ``the drogue`` と ``the main`` について判定し、メインの文の末尾は ``check recovery.main_altitude`` である。開傘時の対気速度と動圧は ``summary.json`` に残る（:ref:`sec-file-summary`）。
 * ``sim.max_time`` までに着地しない。
 * 二段開傘で、メインの開傘高度 ``recovery.main_altitude`` が頂点の高度以上である（``recovery.main_altitude = … m is above the apogee (… m): the main opens together with the drogue``）。
 * ランチャ離脱速度が 15 m/s 未満である（``rail exit speed … m/s is below 15 m/s: the fins have little authority at rail exit and the rocket is easily blown off the rail line; use a longer rail or a higher thrust-to-weight ratio``）。
@@ -751,13 +813,11 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 * 係数表の格子が粗い。Mach 数の刻みが 0.1 を超える（``aero.mach_step = … is coarse (> 0.1): the coefficients are interpolated linearly between the Mach rows, which smooths over the transonic drag rise and shifts the apogee (0.02 is typical)``。部品積み上げ法の一般表では ``aero.general_mach_step``）か、迎角の刻みが 5° を超える（``aero.alpha_step_deg = … is coarse (> 5 deg): the normal force and centre of pressure are interpolated linearly between the rows (1 deg is typical)``）。
   ``aero``、``sim``、``dispersion`` で表示する。外部の係数表（``method = "table"``）は、表そのものの格子なので対象外である。
 * 外部の係数表（``method = "table"``）で、迎角 0 の軸力係数 ``ca_on`` または ``ca_off`` が負である（``aero table: ca_off at Mach …, alpha 0 is … (negative axial force / thrust-like drag)``）。列ごとに、最初の Mach 数を示す。
-* ``dispersion`` で、静的に不安定なケースまたはサンプルがある。降下モードごとに数と最小の静安定余裕を示す（:ref:`sec-dispersion-unstable`）。
+* ``dispersion`` で、静的に不安定なケースまたはサンプル、静的な安定を判定できないケースまたはサンプルがある。降下モードごとに数と最小の静安定余裕（判定できないものは数と最初の理由）を示す（:ref:`sec-dispersion-unstable`）。
 * モンテカルロ解析で、着地したサンプルが 30 未満の降下モードがある（``only … landed samples: the statistics are rough``）。
 * ``dispersion`` の風の格子で、積分がエラーで止まったケースがある。最初の 3 ケースをエラーの文とともに表示し、残りは数だけを表示する（:ref:`sec-wind-grid-failed`）。
-* 係数表の範囲外の引き出しがある。回数、最大の Mach 数、最大の :math:`|\alpha|` を ``aero table: 370854 of 10159590 lookups beyond the angle range (max Mach 1.51, max |alpha| 90.0 deg); Mach is held at the table edge, angles are extrapolated`` の形で表示する（``alpha_max_deg = 30`` にしたパネル法のサンプルの ``dispersion`` での表示。Mach 数の範囲外があるときは ``… lookups beyond the Mach range`` も並ぶ）。サンプルの設定 ``alpha_max_deg = 90`` では、表の範囲外の引き出しはなく、この警告は出ない。
-  迎角の範囲外の引き出しは、頂点のあとの弾道落下（機体が反転し、尾部を先にして落ちる）で起きることが多く、その場合は想定内である。
-  上昇中や燃焼中に起きるときは、結果に影響する。``trajectory.csv`` の迎角で時刻を確かめ、``aero.alpha_max_deg`` を大きくして（たとえば 90）係数表を作り直す。
-  表の外は表の端の区間の線形外挿で、部品積み上げ法の大迎角のフィンの頭打ち（:ref:`sec-fin-large-alpha`）は入らないので、30° を超える範囲の係数は粗い（:ref:`sec-lim-aero`）。
+* 係数表の Mach 数の範囲外の引き出しがある（``aero table: 4426 of 53893 lookups beyond the Mach range (max Mach 1.53); Mach is held at the table edge``。``aero.mach_max = 1.2`` にしたサンプルの ``sim`` での表示）。Mach 数は表の端の値で一定とする（:ref:`sec-aero-interp`）。
+  迎角の範囲外の引き出しは警告ではなく、結果を使えないものとして終了ステータス 3 にする（:ref:`sec-exit-status`）。
 * 形状の抽出結果の疑わしい点（:ref:`sec-geometry-warnings`）。``sim`` と ``dispersion`` を含むすべてのモードで表示し、係数表をキャッシュから読むときは、同じ出力先の ``geometry.json`` の ``warnings`` を使う。
 * CFD モードで、SU2 のバージョンが 8.3.x でない。``cfd-check`` と CFD の係数表の作成で表示する。
 
@@ -783,10 +843,11 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 
        * ``sim`` で ``sim.max_time`` までに着地しなかった。
        * ``dispersion`` で着地しなかった、または失敗したケース・サンプルがある（風の格子で積分がエラーで止まったケースを含む）。
-       * 静的に不安定である（下記。``dispersion`` では静的に不安定なケースやサンプルがあるときも含む）。
+       * 静的に不安定である、または静的な安定を判定できない（下記。``dispersion`` では、そのようなケースやサンプルがあるときも含む）。
+       * 係数表の迎角の範囲（``aero.alpha_max_deg``）を超えて係数を引いた（下記）。
 
        着地しなかった場合と失敗があった場合は、標準エラー出力に ``INCOMPLETE RESULTS`` で始まる行を書く。
-       静的に不安定な場合は、``RESULTS NOT USABLE`` で始まる行を書く
+       静的に不安定な場合、安定を判定できない場合、迎角の範囲を超えた場合は、``RESULTS NOT USABLE`` で始まる行を書く
 
 静的に不安定とは、静安定余裕の最小値が 0 cal 未満のことである。
 最小値は、自由飛行中の最小値とランチャ離脱時の値の小さいほうで、結果パネルの ``min margin`` と同じである（:ref:`sec-config-checks`）。
@@ -798,6 +859,23 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 ``summary.json``、``dispersion_meta.json``、``dispersion_summary.json`` の ``stable`` と ``static_margin_min_cal`` に、公称の飛翔の判定に使った値を残す。
 ``dispersion_meta.json`` と ``dispersion_summary.json`` の ``unstable`` と ``unstable_min_static_margin_cal`` には、降下モードごとの不安定なケースの数と最小の余裕を残す（:ref:`sec-file-summary`、:ref:`sec-file-dispersion`）。
 不安定な飛翔の結果は、保安の判断に使わない。
+
+静的な安定は、安定・不安定・判定できない、の 3 通りである。
+一般表で、ある面の法線力の傾きが 0 か、横流れと同じ向きの力（物理的でない符号）と復元するモーメントの組合せで余裕を cal で表せないとき、その面の余裕は求まらない（:ref:`sec-static-margin-general`）。
+求まった余裕に負のものがあれば不安定とし、そうでなく求まらない余裕があれば「判定できない」とする。どの時刻でも余裕を求めなかった飛翔（ランチャを離れず、頂点までに対気速度が 10 m/s を超えなかった）も判定できない。
+``sim`` は、判定できないとき ``RESULTS NOT USABLE: static stability could not be evaluated (at t = 0.50 s: the yaw normal-force slope dCy/dbeta is zero at Mach 0.10)`` の形の行（括弧内は理由の例）を書いて終了ステータス 3 で終わる。
+``summary.json`` の ``stable`` は ``null`` になり、``stability_unknown`` に理由を書く。
+``dispersion`` では、公称の飛翔が判定できないときに同じ行を書き、判定できないケースやサンプルがあると ``RESULTS NOT USABLE: 1 of 3 wind-grid cases (ballistic): static stability could not be evaluated (first: …)`` の形の行を書く。
+不安定なケースと判定できないケースが両方あるときは、両方の節を ``;`` でつなぐ。
+判定できないケースとサンプルの数は、降下モードごとに ``stability_unknown_runs`` に残す（:ref:`sec-file-dispersion`）。
+
+係数表の迎角の範囲を超えた引き出しは、表の端の区間からの外挿になり、大きな迎角で見かけの釣り合い（トリム）を作って、弾道落下の経路をまったく変えることがある。
+そのため ``sim`` と ``dispersion`` は、そのような引き出しが 1 回でもあれば、``RESULTS NOT USABLE: 332462 of 384618 lookups beyond the aero table's angle range (max |alpha| 90.0 deg > alpha_max 30.0 deg): the descent uses extrapolated coefficients; build the table up to 90 deg`` の形の行を書いて終了ステータス 3 で終わる。
+これは、サンプルを ``aero.alpha_max_deg = 30`` にして東風 4 m/s で弾道落下させたときの表示で、着地距離は 5122.9 m になる（既定の 90° の表では 832.1 m）。
+表の上限がすでに 90° 以上なら、末尾は ``build the table up to 180 deg (aero.alpha_max_deg)`` である。
+``summary.json`` などの ``aero_table_range`` の ``angles_in_range`` は、このとき ``false`` になる（:ref:`sec-file-summary`）。
+飛翔計算は全迎角を :math:`\min(\alpha_t,\,180^\circ-\alpha_t)` に折り返して表を引くので（:ref:`sec-aero-table`）、軸対称表では既定の ``alpha_max_deg = 90`` で範囲を超えることはない。
+書く行は 1 つで、理由が重なったときは、（公称の）飛翔が不安定か判定できないこと、迎角の範囲外、ケースやサンプルの不安定と判定できないこと、着地しなかったことの順に優先する。
 
 着地しなかった飛翔は、着地点が存在しない。``summary.json`` の ``landed`` が ``false`` になり、着地に関する項目は ``null`` になる（:ref:`sec-file-summary`）。
 着地しなかった結果は KML に入れない。``sim`` が着地しなかったときは、前回の飛翔が KML に残らないよう、飛翔の層を除いた ``ignisyeet.kml`` を書き直す（``output.kml = true`` のとき）。
@@ -1047,8 +1125,9 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
      - ``0`` / ``3`` / ``0.02``
      - 係数表の Mach 数の範囲と刻み。``mach_max`` は 10 以下
    * - ``alpha_max_deg`` / ``alpha_step_deg``
-     - ``30`` / ``1``
-     - 係数表の迎角の範囲（0 から。付属のサンプルは 90）と刻み [deg]。``alpha_max_deg`` は 180 以下。格子点の数（Mach 数の数 × 迎角の数）は 10\ :sup:`6` 以下
+     - ``90`` / ``1``
+     - 係数表の迎角の範囲（0 から）と刻み [deg]。``alpha_max_deg`` は 180 以下。格子点の数（Mach 数の数 × 迎角の数）は 10\ :sup:`6` 以下。
+       頂点のあとの弾道落下は横向き（90° 近く）になるので、90 より小さくした表の範囲を超えて引くと、結果を使えないものとして終了ステータス 3 で終わる（:ref:`sec-exit-status`）
    * - ``n_slices``
      - ``600``
      - 形状抽出で STL を切る断面の数（20 以上）
@@ -1057,7 +1136,8 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
      - フィン判定のしきい値（最大胴体半径に対する比）
    * - ``extrapolation``
      - ``"linear"``
-     - 迎角と横滑り角が表の範囲外のときの扱い: ``"linear"`` （線形外挿。符号と範囲を制限する）または ``"clamp"`` （端の値で一定）。Mach 数は、この値にかかわらず端の値で一定（:ref:`sec-aero-interp`）
+     - 迎角と横滑り角が表の格子の外のときの扱い: ``"linear"`` （線形外挿。符号と範囲を制限する）または ``"clamp"`` （端の値で一定）。Mach 数は、この値にかかわらず端の値で一定（:ref:`sec-aero-interp`）。
+       CFD の表の、解いた迎角より大きい行の埋め方には効かない（:ref:`sec-cfd-table-build`）
    * - ``table_kind``
      - ``"axisymmetric"``
      - 飛翔計算に使う係数表の種類。``"axisymmetric"`` （全迎角の軸対称表）または ``"general"`` （迎角と横滑り角の 6 成分の一般表。:ref:`sec-aero-table`）
@@ -1277,10 +1357,10 @@ CFD の準備は ``ignisyeet cfd-check 設定ファイル [--mesh]`` で確か�
        ``"profile"``\ （高度別の表。:ref:`sec-wind`）
    * - ``speed``
      - ``4.0``
-     - 基準高度での風速 [m/s]（0 以上）。``profile`` では使わず、表の平均風速（:ref:`sec-wind-profile`）で置き換える
+     - 基準高度での風速 [m/s]（0 以上）。``profile`` では使わない（表の風速を使う。表全体の風速を変えるには ``profile_mean_speed``）。``profile`` で書いてあると警告する
    * - ``direction_deg``
      - ``0.0``
-     - 風が **吹いてくる** 方位（北から時計回り）[deg]。``profile`` では使わず、表の平均風の風向で置き換える
+     - 風が **吹いてくる** 方位（北から時計回り）[deg]。``profile`` では使わない（表の風向を使う。表全体を回すには ``profile_mean_direction_deg``）。``profile`` で書いてあると警告する
    * - ``ref_height``
      - ``2.0``
      - 風速の基準高度 [m]（正）
@@ -1296,6 +1376,12 @@ CFD の準備は ``ignisyeet cfd-check 設定ファイル [--mesh]`` で確か�
    * - ``profile``
      - なし
      - ``model = "profile"`` のとき必須。高度別の風の CSV ファイル（形式は :ref:`sec-wind-profile`）
+   * - ``profile_mean_speed``
+     - なし
+     - ``profile`` のみ。表の平均風速 :math:`W` をこの値 [m/s]（有限で 0 以上）にするよう、表のすべての風速を同じ倍率で拡大・縮小する（:ref:`sec-wind-scaling`）。省略すると表の風速のまま
+   * - ``profile_mean_direction_deg``
+     - なし
+     - ``profile`` のみ。表の平均風の風向 :math:`\Psi` がこの方位 [deg]（0 以上 360 以下）になるよう、表のすべての風向を同じ角度だけ回す（:ref:`sec-wind-scaling`）。省略すると表の風向のまま
 
 ``[sim]``
 
@@ -1397,10 +1483,10 @@ CFD の準備は ``ignisyeet cfd-check 設定ファイル [--mesh]`` で確か�
      - 絶対 [deg]。射方位の設定誤差。傾けたレールを機体ごと鉛直軸の周りに回す（水平方向の効果は :math:`\sigma\cos(\text{射角})`）
    * - ``wind_speed``
      - ``1.0``
-     - 絶対 [m/s]。基準風速（``[wind]`` の ``speed`` の周りに分布し、0 未満は 0 にする）。``profile`` では表の平均風速 :math:`W` の周りの揺らぎで、表を :math:`\max(W+\delta,0)/W` 倍する（:ref:`sec-wind-scaling`）。表がほぼ無風（平均 0.1 m/s 未満）で、この値が 0 でないときはエラー
+     - 絶対 [m/s]。基準風速（``[wind]`` の ``speed`` の周りに分布し、0 未満は 0 にする）。``profile`` では表の平均風速 :math:`W`\ （``profile_mean_speed`` を指定したときはその値）の周りの揺らぎで、表を :math:`\max(W+\delta,0)/W` 倍する（:ref:`sec-wind-scaling`）。表がほぼ無風（平均 0.1 m/s 未満）で、この値が 0 でないときはエラー
    * - ``wind_direction_deg``
      - ``15.0``
-     - 絶対 [deg]。風向（``[wind]`` の ``direction_deg`` の周りに分布する。``profile`` では表の平均風の風向の周り）
+     - 絶対 [deg]。風向（``[wind]`` の ``direction_deg`` の周りに分布する。``profile`` では表の平均風の風向の周り。``profile_mean_direction_deg`` を指定したときはその方位の周り）
    * - ``parachute_cd_s_scale``
      - ``0.1``
      - 相対。パラシュートの抗力面積 :math:`C_DS`
@@ -1509,6 +1595,8 @@ KML は地理情報を記述する XML 形式で、OGC の標準（KML 2.2 :cite
 ハッシュは、飛翔は ``dispersion`` の設定を除き、風の格子は ``mode`` とモンテカルロの設定を除き、モンテカルロは ``mode`` と風の格子の設定を除いて計算する。
 したがって、設定を変えたときは、``sim`` と ``dispersion`` の両方を実行し直せば、新しい結果だけが入る。
 着地しなかった飛翔と、着地しなかった風のケースは KML に入れない（風の格子で着地したケースが一つもなければ、そのフォルダは作らない）。モンテカルロでは、着地したサンプルだけを入れる。
+``sim`` がエラーで止まったとき（``summary.json`` が失敗の印になる）も、出力先に ``ignisyeet.kml`` があれば、前の飛翔が残らないよう飛翔の層を除いて書き直し、``KML written without the flight layer: the simulation failed`` と表示する。書き直せなければ、ファイルを消して ``ignisyeet.kml removed: it could not be rewritten without the flight (…)`` と表示する。
+``--set`` で変えた設定はハッシュに入り、``--out`` の出力先は入らない（:ref:`sec-cli-overrides`）。
 
 ``Launch site``
    射点を示す白いピンで、地面に固定して表示する（射角・方位・レール長を説明欄に載せる）。

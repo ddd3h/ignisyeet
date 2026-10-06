@@ -440,10 +440,10 @@ CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surf
 ~~~~~~~~~~~~~~~~
 
 ``sim`` が書く、1 回の飛翔の要約である。
-降下モード ``descent``、基準風 ``wind_speed`` と ``wind_direction_deg``\ （``profile`` では表の平均風速 :math:`W` と平均風の風向 :math:`\Psi`。:ref:`sec-wind-profile`）、ランチャ離脱の時刻 ``rail_exit_time`` と速度 ``rail_exit_speed``、燃焼終了時刻 ``burnout_time``、
+降下モード ``descent``、基準風 ``wind_speed`` と ``wind_direction_deg``\ （``profile`` では表の平均風速 :math:`W` と平均風の風向 :math:`\Psi`。:ref:`sec-wind-profile`）、ランチャ離脱の時刻 ``rail_exit_time`` と速度 ``rail_exit_speed``、燃焼終了時刻 ``burnout_time``\ （推力曲線の終わりの時刻。飛翔がそれより前に終わったときは ``null``）、
 最大速度 ``max_speed``、最大 Mach 数 ``max_mach``、最大動圧 ``max_dyn_pressure``、頂点の時刻 ``apogee_time`` と高度 ``apogee``\ （射点からの高さ）と位置 ``apogee_east`` ``apogee_north``、
 最小静安定余裕 ``min_stability_cal`` とランチャ離脱時の値 ``stability_at_rail_exit``\ （``min_stability_cal`` は、ランチャ離脱の時刻（自由飛行はここから始まる）から頂点までのうち対気速度が 10 m/s を超える間に、積分のステップの始端ごとに測った最小値である。
-ランチャ離脱の時刻の値を含む。頂点付近の遅い部分と降下は含まない。該当するステップがなければ ``NaN``。一般表では、記録した軌道の点で求めたピッチとヨーの余裕の小さいほう。:ref:`sec-static-margin-general`）、
+ランチャ離脱の時刻の値を含む。頂点付近の遅い部分と降下は含まない。該当するステップがなければ ``NaN``。一般表では、各ステップのピッチとヨーの余裕の小さいほう。:ref:`sec-static-margin-general`）、
 ランチャ離脱の値と着地の値は、ステップ内の補間（位置は三次エルミート補間、残りは両端の線形補間）で求めた状態の値である（:ref:`sec-rail`、:ref:`sec-landing`）、
 着地の時刻 ``landing_time``、位置 ``landing_east`` ``landing_north`` ``landing_lat`` ``landing_lon``、射点からの距離 ``landing_distance``、着地速度 ``landing_speed`` を持つ。
 ``landing_speed`` は着地の瞬間の **地面に対する速さ** で、水平方向の流され（風による移動）の速さを含む。降下率（鉛直の速さ）ではないので、パラシュート降下で風が強いと、降下率より大きい。
@@ -461,13 +461,26 @@ CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surf
      - 二段開傘（``recovery.main_cd_s`` と ``recovery.main_altitude``）のメインが開傘した時刻 [s] と射点からの高さ [m]（:ref:`sec-dual-deploy`）。
        メインがない設定、弾道落下、メインの開傘より前に飛翔が終わった場合は ``null`` である
    * - ``static_margin_min_cal``
-     - ``min_stability_cal``\ （ランチャ離脱の時刻を含む）と ``stability_at_rail_exit`` のうち小さいほう [cal]（結果パネルの ``min margin`` と同じ）。どちらも有限でなければ ``null``
+     - ``min_stability_cal``\ （ランチャ離脱の時刻を含む）と ``stability_at_rail_exit`` のうち、求まったものの小さいほう [cal]（結果パネルの ``min margin`` と同じ）。どちらも求まらなければ ``null``
    * - ``stable``
-     - ``static_margin_min_cal`` が 0 以上なら ``true``\ （静的に安定）、負なら ``false``。``null`` のときは ``true``。``false`` のとき、``sim`` は着地したかどうかにかかわらず終了ステータス 3 で終わる（:ref:`sec-exit-status`）
+     - 静的に安定なら ``true``、不安定（求まった余裕のどれかが負）なら ``false``、判定できない（求まらない余裕がある、またはどの余裕も求めなかった）なら ``null``。
+       ``false`` と ``null`` のとき、``sim`` は着地したかどうかにかかわらず終了ステータス 3 で終わる（:ref:`sec-exit-status`）
+   * - ``stability_unknown``
+     - ``stable`` が ``null`` のときだけ書く。判定できない理由（``at t = 0.50 s: the yaw normal-force slope dCy/dbeta is zero at Mach 0.10`` の形で、最初に余裕が求まらなかった時刻と理由。:ref:`sec-static-margin-general`）
    * - ``static_margin_pitch_min_cal`` / ``static_margin_yaw_min_cal``
-     - 一般表（6 成分の表）のときだけ書く。ピッチ面とヨー面の静安定余裕の、自由飛行中とランチャ離脱時の小さいほう [cal]（:ref:`sec-static-margin-general`）。求まらなければ ``null``
+     - ピッチ面とヨー面の静安定余裕の、自由飛行中とランチャ離脱時の最小値 [cal]（:ref:`sec-static-margin-general`）。軸対称表では両方とも ``static_margin_min_cal`` と同じ値である。
+       その面の余裕がどこかで求まらなければ ``null``
    * - ``drogue_deploy_time``
      - （ドローグ、または単一の）パラシュートが開いた時刻 [s]。開傘は、頂点の時刻に ``recovery.delay`` を足した時刻に、刻み幅によらず正確に起こる（:ref:`sec-integrators`）。弾道落下と、開傘する前に着地した飛翔では、この項目を書かない
+   * - ``drogue_deploy_speed`` / ``drogue_deploy_q``
+     - パラシュート（二段開傘ではドローグ）が開いたときの対気速度 [m/s]\ （風に対する速さ）と動圧 [Pa]。``drogue_deploy_time`` と同じく、開傘しなかった飛翔では書かない。
+       対気速度が 50 m/s を超えるか動圧が 2 kPa を超えると警告する（:ref:`sec-config-checks`）
+   * - ``main_deploy_speed`` / ``main_deploy_q``
+     - 二段開傘のメインが開いたときの対気速度 [m/s] と動圧 [Pa]。メインが開かなかった飛翔では書かない
+   * - ``earth_model``
+     - 地球のモデル ``earth.model``\ （``"flat"`` または ``"ecef"``）。``python/plot.py`` は、これで高度の求め方を選ぶ（:ref:`sec-run-first`）
+   * - ``wind_model``
+     - 風のモデル ``wind.model``\ （``"constant"``、``"power"``、``"log"``、``"profile"``）
    * - ``wind_scale``
      - ``wind.model = "profile"`` のときだけ書く。その飛翔で表の風速に掛けた倍率 :math:`k`\ （CSV の表そのままなら 1。風の格子とモンテカルロのケースは、そのケースの平均風速に合わせた倍率。:ref:`sec-wind-scaling`）
    * - ``max_time``
@@ -477,10 +490,10 @@ CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surf
    * - ``warnings``
      - 警告の文字列の配列（空のこともある。:ref:`sec-config-checks`）
    * - ``aero_table_range``
-     - 係数表の範囲外の引き出しの集計。全引き出しの回数 ``lookups``、Mach 数が表の最小値未満・最大値超の回数 ``mach_below`` ``mach_above``、迎角または横滑り角が格子の外の回数 ``angle_beyond``、要求された最大の Mach 数 ``max_mach`` と最大の :math:`|\alpha|` [deg] ``max_abs_alpha_deg``、範囲外が 1 回でもあったか ``out_of_range``\ （真偽値）
+     - 係数表の範囲外の引き出しの集計。全引き出しの回数 ``lookups``、Mach 数が表の最小値未満・最大値超の回数 ``mach_below`` ``mach_above``、迎角または横滑り角が格子の外の回数 ``angle_beyond``、要求された最大の Mach 数 ``max_mach`` と最大の :math:`|\alpha|` [deg] ``max_abs_alpha_deg``、範囲外が 1 回でもあったか ``out_of_range``\ （真偽値）、迎角の範囲外がなかったか ``angles_in_range``\ （真偽値。``false`` のときは結果を使えず、終了ステータス 3 で終わる。:ref:`sec-exit-status`）
 
 ``sim`` は、実行の最初に、出力先の古い ``trajectory.csv`` と ``summary.json`` を消す。実行が失敗したとき（積分の発散、``launch.elevation_deg`` が範囲外、ランチャを離れないなど）は、
-``summary.json`` を失敗の印 ``{"failed": true, "error": "…"}`` だけで書き、``error`` にエラーの文を入れる。``trajectory.csv`` は書かない。
+``summary.json`` を失敗の印 ``{"failed": true, "error": "…"}`` だけで書き、``error`` にエラーの文を入れる。``trajectory.csv`` は書かない。``ignisyeet.kml`` があれば、飛翔の層を除いて書き直す（:ref:`sec-kml`）。
 古い結果が残って新しい結果と取り違えられないようにするためで、``python/plot.py`` は、この印があるとき飛翔経路を描かずにエラーで終わる（:ref:`sec-run-first`）。
 
 .. _sec-file-trajectory:
@@ -516,8 +529,8 @@ CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surf
 着地しなかったケースでは、着地に関する列（``landing_east`` から ``landing_speed`` まで）は ``NaN`` になる。
 列 ``error`` は、積分がエラーで止まったケースのエラーの文である（改行は空白に替え、コンマや引用符を含むときは引用符で囲む）。エラーのないケースでは空である。
 エラーで止まったケースは、``landed = false`` で、``wind_speed`` と ``wind_direction_deg`` 以外の数値の列が ``NaN`` になる（:ref:`sec-wind-grid-failed`）。
-最後の列 ``stable`` は、そのケースが静的に安定か（``min_stability_cal`` とランチャ離脱時の余裕のうち小さいほうが 0 以上なら ``true``、負なら ``false``）である。余裕が求まらないケースでは空である（:ref:`sec-dispersion-unstable`）。
-一般表では、``min_stability_cal`` と判定は、ピッチとヨーの余裕の下限（:ref:`sec-static-margin-general`）である。
+最後の列 ``stable`` は、そのケースが静的に安定か（``summary.json`` の ``stable`` と同じ判定で、安定なら ``true``、不安定なら ``false``）である。判定できないケースと、エラーで止まったケースでは空である（:ref:`sec-dispersion-unstable`）。
+一般表では、``min_stability_cal`` は各ステップのピッチとヨーの余裕の小さいほうの最小値（:ref:`sec-static-margin-general`）である。
 
 .. _sec-file-dispersion:
 
@@ -528,9 +541,12 @@ CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surf
 飛翔の設定のハッシュ ``flight_config_hash``\ （``summary.json`` の ``config_hash`` と同じ計算で、``sim`` の結果と同じ設定かを確かめるのに使う）、
 ケース数 ``cases``、着地しなかったケースの数 ``failed``、そのうち積分がエラーで止まったケースの数 ``errored``、警告の文字列の配列 ``warnings``、係数表の範囲外の引き出しの集計 ``aero_table_range``\ （項目は :ref:`sec-file-summary` と同じ。エラーで止まったケースは数えない）、
 公称の飛翔の最小の静安定余裕 ``static_margin_min_cal`` [cal] と、それが 0 以上かを示す ``stable``\ （真偽値）、
-降下モード（``ballistic`` と ``parachute``）ごとの静的に不安定なケースの数 ``unstable`` と、そのモードのケースの最小の静安定余裕 ``unstable_min_static_margin_cal`` [cal]\ （余裕が求まるケースがなければ ``null``）である。
-公称の飛翔は、設定した風での弾道落下である。公称の飛翔が失敗して余裕が求まらないときは、``static_margin_min_cal`` と ``stable`` は ``null`` である。
-``stable`` が ``false`` のとき、または ``unstable`` が 1 以上のモードがあるとき、``dispersion`` は終了ステータス 3 で終わる（:ref:`sec-exit-status`、:ref:`sec-dispersion-unstable`）。
+降下モード（``ballistic`` と ``parachute``）ごとの静的に不安定なケースの数 ``unstable`` と、そのモードのケースの最小の静安定余裕 ``unstable_min_static_margin_cal`` [cal]\ （余裕が求まるケースがなければ ``null``）、
+降下モードごとの静的な安定を判定できないケースの数 ``stability_unknown_runs`` と、公称の飛翔が判定できないときの理由 ``stability_unknown``\ （判定できたときは ``null``）、
+公称の風のモデル ``wind_model``、公称の基準風速 ``wind_speed`` と基準風向 ``wind_direction_deg``\ （``profile`` では表の平均風速 :math:`W` と平均風の風向 :math:`\Psi`。``profile_mean_speed`` と ``profile_mean_direction_deg`` を指定したときはその値）、
+``profile`` のときだけ公称の表の倍率 ``wind_scale``\ （CSV の風速に掛ける倍率。格子の風速はここからさらに拡大する。:ref:`sec-wind-scaling`）である。
+公称の飛翔は、設定した風での弾道落下である。公称の飛翔が失敗して余裕が求まらないときは、``static_margin_min_cal`` と ``stable`` は ``null`` である。公称の飛翔の静的な安定を判定できないときも ``stable`` は ``null`` である。
+``stable`` が ``false`` か ``null`` のとき（公称の飛翔が失敗した場合を除く）、``unstable`` または ``stability_unknown_runs`` が 1 以上のモードがあるとき、迎角の範囲外の引き出しがあったとき（``aero_table_range`` の ``angles_in_range`` が ``false``）、``dispersion`` は終了ステータス 3 で終わる（:ref:`sec-exit-status`、:ref:`sec-dispersion-unstable`）。
 KML は、このファイルのハッシュが現在の設定と一致するときだけ ``dispersion.csv`` を読み込む。
 
 ``dispersion_mc.csv``
@@ -547,14 +563,16 @@ KML は、このファイルのハッシュが現在の設定と一致すると�
 ``elevation_deg`` と ``azimuth_deg`` は、引いた値そのものではなく、実際に飛ばしたレールの射角と射方位の公称値からの変化 [deg]、``roll_deg`` は機体のロール角の公称値からの変化 [deg] である（射方位とロール角は :math:`(-180^\circ,180^\circ]` に折り返す。:ref:`sec-mc-rail`）。
 ``wind_speed`` と ``wind_direction_deg`` はそのサンプルの基準風速・風向（``profile`` では表の平均風速 :math:`W` と平均風の風向 :math:`\Psi` を拡大・回転した値）、続く列は着地点（ENU と緯度経度）、着地距離、着地時刻、着地速度、頂点、頂点時刻、最大 Mach 数、ランチャ離脱速度、最小静安定余裕である。
 続く 9 列（``thrust_misalignment_y_deg`` から ``clp_scale``）は、ロールと非対称について引いた値である。
-最後の列 ``stable`` は、そのサンプルが静的に安定か（最小の静安定余裕とランチャ離脱時の余裕のうち小さいほうが 0 以上なら ``true``、負なら ``false``）で、失敗したサンプルなど余裕が求まらない行では空である（:ref:`sec-dispersion-unstable`）。
+最後の列 ``stable`` は、そのサンプルが静的に安定か（``summary.json`` の ``stable`` と同じ判定で、安定なら ``true``、不安定なら ``false``）で、判定できないサンプルと失敗したサンプルでは空である（:ref:`sec-dispersion-unstable`）。
 
 ``dispersion_summary.json``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ``mode = "monte_carlo"`` が書く。全体の項目はサンプル数 ``samples``、乱数の種 ``seed``、降下モードごとの配列 ``descents``、設定のハッシュ ``config_hash``\ （モンテカルロについて、``mode`` と風の格子の設定を除いた設定から計算する）、飛翔の設定のハッシュ ``flight_config_hash``\ （``summary.json`` の ``config_hash`` と同じ計算）、警告の配列 ``warnings``、係数表の範囲外の引き出しの集計 ``aero_table_range``\ （項目は :ref:`sec-file-summary` と同じ。失敗したサンプルは数えない）、
 公称の飛翔の最小の静安定余裕 ``static_margin_min_cal`` [cal] と、それが 0 以上かを示す ``stable``\ （風の格子の ``dispersion_meta.json`` と同じ。公称の飛翔が失敗したときは ``null``）、
-降下モードごとの静的に不安定なサンプルの数 ``unstable`` と最小の静安定余裕 ``unstable_min_static_margin_cal``\ （風の格子の ``dispersion_meta.json`` と同じ。失敗したサンプルは余裕を持たないので、数に入らない）である。
+降下モードごとの静的に不安定なサンプルの数 ``unstable`` と最小の静安定余裕 ``unstable_min_static_margin_cal``\ （風の格子の ``dispersion_meta.json`` と同じ。失敗したサンプルは余裕を持たないので、数に入らない）、
+``stability_unknown_runs`` と ``stability_unknown``、公称の風 ``wind_model``、``wind_speed``、``wind_direction_deg``、``wind_scale``\ （いずれも風の格子の ``dispersion_meta.json`` と同じ）である。
+モンテカルロの風速と風向の揺らぎは、この公称の風の周りに引く。
 ``descents`` の各要素は、降下モード ``descent``、着地したサンプル数 ``n``、失敗数 ``failed``、そのうち着地しなかった数 ``not_landed``、着地点の平均と共分散行列、
 :math:`1\sigma` と :math:`3\sigma` の誤差楕円（長半径、短半径、長軸の方位）、最大着地距離 ``max_landing_distance`` とそのサンプル番号、
 着地距離のパーセンタイル ``landing_distance_p50`` ``landing_distance_p90`` ``landing_distance_p99``\ （着地したサンプルについて、線形補間で求める）、頂点高度の平均と標準偏差を持つ（:ref:`sec-mc`）。

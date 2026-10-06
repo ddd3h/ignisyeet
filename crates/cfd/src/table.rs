@@ -4,11 +4,11 @@
 //!
 //! Per solved Mach column (alpha direction): `CN` and the nose moment `CN xcp` are odd in alpha
 //! and anchored at `(0, 0)`; they and the CFD axial coefficient are interpolated with monotone
-//! cubics (PCHIP) in alpha. Beyond the solved alpha range the end slope is continued
-//! (`Extrapolation::Linear`) or the end value is held (`Clamp`). `CNa` and `xcp(0)` come from an
+//! cubics (PCHIP) in alpha. Beyond the highest solved angle the coefficients blend into the Barrowman
+//! model (see [`beyond_solved`]); the end slope is never continued. `CNa` and `xcp(0)` come from an
 //! odd cubic fit `c1 a + c3 a^3` through the two lowest positive solved angles. Failed cases
 //! (`coeffs = None`) are simply left out of their column. Across Mach number every quantity is then
-//! interpolated with PCHIP on the table's Mach grid (same extrapolation rule), so a failed
+//! interpolated with PCHIP on the table's Mach grid (edge values held), so a failed
 //! interior Mach column is bridged by its neighbours; a failed first or last Mach column cannot be
 //! bridged and is an error. Finally hybrid viscous terms ([`crate::forces::hybrid_axial`]) are
 //! added and the pitch-damping sums are scaled to the CFD slope and centroid.
@@ -204,7 +204,7 @@ struct Column {
     xcp0: f64,
 }
 
-fn column(mach: f64, pts: &[(f64, BodyCoeffs)], alphas: &[f64], linear: bool) -> Option<Column> {
+fn column(mach: f64, pts: &[(f64, BodyCoeffs)], alphas: &[f64], model: &AeroModel) -> Option<Column> {
     let pos: Vec<&(f64, BodyCoeffs)> = pts.iter().filter(|p| p.0 > 0.0).collect();
     if pos.is_empty() {
         return None;
@@ -220,17 +220,69 @@ fn column(mach: f64, pts: &[(f64, BodyCoeffs)], alphas: &[f64], linear: bool) ->
     let cna = odd_slope(&cn_pts);
     let m1 = odd_slope(&mom_pts);
     let xcp0 = if cna.abs() > 1e-9 { m1 / cna } else { 0.0 };
-    Some(Column {
-        mach,
-        cn: alphas.iter().map(|&a| cn_p.eval(a, linear)).collect(),
-        mom: alphas.iter().map(|&a| mom_p.eval(a, linear)).collect(),
-        ca: alphas.iter().map(|&a| ca_p.eval(a, linear)).collect(),
-        cna,
-        xcp0,
-    })
+    let edge = pos.last().unwrap();
+    let (a_e, e) = (edge.0, edge.1);
+    let xcp_e = if e.cn.abs() > 1e-9 { e.mom / e.cn } else { xcp0 };
+    let (mut cn, mut mom, mut ca) = (Vec::with_capacity(alphas.len()), Vec::with_capacity(alphas.len()), Vec::with_capacity(alphas.len()));
+    for &a in alphas {
+        if a <= a_e {
+            cn.push(cn_p.eval(a, false));
+            mom.push(mom_p.eval(a, false));
+            ca.push(ca_p.eval(a, false));
+        } else {
+            let b = beyond_solved(model, mach, a, a_e, e.cn, xcp_e, ca_p.eval(a_e, false));
+            cn.push(b.0);
+            mom.push(b.0 * b.1);
+            ca.push(b.2);
+        }
+    }
+    Some(Column { mach, cn, mom, ca, cna, xcp0 })
+}
+
+/// Angle, as a multiple of the highest solved angle, at which the coefficients beyond the solved range
+/// have relaxed to the Barrowman model (capped at 90°).
+pub const RELAX_FACTOR: f64 = 2.0;
+
+/// `(CN, xcp [m], CA)` at `a_deg` above the highest solved angle `a_e` [deg] of a Mach column, from the
+/// CFD values at `a_e` (`cn_e`, `xcp_e`, `ca_e`) and the Barrowman model.
+///
+/// CFD gives no data beyond the solved angles, and continuing the end slope is not usable for a
+/// descending rocket: a straight line through the last solved cell moves the centre of pressure without
+/// bound and can put it ahead of the centre of gravity at large angles, which creates an artificial stable
+/// trim at a high angle of attack (a slow, far-drifting ballistic descent). Instead the coefficients follow
+/// the Barrowman model, whose fin normal force is bounded at large angles (crossflow plate value, see
+/// [`AeroModel::fin_cn`]) and whose fin centre of pressure moves to the planform centroid:
+///
+/// * `CN = CN_B(a) (1 + (s - 1) w(a))` with `s = CN_e / CN_B(a_e)` (an offset `CN_e - CN_B(a_e)` scaled by
+///   `w` when `s` is not positive),
+/// * `xcp = xcp_B(a) + (xcp_e - xcp_B(a_e)) w(a)`,
+/// * `CA = CA_e k(a) / k(a_e)` with the Barrowman angle-of-attack factor `k` ([`aero::model::axial_alpha_factor`]),
+///
+/// where `w` falls from 1 at `a_e` to 0 at `a_r = min(RELAX_FACTOR a_e, 90°)` with a C1 smoothstep. The values
+/// match the CFD values at `a_e` and equal the Barrowman shape beyond `a_r` (the CA keeps the CFD level
+/// times the Barrowman shape, which is 0 at 90°). The table is interpolated linearly between its nodes, so
+/// the value match is the continuity that matters.
+pub fn beyond_solved(model: &AeroModel, mach: f64, a_deg: f64, a_e: f64, cn_e: f64, xcp_e: f64, ca_e: f64) -> (f64, f64, f64) {
+    let a_r = (RELAX_FACTOR * a_e).min(90.0).max(a_e);
+    let w = if a_deg >= a_r || a_r <= a_e { 0.0 } else { geom::math::hermite(a_deg, a_e, a_r, 1.0, 0.0, 0.0, 0.0) };
+    let (cn_be, x_be) = model.normal(mach, a_e.to_radians());
+    let (cn_b, x_b) = model.normal(mach, a_deg.to_radians());
+    let s = if cn_be.abs() > 1e-9 { cn_e / cn_be } else { 0.0 };
+    let cn = if s > 0.0 { cn_b * (1.0 + (s - 1.0) * w) } else { cn_b + (cn_e - cn_be) * w };
+    let mut xcp = x_b + (xcp_e - x_be) * w;
+    if model.geom.length > 0.0 {
+        xcp = xcp.clamp(0.0, model.geom.length);
+    }
+    let (k, k_e) = (aero::model::axial_alpha_factor(a_deg.to_radians()), aero::model::axial_alpha_factor(a_e.to_radians()));
+    let ca = if k_e > 1e-9 { ca_e * k / k_e } else { ca_e };
+    (cn, xcp, ca)
 }
 
 /// Builds the table on the grid of `model.opt` (Mach `mach_min..mach_max`, alpha `0..alpha_max`).
+///
+/// Above the highest solved angle of each Mach column the coefficients come from [`beyond_solved`]
+/// (blend into the Barrowman model), independent of `extrapolation`; `extrapolation` is stored in the
+/// table and applies to lookups beyond the table grid.
 pub fn build_from_points(
     points: &[SolvedPoint],
     model: &AeroModel,
@@ -251,7 +303,6 @@ pub fn build_from_points_roll(
     extrapolation: Extrapolation,
     roll: &[crate::general::ClpEntry],
 ) -> Result<(AeroTable, TableFill)> {
-    let linear = extrapolation == Extrapolation::Linear;
     let o = &model.opt;
     let machs = grid(o.mach_min.max(0.0), o.mach_max, o.mach_step);
     let alphas = grid(0.0, o.alpha_max_deg, o.alpha_step_deg);
@@ -273,7 +324,7 @@ pub fn build_from_points_roll(
             }
         }
         pts.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        if let Some(c) = column(m, &pts, &alphas, linear) {
+        if let Some(c) = column(m, &pts, &alphas, model) {
             fill.slopes.push((m, c.cna, c.xcp0));
             cols.push(c);
         }
@@ -439,21 +490,32 @@ mod tests {
         assert!((c0.cna - 2.0 * (2.0 + 0.45)).abs() < 2e-3, "cna {}", c0.cna);
         assert!((c0.xcp - xcp(1.5)).abs() < 1e-6);
         assert!((c0.damp[0] - c0.cna).abs() < 1e-12 && (c0.damp[1] / c0.damp[0] - c0.xcp).abs() < 1e-9);
-        // Beyond the solved alpha range the end slope is continued (linear) or held (clamp) up to the table edge only;
-        // the table grid ends at 16 deg here, so check the lookup extrapolation instead.
-        assert!(t.lookup(1.5, 20f64.to_radians()).cn > t.lookup(1.5, 16f64.to_radians()).cn - 0.05);
     }
 
     #[test]
-    fn extrapolates_in_alpha_and_mach() {
+    fn blends_into_barrowman_beyond_the_solved_angles_and_holds_mach() {
         let g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
-        let o = AeroOptions { mach_min: 0.0, mach_max: 4.0, mach_step: 0.5, alpha_max_deg: 24.0, alpha_step_deg: 4.0, ..Default::default() };
+        let o = AeroOptions { mach_min: 0.0, mach_max: 4.0, mach_step: 0.5, alpha_max_deg: 90.0, alpha_step_deg: 2.0, ..Default::default() };
         let m = AeroModel::new(g, o);
         let (lin, _) = build_from_points(&points(&MACHS, &ALPHAS), &m, FlowModel::Rans, "h".into(), Extrapolation::Linear).unwrap();
         let (cl, _) = build_from_points(&points(&MACHS, &ALPHAS), &m, FlowModel::Rans, "h".into(), Extrapolation::Clamp).unwrap();
         let (a16, a24) = (16f64.to_radians(), 24f64.to_radians());
-        assert!((cl.lookup(2.0, a24).cn - cl.lookup(2.0, a16).cn).abs() < 1e-12);
-        assert!(lin.lookup(2.0, a24).cn != cl.lookup(2.0, a24).cn);
+        for t in [&lin, &cl] {
+            // At the highest solved angle the CFD values are kept.
+            let c = t.lookup(2.0, a16);
+            assert!((c.cn - cn(2.0, 16.0)).abs() < 1e-9 && (c.xcp - xcp(2.0)).abs() < 1e-9, "{c:?}");
+            // In the relaxation band: the blend of the CFD edge values and the Barrowman model.
+            let (bcn, bx, _) = beyond_solved(&m, 2.0, 24.0, 16.0, cn(2.0, 16.0), xcp(2.0), ca(2.0, 16.0));
+            let c = t.lookup(2.0, a24);
+            assert!((c.cn - bcn).abs() < 1e-9 && (c.xcp - bx).abs() < 1e-9);
+            // From twice the highest solved angle on: the Barrowman normal force and centre of pressure.
+            for a in [32.0f64, 60.0, 90.0] {
+                let (c, (bcn, bx)) = (t.lookup(2.0, a.to_radians()), m.normal(2.0, a.to_radians()));
+                assert!((c.cn - bcn).abs() < 1e-9 && (c.xcp - bx).abs() < 1e-9, "a = {a}: {} {} vs {bcn} {bx}", c.cn, c.xcp);
+            }
+            // CA follows the Barrowman angle factor from the edge value (0 at 90 deg plus the hybrid terms, also x 0).
+            assert!(t.lookup(2.0, 90f64.to_radians()).ca_off.abs() < 1e-9);
+        }
         // Beyond the solved Mach range the edge values are held for both modes (no end-slope continuation).
         for t in [&lin, &cl] {
             for &mach in &[3.5, 4.0] {
@@ -461,8 +523,41 @@ mod tests {
                 assert!((e.cn - h.cn).abs() < 1e-12 && (e.cna - h.cna).abs() < 1e-12 && (e.xcp - h.xcp).abs() < 1e-12);
             }
         }
-        // Mach beyond the last solved value: clamp holds the M = 3 value.
-        assert!((cl.lookup(4.0, a16).cn - cl.lookup(3.0, a16).cn).abs() < 1e-12);
+    }
+
+    #[test]
+    fn a_forward_moving_end_slope_does_not_move_the_cp_ahead_of_the_body() {
+        // Synthetic CFD column whose centre of pressure moves forward fast near the last solved angle: a
+        // linear continuation of CN and the nose moment would put xcp at 0.62 m at 90 deg, far ahead of the
+        // Barrowman value (0.91 m).
+        let g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
+        let m = AeroModel::new(g, AeroOptions { mach_max: 1.0, mach_step: 0.5, alpha_max_deg: 90.0, alpha_step_deg: 1.0, ..Default::default() });
+        let xc = |a: f64| 1.2 - 0.02 * a;
+        let mut p = Vec::new();
+        for mach in [0.3, 0.8] {
+            for a in [0.0, 4.0, 8.0, 12.0, 16.0] {
+                let c = 0.3 * a;
+                p.push(SolvedPoint { mach, alpha_deg: a, coeffs: Some(BodyCoeffs { cn: c, ca: 0.1, mom: c * xc(a) }) });
+            }
+        }
+        let (t, _) = build_from_points(&p, &m, FlowModel::Euler, "h".into(), Extrapolation::Linear).unwrap();
+        let mut prev = f64::NAN;
+        for a in (16..=90).map(f64::from) {
+            let c = t.lookup(0.3, a.to_radians());
+            let (_, bx) = m.normal(0.3, a.to_radians());
+            // Close to or aft of the lower of the edge value and the Barrowman value, and the Barrowman value from 32 deg on.
+            assert!(c.xcp >= bx.min(xc(16.0)) - 0.03, "a = {a}: xcp {}", c.xcp);
+            if a >= 32.0 {
+                assert!((c.xcp - bx).abs() < 0.01, "a = {a}: {} vs {bx}", c.xcp);
+            }
+            assert!(c.cn > 0.0 && c.cn.is_finite());
+            if prev.is_finite() {
+                assert!((c.xcp - prev).abs() < 0.03, "smooth hand-over at {a}: {prev} -> {}", c.xcp);
+            }
+            prev = c.xcp;
+        }
+        // The value at the edge is the CFD value.
+        assert!((t.lookup(0.3, 16f64.to_radians()).xcp - xc(16.0)).abs() < 1e-9);
     }
 
     #[test]
@@ -481,6 +576,44 @@ mod tests {
         assert!((c.cn - cn(2.0, 8.0)).abs() < 8e-3, "{} vs {}", c.cn, cn(2.0, 8.0));
         let c = t.lookup(1.5, 8f64.to_radians());
         assert!((c.cn - cn(1.5, 8.0)).abs() < 8e-3);
+    }
+
+    /// The stored Euler cases of the sample rocket (doc/data/cfd, solved at 0, 2, 4, 8 deg).
+    fn sample_euler_points() -> Vec<SolvedPoint> {
+        let text = include_str!("../../../doc/data/cfd/sample_euler_cases.csv");
+        let mut v = Vec::new();
+        for line in text.lines().skip(1) {
+            let f: Vec<&str> = line.split(',').collect();
+            if f[2] != "converged" && f[2] != "accepted" {
+                continue;
+            }
+            let num = |i: usize| f[i].parse::<f64>().unwrap();
+            v.push(SolvedPoint { mach: num(0), alpha_deg: num(1), coeffs: Some(BodyCoeffs { cn: num(6), ca: num(7), mom: num(8) }) });
+        }
+        remove_zero_offset(&mut v);
+        v
+    }
+
+    #[test]
+    fn sample_euler_table_at_large_angles() {
+        let g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
+        let m = AeroModel::new(g, AeroOptions { mach_max: 2.0, mach_step: 0.1, alpha_max_deg: 90.0, alpha_step_deg: 1.0, ..Default::default() });
+        let (t, _) = build_from_points(&sample_euler_points(), &m, FlowModel::Euler, "h".into(), Extrapolation::Linear).unwrap();
+        // Solved up to 8 deg: CFD values there, Barrowman from 16 deg on (printed with --nocapture).
+        for mach in [0.3, 0.8, 1.2, 2.0] {
+            for a in [8.0f64, 12.0, 16.0, 30.0, 60.0, 90.0] {
+                let c = t.lookup(mach, a.to_radians());
+                let (bcn, bx) = m.normal(mach, a.to_radians());
+                eprintln!("M {mach} a {a:>4}: CFD table CN {:.3} xcp {:.3} m | Barrowman CN {bcn:.3} xcp {bx:.3} m", c.cn, c.xcp);
+                if a >= 16.0 {
+                    assert!((c.cn - bcn).abs() < 1e-9 && (c.xcp - bx).abs() < 1e-9);
+                }
+                if a == 8.0 {
+                    let solved = sample_euler_points().into_iter().find(|p| p.mach == mach && p.alpha_deg == 8.0).unwrap().coeffs.unwrap();
+                    assert!((c.cn - solved.cn).abs() < 1e-9, "{} vs {}", c.cn, solved.cn);
+                }
+            }
+        }
     }
 
     #[test]

@@ -732,8 +732,11 @@ def plot_dispersion_grid(out):
             if r.empty:
                 continue
             e, n = grid_polyline(r)
-            ax.plot(e, n, "-", color=colors[v], linewidth=1.5)
-            ax.plot(r.landing_east, r.landing_north, "o", color=colors[v], markersize=4, label=f"{v:g} m/s")
+            ax.plot(e, n, "-o", color=colors[v], markersize=4, linewidth=1.5, label=f"{v:g} m/s")
+            # the broadside cases the outline skips keep their speed's marker
+            b = run_flags(r)[2]
+            if b.any():
+                ax.plot(r.landing_east[b], r.landing_north[b], "o", color=colors[v], markersize=4)
         ax.plot([0], [0], marker="*", color=INK, markersize=12, linestyle="none", label="launch site")
         n_speed = len(ax.get_legend_handles_labels()[1]) - 1  # speed curves drawn before the launch site
         mark_runs(ax, s)

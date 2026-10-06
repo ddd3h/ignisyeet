@@ -1156,6 +1156,25 @@ mod tests {
         assert!((p - 3.0).abs() < 1e-9 && (y + 3.0).abs() < 1e-9, "{p} {y}");
     }
 
+    #[test]
+    fn rows_above_90_deg_are_not_read_by_the_flight_lookups() {
+        // A table built up to 180 deg holds reverse-flow rows (fin CP mirrored towards the trailing edge),
+        // but the six-component lookup folds the total angle to min(alpha, 180 deg - alpha): tail-first
+        // flow uses the nose-first coefficients.
+        let g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
+        let opt = AeroOptions { mach_max: 1.0, mach_step: 0.5, alpha_max_deg: 180.0, alpha_step_deg: 5.0, ..Default::default() };
+        let model = AeroModel::new(g, opt);
+        let t = AeroTable::build(&model, String::new(), Extrapolation::Clamp);
+        let d = t.meta.ref_diameter;
+        for deg in [10.0f64, 30.0, 60.0] {
+            let (a, r) = (deg.to_radians(), (180.0 - deg).to_radians());
+            assert_ne!(t.lookup(0.5, r).xcp, t.lookup(0.5, a).xcp, "the reverse-flow rows differ");
+            let back = t.lookup6(0.5, r, 0.0);
+            assert!((back.cz - t.lookup6(0.5, a, 0.0).cz).abs() < 1e-12);
+            assert!((back.cm * d / back.cz - t.lookup(0.5, a).xcp).abs() < 1e-12, "{deg} deg");
+        }
+    }
+
     /// General table with linear Cz = kz alpha, Cm = km alpha, Cy = ky beta, Cn = kn beta (d = 0.1 m).
     fn linear_table(kz: f64, km: f64, ky: f64, kn: f64) -> AeroTable {
         let meta = TableMeta {

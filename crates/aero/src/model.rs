@@ -364,6 +364,11 @@ impl AeroModel {
     /// plate normal to the flow is symmetric about it. For a trapezoidal fin the centroid lies at half the
     /// mean aerodynamic chord. Above 90° (reverse flow, trailing edge leading) the fraction is mirrored to
     /// `1 - frac(180° - a)`, reaching three quarters of the mean aerodynamic chord at 180° in subsonic flow.
+    ///
+    /// The reverse-flow branch only fills table rows above 90° (`aero.alpha_max_deg > 90`). The flight
+    /// never reads them: the axisymmetric flight model, the six-component lookup and the general-table
+    /// expansion fold the total angle to `min(a, 180° - a)`, so tail-first flight uses the nose-first
+    /// coefficients (centre of pressure included) mirrored about 90°.
     pub fn fin_xcp_at(&self, m: f64, a: f64) -> f64 {
         let x0 = self.fin_xcp(m);
         let Some(f) = &self.geom.fins else { return x0 };

@@ -118,6 +118,39 @@ pub struct TableMeta {
     pub extrapolation: Extrapolation,
 }
 
+fn validate_axis(name: &str, axis: &[f64]) -> Result<()> {
+    if axis.is_empty() {
+        bail!("{name} axis is empty");
+    }
+    if let Some(i) = axis.iter().position(|x| !x.is_finite()) {
+        bail!("{name}[{i}] is not finite: {}", axis[i]);
+    }
+    if let Some(i) = axis.windows(2).position(|w| w[1] <= w[0]) {
+        bail!("{name} must be strictly increasing, but {name}[{}] = {} follows {name}[{i}] = {}", i + 1, axis[i + 1], axis[i]);
+    }
+    Ok(())
+}
+
+fn validate_meta(m: &TableMeta) -> Result<()> {
+    for (name, v) in [("ref_area", m.ref_area), ("ref_diameter", m.ref_diameter), ("length", m.length)] {
+        if !(v.is_finite() && v > 0.0) {
+            bail!("{name} must be finite and positive, got {v}");
+        }
+    }
+    if !m.fin_cant_ref_deg.is_finite() {
+        bail!("fin_cant_ref_deg must be finite, got {}", m.fin_cant_ref_deg);
+    }
+    if m.moment_ref != "nose_tip" {
+        bail!("moment_ref \"{}\" is not supported: tabulated moments must be about the \"nose_tip\" (the simulator transfers them to the CG)", m.moment_ref);
+    }
+    validate_axis("machs", &m.machs)?;
+    validate_axis("alphas_deg", &m.alphas_deg)?;
+    if m.kind == TableKind::General {
+        validate_axis("betas_deg", &m.betas_deg)?;
+    }
+    Ok(())
+}
+
 impl Default for TableMeta {
     fn default() -> Self {
         Self {
@@ -379,7 +412,7 @@ impl AeroTable {
                 for (i, row) in data.iter().enumerate() {
                     write!(f, "{},{}", self.meta.machs[i / na], self.meta.alphas_deg[i % na])?;
                     for v in row {
-                        write!(f, ",{v:.9e}")?;
+                        write!(f, ",{v:e}")?;
                     }
                     writeln!(f)?;
                 }
@@ -391,7 +424,7 @@ impl AeroTable {
                     let (im, ia, ib) = (i / (na * nb), (i / nb) % na, i % nb);
                     write!(f, "{},{},{}", self.meta.machs[im], self.meta.alphas_deg[ia], self.meta.betas_deg[ib])?;
                     for v in row {
-                        write!(f, ",{v:.9e}")?;
+                        write!(f, ",{v:e}")?;
                     }
                     writeln!(f)?;
                 }
@@ -403,45 +436,88 @@ impl AeroTable {
     }
 
     /// Loads a table; version-1 files (8 value columns) become axisymmetric tables without roll terms.
+    ///
+    /// The sidecar is validated (finite positive reference lengths and area, finite strictly
+    /// increasing non-empty axes, `moment_ref` = "nose_tip"), every row's coordinate columns must
+    /// equal the declared grid point in row-major order and every coefficient must be finite.
     pub fn load(csv_path: &Path) -> Result<Self> {
-        let mut meta: TableMeta = serde_json::from_str(&std::fs::read_to_string(csv_path.with_extension("json"))?)?;
-        let text = std::fs::read_to_string(csv_path).with_context(|| format!("cannot read {}", csv_path.display()))?;
-        let rows = text.lines().skip(1).filter(|l| !l.trim().is_empty()).map(|line| {
-            line.split(',').map(|s| s.trim().parse::<f64>()).collect::<Result<Vec<f64>, _>>().with_context(|| format!("bad row in {}: {line}", csv_path.display()))
+        let json_path = csv_path.with_extension("json");
+        let json = std::fs::read_to_string(&json_path).with_context(|| format!("cannot read aero table metadata {}", json_path.display()))?;
+        let mut meta: TableMeta = serde_json::from_str(&json).with_context(|| format!("bad aero table metadata {}", json_path.display()))?;
+        validate_meta(&meta).with_context(|| format!("invalid aero table metadata {}", json_path.display()))?;
+        let text = std::fs::read_to_string(csv_path).with_context(|| format!("cannot read aero table {}", csv_path.display()))?;
+        let header: Vec<&str> = text.lines().next().unwrap_or("").split(',').map(str::trim).collect();
+        let nc = if meta.kind == TableKind::General { 3 } else { 2 };
+        let rows = text.lines().enumerate().skip(1).filter(|(_, l)| !l.trim().is_empty()).map(|(ln, line)| {
+            let v = line.split(',').map(|s| s.trim().parse::<f64>()).collect::<Result<Vec<f64>, _>>().with_context(|| format!("bad row {} in {}: {line}", ln + 1, csv_path.display()))?;
+            Ok::<_, anyhow::Error>((ln + 1, v))
         });
+        let (na, nb) = (meta.alphas_deg.len(), meta.betas_deg.len());
+        let expected_coords = |i: usize| -> Vec<f64> {
+            match meta.kind {
+                TableKind::Axisymmetric => vec![meta.machs[i / na], meta.alphas_deg[i % na]],
+                TableKind::General => vec![meta.machs[i / (na * nb)], meta.alphas_deg[(i / nb) % na], meta.betas_deg[i % nb]],
+            }
+        };
+        let check_row = |idx: usize, ln: usize, v: &[f64]| -> Result<()> {
+            let want = expected_coords(idx);
+            let near = |a: f64, b: f64| (a - b).abs() <= 1e-9 + 1e-6 * a.abs().max(b.abs());
+            if !want.iter().zip(&v[..nc]).all(|(&w, &f)| near(w, f)) {
+                bail!("row {ln} of {}: coordinates {:?} do not match the grid point {:?} expected at this position (rows must follow the metadata axes in order: Mach outermost{})", csv_path.display(), &v[..nc], want, if nc == 3 { ", then alpha, then beta" } else { ", then alpha" });
+            }
+            for (k, x) in v.iter().enumerate().skip(nc) {
+                if !x.is_finite() {
+                    bail!("row {ln} of {}: column {} ({}) is not finite: {x}", csv_path.display(), k + 1, header.get(k).unwrap_or(&"?"));
+                }
+            }
+            Ok(())
+        };
+        let n_expected = match meta.kind {
+            TableKind::Axisymmetric => meta.machs.len() * na,
+            TableKind::General => meta.machs.len() * na * nb,
+        };
         let data = match meta.kind {
             TableKind::Axisymmetric => {
                 let mut data = Vec::new();
-                for v in rows {
-                    let v = v?;
+                for item in rows {
+                    let (ln, v) = item?;
                     let mut r = [0.0; N_FIELDS];
                     match v.len() {
                         n if n == N_FIELDS + 2 => r.copy_from_slice(&v[2..]),
                         n if n == N_FIELDS_V1 + 2 => r[..N_FIELDS_V1].copy_from_slice(&v[2..]),
-                        _ => bail!("bad row in {}: expected {} or {} values, found {}", csv_path.display(), N_FIELDS_V1 + 2, N_FIELDS + 2, v.len()),
+                        _ => bail!("bad row {ln} in {}: expected {} or {} values, found {}", csv_path.display(), N_FIELDS_V1 + 2, N_FIELDS + 2, v.len()),
                     }
+                    if data.len() >= n_expected {
+                        bail!("aero table {} has more rows than the {n_expected} grid points of its metadata", csv_path.display());
+                    }
+                    check_row(data.len(), ln, &v)?;
                     data.push(r);
-                }
-                if data.len() != meta.machs.len() * meta.alphas_deg.len() {
-                    bail!("aero table size does not match its metadata");
                 }
                 TableData::Axisymmetric(data)
             }
             TableKind::General => {
                 let mut data = Vec::new();
-                for v in rows {
-                    let v = v?;
+                for item in rows {
+                    let (ln, v) = item?;
                     if v.len() != N_GEN + 3 {
-                        bail!("bad row in {}: expected {} values, found {}", csv_path.display(), N_GEN + 3, v.len());
+                        bail!("bad row {ln} in {}: expected {} values, found {}", csv_path.display(), N_GEN + 3, v.len());
                     }
+                    if data.len() >= n_expected {
+                        bail!("aero table {} has more rows than the {n_expected} grid points of its metadata", csv_path.display());
+                    }
+                    check_row(data.len(), ln, &v)?;
                     data.push(v[3..].try_into().unwrap());
-                }
-                if data.len() != meta.machs.len() * meta.alphas_deg.len() * meta.betas_deg.len() {
-                    bail!("aero table size does not match its metadata");
                 }
                 TableData::General(data)
             }
         };
+        let found = match &data {
+            TableData::Axisymmetric(d) => d.len(),
+            TableData::General(d) => d.len(),
+        };
+        if found != n_expected {
+            bail!("aero table {} has {found} rows but its metadata declares {n_expected} grid points", csv_path.display());
+        }
         meta.format_version = FORMAT_VERSION;
         Ok(Self { meta, data, counters: Default::default() })
     }
@@ -828,5 +904,102 @@ mod tests {
         assert_eq!(ax.last(), Some(&180.0));
         assert!(ax.windows(2).all(|w| w[1] > w[0]));
         assert!(ax.contains(&0.0) && ax.contains(&30.0) && ax.contains(&40.0));
+    }
+
+    fn loadable_files(tag: &str) -> (std::path::PathBuf, std::path::PathBuf, AeroTable) {
+        let (t, _) = table(Extrapolation::Linear);
+        let dir = std::env::temp_dir().join(format!("ignisyeet_aero_{tag}_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("t.csv");
+        t.save(&p).unwrap();
+        (dir, p, t)
+    }
+
+    fn load_err(p: &Path) -> String {
+        format!("{:#}", AeroTable::load(p).unwrap_err())
+    }
+
+    #[test]
+    fn load_rejects_reordered_or_mismatched_rows() {
+        let (dir, p, _) = loadable_files("order");
+        let text = std::fs::read_to_string(&p).unwrap();
+        let mut lines: Vec<&str> = text.lines().collect();
+        let header = lines.remove(0);
+        lines.reverse();
+        std::fs::write(&p, format!("{header}\n{}\n", lines.join("\n"))).unwrap();
+        let e = load_err(&p);
+        assert!(e.contains("row 2") && e.contains("do not match the grid point"), "{e}");
+        // a shifted coordinate
+        let mut lines: Vec<String> = text.lines().map(String::from).collect();
+        let mut cells: Vec<String> = lines[2].split(',').map(String::from).collect();
+        cells[0] = "0.123".into();
+        lines[2] = cells.join(",");
+        std::fs::write(&p, lines.join("\n") + "\n").unwrap();
+        assert!(load_err(&p).contains("row 3"));
+        // too few rows
+        let short: String = text.lines().take(3).map(|l| format!("{l}\n")).collect();
+        std::fs::write(&p, short).unwrap();
+        assert!(load_err(&p).contains("rows but its metadata declares"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_rejects_non_finite_cells() {
+        let (dir, p, _) = loadable_files("nan");
+        let text = std::fs::read_to_string(&p).unwrap();
+        let mut lines: Vec<String> = text.lines().map(String::from).collect();
+        let mut cells: Vec<String> = lines[3].split(',').map(String::from).collect();
+        cells[4] = "NaN".into();
+        lines[3] = cells.join(",");
+        std::fs::write(&p, lines.join("\n") + "\n").unwrap();
+        let e = load_err(&p);
+        assert!(e.contains("row 4") && e.contains("column 5") && e.contains("not finite"), "{e}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_validates_metadata_and_names_missing_files() {
+        let (dir, p, _) = loadable_files("meta");
+        let jp = p.with_extension("json");
+        let good: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&jp).unwrap()).unwrap();
+        let cases: [(&str, serde_json::Value, &str); 6] = [
+            ("ref_area", serde_json::json!(0.0), "ref_area"),
+            ("ref_diameter", serde_json::json!(-1.0), "ref_diameter"),
+            ("machs", serde_json::json!([]), "machs axis is empty"),
+            ("alphas_deg", serde_json::json!([0.0, 2.0, 2.0]), "strictly increasing"),
+            ("machs", serde_json::json!([0.5, 0.2]), "strictly increasing"),
+            ("moment_ref", serde_json::json!("cg"), "moment_ref"),
+        ];
+        for (k, v, want) in cases {
+            let mut j = good.clone();
+            j[k] = v;
+            std::fs::write(&jp, j.to_string()).unwrap();
+            let e = load_err(&p);
+            assert!(e.contains(want), "{k}: {e}");
+            assert!(e.contains("t.json"), "{e}");
+        }
+        std::fs::remove_file(&jp).unwrap();
+        assert!(load_err(&p).contains("t.json"));
+        std::fs::remove_file(&p).unwrap();
+        std::fs::write(&jp, good.to_string()).unwrap();
+        assert!(load_err(&p).contains("t.csv"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn save_load_is_bit_identical() {
+        let (dir, p, t) = loadable_files("bits");
+        let u = AeroTable::load(&p).unwrap();
+        let (TableData::Axisymmetric(a), TableData::Axisymmetric(b)) = (&t.data, &u.data) else { panic!() };
+        assert_eq!(a.len(), b.len());
+        for (x, y) in a.iter().flatten().zip(b.iter().flatten()) {
+            assert_eq!(x.to_bits(), y.to_bits());
+        }
+        let g = t.to_general(angle_axis(180.0, 30.0, 2.0, 10.0), angle_axis(90.0, 30.0, 2.0, 10.0));
+        g.save(&p).unwrap();
+        let w = AeroTable::load(&p).unwrap();
+        let (TableData::General(a), TableData::General(b)) = (&g.data, &w.data) else { panic!() };
+        assert!(a.iter().flatten().zip(b.iter().flatten()).all(|(x, y)| x.to_bits() == y.to_bits()));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

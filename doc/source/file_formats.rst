@@ -448,6 +448,8 @@ CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surf
      - この結果を計算した設定のハッシュ（16 桁の 16 進数）。出力先と計算資源（``[output]`` と ``[resources]``）、``[dispersion]`` を除く設定と、STL、モータ、風のプロファイル、外部の係数表の内容から計算する。KML は、現在の設定のハッシュと一致するものだけをまとめる（:ref:`sec-kml`）
    * - ``warnings``
      - 警告の文字列の配列（空のこともある。:ref:`sec-config-checks`）
+   * - ``aero_table_range``
+     - 係数表の範囲外の引き出しの集計。全引き出しの回数 ``lookups``、Mach 数が表の最小値未満・最大値超の回数 ``mach_below`` ``mach_above``、迎角または横滑り角が格子の外の回数 ``angle_beyond``、要求された最大の Mach 数 ``max_mach`` と最大の :math:`|\alpha|` [deg] ``max_abs_alpha_deg``、範囲外が 1 回でもあったか ``out_of_range``（真偽値）
 
 .. _sec-file-trajectory:
 
@@ -485,7 +487,7 @@ CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surf
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
 ``mode = "wind_grid"`` が ``dispersion.csv`` と並べて書く。項目は、設定のハッシュ ``config_hash``（風の格子について、``mode`` と ``[dispersion.monte_carlo]`` を除いた設定から計算する）、
-ケース数 ``cases``、着地しなかったケースの数 ``failed``、警告の文字列の配列 ``warnings`` である。
+ケース数 ``cases``、着地しなかったケースの数 ``failed``、警告の文字列の配列 ``warnings``、係数表の範囲外の引き出しの集計 ``aero_table_range``\ （項目は :ref:`sec-file-summary` と同じ）である。
 KML は、このファイルのハッシュが現在の設定と一致するときだけ ``dispersion.csv`` を読み込む。
 
 ``dispersion_mc.csv``
@@ -505,7 +507,7 @@ KML は、このファイルのハッシュが現在の設定と一致すると�
 ``dispersion_summary.json``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``mode = "monte_carlo"`` が書く。全体の項目はサンプル数 ``samples``、乱数の種 ``seed``、降下モードごとの配列 ``descents``、設定のハッシュ ``config_hash``（モンテカルロについて、``mode`` と風の格子の設定を除いた設定から計算する）、警告の配列 ``warnings`` である。
+``mode = "monte_carlo"`` が書く。全体の項目はサンプル数 ``samples``、乱数の種 ``seed``、降下モードごとの配列 ``descents``、設定のハッシュ ``config_hash``（モンテカルロについて、``mode`` と風の格子の設定を除いた設定から計算する）、警告の配列 ``warnings``、係数表の範囲外の引き出しの集計 ``aero_table_range``\ （項目は :ref:`sec-file-summary` と同じ）である。
 ``descents`` の各要素は、降下モード ``descent``、着地したサンプル数 ``n``、失敗数 ``failed``、そのうち着地しなかった数 ``not_landed``、着地点の平均と共分散行列、
 :math:`1\sigma` と :math:`3\sigma` の誤差楕円（長半径、短半径、長軸の方位）、最大着地距離 ``max_landing_distance`` とそのサンプル番号、
 着地距離のパーセンタイル ``landing_distance_p50`` ``landing_distance_p90`` ``landing_distance_p99``（着地したサンプルについて、線形補間で求める）、頂点高度の平均と標準偏差を持つ（:ref:`sec-mc`）。

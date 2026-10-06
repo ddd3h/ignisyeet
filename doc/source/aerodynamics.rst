@@ -294,7 +294,10 @@ Mach 数は、設定にかかわらず、表の端の値で一定とする。
 :math:`\alpha,\beta` の軸が全範囲を覆うので、一般表で外挿が起こるのは、表の軸が全範囲に満たないときだけである。
 
 表の範囲外の引き出しは、数えている。数えるのは、全引き出しの回数、Mach 数が最小値未満・最大値超の回数、迎角または横滑り角が格子の外の回数、要求された最大の Mach 数と最大の :math:`|\alpha|` である
-（ライブラリの ``AeroTable::out_of_range_stats``。コマンドラインには表示しない）。
+（``AeroTable::out_of_range_stats``）。
+範囲外の引き出しがあると、``sim``、``dispersion`` は警告として、引き出しの回数と最大の Mach 数、最大の :math:`|\alpha|` を表示する
+（``aero table: N of M lookups beyond the Mach range`` または ``… beyond the angle range`` の形で、Mach 数は表の端で一定、角度は外挿であることも添える）。
+範囲外の引き出しがなくても、``summary.json``、``dispersion_meta.json``、``dispersion_summary.json`` の ``aero_table_range`` に、全引き出しの回数などを記録する（:ref:`sec-file-summary`）。
 
 .. _sec-aero-external:
 

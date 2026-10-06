@@ -681,7 +681,9 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
 * 静安定余裕（飛翔中の最小値とランチャ離脱時の値の小さいほう）が、0 cal 未満（圧力中心が重心より前にあり不安定）、0 以上 1.0 cal 未満（不安定）、1.0 cal 以上 1.5 cal 未満（推奨の 1.5 cal を下回る）である。
 * 風のモデルが ``power`` または ``log`` で、頂点が地上 1000 m を超える。これらのプロファイルは基準高さ ``wind.ref_height`` の風速 ``wind.speed`` を上空に外挿するので、上空の風と着地点はモデル依存になる（実際の予測には ``model = "profile"`` を使う）。
 * ``sim.max_time`` までに着地しない。
-* 形状の抽出結果の疑わしい点（:ref:`sec-geometry-warnings`）。
+* 係数表の範囲外の引き出しがある。回数、最大の Mach 数、最大の :math:`|\alpha|` を ``aero table: 370888 of 10106213 lookups beyond the angle range (max Mach 1.51, max |alpha| 90.0 deg); Mach is held at the table edge, angles are extrapolated`` の形で表示する（パネル法のサンプルの ``dispersion`` での表示。Mach 数の範囲外があるときは ``… lookups beyond the Mach range`` も並ぶ）。
+* 形状の抽出結果の疑わしい点（:ref:`sec-geometry-warnings`）。``sim`` と ``dispersion`` を含むすべてのモードで表示し、係数表をキャッシュから読むときは、同じ出力先の ``geometry.json`` の ``warnings`` を使う。
+* CFD モードで、SU2 のバージョンが 8.3.x でない。``cfd-check`` と CFD の係数表の作成で表示する。
 
 .. _sec-exit-status:
 
@@ -1349,17 +1351,17 @@ STL からの形状抽出と空力モデルの計算は行わず、``sim`` と `
    * - ``trajectory.csv``
      - 飛翔の時刻歴（位置、速度、Mach 数、迎角、質量、重心、圧力中心、安定余裕、姿勢、角速度など。:ref:`sec-file-trajectory`）
    * - ``summary.json``
-     - ランチャ離脱速度、最大 Mach 数、最大動圧、頂点、最小安定余裕、着地点など。着地の有無 ``landed``、``max_time``、設定のハッシュ ``config_hash``、警告 ``warnings`` も入る（:ref:`sec-file-summary`）
+     - ランチャ離脱速度、最大 Mach 数、最大動圧、頂点、最小安定余裕、着地点など。着地の有無 ``landed``、``max_time``、設定のハッシュ ``config_hash``、警告 ``warnings``、係数表の範囲外の引き出しの集計 ``aero_table_range`` も入る（:ref:`sec-file-summary`）
    * - ``ignisyeet.kml``
      - ``kml = true`` のとき ``sim`` と ``dispersion`` が書き出す、Google Earth 用の KML ファイル 1 つ。射点、飛翔経路（段階ごとに色分け）とイベントの印、風の格子の着地点の輪郭、モンテカルロの着地点と誤差楕円をフォルダに分けて収める（:ref:`sec-kml`）
    * - ``dispersion.csv``
      - ``mode = "wind_grid"``。風の各ケースの着地点、頂点、飛行時間など。着地したかを示す ``landed`` の列もある
    * - ``dispersion_meta.json``
-     - ``mode = "wind_grid"``。``dispersion.csv`` に付く、設定のハッシュ ``config_hash``、ケース数 ``cases``、失敗数 ``failed``、警告 ``warnings``\ （:ref:`sec-file-dispersion`）
+     - ``mode = "wind_grid"``。``dispersion.csv`` に付く、設定のハッシュ ``config_hash``、ケース数 ``cases``、失敗数 ``failed``、警告 ``warnings``、``aero_table_range``\ （:ref:`sec-file-dispersion`）
    * - ``dispersion_mc.csv``
      - ``mode = "monte_carlo"``。サンプルごと・降下モードごとの 1 行（ばらつき、基準風、着地点、頂点など。失敗した行は結果の列が空欄になる）
    * - ``dispersion_summary.json``
-     - ``mode = "monte_carlo"``。降下モードごとの着地点の統計と誤差楕円、最大着地距離、着地距離のパーセンタイル、頂点高度の平均と標準偏差、統計が完全か（``complete``）、設定のハッシュ、警告
+     - ``mode = "monte_carlo"``。降下モードごとの着地点の統計と誤差楕円、最大着地距離、着地距離のパーセンタイル、頂点高度の平均と標準偏差、統計が完全か（``complete``）、設定のハッシュ、警告、``aero_table_range``
 
 .. _sec-kml:
 

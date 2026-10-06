@@ -145,8 +145,26 @@ fn validate_meta(m: &TableMeta) -> Result<()> {
     }
     validate_axis("machs", &m.machs)?;
     validate_axis("alphas_deg", &m.alphas_deg)?;
-    if m.kind == TableKind::General {
-        validate_axis("betas_deg", &m.betas_deg)?;
+    match m.kind {
+        TableKind::Axisymmetric => {
+            // The small-angle coefficients (zero-lift drag, normal-force slope, centre of pressure)
+            // must be tabulated, not extrapolated from larger angles.
+            if m.alphas_deg[0] != 0.0 {
+                bail!(
+                    "alphas_deg of an axisymmetric table must start at 0 deg (the total angle of attack), found {}: the small-angle coefficients would be extrapolated",
+                    m.alphas_deg[0]
+                );
+            }
+        }
+        TableKind::General => {
+            validate_axis("betas_deg", &m.betas_deg)?;
+            for (name, axis) in [("alphas_deg", &m.alphas_deg), ("betas_deg", &m.betas_deg)] {
+                let (lo, hi) = (axis[0], axis[axis.len() - 1]);
+                if !(lo <= 0.0 && hi >= 0.0) {
+                    bail!("{name} of a general table must include 0 deg between its first and last value, found {lo} to {hi}: the small-angle coefficients would be extrapolated");
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -462,8 +480,10 @@ impl AeroTable {
     /// Loads a table; version-1 files (8 value columns) become axisymmetric tables without roll terms.
     ///
     /// The sidecar is validated (finite positive reference lengths and area, finite strictly
-    /// increasing non-empty axes, `moment_ref` = "nose_tip"), every row's coordinate columns must
-    /// equal the declared grid point in row-major order and every coefficient must be finite.
+    /// increasing non-empty axes, `moment_ref` = "nose_tip"; the angle grid of an axisymmetric table
+    /// starts at 0 deg, both angle grids of a general table include 0 deg), every cell must be
+    /// finite and every row's coordinate columns must equal the declared grid point in row-major
+    /// order.
     pub fn load(csv_path: &Path) -> Result<Self> {
         let json_path = csv_path.with_extension("json");
         let json = std::fs::read_to_string(&json_path).with_context(|| format!("cannot read aero table metadata {}", json_path.display()))?;
@@ -498,15 +518,17 @@ impl AeroTable {
             }
         };
         let check_row = |idx: usize, ln: usize, v: &[f64]| -> Result<()> {
+            // Every cell first, coordinates included (an infinite coordinate would pass the
+            // tolerance comparison below).
+            for (k, x) in v.iter().enumerate() {
+                if !x.is_finite() {
+                    bail!("row {ln} of {}: column {} ({}) is not finite: {x}", csv_path.display(), k + 1, header.get(k).unwrap_or(&"?"));
+                }
+            }
             let want = expected_coords(idx);
             let near = |a: f64, b: f64| (a - b).abs() <= 1e-9 + 1e-6 * a.abs().max(b.abs());
             if !want.iter().zip(&v[..nc]).all(|(&w, &f)| near(w, f)) {
                 bail!("row {ln} of {}: coordinates {:?} do not match the grid point {:?} expected at this position (rows must follow the metadata axes in order: Mach outermost{})", csv_path.display(), &v[..nc], want, if nc == 3 { ", then alpha, then beta" } else { ", then alpha" });
-            }
-            for (k, x) in v.iter().enumerate().skip(nc) {
-                if !x.is_finite() {
-                    bail!("row {ln} of {}: column {} ({}) is not finite: {x}", csv_path.display(), k + 1, header.get(k).unwrap_or(&"?"));
-                }
             }
             Ok(())
         };
@@ -641,7 +663,8 @@ impl AeroTable {
     /// `Clamp`. Linearly extrapolated values are bounded: they keep the sign of the edge value
     /// (CN, CA), CNa and the damping sums stay non-negative, `cl_delta` keeps its sign, the
     /// centre of pressure stays inside the body and the roll damping is never positive.
-    /// Lookups outside the grid are counted, see [`out_of_range_stats`](Self::out_of_range_stats).
+    /// Lookups outside the grid (above the last angle node or below the first) are counted, see
+    /// [`out_of_range_stats`](Self::out_of_range_stats).
     ///
     /// Panics for a general table; use [`lookup6`](Self::lookup6).
     pub fn lookup(&self, m: f64, alpha: f64) -> AeroCoeffs {
@@ -670,7 +693,7 @@ impl AeroTable {
         };
         let mut out = interp(ta);
         let extrapolated = !(0.0..=1.0).contains(&ta);
-        let beyond = self.meta.alphas_deg.last().is_some_and(|&last| alpha_deg > last + 1e-9);
+        let beyond = outside(&self.meta.alphas_deg, alpha_deg);
         if rec {
             self.record(m, alpha_deg, beyond);
         }
@@ -725,9 +748,8 @@ impl AeroTable {
         let (j, ta) = locate(&self.meta.alphas_deg, alpha.to_degrees(), clamp);
         let (k, tb) = locate(&self.meta.betas_deg, beta.to_degrees(), clamp);
         let extrapolated = !(0.0..=1.0).contains(&ta) || !(0.0..=1.0).contains(&tb);
-        let beyond = |g: &[f64], x: f64| g.len() >= 2 && (x < g[0] - 1e-9 || x > g[g.len() - 1] + 1e-9);
         if rec {
-            self.record(m, alpha.to_degrees(), beyond(&self.meta.alphas_deg, alpha.to_degrees()) || beyond(&self.meta.betas_deg, beta.to_degrees()));
+            self.record(m, alpha.to_degrees(), outside(&self.meta.alphas_deg, alpha.to_degrees()) || outside(&self.meta.betas_deg, beta.to_degrees()));
         }
         let (i1, j1, k1) = ((i + 1).min(self.meta.machs.len() - 1), (j + 1).min(na - 1), (k + 1).min(nb - 1));
         let at = |ii: usize, jj: usize, kk: usize| &data[(ii * na + jj) * nb + kk];
@@ -883,6 +905,12 @@ fn keep_sign(v: f64, edge: f64) -> f64 {
     } else {
         v.min(0.0)
     }
+}
+
+/// Whether `x` lies outside the angle grid `g` (by more than 1e-9) on either side; with a single
+/// node every other value is outside (it is held at the node).
+fn outside(g: &[f64], x: f64) -> bool {
+    g.first().is_some_and(|&lo| x < lo - 1e-9) || g.last().is_some_and(|&hi| x > hi + 1e-9)
 }
 
 /// Cell index and fractional position; the fraction leaves [0, 1] when extrapolating.
@@ -1343,6 +1371,67 @@ mod tests {
         std::fs::write(&jp, good.to_string()).unwrap();
         assert!(load_err(&p).contains("t.csv"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_rejects_infinite_coordinates() {
+        let (dir, p, _) = loadable_files("infcoord");
+        let text = std::fs::read_to_string(&p).unwrap();
+        for col in [0, 1] {
+            let mut lines: Vec<String> = text.lines().map(String::from).collect();
+            let mut cells: Vec<String> = lines[3].split(',').map(String::from).collect();
+            cells[col] = "inf".into();
+            lines[3] = cells.join(",");
+            std::fs::write(&p, lines.join("\n") + "\n").unwrap();
+            let e = load_err(&p);
+            assert!(e.contains("row 4") && e.contains(&format!("column {}", col + 1)) && e.contains("not finite"), "{e}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_requires_angle_grids_through_zero() {
+        let (dir, p, t) = loadable_files("zero");
+        let jp = p.with_extension("json");
+        let mut j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&jp).unwrap()).unwrap();
+        let mut shifted = t.meta.alphas_deg.clone();
+        shifted[0] = 0.25 * shifted[1];
+        j["alphas_deg"] = serde_json::json!(shifted);
+        std::fs::write(&jp, j.to_string()).unwrap();
+        let e = load_err(&p);
+        assert!(e.contains("alphas_deg of an axisymmetric table must start at 0 deg") && e.contains("t.json"), "{e}");
+        let _ = std::fs::remove_dir_all(&dir);
+        // General tables: both axes must hold 0 between their ends.
+        let g = t.to_general(vec![-10.0, 0.0, 10.0], vec![-10.0, 0.0, 10.0]);
+        for (key, axis) in [("alphas_deg", vec![2.0, 10.0, 20.0]), ("betas_deg", vec![-20.0, -10.0, -2.0])] {
+            let mut meta = g.meta.clone();
+            if key == "alphas_deg" {
+                meta.alphas_deg = axis;
+            } else {
+                meta.betas_deg = axis;
+            }
+            let e = format!("{:#}", validate_meta(&meta).unwrap_err());
+            assert!(e.contains(&format!("{key} of a general table must include 0 deg")), "{e}");
+        }
+        assert!(validate_meta(&g.meta).is_ok());
+    }
+
+    #[test]
+    fn lookups_below_the_first_angle_node_are_out_of_range() {
+        // An axisymmetric table (built without the load validation) whose grid starts at 5 deg.
+        let meta = TableMeta { ref_area: 0.01, ref_diameter: 0.1, length: 1.0, machs: vec![0.0, 1.0], alphas_deg: vec![5.0, 90.0], ..Default::default() };
+        let t = AeroTable::from_fn(meta, |_, a| AeroCoeffs { cn: a, xcp: 0.5, ..Default::default() });
+        t.reset_out_of_range_stats();
+        t.lookup(0.5, 1f64.to_radians());
+        t.lookup(0.5, 10f64.to_radians());
+        assert_eq!(t.out_of_range_stats().angle_beyond, 1);
+        // A general table with a single sideslip node: any other sideslip is held, i.e. out of range.
+        let g = t.to_general(vec![0.0, 10.0], vec![0.0]);
+        g.reset_out_of_range_stats();
+        g.lookup6(0.5, 5f64.to_radians(), 0.0);
+        assert_eq!(g.out_of_range_stats().angle_beyond, 0);
+        g.lookup6(0.5, 5f64.to_radians(), 3f64.to_radians());
+        assert_eq!(g.out_of_range_stats().angle_beyond, 1);
     }
 
     #[test]

@@ -1162,9 +1162,9 @@ impl<'a> Simulation<'a> {
             let (vz_prev, vz) = (prev.vel.dot(loc_prev.up), s.vel.dot(loc.up));
             if !past_apogee && vz_prev > 0.0 && vz <= 0.0 {
                 past_apogee = true;
-                // Zero crossing of the vertical velocity (linear within the step); the apogee
-                // position is the cubic Hermite interpolant of the step at that instant.
-                let fa = vz_prev / (vz_prev - vz);
+                // Zero of the vertical velocity of the step's cubic Hermite interpolant, and the
+                // interpolant's position at that instant.
+                let fa = vertical_speed_zero(&frame, &prev, &s, h);
                 let t_apo = t0 + h * fa;
                 let p = hermite_pos(&prev, &s, h, fa);
                 let h_apo = frame.local(p).height;
@@ -1354,6 +1354,22 @@ const MAX_ALTITUDE: f64 = 1.0e6;
 fn hermite_pos(a: &State, b: &State, h: f64, f: f64) -> Vec3 {
     let (f2, f3) = (f * f, f * f * f);
     a.pos * (2.0 * f3 - 3.0 * f2 + 1.0) + a.vel * (h * (f3 - 2.0 * f2 + f)) + b.pos * (-2.0 * f3 + 3.0 * f2) + b.vel * (h * (f3 - f2))
+}
+
+/// Velocity of the cubic Hermite interpolant of a step (derivative of [`hermite_pos`] in time).
+fn hermite_vel(a: &State, b: &State, h: f64, f: f64) -> Vec3 {
+    let f2 = f * f;
+    (a.pos - b.pos) * ((6.0 * f2 - 6.0 * f) / h) + a.vel * (3.0 * f2 - 4.0 * f + 1.0) + b.vel * (3.0 * f2 - 2.0 * f)
+}
+
+/// Fraction of the step `a` -> `b` (length `h`) where the vertical velocity of the cubic Hermite
+/// interpolant falls through zero (the apogee); needs a rising start (`a`) and a non-rising end.
+fn vertical_speed_zero(frame: &Frame, a: &State, b: &State, h: f64) -> f64 {
+    let vz = |f: f64| {
+        let p = hermite_pos(a, b, h, f);
+        hermite_vel(a, b, h, f).dot(frame.local(p).up)
+    };
+    bisect(|f| -vz(f), -vz(0.0))
 }
 
 /// Whether a step from height `h0` to `h1` reaches the ground: needs the bracket `h0 > 0 >= h1`.
@@ -1667,6 +1683,26 @@ mod tests {
         assert!((p.z - (100.0 + 40.0 * t_apo - 4.9 * t_apo * t_apo)).abs() < 1e-9, "{}", p.z);
         // End of the step would be 4.9 * (8 - 40/9.8)^2 below the apogee.
         assert!(b.pos.z < p.z - 50.0);
+    }
+
+    #[test]
+    fn apogee_time_is_the_zero_of_the_hermite_vertical_velocity() {
+        // Cubic height z(t) = 100 + 40 t - 3 t^2 - 0.2 t^3 (the step's Hermite interpolant is exact)
+        // over a step from t = 1 to 8: vz = 40 - 6 t - 0.6 t^2 is zero at t = (-6 + sqrt(132)) / 1.2;
+        // the linear interpolation of vz would give 3.93 s.
+        let st = |t: f64| State {
+            pos: Vec3::new(0.0, 0.0, 100.0 + 40.0 * t - 3.0 * t * t - 0.2 * t * t * t),
+            vel: Vec3::new(0.0, 0.0, 40.0 - 6.0 * t - 0.6 * t * t),
+            q: Quat::IDENTITY,
+            w: Vec3::ZERO,
+        };
+        let (a, b, h) = (st(1.0), st(8.0), 7.0);
+        let frame = Frame::new(&Earth::default(), &launch(90.0));
+        let f = vertical_speed_zero(&frame, &a, &b, h);
+        let t_apo = (-6.0 + 132f64.sqrt()) / 1.2;
+        assert!((1.0 + h * f - t_apo).abs() < 1e-12, "{} vs {t_apo}", 1.0 + h * f);
+        let z = |t: f64| 100.0 + 40.0 * t - 3.0 * t * t - 0.2 * t * t * t;
+        assert!((hermite_pos(&a, &b, h, f).z - z(t_apo)).abs() < 1e-9);
     }
 
     fn sample_sim<'a>(table: &'a AeroTable, motor: &'a Motor, wind: f64) -> Simulation<'a> {

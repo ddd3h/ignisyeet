@@ -10,6 +10,7 @@ use crate::math::{sym_eigen, Vec3};
 use crate::stl::Triangle;
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::f64::consts::PI;
 
 #[derive(Debug, Clone)]
@@ -164,6 +165,73 @@ struct Slice {
 
 const N_BINS: usize = 72;
 
+/// Edge topology of a triangle surface after welding vertices closer than 1e-7 of the bounding-box
+/// diagonal. Collapsed triangles (two welded vertices) are skipped.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct SurfaceCheck {
+    /// Distinct edges.
+    pub edges: usize,
+    /// Edges used by one triangle only (holes, open boundaries).
+    pub open: usize,
+    /// Edges shared by more than two triangles.
+    pub non_manifold: usize,
+}
+
+/// Fraction of open edges above which the surface counts as clearly not closed.
+const MAX_OPEN_EDGE_FRACTION: f64 = 0.01;
+
+pub fn surface_check(tris: &[Triangle]) -> SurfaceCheck {
+    let (mut lo, mut hi) = (Vec3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY), Vec3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY));
+    for v in tris.iter().flatten() {
+        lo = Vec3::new(lo.x.min(v.x), lo.y.min(v.y), lo.z.min(v.z));
+        hi = Vec3::new(hi.x.max(v.x), hi.y.max(v.y), hi.z.max(v.z));
+    }
+    let diag = (hi - lo).norm();
+    if !(diag.is_finite() && diag > 0.0) {
+        return SurfaceCheck::default();
+    }
+    let tol = 1e-7 * diag;
+    let mut ids: HashMap<[i64; 3], usize> = HashMap::new();
+    let mut id = |v: Vec3| {
+        let k = [((v.x - lo.x) / tol).round() as i64, ((v.y - lo.y) / tol).round() as i64, ((v.z - lo.z) / tol).round() as i64];
+        let n = ids.len();
+        *ids.entry(k).or_insert(n)
+    };
+    let mut edges: HashMap<(usize, usize), u32> = HashMap::new();
+    for t in tris {
+        let [a, b, c] = t.map(&mut id);
+        if a == b || b == c || a == c {
+            continue;
+        }
+        for (p, q) in [(a, b), (b, c), (c, a)] {
+            *edges.entry((p.min(q), p.max(q))).or_insert(0) += 1;
+        }
+    }
+    SurfaceCheck { edges: edges.len(), open: edges.values().filter(|&&n| n == 1).count(), non_manifold: edges.values().filter(|&&n| n > 2).count() }
+}
+
+/// An error for a clearly open surface (more than 1 % of the edges open), a warning for a few open or
+/// non-manifold edges.
+fn surface_findings(c: &SurfaceCheck) -> Result<Option<String>> {
+    if c.open as f64 > MAX_OPEN_EDGE_FRACTION * c.edges as f64 {
+        bail!(
+            "the STL surface is not closed: {} open edges of {} ({:.1} %): the geometry extraction needs a closed (watertight) surface; repair the mesh (close the holes) or export the rocket as a solid",
+            c.open,
+            c.edges,
+            100.0 * c.open as f64 / c.edges.max(1) as f64
+        );
+    }
+    let mut parts = Vec::new();
+    if c.open > 0 {
+        parts.push(format!("{} open", c.open));
+    }
+    if c.non_manifold > 0 {
+        parts.push(format!("{} non-manifold (shared by more than two triangles)", c.non_manifold));
+    }
+    Ok((!parts.is_empty())
+        .then(|| format!("the STL surface has {} edges of {}: small mesh defects, check the extracted geometry", parts.join(" and "), c.edges)))
+}
+
 pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
     if opt.n_slices < 20 {
         bail!("n_slices must be at least 20");
@@ -179,6 +247,7 @@ pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
     if area <= 0.0 {
         bail!("mesh has zero surface area");
     }
+    let surface_note = surface_findings(&surface_check(tris))?;
     c = c / area;
     let mut cov = [[0.0; 3]; 3];
     for t in tris {
@@ -228,6 +297,7 @@ pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
         bail!("could not determine body radius");
     }
     let mut warnings: Vec<String> = Vec::new();
+    warnings.extend(surface_note);
     warnings.extend(r_note);
 
     // Orientation. The fin set is the most reliable cue (fins sit in the aft part of the body);
@@ -559,6 +629,33 @@ mod tests {
 
     fn close(a: f64, b: f64, tol: f64) -> bool {
         (a - b).abs() <= tol
+    }
+
+    #[test]
+    fn open_surfaces_are_rejected_and_small_defects_warned() {
+        let mesh = SampleRocket::default().mesh();
+        let c = surface_check(&mesh);
+        assert!(c.edges > 1000 && c.open == 0 && c.non_manifold == 0, "{c:?}");
+        assert!(extract(&mesh, &ExtractOptions::default()).unwrap().warnings.is_empty());
+        // One triangle: every edge is open.
+        let one = vec![[Vec3::ZERO, Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.0, 1.0, 0.0)]];
+        assert_eq!(surface_check(&one), SurfaceCheck { edges: 3, open: 3, non_manifold: 0 });
+        let e = extract(&one, &ExtractOptions::default()).unwrap_err().to_string();
+        assert_eq!(
+            e,
+            "the STL surface is not closed: 3 open edges of 3 (100.0 %): the geometry extraction needs a closed (watertight) surface; repair the mesh (close the holes) or export the rocket as a solid"
+        );
+        // One missing triangle: a warning only.
+        let holed = &mesh[1..];
+        let c = surface_check(holed);
+        assert_eq!((c.open, c.non_manifold), (3, 0));
+        let g = extract(holed, &ExtractOptions::default()).unwrap();
+        assert!(g.warnings.iter().any(|w| w.starts_with("the STL surface has 3 open edges of")), "{:?}", g.warnings);
+        // A duplicated triangle makes its edges non-manifold.
+        let mut dup = mesh.clone();
+        dup.push(mesh[100]);
+        assert_eq!(surface_check(&dup).non_manifold, 3);
+        assert!(surface_findings(&surface_check(&dup)).unwrap().unwrap().contains("3 non-manifold"));
     }
 
     #[test]

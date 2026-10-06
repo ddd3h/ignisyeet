@@ -135,7 +135,7 @@ pub fn surface_gradient(mesh: &Mesh, mu: &[f64]) -> Vec<Vec3> {
 pub struct PotentialCoeffs {
     /// dCN/dalpha [1/rad].
     pub cna: f64,
-    /// Moment about the nose per radian of uniform incidence, `sum CNa_i x_i` [m/rad].
+    /// Moment about the nose per radian of uniform incidence, `sum(x dFz - z dFx)` [m/rad].
     pub m_alpha: f64,
     /// Normal force per unit nondimensional pitch rate about the nose [m/rad].
     pub n_rot: f64,
@@ -151,11 +151,16 @@ pub fn coefficients(real: &Mesh, pot: &Potential, beta: f64, s_ref: f64) -> Pote
         let vx = pot.vel[0][i];
         let cp_a = -2.0 * vx.dot(pot.vel[1][i]) / beta;
         let cp_r = -2.0 * vx.dot(pot.vel[2][i]) / beta;
+        // Force per unit Cp, `-n A / S`, and its nose moment `x Fz - z Fx` (the pitching moment of
+        // the complete `r x F`, in the sign convention `xcp = M / CN`): the axial pressure force on
+        // sloped surfaces (nose, boattail, fin edges) has a transverse lever arm.
         let fz = -p.normal.z * p.area / s_ref;
+        let fx = -p.normal.x * p.area / s_ref;
+        let mom = p.centroid.x * fz - p.centroid.z * fx;
         c.cna += cp_a * fz;
-        c.m_alpha += cp_a * fz * p.centroid.x;
+        c.m_alpha += cp_a * mom;
         c.n_rot += cp_r * fz;
-        c.m_rot += cp_r * fz * p.centroid.x;
+        c.m_rot += cp_r * mom;
     }
     c
 }

@@ -360,3 +360,47 @@ fn subsonic_large_angles_carry_the_fin_crossflow() {
         }
     }
 }
+
+/// Unit sphere centred at x = 1 (nose tip at the origin).
+fn sphere_mesh(na: usize) -> Mesh {
+    let st: Vec<f64> = (0..=na).map(|i| 1.0 - (PI * i as f64 / na as f64).cos()).collect();
+    let r: Vec<f64> = (0..=na).map(|i| (PI * i as f64 / na as f64).sin()).collect();
+    Mesh::body_of_revolution(&st, &r, 2 * na, 0.0).unwrap()
+}
+
+/// Every pressure force on a sphere points through its centre, so the moment about the nose tip is
+/// the centre's lever arm times the normal force: the nose moment must include the axial pressure
+/// force on the sloped surface (`x Fz - z Fx`), not only `x Fz`. Subsonic (linearised potential flow).
+#[test]
+fn subsonic_nose_moment_is_the_full_cross_product() {
+    let mesh = sphere_mesh(20);
+    let c = alpha_coeffs(&mesh, PI);
+    // the omitted term alone, for scale
+    let pot = solve_potential(&mesh);
+    let mut zfx: f64 = 0.0;
+    for (i, p) in mesh.panels.iter().enumerate() {
+        let cp_a = -2.0 * pot.vel[0][i].dot(pot.vel[1][i]);
+        zfx += cp_a * -p.normal.x * p.area / PI * p.centroid.z;
+    }
+    println!("sphere: CNa {:.4} M_alpha {:.4} (x = 1: {:.4}), z Fx term {zfx:.4}", c.cna, c.m_alpha, c.cna);
+    assert!(zfx.abs() > 0.1, "the axial-force term is significant on a sphere: {zfx}");
+    assert!((c.m_alpha - c.cna).abs() < 0.05 * zfx.abs(), "M_alpha {} vs CNa x_centre {}", c.m_alpha, c.cna);
+    assert!((c.m_rot - c.n_rot).abs() < 0.05 * zfx.abs().max(c.n_rot.abs()), "M_rot {} vs N_rot x_centre {}", c.m_rot, c.n_rot);
+}
+
+/// As above for the supersonic local-inclination methods: on a sphere the centre of pressure is the
+/// centre (x = 1), for the forces at any angle and for the derivatives (within the 2-3 % offset of
+/// flat panels: a panel normal through its centroid misses the centre slightly).
+#[test]
+fn supersonic_nose_moment_is_the_full_cross_product() {
+    let mesh = sphere_mesh(80);
+    let sp = supersonic::SupersonicPanels::new(&mesh, PI, None);
+    for deg in [5.0f64, 30.0, 60.0] {
+        let f = sp.forces(2.0, deg.to_radians(), 0.0);
+        assert!((f.mz / f.fz - 1.0).abs() < 0.03, "{deg}°: xcp {}", f.mz / f.fz);
+    }
+    let d = sp.derivatives(2.0, 2.0);
+    println!("sphere M=2: CNa {:.4} xcp(0) {:.4} N_rot {:.4} M_rot {:.4}", d[0], d[1] / d[0], d[2], d[3]);
+    assert!((d[1] / d[0] - 1.0).abs() < 0.03, "xcp(0) {}", d[1] / d[0]);
+    assert!((d[3] / d[2] - 1.0).abs() < 0.03, "M_rot {} N_rot {}", d[3], d[2]);
+}

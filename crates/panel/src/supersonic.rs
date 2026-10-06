@@ -307,7 +307,7 @@ pub struct Forces {
     pub fx: f64,
     /// Normal force along +z.
     pub fz: f64,
-    /// Sum of normal force times x (moment about the nose tip).
+    /// Pitching moment about the nose tip, `sum(x Fz - z Fx)`, positive with `fz` aft of the nose (`xcp = mz / fz`).
     pub mz: f64,
 }
 
@@ -368,7 +368,8 @@ impl SupersonicPanels {
             let w = -cp * self.area[i] / self.s_ref;
             f.fx += w * self.n[i].x;
             f.fz += w * self.n[i].z;
-            f.mz += w * self.n[i].z * self.c[i].x;
+            // nose moment of the complete `r x F` (`x Fz - z Fx`, sign convention `xcp = M / CN`)
+            f.mz += w * (self.n[i].z * self.c[i].x - self.n[i].x * self.c[i].z);
         }
         f
     }

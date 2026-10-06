@@ -6,7 +6,9 @@
 //! and anchored at `(0, 0)`; they and the CFD axial coefficient are interpolated with monotone
 //! cubics (PCHIP) in alpha. Beyond the highest solved angle the coefficients blend into the Barrowman
 //! model (see [`beyond_solved`]); the end slope is never continued. `CNa` and `xcp(0)` come from an
-//! odd cubic fit `c1 a + c3 a^3` through the two lowest positive solved angles. Failed cases
+//! odd cubic fit `c1 a + c3 a^3` through the two lowest positive solved angles, and the PCHIPs of
+//! `CN` and the moment start at `(0, 0)` with these slopes, so the slope, the damping sums and the
+//! tabulated rows describe one curve. Failed cases
 //! (`coeffs = None`) are simply left out of their column. Across Mach number every quantity is then
 //! interpolated with PCHIP on the table's Mach grid (edge values held), so a failed
 //! interior Mach column is bridged by its neighbours; a failed first or last Mach column cannot be
@@ -157,6 +159,15 @@ impl Pchip {
         Self { xs, ys, m }
     }
 
+    /// Sets the slope at the first node to `slope`; it must keep the sign of the first secant and
+    /// stay within three times it (monotonicity), as [`odd_slope`] does.
+    fn with_start_slope(mut self, slope: f64) -> Self {
+        if let Some(m0) = self.m.first_mut() {
+            *m0 = slope;
+        }
+        self
+    }
+
     pub(crate) fn eval(&self, x: f64, linear: bool) -> f64 {
         let n = self.xs.len();
         if x <= self.xs[0] {
@@ -209,16 +220,20 @@ fn column(mach: f64, pts: &[(f64, BodyCoeffs)], alphas: &[f64], model: &AeroMode
     if pos.is_empty() {
         return None;
     }
-    let mut xs = vec![0.0];
-    xs.extend(pos.iter().map(|p| p.0));
-    let cn_p = Pchip::new(xs.clone(), std::iter::once(0.0).chain(pos.iter().map(|p| p.1.cn)).collect());
-    let mom_p = Pchip::new(xs, std::iter::once(0.0).chain(pos.iter().map(|p| p.1.mom)).collect());
-    let ca_p = Pchip::new(pts.iter().map(|p| p.0).collect(), pts.iter().map(|p| p.1.ca).collect());
     let rad = |p: &&(f64, BodyCoeffs)| p.0.to_radians();
     let cn_pts: Vec<(f64, f64)> = pos.iter().map(|p| (rad(p), p.1.cn)).collect();
     let mom_pts: Vec<(f64, f64)> = pos.iter().map(|p| (rad(p), p.1.mom)).collect();
     let cna = odd_slope(&cn_pts);
     let m1 = odd_slope(&mom_pts);
+    // The normal force and nose moment between the nodes start from zero with these slopes, so the
+    // table's CNa, centre of pressure at zero angle and damping sums belong to the same curve as its
+    // CN and moment rows.
+    let mut xs = vec![0.0];
+    xs.extend(pos.iter().map(|p| p.0));
+    let per_deg = std::f64::consts::PI / 180.0;
+    let cn_p = Pchip::new(xs.clone(), std::iter::once(0.0).chain(pos.iter().map(|p| p.1.cn)).collect()).with_start_slope(cna * per_deg);
+    let mom_p = Pchip::new(xs, std::iter::once(0.0).chain(pos.iter().map(|p| p.1.mom)).collect()).with_start_slope(m1 * per_deg);
+    let ca_p = Pchip::new(pts.iter().map(|p| p.0).collect(), pts.iter().map(|p| p.1.ca).collect());
     let xcp0 = if cna.abs() > 1e-9 { m1 / cna } else { 0.0 };
     let edge = pos.last().unwrap();
     let (a_e, e) = (edge.0, edge.1);
@@ -468,6 +483,22 @@ mod tests {
         let (s, a) = apply_alpha_mode(&pos, AlphaMode::Single);
         assert_eq!(s[1].coeffs.unwrap().cn, 1.3);
         assert_eq!(a.len(), 1);
+    }
+
+    #[test]
+    fn zero_angle_slope_is_the_slope_of_the_normal_force_interpolant() {
+        // Normal force (0, 0), (2, 2), (4, 3) [deg]: the slope at zero must be the one of the curve
+        // the table rows are taken from, also for the nose moment (damping sums).
+        let m = model();
+        let pts: Vec<(f64, BodyCoeffs)> = [(0.0, 0.0), (2.0, 2.0), (4.0, 3.0)].iter().map(|&(a, c)| (a, BodyCoeffs { cn: c, ca: 0.3, mom: 1.1 * c })).collect();
+        let h = 1e-4;
+        let c = column(1.5, &pts, &[0.0, h, 2.0, 4.0], &m).unwrap();
+        let interp = (c.cn[1] / h).to_degrees();
+        assert!((c.cna - interp).abs() < 1e-3 * c.cna, "cna {} vs interpolant slope {interp}", c.cna);
+        assert!((c.xcp0 - 1.1).abs() < 1e-9, "xcp0 {}", c.xcp0);
+        assert!(((c.mom[1] / h).to_degrees() / interp - 1.1).abs() < 1e-6);
+        // The nodes stay on the data.
+        assert!((c.cn[2] - 2.0).abs() < 1e-12 && (c.cn[3] - 3.0).abs() < 1e-12);
     }
 
     #[test]

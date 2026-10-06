@@ -28,6 +28,7 @@ IgnisYeet ドキュメント
 
    intro
    usage
+   safety
    overview
    coordinates
    geometry

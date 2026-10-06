@@ -132,7 +132,10 @@ ref_height = 2.0
 exponent = 6.0             # power law v = v_ref (h/h_ref)^(1/n)
 roughness_length = 0.03    # log model [m]
 # ground_blend_height = 1.0  # cubic Hermite blend height near the ground [m] (power/log; > 0 and < ref_height)
-# profile = "wind.csv"     # profile model: CSV with columns altitude_m,speed,direction_deg
+# For flights above about 1 km use model = "profile" (tabular winds aloft, no power-law extrapolation):
+# set profile = "wind_profile_example.csv" and replace that file with a real forecast or sounding for the
+# launch day. A relative path is resolved from this config file's directory, so it means examples/wind_profile_example.csv.
+# profile = "wind_profile_example.csv"
 
 [sim]
 integrator = "rk4"         # "rk4" (fixed step dt) | "rk45" (adaptive 5th order) | "dop853" (adaptive 8th order)

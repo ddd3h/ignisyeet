@@ -406,6 +406,9 @@ impl Config {
         finite("launch.azimuth_deg", l.azimuth_deg)?;
         finite("launch.roll_deg", l.roll_deg)?;
         non_negative("recovery.cd_s", self.recovery.cd_s)?;
+        if self.recovery.enabled {
+            positive("recovery.cd_s (recovery.enabled = true)", self.recovery.cd_s)?;
+        }
         non_negative("recovery.delay", self.recovery.delay)?;
         self.recovery.validate()?;
 
@@ -780,6 +783,15 @@ mod tests {
             let e = parse(&sample.replacen(&old, line, 1)).err().unwrap_or_else(|| panic!("`{line}` was accepted")).to_string();
             assert!(e.contains(key), "`{line}`: {e}");
         }
+    }
+
+    #[test]
+    fn enabled_recovery_needs_a_positive_drag_area() {
+        let sample = include_str!("../../../examples/sample.toml");
+        let e = parse(&sample.replacen("cd_s = 3.5", "cd_s = 0.0", 1)).err().expect("cd_s = 0 accepted").to_string();
+        assert!(e.contains("recovery.cd_s"), "{e}");
+        let off = sample.replacen("cd_s = 3.5", "cd_s = 0.0", 1).replacen("enabled = true", "enabled = false", 1);
+        parse(&off).unwrap();
     }
 
     #[test]

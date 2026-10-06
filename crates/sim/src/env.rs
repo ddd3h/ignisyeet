@@ -36,11 +36,20 @@ pub enum WindModel {
 #[serde(deny_unknown_fields, default)]
 pub struct WindConfig {
     pub model: WindModel,
-    /// Speed at the reference height [m/s].
+    /// Speed at the reference height [m/s] (constant, power and log models; ignored by the
+    /// profile model, whose speeds come from the CSV).
     pub speed: f64,
-    /// Direction the wind blows FROM, clockwise from north [deg].
+    /// Direction the wind blows FROM, clockwise from north [deg] (ignored by the profile model).
     pub direction_deg: f64,
     pub ref_height: f64,
+    /// Profile model: mean speed [m/s] the profile is scaled to (`k = v / W`, see
+    /// [`Wind::with_speed_direction`]). None keeps the CSV speeds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_mean_speed: Option<f64>,
+    /// Profile model: direction [deg] the profile's mean wind vector is rotated to (every row is
+    /// rotated by `psi - Psi`). None keeps the CSV directions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub profile_mean_direction_deg: Option<f64>,
     /// Power-law exponent n (power model).
     pub exponent: f64,
     /// Surface roughness length [m] (log model).
@@ -65,6 +74,8 @@ impl Default for WindConfig {
             speed: 4.0,
             direction_deg: 0.0,
             ref_height: 2.0,
+            profile_mean_speed: None,
+            profile_mean_direction_deg: None,
             exponent: 6.0,
             roughness_length: 0.03,
             ground_blend_height: 1.0,
@@ -93,8 +104,10 @@ impl ProfilePoint {
 ///
 /// For the `profile` model `speed` and `direction_deg` are not taken from the configuration but
 /// are the profile's representative wind: the mean speed over the profile's altitude range and
-/// the direction of its altitude-averaged wind vector (see [`Wind::profile_mean`]). They are what
-/// the summary reports and what [`Wind::with_speed_direction`] changes.
+/// the direction of its altitude-averaged wind vector (see [`Wind::profile_mean`]), or the
+/// targets `profile_mean_speed` / `profile_mean_direction_deg` of the configuration, to which
+/// the profile is then scaled and rotated. They are what the summary reports and what
+/// [`Wind::with_speed_direction`] changes.
 #[derive(Debug, Clone)]
 pub struct Wind {
     pub model: WindModel,
@@ -198,7 +211,24 @@ impl Wind {
                 let (speed, direction_deg) = w.profile_mean();
                 w.speed = speed;
                 w.direction_deg = direction_deg;
-                return Ok(w);
+                if c.profile_mean_speed.is_none() && c.profile_mean_direction_deg.is_none() {
+                    return Ok(w);
+                }
+                let target = c.profile_mean_speed.unwrap_or(speed);
+                if !(target.is_finite() && target >= 0.0) {
+                    bail!("wind.profile_mean_speed must be a finite number >= 0, found {target}");
+                }
+                let dir = c.profile_mean_direction_deg.unwrap_or(direction_deg);
+                if !(dir.is_finite() && (0.0..=360.0).contains(&dir)) {
+                    bail!("wind.profile_mean_direction_deg must be between 0 and 360 degrees, found {dir}");
+                }
+                if speed < CALM_PROFILE_SPEED {
+                    bail!(
+                        "wind profile is calm (mean speed {speed:.3} m/s): it cannot be scaled to wind.profile_mean_speed / rotated to wind.profile_mean_direction_deg"
+                    );
+                }
+                // The same scaling and rotation as a wind-grid case with this speed and direction.
+                return w.with_speed_direction(target, dir);
             }
         }
         Ok(Self::with_profile(c, Vec::new()))
@@ -770,6 +800,57 @@ mod tests {
         // the mean of the rescaled profile is the requested one
         let (m2, _) = d.profile_mean();
         assert!((m2 - 2.0 * mean).abs() < 1e-9, "{m2}");
+    }
+
+    #[test]
+    fn profile_mean_targets_scale_and_rotate_like_a_wind_grid_case() {
+        let csv = "altitude_m,speed,direction_deg\n0,2,270\n100,6,270\n200,4,350\n300,4,10\n";
+        let base = profile_wind(csv, cfg(WindModel::Profile));
+        let (mean, _) = base.profile_mean();
+        let target = WindConfig { profile_mean_speed: Some(15.6), profile_mean_direction_deg: Some(123.0), ..cfg(WindModel::Profile) };
+        let w = profile_wind(csv, target);
+        assert_eq!((w.speed, w.direction_deg), (15.6, 123.0));
+        assert!((w.profile_scale - 15.6 / mean).abs() < 1e-12);
+        // bit for bit the wind of the wind-grid case with the same speed and direction
+        let grid = base.with_speed_direction(15.6, 123.0).unwrap();
+        for i in 0..400 {
+            let h = i as f64 - 20.0;
+            assert_eq!(w.at(h), grid.at(h), "{h}");
+        }
+        // dispersion cases from the targeted wind equal those of the plain profile
+        let (a, b) = (w.with_speed_direction(9.0, 45.0).unwrap(), base.with_speed_direction(9.0, 45.0).unwrap());
+        for h in [0.0, 50.0, 150.0, 250.0, 500.0] {
+            assert!((a.at(h) - b.at(h)).norm() < 1e-12, "{h}");
+        }
+        // only the direction: the speeds stay those of the CSV
+        let d = profile_wind(csv, WindConfig { profile_mean_direction_deg: Some(90.0), ..cfg(WindModel::Profile) });
+        assert_eq!(d.direction_deg, 90.0);
+        assert!((d.speed - mean).abs() < 1e-12 && (d.profile_scale - 1.0).abs() < 1e-15);
+        // wind.speed and wind.direction_deg do not change a profile
+        let ignored = profile_wind(csv, WindConfig { speed: 30.0, direction_deg: 10.0, ..cfg(WindModel::Profile) });
+        assert_eq!((ignored.speed, ignored.direction_deg), (base.speed, base.direction_deg));
+    }
+
+    #[test]
+    fn profile_mean_targets_are_checked() {
+        let path = std::env::temp_dir().join(format!("ignisyeet_wind_target_{}.csv", std::process::id()));
+        std::fs::write(&path, "altitude_m,speed,direction_deg\n0,0,270\n100,0,270\n").unwrap();
+        let c = |speed, dir| WindConfig {
+            model: WindModel::Profile,
+            profile: Some(path.clone()),
+            profile_mean_speed: speed,
+            profile_mean_direction_deg: dir,
+            ..Default::default()
+        };
+        let calm = Wind::from_config(&c(Some(5.0), None)).unwrap_err().to_string();
+        assert!(calm.contains("calm") && calm.contains("profile_mean_speed"), "{calm}");
+        assert!(Wind::from_config(&c(None, None)).is_ok());
+        std::fs::write(&path, "altitude_m,speed,direction_deg\n0,3,270\n100,5,270\n").unwrap();
+        assert!(Wind::from_config(&c(Some(-1.0), None)).unwrap_err().to_string().contains("profile_mean_speed"));
+        assert!(Wind::from_config(&c(None, Some(400.0))).unwrap_err().to_string().contains("profile_mean_direction_deg"));
+        let zero = Wind::from_config(&c(Some(0.0), None)).unwrap();
+        assert_eq!(zero.at(50.0).norm(), 0.0);
+        std::fs::remove_file(&path).ok();
     }
 
     #[test]

@@ -1918,7 +1918,7 @@ fn write_monte_carlo_csv(path: &Path, rows: &[sim::dispersion::McRow]) -> Result
     let mut f = std::io::BufWriter::new(std::fs::File::create(path)?);
     writeln!(
         f,
-        "sample,descent,status,thrust_scale,burn_time_scale,dry_mass,cg,cn_scale,ca_scale,elevation_deg,azimuth_deg,wind_speed_delta,wind_direction_deg_delta,parachute_cd_s_scale,\
+        "sample,descent,status,thrust_scale,burn_time_scale,dry_mass,cg,cn_scale,ca_scale,elevation_deg,azimuth_deg,roll_deg,wind_speed_delta,wind_direction_deg_delta,parachute_cd_s_scale,\
 wind_speed,wind_direction_deg,landing_east,landing_north,landing_lat,landing_lon,landing_distance,landing_time,landing_speed,apogee,apogee_time,max_mach,rail_exit_speed,min_stability_cal,\
 thrust_misalignment_y_deg,thrust_misalignment_z_deg,thrust_offset_y,thrust_offset_z,fin_cant_deg,cg_lateral_y,cg_lateral_z,cl_scale,clp_scale,stable"
     )?;
@@ -1926,7 +1926,7 @@ thrust_misalignment_y_deg,thrust_misalignment_z_deg,thrust_offset_y,thrust_offse
         let p = &row.perturbation;
         write!(
             f,
-            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},",
             row.sample,
             descent_name(row.descent),
             if row.result.is_ok() { "ok" } else { "failed" },
@@ -1938,6 +1938,7 @@ thrust_misalignment_y_deg,thrust_misalignment_z_deg,thrust_offset_y,thrust_offse
             p.ca_scale,
             p.elevation_deg,
             p.azimuth_deg,
+            p.roll_deg,
             p.wind_speed,
             p.wind_direction_deg,
             p.parachute_cd_s_scale
@@ -2049,7 +2050,7 @@ mod tests {
             rows.push(sim::dispersion::McRow {
                 sample: 0,
                 descent: Descent::Ballistic,
-                perturbation: sim::dispersion::Perturbation { cl_scale: 0.25, ..Default::default() },
+                perturbation: sim::dispersion::Perturbation { cl_scale: 0.25, roll_deg: 1.5, ..Default::default() },
                 result,
             });
         }
@@ -2065,6 +2066,9 @@ mod tests {
         assert_eq!(col, lines[0].len() - 3);
         assert_eq!(lines[0][lines[0].len() - 1], "stable");
         assert_eq!(lines[1][col], "0.25");
+        // The roll change of the rail tilt follows the azimuth.
+        let roll = lines[0].iter().position(|c| *c == "roll_deg").unwrap();
+        assert_eq!((lines[0][roll - 1], lines[1][roll]), ("azimuth_deg", "1.5"));
     }
 
     fn sample_summary() -> sim::Summary {

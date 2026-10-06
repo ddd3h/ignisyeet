@@ -939,7 +939,7 @@ mod tests {
             } else {
                 Ok(Summary { landing_east: -50.0 + 20.0 * i as f64, landing_north: 30.0 - 7.0 * i as f64, ..summary() })
             };
-            rows.push(McRow { sample: i, descent: Descent::Parachute, perturbation: Perturbation::default(), result });
+            rows.push(McRow { sample: i, descent: Descent::Parachute, perturbation: Perturbation { roll_deg: 0.5 * i as f64, ..Default::default() }, result });
         }
         let pts: Vec<(f64, f64)> = rows.iter().filter_map(|r| r.result.as_ref().ok()).map(|s| (s.landing_east, s.landing_north)).collect();
         let landing = sim::dispersion::landing_statistics(&pts);
@@ -1062,6 +1062,7 @@ mod tests {
         let lm = load_monte_carlo(&dir, H).unwrap().unwrap();
         assert_eq!(lm.rows.len(), 6);
         assert!(lm.rows[4].result.is_err() && lm.rows[5].result.is_ok());
+        assert!(lm.rows.iter().enumerate().all(|(i, r)| r.perturbation.roll_deg == 0.5 * i as f64));
         assert_eq!(lm.stats.len(), 1);
         let (a, b) = (&lm.stats[0], &mc_summary.descents[0]);
         assert!(

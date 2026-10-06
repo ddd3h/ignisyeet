@@ -73,9 +73,9 @@ CSV は、1 行目が見出し、2 行目以降が格子点 1 つにつき 1 行
      - 無次元
      - ロール減衰微係数 :math:`C_{lp}=\partial C_l/\partial\hat p`\ （:math:`\hat p=pd/(2V)`。負）
 
-既定の格子は、Mach 数が :math:`M=0,0.02,\dots,3.0`\ （151 点）、全迎角が :math:`\alpha_t=0^\circ,1^\circ,\dots,30^\circ`\ （31 点）である
+既定の格子は、Mach 数が :math:`M=0,0.02,\dots,3.0`\ （151 点）、全迎角が :math:`\alpha_t=0^\circ,1^\circ,\dots,90^\circ`\ （91 点）である
 （設定 ``aero.mach_min`` ``mach_max`` ``mach_step`` と ``alpha_max_deg`` ``alpha_step_deg``。:ref:`[aero] の設定項目 <sec-config-aero>`）。
-飛翔計算は 0 から 90° の :math:`\alpha_t'` で表を引き、表の範囲を超える迎角は外挿する（:ref:`sec-aero-table`、:ref:`sec-aero-interp`）。
+飛翔計算は 0 から 90° の :math:`\alpha_t'` で表を引くので、既定の表では範囲を超えない。``alpha_max_deg`` を小さくした表で範囲を超えた迎角は外挿し、その結果は使えないもの（終了ステータス 3）とする（:ref:`sec-aero-table`、:ref:`sec-aero-interp`）。
 
 .. _sec-file-general:
 
@@ -586,14 +586,14 @@ KML は、このファイルのハッシュが現在の設定と一致すると�
 ``dispersion_summary.json``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``mode = "monte_carlo"`` が書く。全体の項目はサンプル数 ``samples``、乱数の種 ``seed``、降下モードごとの配列 ``descents``、設定のハッシュ ``config_hash``\ （モンテカルロについて、``mode`` と風の格子の設定を除いた設定から計算する）、飛翔の設定のハッシュ ``flight_config_hash``\ （``summary.json`` の ``config_hash`` と同じ計算）、警告の配列 ``warnings``、係数表の範囲外の引き出しの集計 ``aero_table_range``\ （項目は :ref:`sec-file-summary` と同じ。失敗したサンプルは数えない）、
+``mode = "monte_carlo"`` が書く。全体の項目はサンプル数 ``samples``、乱数の種 ``seed``、標準正規乱数を切る範囲 ``truncate_sigma``\ （``dispersion.monte_carlo.truncate_sigma`` の値。切らないときは ``null``。:ref:`sec-mc`）、降下モードごとの配列 ``descents``、設定のハッシュ ``config_hash``\ （モンテカルロについて、``mode`` と風の格子の設定を除いた設定から計算する）、飛翔の設定のハッシュ ``flight_config_hash``\ （``summary.json`` の ``config_hash`` と同じ計算）、警告の配列 ``warnings``、係数表の範囲外の引き出しの集計 ``aero_table_range``\ （項目は :ref:`sec-file-summary` と同じ。失敗したサンプルは数えない）、
 公称の飛翔の最小の静安定余裕 ``static_margin_min_cal`` [cal] と、それが 0 以上かを示す ``stable``\ （風の格子の ``dispersion_meta.json`` と同じ。公称の飛翔が失敗したときは ``null``）、
 降下モードごとの静的に不安定なサンプルの数 ``unstable`` と最小の静安定余裕 ``unstable_min_static_margin_cal``\ （風の格子の ``dispersion_meta.json`` と同じ。失敗したサンプルは余裕を持たないので、数に入らない）、
 ``stability_unknown_runs`` と ``stability_unknown``、横向きに落ちた弾道落下のサンプルの数 ``broadside_runs``、公称の風 ``wind_model``、``wind_speed``、``wind_direction_deg``、``wind_scale``\ （いずれも風の格子の ``dispersion_meta.json`` と同じ）である。
 モンテカルロの風速と風向の揺らぎは、この公称の風の周りに引く。
 ``descents`` の各要素は、降下モード ``descent``、着地したサンプル数 ``n``、失敗数 ``failed``、そのうち着地しなかった数 ``not_landed``、着地点の平均と共分散行列、
 :math:`1\sigma` と :math:`3\sigma` の誤差楕円（長半径、短半径、長軸の方位）、最大着地距離 ``max_landing_distance`` とそのサンプル番号、
-着地距離のパーセンタイル ``landing_distance_p50`` ``landing_distance_p90`` ``landing_distance_p99``\ （着地したサンプルについて、線形補間で求める）、頂点高度の平均と標準偏差を持つ（:ref:`sec-mc`）。
+着地距離のパーセンタイル ``landing_distance_p50`` ``landing_distance_p90`` ``landing_distance_p99`` ``landing_distance_p999``\ （P99.9。着地したサンプルについて、線形補間で求める）、頂点高度の平均と標準偏差を持つ（:ref:`sec-mc`）。
 失敗したサンプルは、どの統計にも入らない。``failed`` が 1 以上のとき、``complete`` は ``false`` で、統計は着地したサンプルだけを表し、真のばらつきはこれより大きいか不明である。
 同じとき ``max_landing_distance_is_lower_bound`` が ``true`` になり、最大着地距離は下限である。
 着地点の平均は着地したサンプルが 1 つ以上、標準偏差・共分散・誤差楕円・頂点高度の標準偏差は 2 つ以上のとき求まる。サンプルが足りない統計は ``null`` である

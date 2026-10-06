@@ -43,7 +43,8 @@
        パーセンタイルの線形補間（``percentiles_interpolate``）、着地しないサンプルが統計を不完全にし最大着地距離を下限にすること（``non_landing_samples_make_statistics_incomplete``）、
        短い ``max_time`` で着地なしの要約になること（``short_max_time_gives_unlanded_summaries``）、6 項目の標準偏差の検査（``new_monte_carlo_sigmas_are_validated``）、
        レールの傾きの回転（``rail_tilt_rotates_the_axis``）、鉛直のレールでの等方性（``rail_tilt_spread_is_isotropic_for_a_vertical_rail``）、
-       範囲外の射角のサンプルの失敗（``rail_elevation_outside_the_valid_range_fails_the_sample``）、すべての降下モードの静安定余裕（``every_dispersion_run_reports_its_stability``）
+       範囲外の射角のサンプルの失敗（``rail_elevation_outside_the_valid_range_fails_the_sample``）、すべての降下モードの静安定余裕（``every_dispersion_run_reports_its_stability``）、
+       既定の乱数が変わらないこと（200 サンプルの和の固定値との比較）と、``truncate_sigma`` が標準正規乱数を切り詰め、内側の値を変えないこと（``default_draws_are_unchanged_and_truncation_clips_the_standard_normal``）、P99.9 の補間
    * - ``ignisyeet``\ （``cli``）
      - 設定ファイルの読み込み（ロール・慣性テンソル・推力の傾き・``table_kind`` の項目を含む）、未知のセクションの拒否、モード間の整合性、外部係数表の読み込み、
        ロール項のない外部表への補完、
@@ -65,11 +66,17 @@
        実行のハッシュが外部の係数表の付属 JSON を含むこと（``run_hash_covers_the_aero_table_sidecar``）、既定のモータ位置の検査（``default_motor_position_is_checked_against_the_body``）、
        ランチャ離脱の風による迎角の警告が、風の格子の最大の風速とモンテカルロの公称の風速 + 2 :math:`\sigma` を使うこと（``rail_exit_wind_warning_uses_the_reference_speed_of_the_study``）、
        失敗した ``sim`` が古い結果の代わりに失敗の印を残すこと（``a_failed_sim_leaves_a_failure_marker_not_the_old_results``）、着地したサンプルが 1 つのときの誤差楕円の表示（``monte_carlo_panel_with_one_landed_sample_has_no_nan_ellipses``）、
-       一般表の展開を数える格子の上限（``general_table_expansion_counts_for_every_method_that_expands``）、KML の説明欄の CDATA を二重にエスケープしないこと
+       一般表の展開を数える格子の上限（``general_table_expansion_counts_for_every_method_that_expands``）、KML の説明欄の CDATA を二重にエスケープしないこと、
+       ``truncate_sigma`` の読み込みと検査（``monte_carlo_truncation_key``）、``aero.panel`` の検査と ``transonic[1]`` の上限（``panel_options_are_validated``）、
+       格子の上限が片側の迎角の格子を数えること（``aero_grid_cap_counts_the_one_sided_alpha_grid``）、``[output]`` の ``dir`` の既定値と 0 サンプルの拒否（``output_without_dir_and_zero_monte_carlo_samples``）、
+       パネル法と CAD 面の CFD でフィンの厚さが正であること（``panel_and_cad_cfd_need_fins_with_thickness``）、機体より長いモータのエラー（``default_motor_position_is_checked_against_the_body``）、
+       ランチャ離脱の風の警告が風のプロファイルを基準の風速に拡大すること（``rail_exit_wind_warning_scales_a_wind_profile_to_the_reference_speed``）、
+       Makefile が字下げ、引用符付きのキー、空白を含む見出しの ``[output] dir`` を読むこと（``makefile_reads_indented_and_quoted_output_dirs``。``make`` がない環境では省く）
    * - ``python/test_plot.py``
      - 作図の見出しの帯と印（``uv run --project python python -m unittest discover -s python`` で実行する）。問題のない落下分散に帯がないこと、
        不安定・判定できない・迎角の範囲外の結果が ``RESULTS NOT USABLE``、失敗と着地しないケースが ``INCOMPLETE``、横向きの落下が ``CAUTION`` になること、
-       風の格子とモンテカルロの図で不安定、判定できない、横向きに落ちた着地点に印が付き、飛翔経路の図に帯が出ること（``Usability`` の各テスト）
+       風の格子とモンテカルロの図で不安定、判定できない、横向きに落ちた着地点に印が付き、飛翔経路の図に帯が出ること（``Usability`` の各テスト）、
+       モンテカルロの図に P99.9 が出ること、風の格子の線が横向きのケースで切れて印は残ること、飛翔経路の図の余裕の欄がランチャを離れたあとの圧力中心と重心の距離であること
    * - ``sim::geo``
      - 測地座標と ECEF の往復変換、ENU の北方向 1 km の緯度差
    * - ``sim::flight``
@@ -222,9 +229,9 @@
    a_0 = \frac{F}{m}-g_0,\qquad v_b = a_0t_b,\qquad
    z_{\mathrm{apo}} = \frac12a_0t_b^2 + \frac{v_b^2}{2g_0}
 
-である。:math:`F=300` N、:math:`m=10` kg、:math:`t_b=2` s（:math:`z_{\mathrm{apo}}\approx 1.36` km）で計算し、
-IgnisYeet の結果との差が 0.2 % 未満であることを確かめている。
-差の大部分は、IgnisYeet が重力の高度変化（:eq:`eq-gravity`、1.4 km で約 0.04 %）を含めていることによる。
+である。:math:`F=300` N、:math:`m=10` kg、:math:`t_b=2` s（:math:`a_0=20.19\ \mathrm{m/s^2}`、:math:`v_b=40.39` m/s、:math:`z_{\mathrm{apo}}\approx 123.5` m）で計算し、
+IgnisYeet の結果との差が 0.2 % 未満であることを確かめている（テストの許容）。
+実際の差は 0.002 %（123.551 m と 123.549 m）で、IgnisYeet が重力の高度変化（:eq:`eq-gravity` の逆 2 乗則。100 m あたり約 0.003 % の減少）を含めていることによる。重力を一定にすると、差は :math:`10^{-12}` 未満になる。
 落下後の着地点が射点から動かないこと（横方向の誤差が :math:`10^{-6}` m 未満）も確かめている。
 
 風に対する応答
@@ -285,15 +292,15 @@ ECEF 座標での積分
      - 44560
      - 813
    * - サンプル・弾道
-     - :math:`2.1\times10^{-5}`
-     - 0.0006
+     - :math:`2.7\times10^{-5}`
+     - 0.0010
      - 128280
-     - 2541
+     - 2487
    * - サンプル・西風 5 m/s・パラシュート
-     - 0.0004
-     - 0.0025
-     - 791888
-     - 12640
+     - :math:`4.6\times10^{-5}`
+     - 0.0005
+     - 791928
+     - 12652
 
 .. _sec-verify-events:
 

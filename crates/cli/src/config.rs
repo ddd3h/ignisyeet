@@ -439,6 +439,9 @@ impl Config {
         if a.n_slices < MIN_SLICES {
             bail!("aero.n_slices = {} is too small: the geometry extraction needs at least {MIN_SLICES} slices", a.n_slices);
         }
+        if a.n_slices > MAX_SLICES {
+            bail!("aero.n_slices = {} is too large (at most {MAX_SLICES})", a.n_slices);
+        }
         non_negative("aero.fin_threshold", a.fin_threshold)?;
 
         let w = &self.wind;
@@ -533,6 +536,19 @@ impl Config {
         if self.dispersion.directions == 0 {
             bail!("dispersion.directions must be at least 1");
         }
+        let d = &self.dispersion;
+        if d.directions > MAX_DIRECTIONS {
+            bail!("dispersion.directions = {} is too large (at most {MAX_DIRECTIONS})", d.directions);
+        }
+        if d.wind_speeds.len() > MAX_WIND_SPEEDS {
+            bail!("dispersion.wind_speeds lists {} speeds (at most {MAX_WIND_SPEEDS})", d.wind_speeds.len());
+        }
+        if d.wind_speeds.len() * d.directions > MAX_WIND_GRID_CASES {
+            bail!("the wind grid would have {} cases (wind_speeds x directions; at most {MAX_WIND_GRID_CASES})", d.wind_speeds.len() * d.directions);
+        }
+        if d.monte_carlo.samples > MAX_MC_SAMPLES {
+            bail!("dispersion.monte_carlo.samples = {} is too large (at most {MAX_MC_SAMPLES})", d.monte_carlo.samples);
+        }
         if self.aero.method == AeroMethod::Table && self.aero.table.is_none() {
             bail!("aero.table is required when aero.method = \"table\"");
         }
@@ -606,6 +622,11 @@ const MAX_TOL: f64 = 1e-3;
 const MACH_LIMIT: f64 = 10.0;
 /// Largest accepted number of aero table grid points.
 const MAX_AERO_GRID_POINTS: f64 = 1e6;
+const MAX_DIRECTIONS: usize = 360;
+const MAX_WIND_SPEEDS: usize = 100;
+const MAX_WIND_GRID_CASES: usize = 100_000;
+const MAX_MC_SAMPLES: usize = 1_000_000;
+const MAX_SLICES: usize = 10_000;
 /// Fewest accepted `aero.n_slices` (the geometry extraction requires this many).
 const MIN_SLICES: usize = 20;
 
@@ -854,7 +875,7 @@ mod tests {
         assert!(e.contains("sim.rtol") && e.contains("too loose"), "{e}");
         let e = bad("atol = 1e-6", "atol = 1.0");
         assert!(e.contains("sim.atol"), "{e}");
-        let e = bad("alpha_max_deg = 30.0", "alpha_max_deg = 1e9");
+        let e = bad("alpha_max_deg = 90.0", "alpha_max_deg = 1e9");
         assert!(e.contains("alpha_max_deg"), "{e}");
         let e = bad("mach_max = 3.0", "mach_max = 1000");
         assert!(e.contains("mach_max"), "{e}");
@@ -862,6 +883,21 @@ mod tests {
         assert!(e.contains("grid"), "{e}");
         let e = bad("n_slices = 600", "n_slices = 5");
         assert!(e.contains("n_slices") && e.contains("20"), "{e}");
+    }
+
+    #[test]
+    fn dispersion_and_slice_counts_have_upper_bounds() {
+        let sample = include_str!("../../../examples/sample.toml");
+        let bad = |from: &str, to: &str| parse(&sample.replacen(from, to, 1)).unwrap_err().to_string();
+        assert!(bad("directions = 8", "directions = 1000000000").contains("dispersion.directions"));
+        assert!(bad("directions = 8", "directions = 361").contains("at most 360"));
+        let many = format!("wind_speeds = [{}]", vec!["1.0"; 101].join(", "));
+        assert!(bad("wind_speeds = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]", &many).contains("dispersion.wind_speeds"));
+        assert!(bad("samples = 1000", "samples = 2000000").contains("monte_carlo.samples"));
+        assert!(bad("n_slices = 600", "n_slices = 100000").contains("aero.n_slices"));
+        let grid = format!("wind_speeds = [{}]\ndirections = 360", vec!["1.0"; 100].join(", "));
+        let t = sample.replacen("wind_speeds = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]", &grid, 1).replacen("directions = 8", "", 1);
+        parse(&t).unwrap();
     }
 
     #[test]

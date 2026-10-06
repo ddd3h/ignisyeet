@@ -28,7 +28,11 @@
 
    * - ``aero::model``
      - 胴体の :math:`C_{N\alpha}=2`、Barrowman の手計算との一致、遷音速での連続性、抗力の妥当な範囲、軸力倍率の形、
-       ロール項の符号・フィン枚数への比例・ストリップ積分との一致・遷音速での連続性
+       ロール項の符号・フィン枚数への比例・ストリップ積分との一致・遷音速での連続性。
+       大迎角のフィンの法線力が、付着流の値と横流れの値が交わる Mach 数（矩形フィン、約 0.59）の前後と、:math:`C_{N,1}=C_{N,90}` と付着流の傾き 0 を通るパラメータの変化で連続であること
+       （``large_alpha_fin_force_is_continuous_where_the_attached_value_meets_the_crossflow_value``、``crossflow_blend_is_continuous_in_its_parameters``）、
+       サンプル機体が Mach 0 から 3 まで指数関数の領域にとどまること（``sample_rocket_stays_in_the_exponential_regime_of_the_crossflow_blend``）、
+       超音速のフィンの圧力中心が小さい縦横比でも Mach 数について連続で、:math:`\kappa` が単調、:math:`[0.25,0.5]` の中、:math:`\mathit{AR}\,\beta=0.84` と 1.2 で :math:`C^1` であること（``supersonic_fin_cp_is_continuous_for_small_aspect_ratio``）
 
    * - ``panel``
      - 影響係数（数値積分との一致、立体角、遠方近似）、球・長球の圧力分布、オジブ-円筒と円すい-円筒の :math:`C_{N\alpha}`、矩形翼と Helmbold の式、
@@ -39,13 +43,13 @@
        軸対称表の展開との一致と一般表の保存・読み込み、迎角・横滑り角の定義と格子。
        Mach 数が線形外挿の設定でも端の値で一定になり、範囲外の引き出しを数えること（``mach_is_clamped_even_with_linear_extrapolation``）、
        迎角の外挿値が符号と範囲（:math:`C_{lp}\le0`、:math:`C_{N\alpha}\ge0`、減衰の和 :math:`\ge0`、圧力中心が機体の内側）に収まり、格子外の引き出しを数えること（``extrapolated_alpha_is_bounded_and_counted``）、
-       :math:`C_{lp}` が正にならず :math:`C_{l\delta}` が符号を保つこと（``clp_never_positive_and_cl_delta_keeps_sign``）
+       :math:`C_{lp}` が正にならず :math:`C_{l\delta}` が符号を保つこと（``clp_never_positive_and_cl_delta_keeps_sign``）、一般表の外挿でロールの強制項 ``cl`` と ``cl_delta`` が端の値の符号を保つこと（``general_extrapolation_keeps_the_sign_of_the_roll_forcing``）、180° までの表の 90° を超える行（逆流の圧力中心）を飛翔の引き出しが読まず、:math:`180^\circ-\alpha` の前向きの係数を使うこと（``rows_above_90_deg_are_not_read_by_the_flight_lookups``）
 
    * - ``cfd``\ （SU2 を使わないテスト）
      - 早期終了の判定が、横滑りのケースでは CFy と CMz を、ロール減衰のケースでは CMx を見ること（``roll_and_sideslip_cases_check_their_own_coefficients``）、
        対称な形状で :math:`C_Y,C_l,C_n`（:math:`\beta=0`）と :math:`C_Z,C_l,C_m`（:math:`\alpha=0`、軸対称）が厳密に 0 になること（``symmetry_plane_noise_is_removed_for_symmetric_shapes``）、
        STL の壁面ではフィン縁の抗力を足さないこと（``hybrid_terms``）、
-       CFD の表が Mach 数の方向に端の値を保つこと（``extrapolates_in_alpha_and_mach``）、SU2 の版の読み取りと 8.3 系以外の判定（``su2_version_warning``）、必要なツールの有無の判定（``all_required_present_follows_the_options``）
+       CFD の表が Mach 数の方向に端の値を保ち、解いた最大の迎角を超えると部品積み上げ法へ移り、その 2 倍の迎角（90° まで）から部品積み上げ法の法線力と圧力中心になること（``blends_into_barrowman_beyond_the_solved_angles_and_holds_mach``）、解いた範囲の端で圧力中心が速く前へ動く列でも、それより大きい迎角の圧力中心が機体の前方へ動き続けないこと（``a_forward_moving_end_slope_does_not_move_the_cp_ahead_of_the_body``）、SU2 の版の読み取りと 8.3 系以外の判定（``su2_version_warning``）、必要なツールの有無の判定（``all_required_present_follows_the_options``）
 
 各節の内容は次のとおりである。
 

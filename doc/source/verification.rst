@@ -152,6 +152,10 @@
   平均風速が 0.1 m/s 未満の表は、風の格子とモンテカルロ解析（風速の標準偏差が 0 でないとき）でエラーになる（単一の飛翔は拡大しないので実行できる）。
   モンテカルロ解析の拡大率は :math:`(W+\delta)/W` に一致する。
   見出しの誤り、高度が増加しない行、負の高度の行（行を示して、射点より低い行を捨てて 0 m の行を加えるよう促すエラー）、データのない表、数値でない行、``wind.profile`` の欠落、存在しないファイルはいずれもエラーになる。
+* **平均風の目標**\ （``profile_mean_targets_scale_and_rotate_like_a_wind_grid_case``、``profile_mean_targets_are_checked``）：``profile_mean_speed = 15.6``、``profile_mean_direction_deg = 123`` の表は、
+  平均風速と風向がその値になり、拡大率が :math:`15.6/W` で、:math:`-20` から 379 m の各高度の風が、同じ風速と風向の風の格子のケースの風とビット単位で一致する。
+  風向だけを指定すると拡大率は 1 のまま、``wind.speed`` と ``wind.direction_deg`` は表を変えない。無風の表、負の風速、360° を超える風向はエラーになり、目標風速 0 の表は無風になる。
+  サンプルを ``profile_mean_speed = 15.6``、``profile_mean_direction_deg = 90`` で飛ばした着地点と頂点は、15.6 m/s、4 方位の風の格子の 90° のケースと一致する（``profile_targets_fly_like_the_wind_grid_case``）。
 * **地面付近の接続**：対数則を :math:`h_{\mathrm{ref}}=10` m、:math:`z_0=0.1` m、接続の高さ 0.11 m とすると、端の傾きが急（:math:`\beta=1/\ln1.1=10.5`）で、補正のない 3 次の Hermite 曲線は 0.055 m で風速が :math:`-0.142` m/s まで下がる。
   補正した曲線は、0 から :math:`h_b` までの 1001 点で風速が 0 以上かつ単調に増え、:math:`h_b` で風速がモデルの値と連続である（``ground_blend_is_non_negative_and_monotonic``）。
   べき法則の接続は、補正のない曲線と 1e-14 の相対精度で一致する（:ref:`sec-wind-blend`）。
@@ -351,7 +355,15 @@ ECEF 座標での積分
 * **慣性テンソルの符号**：点質量 :math:`m=2` kg を :math:`(0.3,-0.2,0)` m に置いた平行軸の項が :math:`I_{xy}=-mxy`、:math:`I_{xx}=my^2`、:math:`I_{yy}=mx^2`、:math:`I_{zz}=m(x^2+y^2)` になる
   （``point_mass_inertia_sign``。:math:`10^{-15}` 以内）。
 * **一般表の静安定余裕**\ （``static_margins_separate_pitch_and_yaw``、``static_margins_of_an_axisymmetric_expansion_equal_the_axisymmetric_margin``）：ピッチの圧力中心 1.2 m、ヨーの圧力中心 0.6 m、重心 0.9 m、:math:`d=0.1` m の一般表で、余裕はピッチ :math:`+3`、ヨー :math:`-3` cal になる（:math:`10^{-9}` 以内）。軸対称表を展開した一般表では、Mach 数の格子点で軸対称表の余裕と :math:`10^{-9}` で一致する。
-  ピッチで安定・ヨーで不安定な表で飛ばすと、判定はヨーの余裕で不安定になり、``sim`` は ``RESULTS NOT USABLE`` を返し、``summary.json`` の ``static_margin_yaw_min_cal`` は負、``stable`` は ``false`` になる（``general_table_unstable_in_yaw_is_not_usable``）。落下分散の下限は、2 つの圧力中心の差 6 cal だけ余裕を下げる（``pitch_stable_yaw_unstable_flight_is_unstable``）。
+  ピッチで安定・ヨーで不安定な表で飛ばすと、判定はヨーの余裕で不安定になり、``sim`` は ``RESULTS NOT USABLE`` を返し、``summary.json`` の ``static_margin_yaw_min_cal`` は負、``stable`` は ``false`` になる（``general_table_unstable_in_yaw_is_not_usable``）。余裕は飛翔計算の各ステップで求めるので、軌道の点を記録しない飛翔、0.002 s ごとに記録する飛翔、1 s ごとに記録する飛翔で、``static_margin_pitch_min_cal``、``static_margin_yaw_min_cal``、``min_stability_cal``、``stability_at_rail_exit`` が一致し、
+  記録した点で求めた余裕より大きくならない（ヨーの圧力中心を 1 cal 前へ動かした一般表。ヨーの余裕がピッチより 0.05 cal 以内で 1 cal 小さい。``general_table_margins_are_evaluated_at_every_step_independent_of_recording``）。
+  軸対称表では、面ごとの最小値がどちらも判定値 ``min(min_stability_cal, stability_at_rail_exit)`` に等しい。
+  ヨーの圧力中心を 6 cal 前へ動かすとピッチは 1 cal 超、ヨーは負の余裕で不安定と判定され、横力を 0 にした一般表ではヨーの余裕が ``null``、理由が ``yaw normal-force slope dCy/dbeta is zero`` を含み、判定できない（``general_table_yaw_instability_and_unknown_stability_are_reported``）。
+  ``sim`` では、判定できない飛翔が ``RESULTS NOT USABLE: static stability could not be evaluated (at t = …`` で終わり、``stable`` が ``null``、ピッチの余裕は 1 cal を超える（``general_table_without_side_force_has_unknown_stability``）。
+  判定できない飛翔は風の格子とモンテカルロ解析で別に数え、不安定な飛翔と同時にあれば両方の節を書く（``unknown_static_stability_is_not_usable``）。
+* **余裕の符号**\ （``static_margins_follow_the_signed_cg_moment_derivative``）：線形の一般表（:math:`d=0.1` m、重心 0.9 m）で、法線力の傾きが物理的でない符号（:math:`\partial C_Z/\partial\alpha=+1`）でも、
+  重心まわりのモーメントが角度を広げる向き（:math:`\partial C_m/\partial\alpha=12`）なら余裕は :math:`-3` cal（不安定）、物理的な符号の表ではピッチ :math:`+3`、ヨー :math:`-3` cal になる（:math:`10^{-9}` 以内）。
+  物理的でない符号で復元するモーメントの面と、法線力の傾きが 0 の面は求まらず、理由（``… is positive at Mach 0.50``、``… is zero``）を返す。
 * **慣性テンソルの検査**\ （``ill_conditioned_inertia_is_an_error``）：主慣性モーメントの比が :math:`10^{8}` を超える乾燥の慣性テンソル、:math:`I_{xx}=0`、負の :math:`I_{xx}` は、``inertia tensor is singular or ill-conditioned`` のエラーになり、条件のよい非対称なテンソルは飛ぶ。
 * **乾燥重心の横ずれ**：乾燥重心を :math:`y_b` 方向に 0.02 m ずらすと、推進剤を含めた重心の横ずれが :math:`m_dy_d/m` になり、慣性乗積 :math:`I_{xy}` が
   :math:`-\sum m\,\Delta x\,\Delta y`（重心からの距離で、乾燥部分と推進剤の和）と :math:`10^{-12}` で一致する。慣性テンソルの行列式は正である
@@ -411,3 +423,15 @@ ECEF 座標での積分
 サンプルの設定が読めること、
 ``gravity = "j2"`` と ``model = "flat"`` の組合せ・``profile`` で表の指定がない場合・粗度長が基準高度の半分以上の場合がエラーになること、
 ``aero.method = "table"`` で ``aero.table`` がないとエラーになること、外部の係数表を読んで ``sim`` が動くことを確かめている。
+既定の ``aero.alpha_max_deg`` が 90 であること（``default_aero_table_reaches_90_degrees``）、
+``exponent``、``roughness_length``、``ground_blend_height`` を、それを使う風モデルでだけ正の値として検査すること（``wind_profile_parameters_are_checked_only_for_the_models_that_use_them``）、
+``profile_mean_speed`` と ``profile_mean_direction_deg`` が ``profile`` でだけ使えることと、``profile`` で ``wind.speed`` と ``wind.direction_deg`` を書いたときの警告（``profile_targets_and_ignored_wind_keys``）も確かめている。
+
+``--set`` は、TOML の値（数、配列、引用符付きの文字列、真偽値）と引用符のない文字列を読み、ない表を作り、未知のキー・範囲外の値・型の誤り・``KEY=VALUE`` でない指定・空のキー・表でない項目の下のキーをエラーにする
+（``set_overrides_parse_toml_values_and_bare_strings``、``set_overrides_are_checked_like_the_file``）。
+``--out`` の相対パスは現在のディレクトリから解釈し（``load_with_applies_set_and_out``）、``--set`` の値は設定のハッシュに入り、ファイルに同じ値を書いた場合と同じハッシュになり、``--out`` はハッシュに入らない（``overrides_enter_the_run_hash_but_out_does_not``）。
+``--aero-table`` は、キャッシュのキーが同じ表と付随ファイルをバイト単位で同じに写し、キーの違う表、読めない表、``--force`` との併用をエラーにする（``aero_table_is_reused_from_another_directory_when_the_key_matches``）。
+
+サンプルを東風 4 m/s で弾道落下させると、迎角 90° までの表では範囲外の引き出しがなく（``angles_in_range`` が ``true``）、30° までの表では ``RESULTS NOT USABLE: … lookups beyond the aero table's angle range`` で終わり、着地距離は 90° の表の 2 倍を超える（``ballistic_descent_beyond_the_table_angles_is_not_usable``）。
+飛翔が推力曲線の終わりより前に終わると ``burnout_time`` は ``null`` になり、ちょうど燃焼終了で終わる飛翔では燃焼終了の時刻になる（``burnout_time_is_reported_only_when_the_flight_reaches_it``）。
+``sim`` が失敗すると、``summary.json`` が失敗の印になり、``ignisyeet.kml`` から前の飛翔の層が消える（``failed_sim_removes_the_previous_flight_from_the_kml``）。

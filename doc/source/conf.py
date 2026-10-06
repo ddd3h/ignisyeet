@@ -54,14 +54,24 @@ ogp_custom_meta_tags = ['<meta name="twitter:card" content="summary_large_image"
 # PDF (make pdf): upLaTeX + jsbook. Figures are generated as both SVG (HTML) and PDF (LaTeX).
 latex_engine = "uplatex"
 latex_documents = [("index", "ignisyeet.tex", "IgnisYeet ドキュメント", author, "manual")]
+# Cross-references in the PDF carry the section number and the page: Sphinx appends " (\autopageref*{label})"
+# to every :ref: and :doc: link, and the preamble below prints it as "(<number>、p. <page>)".
+latex_show_pagerefs = True
 latex_elements = {
     "papersize": "a4paper",
     "pointsize": "11pt",
     "preamble": r"""
+% Embed the Japanese fonts: map the default Mincho and Gothic of upLaTeX/dvipdfmx to the IPAex fonts.
+\usepackage[ipaex]{pxchfon}
 \usepackage{amsmath,amssymb,bm}
 \newcommand{\dd}{\mathrm{d}}
 \newcommand{\sgn}{\operatorname{sgn}}
 \renewcommand{\bibname}{参考文献}
+% :ref: links: "(section number、p. page)" instead of the default "(page N)".
+\makeatletter
+\DeclareRobustCommand*{\autopageref}{\@ifstar\IY@numpage\IY@numpage}
+\newcommand*{\IY@numpage}[1]{\ref*{#1}、p.~\pageref*{#1}}
+\makeatother
 % The appendix chapter "参考文献" (references.rst) already gives the heading and the contents entry:
 % list the entries without the extra \chapter* and contents line of the bibliography environment.
 \makeatletter

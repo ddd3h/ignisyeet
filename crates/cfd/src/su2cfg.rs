@@ -193,10 +193,13 @@ pub fn su2_config_case(opt: &CfdOptions, spec: &CaseSpec, dims: &RefDims, atm: &
     let mg = opt.multigrid_levels();
     if mg > 0 {
         c.kv("MGLEVEL", mg);
-        c.kv("MGCYCLE", match opt.multigrid_cycle {
-            MultigridCycle::W => "W_CYCLE",
-            MultigridCycle::V => "V_CYCLE",
-        });
+        c.kv(
+            "MGCYCLE",
+            match opt.multigrid_cycle {
+                MultigridCycle::W => "W_CYCLE",
+                MultigridCycle::V => "V_CYCLE",
+            },
+        );
     }
     c.kv("LINEAR_SOLVER", "FGMRES");
     c.kv("LINEAR_SOLVER_PREC", "ILU");
@@ -204,8 +207,8 @@ pub fn su2_config_case(opt: &CfdOptions, spec: &CaseSpec, dims: &RefDims, atm: &
     c.kv("LINEAR_SOLVER_ITER", "10");
     c.blank();
     // RANS (first-order Roe, no prisms): the residual stalls near 1e-5 and drifts towards divergence
-        // after a few hundred iterations while the coefficients are flat from about iteration 100.
-        c.kv("ITER", if rans { opt.iterations.min(RANS_MAX_ITER) } else { opt.iterations });
+    // after a few hundred iterations while the coefficients are flat from about iteration 100.
+    c.kv("ITER", if rans { opt.iterations.min(RANS_MAX_ITER) } else { opt.iterations });
     c.kv("CONV_FIELD", "RMS_DENSITY");
     c.kv("CONV_RESIDUAL_MINVAL", opt.residual_minval());
     c.kv("CONV_STARTITER", "10");
@@ -289,7 +292,8 @@ mod tests {
         // Single grid by default: no multigrid lines.
         let d = su2_config(&CfdOptions::default(), 0.8, 2.0, &dims(), &atm(), &CaseFiles::default());
         assert!(!d.contains("MGLEVEL") && !d.contains("MGCYCLE"), "{d}");
-        let o = CfdOptions { multigrid: Some(3), multigrid_cycle: crate::config::MultigridCycle::V, min_iterations: 100, stable_window: 60, ..Default::default() };
+        let o =
+            CfdOptions { multigrid: Some(3), multigrid_cycle: crate::config::MultigridCycle::V, min_iterations: 100, stable_window: 60, ..Default::default() };
         let s = su2_config(&o, 0.8, 2.0, &dims(), &atm(), &CaseFiles::default());
         for l in ["MGLEVEL= 3", "MGCYCLE= V_CYCLE", "LIMITER_ITER= 100"] {
             assert!(has(&s, l), "missing {l:?} in\n{s}");
@@ -297,7 +301,13 @@ mod tests {
         let w = su2_config(&CfdOptions { multigrid: Some(2), ..Default::default() }, 0.8, 2.0, &dims(), &atm(), &CaseFiles::default());
         assert!(has(&w, "MGLEVEL= 2") && has(&w, "MGCYCLE= W_CYCLE"));
         // The rotating frame of a roll case keeps the multigrid lines.
-        let r = su2_config_case(&CfdOptions { multigrid: Some(2), symmetry: false, ..Default::default() }, &CaseSpec::roll(0.8, 0.01), &dims(), &atm(), &CaseFiles::default());
+        let r = su2_config_case(
+            &CfdOptions { multigrid: Some(2), symmetry: false, ..Default::default() },
+            &CaseSpec::roll(0.8, 0.01),
+            &dims(),
+            &atm(),
+            &CaseFiles::default(),
+        );
         assert!(has(&r, "MGLEVEL= 2") && has(&r, "GRID_MOVEMENT= ROTATING_FRAME"));
         // RANS: single grid unless multigrid is set explicitly.
         let rans = CfdOptions { model: FlowModel::Rans, ..Default::default() };
@@ -316,14 +326,23 @@ mod tests {
         let r = CaseSpec::roll(0.8, 0.01);
         let p = 2.0 * 0.8 * atm().sound_speed * 0.01 / 0.1;
         let s = su2_config_case(&o, &r, &dims(), &atm(), &CaseFiles::default());
-        for l in ["GRID_MOVEMENT= ROTATING_FRAME", "MOTION_ORIGIN= 0.0 0.0 0.0", &format!("ROTATION_RATE= {:.6} 0.0 0.0", -p), "SIDESLIP_ANGLE= 0.0", "AOA= 0.000000"] {
+        for l in [
+            "GRID_MOVEMENT= ROTATING_FRAME",
+            "MOTION_ORIGIN= 0.0 0.0 0.0",
+            &format!("ROTATION_RATE= {:.6} 0.0 0.0", -p),
+            "SIDESLIP_ANGLE= 0.0",
+            "AOA= 0.000000",
+        ] {
             assert!(has(&s, l), "missing {l:?} in\n{s}");
         }
         let n = su2_config_case(&o, &CaseSpec::roll(0.8, -0.01), &dims(), &atm(), &CaseFiles::default());
         assert!(has(&n, &format!("ROTATION_RATE= {:.6} 0.0 0.0", p)));
         // Default cases keep their configuration text (case hashes of existing caches stay valid).
         let d = CfdOptions::default();
-        assert_eq!(su2_config(&d, 2.0, 4.0, &dims(), &atm(), &CaseFiles::default()), su2_config_case(&d, &CaseSpec::new(2.0, 4.0), &dims(), &atm(), &CaseFiles::default()));
+        assert_eq!(
+            su2_config(&d, 2.0, 4.0, &dims(), &atm(), &CaseFiles::default()),
+            su2_config_case(&d, &CaseSpec::new(2.0, 4.0), &dims(), &atm(), &CaseFiles::default())
+        );
     }
 
     #[test]

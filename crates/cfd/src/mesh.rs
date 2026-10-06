@@ -30,8 +30,8 @@ use crate::case::hash_parts;
 use crate::config::{y_symmetric_layout, CfdOptions, FlowModel};
 use crate::tools;
 use aero::atmosphere::Atmosphere;
-use geom::Geometry;
 use anyhow::{bail, Context, Result};
+use geom::Geometry;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -287,7 +287,8 @@ pub(crate) fn run_python(py: &Path, prefix: Option<&Path>, dir: &Path, script: &
     if !out.status.success() || !text.contains(ok_token) {
         // The progress lines of gmsh use carriage returns; keep the last meaningful lines.
         let clean = text.replace('\r', "\n");
-        let tail: Vec<&str> = clean.lines().filter(|l| !l.contains("%]")).collect::<Vec<_>>().into_iter().rev().take(12).collect::<Vec<_>>().into_iter().rev().collect();
+        let tail: Vec<&str> =
+            clean.lines().filter(|l| !l.contains("%]")).collect::<Vec<_>>().into_iter().rev().take(12).collect::<Vec<_>>().into_iter().rev().collect();
         bail!("{what} failed (log: {}):\n{}", dir.join(log).display(), tail.join("\n"));
     }
     Ok(text)
@@ -392,7 +393,11 @@ mod tests {
         for name in ["wall", "base", "farfield", "fluid"] {
             assert!(crate::stl_mesh::SCRIPT.contains(&format!("\"{name}\"")), "{name}");
         }
-        assert!(crate::stl_mesh::SCRIPT.contains("Mesh.Algorithm3D") && crate::stl_mesh::SCRIPT.contains("classifySurfaces") && crate::stl_mesh::UNION_SCRIPT.contains("batch_boolean"));
+        assert!(
+            crate::stl_mesh::SCRIPT.contains("Mesh.Algorithm3D")
+                && crate::stl_mesh::SCRIPT.contains("classifySurfaces")
+                && crate::stl_mesh::UNION_SCRIPT.contains("batch_boolean")
+        );
         for name in ["wall", "base", "farfield", "symmetry", "fluid"] {
             assert!(SCRIPT.contains(&format!("\"{name}\"")), "{name}");
         }

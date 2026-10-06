@@ -104,9 +104,7 @@ const B12: f64 = 4.47106157277725905176885569043e-2; // b12
 /// Full 12-entry weight vector of the propagating solution (zeros where
 /// `dop853.f` has no term).  Positions follow the Fortran stage numbering:
 /// `B[0] = b1`, `B[5] = b6`, ..., `B[10] = b11`, `B[11] = b12`.
-const B: [f64; 12] = [
-    B1, 0.0, 0.0, 0.0, 0.0, B6, B7, B8, B9, B10, B11, B12,
-];
+const B: [f64; 12] = [B1, 0.0, 0.0, 0.0, 0.0, B6, B7, B8, B9, B10, B11, B12];
 
 // ---------------------------------------------------------------------------
 // Error coefficients: the embedded 3rd-order estimate (`bhh`) and the
@@ -125,14 +123,10 @@ const ER11: f64 = 0.8192320648511571246570742613e-1; // er11
 const ER12: f64 = -0.2235530786388629525884427845e-1; // er12
 
 /// `BHH[0] = bhh1`, `BHH[8] = bhh2` (stage 9), `BHH[11] = bhh3` (stage 12).
-const BHH: [f64; 12] = [
-    BHH1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, BHH2, 0.0, 0.0, BHH3,
-];
+const BHH: [f64; 12] = [BHH1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, BHH2, 0.0, 0.0, BHH3];
 
 /// `ER[0] = er1`, `ER[5] = er6`, ..., `ER[10] = er11`, `ER[11] = er12`.
-const ER: [f64; 12] = [
-    ER1, 0.0, 0.0, 0.0, 0.0, ER6, ER7, ER8, ER9, ER10, ER11, ER12,
-];
+const ER: [f64; 12] = [ER1, 0.0, 0.0, 0.0, 0.0, ER6, ER7, ER8, ER9, ER10, ER11, ER12];
 
 /// The 12-stage propagating tableau of DOP853 (`c`, lower-triangular `a`, `b`;
 /// order 8).  Row `i` of `a` has `i` entries, with explicit zeros wherever
@@ -152,9 +146,7 @@ pub fn tableau() -> RkTableau {
             vec![A91, 0.0, 0.0, A94, A95, A96, A97, A98],
             vec![A101, 0.0, 0.0, A104, A105, A106, A107, A108, A109],
             vec![A111, 0.0, 0.0, A114, A115, A116, A117, A118, A119, A1110],
-            vec![
-                A121, 0.0, 0.0, A124, A125, A126, A127, A128, A129, A1210, A1211,
-            ],
+            vec![A121, 0.0, 0.0, A124, A125, A126, A127, A128, A129, A1210, A1211],
         ],
         b: B.to_vec(),
         order: 8,
@@ -199,15 +191,7 @@ pub struct Dop853Step {
 /// One step.  `f(t, y, dydt)` writes the derivative into `dydt`; `k1` is
 /// `f(t, y)`.  Error scaling: `sk_i = atol + rtol * max(|y_i|, |y_new_i|)`
 /// (scalar tolerances).
-pub fn step(
-    f: &mut impl FnMut(f64, &[f64], &mut [f64]),
-    t: f64,
-    y: &[f64],
-    k1: &[f64],
-    h: f64,
-    rtol: f64,
-    atol: f64,
-) -> Dop853Step {
+pub fn step(f: &mut impl FnMut(f64, &[f64], &mut [f64]), t: f64, y: &[f64], k1: &[f64], h: f64, rtol: f64, atol: f64) -> Dop853Step {
     let n = y.len();
     let tab = tableau();
 
@@ -261,11 +245,7 @@ pub fn step(
     let mut k_new = vec![0.0; n];
     f(t + h, &y_new, &mut k_new);
 
-    Dop853Step {
-        y: y_new,
-        err,
-        k_new,
-    }
+    Dop853Step { y: y_new, err, k_new }
 }
 
 /// Step-size factor from `dop853.f`.  With `beta = 0`:
@@ -321,10 +301,7 @@ mod tests {
                 s += bi * ci.powi(k);
             }
             let expected = 1.0 / (k as f64 + 1.0);
-            assert!(
-                (s - expected).abs() < 1e-12,
-                "k = {k}: sum b c^k = {s}, expected {expected}"
-            );
+            assert!((s - expected).abs() < 1e-12, "k = {k}: sum b c^k = {s}, expected {expected}");
         }
     }
 
@@ -354,10 +331,7 @@ mod tests {
         let e8 = fixed_step_error(8);
         let e16 = fixed_step_error(16);
         let order = (e8 / e16).log2();
-        assert!(
-            order > 7.5 && order < 8.5,
-            "observed order {order} (e8 = {e8:e}, e16 = {e16:e})"
-        );
+        assert!(order > 7.5 && order < 8.5, "observed order {order} (e8 = {e8:e}, e16 = {e16:e})");
     }
 
     /// Adaptive integration with local-error control.  Returns
@@ -404,15 +378,7 @@ mod tests {
             d[1] = -y[0];
         };
         let t_end = 20.0;
-        let (_, y, steps) = integrate_adaptive(
-            &mut f,
-            0.0,
-            t_end,
-            &[1.0, 0.0],
-            0.1,
-            rtol,
-            atol,
-        );
+        let (_, y, steps) = integrate_adaptive(&mut f, 0.0, t_end, &[1.0, 0.0], 0.1, rtol, atol);
         let exact = [t_end.cos(), -t_end.sin()];
         let err = ((y[0] - exact[0]).powi(2) + (y[1] - exact[1]).powi(2)).sqrt();
         assert!(err < 1e-8, "final error {err}");
@@ -434,9 +400,7 @@ mod tests {
             d[3] = y[1] - 2.0 * y[2] - mu2 * y[1] / r1 - mu * y[1] / r2;
         };
         let (_, y, _) = integrate_adaptive(&mut f, 0.0, t_end, &y0, 0.01, 1e-10, 1e-10);
-        let max_err = (0..4)
-            .map(|i| (y[i] - y0[i]).abs())
-            .fold(0.0f64, f64::max);
+        let max_err = (0..4).map(|i| (y[i] - y0[i]).abs()).fold(0.0f64, f64::max);
         assert!(max_err < 1e-5, "return error {max_err:e}");
     }
 

@@ -38,10 +38,10 @@
 //! Barrowman value of that Mach number. The table value is the Barrowman `Clp(M)` scaled with the
 //! (clamped PCHIP) ratio CFD / Barrowman of the usable Mach numbers.
 
+use crate::config::FlowModel;
 use crate::config::ShapeSymmetry;
 use crate::forces::{hybrid_axial, scale_damping, BodyCoeffs6};
 use crate::table::{grid, odd_slope, Pchip};
-use crate::config::FlowModel;
 use aero::table::{angle_axis, Coeffs6, TableMeta};
 use aero::{AeroModel, AeroTable, Extrapolation};
 use anyhow::{bail, Result};
@@ -300,7 +300,8 @@ impl Field {
         }
         let mut betas = Vec::new();
         let mut cols = Vec::new();
-        let mut region = Region { alpha_min_deg: f64::INFINITY, alpha_max_deg: f64::NEG_INFINITY, beta_min_deg: f64::INFINITY, beta_max_deg: f64::NEG_INFINITY };
+        let mut region =
+            Region { alpha_min_deg: f64::INFINITY, alpha_max_deg: f64::NEG_INFINITY, beta_min_deg: f64::INFINITY, beta_max_deg: f64::NEG_INFINITY };
         for (b, mut v) in by_beta {
             v.sort_by(|p, q| p.0.partial_cmp(&q.0).unwrap());
             let xs: Vec<f64> = v.iter().map(|p| p.0).collect();

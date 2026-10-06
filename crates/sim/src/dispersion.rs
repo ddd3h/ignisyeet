@@ -249,7 +249,10 @@ impl Perturbation {
         if self.wind_speed != 0.0 || self.wind_direction_deg != 0.0 {
             // For a profile `speed` is the mean speed W: k = (W + delta) / W, clamped to >= 0.
             // `run_monte_carlo` has already rejected a calm profile, so this does not fail.
-            if let Ok(w) = base.wind.with_speed_direction((base.wind.speed + self.wind_speed).max(0.0), (base.wind.direction_deg + self.wind_direction_deg).rem_euclid(360.0)) {
+            if let Ok(w) = base
+                .wind
+                .with_speed_direction((base.wind.speed + self.wind_speed).max(0.0), (base.wind.direction_deg + self.wind_direction_deg).rem_euclid(360.0))
+            {
                 s.wind = w;
             }
         }
@@ -432,7 +435,12 @@ pub fn run_monte_carlo(cfg: &MonteCarloConfig, base: &Simulation, recovery_enabl
 
 /// [`run_monte_carlo`] with a progress callback invoked (from worker threads, in completion
 /// order) once per finished flight, i.e. `samples` x number of descent modes times.
-pub fn run_monte_carlo_with_progress(cfg: &MonteCarloConfig, base: &Simulation, recovery_enabled: bool, progress: &(dyn Fn(&McRow) + Sync)) -> Result<McResult> {
+pub fn run_monte_carlo_with_progress(
+    cfg: &MonteCarloConfig,
+    base: &Simulation,
+    recovery_enabled: bool,
+    progress: &(dyn Fn(&McRow) + Sync),
+) -> Result<McResult> {
     if cfg.samples == 0 {
         bail!("dispersion.monte_carlo.samples must be at least 1");
     }
@@ -492,13 +500,14 @@ pub fn run_monte_carlo_with_progress(cfg: &MonteCarloConfig, base: &Simulation, 
     Ok(McResult { rows, summary })
 }
 
-fn run_wind_grid(cfg: &DispersionConfig, base: &Simulation, recovery_enabled: bool, progress: &(dyn Fn(&Case, &Summary) + Sync)) -> Result<(Vec<Case>, Vec<Summary>)> {
+fn run_wind_grid(
+    cfg: &DispersionConfig,
+    base: &Simulation,
+    recovery_enabled: bool,
+    progress: &(dyn Fn(&Case, &Summary) + Sync),
+) -> Result<(Vec<Case>, Vec<Summary>)> {
     let (cases, results) = run_wind_grid_detailed(cfg, base, recovery_enabled, progress)?;
-    let summaries = cases
-        .iter()
-        .zip(results)
-        .map(|(c, r)| r.unwrap_or_else(|_| Summary::failed(c.descent, c.wind_speed, c.wind_direction_deg)))
-        .collect();
+    let summaries = cases.iter().zip(results).map(|(c, r)| r.unwrap_or_else(|_| Summary::failed(c.descent, c.wind_speed, c.wind_direction_deg))).collect();
     Ok((cases, summaries))
 }
 
@@ -856,7 +865,20 @@ mod tests {
     fn perturbations_act_as_documented() {
         let (t, m) = (table(), motor());
         let b = base(&t, &m);
-        let p = Perturbation { thrust_scale: 0.1, burn_time_scale: 0.25, dry_mass: 0.2, cg: 0.01, cn_scale: 0.1, ca_scale: -2.0, elevation_deg: -1.0, azimuth_deg: 2.0, wind_speed: -9.0, wind_direction_deg: 100.0, parachute_cd_s_scale: 0.5, ..Default::default() };
+        let p = Perturbation {
+            thrust_scale: 0.1,
+            burn_time_scale: 0.25,
+            dry_mass: 0.2,
+            cg: 0.01,
+            cn_scale: 0.1,
+            ca_scale: -2.0,
+            elevation_deg: -1.0,
+            azimuth_deg: 2.0,
+            wind_speed: -9.0,
+            wind_direction_deg: 100.0,
+            parachute_cd_s_scale: 0.5,
+            ..Default::default()
+        };
         let pm = p.motor(&m);
         let s = p.simulation(&b, &pm);
         assert!((pm.total_impulse() - 1.1 * m.total_impulse()).abs() < 1e-9 && (pm.burn_time() - 2.5).abs() < 1e-12);
@@ -884,12 +906,38 @@ mod tests {
             let (a, b) = (Perturbation::draw(&base, i), Perturbation::draw(&all, i));
             // The first eleven draws are the original ones, independent of the new sigmas.
             assert_eq!(
-                (a.thrust_scale, a.burn_time_scale, a.dry_mass, a.cg, a.cn_scale, a.ca_scale, a.elevation_deg, a.azimuth_deg, a.wind_speed, a.wind_direction_deg, a.parachute_cd_s_scale),
-                (b.thrust_scale, b.burn_time_scale, b.dry_mass, b.cg, b.cn_scale, b.ca_scale, b.elevation_deg, b.azimuth_deg, b.wind_speed, b.wind_direction_deg, b.parachute_cd_s_scale)
+                (
+                    a.thrust_scale,
+                    a.burn_time_scale,
+                    a.dry_mass,
+                    a.cg,
+                    a.cn_scale,
+                    a.ca_scale,
+                    a.elevation_deg,
+                    a.azimuth_deg,
+                    a.wind_speed,
+                    a.wind_direction_deg,
+                    a.parachute_cd_s_scale
+                ),
+                (
+                    b.thrust_scale,
+                    b.burn_time_scale,
+                    b.dry_mass,
+                    b.cg,
+                    b.cn_scale,
+                    b.ca_scale,
+                    b.elevation_deg,
+                    b.azimuth_deg,
+                    b.wind_speed,
+                    b.wind_direction_deg,
+                    b.parachute_cd_s_scale
+                )
             );
             // Zero sigmas draw exact zeros for the new terms.
             assert_eq!((a.misalignment_y_deg, a.offset_z, a.fin_cant_deg, a.cg_lateral_y, a.cl_scale, a.clp_scale), (0.0, 0.0, 0.0, 0.0, 0.0, 0.0));
-            assert!(b.misalignment_y_deg != 0.0 && b.offset_y != 0.0 && b.fin_cant_deg != 0.0 && b.cg_lateral_z != 0.0 && b.cl_scale != 0.0 && b.clp_scale != 0.0);
+            assert!(
+                b.misalignment_y_deg != 0.0 && b.offset_y != 0.0 && b.fin_cant_deg != 0.0 && b.cg_lateral_z != 0.0 && b.cl_scale != 0.0 && b.clp_scale != 0.0
+            );
         }
         // Frozen first draw of seed 11 (guards the draw order of the original eleven).
         let p = Perturbation::draw(&base, 0);
@@ -904,7 +952,15 @@ mod tests {
         let mut b = base(&t, &m);
         b.thrust_line = ThrustLine { misalignment_deg: 1.0, misalignment_azimuth_deg: 0.0, offset: [0.001, 0.0] };
         b.fin_cant_deg = 0.5;
-        let p = Perturbation { misalignment_z_deg: 1.0, offset_z: 0.002, fin_cant_deg: 0.25, cg_lateral_y: 0.003, cl_scale: 0.5, clp_scale: -0.5, ..Default::default() };
+        let p = Perturbation {
+            misalignment_z_deg: 1.0,
+            offset_z: 0.002,
+            fin_cant_deg: 0.25,
+            cg_lateral_y: 0.003,
+            cl_scale: 0.5,
+            clp_scale: -0.5,
+            ..Default::default()
+        };
         let pm = p.motor(&m);
         let s = p.simulation(&b, &pm);
         // Nominal tilt (1, 0) deg plus (0, 1) deg.
@@ -943,7 +999,9 @@ mod tests {
             landing_distance: d,
             landing_speed: 10.0,
             main_deploy_time: None,
-            main_deploy_altitude: None, drogue_deploy_time: None, wind_scale: None,
+            main_deploy_altitude: None,
+            drogue_deploy_time: None,
+            wind_scale: None,
         }
     }
 

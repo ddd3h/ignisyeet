@@ -214,7 +214,10 @@ pub fn check_tools(opt: &CfdOptions, roots: &[PathBuf]) -> ToolReport {
                 name: "manifold3d (python)",
                 path: Some(py.clone()),
                 version: None,
-                problem: Some(format!("the python module manifold3d is missing (needed for surface = \"stl\"); install it with: {} -m pip install manifold3d", py.display())),
+                problem: Some(format!(
+                    "the python module manifold3d is missing (needed for surface = \"stl\"); install it with: {} -m pip install manifold3d",
+                    py.display()
+                )),
             },
         };
     }

@@ -187,7 +187,11 @@ pub(crate) fn odd_slope(pts: &[(f64, f64)]) -> f64 {
     let r2 = v2 / a2;
     let c3 = (r2 - r1) / (a2 * a2 - a1 * a1);
     let c1 = r1 - c3 * a1 * a1;
-    if c1.is_finite() && (c1 - r1).abs() <= 0.5 * r1.abs().max(1e-9) { c1 } else { r1 }
+    if c1.is_finite() && (c1 - r1).abs() <= 0.5 * r1.abs().max(1e-9) {
+        c1
+    } else {
+        r1
+    }
 }
 
 /// Table-grid values of one solved Mach column.
@@ -284,9 +288,8 @@ pub fn build_from_points_roll(
     let across = |f: &dyn Fn(&Column) -> f64| Pchip::new(mx.clone(), cols.iter().map(f).collect());
     let cna_p = across(&|c| c.cna);
     let x0_p = across(&|c| c.xcp0);
-    let per_alpha = |sel: fn(&Column) -> &Vec<f64>| -> Vec<Pchip> {
-        (0..alphas.len()).map(|j| Pchip::new(mx.clone(), cols.iter().map(|c| sel(c)[j]).collect())).collect()
-    };
+    let per_alpha =
+        |sel: fn(&Column) -> &Vec<f64>| -> Vec<Pchip> { (0..alphas.len()).map(|j| Pchip::new(mx.clone(), cols.iter().map(|c| sel(c)[j]).collect())).collect() };
     let (cn_p, mom_p, ca_p) = (per_alpha(|c| &c.cn), per_alpha(|c| &c.mom), per_alpha(|c| &c.ca));
 
     let mut rows: Vec<Vec<AeroCoeffs>> = Vec::with_capacity(machs.len());

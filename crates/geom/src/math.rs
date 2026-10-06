@@ -21,11 +21,7 @@ impl Vec3 {
         self.x * o.x + self.y * o.y + self.z * o.z
     }
     pub fn cross(self, o: Vec3) -> Vec3 {
-        Vec3::new(
-            self.y * o.z - self.z * o.y,
-            self.z * o.x - self.x * o.z,
-            self.x * o.y - self.y * o.x,
-        )
+        Vec3::new(self.y * o.z - self.z * o.y, self.z * o.x - self.x * o.z, self.x * o.y - self.y * o.x)
     }
     pub fn norm(self) -> f64 {
         self.dot(self).sqrt()
@@ -106,19 +102,11 @@ impl Mat3 {
     }
     pub fn mul_vec(&self, v: Vec3) -> Vec3 {
         let m = &self.0;
-        Vec3::new(
-            m[0][0] * v.x + m[0][1] * v.y + m[0][2] * v.z,
-            m[1][0] * v.x + m[1][1] * v.y + m[1][2] * v.z,
-            m[2][0] * v.x + m[2][1] * v.y + m[2][2] * v.z,
-        )
+        Vec3::new(m[0][0] * v.x + m[0][1] * v.y + m[0][2] * v.z, m[1][0] * v.x + m[1][1] * v.y + m[1][2] * v.z, m[2][0] * v.x + m[2][1] * v.y + m[2][2] * v.z)
     }
     pub fn transpose_mul_vec(&self, v: Vec3) -> Vec3 {
         let m = &self.0;
-        Vec3::new(
-            m[0][0] * v.x + m[1][0] * v.y + m[2][0] * v.z,
-            m[0][1] * v.x + m[1][1] * v.y + m[2][1] * v.z,
-            m[0][2] * v.x + m[1][2] * v.y + m[2][2] * v.z,
-        )
+        Vec3::new(m[0][0] * v.x + m[1][0] * v.y + m[2][0] * v.z, m[0][1] * v.x + m[1][1] * v.y + m[2][1] * v.z, m[0][2] * v.x + m[1][2] * v.y + m[2][2] * v.z)
     }
     pub fn identity() -> Mat3 {
         Mat3::diag(1.0, 1.0, 1.0)
@@ -165,11 +153,8 @@ impl Mat3 {
             return None;
         }
         let c = |r0: usize, c0: usize, r1: usize, c1: usize| m[r0][c0] * m[r1][c1] - m[r0][c1] * m[r1][c0];
-        let adj = [
-            [c(1, 1, 2, 2), -c(0, 1, 2, 2), c(0, 1, 1, 2)],
-            [-c(1, 0, 2, 2), c(0, 0, 2, 2), -c(0, 0, 1, 2)],
-            [c(1, 0, 2, 1), -c(0, 0, 2, 1), c(0, 0, 1, 1)],
-        ];
+        let adj =
+            [[c(1, 1, 2, 2), -c(0, 1, 2, 2), c(0, 1, 1, 2)], [-c(1, 0, 2, 2), c(0, 0, 2, 2), -c(0, 0, 1, 2)], [c(1, 0, 2, 1), -c(0, 0, 2, 1), c(0, 0, 1, 1)]];
         Some(Mat3(adj).scale(1.0 / d))
     }
 }
@@ -282,10 +267,7 @@ pub fn hermite(x: f64, x0: f64, x1: f64, f0: f64, f1: f64, d0: f64, d1: f64) -> 
     let t = (x - x0) / h;
     let t2 = t * t;
     let t3 = t2 * t;
-    (2.0 * t3 - 3.0 * t2 + 1.0) * f0
-        + (t3 - 2.0 * t2 + t) * h * d0
-        + (-2.0 * t3 + 3.0 * t2) * f1
-        + (t3 - t2) * h * d1
+    (2.0 * t3 - 3.0 * t2 + 1.0) * f0 + (t3 - 2.0 * t2 + t) * h * d0 + (-2.0 * t3 + 3.0 * t2) * f1 + (t3 - t2) * h * d1
 }
 
 #[cfg(test)]

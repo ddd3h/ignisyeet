@@ -51,14 +51,7 @@ fn t_len(n: usize, m: usize) -> usize {
 fn cone_cp_matches_taylor_maccoll() {
     let (tris, lc) = cone_cylinder();
     let g = extract(&tris, &ExtractOptions::default()).unwrap();
-    let opt = CfdOptions {
-        machs: vec![2.0],
-        alphas_deg: vec![0.0, 2.0],
-        wall_size: 0.005,
-        ranks_per_case: 4,
-        parallel_cases: 1,
-        ..Default::default()
-    };
+    let opt = CfdOptions { machs: vec![2.0], alphas_deg: vec![0.0, 2.0], wall_size: 0.005, ranks_per_case: 4, parallel_cases: 1, ..Default::default() };
     let dir = std::env::temp_dir().join(format!("ignisyeet_cfd_real_{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let aero = aero::AeroOptions { mach_max: 3.0, mach_step: 0.5, alpha_max_deg: 4.0, alpha_step_deg: 1.0, ..Default::default() };
@@ -145,7 +138,8 @@ fn stl_euler_case_and_roll_pair() {
     let aero = aero::AeroOptions { mach_max: 1.0, mach_step: 0.5, ..Default::default() };
     let opt = stl_options();
     let (table, report) =
-        cfd::build_table_with_progress(&g, &opt, &aero, &dir, "h".into(), aero::Extrapolation::Linear, &ResourceBudget::default(), Some(&raw), &|_| {}).unwrap();
+        cfd::build_table_with_progress(&g, &opt, &aero, &dir, "h".into(), aero::Extrapolation::Linear, &ResourceBudget::default(), Some(&raw), &|_| {})
+            .unwrap();
     assert!(report.failed.is_empty(), "{report:?}");
     assert_eq!(report.table_kind, "general");
     assert_eq!(report.clp_source, "cfd", "{:?}", report.clp);
@@ -217,9 +211,13 @@ fn explicit_symmetry_on_an_asymmetric_stl_is_an_error() {
     let auto = cfd::stl_mesh::check_symmetry(&CfdOptions { roll_damping: false, ..stl_options() }, &g, &skewed, &dir).unwrap();
     assert!(!auto.y.symmetric && !auto.z.symmetric && auto.y.max_mismatch > 1e-4, "{auto:?}");
     assert_eq!((auto.chosen.as_str(), auto.meshed.as_str()), ("none", "full"));
-    let e = cfd::stl_mesh::check_symmetry(&CfdOptions { shape_symmetry: Some(cfd::ShapeSymmetry::Axisymmetric), ..stl_options() }, &g, &skewed, &dir).unwrap_err().to_string();
+    let e = cfd::stl_mesh::check_symmetry(&CfdOptions { shape_symmetry: Some(cfd::ShapeSymmetry::Axisymmetric), ..stl_options() }, &g, &skewed, &dir)
+        .unwrap_err()
+        .to_string();
     assert!(e.contains("axisymmetric") && e.contains("max mismatch") && e.contains("y = 0"), "{e}");
-    let e = cfd::stl_mesh::check_symmetry(&CfdOptions { shape_symmetry: Some(cfd::ShapeSymmetry::PitchPlane), ..stl_options() }, &g, &skewed, &dir).unwrap_err().to_string();
+    let e = cfd::stl_mesh::check_symmetry(&CfdOptions { shape_symmetry: Some(cfd::ShapeSymmetry::PitchPlane), ..stl_options() }, &g, &skewed, &dir)
+        .unwrap_err()
+        .to_string();
     assert!(e.contains("pitch_plane"), "{e}");
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -232,7 +230,8 @@ fn stl_half_domain_matches_the_full_domain_in_cn() {
     let base = CfdOptions { roll_damping: false, symmetry: true, ..stl_options() };
     let solve = |dir: &std::path::Path, o: &CfdOptions| {
         let (table, report) =
-            cfd::build_table_with_progress(&g, o, &aero, dir, "h".into(), aero::Extrapolation::Linear, &ResourceBudget::default(), Some(&raw), &|_| {}).unwrap();
+            cfd::build_table_with_progress(&g, o, &aero, dir, "h".into(), aero::Extrapolation::Linear, &ResourceBudget::default(), Some(&raw), &|_| {})
+                .unwrap();
         assert!(report.failed.is_empty(), "{report:?}");
         (table, report)
     };

@@ -48,7 +48,10 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
     let s = sep();
     p.section("Input");
     p.row("config", short_path(config_path));
-    p.row("STL", format!("{} {}{}", short_path(&cfg.resolve(&cfg.rocket.stl)), dim(format!("(scale {}, nose {})", cfg.rocket.stl_scale, cfg.rocket.nose_direction)), ""));
+    p.row(
+        "STL",
+        format!("{} {}{}", short_path(&cfg.resolve(&cfg.rocket.stl)), dim(format!("(scale {}, nose {})", cfg.rocket.stl_scale, cfg.rocket.nose_direction)), ""),
+    );
     if flight {
         let eng = short_path(&cfg.resolve(&cfg.motor.eng));
         match motor {
@@ -80,7 +83,16 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
     if flight {
         p.section("Rocket");
         let r = &cfg.rocket;
-        p.row("dry mass", format!("{}{s}CG {}{s}Ixx {}{s}Iyy {}", val(format!("{:.3}", r.dry_mass), "kg"), val(format!("{:.3}", r.cg_dry), "m"), val(r.ixx_dry, "kg m2"), val(r.iyy_dry, "kg m2")));
+        p.row(
+            "dry mass",
+            format!(
+                "{}{s}CG {}{s}Ixx {}{s}Iyy {}",
+                val(format!("{:.3}", r.dry_mass), "kg"),
+                val(format!("{:.3}", r.cg_dry), "m"),
+                val(r.ixx_dry, "kg m2"),
+                val(r.iyy_dry, "kg m2")
+            ),
+        );
         p.row("extra Cd", format!("{}{s}motor aft_x {}", val(r.extra_cd, ""), cfg.motor.aft_x.map_or("body length".to_string(), |x| format!("{x} m"))));
         if r.izz_dry.is_some() || r.ixy_dry != 0.0 || r.ixz_dry != 0.0 || r.iyz_dry != 0.0 {
             let izz = r.izz_dry.unwrap_or(r.iyy_dry);
@@ -93,26 +105,71 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
         if mo.misalignment_deg != 0.0 || mo.misalignment_offset != [0.0, 0.0] {
             p.row(
                 "thrust line",
-                format!("tilt {} toward {}{s}offset y {} z {}", val(mo.misalignment_deg, "deg"), val(mo.misalignment_azimuth_deg, "deg"), val(mo.misalignment_offset[0], "m"), val(mo.misalignment_offset[1], "m")),
+                format!(
+                    "tilt {} toward {}{s}offset y {} z {}",
+                    val(mo.misalignment_deg, "deg"),
+                    val(mo.misalignment_azimuth_deg, "deg"),
+                    val(mo.misalignment_offset[0], "m"),
+                    val(mo.misalignment_offset[1], "m")
+                ),
             );
         }
     } else {
         p.section("Geometry");
-        let fin = if let Some(o) = &cfg.rocket.fin_override { format!("override ({} fields)", [o.count.is_some(), o.root_chord.is_some(), o.tip_chord.is_some(), o.span.is_some(), o.sweep.is_some(), o.thickness.is_some(), o.x_le_root.is_some(), o.cant_deg.is_some()].iter().filter(|b| **b).count()) } else { "auto-detect".to_string() };
+        let fin = if let Some(o) = &cfg.rocket.fin_override {
+            format!(
+                "override ({} fields)",
+                [
+                    o.count.is_some(),
+                    o.root_chord.is_some(),
+                    o.tip_chord.is_some(),
+                    o.span.is_some(),
+                    o.sweep.is_some(),
+                    o.thickness.is_some(),
+                    o.x_le_root.is_some(),
+                    o.cant_deg.is_some()
+                ]
+                .iter()
+                .filter(|b| **b)
+                .count()
+            )
+        } else {
+            "auto-detect".to_string()
+        };
         p.row("slices", format!("{}{s}fin threshold {}{s}fins {}", val(cfg.aero.n_slices, ""), val(cfg.aero.fin_threshold, ""), fin));
     }
 
     if flight {
         let l = &cfg.launch;
         p.section("Launch");
-        p.row("site", format!("{}, {}{s}{} {}", val(format!("{:.4}", l.latitude), "N"), val(format!("{:.4}", l.longitude), "E"), val(format!("{:.0}", l.altitude), "m"), dim("ASL")));
-        p.row("rail", format!("{}{s}elevation {}{s}azimuth {}", val(format!("{:.1}", l.rail_length), "m"), val(format!("{:.1}", l.elevation_deg), "deg"), val(format!("{:.0}", l.azimuth_deg), "deg")));
+        p.row(
+            "site",
+            format!(
+                "{}, {}{s}{} {}",
+                val(format!("{:.4}", l.latitude), "N"),
+                val(format!("{:.4}", l.longitude), "E"),
+                val(format!("{:.0}", l.altitude), "m"),
+                dim("ASL")
+            ),
+        );
+        p.row(
+            "rail",
+            format!(
+                "{}{s}elevation {}{s}azimuth {}",
+                val(format!("{:.1}", l.rail_length), "m"),
+                val(format!("{:.1}", l.elevation_deg), "deg"),
+                val(format!("{:.0}", l.azimuth_deg), "deg")
+            ),
+        );
         if l.roll_deg != 0.0 {
             p.row("launch roll", val(l.roll_deg, "deg"));
         }
         p.section("Recovery");
         if cfg.recovery.enabled {
-            p.row("parachute", format!("Cd*S {}{s}deploys {} after apogee", val(format!("{:.2}", cfg.recovery.cd_s), "m2"), val(format!("{:.1}", cfg.recovery.delay), "s")));
+            p.row(
+                "parachute",
+                format!("Cd*S {}{s}deploys {} after apogee", val(format!("{:.2}", cfg.recovery.cd_s), "m2"), val(format!("{:.1}", cfg.recovery.delay), "s")),
+            );
             if let Some((cd_s, alt)) = cfg.recovery.main() {
                 p.row("main parachute", format!("main Cd*S {}{s}deploys at {}", val(format!("{:.2}", cd_s), "m2"), val(format!("{:.0}", alt), "m")));
             }
@@ -137,7 +194,17 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
             }
             _ => {
                 p.row("method", format!("{m}{s}roughness {}{s}extra Cd {}", val(cfg.rocket.roughness * 1e6, "um"), val(cfg.rocket.extra_cd, "")));
-                p.row("grid", format!("Mach {} .. {} step {}{s}alpha 0 .. {} step {} deg", val(a.mach_min, ""), val(a.mach_max, ""), val(a.mach_step, ""), val(a.alpha_max_deg, ""), val(a.alpha_step_deg, "")));
+                p.row(
+                    "grid",
+                    format!(
+                        "Mach {} .. {} step {}{s}alpha 0 .. {} step {} deg",
+                        val(a.mach_min, ""),
+                        val(a.mach_max, ""),
+                        val(a.mach_step, ""),
+                        val(a.alpha_max_deg, ""),
+                        val(a.alpha_step_deg, "")
+                    ),
+                );
                 if a.table_kind == aero::table::TableKind::General {
                     p.row("table", format!("{}{s}α ±180, β ±90 deg{s}Mach step {}", style("general").bold(), val(a.general_mach_step, "")));
                 }
@@ -145,16 +212,44 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
         }
         if a.method == AeroMethod::Cfd {
             let c = &a.cfd;
-            p.row("cfd", format!("{}{s}surface {}{s}{}", style(name(&c.model)).bold(), style(name(&c.surface)).bold(), if c.symmetry { "half model" } else { "full model" }));
+            p.row(
+                "cfd",
+                format!(
+                    "{}{s}surface {}{s}{}",
+                    style(name(&c.model)).bold(),
+                    style(name(&c.surface)).bold(),
+                    if c.symmetry { "half model" } else { "full model" }
+                ),
+            );
             let ms: Vec<String> = c.machs.iter().map(|m| format!("{m}")).collect();
             let al: Vec<String> = c.alphas_deg.iter().map(|m| format!("{m}")).collect();
             p.row("cfd cases", format!("Mach [{}]{s}alpha [{}] deg", ms.join(", "), al.join(", ")));
             p.row("cfd mesh", format!("wall {}{s}farfield {} L{s}y+ {}", val(c.wall_size * 1e3, "mm"), val(c.farfield, ""), val(c.yplus, "")));
-            p.row("cfd solver", format!("{} iter{s}CFL {}{s}res {}{s}{} ranks x {} cases", val(c.iterations, ""), val(c.cfl, ""), val(c.convergence, ""), val(c.ranks_per_case, ""), val(c.parallel_cases, "")));
+            p.row(
+                "cfd solver",
+                format!(
+                    "{} iter{s}CFL {}{s}res {}{s}{} ranks x {} cases",
+                    val(c.iterations, ""),
+                    val(c.cfl, ""),
+                    val(c.convergence, ""),
+                    val(c.ranks_per_case, ""),
+                    val(c.parallel_cases, "")
+                ),
+            );
         }
         if a.method == AeroMethod::Panel {
             let q = &a.panel;
-            p.row("panel mesh", format!("{} x {} body{s}fin {} x {}{s}wake {} L", val(q.body_axial, ""), val(q.body_circ, ""), val(q.fin_chord, ""), val(q.fin_span, ""), val(q.wake_length, "")));
+            p.row(
+                "panel mesh",
+                format!(
+                    "{} x {} body{s}fin {} x {}{s}wake {} L",
+                    val(q.body_axial, ""),
+                    val(q.body_circ, ""),
+                    val(q.fin_chord, ""),
+                    val(q.fin_span, ""),
+                    val(q.wake_length, "")
+                ),
+            );
             let ms: Vec<String> = q.subsonic_machs.iter().map(|m| format!("{m}")).collect();
             p.row("panel Mach", format!("subsonic [{}]", ms.join(", ")));
             p.row("transonic", format!("blend {} .. {}", q.transonic[0], q.transonic[1]));
@@ -169,7 +264,9 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
             "atmosphere",
             match at.model {
                 sim::env::AtmosphereKind::Us1976 => format!("{}{s}dT {}", style("us1976").bold(), val(at.temperature_offset, "K")),
-                sim::env::AtmosphereKind::Constant => format!("{}{s}rho {}{s}a {}", style("constant").bold(), val(at.density, "kg/m3"), val(at.sound_speed, "m/s")),
+                sim::env::AtmosphereKind::Constant => {
+                    format!("{}{s}rho {}{s}a {}", style("constant").bold(), val(at.density, "kg/m3"), val(at.sound_speed, "m/s"))
+                }
             },
         );
         let w = &cfg.wind;
@@ -179,7 +276,16 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
             sim::WindModel::Log => format!("{s}ref {} m, z0 = {} m", w.ref_height, w.roughness_length),
             sim::WindModel::Profile => format!("{s}{}", w.profile.as_ref().map(|p| short_path(&cfg.resolve(p))).unwrap_or_default()),
         };
-        p.row("wind", format!("{}{s}{} from {}{}", style(name(&w.model)).bold(), val(format!("{:.1}", w.speed), "m/s"), val(format!("{:.0}", w.direction_deg), "deg"), detail));
+        p.row(
+            "wind",
+            format!(
+                "{}{s}{} from {}{}",
+                style(name(&w.model)).bold(),
+                val(format!("{:.1}", w.speed), "m/s"),
+                val(format!("{:.0}", w.direction_deg), "deg"),
+                detail
+            ),
+        );
 
         p.section("Integration");
         let c = &cfg.sim;
@@ -196,12 +302,32 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
         match d.mode {
             sim::DispersionMode::WindGrid => {
                 let sp: Vec<String> = d.wind_speeds.iter().map(|v| format!("{v}")).collect();
-                p.row("mode", format!("{}{s}{} speeds x {} directions x {} descent = {}", style("wind_grid").bold().magenta(), d.wind_speeds.len(), d.directions, modes, val(d.wind_speeds.len() * d.directions * modes, "runs")));
+                p.row(
+                    "mode",
+                    format!(
+                        "{}{s}{} speeds x {} directions x {} descent = {}",
+                        style("wind_grid").bold().magenta(),
+                        d.wind_speeds.len(),
+                        d.directions,
+                        modes,
+                        val(d.wind_speeds.len() * d.directions * modes, "runs")
+                    ),
+                );
                 p.row("speeds", format!("[{}] m/s", sp.join(", ")));
             }
             sim::DispersionMode::MonteCarlo => {
                 let m = &d.monte_carlo;
-                p.row("mode", format!("{}{s}{} samples x {} descent = {}{s}seed {}", style("monte_carlo").bold().magenta(), val(m.samples, ""), modes, val(m.samples * modes, "runs"), m.seed));
+                p.row(
+                    "mode",
+                    format!(
+                        "{}{s}{} samples x {} descent = {}{s}seed {}",
+                        style("monte_carlo").bold().magenta(),
+                        val(m.samples, ""),
+                        modes,
+                        val(m.samples * modes, "runs"),
+                        m.seed
+                    ),
+                );
             }
         }
     }
@@ -233,13 +359,30 @@ pub fn geometry_panel(g: &Geometry) -> Panel {
     let mut p = Panel::new("Geometry");
     p.row("length", val(format!("{:.4}", g.length), "m"));
     p.row("diameter", format!("{}{s}ref area {}", val(format!("{:.4}", 2.0 * g.ref_radius), "m"), val(format!("{:.6}", g.ref_area), "m2")));
-    p.row("nose", format!("length {}{s}joint angle {}{s}volume ratio {}", val(format!("{:.4}", g.nose.length), "m"), val(format!("{:.2}", g.nose.joint_half_angle_deg), "deg"), val(format!("{:.3}", g.nose.volume_ratio), "")));
+    p.row(
+        "nose",
+        format!(
+            "length {}{s}joint angle {}{s}volume ratio {}",
+            val(format!("{:.4}", g.nose.length), "m"),
+            val(format!("{:.2}", g.nose.joint_half_angle_deg), "deg"),
+            val(format!("{:.3}", g.nose.volume_ratio), "")
+        ),
+    );
     if let Some(b) = &g.boattail {
         p.row("boattail", format!("length {}{s}r {:.4} -> {:.4} m", val(format!("{:.4}", b.length), "m"), b.r_fore, b.r_aft));
     }
     match &g.fins {
         Some(f) => {
-            p.row("fins", format!("{} x root {} tip {} span {}", val(f.count, ""), val(format!("{:.4}", f.root_chord), "m"), val(format!("{:.4}", f.tip_chord), "m"), val(format!("{:.4}", f.span), "m")));
+            p.row(
+                "fins",
+                format!(
+                    "{} x root {} tip {} span {}",
+                    val(f.count, ""),
+                    val(format!("{:.4}", f.root_chord), "m"),
+                    val(format!("{:.4}", f.tip_chord), "m"),
+                    val(format!("{:.4}", f.span), "m")
+                ),
+            );
             p.row("", format!("sweep {:.4} m{s}thickness {:.4} m{s}at x {:.4} m", f.sweep, f.thickness, f.x_le_root));
         }
         None => {
@@ -274,10 +417,34 @@ pub fn table_panel(t: &AeroTable, elapsed: Option<Duration>) -> Panel {
     let s = sep();
     let mut p = Panel::new("Aerodynamic table");
     let m = &t.meta;
-    p.row("rows", format!("{}{s}Mach {} x alpha {}{}", val(t.rows(), ""), val(m.machs.len(), ""), val(m.alphas_deg.len(), ""), elapsed.map_or(String::new(), |e| format!("{s}built in {}", fmt_dur(e)))));
-    p.row("reference", format!("D {}{s}A {}{s}L {}", val(format!("{:.4}", m.ref_diameter), "m"), val(format!("{:.6}", m.ref_area), "m2"), val(format!("{:.4}", m.length), "m")));
+    p.row(
+        "rows",
+        format!(
+            "{}{s}Mach {} x alpha {}{}",
+            val(t.rows(), ""),
+            val(m.machs.len(), ""),
+            val(m.alphas_deg.len(), ""),
+            elapsed.map_or(String::new(), |e| format!("{s}built in {}", fmt_dur(e)))
+        ),
+    );
+    p.row(
+        "reference",
+        format!(
+            "D {}{s}A {}{s}L {}",
+            val(format!("{:.4}", m.ref_diameter), "m"),
+            val(format!("{:.6}", m.ref_area), "m2"),
+            val(format!("{:.4}", m.length), "m")
+        ),
+    );
     p.text("");
-    let hdr = format!("{}{}{}{}{}", pad_left("Mach", 6), pad_left("CNa [/rad]", 13), pad_left("Xcp [m]", 11), pad_left("CA power-off", 15), pad_left("CA power-on", 14));
+    let hdr = format!(
+        "{}{}{}{}{}",
+        pad_left("Mach", 6),
+        pad_left("CNa [/rad]", 13),
+        pad_left("Xcp [m]", 11),
+        pad_left("CA power-off", 15),
+        pad_left("CA power-on", 14)
+    );
     p.text(style(hdr).dim().underlined().to_string());
     let lo = m.machs.first().copied().unwrap_or(0.0);
     let hi = m.machs.last().copied().unwrap_or(0.0);
@@ -301,11 +468,19 @@ pub fn table_panel(t: &AeroTable, elapsed: Option<Duration>) -> Panel {
 pub fn panel_report_panel(r: &panel::PanelReport) -> Panel {
     let s = sep();
     let mut p = Panel::new("Panel method");
-    p.row("mesh", format!("{} panels + {} wake panels{s}solves took {}", val(r.panels, ""), val(r.wake_panels, ""), val(format!("{:.2}", r.solve_seconds), "s")));
+    p.row(
+        "mesh",
+        format!("{} panels + {} wake panels{s}solves took {}", val(r.panels, ""), val(r.wake_panels, ""), val(format!("{:.2}", r.solve_seconds), "s")),
+    );
     p.text("");
     p.text(style(format!("{}{}{}", pad_left("Mach", 6), pad_left("CNa [/rad]", 13), pad_left("Xcp [m]", 11))).dim().underlined().to_string());
     for x in &r.subsonic {
-        p.text(format!("{}{}{}", pad_left(&style(format!("{:.2}", x.mach)).cyan().bold().to_string(), 6), pad_left(&format!("{:.3}", x.cna), 13), pad_left(&format!("{:.4}", x.xcp), 11)));
+        p.text(format!(
+            "{}{}{}",
+            pad_left(&style(format!("{:.2}", x.mach)).cyan().bold().to_string(), 6),
+            pad_left(&format!("{:.3}", x.cna), 13),
+            pad_left(&format!("{:.4}", x.xcp), 11)
+        ));
     }
     p
 }
@@ -315,9 +490,25 @@ pub fn flight_panel(sm: &Summary, descent: Descent, g_lat_lon: bool) -> Panel {
     let title = format!("Flight result {} {} descent", ui().g().dot, if descent == Descent::Ballistic { "ballistic" } else { "parachute" });
     let mut p = Panel::new(title);
     p.row("wind", format!("{} from {}", val(format!("{:.1}", sm.wind_speed), "m/s"), val(format!("{:.0}", sm.wind_direction_deg), "deg")));
-    p.row("rail exit", format!("{}{s}{}{s}stability {}", val(format!("{:.2}", sm.rail_exit_time), "s"), val(format!("{:.1}", sm.rail_exit_speed), "m/s"), stability(sm.stability_at_rail_exit)));
+    p.row(
+        "rail exit",
+        format!(
+            "{}{s}{}{s}stability {}",
+            val(format!("{:.2}", sm.rail_exit_time), "s"),
+            val(format!("{:.1}", sm.rail_exit_speed), "m/s"),
+            stability(sm.stability_at_rail_exit)
+        ),
+    );
     p.row("burnout", val(format!("{:.2}", sm.burnout_time), "s"));
-    p.row("max speed", format!("{} {}{s}max q {}", style(format!("{:.1} m/s", sm.max_speed)).bold().yellow(), dim(format!("(Mach {:.2})", sm.max_mach)), val(format!("{:.1}", sm.max_dyn_pressure / 1000.0), "kPa")));
+    p.row(
+        "max speed",
+        format!(
+            "{} {}{s}max q {}",
+            style(format!("{:.1} m/s", sm.max_speed)).bold().yellow(),
+            dim(format!("(Mach {:.2})", sm.max_mach)),
+            val(format!("{:.1}", sm.max_dyn_pressure / 1000.0), "kPa")
+        ),
+    );
     // Minimum over the rail exit and the free flight (the rail-exit value is in the row above).
     p.row("min margin", stability(crate::static_margin_min(sm)));
     p.row("apogee", format!("{} {}{s}at {}", style(format!("{:.1} m", sm.apogee)).bold().green(), dim("AGL"), val(format!("{:.2}", sm.apogee_time), "s")));
@@ -328,7 +519,15 @@ pub fn flight_panel(sm: &Summary, descent: Descent, g_lat_lon: bool) -> Panel {
         p.row("landing", style("DID NOT LAND within sim.max_time").red().bold().to_string());
         return p;
     }
-    p.row("landing", format!("E {} N {}{s}{} downrange", val(format!("{:.1}", sm.landing_east), "m"), val(format!("{:.1}", sm.landing_north), "m"), style(format!("{:.0} m", sm.landing_distance)).bold().cyan()));
+    p.row(
+        "landing",
+        format!(
+            "E {} N {}{s}{} downrange",
+            val(format!("{:.1}", sm.landing_east), "m"),
+            val(format!("{:.1}", sm.landing_north), "m"),
+            style(format!("{:.0} m", sm.landing_distance)).bold().cyan()
+        ),
+    );
     p.row("", format!("t = {}{s}impact speed {}", val(format!("{:.1}", sm.landing_time), "s"), val(format!("{:.1}", sm.landing_speed), "m/s")));
     if g_lat_lon {
         p.row("", dim(format!("{:.6}, {:.6}", sm.landing_lat, sm.landing_lon)).to_string());
@@ -342,7 +541,14 @@ pub fn wind_grid_panel(cases: &[Case], results: &[Summary], elapsed: Duration) -
     p.row("cases", format!("{}{s}{}", val(results.len(), "runs"), dim(format!("in {}", fmt_dur(elapsed)))));
     p.text("");
     let w = [11, 7, 13, 11, 22];
-    let hdr = format!("{}{}{}{}{}", pad("descent", w[0]), pad_left("cases", w[1]), pad_left("max landing", w[2]), pad_left("mean", w[3]), pad_left("worst case", w[4]));
+    let hdr = format!(
+        "{}{}{}{}{}",
+        pad("descent", w[0]),
+        pad_left("cases", w[1]),
+        pad_left("max landing", w[2]),
+        pad_left("mean", w[3]),
+        pad_left("worst case", w[4])
+    );
     p.text(style(hdr).dim().underlined().to_string());
     let mut modes: Vec<Descent> = Vec::new();
     for c in cases {
@@ -381,7 +587,16 @@ pub fn monte_carlo_panel(sm: &McSummary, elapsed: Duration, n_rows: usize) -> Pa
     let s = sep();
     let mut p = Panel::new("Monte Carlo result");
     p.spaced = true;
-    p.row("runs", format!("{} samples x {} descent modes = {}{s}{}", val(sm.samples, ""), sm.descents.len(), val(n_rows, "runs"), dim(format!("in {}", fmt_dur(elapsed)))));
+    p.row(
+        "runs",
+        format!(
+            "{} samples x {} descent modes = {}{s}{}",
+            val(sm.samples, ""),
+            sm.descents.len(),
+            val(n_rows, "runs"),
+            dim(format!("in {}", fmt_dur(elapsed)))
+        ),
+    );
     for d in &sm.descents {
         let nm = if d.descent == Descent::Ballistic { style("Ballistic").red().bold() } else { style("Parachute").green().bold() };
         p.section(&nm.to_string());
@@ -396,11 +611,34 @@ pub fn monte_carlo_panel(sm: &McSummary, elapsed: Duration, n_rows: usize) -> Pa
         let (e1, e3) = (d.landing.ellipse_1sigma, d.landing.ellipse_3sigma);
         p.row("mean landing", format!("E {} N {}", val(format!("{:.1}", d.landing.mean_east), "m"), val(format!("{:.1}", d.landing.mean_north), "m")));
         p.row("apogee", format!("{} {} {}", style(format!("{:.1} m", d.apogee_mean)).bold().green(), dim("+-"), val(format!("{:.1}", d.apogee_std), "m")));
-        p.row("1-sigma", format!("{} x {}{s}bearing {} deg", val(format!("{:.1}", e1.semi_major), "m"), val(format!("{:.1}", e1.semi_minor), "m"), val(format!("{:.0}", e1.major_axis_bearing_deg), "")));
+        p.row(
+            "1-sigma",
+            format!(
+                "{} x {}{s}bearing {} deg",
+                val(format!("{:.1}", e1.semi_major), "m"),
+                val(format!("{:.1}", e1.semi_minor), "m"),
+                val(format!("{:.0}", e1.major_axis_bearing_deg), "")
+            ),
+        );
         p.row("3-sigma", format!("{} x {}", val(format!("{:.1}", e3.semi_major), "m"), val(format!("{:.1}", e3.semi_minor), "m")));
         let bound = if d.max_landing_distance_is_lower_bound { "\u{2265} " } else { "" };
-        p.row("max landing", format!("{}  {}", style(format!("{bound}{:.1} m", d.max_landing_distance)).bold().cyan(), dim(format!("(sample {})", d.max_landing_distance_sample.unwrap_or(0)))));
-        p.row("distance", format!("P50 {}{s}P90 {}{s}P99 {}", val(format!("{:.1}", d.landing_distance_p50), "m"), val(format!("{:.1}", d.landing_distance_p90), "m"), val(format!("{:.1}", d.landing_distance_p99), "m")));
+        p.row(
+            "max landing",
+            format!(
+                "{}  {}",
+                style(format!("{bound}{:.1} m", d.max_landing_distance)).bold().cyan(),
+                dim(format!("(sample {})", d.max_landing_distance_sample.unwrap_or(0)))
+            ),
+        );
+        p.row(
+            "distance",
+            format!(
+                "P50 {}{s}P90 {}{s}P99 {}",
+                val(format!("{:.1}", d.landing_distance_p50), "m"),
+                val(format!("{:.1}", d.landing_distance_p90), "m"),
+                val(format!("{:.1}", d.landing_distance_p99), "m")
+            ),
+        );
     }
     p
 }
@@ -429,10 +667,25 @@ mod tests {
         let plain = render(&config_panel(&cfg, &dir.join("sample.toml"), Sub::Sim, None));
         assert!(plain.contains("main Cd*S 8.00 m2") && plain.contains("deploys at 300 m"), "{plain}");
         assert!(plain.contains("drogue") && plain.contains("main") && plain.contains("m/s"), "{plain}");
-        let single = render(&config_panel(&Config::from_value(toml::from_str(include_str!("../../../examples/sample.toml")).unwrap(), Some(&dir)).unwrap(), &dir.join("sample.toml"), Sub::Sim, None));
+        let single = render(&config_panel(
+            &Config::from_value(toml::from_str(include_str!("../../../examples/sample.toml")).unwrap(), Some(&dir)).unwrap(),
+            &dir.join("sample.toml"),
+            Sub::Sim,
+            None,
+        ));
         assert!(!single.contains("main Cd*S") && !single.contains("drogue"), "{single}");
-        let s = Summary { main_deploy_time: Some(61.5), main_deploy_altitude: Some(300.2), landing_time: 100.0, ..Summary::failed(Descent::Parachute, 1.0, 0.0) };
-        let s = Summary { landing_time: 100.0, landing_east: 1.0, landing_north: 2.0, landing_distance: 3.0, landing_speed: 5.0, landing_lat: 0.0, landing_lon: 0.0, ..s };
+        let s =
+            Summary { main_deploy_time: Some(61.5), main_deploy_altitude: Some(300.2), landing_time: 100.0, ..Summary::failed(Descent::Parachute, 1.0, 0.0) };
+        let s = Summary {
+            landing_time: 100.0,
+            landing_east: 1.0,
+            landing_north: 2.0,
+            landing_distance: 3.0,
+            landing_speed: 5.0,
+            landing_lat: 0.0,
+            landing_lon: 0.0,
+            ..s
+        };
         let flight = render(&flight_panel(&s, Descent::Parachute, false));
         assert!(flight.contains("main deploy") && flight.contains("300.2 m") && flight.contains("61.50 s"), "{flight}");
     }
@@ -449,7 +702,8 @@ mod tests {
             extrapolation: aero::Extrapolation::Clamp,
             ..Default::default()
         };
-        let axi = AeroTable::from_fn(meta, |_, a| aero::AeroCoeffs { cn: 3.0 * a.to_radians(), ca_off: 0.4, ca_on: 0.3, xcp: 0.7, cna: 3.0, ..Default::default() });
+        let axi =
+            AeroTable::from_fn(meta, |_, a| aero::AeroCoeffs { cn: 3.0 * a.to_radians(), ca_off: 0.4, ca_on: 0.3, xcp: 0.7, cna: 3.0, ..Default::default() });
         let general = axi.to_general(aero::table::angle_axis(30.0, 30.0, 2.0, 10.0), aero::table::angle_axis(30.0, 30.0, 2.0, 10.0));
         assert_eq!(general.kind(), aero::table::TableKind::General);
         let plain = |t: &AeroTable| console::strip_ansi_codes(&ui().render_panel(&table_panel(t, None)).join("\n")).to_string();
@@ -462,4 +716,3 @@ mod tests {
         assert!((cna - 3.0).abs() < 0.05 && (xcp - 0.7).abs() < 1e-6, "{cna} {xcp}");
     }
 }
-

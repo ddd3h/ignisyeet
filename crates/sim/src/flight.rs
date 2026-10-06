@@ -10,8 +10,8 @@
 use crate::env::{is_pos, AtmosphereModel, AttitudeKind, Earth, IntegratorKind, Wind};
 use crate::frame::Frame;
 use crate::integrator::{self, State};
-use crate::stepper::Stepper;
 use crate::motor::Motor;
+use crate::stepper::Stepper;
 use aero::table::{aero_angles, Coeffs6, TableKind};
 use aero::{AeroCoeffs, AeroTable};
 use anyhow::{bail, Result};
@@ -488,10 +488,7 @@ impl<'a> Simulation<'a> {
         let xcg = (m.dry_mass * m.cg_dry + mp * xp) / total;
         let r = 0.5 * self.motor.diameter;
         if m.is_axisymmetric() {
-            let iyy = m.iyy_dry
-                + m.dry_mass * (m.cg_dry - xcg).powi(2)
-                + mp * (3.0 * r * r + self.motor.length.powi(2)) / 12.0
-                + mp * (xp - xcg).powi(2);
+            let iyy = m.iyy_dry + m.dry_mass * (m.cg_dry - xcg).powi(2) + mp * (3.0 * r * r + self.motor.length.powi(2)) / 12.0 + mp * (xp - xcg).powi(2);
             let ixx = m.ixx_dry + 0.5 * mp * r * r;
             return MassState { m: total, x_cg: xcg, cg_lat: [0.0, 0.0], inertia: Mat3::diag(ixx, iyy, iyy), inv: None, diagonal: true };
         }
@@ -598,33 +595,33 @@ impl<'a> Simulation<'a> {
                         let x_cp = self.eff_xcp(&c, mach).unwrap_or(f64::NAN);
                         aux = Aux { airspeed: v, mach, alpha, qdyn: qd, cn: c.cy.hypot(c.cz), ca: -cx, x_cp, beta, cl, cy: c.cy, ..aux };
                     } else {
-                    // Tail-first flight (alpha > 90 deg) mirrors the nose-first coefficients.
-                    let alpha_eff = alpha.min(std::f64::consts::PI - alpha);
-                    let mach = v / atm.sound_speed;
-                    let c = self.lookup(mach, alpha_eff);
-                    let qd = 0.5 * atm.density * v * v;
-                    let ca = if thrust > 0.0 { c.ca_on } else { c.ca_off };
-                    let axial = Vec3::new(-ca * qd * s_ref * ub.x.signum(), 0.0, 0.0);
-                    f_body += axial;
-                    let mut f_aero = axial;
-                    if lat > 1e-12 {
-                        let fn_b = Vec3::new(0.0, -ub.y / lat, -ub.z / lat) * (c.cn * qd * s_ref);
-                        f_body += fn_b;
-                        f_aero += fn_b;
-                        m_body += Vec3::new(x_cg - c.xcp, 0.0, 0.0).cross(fn_b);
-                    }
-                    let [s0, s1, s2] = c.damp;
-                    let k = (s2 - 2.0 * x_cg * s1 + x_cg * x_cg * s0).max(0.0);
-                    m_body += Vec3::new(0.0, s.w.y, s.w.z) * (-qd * s_ref * k / v);
-                    // Roll: the tabulated forcing at the reference cant (zero for a rocket without
-                    // cant), the change of cant and the roll damping.
-                    let cl = c.cl_delta * (self.table.meta.fin_cant_ref_deg.to_radians() + d_cant) * sgn + c.clp * p_hat;
-                    m_body += Vec3::new(qd * s_ref * d_ref * cl, 0.0, 0.0);
-                    if ms.cg_lat != [0.0, 0.0] {
-                        // The aerodynamic force acts on the axis; the CG is off it.
-                        m_body += Vec3::new(0.0, -ms.cg_lat[0], -ms.cg_lat[1]).cross(f_aero);
-                    }
-                    aux = Aux { airspeed: v, mach, alpha, qdyn: qd, cn: c.cn, ca, x_cp: c.xcp, beta, cl, cy: 0.0, ..aux };
+                        // Tail-first flight (alpha > 90 deg) mirrors the nose-first coefficients.
+                        let alpha_eff = alpha.min(std::f64::consts::PI - alpha);
+                        let mach = v / atm.sound_speed;
+                        let c = self.lookup(mach, alpha_eff);
+                        let qd = 0.5 * atm.density * v * v;
+                        let ca = if thrust > 0.0 { c.ca_on } else { c.ca_off };
+                        let axial = Vec3::new(-ca * qd * s_ref * ub.x.signum(), 0.0, 0.0);
+                        f_body += axial;
+                        let mut f_aero = axial;
+                        if lat > 1e-12 {
+                            let fn_b = Vec3::new(0.0, -ub.y / lat, -ub.z / lat) * (c.cn * qd * s_ref);
+                            f_body += fn_b;
+                            f_aero += fn_b;
+                            m_body += Vec3::new(x_cg - c.xcp, 0.0, 0.0).cross(fn_b);
+                        }
+                        let [s0, s1, s2] = c.damp;
+                        let k = (s2 - 2.0 * x_cg * s1 + x_cg * x_cg * s0).max(0.0);
+                        m_body += Vec3::new(0.0, s.w.y, s.w.z) * (-qd * s_ref * k / v);
+                        // Roll: the tabulated forcing at the reference cant (zero for a rocket without
+                        // cant), the change of cant and the roll damping.
+                        let cl = c.cl_delta * (self.table.meta.fin_cant_ref_deg.to_radians() + d_cant) * sgn + c.clp * p_hat;
+                        m_body += Vec3::new(qd * s_ref * d_ref * cl, 0.0, 0.0);
+                        if ms.cg_lat != [0.0, 0.0] {
+                            // The aerodynamic force acts on the axis; the CG is off it.
+                            m_body += Vec3::new(0.0, -ms.cg_lat[0], -ms.cg_lat[1]).cross(f_aero);
+                        }
+                        aux = Aux { airspeed: v, mach, alpha, qdyn: qd, cn: c.cn, ca, x_cp: c.xcp, beta, cl, cy: 0.0, ..aux };
                     }
                 }
                 let acc = rot.mul_vec(f_body) / mass + g;
@@ -1279,7 +1276,12 @@ mod tests {
     #[test]
     fn hermite_position_is_exact_for_free_fall_and_gives_the_apogee() {
         // z(t) = 100 + 40 t - 4.9 t^2 over a step of 7 s starting at t = 1: apogee at t = 40/9.8.
-        let st = |t: f64| State { pos: Vec3::new(0.0, 0.0, 100.0 + 40.0 * t - 4.9 * t * t), vel: Vec3::new(0.0, 0.0, 40.0 - 9.8 * t), q: Quat::IDENTITY, w: Vec3::ZERO };
+        let st = |t: f64| State {
+            pos: Vec3::new(0.0, 0.0, 100.0 + 40.0 * t - 4.9 * t * t),
+            vel: Vec3::new(0.0, 0.0, 40.0 - 9.8 * t),
+            q: Quat::IDENTITY,
+            w: Vec3::ZERO,
+        };
         let (a, b, h) = (st(1.0), st(8.0), 7.0);
         let f = a.vel.z / (a.vel.z - b.vel.z);
         let p = hermite_pos(&a, &b, h, f);
@@ -1417,7 +1419,20 @@ mod tests {
             ad.settings.integrator = IntegratorKind::Rk45;
             let b = ad.run(descent, true).unwrap();
             let (sa, sb) = (&a.summary, &b.summary);
-            println!("{name}: rk4 apogee {} land ({}, {}) t {} evals {} | rk45 apogee {} land ({}, {}) t {} evals {} samples {}", sa.apogee, sa.landing_east, sa.landing_north, sa.landing_time, a.evals, sb.apogee, sb.landing_east, sb.landing_north, sb.landing_time, b.evals, b.samples.len());
+            println!(
+                "{name}: rk4 apogee {} land ({}, {}) t {} evals {} | rk45 apogee {} land ({}, {}) t {} evals {} samples {}",
+                sa.apogee,
+                sa.landing_east,
+                sa.landing_north,
+                sa.landing_time,
+                a.evals,
+                sb.apogee,
+                sb.landing_east,
+                sb.landing_north,
+                sb.landing_time,
+                b.evals,
+                b.samples.len()
+            );
             assert!((sa.apogee - sb.apogee).abs() / sa.apogee < 1e-3, "{name} apogee");
             assert!((sa.landing_east - sb.landing_east).hypot(sa.landing_north - sb.landing_north) < 1.0, "{name} landing");
             assert!((sa.landing_time - sb.landing_time).abs() < 0.05, "{name} landing time");
@@ -1481,7 +1496,15 @@ mod tests {
                 let r = with(base, i, at).run(descent, false).unwrap();
                 let sm = &r.summary;
                 let d_land = (sm.landing_east - refs.landing_east).hypot(sm.landing_north - refs.landing_north);
-                println!("{name} {descent:?} {i:?}/{at:?}: apogee {:.3} ({:+.3}) landing ({:.2}, {:.2}) d {:.3} evals {}", sm.apogee, sm.apogee - refs.apogee, sm.landing_east, sm.landing_north, d_land, r.evals);
+                println!(
+                    "{name} {descent:?} {i:?}/{at:?}: apogee {:.3} ({:+.3}) landing ({:.2}, {:.2}) d {:.3} evals {}",
+                    sm.apogee,
+                    sm.apogee - refs.apogee,
+                    sm.landing_east,
+                    sm.landing_north,
+                    d_land,
+                    r.evals
+                );
                 assert!((sm.apogee - refs.apogee).abs() < 0.5, "{name} {descent:?} {i:?}/{at:?} apogee {} vs {}", sm.apogee, refs.apogee);
                 assert!(d_land < 2.0, "{name} {descent:?} {i:?}/{at:?} landing off by {d_land}");
             }
@@ -1582,7 +1605,15 @@ mod tests {
     // ---- roll, full inertia tensor, thrust misalignment, general tables ----
 
     fn roll_meta(machs: Vec<f64>) -> TableMeta {
-        TableMeta { ref_area: 0.01, ref_diameter: 0.1, length: 1.0, machs, alphas_deg: vec![0.0, 90.0], extrapolation: Extrapolation::Clamp, ..Default::default() }
+        TableMeta {
+            ref_area: 0.01,
+            ref_diameter: 0.1,
+            length: 1.0,
+            machs,
+            alphas_deg: vec![0.0, 90.0],
+            extrapolation: Extrapolation::Clamp,
+            ..Default::default()
+        }
     }
 
     /// Vertical powered flight in a table with only roll terms; the roll inertia is small so the
@@ -1709,7 +1740,17 @@ mod tests {
     fn torque_free_asymmetric_body_conserves_energy_and_momentum() {
         let (table, motor) = vacuum_parts();
         let mut sim = vacuum_sim(&table, &motor);
-        sim.mass = MassProperties { dry_mass: 5.0, cg_dry: 0.5, ixx_dry: 0.02, iyy_dry: 1.5, izz_dry: Some(1.8), ixy_dry: 0.05, ixz_dry: -0.03, iyz_dry: 0.1, cg_lateral_dry: [0.01, -0.02] };
+        sim.mass = MassProperties {
+            dry_mass: 5.0,
+            cg_dry: 0.5,
+            ixx_dry: 0.02,
+            iyy_dry: 1.5,
+            izz_dry: Some(1.8),
+            ixy_dry: 0.05,
+            ixz_dry: -0.03,
+            iyz_dry: 0.1,
+            cg_lateral_dry: [0.01, -0.02],
+        };
         assert!(sim.mass_at(100.0).inertia.det() > 0.0);
         let w0 = Vec3::new(0.5, 3.0, 0.4);
         let l0 = sim.mass_at(100.0).inertia.mul_vec(w0).norm();
@@ -1768,7 +1809,10 @@ mod tests {
         for wind in [0.0, 5.0] {
             let a = sample_sim(&table, &motor, wind).run(Descent::Ballistic, true).unwrap();
             let b = sample_sim(&general, &motor, wind).run(Descent::Ballistic, true).unwrap();
-            println!("wind {wind}: apogee {} vs {}, landing ({}, {}) vs ({}, {})", a.summary.apogee, b.summary.apogee, a.summary.landing_east, a.summary.landing_north, b.summary.landing_east, b.summary.landing_north);
+            println!(
+                "wind {wind}: apogee {} vs {}, landing ({}, {}) vs ({}, {})",
+                a.summary.apogee, b.summary.apogee, a.summary.landing_east, a.summary.landing_north, b.summary.landing_east, b.summary.landing_north
+            );
             assert!((a.summary.apogee - b.summary.apogee).abs() < 0.5, "wind {wind} apogee");
             assert!((a.summary.min_stability_cal - b.summary.min_stability_cal).abs() < 0.1, "stability");
             assert!(b.samples.iter().all(|s| s.alpha_deg.is_finite() && s.beta_deg.is_finite()));

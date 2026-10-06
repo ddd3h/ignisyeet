@@ -18,11 +18,16 @@ pub fn parse_stl(bytes: &[u8]) -> Result<Vec<Triangle>> {
         let n = u32::from_le_bytes(bytes[80..84].try_into().unwrap()) as usize;
         bytes.len() == 84 + 50 * n
     };
-    let looks_ascii = bytes.starts_with(b"solid")
-        && std::str::from_utf8(&bytes[..bytes.len().min(1024)])
-            .map(|s| s.contains("facet"))
-            .unwrap_or(false);
-    let tris = if is_binary_size && !looks_ascii { parse_binary(bytes)? } else if looks_ascii { parse_ascii(bytes)? } else if is_binary_size { parse_binary(bytes)? } else { bail!("unrecognised STL format") };
+    let looks_ascii = bytes.starts_with(b"solid") && std::str::from_utf8(&bytes[..bytes.len().min(1024)]).map(|s| s.contains("facet")).unwrap_or(false);
+    let tris = if is_binary_size && !looks_ascii {
+        parse_binary(bytes)?
+    } else if looks_ascii {
+        parse_ascii(bytes)?
+    } else if is_binary_size {
+        parse_binary(bytes)?
+    } else {
+        bail!("unrecognised STL format")
+    };
     if tris.is_empty() {
         bail!("STL contains no triangles");
     }

@@ -44,19 +44,9 @@ pub fn us76(z: f64) -> Atmosphere {
     let layer = LAYERS.iter().rev().find(|l| h >= l.0).unwrap_or(&LAYERS[0]);
     let (hb, tb, lr, pb) = *layer;
     let t = tb + lr * (h - hb);
-    let p = if lr == 0.0 {
-        pb * (-G0 * (h - hb) / (R_AIR * tb)).exp()
-    } else {
-        pb * (tb / t).powf(G0 / (R_AIR * lr))
-    };
+    let p = if lr == 0.0 { pb * (-G0 * (h - hb) / (R_AIR * tb)).exp() } else { pb * (tb / t).powf(G0 / (R_AIR * lr)) };
     let density = p / (R_AIR * t);
-    Atmosphere {
-        temperature: t,
-        pressure: p,
-        density,
-        sound_speed: (GAMMA * R_AIR * t).sqrt(),
-        viscosity: 1.458e-6 * t.powf(1.5) / (t + 110.4),
-    }
+    Atmosphere { temperature: t, pressure: p, density, sound_speed: (GAMMA * R_AIR * t).sqrt(), viscosity: 1.458e-6 * t.powf(1.5) / (t + 110.4) }
 }
 
 /// Layer index, geopotential height and local temperature offset handling shared by `us76` and
@@ -86,11 +76,7 @@ fn offset_pressure(h: f64, dt: f64) -> f64 {
             break;
         }
         let tb = tb + dt;
-        p *= if lr == 0.0 {
-            (-G0 * (hh - hb) / (R_AIR * tb)).exp()
-        } else {
-            ((tb + lr * (hh - hb)) / tb).powf(-G0 / (R_AIR * lr))
-        };
+        p *= if lr == 0.0 { (-G0 * (hh - hb) / (R_AIR * tb)).exp() } else { ((tb + lr * (hh - hb)) / tb).powf(-G0 / (R_AIR * lr)) };
         if h <= top {
             break;
         }

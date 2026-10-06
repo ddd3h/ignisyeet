@@ -109,7 +109,11 @@ impl AeroModel {
     }
 
     pub fn body_xcp(&self) -> f64 {
-        if self.body_s[0].abs() > 1e-12 { self.body_s[1] / self.body_s[0] } else { 0.0 }
+        if self.body_s[0].abs() > 1e-12 {
+            self.body_s[1] / self.body_s[0]
+        } else {
+            0.0
+        }
     }
 
     pub fn body_part_count(&self) -> usize {
@@ -164,8 +168,7 @@ impl AeroModel {
         let b = beta(m);
         let m2 = m * m;
         let k1 = 2.0 / b;
-        let k3 = ((g + 1.0) * m2.powi(4) + (2.0 * g * g - 7.0 * g - 5.0) * m2.powi(3) + 10.0 * (g + 1.0) * m2 * m2 + 8.0)
-            / (6.0 * b.powi(7));
+        let k3 = ((g + 1.0) * m2.powi(4) + (2.0 * g * g - 7.0 * g - 5.0) * m2.powi(3) + 10.0 * (g + 1.0) * m2 * m2 + 8.0) / (6.0 * b.powi(7));
         // Flat-plate Busemann (both surfaces) with a linear-theory tip-loss factor.
         let ar = 2.0 * f.span * f.span / f.area();
         let tip = (1.0 - 1.0 / (2.0 * b * ar)).clamp(0.5, 1.0);
@@ -288,7 +291,13 @@ impl AeroModel {
         let mut boattail = 0.0;
         if let Some(b) = &g.boattail {
             let gamma = b.length / (2.0 * (b.r_fore - b.r_aft)).max(1e-9);
-            let k = if gamma < 1.0 { 1.0 } else if gamma > 3.0 { 0.0 } else { (3.0 - gamma) / 2.0 };
+            let k = if gamma < 1.0 {
+                1.0
+            } else if gamma > 3.0 {
+                0.0
+            } else {
+                (3.0 - gamma) / 2.0
+            };
             boattail = k * base_cd(m) * PI * (b.r_fore.powi(2) - b.r_aft.powi(2)) / aref;
         }
 
@@ -303,11 +312,7 @@ impl AeroModel {
         let sj = n.joint_half_angle_deg.to_radians().sin();
         let sub = 0.8 * sj * sj;
         let phi = (n.base_radius / n.length).atan();
-        let shape = if n.volume_ratio <= 1.0 / 3.0 {
-            1.0
-        } else {
-            (1.0 - 0.4 * (n.volume_ratio - 1.0 / 3.0) / (0.55 - 1.0 / 3.0)).max(0.6)
-        };
+        let shape = if n.volume_ratio <= 1.0 / 3.0 { 1.0 } else { (1.0 - 0.4 * (n.volume_ratio - 1.0 / 3.0) / (0.55 - 1.0 / 3.0)).max(0.6) };
         let sup = |m: f64| shape * (2.1 * phi.sin().powi(2) + 0.5 * phi.sin() / (m * m - 1.0).sqrt());
         if m <= 0.8 {
             sub
@@ -354,7 +359,11 @@ pub fn skin_friction(re: f64, m: f64, rel_rough: f64) -> f64 {
 
 /// Base drag coefficient (relative to base area).
 pub fn base_cd(m: f64) -> f64 {
-    if m < 1.0 { 0.12 + 0.13 * m * m } else { 0.25 / m }
+    if m < 1.0 {
+        0.12 + 0.13 * m * m
+    } else {
+        0.25 / m
+    }
 }
 
 /// Rounded leading-edge pressure drag (relative to frontal area).
@@ -468,7 +477,12 @@ mod tests {
         let f = g.fins.as_ref().unwrap();
         let (cr, ct, s, r) = (f.root_chord, f.tip_chord, f.span, f.body_radius);
         let n = 20000;
-        let i2: f64 = (0..n).map(|i| { let xi = r + (i as f64 + 0.5) * s / n as f64; xi * xi * (cr + (ct - cr) * (xi - r) / s) * s / n as f64 }).sum();
+        let i2: f64 = (0..n)
+            .map(|i| {
+                let xi = r + (i as f64 + 0.5) * s / n as f64;
+                xi * xi * (cr + (ct - cr) * (xi - r) / s) * s / n as f64
+            })
+            .sum();
         let d = 2.0 * g.ref_radius;
         let cna1 = m4.fin_cn(0.8, 1e-4) / (1e-4 * m4.fin_scale(f));
         let expect = -2.0 * cna1 / f.area() * 4.0 * i2 / (d * d);

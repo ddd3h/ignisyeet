@@ -116,7 +116,10 @@ fn sample_rocket_vs_barrowman() {
     let (bcna, bxcp) = (model.cna(0.3), model.normal(0.3, 1e-4).1);
     let s = rep.subsonic.iter().find(|s| s.mach == 0.3).unwrap();
     println!("M=0.3: panel CNa {:.3} xcp {:.4} | Barrowman CNa {bcna:.3} xcp {bxcp:.4}", s.cna, s.xcp);
-    println!("M=0: panel CNa {:.3} xcp {:.4}; panels {} wake {} solve {:.1}s", rep.subsonic[0].cna, rep.subsonic[0].xcp, rep.panels, rep.wake_panels, rep.solve_seconds);
+    println!(
+        "M=0: panel CNa {:.3} xcp {:.4}; panels {} wake {} solve {:.1}s",
+        rep.subsonic[0].cna, rep.subsonic[0].xcp, rep.panels, rep.wake_panels, rep.solve_seconds
+    );
     // Barrowman's fin-body interference factor (1 + R/(S+R) = 1.33) is lower than the panel
     // result (about 1.6, between Barrowman and the slender-body limit 1.78), so the panel CNa
     // is higher by roughly a quarter and the centre of pressure about 0.03 m further aft; the
@@ -182,7 +185,16 @@ fn table_is_finite() {
         let (bcn, bx) = model.normal(m, 5f64.to_radians());
         println!(
             "M={m}: panel CN(5deg) {:.3} xcp {:.3} CNa {:.3} CA {:.3} S=({:.2},{:.2},{:.2}) | Barrowman CN {bcn:.3} xcp {bx:.3} CNa {:.3} CA {:.3} S={:?}",
-            c.cn, c.xcp, c.cna, c.ca_off, c.damp[0], c.damp[1], c.damp[2], model.cna(m), model.cd0(m, false).total(), model.damping_sums(m)
+            c.cn,
+            c.xcp,
+            c.cna,
+            c.ca_off,
+            c.damp[0],
+            c.damp[1],
+            c.damp[2],
+            model.cna(m),
+            model.cd0(m, false).total(),
+            model.damping_sums(m)
         );
     }
     let path = std::env::temp_dir().join("ignisyeet_panel_cp_test.csv");
@@ -193,15 +205,20 @@ fn table_is_finite() {
     Mesh::from_geometry(&g, &coarse()).unwrap().write_vtk(&vtk).unwrap();
 }
 
-
-
 #[test]
 #[ignore = "timing run of the default mesh and full default table grid"]
 fn default_table_timing() {
     let g = geometry(&SampleRocket::default());
     let t0 = std::time::Instant::now();
     let (t, rep) = build_table(&g, &PanelOptions::default(), &AeroOptions::default(), "t".into(), Extrapolation::Linear).unwrap();
-    println!("default: {} panels, {} wake, solves {:.1}s, total {:.1}s, {} rows", rep.panels, rep.wake_panels, rep.solve_seconds, t0.elapsed().as_secs_f64(), t.rows());
+    println!(
+        "default: {} panels, {} wake, solves {:.1}s, total {:.1}s, {} rows",
+        rep.panels,
+        rep.wake_panels,
+        rep.solve_seconds,
+        t0.elapsed().as_secs_f64(),
+        t.rows()
+    );
     for s in &rep.subsonic {
         println!("M={:.1}: CNa {:.3} xcp {:.4}", s.mach, s.cna, s.xcp);
     }

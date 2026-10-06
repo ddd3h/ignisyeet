@@ -110,7 +110,10 @@ impl Fidelity {
             )
         };
         let d = |x: &Distances| {
-            format!("max {:.3e} m at ({:.3}, {:.3}, {:.3}), p99 {:.3e} m, rms {:.3e} m ({} samples)", x.max, x.max_at[0], x.max_at[1], x.max_at[2], x.p99, x.rms, x.samples)
+            format!(
+                "max {:.3e} m at ({:.3}, {:.3}, {:.3}), p99 {:.3e} m, rms {:.3e} m ({} samples)",
+                x.max, x.max_at[0], x.max_at[1], x.max_at[2], x.p99, x.rms, x.samples
+            )
         };
         let mut s = format!(
             "  input STL   {}\n  union       {}{}\n  CFD wall    {} ({} wall + {} base)\n  CFD vs union (two-sided)  {}\n  CFD wall vs input STL     {}\n  wall_size {:.3e} m: warn above {:.3e} m, fail above {:.3e} m",
@@ -450,8 +453,14 @@ mod tests {
         let p = |x: f64, y: f64, z: f64| Vec3::new(x, y, z);
         let v = [p(1.0, 0.0, 0.0), p(-1.0, 0.0, 0.0), p(0.0, 1.0, 0.0), p(0.0, -1.0, 0.0), p(0.0, 0.0, 1.0), p(0.0, 0.0, -1.0)];
         let mut t: Vec<Triangle> = vec![
-            [v[0], v[2], v[4]], [v[2], v[1], v[4]], [v[1], v[3], v[4]], [v[3], v[0], v[4]],
-            [v[2], v[0], v[5]], [v[1], v[2], v[5]], [v[3], v[1], v[5]], [v[0], v[3], v[5]],
+            [v[0], v[2], v[4]],
+            [v[2], v[1], v[4]],
+            [v[1], v[3], v[4]],
+            [v[3], v[0], v[4]],
+            [v[2], v[0], v[5]],
+            [v[1], v[2], v[5]],
+            [v[3], v[1], v[5]],
+            [v[0], v[3], v[5]],
         ];
         for _ in 0..level {
             t = t

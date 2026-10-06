@@ -3,8 +3,8 @@
 //! Case matrix, directory names, input hashes and the `done.json` status file.
 
 use crate::config::{AlphaMode, CfdOptions, ShapeSymmetry};
-use crate::forces::BodyCoeffs6;
 use crate::forces::BodyCoeffs;
+use crate::forces::BodyCoeffs6;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -232,13 +232,23 @@ mod tests {
         assert_eq!(warm_start_source(&c, 8), Some(5));
         assert_eq!(warm_start_source(&c, 9), Some(8));
         // The case hash distinguishes the sign of the angle.
-        let cfg = |alpha| crate::su2cfg::su2_config(&o, 0.5, alpha, &crate::su2cfg::RefDims { length: 0.1, area: 0.01 }, &aero::atmosphere::AtmosphereModel::default().at(0.0), &Default::default());
+        let cfg = |alpha| {
+            crate::su2cfg::su2_config(
+                &o,
+                0.5,
+                alpha,
+                &crate::su2cfg::RefDims { length: 0.1, area: 0.01 },
+                &aero::atmosphere::AtmosphereModel::default().at(0.0),
+                &Default::default(),
+            )
+        };
         assert_ne!(case_hash(&cfg(4.0), "m"), case_hash(&cfg(-4.0), "m"));
     }
 
     #[test]
     fn sideslip_and_roll_cases() {
-        let base = CfdOptions { machs: vec![0.8, 2.0], alphas_deg: vec![0.0, 4.0], betas_deg: vec![0.0, 4.0], alpha_mode: AlphaMode::Single, ..Default::default() };
+        let base =
+            CfdOptions { machs: vec![0.8, 2.0], alphas_deg: vec![0.0, 4.0], betas_deg: vec![0.0, 4.0], alpha_mode: AlphaMode::Single, ..Default::default() };
         // Axisymmetric shape: only the positive quadrant (mirror images are not solved).
         let c = case_list(&base);
         assert_eq!(c.len(), 8);

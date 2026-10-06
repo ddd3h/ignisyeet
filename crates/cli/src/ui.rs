@@ -110,11 +110,7 @@ pub fn init(quiet: bool, no_progress: bool) {
     let progress = mode == Mode::Rich && !no_progress && Term::stderr().is_term();
     let linux_console = std::env::var("TERM").is_ok_and(|t| t == "linux");
     let unicode = !dumb && !linux_console && locale_is_utf8() && Term::stdout().features().is_attended();
-    let width = Term::stdout()
-        .size_checked()
-        .map(|(_, w)| w as usize)
-        .or_else(|| std::env::var("COLUMNS").ok().and_then(|c| c.parse().ok()))
-        .unwrap_or(80);
+    let width = Term::stdout().size_checked().map(|(_, w)| w as usize).or_else(|| std::env::var("COLUMNS").ok().and_then(|c| c.parse().ok())).unwrap_or(80);
     let ui = Ui { mode, progress, unicode, width, start: Instant::now(), start_wall: SystemTime::now(), files: Mutex::new(Vec::new()) };
     let _ = UI.set(ui);
 }
@@ -252,8 +248,22 @@ impl Ui {
             format!("     {}", style("/\\").white().bold()),
             format!("    {}", style("/  \\").white().bold()),
             format!("   {}{}{}", style("|").white().bold(), style(" ** ").red().bold(), style("|").white().bold()),
-            format!("  {}{}{}{}{}", style("/").white().bold(), style("|").white().bold(), style("    ").white(), style("|").white().bold(), style("\\").white().bold()),
-            format!(" {}{}{}{}{}", style("/_").white().bold(), style("|").white().bold(), style("_/\\_").white().bold(), style("|").white().bold(), style("_\\").white().bold()),
+            format!(
+                "  {}{}{}{}{}",
+                style("/").white().bold(),
+                style("|").white().bold(),
+                style("    ").white(),
+                style("|").white().bold(),
+                style("\\").white().bold()
+            ),
+            format!(
+                " {}{}{}{}{}",
+                style("/_").white().bold(),
+                style("|").white().bold(),
+                style("_/\\_").white().bold(),
+                style("|").white().bold(),
+                style("_\\").white().bold()
+            ),
             format!("    {}{}{}", style("(").yellow().bold(), style("vv").red().bold(), style(")").yellow().bold()),
         ];
         let text = [
@@ -323,7 +333,13 @@ impl Ui {
         }
         let pb = ProgressBar::with_draw_target(Some(len), ProgressDrawTarget::stderr_with_hz(15));
         let g = self.g();
-        let bar_w = if self.width >= 110 { 32 } else if self.width >= 90 { 24 } else { 16 };
+        let bar_w = if self.width >= 110 {
+            32
+        } else if self.width >= 90 {
+            24
+        } else {
+            16
+        };
         let t = template.replace("{bar}", &format!("{{bar:{bar_w}.cyan/blue.dim}}"));
         pb.set_style(tweak(ProgressStyle::with_template(&t).unwrap().progress_chars(g.bar_chars).tick_strings(g.spinner)));
         pb.set_prefix(prefix.to_string());

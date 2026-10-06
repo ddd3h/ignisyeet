@@ -19,9 +19,9 @@ pub mod general;
 pub mod history;
 pub mod mesh;
 pub mod runner;
-pub mod surface;
 pub mod stl_mesh;
 pub mod su2cfg;
+pub mod surface;
 pub mod symmetry;
 pub mod table;
 pub mod tools;
@@ -40,8 +40,21 @@ pub enum CfdStage {
     /// Surface export and volume meshing.
     Mesh,
     /// Case `index` of `total` (0-based) is running at its latest iteration / log10 residual.
-    Case { index: usize, total: usize, mach: f64, alpha: f64, iter: usize, residual: f64 },
-    CaseDone { index: usize, total: usize, mach: f64, alpha: f64, converged: bool },
+    Case {
+        index: usize,
+        total: usize,
+        mach: f64,
+        alpha: f64,
+        iter: usize,
+        residual: f64,
+    },
+    CaseDone {
+        index: usize,
+        total: usize,
+        mach: f64,
+        alpha: f64,
+        converged: bool,
+    },
     /// Table assembly.
     Table,
     Done,
@@ -257,15 +270,30 @@ pub fn prepare_surface(geom: &Geometry, cfd: &CfdOptions, raw: Option<&[geom::st
 
 /// Meshes the rebuilt geometry or the STL surface according to `cfd.surface` (`raw` in metres for the STL). Returns
 /// the mesh and the options to run with: for an STL surface the symmetry is resolved from the united surface.
-fn ensure_mesh_any(cfd: &CfdOptions, geom: &Geometry, raw: Option<&[geom::stl::Triangle]>, work: &Path, threads: usize) -> Result<(mesh::MeshResult, CfdOptions)> {
+fn ensure_mesh_any(
+    cfd: &CfdOptions,
+    geom: &Geometry,
+    raw: Option<&[geom::stl::Triangle]>,
+    work: &Path,
+    threads: usize,
+) -> Result<(mesh::MeshResult, CfdOptions)> {
     match cfd.surface {
-        SurfaceKind::Stl => stl_mesh::ensure_mesh_stl(cfd, geom, raw.ok_or_else(|| anyhow::anyhow!("surface = \"stl\" needs the STL triangles"))?, work, threads),
+        SurfaceKind::Stl => {
+            stl_mesh::ensure_mesh_stl(cfd, geom, raw.ok_or_else(|| anyhow::anyhow!("surface = \"stl\" needs the STL triangles"))?, work, threads)
+        }
         SurfaceKind::PanelMesh => Ok((mesh::ensure_mesh(cfd, geom, work, threads)?, cfd.clone())),
     }
 }
 
 /// Surface export and volume meshing only (`cfd-check --mesh`).
-pub fn mesh_only(geom: &Geometry, cfd: &CfdOptions, _aero: &AeroOptions, out_dir: &Path, budget: &ResourceBudget, raw: Option<&[geom::stl::Triangle]>) -> Result<mesh::MeshResult> {
+pub fn mesh_only(
+    geom: &Geometry,
+    cfd: &CfdOptions,
+    _aero: &AeroOptions,
+    out_dir: &Path,
+    budget: &ResourceBudget,
+    raw: Option<&[geom::stl::Triangle]>,
+) -> Result<mesh::MeshResult> {
     cfd.validate()?;
     let cfd = &resolve_options(geom, cfd);
     check_tools(cfd)?;
@@ -301,7 +329,17 @@ pub fn build_table_with_progress(
     for n in &plan.notes {
         eprintln!("note: aero.cfd: {n}");
     }
-    let run = runner::RunSetup { opt: cfd, dims, atm, mesh_hash: mesh.hash.clone(), mesh_file: mesh.su2.clone(), work: work.clone(), ranks: plan.ranks, parallel: plan.parallel, tools: &tools };
+    let run = runner::RunSetup {
+        opt: cfd,
+        dims,
+        atm,
+        mesh_hash: mesh.hash.clone(),
+        mesh_file: mesh.su2.clone(),
+        work: work.clone(),
+        ranks: plan.ranks,
+        parallel: plan.parallel,
+        tools: &tools,
+    };
     let results = runner::run_all(&run, progress)?;
     progress(CfdStage::Table);
     let model = aero::AeroModel::new(geom.clone(), aero.clone());
@@ -317,7 +355,13 @@ pub fn build_table_with_progress(
         machs
             .into_iter()
             .map(|m| {
-                let c = |sign: f64| results.iter().find(|r| r.spec.is_roll() && r.spec.mach == m && r.spec.roll_hat * sign > 0.0).and_then(|r| r.result.as_ref()).and_then(|r| r.coeffs6);
+                let c = |sign: f64| {
+                    results
+                        .iter()
+                        .find(|r| r.spec.is_roll() && r.spec.mach == m && r.spec.roll_hat * sign > 0.0)
+                        .and_then(|r| r.result.as_ref())
+                        .and_then(|r| r.coeffs6)
+                };
                 general::RollPair { mach: m, roll_hat: cfd.roll_rate_hat, plus: c(1.0), minus: c(-1.0) }
             })
             .collect()
@@ -377,7 +421,12 @@ pub fn build_table_with_progress(
         let points: Vec<general::SolvedPoint6> = results
             .iter()
             .filter(|r| base_cfd(r))
-            .map(|r| general::SolvedPoint6 { mach: r.spec.mach, alpha_deg: r.spec.alpha_deg, beta_deg: r.spec.beta_deg, coeffs: r.result.as_ref().and_then(|x| x.coeffs6) })
+            .map(|r| general::SolvedPoint6 {
+                mach: r.spec.mach,
+                alpha_deg: r.spec.alpha_deg,
+                beta_deg: r.spec.beta_deg,
+                coeffs: r.result.as_ref().and_then(|x| x.coeffs6),
+            })
             .collect();
         // The rebuilt geometry has no fin cant, so its roll forcing is the model's: reference cant 0.
         let cant_ref = if cfd.surface == SurfaceKind::Stl { geom.fins.as_ref().map_or(0.0, |f| f.cant_deg) } else { 0.0 };
@@ -417,7 +466,8 @@ pub fn build_table_with_progress(
         report.table_kind = "axisymmetric".into();
         report.filled = fill.filled;
         report.asymmetry = asymmetry;
-        report.diagnostics = fill.slopes.iter().map(|&(mach, cna, xcp)| general::Slopes { mach, cna_pitch: cna, xcp_pitch: xcp, cna_yaw: None, xcp_yaw: None }).collect();
+        report.diagnostics =
+            fill.slopes.iter().map(|&(mach, cna, xcp)| general::Slopes { mach, cna_pitch: cna, xcp_pitch: xcp, cna_yaw: None, xcp_yaw: None }).collect();
         report.fin_cant_ref_deg = tab.meta.fin_cant_ref_deg;
         tab
     };
@@ -488,7 +538,11 @@ mod tests {
         // Default configuration: half model, axisymmetric table, quarter mesh (unchanged behaviour).
         assert!(d.symmetry && d.z_mirror_mesh && d.shape() == ShapeSymmetry::Axisymmetric && !d.general_table());
         // Sideslip, roll cases or symmetry = false need the full domain.
-        for o in [CfdOptions { betas_deg: vec![0.0, 4.0], ..Default::default() }, CfdOptions { roll_damping: true, ..Default::default() }, CfdOptions { symmetry: false, ..Default::default() }] {
+        for o in [
+            CfdOptions { betas_deg: vec![0.0, 4.0], ..Default::default() },
+            CfdOptions { roll_damping: true, ..Default::default() },
+            CfdOptions { symmetry: false, ..Default::default() },
+        ] {
             let r = resolve_options(&g, &o);
             assert!(!r.symmetry && r.z_mirror_mesh, "{r:?}");
         }
@@ -510,10 +564,20 @@ mod tests {
     fn missing_tools_give_clear_error() {
         let g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
         let o = CfdOptions { su2: "no_such_su2_cfd".into(), ..Default::default() };
-        let e = build_table_with_progress(&g, &o, &AeroOptions::default(), Path::new("."), "h".into(), Extrapolation::Linear, &ResourceBudget::default(), None, &|_| {})
-            .err()
-            .unwrap()
-            .to_string();
+        let e = build_table_with_progress(
+            &g,
+            &o,
+            &AeroOptions::default(),
+            Path::new("."),
+            "h".into(),
+            Extrapolation::Linear,
+            &ResourceBudget::default(),
+            None,
+            &|_| {},
+        )
+        .err()
+        .unwrap()
+        .to_string();
         assert!(e.starts_with("SU2 is not installed (install with `install.sh --cfd`"), "{e}");
         assert!(e.contains("no_such_su2_cfd"));
     }

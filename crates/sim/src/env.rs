@@ -4,8 +4,8 @@
 //! The `*Config` types are deserialized from TOML; the runtime types are built from them
 //! and return an error for variants that are not implemented yet.
 
-use aero::atmosphere::G0;
 pub use aero::atmosphere::AtmosphereModel;
+use aero::atmosphere::G0;
 use anyhow::{bail, Context, Result};
 use geom::Vec3;
 use serde::{Deserialize, Serialize};
@@ -60,7 +60,16 @@ pub struct WindConfig {
 
 impl Default for WindConfig {
     fn default() -> Self {
-        Self { model: WindModel::Power, speed: 4.0, direction_deg: 0.0, ref_height: 2.0, exponent: 6.0, roughness_length: 0.03, ground_blend_height: 1.0, profile: None }
+        Self {
+            model: WindModel::Power,
+            speed: 4.0,
+            direction_deg: 0.0,
+            ref_height: 2.0,
+            exponent: 6.0,
+            roughness_length: 0.03,
+            ground_blend_height: 1.0,
+            profile: None,
+        }
     }
 }
 
@@ -122,11 +131,8 @@ pub fn parse_wind_profile(text: &str) -> Result<Vec<ProfilePoint>> {
     }
     let mut pts: Vec<ProfilePoint> = Vec::new();
     for l in lines {
-        let v: Vec<f64> = l
-            .split(',')
-            .map(|x| x.trim().parse::<f64>())
-            .collect::<std::result::Result<_, _>>()
-            .with_context(|| format!("bad wind profile row \"{l}\""))?;
+        let v: Vec<f64> =
+            l.split(',').map(|x| x.trim().parse::<f64>()).collect::<std::result::Result<_, _>>().with_context(|| format!("bad wind profile row \"{l}\""))?;
         if v.len() != 3 || v.iter().any(|x| !x.is_finite()) {
             bail!("bad wind profile row \"{l}\": expected 3 finite numbers");
         }
@@ -779,7 +785,10 @@ mod tests {
     fn calm_profile_cannot_be_scaled() {
         let w = profile_wind("altitude_m,speed,direction_deg\n0,0.01,0\n100,0.05,0\n", cfg(WindModel::Profile));
         let e = w.with_speed_direction(3.0, 90.0).unwrap_err().to_string();
-        assert!(e.contains("wind profile is calm (mean speed 0.030") && e.contains("cannot be scaled for dispersion") && e.contains("\"constant\"/\"power\""), "{e}");
+        assert!(
+            e.contains("wind profile is calm (mean speed 0.030") && e.contains("cannot be scaled for dispersion") && e.contains("\"constant\"/\"power\""),
+            "{e}"
+        );
         assert!(w.check_scalable().is_err());
         // the flight itself is not affected: the wind is simply weak
         assert!(w.at(50.0).norm() < 0.1);

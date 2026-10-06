@@ -146,7 +146,10 @@ fn ensure_union(opt: &CfdOptions, dir: &Path, p: &Prepared) -> Result<()> {
         files.push(name);
     }
     std::fs::write(dir.join("stl_union.py"), UNION_SCRIPT)?;
-    std::fs::write(dir.join("union_params.json"), serde_json::to_string_pretty(&serde_json::json!({ "components": files, "out_stl": "union.stl", "report_json": "union_report.json" }))?)?;
+    std::fs::write(
+        dir.join("union_params.json"),
+        serde_json::to_string_pretty(&serde_json::json!({ "components": files, "out_stl": "union.stl", "report_json": "union_report.json" }))?,
+    )?;
     run_python(&py, tools.prefix.as_deref(), dir, "stl_union.py", "union_params.json", "union.log", "UNION_OK", "the STL union (manifold3d)")?;
     std::fs::write(&union_stamp, &p.union_hash)?;
     Ok(())
@@ -202,7 +205,8 @@ pub fn ensure_mesh_stl(opt: &CfdOptions, geom: &Geometry, raw: &[Triangle], work
         meshed = surface::clip_plane(&meshed, 2, tol);
     }
     if clip_y {
-        surface::check_clipped(&meshed, clip_y, clip_z, geom.length).context("the united STL surface cannot be clipped at the symmetry plane; use shape_symmetry = \"none\"")?;
+        surface::check_clipped(&meshed, clip_y, clip_z, geom.length)
+            .context("the united STL surface cannot be clipped at the symmetry plane; use shape_symmetry = \"none\"")?;
     }
     let surface_file = if clip_y { "union_clip.stl" } else { "union.stl" };
     let mut params = MeshParams::new(&ropt, geom, &dir, threads);
@@ -248,14 +252,19 @@ pub fn ensure_mesh_stl(opt: &CfdOptions, geom: &Geometry, raw: &[Triangle], work
                 eprintln!("note: aero.cfd: HXT could not mesh the volume, retrying with Delaunay");
                 let retry = MeshParams { algorithm3d: 1, ..params.clone() };
                 std::fs::write(dir.join("params.json"), serde_json::to_string_pretty(&retry)?)?;
-                run_python(&py, pre, &dir, "mesh_stl.py", "params.json", "mesh.log", "MESH_OK", "gmsh meshing of the STL surface (Delaunay retry)").map_err(|e2| {
-                    let hint = if clip_y {
-                        format!("\nthe {} domain of the symmetric surface could not be meshed; shape_symmetry = \"none\" meshes the full domain", decision.meshed)
-                    } else {
-                        String::new()
-                    };
-                    anyhow::anyhow!("{e}\n{e2}{hint}")
-                })?;
+                run_python(&py, pre, &dir, "mesh_stl.py", "params.json", "mesh.log", "MESH_OK", "gmsh meshing of the STL surface (Delaunay retry)").map_err(
+                    |e2| {
+                        let hint = if clip_y {
+                            format!(
+                                "\nthe {} domain of the symmetric surface could not be meshed; shape_symmetry = \"none\" meshes the full domain",
+                                decision.meshed
+                            )
+                        } else {
+                            String::new()
+                        };
+                        anyhow::anyhow!("{e}\n{e2}{hint}")
+                    },
+                )?;
             }
             let stats: MeshStats = serde_json::from_str(&std::fs::read_to_string(&params.stats_json)?).context("bad mesh_stats.json")?;
             std::fs::write(&stamp_path, serde_json::to_string(&Stamp { hash: hash.clone(), stats: stats.clone() })?)?;
@@ -265,10 +274,13 @@ pub fn ensure_mesh_stl(opt: &CfdOptions, geom: &Geometry, raw: &[Triangle], work
     // Half domain kept: the wall is compared with the clipped union (y >= 0), otherwise with the full union.
     let compare_union = if ropt.symmetry { surface::clip_plane(&union_tris, 1, tol) } else { union_tris.clone() };
     let fidelity = fidelity_for(opt, &dir, &su2, &hash, &prep.input, &compare_union, ropt.symmetry, &decision)?;
-    let union_report: serde_json::Value = std::fs::read_to_string(dir.join("union_report.json")).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+    let union_report: serde_json::Value =
+        std::fs::read_to_string(dir.join("union_report.json")).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
     let mut notes = warnings;
     if opt.stl_remesh == crate::config::StlRemesh::None {
-        notes.push("stl_remesh = none: the triangles of the STL are meshed as they are; flat faces made of a few huge triangles (fins) are under-resolved".to_string());
+        notes.push(
+            "stl_remesh = none: the triangles of the STL are meshed as they are; flat faces made of a few huge triangles (fins) are under-resolved".to_string(),
+        );
     }
     notes.extend(fidelity.warnings.clone());
     let info = StlMeshInfo {
@@ -286,7 +298,16 @@ pub fn ensure_mesh_stl(opt: &CfdOptions, geom: &Geometry, raw: &[Triangle], work
 
 /// Fidelity of the CFD wall (cached in `stl_fidelity.json` per mesh hash; the thresholds are applied on every call).
 #[allow(clippy::too_many_arguments)]
-fn fidelity_for(opt: &CfdOptions, dir: &Path, su2: &Path, mesh_hash: &str, input: &[Triangle], union_tris: &[Triangle], partial: bool, decision: &symmetry::SymmetryDecision) -> Result<Fidelity> {
+fn fidelity_for(
+    opt: &CfdOptions,
+    dir: &Path,
+    su2: &Path,
+    mesh_hash: &str,
+    input: &[Triangle],
+    union_tris: &[Triangle],
+    partial: bool,
+    decision: &symmetry::SymmetryDecision,
+) -> Result<Fidelity> {
     let path = dir.join("stl_fidelity.json");
     let max_error = opt.max_geometry_error.unwrap_or(opt.wall_size);
     let apply = |mut f: Fidelity| {

@@ -483,7 +483,11 @@ impl AeroTable {
             bail!("aero table {}: unexpected CSV header `{}`; expected `{expected_header}`", csv_path.display(), header.join(","));
         }
         let rows = text.lines().enumerate().skip(1).filter(|(_, l)| !l.trim().is_empty()).map(|(ln, line)| {
-            let v = line.split(',').map(|s| s.trim().parse::<f64>()).collect::<Result<Vec<f64>, _>>().with_context(|| format!("bad row {} in {}: {line}", ln + 1, csv_path.display()))?;
+            let v = line
+                .split(',')
+                .map(|s| s.trim().parse::<f64>())
+                .collect::<Result<Vec<f64>, _>>()
+                .with_context(|| format!("bad row {} in {}: {line}", ln + 1, csv_path.display()))?;
             Ok::<_, anyhow::Error>((ln + 1, v))
         });
         let (na, nb) = (meta.alphas_deg.len(), meta.betas_deg.len());
@@ -876,7 +880,15 @@ mod tests {
     fn clp_never_positive_and_cl_delta_keeps_sign() {
         let meta = TableMeta { ref_area: 0.01, ref_diameter: 0.1, length: 1.0, machs: vec![0.0, 1.0], alphas_deg: vec![0.0, 10.0], ..Default::default() };
         // Roll damping grows towards positive and cl_delta towards negative with alpha.
-        let t = AeroTable::from_fn(meta, |_, a| AeroCoeffs { cn: a, xcp: 0.5, cna: 1.0, clp: -0.1 + a * 0.05, cl_delta: 0.5 - a * 0.05, damp: [1.0, 0.5, 0.3], ..Default::default() });
+        let t = AeroTable::from_fn(meta, |_, a| AeroCoeffs {
+            cn: a,
+            xcp: 0.5,
+            cna: 1.0,
+            clp: -0.1 + a * 0.05,
+            cl_delta: 0.5 - a * 0.05,
+            damp: [1.0, 0.5, 0.3],
+            ..Default::default()
+        });
         for deg in [5.0, 10.0, 20.0, 60.0] {
             let c = t.lookup(0.5, f64::to_radians(deg));
             assert!(c.clp <= 0.0, "clp {} at {deg}", c.clp);

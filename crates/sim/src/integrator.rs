@@ -7,8 +7,8 @@
 //! an arbitrary auxiliary value `A` (the flight code uses it for telemetry). Every step function
 //! returns the auxiliary value of its last evaluation so callers can reuse it.
 
-use anyhow::{bail, Result};
 use crate::tableau::RkTableau;
+use anyhow::{bail, Result};
 use geom::{Quat, Vec3};
 
 #[derive(Debug, Clone, Copy)]
@@ -26,9 +26,7 @@ impl State {
     pub const ZERO_DERIV: State = State { pos: Vec3::ZERO, vel: Vec3::ZERO, q: Quat { w: 0.0, x: 0.0, y: 0.0, z: 0.0 }, w: Vec3::ZERO };
 
     pub fn to_arr(&self) -> [f64; N] {
-        [
-            self.pos.x, self.pos.y, self.pos.z, self.vel.x, self.vel.y, self.vel.z, self.q.w, self.q.x, self.q.y, self.q.z, self.w.x, self.w.y, self.w.z,
-        ]
+        [self.pos.x, self.pos.y, self.pos.z, self.vel.x, self.vel.y, self.vel.z, self.q.w, self.q.x, self.q.y, self.q.z, self.w.x, self.w.y, self.w.z]
     }
 
     pub fn from_arr(a: &[f64; N]) -> State {

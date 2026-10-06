@@ -259,18 +259,34 @@ impl Ctx<'_> {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PanelStage {
     /// Meshing starts; `subsonic_solves` potential-flow solutions follow.
-    Mesh { subsonic_solves: usize },
-    MeshReady { panels: usize, wake_panels: usize },
+    Mesh {
+        subsonic_solves: usize,
+    },
+    MeshReady {
+        panels: usize,
+        wake_panels: usize,
+    },
     /// Assembly, LU factorisation and solves of subsonic Mach number `mach` (`index` of `total`, 0-based) begin.
-    Subsonic { index: usize, total: usize, mach: f64 },
-    SubsonicDone { index: usize, total: usize, mach: f64 },
+    Subsonic {
+        index: usize,
+        total: usize,
+        mach: f64,
+    },
+    SubsonicDone {
+        index: usize,
+        total: usize,
+        mach: f64,
+    },
     /// Supersonic local-inclination tables are being set up.
     Supersonic,
     SupersonicDone,
     /// Transonic blend edges are being evaluated.
     Transonic,
     /// Table columns (Mach rows) filled; called from worker threads.
-    Columns { done: usize, total: usize },
+    Columns {
+        done: usize,
+        total: usize,
+    },
     Done,
 }
 
@@ -368,10 +384,13 @@ pub fn build_table_with_progress(
     progress(PanelStage::Mesh { subsonic_solves: machs_sub.len() });
     let mesh = Mesh::from_geometry(geom, panel)?;
     progress(PanelStage::MeshReady { panels: mesh.panels.len(), wake_panels: mesh.wake_panels.len() });
-    check_memory(mesh.panels.len(), match MEMORY_LIMIT.load(std::sync::atomic::Ordering::Relaxed) {
-        0 => None,
-        b => Some(b),
-    })?;
+    check_memory(
+        mesh.panels.len(),
+        match MEMORY_LIMIT.load(std::sync::atomic::Ordering::Relaxed) {
+            0 => None,
+            b => Some(b),
+        },
+    )?;
     let s_ref = geom.ref_area;
 
     // Subsonic solutions (Goethert-scaled incompressible problems).

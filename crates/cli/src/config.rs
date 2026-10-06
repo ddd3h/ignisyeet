@@ -234,7 +234,16 @@ pub struct SimCfg {
 
 impl Default for SimCfg {
     fn default() -> Self {
-        Self { integrator: sim::IntegratorKind::Rk4, attitude: sim::AttitudeKind::Normalize, dt: 0.002, rtol: 1e-7, atol: 1e-6, max_time: 3600.0, output_interval: 0.05, descent: None }
+        Self {
+            integrator: sim::IntegratorKind::Rk4,
+            attitude: sim::AttitudeKind::Normalize,
+            dt: 0.002,
+            rtol: 1e-7,
+            atol: 1e-6,
+            max_time: 3600.0,
+            output_interval: 0.05,
+            descent: None,
+        }
     }
 }
 
@@ -520,7 +529,19 @@ impl Config {
         if !(izz > 0.0 && minors.iter().all(|m| *m > 0.0)) {
             bail!("the inertia tensor of the rocket (ixx_dry, iyy_dry, izz_dry and the products) must be positive definite");
         }
-        let finite = [r.ixy_dry, r.ixz_dry, r.iyz_dry, r.cg_lateral_dry[0], r.cg_lateral_dry[1], r.fin_cant_deg, self.motor.misalignment_deg, self.motor.misalignment_azimuth_deg, self.motor.misalignment_offset[0], self.motor.misalignment_offset[1], self.launch.roll_deg];
+        let finite = [
+            r.ixy_dry,
+            r.ixz_dry,
+            r.iyz_dry,
+            r.cg_lateral_dry[0],
+            r.cg_lateral_dry[1],
+            r.fin_cant_deg,
+            self.motor.misalignment_deg,
+            self.motor.misalignment_azimuth_deg,
+            self.motor.misalignment_offset[0],
+            self.motor.misalignment_offset[1],
+            self.launch.roll_deg,
+        ];
         if finite.iter().any(|v| !v.is_finite()) {
             bail!("rocket inertia products, CG offset, fin cant, motor misalignment and launch.roll_deg must be finite numbers");
         }
@@ -592,7 +613,11 @@ impl Config {
     }
 
     pub fn resolve(&self, p: &Path) -> PathBuf {
-        if p.is_absolute() { p.to_path_buf() } else { self.base_dir.join(p) }
+        if p.is_absolute() {
+            p.to_path_buf()
+        } else {
+            self.base_dir.join(p)
+        }
     }
 
     pub fn out_dir(&self) -> PathBuf {
@@ -666,7 +691,9 @@ mod tests {
         assert!(parse(&ok).is_ok());
         let e = parse(&sample.replace("model = \"power\"", "model = \"profile\"")).unwrap_err().to_string();
         assert!(e.contains("wind.profile"), "{e}");
-        let e = parse(&sample.replace("model = \"power\"", "model = \"log\"").replace("roughness_length = 0.03", "roughness_length = 5.0")).unwrap_err().to_string();
+        let e = parse(&sample.replace("model = \"power\"", "model = \"log\"").replace("roughness_length = 0.03", "roughness_length = 5.0"))
+            .unwrap_err()
+            .to_string();
         assert!(e.contains("roughness_length"), "{e}");
         assert!(parse(&sample.replace("model = \"us1976\"", "model = \"constant\"")).is_ok());
         assert!(parse(&sample.replace("integrator = \"rk4\"", "integrator = \"rk45\"")).is_ok());
@@ -709,7 +736,11 @@ mod tests {
         let c = parse(sample).unwrap();
         assert_eq!(c.resources.threads, 0);
         // drop the sample's own [resources] section so the tests can append theirs
-        let sample = sample.replace("[resources]\nthreads = 0 ", "[resources_x]\n#").replace("memory_gb = 0 ", "#").replace("nice = 0 ", "#").replace("[resources_x]", "");
+        let sample = sample
+            .replace("[resources]\nthreads = 0 ", "[resources_x]\n#")
+            .replace("memory_gb = 0 ", "#")
+            .replace("nice = 0 ", "#")
+            .replace("[resources_x]", "");
         let sample = sample.as_str();
         let r = c.resources.resolve();
         assert_eq!(r.threads, r.available);
@@ -736,8 +767,14 @@ mod tests {
         assert_eq!(c.aero.general_mach_step, 0.05);
         assert!(c.rocket.mass_properties().is_axisymmetric());
         let text = sample
-            .replace("iyy_dry = 1.5 ", "iyy_dry = 1.5\nizz_dry = 1.6\nixy_dry = 0.01\nixz_dry = -0.02\niyz_dry = 0.03\ncg_lateral_dry = [0.001, -0.002]\nfin_cant_deg = 0.5 #")
-            .replace("nozzle_exit_diameter = 0.03", "nozzle_exit_diameter = 0.03\nmisalignment_deg = 0.2\nmisalignment_azimuth_deg = 90\nmisalignment_offset = [0.001, 0.0]")
+            .replace(
+                "iyy_dry = 1.5 ",
+                "iyy_dry = 1.5\nizz_dry = 1.6\nixy_dry = 0.01\nixz_dry = -0.02\niyz_dry = 0.03\ncg_lateral_dry = [0.001, -0.002]\nfin_cant_deg = 0.5 #",
+            )
+            .replace(
+                "nozzle_exit_diameter = 0.03",
+                "nozzle_exit_diameter = 0.03\nmisalignment_deg = 0.2\nmisalignment_azimuth_deg = 90\nmisalignment_offset = [0.001, 0.0]",
+            )
             .replace("azimuth_deg = 270.0 ", "roll_deg = 30.0\nazimuth_deg = 270.0 ")
             .replace("extrapolation = \"linear\" ", "table_kind = \"general\"\ngeneral_mach_step = 0.1\nextrapolation = \"linear\" ");
         let c = parse(&text).unwrap();
@@ -769,7 +806,15 @@ mod tests {
     fn rejects_out_of_range_and_non_finite_numbers() {
         let sample = include_str!("../../../examples/sample.toml");
         let key_of = |line_start: &str| {
-            sample.lines().find(|l| l.trim_start().starts_with(line_start)).unwrap_or_else(|| panic!("no line {line_start}")).split('#').next().unwrap().trim_end().to_string()
+            sample
+                .lines()
+                .find(|l| l.trim_start().starts_with(line_start))
+                .unwrap_or_else(|| panic!("no line {line_start}"))
+                .split('#')
+                .next()
+                .unwrap()
+                .trim_end()
+                .to_string()
         };
         // (existing line prefix, replacement line, expected key in the message)
         let cases = [
@@ -846,7 +891,10 @@ mod tests {
             ("cl_scale = -0.1", "cl_scale"),
             ("clp_scale = -0.1", "clp_scale"),
         ] {
-            let e = parse(&sample.replace("[dispersion.monte_carlo]", &format!("[dispersion.monte_carlo]\n{line}"))).err().unwrap_or_else(|| panic!("{line} accepted")).to_string();
+            let e = parse(&sample.replace("[dispersion.monte_carlo]", &format!("[dispersion.monte_carlo]\n{line}")))
+                .err()
+                .unwrap_or_else(|| panic!("{line} accepted"))
+                .to_string();
             assert!(e.contains(key), "{line}: {e}");
         }
         let e = parse(&sample.replace("wind_speed = 1.0 ", "wind_speed = -1.0 ")).unwrap_err().to_string();
@@ -903,10 +951,11 @@ mod tests {
     #[test]
     fn log_wind_needs_room_above_the_blend() {
         let sample = include_str!("../../../examples/sample.toml");
-        let t = sample
-            .replacen("model = \"power\"", "model = \"log\"", 1)
-            .replacen("ref_height = 2.0", "ref_height = 0.5", 1)
-            .replacen("roughness_length = 0.03", "roughness_length = 0.3\nground_blend_height = 0.1", 1);
+        let t = sample.replacen("model = \"power\"", "model = \"log\"", 1).replacen("ref_height = 2.0", "ref_height = 0.5", 1).replacen(
+            "roughness_length = 0.03",
+            "roughness_length = 0.3\nground_blend_height = 0.1",
+            1,
+        );
         let e = parse(&t).unwrap_err().to_string();
         assert!(e.contains("roughness_length") && e.contains("ref_height"), "{e}");
     }

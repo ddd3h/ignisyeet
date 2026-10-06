@@ -34,10 +34,10 @@
 
 use crate::case::{case_hash, case_list, read_done, warm_start_source, write_done, CaseResult, CaseSpec};
 use crate::config::{AlphaMode, CfdOptions};
-use crate::table::SolvedPoint;
 use crate::forces::{BodyCoeffs, BodyCoeffs6, Su2Coeffs, Su2Coeffs6};
 use crate::history::{summarize, History, StabilityKind};
 use crate::su2cfg::{su2_config_case, CaseFiles, RefDims};
+use crate::table::SolvedPoint;
 use crate::tools::{self, ToolReport};
 use crate::CfdStage;
 use aero::atmosphere::Atmosphere;
@@ -252,7 +252,10 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, restart: Opt
                 // Practically converged (typical for RANS / Euler wake limit cycles): residual down 3
                 // orders and the coefficients flat over `stable_window` iterations. Stop SU2 gracefully
                 // (it writes its restart file) before the residual drifts and diverges.
-                if h.rows.len() >= setup.opt.min_iterations && h.residual_drop_from_peak().is_some_and(|d| d >= min_drop) && h.coefficients_stable(setup.opt.stable_window, kind) {
+                if h.rows.len() >= setup.opt.min_iterations
+                    && h.residual_drop_from_peak().is_some_and(|d| d >= min_drop)
+                    && h.coefficients_stable(setup.opt.stable_window, kind)
+                {
                     child.kill(libc::SIGTERM);
                     let t = Instant::now();
                     while t.elapsed() < Duration::from_secs(30) && child.0.try_wait()?.is_none() {
@@ -594,7 +597,8 @@ exit 0
         assert!(ev.iter().any(|s| matches!(s, CfdStage::Case { .. })));
         // Restart files are removed once nothing needs them.
         assert!(!out[0].spec.dir(&e.dir.join("work")).join("restart.dat").exists());
-        let pts: Vec<SolvedPoint> = out.iter().map(|o| SolvedPoint { mach: o.spec.mach, alpha_deg: o.spec.alpha_deg, coeffs: o.result.as_ref().map(|r| r.coeffs) }).collect();
+        let pts: Vec<SolvedPoint> =
+            out.iter().map(|o| SolvedPoint { mach: o.spec.mach, alpha_deg: o.spec.alpha_deg, coeffs: o.result.as_ref().map(|r| r.coeffs) }).collect();
         let (corrected, _) = crate::table::apply_alpha_mode(&pts, AlphaMode::Single);
         write_cases_csv(&e.dir.join("cases.csv"), &out, &corrected, AlphaMode::Single).unwrap();
         let csv = std::fs::read_to_string(e.dir.join("cases.csv")).unwrap();
@@ -617,7 +621,8 @@ exit 0
         assert!(neg.spec.dir(&e.dir.join("work")).join("done.json").exists());
         assert!(e.dir.join("work/m0.500_a-04.00").is_dir());
         // Mock: CFz = 0.05 alpha (odd), so the combination reproduces CN = 0.2 at +4 deg.
-        let pts: Vec<SolvedPoint> = out.iter().map(|o| SolvedPoint { mach: o.spec.mach, alpha_deg: o.spec.alpha_deg, coeffs: o.result.as_ref().map(|r| r.coeffs) }).collect();
+        let pts: Vec<SolvedPoint> =
+            out.iter().map(|o| SolvedPoint { mach: o.spec.mach, alpha_deg: o.spec.alpha_deg, coeffs: o.result.as_ref().map(|r| r.coeffs) }).collect();
         let (corrected, asym) = crate::table::apply_alpha_mode(&pts, AlphaMode::Mirror);
         assert_eq!((corrected.len(), asym.len()), (4, 2));
         assert!((corrected.iter().find(|p| p.alpha_deg == 4.0).unwrap().coeffs.unwrap().cn - 0.2).abs() < 1e-9);

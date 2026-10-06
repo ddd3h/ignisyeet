@@ -230,7 +230,15 @@ impl SymmetryDecision {
                 c.plane,
                 if c.symmetric { "symmetric" } else { "not symmetric" },
                 c.max_mismatch,
-                if c.symmetric { if c.triangulation_identical { "identical triangulation" } else { "mirror-equivalent surface" } } else { c.reason.as_deref().unwrap_or("") }
+                if c.symmetric {
+                    if c.triangulation_identical {
+                        "identical triangulation"
+                    } else {
+                        "mirror-equivalent surface"
+                    }
+                } else {
+                    c.reason.as_deref().unwrap_or("")
+                }
             )
         };
         format!("shape symmetry {} (requested {}), {} mesh: {}\n    {}\n    {}", self.chosen, self.requested, self.meshed, self.reason, p(&self.y), p(&self.z))
@@ -247,7 +255,9 @@ pub fn decide(opt: &CfdOptions, y: &PlaneCheck, z: &PlaneCheck) -> Result<Symmet
         Some(ShapeSymmetry::PitchPlane) => "pitch_plane",
         Some(ShapeSymmetry::None) => "none",
     };
-    let numbers = |c: &PlaneCheck| format!("{} = 0: max mismatch {:.3e} m (tolerance {:.1e} m): {}", c.plane, c.max_mismatch, c.tolerance, c.reason.as_deref().unwrap_or("symmetric"));
+    let numbers = |c: &PlaneCheck| {
+        format!("{} = 0: max mismatch {:.3e} m (tolerance {:.1e} m): {}", c.plane, c.max_mismatch, c.tolerance, c.reason.as_deref().unwrap_or("symmetric"))
+    };
     let (chosen, reason) = match requested {
         "none" => ("none", "shape_symmetry = none: full domain".to_string()),
         "axisymmetric" => {
@@ -273,9 +283,11 @@ pub fn decide(opt: &CfdOptions, y: &PlaneCheck, z: &PlaneCheck) -> Result<Symmet
         }
         _ => match (y.symmetric, z.symmetric) {
             (true, true) => ("axisymmetric", "auto: symmetric about y = 0 and z = 0".to_string()),
-            (true, false) => ("pitch_plane", format!("auto: symmetric about y = 0 only (z = 0: {})", z.reason.as_deref().unwrap_or("")) ),
+            (true, false) => ("pitch_plane", format!("auto: symmetric about y = 0 only (z = 0: {})", z.reason.as_deref().unwrap_or(""))),
             (false, true) => ("none", format!("auto: symmetric about z = 0 only, which no shape symmetry uses; y = 0: {}", y.reason.as_deref().unwrap_or(""))),
-            (false, false) => ("none", format!("auto: not symmetric (y = 0: {}; z = 0: {})", y.reason.as_deref().unwrap_or(""), z.reason.as_deref().unwrap_or(""))),
+            (false, false) => {
+                ("none", format!("auto: not symmetric (y = 0: {}; z = 0: {})", y.reason.as_deref().unwrap_or(""), z.reason.as_deref().unwrap_or("")))
+            }
         },
     };
     let meshed = match chosen {
@@ -450,7 +462,10 @@ mod tests {
         // Sideslip or roll cases need the full domain, the quarter mesh stays.
         let o = apply(&CfdOptions { roll_damping: true, ..opts(None) }, &d);
         assert_eq!((o.symmetry, o.z_mirror_mesh), (false, true));
-        let o = apply(&CfdOptions { z_mirror_mesh: false, ..opts(None) }, &decide(&CfdOptions { z_mirror_mesh: false, ..opts(None) }, &plane("y", true), &plane("z", true)).unwrap());
+        let o = apply(
+            &CfdOptions { z_mirror_mesh: false, ..opts(None) },
+            &decide(&CfdOptions { z_mirror_mesh: false, ..opts(None) }, &plane("y", true), &plane("z", true)).unwrap(),
+        );
         assert_eq!((o.shape(), o.symmetry, o.z_mirror_mesh), (ShapeSymmetry::Axisymmetric, true, false));
         let d = decide(&opts(None), &plane("y", false), &plane("z", false)).unwrap();
         let o = apply(&opts(None), &d);

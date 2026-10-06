@@ -201,10 +201,12 @@ pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
     let ez = ex.cross(ey);
     let local: Vec<[Vec3; 3]> = tris
         .iter()
-        .map(|t| t.map(|v| {
-            let d = v - c;
-            Vec3::new(d.dot(ex), d.dot(ey), d.dot(ez))
-        }))
+        .map(|t| {
+            t.map(|v| {
+                let d = v - c;
+                Vec3::new(d.dot(ex), d.dot(ey), d.dot(ez))
+            })
+        })
         .collect();
     let (mut xmin, mut xmax) = (f64::INFINITY, f64::NEG_INFINITY);
     for t in &local {
@@ -245,7 +247,9 @@ pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
         (None, Some(p)) if (p - 0.5).abs() > 0.08 => {
             let by_fins = p < 0.5;
             if by_fins != shape_flip {
-                warnings.push("the nose/tail shape and the fin position suggest opposite orientations; the fin position was used (set nose_direction to override)".into());
+                warnings.push(
+                    "the nose/tail shape and the fin position suggest opposite orientations; the fin position was used (set nose_direction to override)".into(),
+                );
             }
             by_fins
         }
@@ -269,11 +273,7 @@ pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
     let nose_len = slices[i_nose].x;
     let nose_r = slices[i_nose].r_body;
     let k0 = ((i_nose as f64) * 0.9) as usize;
-    let joint = if i_nose > k0 + 1 {
-        ((slices[i_nose].r_body - slices[k0].r_body) / (slices[i_nose].x - slices[k0].x)).atan()
-    } else {
-        0.0
-    };
+    let joint = if i_nose > k0 + 1 { ((slices[i_nose].r_body - slices[k0].r_body) / (slices[i_nose].x - slices[k0].x)).atan() } else { 0.0 };
     let nose_vol: f64 = slices[..=i_nose].iter().map(|s| PI * s.r_body * s.r_body * dx).sum();
     let volume_ratio = if nose_len > 0.0 { nose_vol / (PI * nose_r * nose_r * nose_len) } else { 0.0 };
 
@@ -306,18 +306,27 @@ pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
     // Plausibility checks.
     let d = 2.0 * r_max;
     if length / d < 3.0 || length / d > 40.0 {
-        warnings.push(format!("length/diameter ratio {:.1} is unusual for a rocket (length {length:.3} m, diameter {d:.3} m); check the STL scale and units", length / d));
+        warnings.push(format!(
+            "length/diameter ratio {:.1} is unusual for a rocket (length {length:.3} m, diameter {d:.3} m); check the STL scale and units",
+            length / d
+        ));
     }
     if nose_len < 0.4 * d || nose_len > 8.0 * d {
         warnings.push(format!("detected nose length {nose_len:.3} m ({:.1} calibers) is implausible", nose_len / d));
     }
     if base_radius < 0.6 * r_max {
-        warnings.push(format!("the base radius is only {:.0} % of the body radius (protruding nozzle or strong boattail); base drag uses this radius", 100.0 * base_radius / r_max));
+        warnings.push(format!(
+            "the base radius is only {:.0} % of the body radius (protruding nozzle or strong boattail); base drag uses this radius",
+            100.0 * base_radius / r_max
+        ));
     }
     if let Some(f) = &fins {
         let xc = (f.x_le_root + 0.5 * f.root_chord) / length;
         if f.x_le_root < 0.5 * length {
-            warnings.push(format!("the fin root leading edge is at {:.0} % of the length, in the forward half; the body may be reversed (nose_direction)", 100.0 * f.x_le_root / length));
+            warnings.push(format!(
+                "the fin root leading edge is at {:.0} % of the length, in the forward half; the body may be reversed (nose_direction)",
+                100.0 * f.x_le_root / length
+            ));
         } else if xc < 0.6 {
             warnings.push(format!("the fins are centred at {:.0} % of the length, unusually far forward", 100.0 * xc));
         }
@@ -326,11 +335,7 @@ pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
         }
     }
 
-    let profile = slices
-        .iter()
-        .zip(&fin_info)
-        .map(|(s, f)| ProfilePoint { x: s.x, r: s.r_body, fin_span: f.span })
-        .collect();
+    let profile = slices.iter().zip(&fin_info).map(|(s, f)| ProfilePoint { x: s.x, r: s.r_body, fin_span: f.span }).collect();
 
     Ok(Geometry {
         length,
@@ -370,9 +375,7 @@ fn reference_radius(slices: &[Slice]) -> (f64, Option<String>) {
 
 fn slice_mesh(local: &[[Vec3; 3]], xmin: f64, length: f64, n: usize) -> Vec<Slice> {
     let dx = length / n as f64;
-    let mut slices: Vec<Slice> = (0..n)
-        .map(|i| Slice { x: (i as f64 + 0.5) * dx, r_body: 0.0, segs: Vec::new() })
-        .collect();
+    let mut slices: Vec<Slice> = (0..n).map(|i| Slice { x: (i as f64 + 0.5) * dx, r_body: 0.0, segs: Vec::new() }).collect();
     for t in local {
         let xs = t.map(|v| v.x - xmin);
         let lo = xs.iter().copied().fold(f64::INFINITY, f64::min);
@@ -506,7 +509,11 @@ fn detect_fins(slices: &[Slice], info: &[FinSlice], dx: f64) -> Option<FinSet> {
         let half = slices[k].x + dir * 0.5 * dx;
         if k2 != k && s2 > s1 {
             let x0 = slices[k].x + dir * s1 * dx / (s2 - s1);
-            if dir < 0.0 { x0.max(slices[k].x - 3.0 * dx).min(half) } else { x0.min(slices[k].x + 3.0 * dx).max(half) }
+            if dir < 0.0 {
+                x0.max(slices[k].x - 3.0 * dx).min(half)
+            } else {
+                x0.min(slices[k].x + 3.0 * dx).max(half)
+            }
         } else {
             half
         }
@@ -634,7 +641,14 @@ mod tests {
     #[test]
     fn hemispherical_nose_with_long_boattail_is_oriented_correctly() {
         // Regression: this body was detected backwards (fins at x = 0.15 m).
-        let rk = Rk { nose_shape: NoseShape::Hemisphere, nose_length: 0.05, boattail_length: 0.15, boattail_end_radius: 0.035, fin_offset_from_base: 0.15, ..Default::default() };
+        let rk = Rk {
+            nose_shape: NoseShape::Hemisphere,
+            nose_length: 0.05,
+            boattail_length: 0.15,
+            boattail_end_radius: 0.035,
+            fin_offset_from_base: 0.15,
+            ..Default::default()
+        };
         let g = check(&rk, &rk.mesh(), rk.length);
         assert!(g.boattail.is_some());
         assert!(close(g.base_radius, 0.035, 0.002));

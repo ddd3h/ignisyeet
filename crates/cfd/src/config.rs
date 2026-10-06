@@ -308,26 +308,28 @@ impl Default for CfdOptions {
 /// about the x-y plane (z -> -z), so that a quarter model can represent it. No fins is symmetric.
 pub fn z_symmetric_layout(count: usize, roll_deg: f64) -> bool {
     let ang = |k: usize| (90.0 + roll_deg + 360.0 * k as f64 / count.max(1) as f64).rem_euclid(360.0);
-    count == 0 || (0..count).all(|k| {
-        let m = (-ang(k)).rem_euclid(360.0);
-        (0..count).any(|j| {
-            let d = (ang(j) - m).rem_euclid(360.0);
-            d < 1e-6 || d > 360.0 - 1e-6
+    count == 0
+        || (0..count).all(|k| {
+            let m = (-ang(k)).rem_euclid(360.0);
+            (0..count).any(|j| {
+                let d = (ang(j) - m).rem_euclid(360.0);
+                d < 1e-6 || d > 360.0 - 1e-6
+            })
         })
-    })
 }
 
 /// Whether `count` fins (one at +z before the roll of `roll_deg`) form a layout that is mirror symmetric
 /// about the pitch plane y = 0 (fin angle `a` maps to `180 - a`).
 pub fn y_symmetric_layout(count: usize, roll_deg: f64) -> bool {
     let ang = |k: usize| (90.0 + roll_deg + 360.0 * k as f64 / count.max(1) as f64).rem_euclid(360.0);
-    count == 0 || (0..count).all(|k| {
-        let m = (180.0 - ang(k)).rem_euclid(360.0);
-        (0..count).any(|j| {
-            let d = (ang(j) - m).rem_euclid(360.0);
-            d < 1e-6 || d > 360.0 - 1e-6
+    count == 0
+        || (0..count).all(|k| {
+            let m = (180.0 - ang(k)).rem_euclid(360.0);
+            (0..count).any(|j| {
+                let d = (ang(j) - m).rem_euclid(360.0);
+                d < 1e-6 || d > 360.0 - 1e-6
+            })
         })
-    })
 }
 
 fn strictly_increasing(v: &[f64]) -> bool {
@@ -387,7 +389,8 @@ impl CfdOptions {
                  and cases that do not converge fail."
             );
         }
-        if self.base_treatment == Some(BaseTreatment::Fairing) && self.surface == SurfaceKind::Stl && self.model == FlowModel::Euler && self.tail_fairing <= 0.0 {
+        if self.base_treatment == Some(BaseTreatment::Fairing) && self.surface == SurfaceKind::Stl && self.model == FlowModel::Euler && self.tail_fairing <= 0.0
+        {
             bail!("aero.cfd.base_treatment = \"fairing\" needs tail_fairing > 0 (cone length in base radii)");
         }
         if self.roll_damping && self.model == FlowModel::Rans {
@@ -435,9 +438,7 @@ impl CfdOptions {
         let mut w = Vec::new();
         let need = self.ranks_per_case * self.parallel_cases;
         if self.ranks_per_case > 0 && self.parallel_cases > 0 && need > available {
-            w.push(format!(
-                "aero.cfd: ranks_per_case x parallel_cases = {need} exceeds the {available} available cores; cases will be slowed down"
-            ));
+            w.push(format!("aero.cfd: ranks_per_case x parallel_cases = {need} exceeds the {available} available cores; cases will be slowed down"));
         }
         w
     }
@@ -529,11 +530,21 @@ mod tests {
         assert!(e.contains("base_treatment") && e.contains("fairing") && e.contains("flat") && e.contains("MODIFIES"), "{e}");
         CfdOptions { base_treatment: Some(BaseTreatment::Flat), ..stl.clone() }.validate().unwrap();
         CfdOptions { base_treatment: Some(BaseTreatment::Fairing), ..stl.clone() }.validate().unwrap();
-        assert!(CfdOptions { base_treatment: Some(BaseTreatment::Fairing), tail_fairing: 0.0, ..stl.clone() }.validate().unwrap_err().to_string().contains("tail_fairing"));
-        assert!(CfdOptions { base_treatment: Some(BaseTreatment::Flat), max_geometry_error: Some(0.0), ..stl.clone() }.validate().unwrap_err().to_string().contains("max_geometry_error"));
+        assert!(CfdOptions { base_treatment: Some(BaseTreatment::Fairing), tail_fairing: 0.0, ..stl.clone() }
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("tail_fairing"));
+        assert!(CfdOptions { base_treatment: Some(BaseTreatment::Flat), max_geometry_error: Some(0.0), ..stl.clone() }
+            .validate()
+            .unwrap_err()
+            .to_string()
+            .contains("max_geometry_error"));
         // RANS keeps the flat base and needs no choice.
         CfdOptions { model: FlowModel::Rans, ..stl.clone() }.validate().unwrap();
-        let p: CfdOptions = serde_json::from_str(r#"{"shape_symmetry":"pitch_plane","base_treatment":"fairing","betas_deg":[0,4],"roll_damping":true,"symmetry":false}"#).unwrap();
+        let p: CfdOptions =
+            serde_json::from_str(r#"{"shape_symmetry":"pitch_plane","base_treatment":"fairing","betas_deg":[0,4],"roll_damping":true,"symmetry":false}"#)
+                .unwrap();
         assert_eq!((p.shape_symmetry, p.base_treatment), (Some(ShapeSymmetry::PitchPlane), Some(BaseTreatment::Fairing)));
         p.validate().unwrap();
         assert!(p.general_table());
@@ -563,7 +574,10 @@ mod tests {
     #[test]
     fn solver_acceleration_options_are_validated_and_not_serialised_at_their_defaults() {
         let o = CfdOptions::default();
-        assert_eq!((o.multigrid, o.multigrid_cycle, o.min_iterations, o.stable_window), (None, MultigridCycle::W, DEFAULT_MIN_ITERATIONS, DEFAULT_STABLE_WINDOW));
+        assert_eq!(
+            (o.multigrid, o.multigrid_cycle, o.min_iterations, o.stable_window),
+            (None, MultigridCycle::W, DEFAULT_MIN_ITERATIONS, DEFAULT_STABLE_WINDOW)
+        );
         let j = serde_json::to_string(&o).unwrap();
         assert!(!j.contains("multigrid") && !j.contains("min_iterations") && !j.contains("stable_window"), "{j}");
         let p: CfdOptions = serde_json::from_str(r#"{"multigrid":3,"multigrid_cycle":"v","min_iterations":120,"stable_window":50}"#).unwrap();

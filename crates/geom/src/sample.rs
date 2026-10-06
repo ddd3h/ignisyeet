@@ -157,10 +157,7 @@ impl SampleRocket {
         let r0 = self.radius - 0.002;
         let c = |dx: f64, dy: f64, r: f64| Vec3::new(x + dx, r, dy);
         let (lo, hi) = (r0, self.radius + h);
-        let v = [
-            c(-hl, -hw, lo), c(hl, -hw, lo), c(hl, hw, lo), c(-hl, hw, lo),
-            c(-hl, -hw, hi), c(hl, -hw, hi), c(hl, hw, hi), c(-hl, hw, hi),
-        ];
+        let v = [c(-hl, -hw, lo), c(hl, -hw, lo), c(hl, hw, lo), c(-hl, hw, lo), c(-hl, -hw, hi), c(hl, -hw, hi), c(hl, hw, hi), c(-hl, hw, hi)];
         let quads = [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]];
         quads.iter().flat_map(|q| [[v[q[0]], v[q[1]], v[q[2]]], [v[q[0]], v[q[2]], v[q[3]]]]).collect()
     }

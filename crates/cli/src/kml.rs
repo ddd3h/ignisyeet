@@ -111,7 +111,8 @@ pub struct Parts {
 /// The combined document: folders "Launch site", "Flight", "Dispersion - wind grid" and "Dispersion - Monte Carlo".
 pub fn combined(site: &Launch, parts: &Parts) -> String {
     let mut body = folder("Launch site", &[], &site_placemark(site));
-    let mut d = vec!["IgnisYeet results. Altitudes are WGS84 geodetic heights (absolute); landing and dispersion figures are clamped to the ground.".to_string()];
+    let mut d =
+        vec!["IgnisYeet results. Altitudes are WGS84 geodetic heights (absolute); landing and dispersion figures are clamped to the ground.".to_string()];
     if let Some(f) = &parts.flight {
         body.push_str(&flight_folder(site, f, &mut d));
     }
@@ -127,7 +128,10 @@ pub fn combined(site: &Launch, parts: &Parts) -> String {
 fn site_placemark(site: &Launch) -> String {
     point_placemark(
         "Launch site",
-        &[format!("lat {:.6}, lon {:.6}, alt {:.1} m", site.latitude, site.longitude, site.altitude), format!("rail {:.1} m, elevation {:.1} deg, azimuth {:.1} deg", site.rail_length, site.elevation_deg, site.azimuth_deg)],
+        &[
+            format!("lat {:.6}, lon {:.6}, alt {:.1} m", site.latitude, site.longitude, site.altitude),
+            format!("rail {:.1} m, elevation {:.1} deg, azimuth {:.1} deg", site.rail_length, site.elevation_deg, site.azimuth_deg),
+        ],
         &icon_style(&color(255, 255, 255, 255), 1.1, PIN),
         site.latitude,
         site.longitude,
@@ -176,7 +180,11 @@ fn speed(s: &Sample) -> f64 {
 }
 
 fn event(name: &str, s: &Sample, site: &Launch, extra: &[String]) -> String {
-    let mut lines = vec![format!("t = {:.2} s", s.t), format!("altitude {:.1} m MSL ({:.1} m above launch)", s.alt, s.alt - site.altitude), format!("speed {:.1} m/s", speed(s))];
+    let mut lines = vec![
+        format!("t = {:.2} s", s.t),
+        format!("altitude {:.1} m MSL ({:.1} m above launch)", s.alt, s.alt - site.altitude),
+        format!("speed {:.1} m/s", speed(s)),
+    ];
     lines.extend_from_slice(extra);
     point_placemark(name, &lines, &icon_style(&color(255, 255, 255, 255), 0.9, PIN), s.lat, s.lon, s.alt, false)
 }
@@ -385,7 +393,10 @@ fn monte_carlo_folder(site: &Launch, rows: &[McRow], stats: &[DescentStats], doc
                 true,
             ));
             // The ellipses need at least two samples (NaN otherwise).
-            for (k, name) in [(&l.ellipse_1sigma, "1-sigma ellipse"), (&l.ellipse_3sigma, "3-sigma ellipse")].into_iter().filter(|(k, _)| k.semi_major.is_finite() && k.semi_minor.is_finite()) {
+            for (k, name) in [(&l.ellipse_1sigma, "1-sigma ellipse"), (&l.ellipse_3sigma, "3-sigma ellipse")]
+                .into_iter()
+                .filter(|(k, _)| k.semi_major.is_finite() && k.semi_minor.is_finite())
+            {
                 let ring = ellipse_ring(origin, l.mean_east, l.mean_north, k, 72);
                 let col = if name.starts_with('1') { mid } else { c3 };
                 body.push_str(&ground_line(
@@ -402,7 +413,10 @@ fn monte_carlo_folder(site: &Launch, rows: &[McRow], stats: &[DescentStats], doc
             if let Ok(s) = &r.result {
                 body.push_str(&point_placemark(
                     &format!("#{}", r.sample),
-                    &[format!("landing E {:.1} m, N {:.1} m ({:.1} m from launch)", s.landing_east, s.landing_north, s.landing_distance), format!("apogee {:.1} m", s.apogee)],
+                    &[
+                        format!("landing E {:.1} m, N {:.1} m ({:.1} m from launch)", s.landing_east, s.landing_north, s.landing_distance),
+                        format!("apogee {:.1} m", s.apogee),
+                    ],
                     &pt,
                     s.landing_lat,
                     s.landing_lon,
@@ -501,9 +515,37 @@ pub fn load_flight(dir: &Path, hash: &str) -> Result<Option<Flight>, String> {
         let g = |c: &str| t.num(r, c).unwrap_or(0.0);
         let p = |c: &str| t.req(r, c).map_err(|e| format!("{}: {e}", csv.display()));
         samples.push(Sample {
-            t: p("t")?, phase, east: g("east"), north: g("north"), up: g("up"), lat: p("lat")?, lon: p("lon")?, alt: p("alt")?, vel_e: g("vel_e"), vel_n: g("vel_n"), vel_u: g("vel_u"),
-            airspeed: g("airspeed"), mach: g("mach"), alpha_deg: g("alpha_deg"), thrust: g("thrust"), mass: g("mass"), x_cg: g("x_cg"), x_cp: g("x_cp"), stability_cal: g("stability_cal"),
-            dyn_pressure: g("dyn_pressure"), cn: g("cn"), ca: g("ca"), pitch_deg: g("pitch_deg"), heading_deg: g("heading_deg"), wx: g("wx"), wy: g("wy"), wz: g("wz"), beta_deg: g("beta_deg"), roll_rate: g("roll_rate"), cl: g("cl"), cy: g("cy"),
+            t: p("t")?,
+            phase,
+            east: g("east"),
+            north: g("north"),
+            up: g("up"),
+            lat: p("lat")?,
+            lon: p("lon")?,
+            alt: p("alt")?,
+            vel_e: g("vel_e"),
+            vel_n: g("vel_n"),
+            vel_u: g("vel_u"),
+            airspeed: g("airspeed"),
+            mach: g("mach"),
+            alpha_deg: g("alpha_deg"),
+            thrust: g("thrust"),
+            mass: g("mass"),
+            x_cg: g("x_cg"),
+            x_cp: g("x_cp"),
+            stability_cal: g("stability_cal"),
+            dyn_pressure: g("dyn_pressure"),
+            cn: g("cn"),
+            ca: g("ca"),
+            pitch_deg: g("pitch_deg"),
+            heading_deg: g("heading_deg"),
+            wx: g("wx"),
+            wy: g("wy"),
+            wz: g("wz"),
+            beta_deg: g("beta_deg"),
+            roll_rate: g("roll_rate"),
+            cl: g("cl"),
+            cy: g("cy"),
         });
     }
     if samples.is_empty() {
@@ -517,11 +559,32 @@ fn summary_from_json(v: &serde_json::Value) -> Result<Summary, String> {
     let f = |k: &str| v.get(k).and_then(|x| x.as_f64()).unwrap_or(f64::NAN);
     let descent = v.get("descent").and_then(|d| d.as_str()).and_then(parse_descent).ok_or("bad descent")?;
     let s = Summary {
-        descent, wind_speed: f("wind_speed"), wind_direction_deg: f("wind_direction_deg"), rail_exit_time: f("rail_exit_time"), rail_exit_speed: f("rail_exit_speed"), burnout_time: f("burnout_time"),
-        max_speed: f("max_speed"), max_mach: f("max_mach"), max_dyn_pressure: f("max_dyn_pressure"), apogee_time: f("apogee_time"), apogee: f("apogee"), apogee_east: f("apogee_east"),
-        apogee_north: f("apogee_north"), min_stability_cal: f("min_stability_cal"), stability_at_rail_exit: f("stability_at_rail_exit"), landing_time: f("landing_time"), landing_east: f("landing_east"),
-        landing_north: f("landing_north"), landing_lat: f("landing_lat"), landing_lon: f("landing_lon"), landing_distance: f("landing_distance"), landing_speed: f("landing_speed"),
-        main_deploy_time: v.get("main_deploy_time").and_then(|x| x.as_f64()), main_deploy_altitude: v.get("main_deploy_altitude").and_then(|x| x.as_f64()), drogue_deploy_time: v.get("drogue_deploy_time").and_then(|x| x.as_f64()), wind_scale: v.get("wind_scale").and_then(|x| x.as_f64()),
+        descent,
+        wind_speed: f("wind_speed"),
+        wind_direction_deg: f("wind_direction_deg"),
+        rail_exit_time: f("rail_exit_time"),
+        rail_exit_speed: f("rail_exit_speed"),
+        burnout_time: f("burnout_time"),
+        max_speed: f("max_speed"),
+        max_mach: f("max_mach"),
+        max_dyn_pressure: f("max_dyn_pressure"),
+        apogee_time: f("apogee_time"),
+        apogee: f("apogee"),
+        apogee_east: f("apogee_east"),
+        apogee_north: f("apogee_north"),
+        min_stability_cal: f("min_stability_cal"),
+        stability_at_rail_exit: f("stability_at_rail_exit"),
+        landing_time: f("landing_time"),
+        landing_east: f("landing_east"),
+        landing_north: f("landing_north"),
+        landing_lat: f("landing_lat"),
+        landing_lon: f("landing_lon"),
+        landing_distance: f("landing_distance"),
+        landing_speed: f("landing_speed"),
+        main_deploy_time: v.get("main_deploy_time").and_then(|x| x.as_f64()),
+        main_deploy_altitude: v.get("main_deploy_altitude").and_then(|x| x.as_f64()),
+        drogue_deploy_time: v.get("drogue_deploy_time").and_then(|x| x.as_f64()),
+        wind_scale: v.get("wind_scale").and_then(|x| x.as_f64()),
     };
     if !(s.landing_lat.is_finite() && s.landing_lon.is_finite()) {
         return Err("no landing position".into());
@@ -534,10 +597,32 @@ fn summary_from_row(t: &Csv, r: &[String]) -> Result<Summary, String> {
     let descent = t.text(r, "descent").and_then(parse_descent).ok_or("bad descent")?;
     let g = |c: &str| t.num(r, c).unwrap_or(0.0);
     Ok(Summary {
-        descent, wind_speed: t.req(r, "wind_speed")?, wind_direction_deg: t.req(r, "wind_direction_deg")?, rail_exit_time: 0.0, rail_exit_speed: g("rail_exit_speed"), burnout_time: f64::NAN, max_speed: 0.0,
-        max_mach: g("max_mach"), max_dyn_pressure: 0.0, apogee_time: g("apogee_time"), apogee: g("apogee"), apogee_east: 0.0, apogee_north: 0.0, min_stability_cal: g("min_stability_cal"),
-        stability_at_rail_exit: 0.0, landing_time: g("landing_time"), landing_east: t.req(r, "landing_east")?, landing_north: t.req(r, "landing_north")?, landing_lat: t.req(r, "landing_lat")?,
-        landing_lon: t.req(r, "landing_lon")?, landing_distance: g("landing_distance"), landing_speed: g("landing_speed"), main_deploy_time: None, main_deploy_altitude: None, drogue_deploy_time: None, wind_scale: None,
+        descent,
+        wind_speed: t.req(r, "wind_speed")?,
+        wind_direction_deg: t.req(r, "wind_direction_deg")?,
+        rail_exit_time: 0.0,
+        rail_exit_speed: g("rail_exit_speed"),
+        burnout_time: f64::NAN,
+        max_speed: 0.0,
+        max_mach: g("max_mach"),
+        max_dyn_pressure: 0.0,
+        apogee_time: g("apogee_time"),
+        apogee: g("apogee"),
+        apogee_east: 0.0,
+        apogee_north: 0.0,
+        min_stability_cal: g("min_stability_cal"),
+        stability_at_rail_exit: 0.0,
+        landing_time: g("landing_time"),
+        landing_east: t.req(r, "landing_east")?,
+        landing_north: t.req(r, "landing_north")?,
+        landing_lat: t.req(r, "landing_lat")?,
+        landing_lon: t.req(r, "landing_lon")?,
+        landing_distance: g("landing_distance"),
+        landing_speed: g("landing_speed"),
+        main_deploy_time: None,
+        main_deploy_altitude: None,
+        drogue_deploy_time: None,
+        wind_scale: None,
     })
 }
 
@@ -613,12 +698,32 @@ pub fn load_monte_carlo(dir: &Path, hash: &str) -> Result<Option<MonteCarlo>, St
         let descent = t.text(r, "descent").and_then(parse_descent).ok_or_else(|| format!("{}: bad descent", csv.display()))?;
         let g = |c: &str| t.num(r, c).unwrap_or(0.0);
         let perturbation = Perturbation {
-            thrust_scale: g("thrust_scale"), burn_time_scale: g("burn_time_scale"), dry_mass: g("dry_mass"), cg: g("cg"), cn_scale: g("cn_scale"), ca_scale: g("ca_scale"), elevation_deg: g("elevation_deg"),
-            azimuth_deg: g("azimuth_deg"), wind_speed: g("wind_speed_delta"), wind_direction_deg: g("wind_direction_deg_delta"), parachute_cd_s_scale: g("parachute_cd_s_scale"),
-            misalignment_y_deg: g("thrust_misalignment_y_deg"), misalignment_z_deg: g("thrust_misalignment_z_deg"), offset_y: g("thrust_offset_y"), offset_z: g("thrust_offset_z"), fin_cant_deg: g("fin_cant_deg"),
-            cg_lateral_y: g("cg_lateral_y"), cg_lateral_z: g("cg_lateral_z"), cl_scale: g("cl_scale"), clp_scale: g("clp_scale"),
+            thrust_scale: g("thrust_scale"),
+            burn_time_scale: g("burn_time_scale"),
+            dry_mass: g("dry_mass"),
+            cg: g("cg"),
+            cn_scale: g("cn_scale"),
+            ca_scale: g("ca_scale"),
+            elevation_deg: g("elevation_deg"),
+            azimuth_deg: g("azimuth_deg"),
+            wind_speed: g("wind_speed_delta"),
+            wind_direction_deg: g("wind_direction_deg_delta"),
+            parachute_cd_s_scale: g("parachute_cd_s_scale"),
+            misalignment_y_deg: g("thrust_misalignment_y_deg"),
+            misalignment_z_deg: g("thrust_misalignment_z_deg"),
+            offset_y: g("thrust_offset_y"),
+            offset_z: g("thrust_offset_z"),
+            fin_cant_deg: g("fin_cant_deg"),
+            cg_lateral_y: g("cg_lateral_y"),
+            cg_lateral_z: g("cg_lateral_z"),
+            cl_scale: g("cl_scale"),
+            clp_scale: g("clp_scale"),
         };
-        let result = if t.text(r, "status") == Some("ok") { Ok(summary_from_row(&t, r).map_err(|e| format!("{}: {e}", csv.display()))?) } else { Err("failed".to_string()) };
+        let result = if t.text(r, "status") == Some("ok") {
+            Ok(summary_from_row(&t, r).map_err(|e| format!("{}: {e}", csv.display()))?)
+        } else {
+            Err("failed".to_string())
+        };
         rows.push(McRow { sample, descent, perturbation, result });
     }
     Ok(Some(MonteCarlo { rows, stats }))
@@ -671,16 +776,68 @@ mod tests {
 
     fn sample(t: f64, phase: Phase, thrust: f64, alt: f64) -> Sample {
         Sample {
-            t, phase, east: 0.0, north: 0.0, up: alt - 20.0, lat: 34.7347 + t * 1e-4, lon: 139.4204 - t * 1e-4, alt, vel_e: 0.0, vel_n: 0.0, vel_u: 10.0, airspeed: 10.0,
-            mach: 0.0, alpha_deg: 0.0, thrust, mass: 1.0, x_cg: 0.0, x_cp: 0.0, stability_cal: 1.0, dyn_pressure: 0.0, cn: 0.0, ca: 0.0, pitch_deg: 0.0, heading_deg: 0.0, wx: 0.0, wy: 0.0, wz: 0.0, beta_deg: 0.0, roll_rate: 0.0, cl: 0.0, cy: 0.0,
+            t,
+            phase,
+            east: 0.0,
+            north: 0.0,
+            up: alt - 20.0,
+            lat: 34.7347 + t * 1e-4,
+            lon: 139.4204 - t * 1e-4,
+            alt,
+            vel_e: 0.0,
+            vel_n: 0.0,
+            vel_u: 10.0,
+            airspeed: 10.0,
+            mach: 0.0,
+            alpha_deg: 0.0,
+            thrust,
+            mass: 1.0,
+            x_cg: 0.0,
+            x_cp: 0.0,
+            stability_cal: 1.0,
+            dyn_pressure: 0.0,
+            cn: 0.0,
+            ca: 0.0,
+            pitch_deg: 0.0,
+            heading_deg: 0.0,
+            wx: 0.0,
+            wy: 0.0,
+            wz: 0.0,
+            beta_deg: 0.0,
+            roll_rate: 0.0,
+            cl: 0.0,
+            cy: 0.0,
         }
     }
 
     fn summary() -> Summary {
         Summary {
-            descent: Descent::Parachute, wind_speed: 4.0, wind_direction_deg: 0.0, rail_exit_time: 0.2, rail_exit_speed: 20.0, burnout_time: 1.0, max_speed: 1.0, max_mach: 1.0,
-            max_dyn_pressure: 1.0, apogee_time: 3.0, apogee: 100.0, apogee_east: 0.0, apogee_north: 0.0, min_stability_cal: 1.0, stability_at_rail_exit: 1.5, landing_time: 6.0,
-            landing_east: -10.0, landing_north: 5.0, landing_lat: 34.7348, landing_lon: 139.4203, landing_distance: 11.2, landing_speed: 5.0, main_deploy_time: None, main_deploy_altitude: None, drogue_deploy_time: None, wind_scale: None,
+            descent: Descent::Parachute,
+            wind_speed: 4.0,
+            wind_direction_deg: 0.0,
+            rail_exit_time: 0.2,
+            rail_exit_speed: 20.0,
+            burnout_time: 1.0,
+            max_speed: 1.0,
+            max_mach: 1.0,
+            max_dyn_pressure: 1.0,
+            apogee_time: 3.0,
+            apogee: 100.0,
+            apogee_east: 0.0,
+            apogee_north: 0.0,
+            min_stability_cal: 1.0,
+            stability_at_rail_exit: 1.5,
+            landing_time: 6.0,
+            landing_east: -10.0,
+            landing_north: 5.0,
+            landing_lat: 34.7348,
+            landing_lon: 139.4203,
+            landing_distance: 11.2,
+            landing_speed: 5.0,
+            main_deploy_time: None,
+            main_deploy_altitude: None,
+            drogue_deploy_time: None,
+            wind_scale: None,
         }
     }
 
@@ -758,26 +915,51 @@ mod tests {
     }
 
     fn wind_grid_part() -> WindGrid {
-        let cases: Vec<Case> = [(1.0, 0.0), (1.0, 90.0), (1.0, 180.0), (2.0, 0.0), (2.0, 90.0)].iter().map(|&(s, d)| Case { descent: Descent::Ballistic, wind_speed: s, wind_direction_deg: d }).collect();
-        let results: Vec<Summary> = cases.iter().map(|c| Summary { descent: c.descent, wind_speed: c.wind_speed, wind_direction_deg: c.wind_direction_deg, ..summary() }).collect();
+        let cases: Vec<Case> = [(1.0, 0.0), (1.0, 90.0), (1.0, 180.0), (2.0, 0.0), (2.0, 90.0)]
+            .iter()
+            .map(|&(s, d)| Case { descent: Descent::Ballistic, wind_speed: s, wind_direction_deg: d })
+            .collect();
+        let results: Vec<Summary> =
+            cases.iter().map(|c| Summary { descent: c.descent, wind_speed: c.wind_speed, wind_direction_deg: c.wind_direction_deg, ..summary() }).collect();
         WindGrid { cases, results }
     }
 
     fn mc_part() -> MonteCarlo {
         let mut rows = Vec::new();
         for i in 0..6 {
-            let result = if i == 4 { Err("never left the rail".to_string()) } else { Ok(Summary { landing_east: -50.0 + 20.0 * i as f64, landing_north: 30.0 - 7.0 * i as f64, ..summary() }) };
+            let result = if i == 4 {
+                Err("never left the rail".to_string())
+            } else {
+                Ok(Summary { landing_east: -50.0 + 20.0 * i as f64, landing_north: 30.0 - 7.0 * i as f64, ..summary() })
+            };
             rows.push(McRow { sample: i, descent: Descent::Parachute, perturbation: Perturbation::default(), result });
         }
         let pts: Vec<(f64, f64)> = rows.iter().filter_map(|r| r.result.as_ref().ok()).map(|s| (s.landing_east, s.landing_north)).collect();
         let landing = sim::dispersion::landing_statistics(&pts);
-        let stats = vec![DescentStats { descent: Descent::Parachute, failed: 1, not_landed: 0, complete: false, max_landing_distance_is_lower_bound: true, landing_distance_p50: 50.0, landing_distance_p90: 80.0, landing_distance_p99: 89.0, landing, max_landing_distance: 90.0, max_landing_distance_sample: Some(5), apogee_mean: 100.0, apogee_std: 0.0 }];
+        let stats = vec![DescentStats {
+            descent: Descent::Parachute,
+            failed: 1,
+            not_landed: 0,
+            complete: false,
+            max_landing_distance_is_lower_bound: true,
+            landing_distance_p50: 50.0,
+            landing_distance_p90: 80.0,
+            landing_distance_p99: 89.0,
+            landing,
+            max_landing_distance: 90.0,
+            max_landing_distance_sample: Some(5),
+            apogee_mean: 100.0,
+            apogee_std: 0.0,
+        }];
         MonteCarlo { rows, stats }
     }
 
     #[test]
     fn lines_only_no_fill_no_curtain() {
-        let kml = combined(&site(), &Parts { flight: Some(Flight { samples: flight(), summary: summary() }), wind_grid: Some(wind_grid_part()), monte_carlo: Some(mc_part()) });
+        let kml = combined(
+            &site(),
+            &Parts { flight: Some(Flight { samples: flight(), summary: summary() }), wind_grid: Some(wind_grid_part()), monte_carlo: Some(mc_part()) },
+        );
         assert!(!kml.contains("<extrude>1</extrude>") && !kml.contains("<extrude>"));
         assert!(!kml.contains("<PolyStyle>") && !kml.contains("<Polygon>") && !kml.contains("<fill>"));
         assert!(kml.contains("<LineStyle>") && kml.contains("1-sigma ellipse") && kml.contains("<name>Powered flight"));
@@ -794,7 +976,11 @@ mod tests {
     }
 
     fn folders(kml: &str) -> Vec<String> {
-        ["Launch site", "Flight", "Dispersion \u{2013} wind grid", "Dispersion \u{2013} Monte Carlo"].iter().filter(|n| kml.contains(&format!("<Folder><name>{n}</name>"))).map(|n| n.to_string()).collect()
+        ["Launch site", "Flight", "Dispersion \u{2013} wind grid", "Dispersion \u{2013} Monte Carlo"]
+            .iter()
+            .filter(|n| kml.contains(&format!("<Folder><name>{n}</name>")))
+            .map(|n| n.to_string())
+            .collect()
     }
 
     #[test]
@@ -851,7 +1037,13 @@ mod tests {
         let lf = load_flight(&dir, H).unwrap().unwrap();
         assert_eq!(lf.samples.len(), f.samples.len());
         for (a, b) in lf.samples.iter().zip(&f.samples) {
-            assert!(a.phase == b.phase && (a.t - b.t).abs() < 1e-3 && (a.alt - b.alt).abs() < 1e-2 && (a.lat - b.lat).abs() < 1e-7 && (a.thrust - b.thrust).abs() < 1e-2);
+            assert!(
+                a.phase == b.phase
+                    && (a.t - b.t).abs() < 1e-3
+                    && (a.alt - b.alt).abs() < 1e-2
+                    && (a.lat - b.lat).abs() < 1e-7
+                    && (a.thrust - b.thrust).abs() < 1e-2
+            );
         }
         assert!((lf.summary.apogee - 100.0).abs() < 1e-9 && lf.summary.descent == Descent::Parachute && (lf.summary.landing_lat - 34.7348).abs() < 1e-9);
 
@@ -865,7 +1057,12 @@ mod tests {
         assert!(lm.rows[4].result.is_err() && lm.rows[5].result.is_ok());
         assert_eq!(lm.stats.len(), 1);
         let (a, b) = (&lm.stats[0], &mc_summary.descents[0]);
-        assert!(a.landing.n == 5 && a.failed == 1 && (a.landing.mean_east - b.landing.mean_east).abs() < 1e-9 && (a.landing.ellipse_3sigma.semi_major - b.landing.ellipse_3sigma.semi_major).abs() < 1e-9);
+        assert!(
+            a.landing.n == 5
+                && a.failed == 1
+                && (a.landing.mean_east - b.landing.mean_east).abs() < 1e-9
+                && (a.landing.ellipse_3sigma.semi_major - b.landing.ellipse_3sigma.semi_major).abs() < 1e-9
+        );
 
         // The loaded parts give the same document as the in-memory ones (up to the CSV precision).
         let live = combined(&site(), &Parts { flight: Some(f), wind_grid: Some(w), monte_carlo: Some(m) });
@@ -897,7 +1094,11 @@ mod tests {
         assert!(load_flight(&dir, H).err().unwrap().starts_with(STALE));
         assert!(load_wind_grid(&dir, H).err().unwrap().starts_with(STALE));
         assert!(load_monte_carlo(&dir, H).err().unwrap().starts_with(STALE));
-        assert!(load_flight(&dir, "other").unwrap().is_some() && load_wind_grid(&dir, "other").unwrap().is_some() && load_monte_carlo(&dir, "other").unwrap().is_some());
+        assert!(
+            load_flight(&dir, "other").unwrap().is_some()
+                && load_wind_grid(&dir, "other").unwrap().is_some()
+                && load_monte_carlo(&dir, "other").unwrap().is_some()
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

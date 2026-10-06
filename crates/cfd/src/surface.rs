@@ -417,8 +417,24 @@ fn band(a: &[Vec3], ta: &[f64], b: &[Vec3], tb: &[f64], out: &mut Vec<Triangle>)
     let (na, nb) = (a.len(), b.len());
     let (mut i, mut k) = (0usize, 0usize);
     while i < na || k < nb {
-        let nta = if i < na { if i + 1 < na { ta[i + 1] } else { tau } } else { f64::INFINITY };
-        let ntb = if k < nb { if k + 1 < nb { tb[k + 1] } else { tau } } else { f64::INFINITY };
+        let nta = if i < na {
+            if i + 1 < na {
+                ta[i + 1]
+            } else {
+                tau
+            }
+        } else {
+            f64::INFINITY
+        };
+        let ntb = if k < nb {
+            if k + 1 < nb {
+                tb[k + 1]
+            } else {
+                tau
+            }
+        } else {
+            f64::INFINITY
+        };
         if i < na && (nta <= ntb || k >= nb) {
             out.push([a[i], a[(i + 1) % na], b[k % nb]]);
             i += 1;
@@ -567,7 +583,9 @@ pub fn fairing_cone(length: f64, base_radius: f64, tail_length: f64, wall_size: 
             let rc = 0.98 * base_radius;
             let n = ((tau * rc / (0.8 * wall_size)).ceil() as usize).clamp(24, 256).div_ceil(4) * 4;
             let inside = (0.02 * length).max(2.0 * wall_size).min(0.1 * length);
-            let poly = |x: f64| -> Vec<Vec3> { (0..n).map(|k| Vec3::new(x, rc * (tau * k as f64 / n as f64).cos(), rc * (tau * k as f64 / n as f64).sin())).collect() };
+            let poly = |x: f64| -> Vec<Vec3> {
+                (0..n).map(|k| Vec3::new(x, rc * (tau * k as f64 / n as f64).cos(), rc * (tau * k as f64 / n as f64).sin())).collect()
+            };
             let tt: Vec<f64> = (0..n).map(|k| tau * k as f64 / n as f64).collect();
             // Short cylinder into the body (front ring -> base-plane ring).
             let front = poly(length - inside);

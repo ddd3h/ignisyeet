@@ -167,11 +167,7 @@ fn main() -> Result<()> {
             return cfd_check(&cfg, &config, mesh);
         }
         Cmd::SampleStl { path } => {
-            let tris: Vec<_> = geom::sample::SampleRocket::default()
-                .mesh()
-                .iter()
-                .map(|t| t.map(|v| geom::Vec3::new(v.y, v.z, -v.x) * 1000.0))
-                .collect();
+            let tris: Vec<_> = geom::sample::SampleRocket::default().mesh().iter().map(|t| t.map(|v| geom::Vec3::new(v.y, v.z, -v.x) * 1000.0)).collect();
             geom::stl::write_stl_binary(&path, &tris)?;
             if ui().mode != ui::Mode::Quiet {
                 println!("wrote {} ({} triangles)", path.display(), tris.len());
@@ -329,7 +325,10 @@ fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: f64) -> Vec<String>
     if wind.model == sim::WindModel::Profile {
         if let Some((bottom, top, _)) = wind_profile_extent(cfg) {
             if s.apogee > top {
-                w.push(format!("apogee {:.0} m is above the top of the wind profile ({top:.0} m): the wind above {top:.0} m is held at the top value", s.apogee));
+                w.push(format!(
+                    "apogee {:.0} m is above the top of the wind profile ({top:.0} m): the wind above {top:.0} m is held at the top value",
+                    s.apogee
+                ));
             }
             if bottom > 0.0 {
                 w.push(format!("the wind profile starts at {bottom:.0} m: the wind below is held at the lowest row"));
@@ -364,10 +363,7 @@ fn parachute_warnings(cfg: &Config, s: &Summary) -> Vec<String> {
             s.landing_speed, cfg.recovery.delay
         ));
     } else if s.landing_speed > MAX_PARACHUTE_LANDING_SPEED {
-        w.push(format!(
-            "parachute descent landed at {:.1} m/s, which is above {MAX_PARACHUTE_LANDING_SPEED:.0} m/s: check recovery.cd_s",
-            s.landing_speed
-        ));
+        w.push(format!("parachute descent landed at {:.1} m/s, which is above {MAX_PARACHUTE_LANDING_SPEED:.0} m/s: check recovery.cd_s", s.landing_speed));
     }
     w
 }
@@ -533,7 +529,11 @@ fn aero_options(cfg: &Config) -> AeroOptions {
     AeroOptions {
         mach_min: a.mach_min,
         mach_max: a.mach_max,
-        mach_step: if cfg.aero.table_kind == aero::table::TableKind::General && a.method == config::AeroMethod::Barrowman { a.general_mach_step } else { a.mach_step },
+        mach_step: if cfg.aero.table_kind == aero::table::TableKind::General && a.method == config::AeroMethod::Barrowman {
+            a.general_mach_step
+        } else {
+            a.mach_step
+        },
         alpha_max_deg: a.alpha_max_deg,
         alpha_step_deg: a.alpha_step_deg,
         reference_altitude: cfg.launch.altitude,
@@ -764,7 +764,17 @@ fn aero_table_inner(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
         writeln!(
             f,
             "{m},{:.6e},{:.6e},{:.6e},{:.6e},{:.6e},{:.6e},{:.6e},{:.6e},{:.6e},{:.6e},{:.6e}",
-            off.reynolds, off.friction, off.nose, off.base, off.fins, off.boattail, off.extra, off.total(), on.total(), c.cna, c.xcp
+            off.reynolds,
+            off.friction,
+            off.nose,
+            off.base,
+            off.fins,
+            off.boattail,
+            off.extra,
+            off.total(),
+            on.total(),
+            c.cna,
+            c.xcp
         )?;
     }
     let c = table.lookup(0.3, 0.0);
@@ -823,14 +833,32 @@ fn cfd_table(cfg: &Config, g: Geometry, hash: String, path: &Path, start: std::t
     };
     let out_dir = cfg.out_dir();
     let raw = if cfg.aero.cfd.surface == cfd::SurfaceKind::Stl { Some(raw_stl(cfg)?) } else { None };
-    let built = cfd::build_table_with_progress(&g, &cfg.aero.cfd, &aero_options(cfg), &out_dir, hash, cfg.aero.extrapolation, &cfd_budget(cfg), raw.as_deref(), &progress);
+    let built = cfd::build_table_with_progress(
+        &g,
+        &cfg.aero.cfd,
+        &aero_options(cfg),
+        &out_dir,
+        hash,
+        cfg.aero.extrapolation,
+        &cfd_budget(cfg),
+        raw.as_deref(),
+        &progress,
+    );
     pb.finish_and_clear();
     let (table, report) = built?;
     table.save(path)?;
     std::fs::write(out_path(cfg, "cfd_report.json")?, serde_json::to_string_pretty(&report)?)?;
     ui().record(&out_dir.join("cfd_cases.csv"));
     if u.plain() {
-        println!("Aero table: CFD, {} cases ({} failed, {} unconverged), {} cells, {:.1?} -> {}", report.cases, report.failed.len(), report.unconverged.len(), report.mesh_cells, start.elapsed(), path.display());
+        println!(
+            "Aero table: CFD, {} cases ({} failed, {} unconverged), {} cells, {:.1?} -> {}",
+            report.cases,
+            report.failed.len(),
+            report.unconverged.len(),
+            report.mesh_cells,
+            start.elapsed(),
+            path.display()
+        );
     }
     u.done_line("CFD", &format!("{} cases, {} failed, {} cells", report.cases, report.failed.len(), report.mesh_cells), start.elapsed());
     show_table(&table, Some(start.elapsed()), sub);
@@ -849,8 +877,12 @@ fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
     }
     for t in [&r.su2, &r.mpi, &r.gmsh, &r.manifold] {
         match (&t.problem, &t.version) {
-            (None, v) => println!("  {:<21}ok       {}  [{}]", t.name, v.as_deref().unwrap_or(""), t.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default()),
-            (Some(p), _) if t.name.starts_with("manifold3d") && opt.surface != cfd::SurfaceKind::Stl => println!("  {:<21}not installed (only needed for surface = \"stl\")", t.name),
+            (None, v) => {
+                println!("  {:<21}ok       {}  [{}]", t.name, v.as_deref().unwrap_or(""), t.path.as_ref().map(|p| p.display().to_string()).unwrap_or_default())
+            }
+            (Some(p), _) if t.name.starts_with("manifold3d") && opt.surface != cfd::SurfaceKind::Stl => {
+                println!("  {:<21}not installed (only needed for surface = \"stl\")", t.name)
+            }
             (Some(p), _) => println!("  {:<21}MISSING  {p}", t.name),
         }
     }
@@ -1076,7 +1108,11 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
     let p = prepare(cfg)?;
     let descent = descent.unwrap_or_else(|| default_descent(cfg));
     if u.rich() {
-        u.done_line("Rocket model", &format!("L {:.3} m {d} D {:.4} m {d} {} aero rows", p.table.meta.length, p.table.meta.ref_diameter, p.table.rows(), d = u.g().dot), std::time::Duration::ZERO);
+        u.done_line(
+            "Rocket model",
+            &format!("L {:.3} m {d} D {:.4} m {d} {} aero rows", p.table.meta.length, p.table.meta.ref_diameter, p.table.rows(), d = u.g().dot),
+            std::time::Duration::ZERO,
+        );
     }
     let t0 = std::time::Instant::now();
     let r = fly(cfg, &simulation(cfg, &p)?, descent)?;
@@ -1103,7 +1139,10 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
             println!("  main deploy     {h:.1} m at {t:.2} s");
         }
         if landed {
-            println!("  landing         {:.1} s, E {:.1} m, N {:.1} m ({:.6}, {:.6}), {:.1} m/s", s.landing_time, s.landing_east, s.landing_north, s.landing_lat, s.landing_lon, s.landing_speed);
+            println!(
+                "  landing         {:.1} s, E {:.1} m, N {:.1} m ({:.6}, {:.6}), {:.1} m/s",
+                s.landing_time, s.landing_east, s.landing_north, s.landing_lat, s.landing_lon, s.landing_speed
+            );
         } else {
             println!("  landing         NONE: the rocket did not reach the ground within sim.max_time = {} s", cfg.sim.max_time);
         }
@@ -1244,7 +1283,8 @@ impl FarthestLanding {
 fn nominal_warnings(cfg: &Config, p: &Prepared, base: &Simulation) -> Vec<String> {
     let mut w = p.geometry_warnings.clone();
     w.extend(size_warnings(cfg, p.table.meta.length, p.table.meta.ref_diameter));
-    let ref_speed = if cfg.dispersion.mode == sim::DispersionMode::WindGrid { cfg.dispersion.wind_speeds.iter().copied().fold(0.0, f64::max) } else { cfg.wind.speed };
+    let ref_speed =
+        if cfg.dispersion.mode == sim::DispersionMode::WindGrid { cfg.dispersion.wind_speeds.iter().copied().fold(0.0, f64::max) } else { cfg.wind.speed };
     match base.run(Descent::Ballistic, false) {
         Ok(r) => w.extend(flight_warnings_at(cfg, &r.summary, ref_speed)),
         Err(e) => w.push(format!("the nominal flight could not be simulated ({e:#}): stability and wind-model checks were skipped")),
@@ -1387,8 +1427,22 @@ fn write_wind_grid_csv(path: &Path, results: &[sim::Summary], errors: &[Option<S
         writeln!(
             f,
             "{mode},{},{},{:.2},{:.2},{:.8},{:.8},{:.2},{:.2},{:.2},{:.2},{:.2},{:.4},{:.2},{:.3},{},{}",
-            s.wind_speed, s.wind_direction_deg, s.landing_east, s.landing_north, s.landing_lat, s.landing_lon, s.landing_distance,
-            s.landing_time, s.landing_speed, s.apogee, s.apogee_time, s.max_mach, s.rail_exit_speed, s.min_stability_cal, s.landed(), csv_field(e.as_deref().unwrap_or(""))
+            s.wind_speed,
+            s.wind_direction_deg,
+            s.landing_east,
+            s.landing_north,
+            s.landing_lat,
+            s.landing_lon,
+            s.landing_distance,
+            s.landing_time,
+            s.landing_speed,
+            s.apogee,
+            s.apogee_time,
+            s.max_mach,
+            s.rail_exit_speed,
+            s.min_stability_cal,
+            s.landed(),
+            csv_field(e.as_deref().unwrap_or(""))
         )?;
     }
     f.flush()?;
@@ -1443,7 +1497,14 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
     std::fs::write(&spath, serde_json::to_string_pretty(&json)?)?;
     u.done_line("Monte Carlo", &format!("{} samples x {} descent modes", r.summary.samples, r.summary.descents.len()), start.elapsed());
     if u.plain() {
-        println!("Monte Carlo: {} samples x {} descent modes in {:.2?} -> {}, {}", r.summary.samples, r.summary.descents.len(), start.elapsed(), path.display(), spath.display());
+        println!(
+            "Monte Carlo: {} samples x {} descent modes in {:.2?} -> {}, {}",
+            r.summary.samples,
+            r.summary.descents.len(),
+            start.elapsed(),
+            path.display(),
+            spath.display()
+        );
         for d in &r.summary.descents {
             println!("  {:?}: {} ok, {} failed or did not land", d.descent, d.landing.n, d.failed);
             if !d.complete {
@@ -1455,13 +1516,24 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
             }
             let (e1, e3) = (d.landing.ellipse_1sigma, d.landing.ellipse_3sigma);
             println!("    mean landing E {:.1} m, N {:.1} m; apogee {:.1} +- {:.1} m", d.landing.mean_east, d.landing.mean_north, d.apogee_mean, d.apogee_std);
-            println!("    1-sigma ellipse {:.1} x {:.1} m, 3-sigma {:.1} x {:.1} m, major axis bearing {:.0} deg", e1.semi_major, e1.semi_minor, e3.semi_major, e3.semi_minor, e1.major_axis_bearing_deg);
+            println!(
+                "    1-sigma ellipse {:.1} x {:.1} m, 3-sigma {:.1} x {:.1} m, major axis bearing {:.0} deg",
+                e1.semi_major, e1.semi_minor, e3.semi_major, e3.semi_minor, e1.major_axis_bearing_deg
+            );
             if d.max_landing_distance_is_lower_bound {
-                println!("    max landing distance \u{2265} {:.1} m ({} samples did not land or failed; sample {} is the farthest that landed)", d.max_landing_distance, d.failed, d.max_landing_distance_sample.unwrap_or(0));
+                println!(
+                    "    max landing distance \u{2265} {:.1} m ({} samples did not land or failed; sample {} is the farthest that landed)",
+                    d.max_landing_distance,
+                    d.failed,
+                    d.max_landing_distance_sample.unwrap_or(0)
+                );
             } else {
                 println!("    max landing distance {:.1} m (sample {})", d.max_landing_distance, d.max_landing_distance_sample.unwrap_or(0));
             }
-            println!("    landing distance P50 {:.1} m, P90 {:.1} m, P99 {:.1} m (landed samples)", d.landing_distance_p50, d.landing_distance_p90, d.landing_distance_p99);
+            println!(
+                "    landing distance P50 {:.1} m, P90 {:.1} m, P99 {:.1} m (landed samples)",
+                d.landing_distance_p50, d.landing_distance_p90, d.landing_distance_p99
+            );
         }
     } else if u.rich() {
         println!();
@@ -1473,7 +1545,11 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
             println!("  KML: Monte Carlo left out (no sample landed)");
         }
     } else {
-        write_kml(cfg, kml::Parts { monte_carlo: Some(kml::MonteCarlo { rows: r.rows.clone(), stats: r.summary.descents.clone() }), ..Default::default() }, false)?;
+        write_kml(
+            cfg,
+            kml::Parts { monte_carlo: Some(kml::MonteCarlo { rows: r.rows.clone(), stats: r.summary.descents.clone() }), ..Default::default() },
+            false,
+        )?;
     }
     for row in r.rows.iter().filter(|x| x.result.is_err()).take(3) {
         let msg = format!("failed: sample {} ({}): {}", row.sample, descent_name(row.descent), row.result.as_ref().unwrap_err());
@@ -1502,14 +1578,36 @@ thrust_misalignment_y_deg,thrust_misalignment_z_deg,thrust_offset_y,thrust_offse
             row.sample,
             descent_name(row.descent),
             if row.result.is_ok() { "ok" } else { "failed" },
-            p.thrust_scale, p.burn_time_scale, p.dry_mass, p.cg, p.cn_scale, p.ca_scale, p.elevation_deg, p.azimuth_deg, p.wind_speed, p.wind_direction_deg, p.parachute_cd_s_scale
+            p.thrust_scale,
+            p.burn_time_scale,
+            p.dry_mass,
+            p.cg,
+            p.cn_scale,
+            p.ca_scale,
+            p.elevation_deg,
+            p.azimuth_deg,
+            p.wind_speed,
+            p.wind_direction_deg,
+            p.parachute_cd_s_scale
         )?;
         match &row.result {
             Ok(s) => write!(
                 f,
                 "{},{},{:.2},{:.2},{:.8},{:.8},{:.2},{:.2},{:.2},{:.2},{:.2},{:.4},{:.2},{:.3}",
-                s.wind_speed, s.wind_direction_deg, s.landing_east, s.landing_north, s.landing_lat, s.landing_lon, s.landing_distance,
-                s.landing_time, s.landing_speed, s.apogee, s.apogee_time, s.max_mach, s.rail_exit_speed, s.min_stability_cal
+                s.wind_speed,
+                s.wind_direction_deg,
+                s.landing_east,
+                s.landing_north,
+                s.landing_lat,
+                s.landing_lon,
+                s.landing_distance,
+                s.landing_time,
+                s.landing_speed,
+                s.apogee,
+                s.apogee_time,
+                s.max_mach,
+                s.rail_exit_speed,
+                s.min_stability_cal
             )?,
             Err(_) => write!(f, ",,,,,,,,,,,,,")?,
         }
@@ -1557,10 +1655,19 @@ mod tests {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
         let tmp = std::env::temp_dir().join(format!("ignisyeet_cli_legacy_{}", std::process::id()));
         std::fs::create_dir_all(&tmp).unwrap();
-        let meta = aero::table::TableMeta { source_hash: "ext".into(), ref_area: 0.01, ref_diameter: 0.1, length: 1.0, machs: vec![0.0, 1.0], alphas_deg: vec![0.0, 10.0], ..Default::default() };
+        let meta = aero::table::TableMeta {
+            source_hash: "ext".into(),
+            ref_area: 0.01,
+            ref_diameter: 0.1,
+            length: 1.0,
+            machs: vec![0.0, 1.0],
+            alphas_deg: vec![0.0, 10.0],
+            ..Default::default()
+        };
         let csv = tmp.join("legacy.csv");
         AeroTable::from_fn(meta, |_, a| aero::AeroCoeffs { cn: a, ca_off: 0.5, xcp: 0.6, ..Default::default() }).save(&csv).unwrap();
-        let text = include_str!("../../../examples/sample.toml").replace("method = \"barrowman\"", &format!("method = \"table\"\ntable = \"{}\"", csv.display()));
+        let text =
+            include_str!("../../../examples/sample.toml").replace("method = \"barrowman\"", &format!("method = \"table\"\ntable = \"{}\"", csv.display()));
         let cfg = Config::from_value(toml::from_str(&text).unwrap(), Some(&dir)).unwrap();
         let t = aero_table(&cfg, false).unwrap();
         let c = t.lookup(0.5, 0.0);
@@ -1578,7 +1685,12 @@ mod tests {
             } else {
                 Err("failed".to_string())
             };
-            rows.push(sim::dispersion::McRow { sample: 0, descent: Descent::Ballistic, perturbation: sim::dispersion::Perturbation { cl_scale: 0.25, ..Default::default() }, result });
+            rows.push(sim::dispersion::McRow {
+                sample: 0,
+                descent: Descent::Ballistic,
+                perturbation: sim::dispersion::Perturbation { cl_scale: 0.25, ..Default::default() },
+                result,
+            });
         }
         let path = std::env::temp_dir().join(format!("ignisyeet_mc_csv_{}.csv", std::process::id()));
         write_monte_carlo_csv(&path, &rows).unwrap();
@@ -1618,7 +1730,9 @@ mod tests {
             landing_distance: 22.0,
             landing_speed: 30.0,
             main_deploy_time: None,
-            main_deploy_altitude: None, drogue_deploy_time: None, wind_scale: None,
+            main_deploy_altitude: None,
+            drogue_deploy_time: None,
+            wind_scale: None,
         }
     }
 
@@ -1651,7 +1765,15 @@ mod tests {
         // With method = "cfd" only the resource/path fields are ignored; physical settings are not.
         let cfd_text = |extra: &str| with_cfd(extra).replace("method = \"barrowman\"", "method = \"cfd\"");
         let plain = source_hash(&load_sample(&cfd_text(""))).unwrap();
-        for resource in ["prefix = \"/opt/su2\"", "su2 = \"SU2_CFD2\"", "mpi = \"mpiexec\"", "ranks_per_case = 3", "parallel_cases = 2", "timeout_minutes = 5.0", "workdir = \"elsewhere\""] {
+        for resource in [
+            "prefix = \"/opt/su2\"",
+            "su2 = \"SU2_CFD2\"",
+            "mpi = \"mpiexec\"",
+            "ranks_per_case = 3",
+            "parallel_cases = 2",
+            "timeout_minutes = 5.0",
+            "workdir = \"elsewhere\"",
+        ] {
             assert_eq!(plain, source_hash(&load_sample(&cfd_text(resource))).unwrap(), "{resource}");
         }
         assert_ne!(plain, source_hash(&load_sample(&cfd_text("iterations = 77"))).unwrap());
@@ -1684,7 +1806,16 @@ mod tests {
     }
 
     fn unlanded(s: sim::Summary) -> sim::Summary {
-        sim::Summary { landing_time: f64::NAN, landing_east: f64::NAN, landing_north: f64::NAN, landing_lat: f64::NAN, landing_lon: f64::NAN, landing_distance: f64::NAN, landing_speed: f64::NAN, ..s }
+        sim::Summary {
+            landing_time: f64::NAN,
+            landing_east: f64::NAN,
+            landing_north: f64::NAN,
+            landing_lat: f64::NAN,
+            landing_lon: f64::NAN,
+            landing_distance: f64::NAN,
+            landing_speed: f64::NAN,
+            ..s
+        }
     }
 
     #[test]
@@ -1826,7 +1957,12 @@ mod tests {
         cfg.wind.profile = Some(dir.join("w.csv"));
         let run = |k: f64, v: f64| sim::Summary { wind_scale: Some(k), wind_speed: v, ..sample_summary() };
         // within 1/3 .. 3: no warning; non-profile runs have no scale
-        assert!(wind_scale_warning(&cfg, "wind grid", [&run(1.0, 3.0), &run(2.9, 8.7), &run(0.4, 1.2), &sim::Summary { wind_scale: None, ..sample_summary() }]).is_none());
+        assert!(wind_scale_warning(
+            &cfg,
+            "wind grid",
+            [&run(1.0, 3.0), &run(2.9, 8.7), &run(0.4, 1.2), &sim::Summary { wind_scale: None, ..sample_summary() }]
+        )
+        .is_none());
         // calm case (v = 0, k = 0) is not a warning
         assert!(wind_scale_warning(&cfg, "wind grid", [&run(0.0, 0.0)]).is_none());
         // the largest deviation is named, with the winds aloft (largest row 5 m/s x k)
@@ -2012,39 +2148,47 @@ mod tests {
         let mut cfg = sample_config("matrix");
         let p = prepare(&cfg).unwrap();
         for wind in [4.0, 0.0] {
-        println!("wind {wind} m/s");
-        cfg.wind.speed = wind;
-        cfg.sim.integrator = I::Rk4;
-        cfg.sim.attitude = A::Normalize;
-        cfg.sim.dt = 0.0005;
-        let refs: Vec<_> = [Descent::Parachute, Descent::Ballistic].iter().map(|&d| fly_sample(&cfg, &p, d)).collect();
-        cfg.sim.dt = 0.002;
-        println!("reference rk4 dt=0.5ms: parachute apogee {:.3} land ({:.2}, {:.2}); ballistic apogee {:.3} land ({:.2}, {:.2})", refs[0].0.summary.apogee, refs[0].0.summary.landing_east, refs[0].0.summary.landing_north, refs[1].0.summary.apogee, refs[1].0.summary.landing_east, refs[1].0.summary.landing_north);
-        for (rtol, atol) in [(1e-7, 1e-6), (1e-9, 1e-9), (1e-10, 1e-10)] {
-            cfg.sim.rtol = rtol;
-            cfg.sim.atol = atol;
-            for i in [I::Rk4, I::Rk45, I::Dop853] {
-                if i == I::Rk4 && rtol != 1e-7 {
-                    continue;
-                }
-                for a in [A::Normalize, A::LieGroup] {
-                    cfg.sim.integrator = i;
-                    cfg.sim.attitude = a;
-                    for (k, d) in [Descent::Parachute, Descent::Ballistic].into_iter().enumerate() {
-                        match simulation(&cfg, &p).unwrap().run(d, false) {
-                            Ok(r) => {
-                                let t0 = std::time::Instant::now();
-                                let _ = simulation(&cfg, &p).unwrap().run(d, false);
-                                let wall = t0.elapsed();
-                                let (s, rf) = (&r.summary, &refs[k].0.summary);
-                                println!("tol {rtol:e}/{atol:e} {i:?}/{a:?} {d:?}: apogee {:.3} ({:+.3}) land E {:.2} N {:.2} (d {:.3}) evals {} wall {:.1} ms qerr {:.1e}", s.apogee, s.apogee - rf.apogee, s.landing_east, s.landing_north, (s.landing_east - rf.landing_east).hypot(s.landing_north - rf.landing_north), r.evals, wall.as_secs_f64() * 1e3, r.max_quat_norm_error);
+            println!("wind {wind} m/s");
+            cfg.wind.speed = wind;
+            cfg.sim.integrator = I::Rk4;
+            cfg.sim.attitude = A::Normalize;
+            cfg.sim.dt = 0.0005;
+            let refs: Vec<_> = [Descent::Parachute, Descent::Ballistic].iter().map(|&d| fly_sample(&cfg, &p, d)).collect();
+            cfg.sim.dt = 0.002;
+            println!(
+                "reference rk4 dt=0.5ms: parachute apogee {:.3} land ({:.2}, {:.2}); ballistic apogee {:.3} land ({:.2}, {:.2})",
+                refs[0].0.summary.apogee,
+                refs[0].0.summary.landing_east,
+                refs[0].0.summary.landing_north,
+                refs[1].0.summary.apogee,
+                refs[1].0.summary.landing_east,
+                refs[1].0.summary.landing_north
+            );
+            for (rtol, atol) in [(1e-7, 1e-6), (1e-9, 1e-9), (1e-10, 1e-10)] {
+                cfg.sim.rtol = rtol;
+                cfg.sim.atol = atol;
+                for i in [I::Rk4, I::Rk45, I::Dop853] {
+                    if i == I::Rk4 && rtol != 1e-7 {
+                        continue;
+                    }
+                    for a in [A::Normalize, A::LieGroup] {
+                        cfg.sim.integrator = i;
+                        cfg.sim.attitude = a;
+                        for (k, d) in [Descent::Parachute, Descent::Ballistic].into_iter().enumerate() {
+                            match simulation(&cfg, &p).unwrap().run(d, false) {
+                                Ok(r) => {
+                                    let t0 = std::time::Instant::now();
+                                    let _ = simulation(&cfg, &p).unwrap().run(d, false);
+                                    let wall = t0.elapsed();
+                                    let (s, rf) = (&r.summary, &refs[k].0.summary);
+                                    println!("tol {rtol:e}/{atol:e} {i:?}/{a:?} {d:?}: apogee {:.3} ({:+.3}) land E {:.2} N {:.2} (d {:.3}) evals {} wall {:.1} ms qerr {:.1e}", s.apogee, s.apogee - rf.apogee, s.landing_east, s.landing_north, (s.landing_east - rf.landing_east).hypot(s.landing_north - rf.landing_north), r.evals, wall.as_secs_f64() * 1e3, r.max_quat_norm_error);
+                                }
+                                Err(e) => println!("tol {rtol:e}/{atol:e} {i:?}/{a:?} {d:?}: FAILED {e}"),
                             }
-                            Err(e) => println!("tol {rtol:e}/{atol:e} {i:?}/{a:?} {d:?}: FAILED {e}"),
                         }
                     }
                 }
             }
-        }
         }
         let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }

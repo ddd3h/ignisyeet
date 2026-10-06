@@ -22,6 +22,7 @@ DOWNLOAD_BASE="${IGNISYEET_DOWNLOAD_BASE:-https://github.com/$REPO/releases/down
 CFD_ENV_NAME="ignisyeet-cfd"
 CFD_PACKAGES="python=3.10 su2=8.3.0 gmsh=4.15.2 python-gmsh=4.15.2 openmpi=5"
 MICROMAMBA_VERSION="2.9.0"
+MANIFOLD3D_VERSION="3.5.4"
 
 ROLE="${IGNISYEET_ROLE:-}"                 # user | developer | "" (ask)
 VERSION="${IGNISYEET_VERSION:-}"           # vX.Y.Z | "" (latest release)
@@ -382,7 +383,7 @@ Roles:
   --developer          git clone, build from source, tests, python/doc environments
 
 Options:
-  --cfd / --no-cfd     install (or skip) the optional CFD tools: SU2, gmsh, Open MPI (~3 GB, conda-forge)
+  --cfd / --no-cfd     install (or skip) the optional CFD tools: SU2, gmsh, Open MPI (~3 GB, conda-forge) and manifold3d (pip)
   --version vX.Y.Z     release to install (default: latest GitHub release); developer: tag to check out
   --prefix DIR         install prefix (default: ~/.local; binary in DIR/bin, data in DIR/share/ignisyeet)
   --dir DIR            developer clone location (default: current clone, else ~/ignisyeet)
@@ -984,8 +985,8 @@ install_cfd() {
   state_set cfd_env "$CFD_PREFIX"
   # manifold3d (pip only): the exact union of the overlapping STL shells for surface = "stl". The environment is
   # removed as a whole by --uninstall --purge, so nothing else has to be tracked.
-  if ! step "Installing manifold3d (pip)" "$CFD_PREFIX/bin/python" -m pip install --quiet manifold3d; then
-    warn "manifold3d could not be installed; surface = \"stl\" will not be available (retry: $CFD_PREFIX/bin/python -m pip install manifold3d)"
+  if ! step "Installing manifold3d (pip)" "$CFD_PREFIX/bin/python" -m pip install --quiet "manifold3d==$MANIFOLD3D_VERSION"; then
+    warn "manifold3d could not be installed; surface = \"stl\" will not be available (retry: $CFD_PREFIX/bin/python -m pip install manifold3d==$MANIFOLD3D_VERSION)"
   fi
 }
 

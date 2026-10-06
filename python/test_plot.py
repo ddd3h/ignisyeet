@@ -344,5 +344,169 @@ class StaleOutputs(unittest.TestCase):
             self.assertIn("summary.json", w[0])
 
 
+def capture_figures(fn, *args):
+    """Runs a plot function and returns {file name: figure} of the figures it saves (not written)."""
+    figs = {}
+    orig = plot.save
+
+    def keep(fig, out, name):
+        figs[name] = fig
+
+    plot.save = keep
+    try:
+        fn(*args)
+    finally:
+        plot.save = orig
+    return figs
+
+
+def banner(fig):
+    return "\n".join(t.get_text() for t in fig.texts)
+
+
+def labels(fig):
+    return [lbl for ax in fig.axes for lbl in ax.get_legend_handles_labels()[1]]
+
+
+class Usability(unittest.TestCase):
+    CLEAN = {"stable": True, "unstable": {"ballistic": 0}, "stability_unknown_runs": {"ballistic": 0}, "broadside_runs": {"ballistic": 0}, "aero_table_range": {"angles_in_range": True}}
+
+    def test_clean_dispersion_has_no_banner(self):
+        self.assertEqual(plot.dispersion_usability({**self.CLEAN, "failed": 0}), (None, []))
+        self.assertEqual(plot.dispersion_usability({}), (None, []))
+
+    def test_unusable_dispersion(self):
+        j = {
+            **self.CLEAN,
+            "stable": False,
+            "static_margin_min_cal": -0.31,
+            "unstable": {"ballistic": 3, "parachute": 0},
+            "unstable_min_static_margin_cal": {"ballistic": -0.52, "parachute": 1.2},
+            "stability_unknown_runs": {"ballistic": 1, "parachute": 0},
+            "aero_table_range": {"angles_in_range": False, "angle_beyond": 12, "max_abs_alpha_deg": 97.0},
+            "failed": 2,
+            "cases": 40,
+        }
+        head, lines = plot.dispersion_usability(j)
+        self.assertEqual(head, "RESULTS NOT USABLE")
+        self.assertEqual(
+            lines,
+            [
+                "nominal flight statically UNSTABLE (min static margin -0.31 cal)",
+                "3 ballistic runs statically UNSTABLE (min static margin down to -0.52 cal)",
+                "1 ballistic run with unknown static stability",
+                "aero table angle range exceeded (12 lookups, max |alpha| 97 deg)",
+                "2 of 40 cases failed or did not land",
+            ],
+        )
+        head, lines = plot.dispersion_usability({**self.CLEAN, "stable": None, "stability_unknown": "the yaw normal-force slope is zero at Mach 0.30"})
+        self.assertEqual((head, lines), ("RESULTS NOT USABLE", ["nominal static stability unknown: the yaw normal-force slope is zero at Mach 0.30"]))
+
+    def test_incomplete_and_broadside(self):
+        mc = {**self.CLEAN, "samples": 100, "descents": [{"descent": "ballistic", "failed": 4}, {"descent": "parachute", "failed": 0}]}
+        self.assertEqual(plot.dispersion_usability(mc), ("INCOMPLETE", ["4 of 100 ballistic samples failed or did not land"]))
+        self.assertEqual(
+            plot.dispersion_usability({**self.CLEAN, "broadside_runs": {"ballistic": 2}}),
+            ("CAUTION", ["2 ballistic runs fell broadside (large-angle aerodynamics, not validated)"]),
+        )
+
+    def test_trajectory_usability(self):
+        ok = {"landed": True, "stable": True, "fell_broadside": False, "aero_table_range": {"angles_in_range": True}}
+        self.assertEqual(plot.trajectory_usability(ok), (None, []))
+        self.assertEqual(plot.trajectory_usability({}), (None, []))
+        bad = {**ok, "stable": False, "static_margin_min_cal": -0.2, "static_margin_min_t": 1.5, "static_margin_min_mach": 0.4}
+        self.assertEqual(plot.trajectory_usability(bad), ("RESULTS NOT USABLE", ["statically UNSTABLE (min static margin -0.20 cal at t = 1.50 s, Mach 0.40)"]))
+        unk = {**ok, "stable": None, "stability_unknown": "no margin"}
+        self.assertEqual(plot.trajectory_usability(unk), ("RESULTS NOT USABLE", ["static stability could not be evaluated (no margin)"]))
+        ang = {**ok, "aero_table_range": {"angles_in_range": False, "angle_beyond": 5, "max_abs_alpha_deg": 120.0}}
+        self.assertEqual(plot.trajectory_usability(ang)[0], "RESULTS NOT USABLE")
+        self.assertEqual(plot.trajectory_usability({**ok, "landed": False, "max_time": 300})[0], "INCOMPLETE")
+        self.assertEqual(
+            plot.trajectory_usability({**ok, "fell_broadside": True, "broadside_time": 42.0}),
+            ("CAUTION", ["the ballistic descent fell broadside for 42 s (large-angle aerodynamics, not validated)"]),
+        )
+
+    def mc_csv(self, out):
+        rows = []
+        for i, (stable, broad) in enumerate([("true", 0.0), ("true", 0.0), ("false", 0.0), ("", 0.0), ("true", 30.0), ("true", 0.0)]):
+            rows.append({"sample": i, "descent": "ballistic", "status": "ok", "landing_east": 10.0 * i, "landing_north": 5.0 * i, "stable": stable, "broadside_time": broad})
+        rows.append({"sample": 6, "descent": "ballistic", "status": "failed", "landing_east": None, "landing_north": None, "stable": "", "broadside_time": None})
+        pd.DataFrame(rows).to_csv(out / "dispersion_mc.csv", index=False)
+
+    def test_monte_carlo_plot_marks_samples_and_shows_the_banner(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self.mc_csv(out)
+            summ = {
+                **self.CLEAN,
+                "samples": 7,
+                "unstable": {"ballistic": 1},
+                "unstable_min_static_margin_cal": {"ballistic": -0.4},
+                "stability_unknown_runs": {"ballistic": 1},
+                "broadside_runs": {"ballistic": 1},
+                "descents": [{"descent": "ballistic", "n": 6, "failed": 1, "mean_east": 25.0, "mean_north": 12.5}],
+            }
+            (out / "dispersion_summary.json").write_text(json.dumps(summ))
+            fig = capture_figures(plot.plot_dispersion_mc, out)["dispersion_mc.png"]
+            text = banner(fig)
+            self.assertIn("RESULTS NOT USABLE", text)
+            self.assertIn("1 ballistic run statically UNSTABLE", text)
+            self.assertIn("1 of 7 ballistic samples failed or did not land", text)
+            lbl = labels(fig)
+            self.assertIn("statically unstable (1)", lbl)
+            self.assertIn("stability unknown (1)", lbl)
+            self.assertIn("fell broadside (1)", lbl)
+
+    def test_grid_plot_marks_cases_and_shows_the_banner(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            rows = []
+            for v in (5.0, 10.0):
+                for d in (0.0, 90.0, 180.0, 270.0):
+                    st = "false" if (v, d) == (10.0, 90.0) else "true"
+                    rows.append({"descent": "ballistic", "wind_speed": v, "wind_direction_deg": d, "landing_east": v * np.sin(np.radians(d)), "landing_north": v * np.cos(np.radians(d)), "landing_distance": v, "landed": True, "stable": st, "broadside_time": 0.0})
+            pd.DataFrame(rows).to_csv(out / "dispersion.csv", index=False)
+            meta = {**self.CLEAN, "cases": 8, "failed": 0, "unstable": {"ballistic": 1}, "unstable_min_static_margin_cal": {"ballistic": -0.1}}
+            (out / "dispersion_meta.json").write_text(json.dumps(meta))
+            fig = capture_figures(plot.plot_dispersion_grid, out)["dispersion.png"]
+            self.assertIn("RESULTS NOT USABLE: 1 ballistic run statically UNSTABLE", banner(fig).replace("\n", " "))
+            self.assertIn("statically unstable (1)", labels(fig))
+            # A clean study draws no banner and no extra legend entries.
+            pd.DataFrame([{**r, "stable": "true"} for r in rows]).to_csv(out / "dispersion.csv", index=False)
+            (out / "dispersion_meta.json").write_text(json.dumps({**self.CLEAN, "cases": 8, "failed": 0}))
+            fig = capture_figures(plot.plot_dispersion_grid, out)["dispersion.png"]
+            self.assertEqual(banner(fig), "")
+            self.assertFalse(any("unstable" in x for x in labels(fig)))
+
+    def test_trajectory_plots_show_the_banner(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            t = np.linspace(0.0, 10.0, 21)
+            up = 50.0 * t - 5.0 * t * t
+            zero = 0.0 * t
+            cols = {
+                "t": t,
+                "phase": ["rail"] + ["free"] * 20,
+                "east": zero,
+                "north": zero,
+                "up": up,
+                "alt": up,
+                "vel_u": 50.0 - 10.0 * t,
+                "airspeed": 20.0 + zero,
+                "mach": 0.1 + zero,
+                "alpha_deg": zero,
+                "stability_cal": 1.0 + zero,
+                "dyn_pressure": zero,
+                "thrust": zero,
+                "mass": 1.0 + zero,
+                "pitch_deg": zero,
+            }
+            pd.DataFrame(cols).to_csv(out / "trajectory.csv", index=False)
+            (out / "summary.json").write_text(json.dumps({"landed": True, "stable": False, "static_margin_min_cal": -0.5, "earth_model": "flat", "apogee": 125.0, "apogee_time": 5.0}))
+            figs = capture_figures(plot.plot_trajectory, out)
+            for name in ("trajectory.png", "trajectory_3d.png"):
+                self.assertIn("RESULTS NOT USABLE: statically UNSTABLE (min static margin -0.50 cal)", banner(figs[name]).replace("\n", " "), name)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -14,6 +14,12 @@ alpha = 4 deg at the lowest subsonic Mach number) as panel.png; `all` includes i
 With the panel method aero_drag.csv has no breakdown columns and the aero plot shows the total CD0.
 With --compare, aero_compare.png overlays CNα, Xcp and CD0 of both aerodynamic tables
 (labels are the directory names).
+
+The trajectory and dispersion figures carry a banner when the run's JSON reports a problem: RESULTS NOT
+USABLE (statically unstable or unknown static stability, aero-table angle range exceeded), INCOMPLETE
+(runs that failed or did not land) or CAUTION (ballistic runs that fell broadside). Landing points of
+unstable runs are marked with a red x, of unknown stability with a triangle and of broadside falls with
+a diamond (`stable` and `broadside_time` columns of the dispersion CSV files).
 """
 
 import argparse
@@ -369,6 +375,8 @@ def plot_trajectory(out):
     not_landed = summ.get("landed") is False
     ax.set_title(f"Trajectory ({summ.get('descent', '')})" + ("  -  did not land" if not_landed else ""))
     ax.legend(loc="upper left")
+    usability = trajectory_usability(summ)
+    draw_usability(fig, *usability)
     save(fig, out, "trajectory_3d.png")
 
     # Rigid-body panels cover powered flight and coast; the parachute descent only adds a flat tail.
@@ -414,6 +422,7 @@ def plot_trajectory(out):
     if not_landed:
         a.text(0.97, 0.06, f"did not land within {summ.get('max_time', tr.t.max()):g} s", transform=a.transAxes, ha="right", color=SERIES[7])
     fig.tight_layout()
+    draw_usability(fig, *usability)
     save(fig, out, "trajectory.png")
 
 
@@ -465,6 +474,139 @@ def _finite(v):
     return isinstance(v, (int, float)) and not isinstance(v, bool) and np.isfinite(v)
 
 
+NOT_USABLE = "RESULTS NOT USABLE"
+INCOMPLETE = "INCOMPLETE"
+CAUTION = "CAUTION"
+BROADSIDE_LIMIT = 10.0  # s; a ballistic run that flew longer broadside counts as fallen broadside (as the CLI)
+
+
+def _runs(n, what):
+    """"n what" with the plural s for n != 1."""
+    return f"{n} {what}" + ("" if n == 1 else "s")
+
+
+def _angle_range_line(j):
+    r = j.get("aero_table_range") or {}
+    if r.get("angles_in_range") is not False:
+        return None
+    n, a = r.get("angle_beyond"), r.get("max_abs_alpha_deg")
+    detail = ", ".join(([f"{n} lookups"] if isinstance(n, int) else []) + ([f"max |alpha| {a:.0f} deg"] if _finite(a) else []))
+    return "aero table angle range exceeded" + (f" ({detail})" if detail else "")
+
+
+def _headline(bad, incomplete, caution):
+    """(headline, lines): the worst level that has a line, and every line, worst first."""
+    lines = bad + incomplete + caution
+    head = NOT_USABLE if bad else INCOMPLETE if incomplete else CAUTION if caution else None
+    return head, lines
+
+
+def dispersion_usability(j):
+    """Headline and reasons from dispersion_meta.json (wind grid) or dispersion_summary.json (Monte Carlo).
+
+    RESULTS NOT USABLE: the nominal flight or runs are statically unstable or of unknown static stability, or the
+    aero table's angle range was exceeded (the CLI exits with status 3); INCOMPLETE: runs failed or did not land;
+    CAUTION: ballistic runs fell broadside. (None, []) when there is nothing to report or the file predates these keys.
+    """
+    bad, incomplete, caution = [], [], []
+    if j.get("stable") is False:
+        m = j.get("static_margin_min_cal")
+        bad.append("nominal flight statically UNSTABLE" + (f" (min static margin {m:.2f} cal)" if _finite(m) else ""))
+    elif "stable" in j and j["stable"] is None and j.get("stability_unknown"):
+        bad.append(f"nominal static stability unknown: {j['stability_unknown']}")
+    worst = j.get("unstable_min_static_margin_cal") or {}
+    for mode, n in (j.get("unstable") or {}).items():
+        if n:
+            w = worst.get(mode)
+            bad.append(f"{_runs(n, mode + ' run')} statically UNSTABLE" + (f" (min static margin down to {w:.2f} cal)" if _finite(w) else ""))
+    for mode, n in (j.get("stability_unknown_runs") or {}).items():
+        if n:
+            bad.append(f"{_runs(n, mode + ' run')} with unknown static stability")
+    angle = _angle_range_line(j)
+    if angle:
+        bad.append(angle)
+    if isinstance(j.get("failed"), int) and j["failed"] > 0:
+        incomplete.append(f"{j['failed']} of {j.get('cases', '?')} cases failed or did not land")
+    for d in j.get("descents") or []:
+        if d.get("failed"):
+            incomplete.append(f"{d['failed']} of {j.get('samples', '?')} {d.get('descent', '')} samples failed or did not land")
+    for mode, n in (j.get("broadside_runs") or {}).items():
+        if n:
+            caution.append(f"{_runs(n, mode + ' run')} fell broadside (large-angle aerodynamics, not validated)")
+    return _headline(bad, incomplete, caution)
+
+
+def trajectory_usability(s):
+    """Headline and reasons from summary.json, as dispersion_usability: unstable or unknown static stability and an
+    exceeded aero-table angle range are not usable, a flight that did not land is incomplete, a broadside ballistic
+    descent a caution."""
+    bad, incomplete, caution = [], [], []
+    if s.get("stable") is False:
+        m, t, mach = s.get("static_margin_min_cal"), s.get("static_margin_min_t"), s.get("static_margin_min_mach")
+        at = f" at t = {t:.2f} s, Mach {mach:.2f}" if _finite(t) and _finite(mach) else ""
+        bad.append("statically UNSTABLE" + (f" (min static margin {m:.2f} cal{at})" if _finite(m) else ""))
+    elif "stable" in s and s["stable"] is None:
+        bad.append(f"static stability could not be evaluated ({s.get('stability_unknown') or 'no margin evaluated'})")
+    angle = _angle_range_line(s)
+    if angle:
+        bad.append(angle)
+    if s.get("landed") is False:
+        mt = s.get("max_time")
+        incomplete.append("the flight did not land" + (f" within {mt:g} s" if _finite(mt) else ""))
+    if s.get("fell_broadside") is True:
+        bt = s.get("broadside_time")
+        caution.append("the ballistic descent fell broadside" + (f" for {bt:.0f} s" if _finite(bt) else "") + " (large-angle aerodynamics, not validated)")
+    return _headline(bad, incomplete, caution)
+
+
+def draw_usability(fig, head, lines):
+    """Prominent banner above the figure (nothing when head is None): red for RESULTS NOT USABLE, amber otherwise."""
+    if head is None:
+        return
+    color = SERIES[7] if head == NOT_USABLE else "#b06d00"
+    text = f"{head}: " + "\n".join(lines)
+    fig.text(0.5, 1.0, text, ha="center", va="bottom", fontsize=11, fontweight="bold", color=color, transform=fig.transFigure,
+             bbox={"boxstyle": "round,pad=0.5", "facecolor": SURFACE, "edgecolor": color, "linewidth": 2})
+
+
+def run_flags(d):
+    """Masks of the landed runs to mark: statically unstable, stability unknown (`stable` column) and fallen broadside
+    (`broadside_time`, ballistic). All False for files without the columns."""
+    none = pd.Series(False, index=d.index)
+    if "stable" in d.columns:
+        st = d["stable"].astype(str).str.strip().str.lower()
+        unstable, unknown = st == "false", ~st.isin(["true", "false"])
+    else:
+        unstable, unknown = none, none
+    broadside = none
+    if "broadside_time" in d.columns:
+        broadside = (d.descent == "ballistic") & (pd.to_numeric(d["broadside_time"], errors="coerce") > BROADSIDE_LIMIT)
+    return unstable, unknown, broadside
+
+
+def mark_runs(ax, s):
+    """Overlays markers on the landing points of `s` that are statically unstable (red x), of unknown static stability
+    (amber triangle) or fell broadside (hollow diamond)."""
+    unstable, unknown, broadside = run_flags(s)
+    for mask, kw, label in (
+        (unstable, {"marker": "x", "color": SERIES[7], "s": 46, "linewidths": 2.0}, "statically unstable"),
+        (unknown, {"marker": "^", "facecolors": "none", "edgecolors": "#b06d00", "s": 46, "linewidths": 1.6}, "stability unknown"),
+        (broadside, {"marker": "D", "facecolors": "none", "edgecolors": SERIES[6], "s": 40, "linewidths": 1.4}, "fell broadside"),
+    ):
+        if mask.any():
+            r = s[mask]
+            ax.scatter(r.landing_east, r.landing_north, zorder=5, label=f"{label} ({int(mask.sum())})", **kw)
+
+
+def read_json(f):
+    """The JSON object in file f, or {} when it is missing or unreadable."""
+    try:
+        j = json.loads(f.read_text())
+    except (OSError, ValueError):
+        return {}
+    return j if isinstance(j, dict) else {}
+
+
 def ellipse_xy(mean_e, mean_n, semi_major, semi_minor, bearing_deg, n=200):
     """Closed ellipse in (east, north); the major axis points along a bearing clockwise from north."""
     th = np.radians(bearing_deg)
@@ -485,6 +627,7 @@ def plot_dispersion_mc(out):
         s = d[(d.descent == mode) & (d.status == "ok")].dropna(subset=["landing_east", "landing_north"])
         st = stats[mode]
         ax.scatter(s.landing_east, s.landing_north, s=6, color=SERIES[0], alpha=0.35, linewidths=0, label=f"landing points (n = {st.get('n', len(s))})")
+        mark_runs(ax, s)
         if st.get("mean_east") is not None and st.get("mean_north") is not None:
             for k, ls in ((1, "-"), (3, "--")):
                 # With fewer than 2 samples the spread is undefined and the ellipses are null.
@@ -517,6 +660,7 @@ def plot_dispersion_mc(out):
         if lines:
             ax.text(0.02, 0.02, "\n".join(lines), transform=ax.transAxes, fontsize=8, color=INK2, va="bottom")
     fig.tight_layout()
+    draw_usability(fig, *dispersion_usability(summ))
     save(fig, out, "dispersion_mc.png")
 
 
@@ -576,6 +720,8 @@ def plot_dispersion_grid(out):
             n = np.append(r.landing_north.values, r.landing_north.values[:1])
             ax.plot(e, n, "-o", color=colors[v], markersize=4, linewidth=1.5, label=f"{v:g} m/s")
         ax.plot([0], [0], marker="*", color=INK, markersize=12, linestyle="none", label="launch site")
+        n_speed = len(ax.get_legend_handles_labels()[1]) - 1  # speed curves drawn before the launch site
+        mark_runs(ax, s)
         ax.set_aspect("equal", adjustable="datalim")
         ax.set_xlabel("East [m]")
         ax.set_ylabel("North [m]")
@@ -588,10 +734,12 @@ def plot_dispersion_grid(out):
         # Highest wind speed first. That curve is not necessarily the outermost one (a ballistic
         # landing can lie farthest out at an intermediate speed), so the legend orders by speed.
         handles, labels = ax.get_legend_handles_labels()
-        order = list(range(len(labels) - 1))[::-1] + [len(labels) - 1]  # speeds were drawn in ascending order; launch site stays last
+        # Speeds were drawn in ascending order; the launch site and the run markers follow them.
+        order = list(range(n_speed))[::-1] + list(range(n_speed, len(labels)))
         title = ("profile mean speed" if profile_wind(out) else "wind speed") + ", highest first"
         ax.legend([handles[i] for i in order], [labels[i] for i in order], title=title, loc="upper left", bbox_to_anchor=(1.01, 1.0))
     fig.tight_layout()
+    draw_usability(fig, *dispersion_usability(read_json(out / "dispersion_meta.json")))
     save(fig, out, "dispersion.png")
 
 

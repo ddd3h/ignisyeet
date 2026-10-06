@@ -116,6 +116,37 @@ pub struct Launch {
     pub roll_deg: f64,
 }
 
+impl Launch {
+    /// Rail direction in launch-site ENU (x east, y north, z up).
+    pub fn rail_dir_enu(&self) -> Vec3 {
+        let (se, ce) = self.elevation_deg.to_radians().sin_cos();
+        let (sa, ca) = self.azimuth_deg.to_radians().sin_cos();
+        Vec3::new(ce * sa, ce * ca, se)
+    }
+
+    /// Body axes (x_b, y_b, z_b) on the rail in launch-site ENU.
+    pub fn body_axes_enu(&self) -> [Vec3; 3] {
+        self.body_axes(|v| v)
+    }
+
+    /// Body axes on the rail, built in the frame that `to_frame` maps launch-site ENU vectors
+    /// into: x_b along the rail, y_b = (cos az, -sin az, 0) (horizontal, to the right of the
+    /// azimuth) rolled by `roll_deg` about x_b, z_b = x_b cross y_b.
+    fn body_axes(&self, to_frame: impl Fn(Vec3) -> Vec3) -> [Vec3; 3] {
+        let xb = to_frame(self.rail_dir_enu());
+        let az = self.azimuth_deg.to_radians();
+        let yb = to_frame(Vec3::new(az.cos(), -az.sin(), 0.0));
+        let zb = xb.cross(yb);
+        if self.roll_deg == 0.0 {
+            return [xb, yb, zb];
+        }
+        // Roll about the rail axis: y' = cos y + sin z, z' = x cross y'.
+        let (sr, cr) = self.roll_deg.to_radians().sin_cos();
+        let yr = yb * cr + zb * sr;
+        [xb, yr, xb.cross(yr)]
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Recovery {
@@ -136,8 +167,19 @@ pub struct Recovery {
 }
 
 impl Recovery {
-    /// Checks the dual-deploy fields (both or neither, positive and finite).
+    /// Checks an enabled recovery: drag area positive and finite, delay non-negative and finite,
+    /// the dual-deploy fields both or neither, positive and finite. A disabled recovery is not
+    /// flown and passes.
     pub fn validate(&self) -> Result<()> {
+        if !self.enabled {
+            return Ok(());
+        }
+        if !(self.cd_s.is_finite() && self.cd_s > 0.0) {
+            bail!("recovery.cd_s must be positive and finite when recovery.enabled = true, got {}", self.cd_s);
+        }
+        if !(self.delay.is_finite() && self.delay >= 0.0) {
+            bail!("recovery.delay must be non-negative and finite, got {}", self.delay);
+        }
         match (self.main_cd_s, self.main_altitude) {
             (None, None) => Ok(()),
             (Some(c), Some(a)) => {
@@ -226,6 +268,9 @@ pub fn parallel_axis(m: f64, d: Vec3) -> Mat3 {
     }
     Mat3(r)
 }
+
+/// Largest accepted ratio of the largest to the smallest principal moment of inertia.
+pub const MAX_INERTIA_CONDITION: f64 = 1e8;
 
 #[derive(Clone)]
 pub struct Simulation<'a> {
@@ -413,26 +458,10 @@ struct Ctx {
 }
 
 impl<'a> Simulation<'a> {
-    /// Rail direction in launch-site ENU (x east, y north, z up).
-    fn rail_dir_enu(&self) -> Vec3 {
-        let (se, ce) = self.launch.elevation_deg.to_radians().sin_cos();
-        let (sa, ca) = self.launch.azimuth_deg.to_radians().sin_cos();
-        Vec3::new(ce * sa, ce * ca, se)
-    }
-
     /// Body-to-frame attitude on the rail.
     fn initial_attitude(&self, fr: &Frame) -> Quat {
-        let xb = fr.from_launch_enu(self.rail_dir_enu());
-        let az = self.launch.azimuth_deg.to_radians();
-        let yb = fr.from_launch_enu(Vec3::new(az.cos(), -az.sin(), 0.0));
-        let zb = xb.cross(yb);
-        if self.launch.roll_deg == 0.0 {
-            return Quat::from_mat(&Mat3::from_cols(xb, yb, zb));
-        }
-        // Roll about the rail axis: y' = cos y + sin z, z' = x cross y'.
-        let (sr, cr) = self.launch.roll_deg.to_radians().sin_cos();
-        let yr = yb * cr + zb * sr;
-        Quat::from_mat(&Mat3::from_cols(xb, yr, xb.cross(yr)))
+        let [xb, yb, zb] = self.launch.body_axes(|v| fr.from_launch_enu(v));
+        Quat::from_mat(&Mat3::from_cols(xb, yb, zb))
     }
 
     /// Table lookup with the dispersion multipliers applied.
@@ -501,6 +530,36 @@ impl<'a> Simulation<'a> {
         let prop = Mat3::diag(0.5 * mp * r * r, iyy_p, iyy_p);
         let inertia = m.dry_tensor().add(&parallel_axis(m.dry_mass, d_dry)).add(&prop).add(&parallel_axis(mp, d_p));
         MassState { m: total, x_cg: xcg, cg_lat: lat, inertia, inv: inertia.inverse(), diagonal: false }
+    }
+
+    /// Checks that the inertia tensor about the CG is positive definite with a ratio of the
+    /// largest to the smallest principal moment of at most [`MAX_INERTIA_CONDITION`], dry and
+    /// with propellant at the thrust-curve knots and on a uniform grid over the burn.
+    fn check_inertia(&self) -> Result<()> {
+        let burn = self.motor.burn_time();
+        let mut times: Vec<f64> = (0..=32).map(|i| burn * f64::from(i) / 32.0).collect();
+        let mut t = 0.0;
+        while let Some(k) = self.motor.next_knot(t) {
+            if k <= t {
+                break;
+            }
+            times.push(k);
+            t = k;
+        }
+        for t in times {
+            let ms = self.mass_at(t);
+            let (ev, _) = geom::math::sym_eigen(ms.inertia.0);
+            let (hi, lo) = (ev[0], ev[2]);
+            if !(ev.iter().all(|e| e.is_finite()) && lo > 0.0 && hi <= lo * MAX_INERTIA_CONDITION) {
+                bail!(
+                    "inertia tensor is singular or ill-conditioned at t = {t:.3} s (principal moments {:.6e}, {:.6e}, {:.6e} kg m^2; the largest may be at most {MAX_INERTIA_CONDITION:.0e} times the smallest): check rocket.ixx_dry, iyy_dry, izz_dry and the products of inertia",
+                    ev[0],
+                    ev[1],
+                    ev[2]
+                );
+            }
+        }
+        Ok(())
     }
 
     /// State derivative. The frame supplies gravity, the apparent (Coriolis/centrifugal)
@@ -641,7 +700,9 @@ impl<'a> Simulation<'a> {
                 } else {
                     // Full tensor: dw = I^-1 (M - w x I w).
                     let gyro = wi.cross(ms.inertia.mul_vec(wi));
-                    ms.inv.unwrap_or(Mat3::identity()).mul_vec(m_body - gyro)
+                    // `check_inertia` rejects tensors that cannot be inverted; should one still
+                    // fail, the NaN stops the run as a divergence instead of a wrong answer.
+                    ms.inv.map_or(Vec3::new(f64::NAN, f64::NAN, f64::NAN), |inv| inv.mul_vec(m_body - gyro))
                 };
                 let dw = dwi + s.w.cross(om_b);
                 (State { pos: s.vel, vel: acc, q: s.q.derivative(s.w), w: dw }, aux)
@@ -725,16 +786,18 @@ impl<'a> Simulation<'a> {
         if !(elev > 0.0 && elev <= 90.0) {
             bail!("launch.elevation_deg must be in (0, 90], found {elev}");
         }
-        if self.recovery.enabled {
-            self.recovery.validate()?;
+        if descent == Descent::Parachute && !self.recovery.enabled {
+            bail!("the parachute descent needs recovery.enabled = true (with recovery disabled there is no parachute to deploy); fly the ballistic descent or enable [recovery]");
         }
+        self.recovery.validate()?;
+        self.check_inertia()?;
         let stepper = Stepper::new(self.settings.integrator, self.settings.attitude);
         let adaptive = stepper.adaptive();
         if adaptive && !(is_pos(self.settings.rtol) && is_pos(self.settings.atol) && is_pos(self.settings.output_interval)) {
             bail!("sim.rtol, sim.atol and sim.output_interval must be positive for the adaptive integrators (rk45, dop853)");
         }
         let frame = Frame::new(&self.earth, &self.launch);
-        let cx = Ctx { frame, rail: frame.from_launch_enu(self.rail_dir_enu()), cd_s: Default::default(), segment: Default::default() };
+        let cx = Ctx { frame, rail: frame.from_launch_enu(self.launch.rail_dir_enu()), cd_s: Default::default(), segment: Default::default() };
         let mut s = State { pos: frame.origin(), vel: Vec3::ZERO, q: self.initial_attitude(&frame), w: Vec3::ZERO };
         cx.cd_s.set(self.recovery.cd_s);
         let main = if self.recovery.enabled { self.recovery.main() } else { None };
@@ -1140,7 +1203,7 @@ mod tests {
         let frame = Frame::new(&sim.earth, &sim.launch);
         let cx = Ctx {
             frame,
-            rail: frame.from_launch_enu(sim.rail_dir_enu()),
+            rail: frame.from_launch_enu(sim.launch.rail_dir_enu()),
             cd_s: Default::default(),
             segment: std::cell::Cell::new(sim.motor.segment_after(10.0)),
         };
@@ -1715,6 +1778,54 @@ mod tests {
         let table = AeroTable::from_fn(meta, |_, _| AeroCoeffs { xcp: 0.5, cl_delta, clp, ..Default::default() });
         let (_, motor) = vacuum_parts();
         check_steady_roll(&roll_sim(&table, &motor, 2.0), cl_delta * 2.0f64.to_radians(), clp);
+    }
+
+    #[test]
+    fn parachute_descent_needs_recovery_enabled() {
+        let (table, motor) = sample_parts();
+        let mut sim = sample_sim(&table, &motor, 0.0);
+        sim.recovery.enabled = false;
+        let e = format!("{:#}", sim.run(Descent::Parachute, false).err().expect("parachute descent without recovery accepted"));
+        assert!(e.contains("the parachute descent needs recovery.enabled = true"), "{e}");
+        assert!(sim.run(Descent::Ballistic, false).is_ok());
+        // With recovery enabled the drag area must be positive and finite.
+        sim.recovery.enabled = true;
+        for cd_s in [0.0, -1.0, f64::NAN] {
+            sim.recovery.cd_s = cd_s;
+            let e = format!("{:#}", sim.run(Descent::Parachute, false).err().expect("bad cd_s accepted"));
+            assert!(e.contains("recovery.cd_s must be positive and finite"), "{e}");
+        }
+        sim.recovery.cd_s = 3.5;
+        sim.recovery.delay = -1.0;
+        let e = format!("{:#}", sim.run(Descent::Parachute, false).err().expect("negative delay accepted"));
+        assert!(e.contains("recovery.delay must be non-negative and finite"), "{e}");
+        // A disabled recovery is not validated (its fields are unused).
+        sim.recovery = Recovery { enabled: false, cd_s: 0.0, delay: 0.0, main_cd_s: None, main_altitude: None };
+        assert!(sim.recovery.validate().is_ok());
+    }
+
+    #[test]
+    fn ill_conditioned_inertia_is_an_error() {
+        let (table, motor) = sample_parts();
+        // Positive definite but nearly singular dry tensor: no silent identity inverse.
+        for (ixx, izz) in [(1e-16, 1.000001), (0.0, 1.0), (-0.01, 1.0)] {
+            let mut sim = sample_sim(&table, &motor, 0.0);
+            sim.mass.ixx_dry = ixx;
+            sim.mass.iyy_dry = 1.0;
+            sim.mass.izz_dry = Some(izz);
+            let e = format!("{:#}", sim.run(Descent::Ballistic, false).err().expect("ill-conditioned inertia accepted"));
+            assert!(e.contains("inertia tensor is singular or ill-conditioned"), "{e}");
+        }
+        // The axisymmetric path is checked too.
+        let mut sim = sample_sim(&table, &motor, 0.0);
+        sim.mass.ixx_dry = 0.0;
+        let e = format!("{:#}", sim.run(Descent::Ballistic, false).err().expect("zero roll inertia accepted"));
+        assert!(e.contains("inertia tensor is singular or ill-conditioned"), "{e}");
+        // A well-conditioned asymmetric tensor flies.
+        let mut sim = sample_sim(&table, &motor, 0.0);
+        sim.mass.izz_dry = Some(sim.mass.iyy_dry * 1.1);
+        sim.mass.ixy_dry = 1e-3;
+        assert!(sim.run(Descent::Ballistic, false).is_ok());
     }
 
     #[test]

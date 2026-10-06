@@ -5,6 +5,7 @@
 use crate::flight::{AeroScale, Descent, Launch, Simulation, Summary};
 use crate::motor::Motor;
 use anyhow::{bail, Result};
+use geom::Vec3;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use rand_distr::{Distribution, StandardNormal};
@@ -46,10 +47,12 @@ pub struct MonteCarloConfig {
     /// the rail (+ = towards higher elevation) and one perpendicular to it (+ = towards higher
     /// azimuth), so the tilt is isotropic about the nominal axis at any elevation, vertical
     /// included: the angle between the perturbed and the nominal axis is Rayleigh distributed
-    /// with this sigma.
+    /// with this sigma. The rocket turns with the rail, so its body axes stay within the tilt
+    /// angle of their nominal directions (see [`tilt_launch`]).
     pub elevation_deg: f64,
-    /// Absolute [deg]: azimuth setting error, a rotation of the (tilted) rail about the vertical.
-    /// It moves the axis sideways by sigma * cos(elevation) and does nothing to a vertical rail.
+    /// Absolute [deg]: azimuth setting error, a rotation of the (tilted) rail, with the rocket on
+    /// it, about the vertical. It moves the axis sideways by sigma * cos(elevation); a vertical
+    /// rail keeps its axis and only the rocket's roll about it changes.
     pub azimuth_deg: f64,
     /// Absolute [m/s]: reference wind speed around the configured `[wind]` speed (clamped at 0).
     pub wind_speed: f64,
@@ -156,11 +159,15 @@ pub struct Perturbation {
     pub cg: f64,
     pub cn_scale: f64,
     pub ca_scale: f64,
-    /// Change of the rail elevation [deg] and of the rail azimuth [deg, in (-180, 180]] that the
-    /// rail tilt draws produce (see [`MonteCarloConfig::elevation_deg`]): the perturbed rail has
-    /// elevation `nominal + elevation_deg` and azimuth `nominal + azimuth_deg`.
+    /// Change of the rail elevation [deg], of the rail azimuth [deg, in (-180, 180]] and of the
+    /// body roll about the rail [deg, in (-180, 180]] that the rail draws produce (see
+    /// [`MonteCarloConfig::elevation_deg`] and [`tilt_launch`]): the perturbed launch has
+    /// elevation `nominal + elevation_deg`, azimuth `nominal + azimuth_deg` and roll
+    /// `nominal + roll_deg`. The roll change keeps the body axes turning with the rail, e.g. it
+    /// is 180 deg when a small tilt of a vertical rail flips the azimuth.
     pub elevation_deg: f64,
     pub azimuth_deg: f64,
+    pub roll_deg: f64,
     pub wind_speed: f64,
     pub wind_direction_deg: f64,
     pub parachute_cd_s_scale: f64,
@@ -192,7 +199,7 @@ impl Perturbation {
     /// asymmetry terms come after the original eleven, the cross-plane rail tilt last), so
     /// switching one sigma on or off does not change the draws of the others. The rail draws
     /// (in-plane tilt, rotation about the vertical, cross-plane tilt) are turned into the
-    /// elevation and azimuth changes of the rail `launch` (see [`tilt_rail`]).
+    /// elevation, azimuth and roll changes of the launch `launch` (see [`tilt_launch`]).
     pub fn draw(cfg: &MonteCarloConfig, index: usize, launch: &Launch) -> Self {
         let mut rng = ChaCha8Rng::seed_from_u64(cfg.seed.wrapping_add(index as u64));
         let mut n = |sigma: f64| {
@@ -208,6 +215,8 @@ impl Perturbation {
             ca_scale: n(cfg.ca_scale),
             elevation_deg: n(cfg.elevation_deg),
             azimuth_deg: n(cfg.azimuth_deg),
+            // Set from the rail draws below.
+            roll_deg: 0.0,
             wind_speed: n(cfg.wind_speed),
             wind_direction_deg: n(cfg.wind_direction_deg),
             parachute_cd_s_scale: n(cfg.parachute_cd_s_scale),
@@ -222,12 +231,10 @@ impl Perturbation {
             clp_scale: n(cfg.clp_scale),
         };
         let cross = n(cfg.elevation_deg);
-        let (el, az) = tilt_rail(launch.elevation_deg, launch.azimuth_deg, p.elevation_deg, cross, p.azimuth_deg);
+        let (el, az, roll) = tilt_launch(launch, p.elevation_deg, cross, p.azimuth_deg);
         p.elevation_deg = el - launch.elevation_deg;
-        p.azimuth_deg = (az - launch.azimuth_deg + 180.0).rem_euclid(360.0) - 180.0;
-        if p.azimuth_deg == -180.0 {
-            p.azimuth_deg = 180.0;
-        }
+        p.azimuth_deg = wrap180(az - launch.azimuth_deg);
+        p.roll_deg = wrap180(roll - launch.roll_deg);
         p
     }
 
@@ -266,6 +273,7 @@ impl Perturbation {
         // Rounding must not lift a rail tilted from the vertical above 90 deg.
         s.launch.elevation_deg = (s.launch.elevation_deg + self.elevation_deg).min(90.0);
         s.launch.azimuth_deg += self.azimuth_deg;
+        s.launch.roll_deg += self.roll_deg;
         if self.wind_speed != 0.0 || self.wind_direction_deg != 0.0 {
             // For a profile `speed` is the mean speed W: k = (W + delta) / W, clamped to >= 0.
             // `run_monte_carlo` has already rejected a calm profile, so this does not fail.
@@ -283,30 +291,54 @@ impl Perturbation {
     }
 }
 
-/// Rail elevation and azimuth [deg] after tilting the rail axis (elevation `el`, azimuth `az`)
-/// by `d_in` in its vertical plane (+ = up; past the zenith the azimuth flips) and by `d_cross`
-/// perpendicular to that plane (+ = towards increasing azimuth), both [deg], as one rotation by
-/// `hypot(d_in, d_cross)` about the nominal axis' normal, then rotating it about the vertical by
-/// `d_az` [deg]. For small angles this is `el + d_in`, `az + d_cross / cos(el) + d_az`; for a
-/// vertical rail the in-plane direction is that of the nominal azimuth. The returned azimuth is
-/// not wrapped.
-pub fn tilt_rail(el: f64, az: f64, d_in: f64, d_cross: f64, d_az: f64) -> (f64, f64) {
+/// Rail elevation, azimuth and body roll [deg] (see [`Launch`]) of the launch attitude of
+/// `launch` after rotating the whole body: first a tilt of the rail axis by `d_in` in its
+/// vertical plane (+ = up; past the zenith the azimuth flips) and by `d_cross` perpendicular to
+/// that plane (+ = towards increasing azimuth), both [deg], as one rotation by
+/// `hypot(d_in, d_cross)` about the nominal axis' normal, then a rotation about the vertical by
+/// `d_az` [deg] (clockwise seen from above). For small angles the axis moves to `el + d_in`,
+/// `az + d_cross / cos(el) + d_az`; for a vertical rail the in-plane direction is that of the
+/// nominal azimuth. The body axes turn with the rail, so they stay within the rotation angle of
+/// their nominal directions: a tiny tilt of a vertical rail that flips the azimuth by 180 deg
+/// flips the roll by 180 deg as well. The returned azimuth and roll are in (-180, 180].
+pub fn tilt_launch(launch: &Launch, d_in: f64, d_cross: f64, d_az: f64) -> (f64, f64, f64) {
     let theta = d_in.hypot(d_cross);
     if theta == 0.0 {
-        return (el, az + d_az);
+        // A rotation about the vertical keeps the elevation and the roll.
+        return (launch.elevation_deg, wrap180(launch.azimuth_deg + d_az), wrap180(launch.roll_deg));
     }
-    let (se, ce) = el.to_radians().sin_cos();
-    let (sa, ca) = az.to_radians().sin_cos();
-    // Nominal axis (east, north, up), unit vectors towards higher elevation and higher azimuth.
-    let d0 = [ce * sa, ce * ca, se];
-    let ue = [-se * sa, -se * ca, ce];
-    let uc = [ca, -sa, 0.0];
+    let mut axes = launch.body_axes_enu();
+    let (se, ce) = launch.elevation_deg.to_radians().sin_cos();
+    let (sa, ca) = launch.azimuth_deg.to_radians().sin_cos();
+    // Unit vectors (east, north, up) towards higher elevation and higher azimuth.
+    let ue = Vec3::new(-se * sa, -se * ca, ce);
+    let uc = Vec3::new(ca, -sa, 0.0);
+    let u = ue * (d_in / theta) + uc * (d_cross / theta);
+    // Rotation by theta about k = d0 x u, which turns the axis d0 towards u (Rodrigues).
+    let k = axes[0].cross(u);
+    let k = k * (1.0 / k.norm());
     let (st, ct) = theta.to_radians().sin_cos();
-    let (a, b) = (d_in / theta, d_cross / theta);
-    let d: [f64; 3] = std::array::from_fn(|i| ct * d0[i] + st * (a * ue[i] + b * uc[i]));
-    let el2 = d[2].clamp(-1.0, 1.0).asin().to_degrees();
-    let az2 = if d[0] == 0.0 && d[1] == 0.0 { az } else { d[0].atan2(d[1]).to_degrees() };
-    (el2, az2 + d_az)
+    axes = axes.map(|v| v * ct + k.cross(v) * st + k * (k.dot(v) * (1.0 - ct)));
+    let (sz, cz) = d_az.to_radians().sin_cos();
+    let axes = axes.map(|v| Vec3::new(v.x * cz + v.y * sz, -v.x * sz + v.y * cz, v.z));
+    let x = axes[0];
+    let h = x.x.hypot(x.y);
+    let el = x.z.atan2(h).to_degrees();
+    let az = if h == 0.0 { launch.azimuth_deg + d_az } else { x.x.atan2(x.y).to_degrees() };
+    // Roll of the turned y_b from the unrolled y_b of the new elevation and azimuth.
+    let [_, y0, z0] = Launch { elevation_deg: el, azimuth_deg: az, roll_deg: 0.0, ..launch.clone() }.body_axes_enu();
+    let roll = axes[1].dot(z0).atan2(axes[1].dot(y0)).to_degrees();
+    (el, wrap180(az), wrap180(roll))
+}
+
+/// `a` [deg] wrapped into (-180, 180].
+fn wrap180(a: f64) -> f64 {
+    let w = (a + 180.0).rem_euclid(360.0) - 180.0;
+    if w == -180.0 {
+        180.0
+    } else {
+        w
+    }
 }
 
 /// One Monte Carlo run: a sample under one descent mode.
@@ -1215,6 +1247,16 @@ azimuth_deg = 0.0"#;
         assert_eq!(r.summary.descents[0].failed, bad.len() / 2);
     }
 
+    fn site(el: f64, az: f64, roll: f64) -> Launch {
+        Launch { latitude: 35.0, longitude: 139.0, altitude: 0.0, rail_length: 3.0, elevation_deg: el, azimuth_deg: az, roll_deg: roll }
+    }
+
+    /// Rail elevation and azimuth after `tilt_launch`.
+    fn tilt_rail(el: f64, az: f64, d_in: f64, d_cross: f64, d_az: f64) -> (f64, f64) {
+        let (e, a, _) = tilt_launch(&site(el, az, 0.0), d_in, d_cross, d_az);
+        (e, a)
+    }
+
     #[test]
     fn rail_tilt_rotates_the_axis() {
         let close = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs() < 1e-9 && (a.1 - b.1).abs() < 1e-9;
@@ -1230,14 +1272,68 @@ azimuth_deg = 0.0"#;
         // only to second order; the angle between the axes is d.
         let (el, az) = tilt_rail(45.0, 30.0, 0.0, 0.01, 0.0);
         assert!((az - 30.0 - 0.01 / 45f64.to_radians().cos()).abs() < 1e-6 && (el - 45.0).abs() < 1e-5, "{el} {az}");
-        let dir = |el: f64, az: f64| {
-            let (se, ce) = el.to_radians().sin_cos();
-            let (sa, ca) = az.to_radians().sin_cos();
-            [ce * sa, ce * ca, se]
-        };
-        let (d0, d1) = (dir(45.0, 30.0), dir(el, az));
-        let ang = (d0[0] * d1[0] + d0[1] * d1[1] + d0[2] * d1[2]).clamp(-1.0, 1.0).acos().to_degrees();
+        let (d0, d1) = (site(45.0, 30.0, 0.0).rail_dir_enu(), site(el, az, 0.0).rail_dir_enu());
+        let ang = d0.dot(d1).clamp(-1.0, 1.0).acos().to_degrees();
         assert!((ang - 0.01).abs() < 1e-9, "{ang}");
+    }
+
+    /// Largest angle [deg] between corresponding body axes of two launch attitudes.
+    fn axes_angle(a: &Launch, b: &Launch) -> f64 {
+        let (a, b) = (a.body_axes_enu(), b.body_axes_enu());
+        (0..3).map(|i| a[i].dot(b[i]).clamp(-1.0, 1.0).acos().to_degrees()).fold(0.0, f64::max)
+    }
+
+    #[test]
+    fn small_rail_tilt_moves_the_body_axes_only_a_little() {
+        // A tilt of a vertical rail flips the azimuth; the body must not flip with it, so thrust
+        // offsets, lateral CG offsets, fin cant and asymmetric aerodynamics keep their direction.
+        let (t, m) = (table(), motor());
+        let b = base(&t, &m);
+        for (el, az, roll) in [(90.0, 0.0, 0.0), (90.0, 270.0, 30.0), (85.0, 270.0, 0.0), (85.0, 0.0, -60.0), (45.0, 30.0, 10.0)] {
+            let nominal = site(el, az, roll);
+            for (d_in, d_cross, d_az) in [
+                (1e-3, 0.0, 0.0),
+                (-1e-3, 0.0, 0.0),
+                (0.0, 1e-3, 0.0),
+                (0.0, -1e-3, 0.0),
+                (7e-4, -7e-4, 0.0),
+                (0.5, 0.3, 0.0),
+                (0.0, 0.0, 1e-3),
+                (2e-4, 1e-4, 3e-4),
+            ] {
+                let (e, a, r) = tilt_launch(&nominal, d_in, d_cross, d_az);
+                let ang = axes_angle(&nominal, &site(e, a, r));
+                let bound = d_in.hypot(d_cross) + f64::abs(d_az);
+                assert!(ang <= bound * (1.0 + 1e-6) + 1e-9, "rail ({el}, {az}, {roll}) tilt ({d_in}, {d_cross}, {d_az}): axes moved {ang} deg");
+                // The recorded perturbation reproduces the turned attitude in the simulation.
+                let p = Perturbation { elevation_deg: e - el, azimuth_deg: wrap180(a - az), roll_deg: wrap180(r - roll), ..Default::default() };
+                let mut bb = b.clone();
+                bb.launch = nominal.clone();
+                let s = p.simulation(&bb, &m);
+                let ang = axes_angle(&nominal, &s.launch);
+                assert!(ang <= bound * (1.0 + 1e-6) + 1e-9, "rail ({el}, {az}, {roll}) tilt ({d_in}, {d_cross}, {d_az}): flown axes moved {ang} deg");
+            }
+        }
+        // The flip of a vertical rail: azimuth 180 deg, roll 180 deg, the elevation and azimuth
+        // columns still give the tilted rail.
+        let (e, a, r) = tilt_launch(&site(90.0, 0.0, 0.0), 1e-3, 0.0, 0.0);
+        assert!((e - (90.0 - 1e-3)).abs() < 1e-9 && (a - 180.0).abs() < 1e-9 && (r.abs() - 180.0).abs() < 1e-9, "{e} {a} {r}");
+        // A pure azimuth rotation of a vertical rail rolls the rocket with the launcher.
+        let (e, a, r) = tilt_launch(&site(90.0, 10.0, 5.0), 0.0, 0.0, 2.0);
+        assert_eq!((e, a, r), (90.0, 12.0, 5.0));
+    }
+
+    #[test]
+    fn drawn_rail_perturbation_turns_the_body_with_the_rail() {
+        // Draws with a tiny tilt sigma: the flown body axes stay within a few sigma of nominal.
+        let (t, m) = (table(), motor());
+        let b = base(&t, &m);
+        let cfg = MonteCarloConfig { samples: 50, elevation_deg: 1e-3, azimuth_deg: 1e-3, ..zero() };
+        for i in 0..50 {
+            let p = Perturbation::draw(&cfg, i, &b.launch);
+            let ang = axes_angle(&b.launch, &p.simulation(&b, &m).launch);
+            assert!(ang < 1e-2, "sample {i}: body axes moved {ang} deg ({p:?})");
+        }
     }
 
     #[test]

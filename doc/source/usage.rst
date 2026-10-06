@@ -757,7 +757,7 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 * 係数表の範囲外の引き出しがある。回数、最大の Mach 数、最大の :math:`|\alpha|` を ``aero table: 370854 of 10159590 lookups beyond the angle range (max Mach 1.51, max |alpha| 90.0 deg); Mach is held at the table edge, angles are extrapolated`` の形で表示する（``alpha_max_deg = 30`` にしたパネル法のサンプルの ``dispersion`` での表示。Mach 数の範囲外があるときは ``… lookups beyond the Mach range`` も並ぶ）。サンプルの設定 ``alpha_max_deg = 90`` では、表の範囲外の引き出しはなく、この警告は出ない。
   迎角の範囲外の引き出しは、頂点のあとの弾道落下（機体が反転し、尾部を先にして落ちる）で起きることが多く、その場合は想定内である。
   上昇中や燃焼中に起きるときは、結果に影響する。``trajectory.csv`` の迎角で時刻を確かめ、``aero.alpha_max_deg`` を大きくして（たとえば 90）係数表を作り直す。
-  表の外では、フィンの項は失速せず線形のままなので、30° を超える範囲の係数は粗い（:ref:`sec-lim-aero`）。
+  表の外は表の端の区間の線形外挿で、部品積み上げ法の大迎角のフィンの頭打ち（:ref:`sec-fin-large-alpha`）は入らないので、30° を超える範囲の係数は粗い（:ref:`sec-lim-aero`）。
 * 形状の抽出結果の疑わしい点（:ref:`sec-geometry-warnings`）。``sim`` と ``dispersion`` を含むすべてのモードで表示し、係数表をキャッシュから読むときは、同じ出力先の ``geometry.json`` の ``warnings`` を使う。
 * CFD モードで、SU2 のバージョンが 8.3.x でない。``cfd-check`` と CFD の係数表の作成で表示する。
 

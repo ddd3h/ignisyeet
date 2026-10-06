@@ -270,6 +270,52 @@ IgnisYeet では、抽出した半径分布を断面ごとの円錐台の連な�
 フィン部分の :math:`C_{N\alpha}` は約 25 % 小さい（パネル法と CFD との差は :ref:`sec-vaero-compare`、影響は :ref:`sec-lim-aero`）。
 静安定余裕は圧力中心が前に出るので安全側になるが、風見効果と落下点は変わる。落下分散では、``aero.method = "panel"`` との比較と、``cn_scale`` の標準偏差で差を含めるとよい。
 
+.. _sec-fin-large-alpha:
+
+大迎角のフィンの法線力
+~~~~~~~~~~~~~~~~~~~~~~
+
+ここまでのフィンの式は、流れがフィンに付着している小さな迎角の理論である。
+超音速の Busemann の展開は衝撃波が前縁に付いている間だけ成り立ち、衝撃波は迎角が最大の転向角（:math:`M=1.5` で約 12°、:math:`M=2` で約 23°）を超えると離れる。
+OpenRocket のフィンのモデルも、フィンの迎角を失速角 20° で打ち切る :cite:`niskanen`。
+そこで、フィン全体の法線力 :math:`C_N^{\mathrm{fins}}`\ （:eq:`eq-fin-total`）を、:math:`\alpha_1=15^\circ` まではここまでの式のまま使い、
+それより大きな迎角では、フィンを流れに垂直な平板とみなした横流れの値へ単調に近づける。
+:math:`\alpha_1` までの式は変えないので、:math:`C_{N\alpha}` と小さい迎角の係数は変わらない。:math:`\alpha_1=15^\circ` では、Busemann の 3 次の項は 1 次の項の約 2 割までにとどまる（遷音速の補間を通して :math:`M\approx1.2` で最大）。
+
+:math:`90^\circ` での値は、平板の垂直抗力から
+
+.. math::
+   :label: eq-fin-cn90
+
+   C_{N,90}^{\mathrm{fins}} = k_N\,\frac{N}{2}\,C_{D,\mathrm{plate}}(M)\,\frac{A_f}{S},\qquad
+   C_{D,\mathrm{plate}} = \begin{cases}1.2 & (M\le0.8)\\ 1.7 & (M\ge1.2)\end{cases}
+
+とする（:math:`A_f` はフィン 1 枚の面積）。:math:`0.8<M<1.2` は、両端の傾きを 0 とする 3 次 Hermite 補間でつなぐ。
+亜音速の 1.2 は、縦横比 1〜5 の平板の垂直抗力係数 1.17〜1.2、超音速の 1.7 は、流れに垂直な平板と円板の 1.6〜1.8 の範囲の値である :cite:`hoerner`。
+胴体干渉係数 :math:`K_{fb}` は小さい迎角のポテンシャル流の吹き上げを表すので、この横流れの値には掛けない。
+
+:math:`\alpha_1<\alpha\le90^\circ` では、:math:`t=\alpha-\alpha_1`、:math:`T=90^\circ-\alpha_1` として
+
+.. math::
+   :label: eq-fin-crossflow
+
+   C_N^{\mathrm{fins}} = C_{N,1} + \left(C_{N,90}^{\mathrm{fins}}-C_{N,1}\right)\frac{1-e^{-k\tau}}{1-e^{-kT}},\qquad
+   \tau = T\sin\frac{\pi t}{2T}
+
+とする。:math:`C_{N,1}` は :math:`\alpha_1` での付着流の値、:math:`k` は :math:`\alpha_1` での傾きが付着流の傾きに一致するように数値的に決める（二分法）。
+:math:`\tau` によって :math:`90^\circ` での傾きは 0 になる（平板は :math:`90^\circ` について対称）。
+:math:`C_{N,90}^{\mathrm{fins}}>C_{N,1}` なら、曲線は :math:`\alpha_1` で値と傾きが連続で、:math:`C_{N,90}^{\mathrm{fins}}` まで単調に増え、それを超えない。
+付着流の値がすでに横流れの値を超える場合（縦横比の大きなフィン）は、両端の傾きを付着流の傾きと 0 にした 3 次 Hermite 補間で :math:`C_{N,90}^{\mathrm{fins}}` に戻す。
+この形（:math:`\alpha_1` の上で折れ、横流れの値で頭打ちになる）は、縦横比の小さい平板の法線力の測定値（面積あたり 30° で約 1.0、45〜90° で 1.1〜1.2）の傾向に沿う :cite:`hoerner`。
+:math:`90^\circ` を超える迎角（後ろ向きの流れ）では :math:`180^\circ-\alpha` の値を使い、:math:`C_N^{\mathrm{fins}}` は :math:`\alpha` について奇関数である。
+
+フィンの圧力中心も、:math:`\alpha_1` までは :eq:`eq-fin-cp` のままで、それより大きい迎角では、平均空力翼弦に対する位置 :math:`\kappa` を、
+両端の傾きを 0 とする 3 次 Hermite 補間で :math:`90^\circ` の 0.5（台形の平面形の図心。流れに垂直な平板の圧力はこの点について対称）へ動かす。
+:math:`90^\circ` を超える迎角では :math:`1-\kappa(180^\circ-\alpha)` とし、亜音速の :math:`180^\circ` では翼弦の 3/4 になる。
+
+サンプル機体の全体の :math:`C_N`\ （胴体を含む）は、:math:`\alpha=90^\circ` で :math:`M=0.3`、1.2、2.0 のとき 24.2、26.1、26.1 である。
+大迎角のフィンの法線力は経験的な近似で、平板の値の幅（亜音速で 1.17〜2.0、超音速で 1.6〜1.8）と遷音速のつなぎ方の分だけ不確かである（:ref:`sec-lim-aero`）。
+
 フィンの圧力中心
 ~~~~~~~~~~~~~~~~
 
@@ -350,7 +396,7 @@ IgnisYeet では、抽出した半径分布を断面ごとの円錐台の連な�
    :width: 80%
 
    迎角と法線力係数。迎角が大きくなると胴体揚力 :math:`\propto\sin^2\alpha` が加わり、直線からずれる。
-   :math:`M\ge0.9` の曲がりは、主に超音速のフィンの Busemann の 3 次の項（:eq:`eq-fin-sup`。遷音速はこれとの補間）による。この項は大迎角では理論の適用範囲の外である。
+   15° を超えると、フィンの法線力は流れに垂直な平板の横流れの値へ頭打ちになる（:ref:`sec-fin-large-alpha`）。
 
 .. _sec-damping:
 

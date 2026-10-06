@@ -300,7 +300,7 @@ Mach 数は、設定にかかわらず、表の端の値で一定とする。
 （``aero table: N of M lookups beyond the Mach range`` または ``… beyond the angle range`` の形で、Mach 数は表の端で一定、角度は外挿であることも添える）。
 迎角の範囲外の引き出しは、頂点のあとの弾道落下（機体が反転して尾部を先に落ちる）で起きることが多く、その場合は想定内である。
 上昇中や燃焼中に起きるときは結果に影響するので、``trajectory.csv`` の迎角で時刻を確かめ、``alpha_max_deg`` を大きくして（たとえば 90。サンプルの設定である）表を作り直す。
-表の外ではフィンの項は失速せず線形のままなので、約 30° を超える範囲の係数は粗い（:ref:`sec-lim-aero`）。
+表の外は表の端の区間の線形外挿で、部品積み上げ法の大迎角のフィンの頭打ち（:ref:`sec-fin-large-alpha`）は入らないので、約 30° を超える範囲の係数は粗い（:ref:`sec-lim-aero`）。
 範囲外の引き出しがなくても、``summary.json``、``dispersion_meta.json``、``dispersion_summary.json`` の ``aero_table_range`` に、全引き出しの回数などを記録する（:ref:`sec-file-summary`）。
 
 .. _sec-aero-external:

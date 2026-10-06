@@ -724,8 +724,11 @@ impl AeroTable {
 
     /// Six-component coefficients at Mach `m`, alpha = atan2(w, u) and beta = asin(v / V) [rad].
     ///
-    /// General tables are interpolated trilinearly; axisymmetric tables are expanded from the
-    /// total angle (see [`expand_axisymmetric`]).
+    /// General tables are interpolated trilinearly (Mach held at the grid edge; with
+    /// [`Extrapolation::Linear`] the angles continue linearly, every coefficient except `clp`
+    /// keeping the sign of its edge value, the damping sums non-negative and `clp` never
+    /// positive); axisymmetric tables are expanded from the total angle (see
+    /// [`expand_axisymmetric`]).
     pub fn lookup6(&self, m: f64, alpha: f64, beta: f64) -> Coeffs6 {
         self.lookup6_rec(m, alpha, beta, true)
     }
@@ -768,10 +771,10 @@ impl AeroTable {
         };
         let mut out = interp(ta, tb);
         if extrapolated {
-            // Axial force, roll forcing (the tabulated `cl` at the reference cant and `cl_delta`) and
-            // damping sums keep the sign of the edge value.
+            // Axial, side and normal force, the moments, the roll forcing (the tabulated `cl` at the
+            // reference cant and `cl_delta`) and the damping sums keep the sign of the edge value.
             let edge = interp(ta.clamp(0.0, 1.0), tb.clamp(0.0, 1.0));
-            for f in [0, 1, 4, 7, 9, 10, 11, 12, 13, 14] {
+            for f in [0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14] {
                 out[f] = keep_sign(out[f], edge[f]);
             }
             for f in [9, 10, 11, 12, 13, 14] {
@@ -1230,6 +1233,36 @@ mod tests {
         assert_eq!((c.cl, c.cl_delta), (0.0, 0.0), "{c:?}");
         // Inside the grid the values are unchanged.
         assert!((g.lookup6(0.5, 15f64.to_radians(), 0.0).cl - (0.02 - 0.0009 * 15.0)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn general_extrapolation_keeps_the_sign_of_the_transverse_forces_and_moments() {
+        // Transverse forces and moments shrinking towards the grid edge: linear extrapolation beyond
+        // it would flip their sign.
+        let meta = TableMeta {
+            ref_area: 0.01,
+            ref_diameter: 0.1,
+            length: 1.5,
+            machs: vec![0.0, 1.0],
+            alphas_deg: vec![0.0, 10.0, 20.0],
+            betas_deg: vec![0.0, 10.0, 20.0],
+            extrapolation: Extrapolation::Linear,
+            ..Default::default()
+        };
+        let g = AeroTable::general_from_fn(meta, |_, a, b| Coeffs6 {
+            cx_on: -0.5,
+            cx_off: -0.6,
+            cy: -(2.0 - 0.09 * b),
+            cz: -(2.0 - 0.09 * a),
+            cm: 1.0 - 0.045 * a,
+            cn: 1.0 - 0.045 * b,
+            ..Default::default()
+        });
+        let c = g.lookup6(0.5, 40f64.to_radians(), 40f64.to_radians());
+        assert_eq!((c.cy, c.cz, c.cm, c.cn), (0.0, 0.0, 0.0, 0.0), "{c:?}");
+        // Short of the sign change the linear extrapolation is kept.
+        let c = g.lookup6(0.5, 22f64.to_radians(), 22f64.to_radians());
+        assert!((c.cz + 2.0 - 0.09 * 22.0).abs() < 1e-12 && (c.cm - (1.0 - 0.045 * 22.0)).abs() < 1e-12, "{c:?}");
     }
 
     /// General table with linear Cz = kz alpha, Cm = km alpha, Cy = ky beta, Cn = kn beta (d = 0.1 m).

@@ -477,9 +477,16 @@ impl Config {
         non_negative("wind.speed", w.speed)?;
         range("wind.direction_deg", w.direction_deg, 0.0, 360.0)?;
         positive("wind.ref_height", w.ref_height)?;
-        positive("wind.exponent", w.exponent)?;
-        positive("wind.roughness_length", w.roughness_length)?;
-        positive("wind.ground_blend_height", w.ground_blend_height)?;
+        // Each profile parameter is checked only for the model that uses it (as in `Wind::from_config`).
+        if w.model == sim::WindModel::Power {
+            positive("wind.exponent", w.exponent)?;
+        }
+        if w.model == sim::WindModel::Log {
+            positive("wind.roughness_length", w.roughness_length)?;
+        }
+        if matches!(w.model, sim::WindModel::Power | sim::WindModel::Log) {
+            positive("wind.ground_blend_height", w.ground_blend_height)?;
+        }
         if w.model == sim::WindModel::Log && 2.0 * w.roughness_length >= w.ref_height {
             bail!("wind.roughness_length ({}) must be smaller than half of wind.ref_height ({}) for the log profile", w.roughness_length, w.ref_height);
         }
@@ -1048,5 +1055,34 @@ mod tests {
         );
         let e = parse(&t).unwrap_err().to_string();
         assert!(e.contains("roughness_length") && e.contains("ref_height"), "{e}");
+    }
+
+    #[test]
+    fn wind_profile_parameters_are_checked_only_for_the_models_that_use_them() {
+        let sample = include_str!("../../../examples/sample.toml");
+        let with = |model: &str, key: &str, value: &str| {
+            let t = sample.replacen("model = \"power\"", &format!("model = \"{model}\""), 1);
+            let t = match key {
+                "exponent" => t.replacen("exponent = 6.0", &format!("exponent = {value}"), 1),
+                "roughness_length" => t.replacen("roughness_length = 0.03", &format!("roughness_length = {value}"), 1),
+                _ => t.replacen("roughness_length = 0.03", &format!("roughness_length = 0.03\nground_blend_height = {value}"), 1),
+            };
+            parse(&t).map(|_| ()).map_err(|e| e.to_string())
+        };
+        // Unused by the model: any value is accepted.
+        for (model, key) in [
+            ("constant", "exponent"),
+            ("constant", "roughness_length"),
+            ("constant", "ground_blend_height"),
+            ("log", "exponent"),
+            ("power", "roughness_length"),
+        ] {
+            assert!(with(model, key, "0.0").is_ok(), "{model} {key}: {:?}", with(model, key, "0.0"));
+        }
+        // Used by the model: must be positive.
+        for (model, key) in [("power", "exponent"), ("log", "roughness_length"), ("power", "ground_blend_height"), ("log", "ground_blend_height")] {
+            let e = with(model, key, "0.0").unwrap_err();
+            assert!(e.contains(&format!("wind.{key}")), "{model} {key}: {e}");
+        }
     }
 }

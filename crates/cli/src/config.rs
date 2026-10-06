@@ -177,6 +177,8 @@ pub struct AeroCfg {
     pub mach_min: f64,
     pub mach_max: f64,
     pub mach_step: f64,
+    /// Largest angle of attack of the table [deg]. Default 90: a ballistic descent turns broadside, and
+    /// lookups beyond the table make the results unusable.
     pub alpha_max_deg: f64,
     pub alpha_step_deg: f64,
     pub n_slices: usize,
@@ -199,7 +201,7 @@ impl Default for AeroCfg {
             mach_min: 0.0,
             mach_max: 3.0,
             mach_step: 0.02,
-            alpha_max_deg: 30.0,
+            alpha_max_deg: 90.0,
             alpha_step_deg: 1.0,
             n_slices: 600,
             fin_threshold: 0.05,
@@ -978,6 +980,16 @@ mod tests {
     #[test]
     fn default_max_time_is_one_hour() {
         assert_eq!(SimCfg::default().max_time, 3600.0);
+    }
+
+    #[test]
+    fn default_aero_table_reaches_90_degrees() {
+        // A ballistic descent reaches alpha ~ 90 deg; a shorter table is extrapolated there.
+        assert_eq!(AeroCfg::default().alpha_max_deg, 90.0);
+        assert_eq!(aero::AeroOptions::default().alpha_max_deg, 90.0);
+        let sample = include_str!("../../../examples/sample.toml");
+        let c = parse(&sample.replace("alpha_max_deg = 90.0 ", "# alpha_max_deg removed ")).unwrap();
+        assert_eq!(c.aero.alpha_max_deg, 90.0);
     }
 
     #[test]

@@ -42,7 +42,7 @@ impl Default for AeroOptions {
             mach_min: 0.0,
             mach_max: 3.0,
             mach_step: 0.05,
-            alpha_max_deg: 30.0,
+            alpha_max_deg: 90.0,
             alpha_step_deg: 1.0,
             reference_altitude: 0.0,
             atmosphere: AtmosphereModel::default(),

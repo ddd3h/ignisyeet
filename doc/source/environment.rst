@@ -280,7 +280,9 @@ ECEF 座標での扱いの違いは :ref:`sec-ecef-gravity` で述べる。
    1000,13.0,310
 
 各列は、地上高度 [m]（射点標高からの高さ。**厳密に増加** していなければならない）、風速 [m/s]（0 以上）、
-風が吹いてくる方位 [deg]（北から時計回り）である。値は有限の数でなければならず、1 行以上のデータが必要である。
+風が吹いてくる方位 [deg]（北から時計回り。0 以上 360 以下）である。値は有限の数でなければならず、1 行以上のデータが必要である。
+方位が 0 から 360 の範囲を外れた行は、``wind profile direction must be between 0 and 360 degrees (row "0,1,400")`` の形で、その行を示してエラーにする。
+設定の ``wind.direction_deg`` も同じ範囲である。
 
 予報やゾンデのデータを表にするときは、次のように換算する。
 
@@ -351,7 +353,9 @@ ECEF 座標での扱いの違いは :ref:`sec-ecef-gravity` で述べる。
 :math:`k=\max(W+\delta,\,0)/W` で表を拡大する。:math:`k\ge0` なので、揺らぎで風向が反転することはない。
 
 表の平均風速が 0.1 m/s 未満（ほぼ無風）の表は拡大できない。風速格子、および風速の揺らぎが 0 でないモンテカルロ法では、
-一様な風へ置き換えることはせず、エラーにする。このときは ``model = "constant"`` または ``"power"`` で風速格子を作る。
+一様な風へ置き換えることはせず、エラーにする。
+風速格子では ``wind profile is calm (mean speed … m/s): it cannot be scaled for dispersion; use wind.model = "constant"/"power" for a wind grid`` となり、``model = "constant"`` または ``"power"`` で風速格子を作る。
+モンテカルロ法では ``wind profile is calm (mean speed … m/s): the Monte Carlo wind perturbations cannot be applied to it; set dispersion.monte_carlo.wind_speed and wind_direction_deg to 0, or use a profile with wind`` となり、風速と風向の標準偏差を 0 にするか、風のある表を使う。
 単一の飛翔（``ignisyeet sim``）は拡大しないので、ほぼ無風の表でも実行できる。
 
 拡大率 :math:`k` が 3 を超える、または 1/3 を下回るケースがあると、警告を出す。

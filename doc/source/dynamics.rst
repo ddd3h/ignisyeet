@@ -337,7 +337,7 @@ CAD ソフトの多くは慣性乗積を :math:`+\int xy\,\mathrm{d}m` の符号
    \dot{\bm{v}} = -\frac{\rho\,|\bm{v}_a|\,(C_DS)_p}{2m}\,\bm{v}_a + \bm{g},\qquad \bm{v}_a=\bm{v}-\bm{w}
 
 とする :cite:`knacke`\ （:math:`(C_DS)_p` は設定 ``cd_s``）。終端降下速度は :math:`v_t=\sqrt{2mg/(\rho\,(C_DS)_p)}` で、
-サンプル機体（燃焼後 8 kg、:math:`(C_DS)_p=3.5\ \mathrm{m^2}`）では海面付近で約 6.1 m/s になる。
+サンプル機体（燃焼後 8 kg、:math:`(C_DS)_p=3.5\ \mathrm{m^2}`）では海面付近で約 6.0 m/s になる。
 開傘の衝撃や、開傘までの過渡的な挙動は扱わない。開傘は瞬時に完了し、抗力面積は開傘の瞬間に :math:`0` から :math:`(C_DS)_p` へ跳ぶ（:doc:`limitations`）。
 
 .. _sec-dual-deploy:

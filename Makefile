@@ -24,7 +24,7 @@ begin:
 	rm -f "$(INCOMPLETE)"
 
 finish:
-	@if [ -f "$(INCOMPLETE)" ]; then echo "make: results are INCOMPLETE (exit status 3): see the INCOMPLETE RESULTS lines above" >&2; rm -f "$(INCOMPLETE)"; exit 3; fi
+	@if [ -f "$(INCOMPLETE)" ]; then echo "make: results are INCOMPLETE or NOT USABLE (exit status 3): see the lines above" >&2; rm -f "$(INCOMPLETE)"; exit 3; fi
 
 build:
 	cargo build --release

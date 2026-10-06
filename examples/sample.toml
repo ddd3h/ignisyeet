@@ -128,8 +128,8 @@ viscosity = 1.789e-5       # constant only [Pa s]
 
 [wind]
 model = "power"            # "constant" | "power" | "log" | "profile"
-speed = 4.0                # m/s at reference height
-direction_deg = 0.0        # direction the wind blows FROM, clockwise from north
+speed = 4.0                # m/s at reference height (ignored for model = "profile": see profile_mean_speed)
+direction_deg = 0.0        # direction the wind blows FROM, clockwise from north (ignored for model = "profile")
 ref_height = 2.0
 # speed is the wind speed at ref_height (2 m) [m/s]; the power/log models extrapolate it upward to apogee (x3-4 at several km).
 # For real predictions use model = "profile" with measured winds aloft.
@@ -140,6 +140,12 @@ roughness_length = 0.03    # log model [m]
 # set profile = "wind_profile_example.csv" and replace that file with a real forecast or sounding for the
 # launch day. A relative path is resolved from this config file's directory, so it means examples/wind_profile_example.csv.
 # profile = "wind_profile_example.csv"
+# With model = "profile" the speeds and directions come from the CSV; speed and direction_deg above are
+# ignored (a warning says so when they are set). To run the profile at another mean wind, set the targets:
+# the whole profile is scaled to this mean speed and rotated to this mean direction (the same scaling as
+# a wind-grid case), e.g. the worst wind of a grid run for a keep-out radius.
+# profile_mean_speed = 15.6           # m/s, mean speed over the profile's altitude range
+# profile_mean_direction_deg = 270.0  # direction the profile's mean wind blows FROM
 
 [sim]
 integrator = "rk4"         # "rk4" (fixed step dt) | "rk45" (adaptive 5th order) | "dop853" (adaptive 8th order)
@@ -156,7 +162,7 @@ output_interval = 0.05
 #   [dispersion] mode = "monte_carlo"      (1000 samples, seed 1 and the sigmas below as they stand)
 [dispersion]
 mode = "wind_grid"         # "wind_grid" | "monte_carlo"
-wind_speeds = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]   # speeds at the [wind] reference height [m/s]
+wind_speeds = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]   # speeds at the [wind] reference height [m/s] (model = "profile": mean speeds of the profile)
 directions = 8
 
 # 1-sigma perturbations for mode = "monte_carlo"; each is an independent normal draw, 0 disables it.

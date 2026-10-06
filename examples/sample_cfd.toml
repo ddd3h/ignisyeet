@@ -118,8 +118,8 @@ viscosity = 1.789e-5       # constant only [Pa s]
 
 [wind]
 model = "power"            # "constant" | "power" | "log" | "profile"
-speed = 4.0                # m/s at reference height
-direction_deg = 0.0        # direction the wind blows FROM, clockwise from north
+speed = 4.0                # m/s at reference height (ignored for model = "profile": set profile_mean_speed)
+direction_deg = 0.0        # direction the wind blows FROM, clockwise from north (ignored for model = "profile": set profile_mean_direction_deg)
 ref_height = 2.0
 # speed is the wind speed at ref_height (2 m) [m/s]; the power/log models extrapolate it upward to apogee (x3-4 at several km).
 # For real predictions use model = "profile" with measured winds aloft.

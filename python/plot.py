@@ -323,16 +323,36 @@ def plot_panel(out):
     save(fig, out, "panel.png")
 
 
+def draw_path_3d(ax, tr):
+    """Flight path by phase on a 3-D axis with equal scaling on all three axes.
+
+    The axes span a cube of the largest extent of the path, so a steep climb looks steep. A phase whose
+    run is shorter than 1 % of that extent (a 5 m launch rail) is drawn but left out of the legend.
+    """
+    pts = tr[["east", "north", "up"]].to_numpy(float)
+    pts = pts[np.isfinite(pts).all(axis=1)]
+    lo, hi = (pts.min(axis=0), pts.max(axis=0)) if len(pts) else (np.zeros(3), np.ones(3))
+    half = 0.5 * max(float((hi - lo).max()), 1.0)
+    for phase, c in (("rail", SERIES[2]), ("free", SERIES[0]), ("parachute", SERIES[1])):
+        s = tr[tr.phase == phase]
+        if len(s):
+            ext = float(np.ptp(s[["east", "north", "up"]].to_numpy(float), axis=0).max())
+            ax.plot(s.east, s.north, s.up, color=c, label=phase if ext > 0.02 * half else None)
+    ax.scatter([0], [0], [0], color=INK, s=30, label="launch site")
+    mid = 0.5 * (lo + hi)
+    ax.set_xlim(mid[0] - half, mid[0] + half)
+    ax.set_ylim(mid[1] - half, mid[1] + half)
+    z0 = max(mid[2] - half, min(lo[2], 0.0))  # ground level at the bottom when the cube leaves room for it
+    ax.set_zlim(z0, z0 + 2 * half)
+    ax.set_box_aspect((1, 1, 1))
+
+
 def plot_trajectory(out):
     tr = pd.read_csv(out / "trajectory.csv")
     summ = json.loads((out / "summary.json").read_text()) if (out / "summary.json").exists() else {}
     fig = plt.figure(figsize=(7, 6))
     ax = fig.add_subplot(projection="3d")
-    for phase, c in (("rail", SERIES[2]), ("free", SERIES[0]), ("parachute", SERIES[1])):
-        s = tr[tr.phase == phase]
-        if len(s):
-            ax.plot(s.east, s.north, s.up, color=c, label=phase)
-    ax.scatter([0], [0], [0], color=INK, s=30, label="launch site")
+    draw_path_3d(ax, tr)
     ax.set_xlabel("East [m]")
     ax.set_ylabel("North [m]")
     ax.set_zlabel("Up [m]")

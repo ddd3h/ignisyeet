@@ -139,6 +139,23 @@ class FinSideQuads(unittest.TestCase):
         self.assertIsNone(plot.fin_side_quads(c[:, 0], c[:, 1]))
 
 
+class Trajectory3d(unittest.TestCase):
+    def test_equal_axes_and_no_legend_entry_for_a_short_rail(self):
+        t = np.linspace(0, 100, 201)
+        tr = pd.DataFrame({"t": t, "east": -5 * t, "north": -60 * t, "up": 4000 * np.sin(np.pi * t / 200)})
+        tr["phase"] = np.where(t < 0.6, "rail", np.where(t < 50, "free", "parachute"))
+        tr.loc[tr.phase == "rail", ["east", "north", "up"]] = [[0, 0, 0], [0.5, 0.5, 5.0]]
+        fig = plot.plt.figure()
+        ax = fig.add_subplot(projection="3d")
+        plot.draw_path_3d(ax, tr)
+        spans = [np.ptp(lim) for lim in (ax.get_xlim(), ax.get_ylim(), ax.get_zlim())]
+        np.testing.assert_allclose(spans, spans[0])
+        self.assertGreaterEqual(spans[0], 6000.0)  # north runs 0.5 .. -6000 m
+        self.assertEqual(ax.get_zlim()[0], 0.0)
+        self.assertEqual([h.get_label() for h in ax.get_legend_handles_labels()[0]], ["free", "parachute", "launch site"])
+        plot.plt.close(fig)
+
+
 class TrajectoryAltitude(unittest.TestCase):
     def frame(self):
         t = np.linspace(0, 10, 11)

@@ -449,7 +449,9 @@ fn wind_scale_warning<'a>(cfg: &Config, what: &str, summaries: impl IntoIterator
         .max_by(|a, b| extreme(a.0).total_cmp(&extreme(b.0)))?;
     let (k, v) = worst;
     let aloft = wind_profile_extent(cfg).map_or(String::new(), |(_, _, vmax)| format!(": winds aloft up to {:.0} m/s", vmax * k));
-    Some(format!("wind profile scaled by up to {k:.1} ({what} {v:.1} m/s vs profile mean {:.1} m/s){aloft}", v / k))
+    // The run with the largest deviation from the profile, up or down.
+    let factor = if k >= 1.0 { format!("{k:.1}") } else { format!("{k:.2}") };
+    Some(format!("wind profile scaled by a factor of {factor} ({what} {v:.1} m/s vs profile mean {:.1} m/s){aloft}", v / k))
 }
 
 /// (lowest altitude, top altitude, largest speed) of the wind profile table, when it can be read.
@@ -2495,9 +2497,9 @@ mod tests {
         assert!(wind_scale_warning(&cfg, "wind grid", [&run(0.0, 0.0)]).is_none());
         // the largest deviation is named, with the winds aloft (largest row 5 m/s x k)
         let w = wind_scale_warning(&cfg, "wind grid", [&run(4.5, 9.0), &run(2.0, 4.0), &run(3.5, 7.0)]).unwrap();
-        assert_eq!(w, "wind profile scaled by up to 4.5 (wind grid 9.0 m/s vs profile mean 2.0 m/s): winds aloft up to 22 m/s");
+        assert_eq!(w, "wind profile scaled by a factor of 4.5 (wind grid 9.0 m/s vs profile mean 2.0 m/s): winds aloft up to 22 m/s");
         let w = wind_scale_warning(&cfg, "Monte Carlo sample", [&run(0.1, 0.3)]).unwrap();
-        assert!(w.starts_with("wind profile scaled by up to 0.1 (Monte Carlo sample 0.3 m/s vs profile mean 3.0 m/s)"), "{w}");
+        assert!(w.starts_with("wind profile scaled by a factor of 0.10 (Monte Carlo sample 0.3 m/s vs profile mean 3.0 m/s)"), "{w}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

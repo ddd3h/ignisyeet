@@ -208,8 +208,10 @@ fn stability(cal: f64) -> String {
     let txt = format!("{cal:.2} cal");
     if !cal.is_finite() {
         dim("n/a").to_string()
-    } else if cal < 1.0 {
+    } else if cal < 0.0 {
         format!("{}  {} {}", style(txt).red().bold(), style(g.bad).red().bold(), style("UNSTABLE").red().bold())
+    } else if cal < 1.0 {
+        format!("{}  {} {}", style(txt).red().bold(), style(g.bad).red().bold(), style("low static margin (< 1.0 cal)").red())
     } else if cal < 1.5 {
         format!("{}  {} {}", style(txt).yellow().bold(), style(g.warn).yellow().bold(), style("marginal (< 1.5 cal)").yellow())
     } else {

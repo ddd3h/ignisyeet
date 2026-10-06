@@ -32,7 +32,7 @@ const LONG_VERSION: &str = concat!(
     version,
     long_version = LONG_VERSION,
     about = "IgnisYeet by 西濱大将 (NISHIHAMA Daisuke): STL-based rocket aerodynamics, 6-DoF trajectory and landing dispersion",
-    after_help = "Exit status: 0 success; 1 error (invalid configuration, missing input, failed step); 2 usage error; \
+    after_help = "Exit status: 0 success (a flight that landed exits 0 even when it is statically unstable: check `stable` and `static_margin_min_cal` in summary.json); 1 error (invalid configuration, missing input, failed step); 2 usage error; \
 3 the run finished and wrote its outputs but the results are incomplete (a flight did not land within sim.max_time, or dispersion cases/samples failed or did not land).\n\n\
 Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke). License GPL-3.0-or-later: <https://www.gnu.org/licenses/>. This is free software; there is NO WARRANTY."
 )]
@@ -271,7 +271,7 @@ fn aero_range_json(s: &aero::table::OutOfRangeStats) -> serde_json::Value {
 }
 
 /// Plausible size range of a rocket body; outside it `rocket.stl_scale` is most likely wrong.
-const LENGTH_RANGE: (f64, f64) = (0.1, 30.0);
+const LENGTH_RANGE: (f64, f64) = (0.1, 20.0);
 const DIAMETER_RANGE: (f64, f64) = (0.005, 3.0);
 
 /// Warnings about the size of the body (`length`, `diameter` in metres).
@@ -297,6 +297,12 @@ const WIND_VALID_HEIGHT: f64 = 1000.0;
 
 /// Warnings about the flight itself: static margin, centre of pressure, wind-model validity, no landing.
 fn flight_warnings(cfg: &Config, s: &Summary) -> Vec<String> {
+    flight_warnings_at(cfg, s, cfg.wind.speed)
+}
+
+/// [`flight_warnings`] for a run whose largest reference wind speed is `wind_speed` [m/s]: the extrapolation
+/// of the wind profile only matters when there is wind.
+fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: f64) -> Vec<String> {
     let mut w = Vec::new();
     if !s.landed() {
         w.push(format!(
@@ -309,19 +315,30 @@ fn flight_warnings(cfg: &Config, s: &Summary) -> Vec<String> {
         if m < 0.0 {
             w.push(format!("static margin {m:.2} cal is negative: the centre of pressure is forward of the CG, the rocket is UNSTABLE"));
         } else if m < 1.0 {
-            w.push(format!("minimum static margin {m:.2} cal is below 1.0 cal: the rocket is UNSTABLE"));
+            w.push(format!("minimum static margin {m:.2} cal is below 1.0 cal: low static margin"));
         } else if m < 1.5 {
             w.push(format!("minimum static margin {m:.2} cal is below the recommended 1.5 cal (marginal)"));
         }
     }
     let wind = &cfg.wind;
-    if matches!(wind.model, sim::WindModel::Power | sim::WindModel::Log) && s.apogee > WIND_VALID_HEIGHT {
+    if matches!(wind.model, sim::WindModel::Power | sim::WindModel::Log) && wind_speed != 0.0 && s.apogee > WIND_VALID_HEIGHT {
         w.push(format!(
             "apogee {:.0} m is above {WIND_VALID_HEIGHT:.0} m, the validity height of the {:?} wind profile: the profile is extrapolated there, and wind.speed = {} m/s is the speed at wind.ref_height = {} m, so the winds aloft and the landing point are model-dependent",
             s.apogee, wind.model, wind.speed, wind.ref_height
         ));
     }
     w
+}
+
+/// An error when the body length (metres, after `rocket.stl_scale`) is not that of a rocket.
+fn check_length(cfg: &Config, length: f64) -> Result<()> {
+    if !(LENGTH_RANGE.0..=LENGTH_RANGE.1).contains(&length) {
+        anyhow::bail!(
+            "body length {length:.4} m is outside the plausible {}-{} m range: check the STL units and rocket.stl_scale (now {}; 0.001 converts millimetres to metres)",
+            LENGTH_RANGE.0, LENGTH_RANGE.1, cfg.rocket.stl_scale
+        );
+    }
+    Ok(())
 }
 
 /// An error when the dry CG lies outside the body (`length` in metres, CG measured aft of the nose tip).
@@ -334,7 +351,8 @@ fn check_cg(cfg: &Config, length: f64) -> Result<()> {
 }
 
 fn load_motor(cfg: &Config) -> Result<Motor> {
-    let mut motor = Motor::load(&cfg.resolve(&cfg.motor.eng))?;
+    let eng = cfg.resolve(&cfg.motor.eng);
+    let mut motor = Motor::load(&eng).with_context(|| format!("cannot read motor file {}", eng.display()))?;
     if let Some(m) = cfg.motor.propellant_mass {
         motor.propellant_mass = m;
     }
@@ -361,7 +379,7 @@ fn out_path(cfg: &Config, name: &str) -> Result<PathBuf> {
 fn geometry(cfg: &Config) -> Result<Geometry> {
     let stl = cfg.resolve(&cfg.rocket.stl);
     let s = cfg.rocket.stl_scale;
-    let tris: Vec<_> = geom::stl::read_stl(&stl)?.into_iter().map(|t| t.map(|v| v * s)).collect();
+    let tris: Vec<_> = geom::stl::read_stl(&stl).with_context(|| format!("cannot read STL {}", stl.display()))?.into_iter().map(|t| t.map(|v| v * s)).collect();
     let opt = ExtractOptions { n_slices: cfg.aero.n_slices, nose_direction: cfg.nose_direction()?, fin_threshold: cfg.aero.fin_threshold };
     let mut g = geom::extract(&tris, &opt).with_context(|| format!("geometry extraction failed for {}", stl.display()))?;
     *GEOMETRY_WARNINGS.lock().unwrap() = Some(g.warnings.clone());
@@ -393,6 +411,7 @@ fn geometry(cfg: &Config) -> Result<Geometry> {
     if let Some(f) = g.fins.as_mut() {
         f.cant_deg = cfg.rocket.cant_deg();
     }
+    check_length(cfg, g.length)?;
     check_cg(cfg, g.length)?;
     Ok(g)
 }
@@ -483,7 +502,11 @@ fn aero_inputs(cfg: &Config) -> Result<serde_json::Value> {
 
 fn source_hash(cfg: &Config) -> Result<String> {
     let mut h = 0xcbf2_9ce4_8422_2325u64;
-    fnv1a(&mut h, &std::fs::read(cfg.resolve(&cfg.rocket.stl))?);
+    let stl = cfg.resolve(&cfg.rocket.stl);
+    fnv1a(&mut h, &std::fs::read(&stl).with_context(|| format!("cannot read STL {}", stl.display()))?);
+    // The extracted geometry (after scale, nose direction, fin override and cant) enters as well, so a change
+    // of the extraction code invalidates cached tables without a MODEL_VERSION bump.
+    fnv1a(&mut h, &serde_json::to_vec(&geometry(cfg)?)?);
     #[derive(Serialize)]
     struct Inputs<'a> {
         scale: f64,
@@ -699,7 +722,8 @@ fn show_table(t: &AeroTable, elapsed: Option<std::time::Duration>, sub: Sub) {
 /// Raw STL in metres (only needed for `surface = "stl"`).
 fn raw_stl(cfg: &Config) -> Result<Vec<geom::stl::Triangle>> {
     let s = cfg.rocket.stl_scale;
-    Ok(geom::stl::read_stl(&cfg.resolve(&cfg.rocket.stl))?.into_iter().map(|t| t.map(|v| v * s)).collect())
+    let stl = cfg.resolve(&cfg.rocket.stl);
+    Ok(geom::stl::read_stl(&stl).with_context(|| format!("cannot read STL {}", stl.display()))?.into_iter().map(|t| t.map(|v| v * s)).collect())
 }
 
 /// Build the coefficient table with SU2.
@@ -883,7 +907,10 @@ fn simulation<'a>(cfg: &Config, p: &'a Prepared) -> Result<Simulation<'a>> {
         motor_aft_x: p.motor_aft_x,
         launch: cfg.launch.clone(),
         recovery: cfg.recovery.clone(),
-        wind: sim::Wind::from_config(&cfg.wind_config())?,
+        wind: sim::Wind::from_config(&cfg.wind_config()).with_context(|| match &cfg.wind.profile {
+            Some(p) => format!("cannot load wind profile {}", cfg.resolve(p).display()),
+            None => "invalid wind configuration".to_string(),
+        })?,
         atmosphere: cfg.atmosphere.build()?,
         earth: sim::Earth::from_config(&cfg.earth)?,
         settings: sim::Settings {
@@ -1003,11 +1030,15 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
     }
     print_warnings(&warnings);
     if landed {
-        write_kml(cfg, kml::Parts { flight: Some(kml::Flight { samples: r.samples, summary: r.summary }), ..Default::default() })?;
+        write_kml(cfg, kml::Parts { flight: Some(kml::Flight { samples: r.samples, summary: r.summary }), ..Default::default() }, false)?;
         Ok(None)
     } else {
-        if u.mode != ui::Mode::Quiet {
-            println!("  KML not updated: the flight has no landing point");
+        // The previous run's flight must not stay in the file: write it without the flight layer.
+        if cfg.output.kml {
+            write_kml(cfg, kml::Parts::default(), true)?;
+            if u.mode != ui::Mode::Quiet {
+                println!("  KML written without the flight layer: the flight has no landing point");
+            }
         }
         Ok(Some(format!("the flight did not land within sim.max_time = {} s", cfg.sim.max_time)))
     }
@@ -1017,6 +1048,10 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
 fn summary_json(cfg: &Config, s: &Summary, warnings: &[String]) -> Result<serde_json::Value> {
     let mut json = serde_json::to_value(s)?;
     json["landed"] = s.landed().into();
+    // Smallest static margin of the flight, including the rail exit; `stable` is false when it is negative.
+    let margin = [s.min_stability_cal, s.stability_at_rail_exit].into_iter().filter(|m| m.is_finite()).min_by(f64::total_cmp);
+    json["static_margin_min_cal"] = margin.map_or(serde_json::Value::Null, Into::into);
+    json["stable"] = margin.is_none_or(|m| m >= 0.0).into();
     json["max_time"] = cfg.sim.max_time.into();
     json["config_hash"] = run_hash(cfg, RunKind::Flight).into();
     json["warnings"] = serde_json::json!(warnings);
@@ -1026,7 +1061,7 @@ fn summary_json(cfg: &Config, s: &Summary, warnings: &[String]) -> Result<serde_
 /// Writes `ignisyeet.kml`: the parts given are used as they are, the others are read back from the
 /// output files already in the output directory (a missing part is left out, an unreadable one is
 /// noted in plain mode).
-fn write_kml(cfg: &Config, mut parts: kml::Parts) -> Result<()> {
+fn write_kml(cfg: &Config, mut parts: kml::Parts, skip_flight: bool) -> Result<()> {
     if !cfg.output.kml {
         return Ok(());
     }
@@ -1044,7 +1079,7 @@ fn write_kml(cfg: &Config, mut parts: kml::Parts) -> Result<()> {
             ui::Mode::Quiet => {}
         }
     };
-    if parts.flight.is_none() {
+    if parts.flight.is_none() && !skip_flight {
         match kml::load_flight(&dir, &run_hash(cfg, RunKind::Flight)) {
             Ok(f) => parts.flight = f,
             Err(e) => note("flight", e),
@@ -1125,8 +1160,9 @@ impl FarthestLanding {
 fn nominal_warnings(cfg: &Config, p: &Prepared, base: &Simulation) -> Vec<String> {
     let mut w = p.geometry_warnings.clone();
     w.extend(size_warnings(cfg, p.table.meta.length, p.table.meta.ref_diameter));
+    let ref_speed = if cfg.dispersion.mode == sim::DispersionMode::WindGrid { cfg.dispersion.wind_speeds.iter().copied().fold(0.0, f64::max) } else { cfg.wind.speed };
     match base.run(Descent::Ballistic, false) {
-        Ok(r) => w.extend(flight_warnings(cfg, &r.summary)),
+        Ok(r) => w.extend(flight_warnings_at(cfg, &r.summary, ref_speed)),
         Err(e) => w.push(format!("the nominal flight could not be simulated ({e:#}): stability and wind-model checks were skipped")),
     }
     w
@@ -1207,7 +1243,7 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
         }
         return Ok(incomplete);
     }
-    write_kml(cfg, kml::Parts { wind_grid: Some(kml::WindGrid { cases, results }), ..Default::default() })?;
+    write_kml(cfg, kml::Parts { wind_grid: Some(kml::WindGrid { cases, results }), ..Default::default() }, false)?;
     Ok(incomplete)
 }
 
@@ -1302,7 +1338,7 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
             println!("  KML: Monte Carlo left out (no sample landed)");
         }
     } else {
-        write_kml(cfg, kml::Parts { monte_carlo: Some(kml::MonteCarlo { rows: r.rows.clone(), stats: r.summary.descents.clone() }), ..Default::default() })?;
+        write_kml(cfg, kml::Parts { monte_carlo: Some(kml::MonteCarlo { rows: r.rows.clone(), stats: r.summary.descents.clone() }), ..Default::default() }, false)?;
     }
     for row in r.rows.iter().filter(|x| x.result.is_err()).take(3) {
         let msg = format!("failed: sample {} ({}): {}", row.sample, descent_name(row.descent), row.result.as_ref().unwrap_err());
@@ -1522,7 +1558,7 @@ mod tests {
         let marginal = sim::Summary { min_stability_cal: 1.2, ..ok.clone() };
         assert!(flight_warnings(&cfg, &marginal).iter().any(|w| w.contains("1.20 cal") && w.contains("marginal")));
         let unstable = sim::Summary { min_stability_cal: 0.6, ..ok.clone() };
-        assert!(flight_warnings(&cfg, &unstable).iter().any(|w| w.contains("UNSTABLE")));
+        assert!(flight_warnings(&cfg, &unstable).iter().any(|w| w.contains("low static margin")));
         let forward = sim::Summary { min_stability_cal: -0.4, ..ok.clone() };
         assert!(flight_warnings(&cfg, &forward).iter().any(|w| w.contains("forward of the CG")));
         // The margin at rail exit counts too.
@@ -1591,6 +1627,90 @@ mod tests {
         std::fs::write(tmp.join("geometry.json"), r#"{"warnings":["fins look reversed"]}"#).unwrap();
         assert_eq!(stored_geometry_warnings(&cfg), vec!["fins look reversed".to_string()]);
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn low_static_margin_is_not_called_unstable() {
+        let cfg = load_sample(include_str!("../../../examples/sample.toml"));
+        let ok = sim::Summary { min_stability_cal: 2.0, stability_at_rail_exit: 2.0, apogee: 500.0, ..sample_summary() };
+        let low = sim::Summary { min_stability_cal: 0.6, ..ok.clone() };
+        let w = flight_warnings(&cfg, &low);
+        assert!(w.iter().any(|w| w.contains("low static margin")) && !w.iter().any(|w| w.contains("UNSTABLE")), "{w:?}");
+        let neg = sim::Summary { min_stability_cal: -0.1, ..ok.clone() };
+        assert!(flight_warnings(&cfg, &neg).iter().any(|w| w.contains("UNSTABLE")));
+        // summary.json: the smallest margin and a stable flag.
+        let j = summary_json(&cfg, &low, &[]).unwrap();
+        assert_eq!((j["static_margin_min_cal"].as_f64(), j["stable"].as_bool()), (Some(0.6), Some(true)));
+        let j = summary_json(&cfg, &neg, &[]).unwrap();
+        assert_eq!((j["static_margin_min_cal"].as_f64(), j["stable"].as_bool()), (Some(-0.1), Some(false)));
+        let rail = sim::Summary { stability_at_rail_exit: -0.3, ..ok };
+        assert_eq!(summary_json(&cfg, &rail, &[]).unwrap()["stable"].as_bool(), Some(false));
+    }
+
+    #[test]
+    fn wind_extrapolation_warning_needs_wind() {
+        let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
+        let high = sim::Summary { min_stability_cal: 2.0, stability_at_rail_exit: 2.0, apogee: 4440.7, ..sample_summary() };
+        assert!(!flight_warnings(&cfg, &high).is_empty());
+        assert!(flight_warnings_at(&cfg, &high, 0.0).is_empty());
+        cfg.wind.speed = 0.0;
+        assert!(flight_warnings(&cfg, &high).is_empty());
+    }
+
+    #[test]
+    fn missing_input_files_name_the_path() {
+        let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
+        cfg.rocket.stl = "no_such_rocket.stl".into();
+        for e in [source_hash(&cfg).unwrap_err(), geometry(&cfg).unwrap_err()] {
+            assert!(format!("{e:#}").contains("cannot read STL") && format!("{e:#}").contains("no_such_rocket.stl"), "{e:#}");
+        }
+        let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
+        cfg.motor.eng = "no_such_motor.eng".into();
+        assert!(format!("{:#}", load_motor(&cfg).unwrap_err()).contains("no_such_motor.eng"));
+        let mut cfg = sample_config("wprof");
+        let p = prepare(&cfg).unwrap();
+        cfg.wind.model = sim::WindModel::Profile;
+        cfg.wind.profile = Some("no_such_wind.csv".into());
+        let e = simulation(&cfg, &p).err().expect("missing wind profile accepted");
+        assert!(format!("{e:#}").contains("no_such_wind.csv"), "{e:#}");
+        let _ = std::fs::remove_dir_all(&cfg.output.dir);
+    }
+
+    #[test]
+    fn implausible_body_length_stops_with_a_unit_hint() {
+        let mut cfg = sample_config("size");
+        cfg.rocket.stl_scale = 1000.0;
+        let e = format!("{:#}", geometry(&cfg).unwrap_err());
+        assert!(e.contains("body length") && e.contains("rocket.stl_scale") && e.contains("0.1-20 m"), "{e}");
+        cfg.rocket.stl_scale = 1e-6;
+        assert!(geometry(&cfg).is_err());
+    }
+
+    #[test]
+    fn cache_key_includes_the_extracted_geometry() {
+        let src = include_str!("main.rs");
+        let body = &src[src.find("fn source_hash").unwrap()..];
+        let body = &body[..body.find("let inputs = Inputs").unwrap()];
+        assert!(body.contains("geometry(cfg)"), "source_hash must hash the extracted geometry");
+        // Same STL bytes, different extraction input: different key.
+        let cfg = sample_config("key");
+        let mut other = cfg.clone();
+        other.aero.n_slices += 10;
+        assert_ne!(source_hash(&cfg).unwrap(), source_hash(&other).unwrap());
+    }
+
+    #[test]
+    fn unlanded_flight_replaces_a_stale_kml_without_the_flight() {
+        let mut cfg = sample_config("kml");
+        cfg.output.kml = true;
+        let dir = cfg.out_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("ignisyeet.kml");
+        std::fs::write(&path, "STALE_FLIGHT_MARKER").unwrap();
+        write_kml(&cfg, kml::Parts::default(), true).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(!text.contains("STALE_FLIGHT_MARKER") && text.contains("Launch site") && !text.contains("<name>Flight</name>"), "{text}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

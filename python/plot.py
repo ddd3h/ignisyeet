@@ -212,7 +212,7 @@ def plot_aero(out):
     save(fig, out, "aero.png")
 
 
-def _tri(ax, x, y, c, norm, cmap, max_dy, y_scale=1.0):
+def _tri(ax, x, y, c, norm, cmap, max_dy, y_scale=1.0, shading="gouraud"):
     """Smooth-shaded triangulated Cp map; triangles spanning gaps (fin footprints, seams) are masked.
 
     The Delaunay triangulation is built on (x, y_scale * y) so that the panels are close to square in
@@ -225,7 +225,7 @@ def _tri(ax, x, y, c, norm, cmap, max_dy, y_scale=1.0):
     tri = mtri.Triangulation(x, y, mtri.Triangulation(x, y * y_scale).triangles)
     yy = np.asarray(y)[tri.triangles]
     tri.set_mask(np.ptp(yy, axis=1) > max_dy)
-    return ax.tripcolor(tri, np.asarray(c), cmap=cmap, norm=norm, shading="gouraud")
+    return ax.tripcolor(tri, np.asarray(c), cmap=cmap, norm=norm, shading=shading)
 
 
 def fin_azimuth(fin):
@@ -240,8 +240,36 @@ def fin_azimuth(fin):
     return float(np.angle(np.exp(1j * phi[near]).mean()))
 
 
+def fin_side_quads(x, rho):
+    """Panel outlines (n, 4, 2) in (x, rho) of one fin side, rebuilt from its panel centroids; None if not a structured grid.
+
+    panel_cp.csv lists the side panels of a fin chord station by chord station, root to tip within a
+    station, so the centroids form an n_chord x n_span grid in file order. The corners are the means
+    of the four surrounding centroids, with one row of centroids extrapolated linearly beyond every
+    edge of the grid (root, tip, leading and trailing edge).
+    """
+    x, rho = np.asarray(x, float), np.asarray(rho, float)
+    drops = np.flatnonzero(np.diff(rho) < 0)
+    if len(x) < 4 or len(drops) == 0:
+        return None
+    ns = int(drops[0]) + 1
+    if ns < 2 or len(x) % ns:
+        return None
+    nc = len(x) // ns
+    g = np.stack([x, rho], axis=-1).reshape(nc, ns, 2)
+    if nc < 2 or np.any(np.diff(g[:, :, 1], axis=1) <= 0) or np.any(np.diff(g[:, :, 0], axis=0) <= 0):
+        return None
+    p = np.empty((nc + 2, ns + 2, 2))
+    p[1:-1, 1:-1] = g
+    p[0, 1:-1], p[-1, 1:-1] = 2 * g[0] - g[1], 2 * g[-1] - g[-2]
+    p[:, 0], p[:, -1] = 2 * p[:, 1] - p[:, 2], 2 * p[:, -2] - p[:, -3]
+    v = 0.25 * (p[:-1, :-1] + p[1:, :-1] + p[:-1, 1:] + p[1:, 1:])
+    return np.stack([v[:-1, :-1], v[1:, :-1], v[1:, 1:], v[:-1, 1:]], axis=2).reshape(-1, 4, 2)
+
+
 def plot_panel(out):
     """Surface Cp of the panel solution: unrolled body map and one fin (both sides)."""
+    from matplotlib.collections import PolyCollection
     from matplotlib.colors import TwoSlopeNorm
 
     d = pd.read_csv(out / "panel_cp.csv")
@@ -271,11 +299,18 @@ def plot_panel(out):
         k = fin[np.abs(np.angle(np.exp(1j * (phi - phi0)))) < np.radians(12)]
         side = k.ny * (-np.sin(phi0)) + k.nz * np.cos(phi0)
         rho = np.hypot(k.y, k.z)
-        for col, (sel, name) in enumerate(((side > 0, "Fin, +side"), (side <= 0, "Fin, −side"))):
+        # |side| > 0.5 keeps the two side faces; the tip-cap panels (radial normal, side ~ 0) belong to neither.
+        for col, (sel, name) in enumerate(((side > 0.5, "Fin, +side"), (side < -0.5, "Fin, −side"))):
             a = fig.add_subplot(gs[1, col])
-            if sel.sum() >= 3:
+            x, r, c = k.x[sel].values, rho[sel].values, k.cp[sel].values
+            quads = fin_side_quads(x, r)
+            if quads is not None:
+                # one flat-coloured quad per panel, no interpolation between panels
+                a.add_collection(PolyCollection(quads, array=c, cmap=cmap, norm=norm, edgecolors="face", linewidths=0.2))
+                a.autoscale_view()
+            elif sel.sum() >= 3:
                 try:
-                    _tri(a, k.x[sel].values, rho[sel].values, k.cp[sel].values, norm, cmap, 1e9)
+                    _tri(a, x, r, c, norm, cmap, 1e9, shading="flat")
                 except (ValueError, RuntimeError):
                     pass  # degenerate (collinear) point set: leave the panel empty
             a.set_xlabel("x aft of nose tip [m]")
@@ -283,7 +318,7 @@ def plot_panel(out):
             a.set_title(name)
             a.set_aspect("equal", adjustable="datalim")
             a.grid(False)
-    cb = fig.colorbar(sc, ax=fig.axes, shrink=0.85, pad=0.02)
+    cb = fig.colorbar(sc, ax=fig.axes, shrink=0.85, pad=0.02, extend="both")
     cb.set_label("Cp")
     save(fig, out, "panel.png")
 

@@ -558,8 +558,36 @@ def monte_carlo(f, out):
     f.save(fig, "dispersion_mc")
 
 
+def fin_side_quads(x, rho):
+    """Panel outlines (n, 4, 2) in (x, rho) of one fin side, rebuilt from its panel centroids; None if not a structured grid.
+
+    The panel mesh writes the side panels of a fin chord station by chord station, root to tip within
+    a station (mesh.rs), so the centroids form an n_chord x n_span grid in file order. The corners are
+    the means of the four surrounding centroids, with one row of centroids extrapolated linearly
+    beyond every edge of the grid (root, tip, leading and trailing edge).
+    """
+    x, rho = np.asarray(x, float), np.asarray(rho, float)
+    drops = np.flatnonzero(np.diff(rho) < 0)
+    if len(x) < 4 or len(drops) == 0:
+        return None
+    ns = int(drops[0]) + 1
+    if ns < 2 or len(x) % ns:
+        return None
+    nc = len(x) // ns
+    g = np.stack([x, rho], axis=-1).reshape(nc, ns, 2)
+    if nc < 2 or np.any(np.diff(g[:, :, 1], axis=1) <= 0) or np.any(np.diff(g[:, :, 0], axis=0) <= 0):
+        return None
+    p = np.empty((nc + 2, ns + 2, 2))
+    p[1:-1, 1:-1] = g
+    p[0, 1:-1], p[-1, 1:-1] = 2 * g[0] - g[1], 2 * g[-1] - g[-2]
+    p[:, 0], p[:, -1] = 2 * p[:, 1] - p[:, 2], 2 * p[:, -2] - p[:, -3]
+    v = 0.25 * (p[:-1, :-1] + p[1:, :-1] + p[:-1, 1:] + p[1:, 1:])
+    return np.stack([v[:-1, :-1], v[1:, :-1], v[1:, 1:], v[:-1, 1:]], axis=2).reshape(-1, 4, 2)
+
+
 def panel_method(f, out, pn):
     """Barrowman (out) versus panel method (pn): coefficients, surface Cp and flight histories."""
+    from matplotlib.collections import PolyCollection
     from matplotlib.colors import TwoSlopeNorm
     import matplotlib.tri as mtri
 
@@ -580,12 +608,12 @@ def panel_method(f, out, pn):
     lim = max(float(np.percentile(np.abs(d.cp), 99)), 0.1)
     norm = TwoSlopeNorm(vmin=-lim, vcenter=0.0, vmax=lim)
 
-    def tri(ax, x, y, c, max_dy, y_scale=1.0):
+    def tri(ax, x, y, c, max_dy, y_scale=1.0, shading="gouraud"):
         # Delaunay on (x, y_scale*y) so the panels are near-square (no slivers along narrow columns).
         x, y = np.asarray(x), np.asarray(y)
         t = mtri.Triangulation(x, y, mtri.Triangulation(x, y * y_scale).triangles)
         t.set_mask(np.ptp(np.asarray(y)[t.triangles], axis=1) > max_dy)
-        return ax.tripcolor(t, np.asarray(c), cmap="RdBu_r", norm=norm, shading="gouraud", rasterized=True)
+        return ax.tripcolor(t, np.asarray(c), cmap="RdBu_r", norm=norm, shading=shading, rasterized=True)
 
     body, fin = d[d.part == "body"], d[d.part == "fin"]
     fig = plt.figure(figsize=(7.8, 5.4), layout="constrained")
@@ -602,15 +630,23 @@ def panel_method(f, out, pn):
     k = fin[np.abs(np.angle(np.exp(1j * (phi - np.radians(45))))) < np.radians(20)]
     side = k.ny * (-np.sin(np.radians(45))) + k.nz * np.cos(np.radians(45))
     rho = np.hypot(k.y, k.z)
-    for col, (sel, lab) in enumerate(((side > 0, "フィン（$+$ 側の面）"), (side <= 0, "フィン（$-$ 側の面）"))):
+    # |side| > 0.5 keeps the two side faces; the tip-cap panels (radial normal, side ~ 0) belong to neither.
+    for col, (sel, lab) in enumerate(((side > 0.5, "フィン（$+$ 側の面）"), (side < -0.5, "フィン（$-$ 側の面）"))):
         a = fig.add_subplot(gs[1, col])
-        tri(a, k.x[sel].values, rho[sel].values, k.cp[sel].values, 1e9)
+        x, r, c = k.x[sel].values, rho[sel].values, k.cp[sel].values
+        quads = fin_side_quads(x, r)
+        if quads is not None:
+            # one flat-coloured quad per panel (outline rebuilt from the centroid grid), no interpolation
+            a.add_collection(PolyCollection(quads, array=c, cmap="RdBu_r", norm=norm, edgecolors="face", linewidths=0.2, rasterized=True))
+            a.autoscale_view()
+        else:
+            tri(a, x, r, c, 1e9, shading="flat")
         a.set_xlabel("先端からの距離 $x$ [m]")
         a.set_ylabel("軸からの距離 [m]")
         a.text(0.03, 0.96, lab, transform=a.transAxes, va="top", color=INK, fontsize=9)
         a.set_aspect("equal", adjustable="datalim")
         a.grid(False)
-    cb = fig.colorbar(sc, ax=fig.axes, shrink=0.85, pad=0.02)
+    cb = fig.colorbar(sc, ax=fig.axes, shrink=0.85, pad=0.02, extend="both")
     cb.outline.set_visible(False)
     cb.set_label("圧力係数 $C_p$")
     f.save(fig, "panel_cp")

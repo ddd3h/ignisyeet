@@ -117,6 +117,28 @@ class PanelPlot(unittest.TestCase):
         self.assertAlmostEqual(np.degrees(self.draw([45, 135, -135, -45])) % 90, 45.0, places=3)
 
 
+class FinSideQuads(unittest.TestCase):
+    def grid(self):
+        """Corners of a swept 4 x 3 panel grid on a uniform (affine) lattice and the centroids in file order."""
+        i, j = np.meshgrid(np.arange(5), np.arange(4), indexing="ij")
+        v = np.stack([1.3 + 0.02 * i + 0.01 * j, 0.05 + 0.03 * j], axis=-1)
+        c = 0.25 * (v[:-1, :-1] + v[1:, :-1] + v[:-1, 1:] + v[1:, 1:])  # chord-major, root to tip
+        return v, c.reshape(-1, 2)
+
+    def test_uniform_grid_recovers_the_panel_corners(self):
+        v, c = self.grid()
+        q = plot.fin_side_quads(c[:, 0], c[:, 1])
+        self.assertEqual(q.shape, (12, 4, 2))
+        np.testing.assert_allclose(q[0], [v[0, 0], v[1, 0], v[1, 1], v[0, 1]], atol=1e-12)
+        np.testing.assert_allclose(q[-1], [v[3, 2], v[4, 2], v[4, 3], v[3, 3]], atol=1e-12)
+        np.testing.assert_allclose(q.mean(axis=1), c, atol=1e-12)
+
+    def test_unordered_centroids_are_not_a_grid(self):
+        _, c = self.grid()
+        c = c[np.random.default_rng(1).permutation(len(c))]
+        self.assertIsNone(plot.fin_side_quads(c[:, 0], c[:, 1]))
+
+
 class TrajectoryAltitude(unittest.TestCase):
     def frame(self):
         t = np.linspace(0, 10, 11)

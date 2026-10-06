@@ -495,6 +495,9 @@ impl Config {
         if self.aero.mach_step <= 0.0 || self.aero.alpha_step_deg <= 0.0 || self.aero.mach_max <= self.aero.mach_min {
             bail!("invalid aero grid");
         }
+        if self.dispersion.wind_speeds.is_empty() {
+            bail!("dispersion.wind_speeds must list at least one speed");
+        }
         if self.dispersion.directions == 0 {
             bail!("dispersion.directions must be at least 1");
         }
@@ -757,6 +760,12 @@ mod tests {
         let e = parse(&sample.replace("wind_speed = 1.0 ", "wind_speed = -1.0 ")).unwrap_err().to_string();
         assert!(e.contains("monte_carlo.wind_speed"), "{e}");
         assert!(sample_with("nozzle_exit_diameter = 0.03", "nozzle_exit_diameter = -0.03").unwrap_err().to_string().contains("motor.nozzle_exit_diameter"));
+    }
+
+    #[test]
+    fn rejects_an_empty_wind_speed_list() {
+        let e = sample_with("wind_speeds = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]", "wind_speeds = []").unwrap_err().to_string();
+        assert!(e.contains("dispersion.wind_speeds") && e.contains("at least one"), "{e}");
     }
 
     #[test]

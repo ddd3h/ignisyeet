@@ -70,6 +70,5 @@ jobs:
             exit 1
           fi
       - name: ShellCheck
-        # Advisory until the current warnings are cleaned up.
-        continue-on-error: true
+        # Blocking: the scripts are clean; a false positive gets a "# shellcheck disable=SCxxxx" with its reason.
         run: shellcheck install.sh scripts/*.sh

@@ -444,6 +444,8 @@ parse_args() {
 # Absolute path of $1 (which need not exist yet); "~" is expanded.
 abs_path() {
   local p="$1"
+  # The quoted "~" patterns match a literal tilde on purpose (the expansion is done here), so SC2088 does not apply.
+  # shellcheck disable=SC2088
   case "$p" in "~") p="$HOME" ;; "~/"*) p="$HOME/${p#"~/"}" ;; esac
   case "$p" in /*) printf '%s' "$p" ;; *) printf '%s/%s' "$PWD" "${p#./}" ;; esac
 }

@@ -766,7 +766,7 @@ show_plan() {
     create)
       [ "$CFD_NEED_MM" = 1 ] && p "install ${CYAN}micromamba $MICROMAMBA_VERSION${RESET} to $(tilde "$BIN_DIR")/micromamba"
       p "CFD: create conda-forge env ${CYAN}$CFD_ENV_NAME${RESET} with $CFD_PACKAGES ${GREY}(~3 GB)${RESET}"
-      p "CFD: pip install ${CYAN}manifold3d${RESET} into it ${GREY}(union of STL shells, surface = \"stl\")${RESET}"
+      p "CFD: pip install ${CYAN}manifold3d $MANIFOLD3D_VERSION${RESET} into it ${GREY}(union of STL shells, surface = \"stl\")${RESET}"
       note "SU2 is pinned to 8.3.0 on all platforms" ;;
     none) skip "CFD: not requested" ;;
   esac
@@ -945,7 +945,7 @@ install_cfd() {
         ok "reusing existing environment ${CYAN}$CFD_PREFIX${RESET} ${GREY}(su2 ${CFD_SU2_VER:-?})${RESET}"
         [ "$CFD_SU2_BAD" = 1 ] && warn "su2 $CFD_SU2_VER needs AVX-512; recreate with: $CONDA_MGR create -y -n $CFD_ENV_NAME -c conda-forge --override-channels $CFD_PACKAGES"
         if [ -x "$CFD_PREFIX/bin/python" ] && ! "$CFD_PREFIX/bin/python" -c 'import manifold3d' >/dev/null 2>&1; then
-          note "manifold3d is not installed in this environment (only needed for surface = \"stl\"): $CFD_PREFIX/bin/python -m pip install manifold3d"
+          note "manifold3d is not installed in this environment (only needed for surface = \"stl\"): $CFD_PREFIX/bin/python -m pip install manifold3d==$MANIFOLD3D_VERSION"
         fi
       else
         ok "reusing SU2/gmsh/mpirun found in PATH"

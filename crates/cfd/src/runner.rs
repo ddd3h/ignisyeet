@@ -42,7 +42,6 @@ use crate::tools::{self, ToolReport};
 use crate::CfdStage;
 use aero::atmosphere::Atmosphere;
 use anyhow::{anyhow, bail, Context, Result};
-use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -78,50 +77,100 @@ pub struct CaseOutcome {
 
 static CANCEL: AtomicBool = AtomicBool::new(false);
 
-extern "C" fn on_signal(_: libc::c_int) {
-    CANCEL.store(true, Ordering::SeqCst);
-}
+/// Unix process-group and signal handling. The CFD mode needs a Unix-like system; elsewhere `run_all` fails early.
+#[cfg(unix)]
+mod sys {
+    use super::CANCEL;
+    use std::os::unix::process::CommandExt;
+    use std::process::{Child, Command};
+    use std::sync::atomic::Ordering;
 
-/// Installs the Ctrl-C / SIGTERM handlers for the duration of a run.
-struct SignalGuard;
+    pub const SIGTERM: i32 = libc::SIGTERM;
+    pub const SIGKILL: i32 = libc::SIGKILL;
 
-impl SignalGuard {
-    fn new() -> Self {
-        CANCEL.store(false, Ordering::SeqCst);
-        unsafe {
-            libc::signal(libc::SIGINT, on_signal as *const () as usize);
-            libc::signal(libc::SIGTERM, on_signal as *const () as usize);
+    extern "C" fn on_signal(_: libc::c_int) {
+        CANCEL.store(true, Ordering::SeqCst);
+    }
+
+    /// Installs the Ctrl-C / SIGTERM handlers for the duration of a run.
+    pub struct SignalGuard;
+
+    impl SignalGuard {
+        pub fn new() -> Self {
+            CANCEL.store(false, Ordering::SeqCst);
+            unsafe {
+                libc::signal(libc::SIGINT, on_signal as *const () as usize);
+                libc::signal(libc::SIGTERM, on_signal as *const () as usize);
+            }
+            SignalGuard
         }
-        SignalGuard
+    }
+
+    impl Drop for SignalGuard {
+        fn drop(&mut self) {
+            unsafe {
+                libc::signal(libc::SIGINT, libc::SIG_DFL);
+                libc::signal(libc::SIGTERM, libc::SIG_DFL);
+            }
+        }
+    }
+
+    pub fn own_group(c: &mut Command) -> &mut Command {
+        c.process_group(0)
+    }
+
+    pub fn kill_group(child: &Child, sig: i32) {
+        unsafe {
+            libc::kill(-(child.id() as i32), sig);
+        }
     }
 }
 
-impl Drop for SignalGuard {
-    fn drop(&mut self) {
-        unsafe {
-            libc::signal(libc::SIGINT, libc::SIG_DFL);
-            libc::signal(libc::SIGTERM, libc::SIG_DFL);
+#[cfg(not(unix))]
+mod sys {
+    use super::CANCEL;
+    use std::process::{Child, Command};
+    use std::sync::atomic::Ordering;
+
+    pub const SIGTERM: i32 = 15;
+    pub const SIGKILL: i32 = 9;
+
+    pub struct SignalGuard;
+
+    impl SignalGuard {
+        pub fn new() -> Self {
+            CANCEL.store(false, Ordering::SeqCst);
+            SignalGuard
         }
     }
+
+    pub fn own_group(c: &mut Command) -> &mut Command {
+        c
+    }
+
+    pub fn kill_group(child: &Child, _sig: i32) {
+        // Not reachable in practice: `run_all` refuses to start. Best effort only.
+        let _ = child.id();
+    }
 }
+
+use sys::SignalGuard;
 
 /// A child process group that is killed when dropped.
 struct Group(Child);
 
 impl Group {
-    fn kill(&mut self, sig: libc::c_int) {
-        unsafe {
-            libc::kill(-(self.0.id() as i32), sig);
-        }
+    fn kill(&mut self, sig: i32) {
+        sys::kill_group(&self.0, sig);
     }
 }
 
 impl Drop for Group {
     fn drop(&mut self) {
         if matches!(self.0.try_wait(), Ok(None)) {
-            self.kill(libc::SIGTERM);
+            self.kill(sys::SIGTERM);
             std::thread::sleep(Duration::from_millis(200));
-            self.kill(libc::SIGKILL);
+            self.kill(sys::SIGKILL);
             let _ = self.0.wait();
         }
     }
@@ -191,7 +240,8 @@ fn command(setup: &RunSetup, dir: &Path) -> Result<std::process::Command> {
     // Single-node runs: shared-memory transport only (the TCP/UCX components probe network interfaces
     // and fail or spam errors on machines with virtual / unreachable interfaces).
     c.env("OMPI_MCA_btl", "self,sm").env("OMPI_MCA_osc", "^ucx").env("OMPI_MCA_pml", "ob1");
-    c.current_dir(dir).env("OMP_NUM_THREADS", "1").stdin(Stdio::null()).stdout(log.try_clone()?).stderr(log).process_group(0);
+    c.current_dir(dir).env("OMP_NUM_THREADS", "1").stdin(Stdio::null()).stdout(log.try_clone()?).stderr(log);
+    sys::own_group(&mut c);
     Ok(c)
 }
 
@@ -226,9 +276,9 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, restart: Opt
     let mut timed_out = false;
     let status = loop {
         if CANCEL.load(Ordering::SeqCst) {
-            child.kill(libc::SIGTERM);
+            child.kill(sys::SIGTERM);
             std::thread::sleep(Duration::from_millis(300));
-            child.kill(libc::SIGKILL);
+            child.kill(sys::SIGKILL);
             let _ = child.0.wait();
             bail!("interrupted");
         }
@@ -236,9 +286,9 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, restart: Opt
             break Some(st);
         }
         if limit.is_some_and(|l| t0.elapsed() > l) {
-            child.kill(libc::SIGTERM);
+            child.kill(sys::SIGTERM);
             std::thread::sleep(Duration::from_millis(500));
-            child.kill(libc::SIGKILL);
+            child.kill(sys::SIGKILL);
             let _ = child.0.wait();
             timed_out = true;
             break None;
@@ -256,7 +306,7 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, restart: Opt
                     && h.residual_drop_from_peak().is_some_and(|d| d >= min_drop)
                     && h.coefficients_stable(setup.opt.stable_window, kind)
                 {
-                    child.kill(libc::SIGTERM);
+                    child.kill(sys::SIGTERM);
                     let t = Instant::now();
                     while t.elapsed() < Duration::from_secs(30) && child.0.try_wait()?.is_none() {
                         std::thread::sleep(Duration::from_millis(100));
@@ -334,6 +384,9 @@ enum St {
 /// Runs the whole case matrix (see the module documentation). Returns the outcomes in case order;
 /// failed cases are outcomes with `result = None`. Errors only on interruption or I/O problems.
 pub fn run_all(setup: &RunSetup, progress: &(dyn Fn(CfdStage) + Sync)) -> Result<Vec<CaseOutcome>> {
+    if !cfg!(unix) {
+        bail!("the CFD mode needs a Unix-like system (Linux, macOS or WSL)");
+    }
     let cases = case_list(setup.opt);
     let n = cases.len();
     let _sig = SignalGuard::new();

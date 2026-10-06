@@ -101,9 +101,15 @@ pub fn resolve_prefix(opt: &CfdOptions) -> Option<PathBuf> {
     std::env::var("IGNISYEET_CFD_PREFIX").ok().filter(|s| !s.trim().is_empty()).map(|s| expand(s.trim()))
 }
 
+#[cfg(unix)]
 fn is_exec(p: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
     p.metadata().map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0).unwrap_or(false)
+}
+
+#[cfg(not(unix))]
+fn is_exec(p: &Path) -> bool {
+    p.metadata().map(|m| m.is_file()).unwrap_or(false)
 }
 
 /// `which`-like lookup: a name containing `/` is checked directly, otherwise `<prefix>/bin` and `PATH`.

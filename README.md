@@ -55,7 +55,7 @@ At startup, the contents of the configuration file are shown grouped by item, so
 
 ![Startup screen of sim (banner and configuration panel)](doc/images/readme/screen_sim_start.png)
 
-When the flight computation finishes, a result panel and the list of output files are shown. The static margin carries a verdict mark (green at 1.5 cal or more, `UNSTABLE` below 1.0 cal).
+When the flight computation finishes, a result panel and the list of output files are shown. The static margin carries a verdict mark (green at 1.5 cal or more, a warning below 1.5 cal, `low static margin` below 1.0 cal, `UNSTABLE` below 0 cal).
 
 ![Completion screen of sim (result panel and output files)](doc/images/readme/screen_sim_result.png)
 
@@ -226,7 +226,7 @@ To plot with `pip` instead of uv, create a virtual environment first.
 
 ```sh
 python3 -m venv .venv && . .venv/bin/activate
-pip install -r python/requirements.txt
+pip install -r python/requirements.txt -c scripts/plot-constraints.txt
 python python/plot.py all examples/out
 # via make: make plot PLOT="python python/plot.py"
 ```

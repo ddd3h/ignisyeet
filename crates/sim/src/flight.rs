@@ -1217,8 +1217,12 @@ impl<'a> Simulation<'a> {
                 // Full touchdown state: Hermite position, the rest linear between the last two states.
                 let st = State { pos: p, ..lerp_state(&prev, &s, f) };
                 sum.landing_speed = st.vel.norm();
+                // The touchdown state counts for the maxima as every step start does.
+                let (_, aux) = self.deriv(&cx, sum.landing_time, &st, phase);
+                sum.max_speed = sum.max_speed.max(sum.landing_speed);
+                sum.max_mach = sum.max_mach.max(aux.mach);
+                sum.max_dyn_pressure = sum.max_dyn_pressure.max(aux.qdyn);
                 if want_samples {
-                    let (_, aux) = self.deriv(&cx, sum.landing_time, &st, phase);
                     let mut last = self.sample(&cx, sum.landing_time, &st, phase, &aux);
                     if frame.is_flat() {
                         last.up = 0.0;
@@ -2472,6 +2476,22 @@ mod tests {
         let s = sim.run(Descent::Parachute, false).unwrap().summary;
         assert!((s.drogue_deploy_time.unwrap() - (t_apo + sim.recovery.delay)).abs() < 1e-9);
         assert!(s.landing_time > s.drogue_deploy_time.unwrap());
+    }
+
+    #[test]
+    fn maxima_include_the_touchdown_state() {
+        // Vacuum: the fall ends faster than the burnout speed, the fastest state is the touchdown.
+        let (table, motor) = vacuum_parts();
+        for integrator in [IntegratorKind::Rk4, IntegratorKind::Rk45] {
+            let mut sim = vacuum_const_g(&table, &motor, 90.0, 0.5);
+            sim.settings.integrator = integrator;
+            sim.settings.output_interval = 0.5;
+            let s = sim.run(Descent::Ballistic, false).unwrap().summary;
+            let a = sim.atmosphere.at(sim.launch.altitude).sound_speed;
+            let q = 0.5 * sim.atmosphere.at(sim.launch.altitude).density * s.landing_speed * s.landing_speed;
+            assert!(s.max_speed >= s.landing_speed && s.max_speed - s.landing_speed < 1e-9, "{integrator:?}: {} vs {}", s.max_speed, s.landing_speed);
+            assert!((s.max_mach - s.landing_speed / a).abs() < 1e-9 && (s.max_dyn_pressure - q).abs() < 1e-6 * q, "{s:?}");
+        }
     }
 
     #[test]

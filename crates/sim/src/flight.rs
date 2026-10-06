@@ -116,6 +116,37 @@ pub struct Launch {
     pub roll_deg: f64,
 }
 
+impl Launch {
+    /// Rail direction in launch-site ENU (x east, y north, z up).
+    pub fn rail_dir_enu(&self) -> Vec3 {
+        let (se, ce) = self.elevation_deg.to_radians().sin_cos();
+        let (sa, ca) = self.azimuth_deg.to_radians().sin_cos();
+        Vec3::new(ce * sa, ce * ca, se)
+    }
+
+    /// Body axes (x_b, y_b, z_b) on the rail in launch-site ENU.
+    pub fn body_axes_enu(&self) -> [Vec3; 3] {
+        self.body_axes(|v| v)
+    }
+
+    /// Body axes on the rail, built in the frame that `to_frame` maps launch-site ENU vectors
+    /// into: x_b along the rail, y_b = (cos az, -sin az, 0) (horizontal, to the right of the
+    /// azimuth) rolled by `roll_deg` about x_b, z_b = x_b cross y_b.
+    fn body_axes(&self, to_frame: impl Fn(Vec3) -> Vec3) -> [Vec3; 3] {
+        let xb = to_frame(self.rail_dir_enu());
+        let az = self.azimuth_deg.to_radians();
+        let yb = to_frame(Vec3::new(az.cos(), -az.sin(), 0.0));
+        let zb = xb.cross(yb);
+        if self.roll_deg == 0.0 {
+            return [xb, yb, zb];
+        }
+        // Roll about the rail axis: y' = cos y + sin z, z' = x cross y'.
+        let (sr, cr) = self.roll_deg.to_radians().sin_cos();
+        let yr = yb * cr + zb * sr;
+        [xb, yr, xb.cross(yr)]
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Recovery {
@@ -413,26 +444,10 @@ struct Ctx {
 }
 
 impl<'a> Simulation<'a> {
-    /// Rail direction in launch-site ENU (x east, y north, z up).
-    fn rail_dir_enu(&self) -> Vec3 {
-        let (se, ce) = self.launch.elevation_deg.to_radians().sin_cos();
-        let (sa, ca) = self.launch.azimuth_deg.to_radians().sin_cos();
-        Vec3::new(ce * sa, ce * ca, se)
-    }
-
     /// Body-to-frame attitude on the rail.
     fn initial_attitude(&self, fr: &Frame) -> Quat {
-        let xb = fr.from_launch_enu(self.rail_dir_enu());
-        let az = self.launch.azimuth_deg.to_radians();
-        let yb = fr.from_launch_enu(Vec3::new(az.cos(), -az.sin(), 0.0));
-        let zb = xb.cross(yb);
-        if self.launch.roll_deg == 0.0 {
-            return Quat::from_mat(&Mat3::from_cols(xb, yb, zb));
-        }
-        // Roll about the rail axis: y' = cos y + sin z, z' = x cross y'.
-        let (sr, cr) = self.launch.roll_deg.to_radians().sin_cos();
-        let yr = yb * cr + zb * sr;
-        Quat::from_mat(&Mat3::from_cols(xb, yr, xb.cross(yr)))
+        let [xb, yb, zb] = self.launch.body_axes(|v| fr.from_launch_enu(v));
+        Quat::from_mat(&Mat3::from_cols(xb, yb, zb))
     }
 
     /// Table lookup with the dispersion multipliers applied.
@@ -734,7 +749,7 @@ impl<'a> Simulation<'a> {
             bail!("sim.rtol, sim.atol and sim.output_interval must be positive for the adaptive integrators (rk45, dop853)");
         }
         let frame = Frame::new(&self.earth, &self.launch);
-        let cx = Ctx { frame, rail: frame.from_launch_enu(self.rail_dir_enu()), cd_s: Default::default(), segment: Default::default() };
+        let cx = Ctx { frame, rail: frame.from_launch_enu(self.launch.rail_dir_enu()), cd_s: Default::default(), segment: Default::default() };
         let mut s = State { pos: frame.origin(), vel: Vec3::ZERO, q: self.initial_attitude(&frame), w: Vec3::ZERO };
         cx.cd_s.set(self.recovery.cd_s);
         let main = if self.recovery.enabled { self.recovery.main() } else { None };
@@ -1140,7 +1155,7 @@ mod tests {
         let frame = Frame::new(&sim.earth, &sim.launch);
         let cx = Ctx {
             frame,
-            rail: frame.from_launch_enu(sim.rail_dir_enu()),
+            rail: frame.from_launch_enu(sim.launch.rail_dir_enu()),
             cd_s: Default::default(),
             segment: std::cell::Cell::new(sim.motor.segment_after(10.0)),
         };

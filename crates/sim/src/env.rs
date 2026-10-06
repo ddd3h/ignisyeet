@@ -180,8 +180,11 @@ impl Wind {
         if !is_pos(c.ref_height) {
             bail!("wind.ref_height must be positive");
         }
-        if c.speed.is_nan() || c.speed < 0.0 {
-            bail!("wind.speed must not be negative");
+        if !(c.speed.is_finite() && c.speed >= 0.0) {
+            bail!("wind.speed must be a finite number >= 0, found {}", c.speed);
+        }
+        if !c.direction_deg.is_finite() {
+            bail!("wind.direction_deg must be a finite number, found {}", c.direction_deg);
         }
         if matches!(c.model, WindModel::Power | WindModel::Log) && !(is_pos(c.ground_blend_height) && c.ground_blend_height < c.ref_height) {
             bail!("wind.ground_blend_height must be positive and smaller than wind.ref_height");
@@ -338,6 +341,9 @@ impl Wind {
     /// `(W + delta) / W` clamped to >= 0. Other models only change `speed` and `direction_deg`
     /// (the values at `ref_height`).
     pub fn with_speed_direction(&self, speed: f64, direction_deg: f64) -> Result<Self> {
+        if !(speed.is_finite() && direction_deg.is_finite()) {
+            bail!("wind speed and direction must be finite numbers, found {speed} m/s from {direction_deg} deg");
+        }
         self.check_scalable()?;
         let mut w = self.clone();
         if self.model == WindModel::Profile {
@@ -650,6 +656,25 @@ mod tests {
         assert!((k.at(2000.0).x - 4.0).abs() < 1e-12 && k.at(0.0).y.abs() < 1e-12);
         let k2 = k.with_speed_direction(3.0, 0.0).unwrap();
         assert!((k2.at(10.0).y + 3.0).abs() < 1e-12 && (k2.speed, k2.direction_deg) == (3.0, 0.0));
+    }
+
+    #[test]
+    fn non_finite_wind_speed_and_direction_are_rejected() {
+        for (speed, dir) in [(f64::INFINITY, 0.0), (f64::NAN, 0.0), (-1.0, 0.0)] {
+            let e = Wind::from_config(&WindConfig { speed, direction_deg: dir, ..cfg(WindModel::Power) }).unwrap_err().to_string();
+            assert!(e.starts_with("wind.speed must be a finite number >= 0, found"), "{e}");
+        }
+        for dir in [f64::NAN, f64::INFINITY] {
+            let e = Wind::from_config(&WindConfig { direction_deg: dir, ..cfg(WindModel::Constant) }).unwrap_err().to_string();
+            assert!(e.starts_with("wind.direction_deg must be a finite number, found"), "{e}");
+        }
+        let w = Wind::from_config(&cfg(WindModel::Power)).unwrap();
+        for (speed, dir) in [(f64::NAN, 0.0), (f64::INFINITY, 0.0), (3.0, f64::NAN), (3.0, f64::NEG_INFINITY)] {
+            let e = w.with_speed_direction(speed, dir).unwrap_err().to_string();
+            assert!(e.starts_with("wind speed and direction must be finite numbers"), "{e}");
+        }
+        let p = profile_wind("altitude_m,speed,direction_deg\n0,2,90\n1000,6,120\n", cfg(WindModel::Profile));
+        assert!(p.with_speed_direction(f64::NAN, 0.0).is_err());
     }
 
     #[test]

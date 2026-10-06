@@ -106,38 +106,91 @@ pub fn plate_cd(m: f64) -> f64 {
     }
 }
 
-/// Monotone C1 transition from the attached-flow normal force to the crossflow value.
+/// Supersonic fin centre of pressure as a fraction of the mean aerodynamic chord, from `ab = A beta`.
 ///
-/// `t` is the angle beyond the validity angle, `t_end` the span up to 90°, `cn1` and `d0` the value and
-/// slope at the validity angle, `cn90` the crossflow value at 90°. Returns
-/// `cn1 + (cn90 - cn1) (1 - e^{-k tau}) / (1 - e^{-k t_end})` with `tau = t_end sin(pi t / (2 t_end))`,
-/// so that the value and slope match at `t = 0`, the value is `cn90` and the slope zero at `t = t_end`, and
-/// the curve is monotone between them when `cn90 > cn1` (any `k`, positive or negative, is monotone).
-/// When the attached-flow value already exceeds the crossflow value (large-aspect-ratio fins, which
-/// stall), a cubic Hermite with zero end slope gives a bounded overshoot that relaxes to `cn90`.
+/// For `A beta >= 1.2` the expression of Fleeman (Tactical Missile Design, 2001), used by Niskanen
+/// (2009) for M >= 2: `(A beta - 0.67) / (2 A beta - 1)`, which rises from 0.38 at 1.2 to 0.5 as
+/// `A beta -> inf`. It has a pole at `A beta = 0.5` and falls to the quarter chord at `A beta = 0.84`,
+/// so it is not used for small `A beta`. There the low-aspect-ratio (slender-wing) limit applies: the
+/// loading of a low-aspect-ratio wing does not depend on Mach number (R. T. Jones, "Properties of
+/// low-aspect-ratio pointed wings at speeds below and above the speed of sound", NACA Report 835,
+/// 1946), so the centre of pressure keeps its subsonic position, the quarter chord, for
+/// `A beta <= 0.84`. Between 0.84 and 1.2 a monotone C1 cubic Hermite in `A beta` joins the two
+/// (zero slope at 0.84, the slope of the expression at 1.2). The result is continuous in Mach and in
+/// the fin geometry and lies in [0.25, 0.5].
+pub fn supersonic_fin_cp_fraction(ab: f64) -> f64 {
+    const LO: f64 = 0.84;
+    const HI: f64 = 1.2;
+    let fleeman = |x: f64| (x - 0.67) / (2.0 * x - 1.0);
+    if ab <= LO {
+        0.25
+    } else if ab >= HI {
+        fleeman(ab).min(0.5)
+    } else {
+        let d_hi = 0.34 / (2.0 * HI - 1.0).powi(2);
+        hermite(ab, LO, HI, 0.25, fleeman(HI), 0.0, d_hi)
+    }
+}
+
+/// Bounds of the shape parameter `u = k t_end` of [`crossflow_blend`]. Within them the transition is the
+/// pure exponential saturation; beyond them (the attached-flow value close to the crossflow value, or
+/// an attached-flow slope near zero) `u` is held and the remaining slope goes into a bump that vanishes
+/// at both ends. The sample rocket stays inside (u = 3.7 .. 7.4 over Mach 0 .. 3).
+const BLEND_U_MIN: f64 = -20.0;
+const BLEND_U_MAX: f64 = 20.0;
+
+/// C1 transition from the attached-flow normal force to the crossflow value, continuous in its parameters.
+///
+/// `t` is the angle beyond the validity angle, `t_end = T` the span up to 90°, `cn1` and `d0` the value
+/// and slope at the validity angle, `cn90` the crossflow value at 90°, `delta = cn90 - cn1`. With
+/// `tau = T sin(pi t / (2 T))`, `s = t / T` and the bump `b(t) = t (1 - s)^2` (b = 0 at both ends,
+/// b'(0) = 1, b'(T) = 0) it returns
+///
+/// `cn1 + delta (1 - e^{-u tau / T}) / (1 - e^{-u}) + (d0 - d_e) b(t)`,  `d_e = delta (pi / 2) g(u) / T`,
+///
+/// with `g(u) = u / (1 - e^{-u})` the slope factor of the exponential term at `t = 0`. For `delta > 0`
+/// `u` solves `g(u) = d0 T / (delta pi / 2)`, so that the exponential alone carries the slope `d0` and
+/// the bump vanishes; the curve is then monotone (any `u`, positive or negative). `u` is held in
+/// [`BLEND_U_MIN`, `BLEND_U_MAX`], and the slope the exponential cannot carry goes into the bump. For
+/// `delta <= 0` (the attached-flow value at or above the crossflow value: large-aspect-ratio fins, which
+/// stall) the exponential term is replaced by `delta (3 s^2 - 2 s^3)`, which makes the whole expression
+/// the cubic Hermite with zero end slope: a bounded overshoot that relaxes to `cn90`.
+///
+/// Value and slope match at `t = 0`, the value is `cn90` and the slope zero at `t = T`. Both branches
+/// tend to `cn1 + d0 b(t)` as `delta -> 0` (the exponential term and `d_e` are bounded multiples of
+/// `delta` because `u` is bounded), so the result is continuous in `cn1`, `cn90` and `d0`.
 fn crossflow_blend(t: f64, t_end: f64, cn1: f64, d0: f64, cn90: f64) -> f64 {
     let t = t.clamp(0.0, t_end);
+    let s = t / t_end;
+    let bump = t * (1.0 - s) * (1.0 - s);
     let delta = cn90 - cn1;
-    if delta <= 1e-9 * cn90.abs().max(1e-12) || d0 <= 0.0 {
-        return hermite(t, 0.0, t_end, cn1, cn90, d0, 0.0);
+    if delta <= 0.0 {
+        return cn1 + delta * s * s * (3.0 - 2.0 * s) + d0 * bump;
     }
-    // d/dt at t = 0: delta k (pi/2) / (1 - e^{-k t_end}) = d0, i.e. g(u) = u / (1 - e^{-u}) = r with u = k t_end.
+    // d/dt at t = 0 of the exponential term: delta (pi/2) g(u) / T.
     let r = d0 * t_end / (delta * PI / 2.0);
     let g = |u: f64| if u.abs() < 1e-12 { 1.0 } else { u / -(-u).exp_m1() };
     // g increases from 0 (u -> -inf) through 1 (u = 0) to ~u (u -> +inf).
-    let (mut lo, mut hi) = (-60.0f64, r.max(1.0) + 60.0);
-    for _ in 0..200 {
-        let mid = 0.5 * (lo + hi);
-        if g(mid) < r {
-            lo = mid;
-        } else {
-            hi = mid;
+    let u = if r <= g(BLEND_U_MIN) {
+        BLEND_U_MIN
+    } else if r >= g(BLEND_U_MAX) {
+        BLEND_U_MAX
+    } else {
+        let (mut lo, mut hi) = (BLEND_U_MIN, BLEND_U_MAX);
+        for _ in 0..200 {
+            let mid = 0.5 * (lo + hi);
+            if g(mid) < r {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
         }
-    }
-    let u = 0.5 * (lo + hi);
+        0.5 * (lo + hi)
+    };
+    let d_e = delta * (PI / 2.0) * g(u) / t_end;
     let tau = t_end * (PI * t / (2.0 * t_end)).sin();
     let frac = if u.abs() < 1e-12 { tau / t_end } else { (-u * tau / t_end).exp_m1() / (-u).exp_m1() };
-    cn1 + delta * frac
+    cn1 + delta * frac + (d0 - d_e) * bump
 }
 
 impl AeroModel {
@@ -218,6 +271,8 @@ impl AeroModel {
     ///
     /// with `t = alpha - alpha_1`, `T = 90° - alpha_1`; `k` is chosen so that the slope at `alpha_1` equals the
     /// attached-flow slope there, and `tau` makes the slope zero at 90° (flat plate symmetric about 90°).
+    /// When `CN_1` approaches or exceeds `CN_90` the curve turns continuously into a cubic Hermite with
+    /// a bounded overshoot (see [`crossflow_blend`]), so the force stays continuous in Mach and geometry.
     /// The resulting shape — a knee above the validity angle levelling off to the crossflow value — follows
     /// the measured normal force of low-aspect-ratio flat plates, which per unit plate area reaches about
     /// 1.0 at 30° and 1.1–1.2 between 45° and 90° (Hoerner, Fluid-Dynamic Drag, 1965, ch. 3; Fluid-Dynamic
@@ -283,13 +338,14 @@ impl AeroModel {
     }
 
     /// Fin centre of pressure (distance aft of the nose tip) at Mach `m`.
+    ///
+    /// Subsonic (M <= 0.5): the quarter chord of the mean aerodynamic chord (Barrowman). Supersonic
+    /// (M >= 2): the fraction [`supersonic_fin_cp_fraction`] of the MAC from `A beta`, `A` the aspect
+    /// ratio of an opposing fin pair `2 s^2 / A_fin`. In between a C1 Hermite in Mach (Niskanen 2009).
     pub fn fin_xcp(&self, m: f64) -> f64 {
         let Some(f) = &self.geom.fins else { return 0.0 };
         let ar = 2.0 * f.span * f.span / f.area().max(1e-12);
-        let sup = |m: f64| {
-            let ab = ar * beta(m);
-            ((ab - 0.67) / (2.0 * ab - 1.0)).clamp(0.25, 0.5)
-        };
+        let sup = |m: f64| supersonic_fin_cp_fraction(ar * beta(m));
         let frac = if m <= 0.5 {
             0.25
         } else if m >= 2.0 {
@@ -308,6 +364,11 @@ impl AeroModel {
     /// plate normal to the flow is symmetric about it. For a trapezoidal fin the centroid lies at half the
     /// mean aerodynamic chord. Above 90° (reverse flow, trailing edge leading) the fraction is mirrored to
     /// `1 - frac(180° - a)`, reaching three quarters of the mean aerodynamic chord at 180° in subsonic flow.
+    ///
+    /// The reverse-flow branch only fills table rows above 90° (`aero.alpha_max_deg > 90`). The flight
+    /// never reads them: the axisymmetric flight model, the six-component lookup and the general-table
+    /// expansion fold the total angle to `min(a, 180° - a)`, so tail-first flight uses the nose-first
+    /// coefficients (centre of pressure included) mirrored about 90°.
     pub fn fin_xcp_at(&self, m: f64, a: f64) -> f64 {
         let x0 = self.fin_xcp(m);
         let Some(f) = &self.geom.fins else { return x0 };
@@ -703,7 +764,7 @@ mod tests {
     #[test]
     fn crossflow_blend_is_monotone_and_matches_its_ends() {
         let t_end = 75f64.to_radians();
-        for &(cn1, d0, cn90) in &[(2.5, 9.7, 4.6), (3.7, 25.0, 6.5), (1.0, 0.5, 6.0), (1.0, 1e-3, 6.0), (1.0, 200.0, 1.01)] {
+        for &(cn1, d0, cn90) in &[(2.5, 9.7, 4.6), (3.7, 25.0, 6.5), (1.0, 0.5, 6.0), (1.0, 1e-3, 6.0), (1.0, 10.0, 1.5)] {
             assert!((crossflow_blend(0.0, t_end, cn1, d0, cn90) - cn1).abs() < 1e-12);
             assert!((crossflow_blend(t_end, t_end, cn1, d0, cn90) - cn90).abs() < 1e-9);
             let h = 1e-7;
@@ -716,10 +777,34 @@ mod tests {
                 prev = v;
             }
         }
-        // Attached value above the crossflow value: bounded relaxation to cn90.
-        let v: Vec<f64> = (0..=100).map(|k| crossflow_blend(t_end * k as f64 / 100.0, t_end, 6.0, 10.0, 4.0)).collect();
-        assert!((v[100] - 4.0).abs() < 1e-12);
-        assert!(v.iter().all(|x| x.is_finite() && *x < 6.0 + 10.0 * t_end));
+        // Attached value above the crossflow value, or just below it with a steep attached slope
+        // (beyond the exponential's range): bounded relaxation to cn90, slope matched at the start.
+        for &(cn1, d0, cn90) in &[(6.0, 10.0, 4.0), (1.0, 200.0, 1.01), (1.0, 200.0, 1.0)] {
+            let v: Vec<f64> = (0..=100).map(|k| crossflow_blend(t_end * k as f64 / 100.0, t_end, cn1, d0, cn90)).collect();
+            assert!((v[100] - cn90).abs() < 1e-12);
+            // Bounded by the Hermite bump: cn1 + |delta| + d0 * max b = cn1 + |delta| + d0 * 4 T / 27.
+            assert!(v.iter().all(|x| x.is_finite() && *x <= cn1.max(cn90) + d0 * 4.0 * t_end / 27.0 + 1e-9), "({cn1}, {d0}, {cn90})");
+            let h = 1e-7;
+            let s0 = (crossflow_blend(h, t_end, cn1, d0, cn90) - cn1) / h;
+            assert!((s0 - d0).abs() < 1e-4 * d0, "slope {s0} vs {d0}");
+        }
+    }
+
+    #[test]
+    fn sample_rocket_stays_in_the_exponential_regime_of_the_crossflow_blend() {
+        // The sample's fin force beyond the validity angle is the pure exponential saturation (no bump).
+        let (m, _) = model();
+        let f = m.geom.fins.clone().unwrap();
+        let g = |u: f64| u / -(-u).exp_m1();
+        let t_end = PI / 2.0 - FIN_ALPHA_LINEAR;
+        for i in 0..=150 {
+            let mach = 0.02 * i as f64;
+            let cn1 = m.fin_cn_attached(mach, FIN_ALPHA_LINEAR);
+            let d0 = (cn1 - m.fin_cn_attached(mach, FIN_ALPHA_LINEAR - 1e-5)) / 1e-5;
+            let cn90 = AeroModel::fin_count_factor(f.count) * plate_cd(mach) * f.area() / m.geom.ref_area;
+            let r = d0 * t_end / ((cn90 - cn1) * PI / 2.0);
+            assert!(cn90 > cn1 && r > g(BLEND_U_MIN) && r < g(BLEND_U_MAX), "M={mach}: r = {r}");
+        }
     }
 
     #[test]
@@ -750,5 +835,115 @@ mod tests {
         // Continuous through the transonic blend.
         let (a, b) = (m4.roll_terms(0.899).1, m4.roll_terms(0.901).1);
         assert!((a - b).abs() < 1e-2 * a.abs());
+    }
+
+    /// Sample body with rectangular fins of span `span` and chord `chord` on a body of radius 0.05 m.
+    fn rect_fins(span: f64, chord: f64) -> AeroModel {
+        let mut g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
+        let f = g.fins.as_mut().unwrap();
+        (f.span, f.root_chord, f.tip_chord, f.sweep, f.body_radius) = (span, chord, chord, 0.0, 0.05);
+        AeroModel::new(g, AeroOptions::default())
+    }
+
+    #[test]
+    fn large_alpha_fin_force_is_continuous_where_the_attached_value_meets_the_crossflow_value() {
+        // Rectangular fins (span 0.15 m, chord 0.10 m, body radius 0.05 m): the attached-flow value
+        // at the validity angle crosses the crossflow value near Mach 0.59.
+        let m = rect_fins(0.15, 0.10);
+        let (a1, h) = (FIN_ALPHA_LINEAR, 1e-6);
+        let f = m.geom.fins.clone().unwrap();
+        let cn90 = |mach: f64| AeroModel::fin_count_factor(f.count) * plate_cd(mach) * f.area() / m.geom.ref_area;
+        let gap = |mach: f64| cn90(mach) - m.fin_cn_attached(mach, a1);
+        let (mut lo, mut hi) = (0.3, 0.9);
+        assert!(gap(lo) * gap(hi) < 0.0, "no crossover in [{lo}, {hi}]: {} {}", gap(lo), gap(hi));
+        for _ in 0..200 {
+            let mid = 0.5 * (lo + hi);
+            if gap(lo) * gap(mid) <= 0.0 {
+                hi = mid;
+            } else {
+                lo = mid;
+            }
+        }
+        let mc = 0.5 * (lo + hi);
+        assert!((mc - 0.590458).abs() < 1e-3, "crossover at Mach {mc}");
+        for deg in [20.0f64, 30.0, 40.0, 60.0, 80.0] {
+            let a = deg.to_radians();
+            let (l, r) = (m.fin_cn(mc - h, a), m.fin_cn(mc + h, a));
+            assert!((r - l).abs() < 1e-3 * l.abs(), "alpha {deg} deg: fin CN jumps {l} -> {r} at Mach {mc}");
+        }
+        // Mach sweep through the crossover: no jump at any angle.
+        for deg in [16.0f64, 25.0, 40.0, 55.0, 75.0, 89.0] {
+            let a = deg.to_radians();
+            let mut mach = 0.3;
+            let mut prev = m.fin_cn(mach, a);
+            while mach < 0.9 {
+                mach += 1e-4;
+                let cn = m.fin_cn(mach, a);
+                assert!((cn - prev).abs() < 2e-3 * prev.abs(), "alpha {deg} deg: fin CN jump at Mach {mach}: {prev} -> {cn}");
+                prev = cn;
+            }
+        }
+    }
+
+    #[test]
+    fn crossflow_blend_is_continuous_in_its_parameters() {
+        let t_end = 75f64.to_radians();
+        // Through cn90 = cn1 (the attached value meeting the crossflow value) and through d0 = 0.
+        for &(cn1, d0) in &[(2.0, 5.0), (2.0, 0.3), (1.0, 40.0)] {
+            for k in 0..=50 {
+                let t = t_end * k as f64 / 50.0;
+                let (l, r) = (crossflow_blend(t, t_end, cn1, d0, cn1 - 1e-9), crossflow_blend(t, t_end, cn1, d0, cn1 + 1e-9));
+                assert!((l - r).abs() < 1e-6, "({cn1}, {d0}) t = {t}: {l} vs {r}");
+            }
+        }
+        for k in 0..=50 {
+            let t = t_end * k as f64 / 50.0;
+            let (l, r) = (crossflow_blend(t, t_end, 1.0, -1e-9, 3.0), crossflow_blend(t, t_end, 1.0, 1e-9, 3.0));
+            assert!((l - r).abs() < 1e-6, "d0 through 0, t = {t}: {l} vs {r}");
+        }
+    }
+
+    #[test]
+    fn supersonic_fin_cp_is_continuous_for_small_aspect_ratio() {
+        // Aspect ratio of an opposing pair 2 s^2 / A = 0.25: AR beta passes 0.5 at Mach sqrt(5).
+        let m = rect_fins(0.0125, 0.10);
+        let f = m.geom.fins.clone().unwrap();
+        assert!((2.0 * f.span * f.span / f.area() - 0.25).abs() < 1e-12);
+        let (base, mac) = (f.x_le_root + f.mac_le_offset(), f.mac());
+        let frac = |mach: f64| (m.fin_xcp(mach) - base) / mac;
+        let mut mach = 0.0;
+        let mut prev = frac(mach);
+        while mach < 6.0 {
+            mach += 1e-3;
+            let x = frac(mach);
+            assert!((0.25 - 1e-12..=0.5 + 1e-12).contains(&x), "Mach {mach}: CP fraction {x}");
+            assert!((x - prev).abs() < 2e-3, "fin CP jumps at Mach {mach}: {prev} -> {x} of the MAC");
+            prev = x;
+        }
+        // The fraction itself: monotone, in [0.25, 0.5], C1 at the joins, Fleeman's value beyond 1.2.
+        let mut prev = supersonic_fin_cp_fraction(0.0);
+        for k in 1..=10000 {
+            let x = supersonic_fin_cp_fraction(k as f64 * 1e-3);
+            assert!(x >= prev - 1e-15 && (0.25..=0.5).contains(&x), "A beta {}: {x}", k as f64 * 1e-3);
+            prev = x;
+        }
+        for x0 in [0.84, 1.2] {
+            let h = 1e-7;
+            let (l, c, r) = (supersonic_fin_cp_fraction(x0 - h), supersonic_fin_cp_fraction(x0), supersonic_fin_cp_fraction(x0 + h));
+            assert!(((c - l) / h - (r - c) / h).abs() < 1e-4, "slope jump at A beta = {x0}");
+        }
+        assert!((supersonic_fin_cp_fraction(2.25) - (2.25 - 0.67) / 3.5).abs() < 1e-15);
+        // Other aspect ratios: continuous as well.
+        for (span, chord) in [(0.03, 0.10), (0.05, 0.10), (0.15, 0.10)] {
+            let m = rect_fins(span, chord);
+            let mut prev = m.fin_xcp(0.0);
+            let mut mach = 0.0;
+            while mach < 6.0 {
+                mach += 1e-3;
+                let x = m.fin_xcp(mach);
+                assert!((x - prev).abs() < 2e-3 * chord, "span {span}: fin CP jumps at Mach {mach}");
+                prev = x;
+            }
+        }
     }
 }

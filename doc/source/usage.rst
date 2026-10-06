@@ -1140,7 +1140,7 @@ CFD の準備は ``ignisyeet cfd-check 設定ファイル [--mesh]`` で確か�
      - ``"us1976"``\ （米国標準大気 1976）または ``"constant"``\ （高度によらず一定）
    * - ``temperature_offset``
      - ``0.0``
-     - 標準大気の温度に一律に足す温度差 :math:`\Delta T` [K]（``us1976`` のみ。:math:`-200` K より大きい値）
+     - 標準大気の温度に一律に足す温度差 :math:`\Delta T` [K]（``us1976`` のみ。:math:`-186.946` K より大きい値）
    * - ``density``
      - ``1.225``
      - 密度 [kg/m\ :sup:`3`]（``constant`` のみ）

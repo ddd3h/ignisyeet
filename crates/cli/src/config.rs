@@ -445,7 +445,8 @@ impl Config {
         let n_alpha = (a.alpha_max_deg / a.alpha_step_deg).round().max(1.0) * 2.0 + 1.0;
         let mut points = n_mach * n_alpha;
         let mut what = format!("{n_mach} Mach x {n_alpha} alpha");
-        if general && a.method == AeroMethod::Barrowman {
+        // Every method but an external table is expanded to the general grid when the table kind is general.
+        if general && a.method != AeroMethod::Table {
             let (alphas, betas) = crate::general_axes();
             points = points.max(n_mach * (alphas.len() * betas.len()) as f64);
             what = format!(
@@ -984,6 +985,17 @@ mod tests {
         assert!(e.contains("grid"), "{e}");
         let e = bad("n_slices = 600", "n_slices = 5");
         assert!(e.contains("n_slices") && e.contains("20"), "{e}");
+    }
+
+    #[test]
+    fn general_table_expansion_counts_for_every_method_that_expands() {
+        let sample = include_str!("../../../examples/sample.toml");
+        let t =
+            sample.replacen("method = \"barrowman\"", "method = \"panel\"", 1).replacen("mach_step = 0.02", "mach_step = 0.001\ntable_kind = \"general\"", 1);
+        let e = parse(&t).unwrap_err().to_string();
+        assert!(e.contains("the aero table grid would have about") && e.contains("beta (general table)"), "{e}");
+        // the axisymmetric table of the same fine step is within the cap
+        parse(&t.replacen("table_kind = \"general\"", "table_kind = \"axisymmetric\"", 1)).unwrap();
     }
 
     #[test]

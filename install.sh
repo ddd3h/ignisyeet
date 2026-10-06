@@ -20,7 +20,8 @@ REPO="${IGNISYEET_REPO:-ddd3h/ignisyeet}"
 REPO_URL="${IGNISYEET_REPO_URL:-https://github.com/$REPO.git}"
 DOWNLOAD_BASE="${IGNISYEET_DOWNLOAD_BASE:-https://github.com/$REPO/releases/download}"
 CFD_ENV_NAME="ignisyeet-cfd"
-CFD_PACKAGES="python=3.10 su2 gmsh python-gmsh openmpi"
+CFD_PACKAGES="python=3.10 su2=8.3.0 gmsh=4.15.2 python-gmsh=4.15.2 openmpi=5"
+MICROMAMBA_VERSION="2.9.0"
 
 ROLE="${IGNISYEET_ROLE:-}"                 # user | developer | "" (ask)
 VERSION="${IGNISYEET_VERSION:-}"           # vX.Y.Z | "" (latest release)
@@ -359,7 +360,9 @@ on_int() {
   exit 130
 }
 
-normalize_version() { case "$1" in v*) printf '%s' "$1" ;; *) printf 'v%s' "$1" ;; esac; }
+validate_version() {
+  [[ "$1" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "version must match vX.Y.Z (got '$1')"
+}
 
 sha256_of() {
   if have sha256sum; then sha256sum "$1" | awk '{print $1}'; else shasum -a 256 "$1" | awk '{print $1}'; fi
@@ -409,8 +412,8 @@ parse_args() {
       --developer | --dev) ROLE=developer ;;
       --cfd) WANT_CFD=1 ;;
       --no-cfd) WANT_CFD=0 ;;
-      --version) shift; [ $# -gt 0 ] || die "--version needs a value"; VERSION="$1" ;;
-      --version=*) VERSION="${1#*=}" ;;
+      --version) shift; [ $# -gt 0 ] || die "--version needs a value"; VERSION="$1"; validate_version "$VERSION" ;;
+      --version=*) VERSION="${1#*=}"; validate_version "$VERSION" ;;
       --prefix) shift; [ $# -gt 0 ] || die "--prefix needs a value"; PREFIX="$1" ;;
       --prefix=*) PREFIX="${1#*=}" ;;
       --dir) shift; [ $# -gt 0 ] || die "--dir needs a value"; DEV_DIR="$1" ;;
@@ -430,8 +433,18 @@ parse_args() {
   done
   case "$ROLE" in "" | user | developer) ;; *) die "role must be 'user' or 'developer' (got '$ROLE')" ;; esac
   case "$WANT_CFD" in "" | 0 | 1) ;; *) die "IGNISYEET_CFD must be 1 or 0" ;; esac
-  [ -n "$VERSION" ] && VERSION=$(normalize_version "$VERSION")
+  [ -n "$VERSION" ] && validate_version "$VERSION"
+  # Relative paths would give broken symlinks (they are resolved against the link's own directory).
+  PREFIX=$(abs_path "$PREFIX")
+  [ -n "$DEV_DIR" ] && DEV_DIR=$(abs_path "$DEV_DIR")
   return 0
+}
+
+# Absolute path of $1 (which need not exist yet); "~" is expanded.
+abs_path() {
+  local p="$1"
+  case "$p" in "~") p="$HOME" ;; "~/"*) p="$HOME/${p#"~/"}" ;; esac
+  case "$p" in /*) printf '%s' "$p" ;; *) printf '%s/%s' "$PWD" "${p#./}" ;; esac
 }
 
 # ----------------------------------------------------------------------------------------------
@@ -662,6 +675,7 @@ decide() {
       die "IGNISYEET_DOWNLOAD_BASE is set; also give --version vX.Y.Z"
     fi
     VERSION=$(resolve_latest_version)
+    [ -z "$VERSION" ] || validate_version "$VERSION"
     if [ -z "$VERSION" ]; then
       if [ "$DRY_RUN" = 1 ]; then VERSION="(latest)"; else
         die "could not determine the latest release of $REPO (no release published yet, or no network). Use --version vX.Y.Z or --developer."
@@ -707,8 +721,6 @@ decide() {
   elif [ "$WANT_CFD" = 1 ]; then
     if [ -n "$SU2_PATH" ] && [ -n "$GMSH_PATH" ] && [ -n "$MPI_PATH" ] && [ "$FORCE" != 1 ]; then CFD_ACTION=reuse; else CFD_ACTION=create; fi
   fi
-  SU2_PIN=""
-  if [ "$CFD_ACTION" = create ] && [ "$OS" = Linux ] && [ "$ARCH" = x86_64 ] && ! cpu_has_avx512; then SU2_PIN="su2=8.3.0"; fi
   CFD_NEED_MM=0
   [ "$CFD_ACTION" = create ] && [ -z "$CONDA_MGR" ] && CFD_NEED_MM=1
 
@@ -731,11 +743,11 @@ show_plan() {
     else p "download ${CYAN}ignisyeet-$VERSION-$TARGET.tar.gz${RESET}, verify sha256, install to ${CYAN}$(tilde "$DATA_ROOT")/$VERSION${RESET}"
       p "link ${CYAN}$(tilde "$BIN_DIR")/ignisyeet${RESET} and ${CYAN}ignisyeet-plot${RESET}"; fi
     [ "$INSTALL_UV" = 1 ] && p "install ${CYAN}uv${RESET} (astral.sh installer)"
-    if [ "$USE_UV" = 1 ]; then p "plotting env (numpy, pandas, matplotlib) with uv ${GREY}${UV_VER:+(reusing uv $UV_VER)}${RESET} in $(tilde "$VENV_DIR")"
-    else p "plotting env with python3 -m venv + pip in $(tilde "$VENV_DIR")"; fi
+    if [ "$USE_UV" = 1 ]; then p "plotting env: uv sync --frozen --project $DATA_ROOT/current/python ${GREY}${UV_VER:+(reusing uv $UV_VER)}${RESET} in $(tilde "$VENV_DIR")"
+    else p "plotting env with python3 -m venv + pip -r requirements.txt -c plot-constraints.txt in $(tilde "$VENV_DIR")"; fi
   else
     say "  ${GREY}directory${RESET}    $(tilde "$DEV_DIR")"
-    if [ -d "$DEV_DIR/.git" ]; then p "reuse clone ${CYAN}$(tilde "$DEV_DIR")${RESET}; ${GREY}git pull --ff-only if clean${RESET}"
+    if [ -e "$DEV_DIR/.git" ]; then p "reuse clone ${CYAN}$(tilde "$DEV_DIR")${RESET}; ${GREY}git pull --ff-only if clean${RESET}"
     else p "git clone ${CYAN}$REPO_URL${RESET} -> $(tilde "$DEV_DIR")"; fi
     [ -n "$VERSION" ] && p "check out ${CYAN}$VERSION${RESET}"
     if [ "$INSTALL_RUST" = 1 ]; then p "install ${CYAN}Rust${RESET} via rustup (sh.rustup.rs, minimal profile)"
@@ -743,18 +755,18 @@ show_plan() {
     [ "$INSTALL_UV" = 1 ] && p "install ${CYAN}uv${RESET} (astral.sh installer)"
     p "cargo build --release"
     [ "$WANT_TEST" = 1 ] && p "cargo test --release"
-    if [ "$USE_UV" = 1 ]; then p "uv sync: python/ (plotting) and doc/ (Sphinx) environments"
-    else p "venv + pip: .venv with python/ and doc/ requirements"; fi
+    if [ "$USE_UV" = 1 ]; then p "uv sync --frozen --project $DEV_DIR/python (plotting); uv sync --project $DEV_DIR/doc (Sphinx)"
+    else p "venv + pip: .venv with python/requirements.txt constrained by scripts/plot-constraints.txt, then doc/requirements.txt"; fi
     if [ -n "$DOC_MISSING_NAMES" ]; then p "documentation tools missing (${DOC_MISSING_NAMES}); the exact install command is printed at the end"
     else p "documentation tools: ${GREEN}all found${RESET}"; fi
   fi
   case "$CFD_ACTION" in
     reuse) p "CFD: ${GREEN}reuse${RESET} $(tilde "${CFD_PREFIX:-$SU2_PATH}")" ;;
     create)
-      [ "$CFD_NEED_MM" = 1 ] && p "install ${CYAN}micromamba${RESET} to $(tilde "$BIN_DIR")/micromamba"
-      p "CFD: create conda-forge env ${CYAN}$CFD_ENV_NAME${RESET} with ${CFD_PACKAGES/su2/${SU2_PIN:-su2}} ${GREY}(~3 GB)${RESET}"
+      [ "$CFD_NEED_MM" = 1 ] && p "install ${CYAN}micromamba $MICROMAMBA_VERSION${RESET} to $(tilde "$BIN_DIR")/micromamba"
+      p "CFD: create conda-forge env ${CYAN}$CFD_ENV_NAME${RESET} with $CFD_PACKAGES ${GREY}(~3 GB)${RESET}"
       p "CFD: pip install ${CYAN}manifold3d${RESET} into it ${GREY}(union of STL shells, surface = \"stl\")${RESET}"
-      [ -n "$SU2_PIN" ] && note "no AVX-512 on this CPU: su2 is pinned to 8.3.0 (8.5.0 crashes with SIGILL)" ;;
+      note "SU2 is pinned to 8.3.0 on all platforms" ;;
     none) skip "CFD: not requested" ;;
   esac
 }
@@ -774,16 +786,24 @@ ensure_uv() {
 # Create a venv at DIR with the requirements file REQ (uv or venv+pip).
 make_venv() { # DIR REQ LABEL
   local dir="$1" req="$2" label="$3"
-  if [ -x "$dir/bin/python" ] && "$dir/bin/python" -c 'import numpy, pandas, matplotlib' >/dev/null 2>&1; then
-    row_found "$label" "already set up ($dir)"
-    return 0
-  fi
-  if [ "$USE_UV" = 1 ]; then
+  local project constraints
+  project=$(dirname "$req")
+  if [ "$USE_UV" = 1 ] && [ -f "$project/uv.lock" ]; then
+    step "$label: syncing locked environment (uv)" env UV_PROJECT_ENVIRONMENT="$dir" "$UV_PATH" sync --frozen --project "$project" || die "uv sync failed"
+  elif [ "$USE_UV" = 1 ]; then
+    # Releases up to v0.3.0 ship no uv.lock: unpinned requirements.
     step "$label: creating environment (uv)" "$UV_PATH" venv --quiet --allow-existing --python '>=3.10' "$dir" || die "uv venv failed"
     step "$label: installing numpy, pandas, matplotlib" "$UV_PATH" pip install --quiet --python "$dir/bin/python" -r "$req" || die "uv pip install failed"
   else
+    constraints="$project/plot-constraints.txt"
+    [ -f "$constraints" ] || constraints="$project/../scripts/plot-constraints.txt"
     step "$label: creating environment (venv)" python3 -m venv "$dir" || die "python3 -m venv failed (on Debian/Ubuntu: apt install python3-venv)"
-    step "$label: installing numpy, pandas, matplotlib" "$dir/bin/python" -m pip install --quiet -r "$req" || die "pip install failed"
+    if [ -f "$constraints" ]; then
+      step "$label: installing locked plotting requirements" "$dir/bin/python" -m pip install --quiet -r "$req" -c "$constraints" || die "pip install failed"
+    else
+      # Releases up to v0.3.0 ship no constraints file: unpinned requirements.
+      step "$label: installing numpy, pandas, matplotlib" "$dir/bin/python" -m pip install --quiet -r "$req" || die "pip install failed"
+    fi
   fi
 }
 
@@ -858,7 +878,7 @@ install_developer() {
   [ -n "$GIT_VER" ] || die "git is required for the developer install (apt install git / xcode-select --install)"
   section "Source tree"
   local dirty
-  if [ -d "$DEV_DIR/.git" ]; then
+  if [ -e "$DEV_DIR/.git" ]; then
     ok "reusing clone ${CYAN}$DEV_DIR${RESET}"
     dirty=$(git -C "$DEV_DIR" status --porcelain 2>/dev/null | head -n 1 || true)
     if [ -n "$dirty" ]; then
@@ -891,12 +911,12 @@ install_developer() {
 
   section "Python environments"
   if [ "$USE_UV" = 1 ]; then
-    step "uv sync (python/ plotting)" "$UV_PATH" sync --quiet --project "$DEV_DIR/python" || die "uv sync python failed"
+    step "uv sync (python/ plotting)" "$UV_PATH" sync --frozen --project "$DEV_DIR/python" || die "uv sync python failed"
     step "uv sync (doc/ Sphinx)" "$UV_PATH" sync --quiet --project "$DEV_DIR/doc" || die "uv sync doc failed"
   else
     make_venv "$DEV_DIR/.venv" "$DEV_DIR/python/requirements.txt" "plotting"
     [ -f "$DEV_DIR/doc/requirements.txt" ] &&
-      { step "doc requirements (pip)" "$DEV_DIR/.venv/bin/python" -m pip install --quiet -r "$DEV_DIR/doc/requirements.txt" || warn "doc requirements failed"; }
+      { step "doc requirements (pip)" "$DEV_DIR/.venv/bin/python" -m pip install --quiet -r "$DEV_DIR/doc/requirements.txt" -c "$DEV_DIR/scripts/plot-constraints.txt" || warn "doc requirements failed"; }
   fi
 
   section "Documentation tools"
@@ -922,7 +942,7 @@ install_cfd() {
     reuse)
       if [ -n "$CFD_PREFIX" ]; then
         ok "reusing existing environment ${CYAN}$CFD_PREFIX${RESET} ${GREY}(su2 ${CFD_SU2_VER:-?})${RESET}"
-        [ "$CFD_SU2_BAD" = 1 ] && warn "su2 $CFD_SU2_VER needs AVX-512; recreate with: $CONDA_MGR create -y -n $CFD_ENV_NAME -c conda-forge --override-channels $CFD_PACKAGES su2=8.3.0"
+        [ "$CFD_SU2_BAD" = 1 ] && warn "su2 $CFD_SU2_VER needs AVX-512; recreate with: $CONDA_MGR create -y -n $CFD_ENV_NAME -c conda-forge --override-channels $CFD_PACKAGES"
         if [ -x "$CFD_PREFIX/bin/python" ] && ! "$CFD_PREFIX/bin/python" -c 'import manifold3d' >/dev/null 2>&1; then
           note "manifold3d is not installed in this environment (only needed for surface = \"stl\"): $CFD_PREFIX/bin/python -m pip install manifold3d"
         fi
@@ -940,15 +960,14 @@ install_cfd() {
     step "Installing micromamba ($MM_PLAT)" sh -c '
       set -e
       d=$(mktemp -d); trap "rm -rf $d" EXIT
-      curl -fsSL "https://micro.mamba.pm/api/micromamba/$1/latest" | tar -xj -C "$d" bin/micromamba
+      curl -fsSL "https://micro.mamba.pm/api/micromamba/$1/$3" | tar -xj -C "$d" bin/micromamba
       install -m 755 "$d/bin/micromamba" "$2"
-    ' sh "$MM_PLAT" "$mm" || { warn "micromamba installation failed; CFD skipped"; return 0; }
+    ' sh "$MM_PLAT" "$mm" "$MICROMAMBA_VERSION" || { warn "micromamba installation failed; CFD skipped"; return 0; }
     state_set micromamba "$mm"
   else
     ok "reusing $(basename "$mm") ${GREY}$mm${RESET}"
   fi
   local pkgs="$CFD_PACKAGES"
-  [ -n "$SU2_PIN" ] && pkgs="${pkgs/su2/$SU2_PIN}"
   note "this downloads about 3 GB; progress is in $LOG_FILE"
   # shellcheck disable=SC2086
   if ! step "Creating conda env $CFD_ENV_NAME (conda-forge)" "$mm" $root_args create -y -n "$CFD_ENV_NAME" -c conda-forge --override-channels $pkgs; then
@@ -1104,6 +1123,10 @@ main() {
   ORIG_ARGS="$*"
   HELP=0
   parse_args "$@"
+  # Anchor relative paths before any directory changes; no mkdir in dry runs.
+  [ -n "$PREFIX" ] || die "--prefix must not be empty"
+  case "$PREFIX" in /*) ;; *) PREFIX="$PWD/$PREFIX" ;; esac
+  case "$DEV_DIR" in "" | /*) ;; *) DEV_DIR="$PWD/$DEV_DIR" ;; esac
   setup_ui
   if [ "$HELP" = 1 ]; then usage; exit 0; fi
   trap 'on_err $LINENO' ERR

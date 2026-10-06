@@ -310,7 +310,7 @@ fn square() -> String {
 impl Config {
     pub fn load(path: &Path) -> Result<Self> {
         let text = std::fs::read_to_string(path).with_context(|| format!("cannot read config {}", path.display()))?;
-        let raw: toml::Value = toml::from_str(&text).with_context(|| format!("invalid config {}", path.display()))?;
+        let raw: toml::Value = toml::from_str(text.strip_prefix('\u{feff}').unwrap_or(&text)).with_context(|| format!("invalid config {}", path.display()))?;
         Self::from_value(raw, path.parent()).with_context(|| format!("invalid config {}", path.display()))
     }
 

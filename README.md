@@ -8,7 +8,7 @@
 [![Docs](https://github.com/ddd3h/ignisyeet/actions/workflows/docs.yml/badge.svg?branch=main)](https://github.com/ddd3h/ignisyeet/actions/workflows/docs.yml)
 [![Documentation](https://img.shields.io/badge/docs-www.ddd3h.com%2Fignisyeet-1f6feb?logo=readthedocs&logoColor=white)](https://www.ddd3h.com/ignisyeet/)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.3.0-informational)](CITATION.cff)
+[![Version](https://img.shields.io/badge/version-0.4.0-informational)](CITATION.cff)
 
 [![Rust](https://img.shields.io/badge/Rust-2021_edition-000000?logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
@@ -192,7 +192,7 @@ Releases are published on GitHub as `ignisyeet-<version>-<target>.tar.gz` with a
 
 `--prefix` and `--dir` are made absolute at start-up (relative paths would give broken symlinks).
 
-A release is made by pushing a tag equal to the workspace version (`git tag v0.3.0 && git push origin v0.3.0`); the `release` workflow builds the four platform archives (GNU tar, reproducible ordering and timestamps) and creates the GitHub Release. The `ci` workflow builds the workspace with the minimum supported Rust version (1.87, `rust-version` in `Cargo.toml`), builds and tests it with stable (`--locked`), and runs `geom`, `aero`, `sim`, a wind-grid `dispersion`, a Monte Carlo `dispersion` and `python/plot.py` on the sample, and checks that an incomplete flight exits with status 3, for every push and pull request; its clippy, rustfmt and ShellCheck steps are advisory.
+A release is made by pushing a tag equal to the workspace version (`git tag v0.4.0 && git push origin v0.4.0`); the `release` workflow builds the four platform archives (GNU tar, reproducible ordering and timestamps) and creates the GitHub Release. The `ci` workflow builds the workspace with the minimum supported Rust version (1.87, `rust-version` in `Cargo.toml`), builds and tests it with stable (`--locked`), and runs `geom`, `aero`, `sim`, a wind-grid `dispersion`, a Monte Carlo `dispersion` and `python/plot.py` on the sample, and checks that an incomplete flight exits with status 3, for every push and pull request; its clippy, rustfmt and ShellCheck steps are advisory.
 
 ### Building from source
 

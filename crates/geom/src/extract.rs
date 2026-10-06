@@ -167,7 +167,7 @@ const N_BINS: usize = 72;
 
 /// Edge topology of a triangle surface after welding vertices closer than 1e-7 of the bounding-box
 /// diagonal. Collapsed triangles (two welded vertices) are skipped.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct SurfaceCheck {
     /// Distinct edges.
     pub edges: usize,
@@ -175,10 +175,40 @@ pub struct SurfaceCheck {
     pub open: usize,
     /// Edges shared by more than two triangles.
     pub non_manifold: usize,
+    /// The widest hole: the connected group of open edges with the largest [`Hole::width`].
+    pub widest_hole: Option<Hole>,
+}
+
+/// A connected group of open edges (the boundary of a hole), in mesh units.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct Hole {
+    /// Open edges bounding the hole.
+    pub edges: usize,
+    /// Size of the hole: the largest distance between its boundary vertices (estimate).
+    pub extent: f64,
+    /// Magnitude of the vector area enclosed by the boundary (the area of the missing surface for a
+    /// consistently oriented mesh).
+    pub area: f64,
+}
+
+impl Hole {
+    /// Mean width of the hole, area / extent: small for a missing sliver triangle however long it is,
+    /// about 0.39 diameters for a missing circular end cap.
+    pub fn width(&self) -> f64 {
+        if self.extent > 0.0 {
+            self.area / self.extent
+        } else {
+            0.0
+        }
+    }
 }
 
 /// Fraction of open edges above which the surface counts as clearly not closed.
 const MAX_OPEN_EDGE_FRACTION: f64 = 0.01;
+
+/// Width of a hole, as a fraction of the body diameter, above which the surface counts as clearly
+/// not closed (a missing end cap has 0.39, a missing fin side face several tenths).
+const MAX_HOLE_WIDTH: f64 = 0.1;
 
 pub fn surface_check(tris: &[Triangle]) -> SurfaceCheck {
     let (mut lo, mut hi) = (Vec3::new(f64::INFINITY, f64::INFINITY, f64::INFINITY), Vec3::new(f64::NEG_INFINITY, f64::NEG_INFINITY, f64::NEG_INFINITY));
@@ -192,22 +222,74 @@ pub fn surface_check(tris: &[Triangle]) -> SurfaceCheck {
     }
     let tol = 1e-7 * diag;
     let mut ids: HashMap<[i64; 3], usize> = HashMap::new();
+    let mut pos: Vec<Vec3> = Vec::new();
     let mut id = |v: Vec3| {
         let k = [((v.x - lo.x) / tol).round() as i64, ((v.y - lo.y) / tol).round() as i64, ((v.z - lo.z) / tol).round() as i64];
         let n = ids.len();
-        *ids.entry(k).or_insert(n)
+        *ids.entry(k).or_insert_with(|| {
+            pos.push(v);
+            n
+        })
     };
-    let mut edges: HashMap<(usize, usize), u32> = HashMap::new();
+    // Undirected edge -> (use count, the edge as directed in its first triangle).
+    let mut edges: HashMap<(usize, usize), (u32, (usize, usize))> = HashMap::new();
     for t in tris {
         let [a, b, c] = t.map(&mut id);
         if a == b || b == c || a == c {
             continue;
         }
         for (p, q) in [(a, b), (b, c), (c, a)] {
-            *edges.entry((p.min(q), p.max(q))).or_insert(0) += 1;
+            edges.entry((p.min(q), p.max(q))).or_insert((0, (p, q))).0 += 1;
         }
     }
-    SurfaceCheck { edges: edges.len(), open: edges.values().filter(|&&n| n == 1).count(), non_manifold: edges.values().filter(|&&n| n > 2).count() }
+    let open: Vec<(usize, usize)> = edges.values().filter(|e| e.0 == 1).map(|e| e.1).collect();
+    SurfaceCheck { edges: edges.len(), open: open.len(), non_manifold: edges.values().filter(|e| e.0 > 2).count(), widest_hole: widest_hole(&open, &pos) }
+}
+
+/// Groups the directed open edges into connected boundaries and returns the widest one.
+fn widest_hole(open: &[(usize, usize)], pos: &[Vec3]) -> Option<Hole> {
+    let mut parent: HashMap<usize, usize> = HashMap::new();
+    fn find(parent: &mut HashMap<usize, usize>, v: usize) -> usize {
+        let mut r = v;
+        while let Some(&p) = parent.get(&r) {
+            if p == r {
+                break;
+            }
+            r = p;
+        }
+        parent.insert(v, r);
+        r
+    }
+    for &(a, b) in open {
+        parent.entry(a).or_insert(a);
+        parent.entry(b).or_insert(b);
+        let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
+        if ra != rb {
+            parent.insert(ra, rb);
+        }
+    }
+    // Per boundary: edge count, vector area (sum of p x q / 2 over the directed edges), vertices.
+    let mut groups: HashMap<usize, (usize, Vec3, Vec<Vec3>)> = HashMap::new();
+    let origin = open.first().map_or(Vec3::ZERO, |e| pos[e.0]);
+    for &(a, b) in open {
+        let r = find(&mut parent, a);
+        let g = groups.entry(r).or_insert((0, Vec3::ZERO, Vec::new()));
+        let (p, q) = (pos[a] - origin, pos[b] - origin);
+        g.0 += 1;
+        g.1 += p.cross(q) * 0.5;
+        g.2.push(p);
+    }
+    // The extent is the double-sweep estimate of the largest vertex distance (the farthest vertex from
+    // the farthest vertex of an arbitrary one): exact for a circle, at least half the true value.
+    let farthest = |from: Vec3, vs: &[Vec3]| vs.iter().copied().max_by(|a, b| (*a - from).norm().total_cmp(&(*b - from).norm())).unwrap_or(from);
+    groups
+        .into_values()
+        .map(|(edges, area, vs)| {
+            let a = farthest(vs[0], &vs);
+            let b = farthest(a, &vs);
+            Hole { edges, extent: (b - a).norm(), area: area.norm() }
+        })
+        .max_by(|a, b| a.width().total_cmp(&b.width()))
 }
 
 /// An error for a clearly open surface (more than 1 % of the edges open), a warning for a few open or
@@ -215,7 +297,7 @@ pub fn surface_check(tris: &[Triangle]) -> SurfaceCheck {
 fn surface_findings(c: &SurfaceCheck) -> Result<Option<String>> {
     if c.open as f64 > MAX_OPEN_EDGE_FRACTION * c.edges as f64 {
         bail!(
-            "the STL surface is not closed: {} open edges of {} ({:.1} %): the geometry extraction needs a closed (watertight) surface; repair the mesh (close the holes) or export the rocket as a solid",
+            "the STL surface is not closed: {} open edges of {} ({:.1} %): {CLOSED_SURFACE_HINT}",
             c.open,
             c.edges,
             100.0 * c.open as f64 / c.edges.max(1) as f64
@@ -230,6 +312,26 @@ fn surface_findings(c: &SurfaceCheck) -> Result<Option<String>> {
     }
     Ok((!parts.is_empty())
         .then(|| format!("the STL surface has {} edges of {}: small mesh defects, check the extracted geometry", parts.join(" and "), c.edges)))
+}
+
+const CLOSED_SURFACE_HINT: &str =
+    "the geometry extraction needs a closed (watertight) surface; repair the mesh (close the holes) or export the rocket as a solid";
+
+/// An error when the widest hole of the surface is wider than [`MAX_HOLE_WIDTH`] body diameters
+/// (`diameter` in mesh units): a missing end cap, fin face or part of the body, which the edge
+/// fraction alone does not catch on a finely meshed surface.
+fn hole_finding(c: &SurfaceCheck, diameter: f64) -> Result<()> {
+    if let Some(h) = c.widest_hole {
+        if h.width() > MAX_HOLE_WIDTH * diameter {
+            bail!(
+                "the STL surface is not closed: a hole bounded by {} open edges is {:.3} m across ({:.0} % of the body diameter {diameter:.3} m): {CLOSED_SURFACE_HINT}",
+                h.edges,
+                h.extent,
+                100.0 * h.extent / diameter
+            );
+        }
+    }
+    Ok(())
 }
 
 pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
@@ -247,7 +349,8 @@ pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
     if area <= 0.0 {
         bail!("mesh has zero surface area");
     }
-    let surface_note = surface_findings(&surface_check(tris))?;
+    let surface = surface_check(tris);
+    let surface_note = surface_findings(&surface)?;
     c = c / area;
     let mut cov = [[0.0; 3]; 3];
     for t in tris {
@@ -296,6 +399,7 @@ pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
     if r_max <= 0.0 {
         bail!("could not determine body radius");
     }
+    hole_finding(&surface, 2.0 * r_max)?;
     let mut warnings: Vec<String> = Vec::new();
     warnings.extend(surface_note);
     warnings.extend(r_note);
@@ -384,6 +488,12 @@ pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
     if nose_len < 0.4 * d || nose_len > 8.0 * d {
         warnings.push(format!("detected nose length {nose_len:.3} m ({:.1} calibers) is implausible", nose_len / d));
     }
+    if base_radius > 1.05 * r_max {
+        warnings.push(format!(
+            "the aft end of the mesh is wider than the body (radius {base_radius:.4} m vs {r_max:.4} m): the fins probably extend behind the body base; \
+             Barrowman's fin-body interference assumes the body continues behind the fin root chord, and base drag uses this radius (check the fins, or set rocket.fin_override)"
+        ));
+    }
     if base_radius < 0.6 * r_max {
         warnings.push(format!(
             "the base radius is only {:.0} % of the body radius (protruding nozzle or strong boattail); base drag uses this radius",
@@ -422,6 +532,18 @@ pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
         frame: Frame { axis_point: [c.x, c.y, c.z], aft_direction: [aft.x, aft.y, aft.z], nose_offset },
         profile,
         warnings,
+    })
+}
+
+/// A warning when a fin trailing edge (root or tip) lies aft of the body end `length` (both measured
+/// aft of the nose tip): Barrowman's fin-body interference assumes that the body continues behind the
+/// fin root chord.
+pub fn fin_overhang_warning(f: &FinSet, length: f64) -> Option<String> {
+    let te = (f.x_le_root + f.root_chord).max(f.x_le_root + f.sweep + f.tip_chord);
+    (f.count > 0 && f.span > 0.0 && te > length + 1e-3 * length.max(1.0)).then(|| {
+        format!(
+            "the fin trailing edge at {te:.4} m lies aft of the body end at {length:.4} m: Barrowman's fin-body interference assumes that the body continues behind the fin root chord"
+        )
     })
 }
 
@@ -639,7 +761,9 @@ mod tests {
         assert!(extract(&mesh, &ExtractOptions::default()).unwrap().warnings.is_empty());
         // One triangle: every edge is open.
         let one = vec![[Vec3::ZERO, Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.0, 1.0, 0.0)]];
-        assert_eq!(surface_check(&one), SurfaceCheck { edges: 3, open: 3, non_manifold: 0 });
+        let c = surface_check(&one);
+        assert_eq!((c.edges, c.open, c.non_manifold, c.widest_hole.map(|h| h.edges)), (3, 3, 0, Some(3)));
+        assert!(close(c.widest_hole.unwrap().area, 0.5, 1e-12));
         let e = extract(&one, &ExtractOptions::default()).unwrap_err().to_string();
         assert_eq!(
             e,
@@ -651,11 +775,50 @@ mod tests {
         assert_eq!((c.open, c.non_manifold), (3, 0));
         let g = extract(holed, &ExtractOptions::default()).unwrap();
         assert!(g.warnings.iter().any(|w| w.starts_with("the STL surface has 3 open edges of")), "{:?}", g.warnings);
+        // A missing end cap or half of the rocket is a hole about as wide as the body: an error even
+        // though fewer than 1 % of the edges are open.
+        let half = &mesh[..mesh.len() / 2];
+        let c = surface_check(half);
+        assert!((c.open as f64) < 0.01 * c.edges as f64, "{c:?}");
+        let e = extract(half, &ExtractOptions::default()).unwrap_err().to_string();
+        assert!(e.starts_with("the STL surface is not closed: a hole bounded by ") && e.contains("% of the body diameter "), "{e}");
+        let rk = SampleRocket { fin_count: 0, ..Default::default() };
+        let full = rk.mesh();
+        let no_base: Vec<Triangle> = full.iter().filter(|t| !t.iter().all(|v| close(v.x, rk.length, 1e-12))).copied().collect();
+        assert_eq!(full.len() - no_base.len(), rk.segments);
+        let e = extract(&no_base, &ExtractOptions::default()).unwrap_err().to_string();
+        assert!(e.contains(&format!("a hole bounded by {} open edges is 0.100 m across (100 % of the body diameter 0.100 m)", rk.segments)), "{e}");
+        // A missing flat side of a fin (the last fin box: 2 + 2 side triangles, then 8 edge triangles).
+        let n = mesh.len();
+        let fins_open: Vec<Triangle> = mesh[..n - 12].iter().chain(&mesh[n - 10..]).copied().collect();
+        assert!(extract(&fins_open, &ExtractOptions::default()).unwrap_err().to_string().contains("not closed"));
         // A duplicated triangle makes its edges non-manifold.
         let mut dup = mesh.clone();
         dup.push(mesh[100]);
         assert_eq!(surface_check(&dup).non_manifold, 3);
         assert!(surface_findings(&surface_check(&dup)).unwrap().unwrap().contains("3 non-manifold"));
+    }
+
+    #[test]
+    fn fins_behind_the_body_base_warn() {
+        let g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
+        let f = g.fins.clone().unwrap();
+        assert!(fin_overhang_warning(&f, g.length).is_none());
+        let back = FinSet { x_le_root: g.length - 0.1, ..f.clone() };
+        let w = fin_overhang_warning(&back, g.length).unwrap();
+        assert!(w.starts_with("the fin trailing edge at 1.59") && w.contains("lies aft of the body end at 1.5000 m"), "{w}");
+        // swept tip behind the base, root ending at it
+        let swept = FinSet { x_le_root: g.length - f.root_chord, sweep: f.root_chord, ..f };
+        assert!(fin_overhang_warning(&swept, g.length).is_some());
+        // a mesh whose fins overhang the base: the aft end is wider than the body
+        let g = extract(&SampleRocket { fin_offset_from_base: -0.05, ..Default::default() }.mesh(), &ExtractOptions::default()).unwrap();
+        assert!(
+            g.warnings
+                .iter()
+                .any(|w| w.starts_with("the aft end of the mesh is wider than the body") && w.contains("the fins probably extend behind the body base")),
+            "{:?}",
+            g.warnings
+        );
     }
 
     #[test]

@@ -658,6 +658,8 @@ CFD の座標は機体座標を :math:`y` まわりに 180 度回したもの（
    この傾きは最小の迎角での割線の傾きの 0.5〜1.5 倍（または割線の傾きそのもの）なので、PCHIP の単調性の条件（割線と同じ符号で 3 倍以内）を満たす。
    こうすると、表の :math:`C_{N\alpha}`、迎角 0 の圧力中心 :math:`x_{cp0}`、減衰の和（:eq:`eq-cfd-damp`）と、表の :math:`C_N` と :math:`m` の行が、一つの曲線から求めたものになる。
 3. Mach 数の方向にも、各量を係数表の Mach 数の格子に PCHIP で補間する。解いた Mach 数の範囲の外には外挿せず、最小または最大の Mach 数の値で一定とする。
+   迎角 0 の圧力中心は、:math:`x_{cp0}` そのものではなく、モーメントの傾き :math:`C_{N\alpha}x_{cp0}` と :math:`C_{N\alpha}` をそれぞれ補間した比 :math:`(C_{N\alpha}x_{cp0})/C_{N\alpha}` とする（:math:`|C_{N\alpha}|\le10^{-9}` では :math:`x_{cp0}` を補間する）。
+   0 でない迎角の行が、補間したモーメントを補間した :math:`C_N` で割った圧力中心を持つ（:eq:`eq-xcp-interp`）のと同じ扱いで、解いた Mach 数の間でも、迎角 0 の圧力中心と減衰の和（:eq:`eq-cfd-damp`）が小さい迎角の行と食い違わない。
    途中の Mach 数の列が失敗していれば、両隣の列で補間して埋める。最小または最大の Mach 数の列の失敗は補えず、エラーになる。
 4. 軸力に上の項を足し、ピッチ減衰の和を取り替える。``roll_damping`` が真のときは、:math:`C_{lp}` も CFD の値（:ref:`sec-cfd-roll-post`）にする。
 
@@ -735,6 +737,7 @@ Mach 数ごとの作り方は次のとおりである。
    \end{aligned}
 
 とする。:eq:`eq-cfd-damp` をピッチ（:math:`S^q`）とヨー（:math:`S^r`）にそれぞれ適用する。
+Mach 数の方向には、軸対称表と同じく :math:`C_{N\alpha}` とモーメントの傾き :math:`C_{N\alpha}x_{cp0}` を PCHIP で補間し、減衰の重心 :math:`x_{cp0}` をその比とする（:math:`|C_{N\alpha}|\le10^{-9}` では :math:`x_{cp0}` を補間する）。
 横滑りを解かないときは、ヨーの和をピッチの和に等しくし、``cfd_report.json`` の ``yaw_damping_from_pitch`` が真になる。
 :math:`C_{N\alpha}` と :math:`x_{cp0}` は一般表の入力ではなく、``cfd_report.json`` の ``diagnostics`` に記録する診断値である。
 ピッチとヨーを別々に求めるので、機体が非対称なときは異なる値になる。

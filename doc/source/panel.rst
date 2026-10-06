@@ -85,10 +85,10 @@ Mach 数による使い分け
      - 手法
    * - 亜音速（``subsonic_machs``、既定は :math:`0\ldots0.8`）
      - Morino の Dirichlet 型定式化 :cite:`morino` による定数強度のわき出し・二重わき出しパネル法。
-       Göthert の変換 :cite:`gothert` で圧縮性を入れる。解いた Mach 数の間は Mach 数について滑らかに内挿する
+       Göthert の変換 :cite:`gothert` で圧縮性を入れる。解いた Mach 数の間は Mach 数について滑らかに内挿する。迎角 15° から 30° の間で部品積み上げ法の大迎角の値へ移す（「非線形な法線力」）
    * - 超音速（``transonic[1]`` 以上、既定は :math:`1.2` 以上）
      - 局所傾斜法。各パネルが自分の傾きだけで圧力を決める（接線くさび、Prandtl–Meyer 膨張、修正 Newton、Taylor–Maccoll の接線円すい）
-   * - 遷音速（最後の亜音速解の Mach 数から ``transonic[1]`` まで。既定は :math:`0.8` から :math:`1.2`）
+   * - 遷音速（``transonic[0]``\ （``subsonic_machs`` の最大がそれより低ければその値）から ``transonic[1]`` まで。既定は :math:`0.8` から :math:`1.2`）
      - 両側の値をつなぐ 3 次 Hermite 補間（法線力とモーメントは両端の値の間に収まるよう傾きを制限する）
    * - 軸力（全 Mach 数）
      - パネルで積分した表面摩擦、超音速の造波抗力、および部品積み上げ法の底面・フィン縁・ボートテール・追加抗力の項
@@ -323,6 +323,14 @@ Green の恒等式を外部領域に適用すると、:math:`\Phi` は表面 :ma
 係数行列は迎角に依存しないので、一度分解すれば、向きの違う三つの流れを同時に解ける。迎角が変わっても解き直さず、解を重ね合わせて使う。
 
 係数行列 :math:`A` は密な :math:`n\times n` 行列で、``faer`` による部分ピボット付き LU 分解で解く。
+組み立てた行列をそのまま分解する（in place）ので、:math:`n\times n` の行列は 1 つだけで、必要なメモリは :math:`8n^2+64n` バイト（既定のメッシュの表面 5888 枚で約 278 MB）である。
+行の順に組み立てた行列を列の順に読むと :math:`A^\top` になるので、:math:`A^\top` を分解し、転置した因子で :math:`A\bm x=\bm b` を解く。
+解く前に、必要な量を、このプロセスが使えるメモリの最小の値と比べる。Linux では ``/proc/meminfo`` の ``MemAvailable``、cgroup の上限（v2 の ``memory.max`` から ``memory.current`` を引いた値、v1 の ``memory.limit_in_bytes`` から ``memory.usage_in_bytes`` を引いた値）、
+アドレス空間の上限 ``RLIMIT_AS``\ （``ulimit -v``）から確保済みのアドレス空間（``/proc/self/status`` の ``VmSize``）を引いた値、macOS では物理メモリ（``sysctl hw.memsize``）である。
+超えるときは ``the panel method needs about … GB for … panels (dense matrix), more than the … GB of memory available to this process (…); use coarser panel settings (body_axial, body_circ, fin_chord, fin_span)`` のエラーで止まる（括弧内は値を取った出所）。
+どれも得られない環境では確かめない。行列の確保も失敗をエラーとして扱い（作業領域の余裕として行列の 1/16 と 256 MB を足して先に確かめる）、
+確保できなければ ``could not allocate the dense panel matrix: about … GB for … panels; use coarser panel settings (body_axial, body_circ, fin_chord, fin_span) or free memory`` のエラーになる。
+メモリの予算 ``resources.memory_gb`` を指定したときは、それも超えてはならない（:doc:`usage` の ``[resources]``）。
 :math:`A` は形状と Mach 数だけで決まり、迎角によらない。右辺 :math:`b` は一様流 :math:`\bm U` の線形関数なので、
 次の三つの単位問題を同時に解けば（一つの LU 分解に右辺 3 列）、任意の迎角と回転が線形結合で表せる。
 
@@ -410,12 +418,15 @@ Green の恒等式を外部領域に適用すると、:math:`\Phi` は表面 :ma
 
    \begin{aligned}
    C_{N\alpha}&=\sum_i\left(\frac{\partial C_p}{\partial\alpha}\right)_i f_i,&
-   M_\alpha&=\sum_i\left(\frac{\partial C_p}{\partial\alpha}\right)_i f_i\,x_i,\\
+   M_\alpha&=\sum_i\left(\frac{\partial C_p}{\partial\alpha}\right)_i \bigl(x_if_i-z_ig_i\bigr),\\
    N_{r}&=\sum_i\left(\frac{\partial C_p}{\partial\omega}\right)_i f_i,&
-   M_{r}&=\sum_i\left(\frac{\partial C_p}{\partial\omega}\right)_i f_i\,x_i
+   M_{r}&=\sum_i\left(\frac{\partial C_p}{\partial\omega}\right)_i \bigl(x_if_i-z_ig_i\bigr)
    \end{aligned}
 
-:math:`x_i` はパネルの重心の位置で、:math:`M_\alpha` と :math:`M_r` はノーズ先端まわりのモーメントである。
+:math:`(x_i,z_i)` はパネルの重心の位置、:math:`g_i=-n_{x,i}A_i/S` は単位の :math:`C_p` あたりの軸方向の力で、:math:`M_\alpha` と :math:`M_r` はノーズ先端まわりのモーメントである。
+モーメントは :math:`\bm r\times\bm F` のピッチ成分 :math:`x\,F_z-z\,F_x` をすべて取り（符号は :math:`x_{cp}=M/C_N` の約束）、:math:`x\,F_z` だけではない。
+ノーズ、ボートテール、フィンの縁のような傾いた面では、圧力の軸方向の力が横方向の腕 :math:`z_i` を持つからである。
+球ではすべての圧力の力が中心を通るので、ノーズ先端まわりのモーメントは中心の腕と法線力の積になる。これを単体テスト（``subsonic_nose_moment_is_the_full_cross_product``）で確かめている。
 :math:`\alpha\to0` の圧力中心は :math:`x_{cp}=M_\alpha/C_{N\alpha}` である。
 
 圧縮性：Göthert の変換
@@ -484,6 +495,24 @@ Prandtl–Glauert の規則 :cite:`glauert` を三次元の物体に拡張した
 とし、モーメントは :math:`M_\alpha\sin\alpha\cos\alpha+C_N^{\mathrm{cross}}\,x_p`\ （:math:`x_p` は側面投影面積の図心）とする。
 第 2 項は、迎角が大きいときに胴体を横切る流れがはく離して生じる粘性の横流れ力 :cite:`allen` を、:doc:`barrowman` の\ :eq:`eq-body-lift` と同じ経験式で与えたものである。
 圧力中心は :math:`x_{cp}=M/C_N`、:math:`\alpha=0` では :math:`M_\alpha/C_{N\alpha}` とする。
+
+この式は付着した流れの線形理論なので、小さい迎角でしか成り立たない。ポテンシャル流の項 :math:`\sin\alpha\cos\alpha` は :math:`90^\circ` で 0 になるので、
+そのまま使うと大きな迎角でフィンが法線力を持たず、圧力中心は胴体の側面投影面積の図心まで前へ動く。
+実際には、大きな迎角のフィンは流れに垂直な平板に近く、横流れの力を受ける（:ref:`sec-fin-large-alpha`）。
+そこで亜音速の列は、付着流の角度 :math:`\alpha_1=15^\circ`\ （部品積み上げ法のフィンの式と同じ角度）までは上の式のまま使い、それより大きい迎角では部品積み上げ法の値 :math:`B(\alpha)`\ （胴体、胴体の横流れ、平面形の図心に働くフィンの平板の横流れ。:eq:`eq-cn-total`、:eq:`eq-xcp-total`）へ移す。
+法線力 :math:`C_N` とノーズ先端まわりのモーメント :math:`C_Nx_{cp}` のそれぞれ（:math:`P` と書く）について、
+
+.. math::
+   :label: eq-pn-large-alpha
+
+   P(\alpha)=B(\alpha)+\bigl(D+D'(\alpha-\alpha_1)\bigr)\,w(\alpha),\qquad
+   D=P_{\mathrm{panel}}(\alpha_1)-B(\alpha_1),\quad D'=P_{\mathrm{panel}}'(\alpha_1)-B'(\alpha_1)
+
+とする。:math:`P_{\mathrm{panel}}` は上のパネル法の式、:math:`w` は :math:`\alpha_1` で 1、:math:`2\alpha_1=30^\circ` で 0 になる、両端の傾きが 0 の 3 次 Hermite 補間（C\ :sup:`1` のなめらかな階段）である。
+値と傾きは :math:`\alpha_1` でパネル法の値に一致し、:math:`30^\circ` から先は部品積み上げ法の値 :math:`B(\alpha)` そのものになる。
+遷移の間の圧力中心 :math:`x_{cp}=M/C_N` は、機体の内側（0 から全長）に制限する。:math:`\alpha_1` までの値は変えないので、:math:`C_{N\alpha}`、迎角 0 の圧力中心、減衰の和は変わらない。
+超音速の列（局所傾斜法）は、各迎角の力を直接積分するので、この移行を使わない。
+単体テスト（``subsonic_large_angles_carry_the_fin_crossflow``）で、:math:`\alpha_1` まではポテンシャル流と横流れの式に、:math:`30^\circ` 以上（:math:`110^\circ` まで）では部品積み上げ法の値に一致し、遷移の中で :math:`C_N` が連続で単調に増えることと、:math:`90^\circ` の圧力中心がフィンの横流れで胴体の図心より 0.05 m 以上後ろにあることを確かめている。
 
 フィンと胴体の干渉
 ~~~~~~~~~~~~~~~~~~
@@ -635,7 +664,9 @@ Taylor–Maccoll の接線円すい
 
 .. math::
 
-   C_{x}=-\sum_i C_{p,i}\,n_{x,i}\frac{A_i}{S},\qquad C_{z}=-\sum_i C_{p,i}\,n_{z,i}\frac{A_i}{S},\qquad M_N=-\sum_i C_{p,i}\,n_{z,i}\frac{A_i}{S}\,x_i
+   C_{x}=-\sum_i C_{p,i}\,n_{x,i}\frac{A_i}{S},\qquad C_{z}=-\sum_i C_{p,i}\,n_{z,i}\frac{A_i}{S},\qquad M_N=-\sum_i C_{p,i}\bigl(n_{z,i}x_i-n_{x,i}z_i\bigr)\frac{A_i}{S}
+
+モーメントは亜音速と同じく :math:`\bm r\times\bm F` のピッチ成分 :math:`x\,F_z-z\,F_x` である。球の圧力中心が中心に来ること（平らなパネルの法線が中心からわずかにずれる分の 3 % 以内）を単体テスト（``supersonic_nose_moment_is_the_full_cross_product``）で確かめている。
 
 迎角 0 での :math:`C_x` が造波抗力（圧力による軸力）で、これがそのまま軸力係数の一部になる。
 :math:`C_{N\alpha}`, :math:`M_\alpha`, :math:`N_r`, :math:`M_r` は、迎角と回転についての :math:`\pm0.25^\circ` の中心差分で求める
@@ -646,8 +677,10 @@ Taylor–Maccoll の接線円すい
 
 亜音速の解も局所傾斜法も成り立たない Mach 数の帯では、両側の値を滑らかにつなぐ。この帯の物理は計算しない。
 
-Mach 数が最後の亜音速解 :math:`M_{lo}`\ （既定は 0.8）と超音速側の下限 :math:`M_{hi}=` ``transonic[1]``\ （既定は 1.2）の間では、
+Mach 数が :math:`M_{lo}=\min(` ``transonic[0]``\ :math:`,\ ` 最後の亜音速解の Mach 数 :math:`)`\ （既定は 0.8）と超音速側の下限 :math:`M_{hi}=` ``transonic[1]``\ （既定は 1.2）の間では、
 どちらの手法も成り立たない。:doc:`barrowman` と同じ形の 3 次 Hermite 補間（:eq:`eq-hermite`）で両端をつなぐ。
+:math:`M_{lo}` までは亜音速の解（解いた Mach 数の間の内挿）で、:math:`M_{lo}` が最後の亜音速解より高くても、亜音速の列をその解の先へ外挿しない。
+``transonic[0]`` を下げると帯が広がり、``transonic[0]`` より下の列は変わらない（``transonic_band_starts_at_its_lower_edge``）。
 補間する量は、流れの解について線形な量である。迎角ごとの法線力 :math:`C_N` と、そのノーズ先端まわりのモーメント :math:`C_Nx_{cp}`、軸力 :math:`C_A`\ （燃焼中・燃焼後）、
 列ごとの :math:`C_{N\alpha}` とそのモーメント :math:`C_{N\alpha}x_{cp}(0)`\ （:math:`x_{cp}(0)` は迎角 0 の圧力中心）、減衰の和 :math:`S_0,S_1,S_2` である。
 圧力中心は補間せず、補間したモーメントを補間した法線力で割って求める（:math:`C_N=0` の迎角 0 では、補間した :math:`C_{N\alpha}x_{cp}(0)` を :math:`C_{N\alpha}` で割る）。
@@ -694,7 +727,7 @@ Mach 数が最後の亜音速解 :math:`M_{lo}`\ （既定は 0.8）と超音速
 各パネルの表面摩擦を、平板の局所摩擦係数から求めて足し合わせる。圧縮性は参照温度法で入れる。
 
 表面摩擦は、パネルごとに平板の局所摩擦係数を求めて足し合わせる。走行長 :math:`x_s` は、胴体ではノーズ先端から子午線に沿った長さ、
-フィンでは前縁からの弦方向の長さ、Reynolds 数は :math:`Re_x=V x_s/\nu`\ （射点高度の標準大気で :math:`V=\max(M,0.05)\,a`）である。
+フィンでは前縁からの弦方向の長さ、Reynolds 数は :math:`Re_x=V x_s/\nu`\ （設定した大気 ``[atmosphere]``\ （温度差を含む）の射点高度の値で :math:`V=\max(M,0.05)\,a`）である。部品積み上げ法の摩擦と同じ大気を使う。
 圧縮性は Eckert の参照温度法 :cite:`eckert` で入れる。断熱壁の温度比と参照温度比は
 
 .. math::

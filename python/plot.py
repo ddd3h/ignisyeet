@@ -409,18 +409,22 @@ def plot_aero_compare(out, other):
 
 
 def warn_stale(out):
-    """Warn (stderr) when a dispersion output is older than the flight summary: it was written for an earlier configuration.
+    """Warn (stderr) when a dispersion output belongs to another flight configuration than summary.json.
 
-    config_hash cannot be compared across files: the flight, wind-grid and Monte Carlo hashes cover different
-    configuration sections and differ by design. A dispersion run that follows its flight run is newer.
+    The dispersion outputs carry the hash of the flight configuration they were run with
+    (``flight_config_hash``); summary.json carries it as ``config_hash``.
     """
     ref = out / "summary.json"
     if not ref.exists():
         return
-    for name in ("dispersion.csv", "dispersion_meta.json", "dispersion_mc.csv", "dispersion_summary.json"):
+    flight = json.loads(ref.read_text()).get("config_hash")
+    for name in ("dispersion_meta.json", "dispersion_summary.json"):
         f = out / name
-        if f.exists() and f.stat().st_mtime < ref.stat().st_mtime - 1.0:
-            print(f"warning: {f} is older than {ref}: it was probably written for an earlier configuration; rerun `ignisyeet dispersion` before reading it next to the trajectory", file=sys.stderr)
+        if not f.exists():
+            continue
+        h = json.loads(f.read_text()).get("flight_config_hash")
+        if h is None or h != flight:
+            print(f"warning: {f} was written for another flight configuration than {ref}; rerun `ignisyeet dispersion` before reading the dispersion plot next to the trajectory", file=sys.stderr)
 
 
 PLOTS = {"geometry": plot_geometry, "aero": plot_aero, "panel": plot_panel, "trajectory": plot_trajectory, "dispersion": plot_dispersion}

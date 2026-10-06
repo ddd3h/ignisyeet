@@ -1250,7 +1250,7 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
     warnings.extend(aero_range_warning(&p.table.out_of_range_stats()));
     let path = out_path(cfg, "dispersion.csv")?;
     write_wind_grid_csv(&path, &results)?;
-    let meta = serde_json::json!({ "config_hash": run_hash(cfg, RunKind::WindGrid), "cases": results.len(), "failed": failed, "warnings": warnings, "aero_table_range": aero_range_json(&p.table.out_of_range_stats()) });
+    let meta = serde_json::json!({ "config_hash": run_hash(cfg, RunKind::WindGrid), "flight_config_hash": run_hash(cfg, RunKind::Flight), "cases": results.len(), "failed": failed, "warnings": warnings, "aero_table_range": aero_range_json(&p.table.out_of_range_stats()) });
     std::fs::write(out_path(cfg, kml::WIND_GRID_META)?, serde_json::to_string_pretty(&meta)?)?;
     u.done_line("Wind grid", &format!("{} cases, {failed} failed", results.len()), start.elapsed());
     if u.plain() {
@@ -1333,6 +1333,8 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
     let spath = out_path(cfg, "dispersion_summary.json")?;
     let mut json = serde_json::to_value(&r.summary)?;
     json["config_hash"] = run_hash(cfg, RunKind::MonteCarlo).into();
+    // Lets the plots check that this run belongs to the same flight configuration as summary.json.
+    json["flight_config_hash"] = run_hash(cfg, RunKind::Flight).into();
     json["warnings"] = serde_json::json!(warnings);
     json["aero_table_range"] = aero_range_json(&range);
     std::fs::write(&spath, serde_json::to_string_pretty(&json)?)?;

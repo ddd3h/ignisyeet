@@ -688,7 +688,7 @@ mod tests {
             extrapolation: Extrapolation::Clamp,
             ..Default::default()
         };
-        AeroTable::from_fn(meta, |_, _| AeroCoeffs { xcp: 0.5, ca_on: 0.5, ca_off: 0.5, ..Default::default() })
+        AeroTable::from_fn(meta, |_, _| AeroCoeffs { xcp: 0.5, cna: 2.0, ca_on: 0.5, ca_off: 0.5, ..Default::default() })
     }
 
     fn motor() -> Motor {

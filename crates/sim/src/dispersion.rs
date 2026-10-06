@@ -12,6 +12,10 @@ use rand_distr::{Distribution, StandardNormal};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
+/// Fewest landed samples for which the P99.9 of the landing distance is reported: below it the percentile is
+/// the largest sample or an interpolation next to it, not an estimate of the 0.1 % tail.
+pub const P999_MIN_SAMPLES: usize = 1000;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DispersionMode {
@@ -427,7 +431,8 @@ pub struct DescentStats {
     pub landing_distance_p50: f64,
     pub landing_distance_p90: f64,
     pub landing_distance_p99: f64,
-    pub landing_distance_p999: f64,
+    /// P99.9 of the landing distance [m]; None (null) with fewer than [`P999_MIN_SAMPLES`] landed samples.
+    pub landing_distance_p999: Option<f64>,
     #[serde(flatten)]
     pub landing: PointStats,
     pub max_landing_distance: f64,
@@ -506,7 +511,7 @@ pub fn summarize(rows: &[McRow], samples: usize, seed: u64) -> McSummary {
                 landing_distance_p50: percentile(&dist, 50.0),
                 landing_distance_p90: percentile(&dist, 90.0),
                 landing_distance_p99: percentile(&dist, 99.0),
-                landing_distance_p999: percentile(&dist, 99.9),
+                landing_distance_p999: (dist.len() >= P999_MIN_SAMPLES).then(|| percentile(&dist, 99.9)),
                 landing: landing_statistics(&pts),
                 max_landing_distance: dmax,
                 max_landing_distance_sample: imax,
@@ -1188,7 +1193,13 @@ mod tests {
         assert!(!st.complete && st.max_landing_distance_is_lower_bound);
         assert_eq!(st.max_landing_distance, 300.0);
         assert_eq!((st.landing_distance_p50, st.landing_distance_p90), (200.0, 280.0));
-        assert!((st.landing_distance_p999 - 299.8).abs() < 1e-9, "{}", st.landing_distance_p999);
+        // Three landed samples: no P99.9.
+        assert_eq!(st.landing_distance_p999, None);
+        let many: Vec<McRow> = (0..1000).map(|i| mk(i, Ok(landed_summary(i as f64)))).collect();
+        let st = &summarize(&many, 1000, 1).descents[0];
+        assert!((st.landing_distance_p999.unwrap() - 998.001).abs() < 1e-6, "{:?}", st.landing_distance_p999);
+        let few = summarize(&many[..999], 999, 1);
+        assert_eq!(few.descents[0].landing_distance_p999, None);
         let all = summarize(&rows[..3], 3, 1);
         assert!(all.descents[0].complete && !all.descents[0].max_landing_distance_is_lower_bound);
     }

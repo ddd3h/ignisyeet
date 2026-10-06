@@ -87,7 +87,7 @@ pub fn lock_dir(dir: &Path) -> Result<()> {
                 let pid = std::fs::read_to_string(&lock).ok().and_then(|t| t.trim().parse::<u32>().ok());
                 match pid {
                     Some(p) if pid_alive(p) => {
-                        bail!("another ignisyeet run is using {} (lock file {}, pid {p}); wait for it or use a different --out", dir.display(), lock.display())
+                        bail!("another ignisyeet run is using {} (lock file {}, pid {p}); wait for it or use a different --out (if no other run is active, delete {})", dir.display(), lock.display(), lock.display())
                     }
                     Some(_) => {
                         let _ = std::fs::remove_file(&lock);
@@ -99,7 +99,12 @@ pub fn lock_dir(dir: &Path) -> Result<()> {
             Err(e) => return Err(e).with_context(|| format!("cannot create the lock file {}", lock.display())),
         }
     }
-    bail!("another ignisyeet run is using {} (lock file {}); wait for it or use a different --out", dir.display(), lock.display())
+    bail!(
+        "another ignisyeet run is using {} (lock file {}); wait for it or use a different --out (if no other run is active, delete {})",
+        dir.display(),
+        lock.display(),
+        lock.display()
+    )
 }
 
 /// Removes the lock files this process holds.

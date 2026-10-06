@@ -659,11 +659,13 @@ def plot_dispersion_mc(out):
             if p999 is not None:
                 lines.append("P50 / P90 / P99 / P99.9: " + " / ".join(f"{v:.0f}" for v in pct + [p999]) + " m")
             else:
-                lines.append("P50 / P90 / P99: " + " / ".join(f"{v:.0f}" for v in pct) + " m")
+                lines.append("P50 / P90 / P99: " + " / ".join(f"{v:.0f}" for v in pct) + " m (P99.9 needs ≥ 1000 landed samples)")
         if st.get("complete") is False:
             lines.append("statistics incomplete")
         if lines:
-            ax.text(0.02, 0.02, "\n".join(lines), transform=ax.transAxes, fontsize=8, color=INK2, va="bottom")
+            # Below the axes, in a box: inside them it would cover landing points, the launch site or the legend.
+            ax.text(0.5, -0.13, "\n".join(lines), transform=ax.transAxes, fontsize=8, color=INK2, ha="center", va="top",
+                    bbox={"boxstyle": "round,pad=0.4", "facecolor": "none", "edgecolor": INK2, "linewidth": 0.6, "alpha": 0.8})
     fig.tight_layout()
     draw_usability(fig, *dispersion_usability(summ))
     save(fig, out, "dispersion_mc.png")
@@ -812,6 +814,8 @@ def stale_warnings(out):
         except (OSError, ValueError) as e:
             msgs.append(f"warning: {f} cannot be read ({e}); rerun the command that writes it")
             continue
+        if name == "summary.json" and isinstance(j, dict) and j.get("failed") is True:
+            continue  # the failure marker of a failed sim run carries no hash: the dispersion files are still compared
         h = j.get(key) if isinstance(j, dict) else None
         if h is None:
             if name != "summary.json":
@@ -847,8 +851,7 @@ def main():
     if failed is not None and a.what == "trajectory":
         remove_old_plots(a.out_dir, PNGS["trajectory"])
         sys.exit(f"error: the last sim run failed: {failed}; not plotting the old trajectory")
-    if failed is None:
-        warn_stale(a.out_dir)
+    warn_stale(a.out_dir)
     names = list(PLOTS) if a.what == "all" else [a.what]
     plotted = 0
     for name in names:

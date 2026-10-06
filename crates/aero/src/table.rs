@@ -781,7 +781,13 @@ impl AeroTable {
         let (k, tb) = locate(&self.meta.betas_deg, beta.to_degrees(), clamp);
         let extrapolated = !(0.0..=1.0).contains(&ta) || !(0.0..=1.0).contains(&tb);
         if rec {
-            self.record(m, alpha.to_degrees(), outside(&self.meta.alphas_deg, alpha.to_degrees()) || outside(&self.meta.betas_deg, beta.to_degrees()));
+            // The largest angle is the total angle of attack acos(cos a cos b), not the pitch-plane angle alone.
+            let [u, v, w] = airspeed_direction(alpha, beta);
+            self.record(
+                m,
+                v.hypot(w).atan2(u).to_degrees(),
+                outside(&self.meta.alphas_deg, alpha.to_degrees()) || outside(&self.meta.betas_deg, beta.to_degrees()),
+            );
         }
         let (i1, j1, k1) = ((i + 1).min(self.meta.machs.len() - 1), (j + 1).min(na - 1), (k + 1).min(nb - 1));
         let at = |ii: usize, jj: usize, kk: usize| &data[(ii * na + jj) * nb + kk];
@@ -1532,6 +1538,21 @@ mod tests {
         assert_eq!(g.out_of_range_stats().angle_beyond, 0);
         g.lookup6(0.5, 5f64.to_radians(), 3f64.to_radians());
         assert_eq!(g.out_of_range_stats().angle_beyond, 1);
+    }
+
+    #[test]
+    fn general_table_records_the_total_angle_of_attack() {
+        let (t, _) = table(Extrapolation::Linear);
+        let g = t.to_general(angle_axis(180.0, 30.0, 2.0, 10.0), angle_axis(90.0, 30.0, 2.0, 10.0));
+        g.reset_out_of_range_stats();
+        // Pure sideslip of 40 deg: the pitch-plane angle is 0, the total angle 40 deg.
+        g.lookup6(0.5, 0.0, 40f64.to_radians());
+        assert!((g.out_of_range_stats().max_abs_alpha_deg - 40.0).abs() < 1e-9);
+        let (a, b) = (30f64.to_radians(), 30f64.to_radians());
+        g.reset_out_of_range_stats();
+        g.lookup6(0.5, a, b);
+        let total = (a.cos() * b.cos()).acos().to_degrees();
+        assert!((g.out_of_range_stats().max_abs_alpha_deg - total).abs() < 1e-9);
     }
 
     #[test]

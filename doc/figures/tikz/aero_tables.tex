@@ -15,9 +15,9 @@
   \node[note, anchor=north] at (2.0,-1.7) {$\alpha_t$ の既定の範囲は 0 から 30°\\（超える分は外挿）};
   % ---- middle: expansion ----
   \draw[arr] (6.0,2.2) -- (9.4,2.2);
-  \node[note, anchor=south, text width=36mm] at (7.7,2.35) {展開\\$\cos\alpha_t=\cos\alpha\cos\beta$};
-  \node[note, anchor=north, text width=36mm] at (7.7,2.05) {引く角は $\alpha_t'=\min(\alpha_t,\pi-\alpha_t)$};
-  \node[note, anchor=north, text width=36mm] at (7.7,0.6) {展開しても\\情報は増えない};
+  \node[note, anchor=south] at (7.7,2.35) {展開\\$\cos\alpha_t=\cos\alpha\cos\beta$};
+  \node[note, anchor=north] at (7.7,2.05) {引く角は\\$\alpha_t'=\min(\alpha_t,\pi-\alpha_t)$};
+  \node[note, anchor=north] at (7.7,0.6) {展開しても\\情報は増えない};
   % ---- right: general table, a stack of (M, alpha) grids, one per beta ----
   \node[font=\bfseries] at (13.0,4.6) {一般表};
   \foreach \k in {3,2,1,0} {
@@ -33,7 +33,7 @@
   \node[note, anchor=north] at (12.6,-0.5) {各点の値：$C_X,C_Y,C_Z,C_l,C_m,C_n$,\\ロールの微係数、ピッチ・ヨーの減衰の和};
   % ---- bottom: direct sources ----
   \node[boxo, minimum width=62mm, minimum height=9mm] (dir) at (12.6,-2.6) {CFD の一般表・外部の一般表};
-  \draw[arr] (dir.north) -- ++(0,0.45);
+  \draw[arr] (dir.east) -- ++(0.5,0) |- (15.5,2.2);
   \node[note, anchor=east] at (8.9,-2.6) {展開を通さずに\\直接作る};
   \draw[arr, dashed] (9.0,-2.6) -- (dir.west);
 \end{tikzpicture}

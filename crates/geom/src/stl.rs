@@ -25,6 +25,13 @@ pub fn parse_stl(bytes: &[u8]) -> Result<Vec<Triangle>> {
         parse_ascii(bytes)?
     } else if is_binary_size {
         parse_binary(bytes)?
+    } else if bytes.len() >= 84 {
+        let n = u32::from_le_bytes(bytes[80..84].try_into().unwrap()) as usize;
+        bail!(
+            "binary STL declares {n} triangles (needs {} bytes) but the file has {} bytes: the file is truncated or corrupt",
+            84usize.saturating_add(50usize.saturating_mul(n)),
+            bytes.len()
+        )
     } else {
         bail!("unrecognised STL format")
     };
@@ -115,6 +122,15 @@ mod tests {
         let ascii = b"solid t\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex NaN 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid t\n";
         let e = parse_stl(ascii).unwrap_err().to_string();
         assert!(e.contains("triangle 1"), "{e}");
+    }
+
+    #[test]
+    fn truncated_binary_stl_is_reported_as_truncated() {
+        let mut b = vec![0u8; 80];
+        b.extend_from_slice(&3u32.to_le_bytes());
+        b.extend(vec![0u8; 50 * 2 + 7]);
+        let e = parse_stl(&b).unwrap_err().to_string();
+        assert!(e.contains("declares 3 triangles (needs 234 bytes) but the file has 191 bytes") && e.contains("truncated or corrupt"), "{e}");
     }
 
     #[test]

@@ -164,6 +164,20 @@ struct Slice {
 
 const N_BINS: usize = 72;
 
+/// Hard size sanity check on the extracted body length (0.1-20 m); a failure almost always means a wrong STL unit.
+pub fn check_plausible_size(g: &Geometry) -> Result<()> {
+    let l = g.length;
+    if !(0.1..=20.0).contains(&l) {
+        let hint = if l > 20.0 {
+            "the STL is probably in millimetres; use stl_scale = 0.001"
+        } else {
+            "the STL is probably in metres already or scaled down; check the STL units"
+        };
+        bail!("body length {l:.3} m is outside 0.1-20 m: check stl_scale ({hint})");
+    }
+    Ok(())
+}
+
 pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
     if opt.n_slices < 20 {
         bail!("n_slices must be at least 20");
@@ -359,7 +373,7 @@ fn reference_radius(slices: &[Slice]) -> (f64, Option<String>) {
     if v.is_empty() {
         return (0.0, None);
     }
-    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    v.sort_by(|a, b| a.total_cmp(b));
     let p90 = v[((v.len() - 1) as f64 * 0.9) as usize];
     if max <= 1.15 * p90 {
         (max, None)
@@ -411,7 +425,7 @@ fn slice_mesh(local: &[[Vec3; 3]], xmin: f64, length: f64, n: usize) -> Vec<Slic
         }
         let mut filled: Vec<f64> = bins.iter().copied().filter(|&r| r > 0.0).collect();
         s.r_body = if filled.len() >= 3 {
-            filled.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            filled.sort_by(|a, b| a.total_cmp(b));
             filled[filled.len() / 2]
         } else {
             filled.iter().copied().fold(0.0, f64::max)
@@ -445,7 +459,7 @@ fn fin_slice(s: &Slice, thr: f64) -> FinSlice {
     if out.is_empty() {
         return FinSlice::default();
     }
-    out.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    out.sort_by(|a, b| a.1.total_cmp(&b.1));
     let gap = 10f64.to_radians();
     let mut clusters: Vec<Vec<(f64, f64)>> = vec![vec![out[0]]];
     for w in out.windows(2) {
@@ -518,10 +532,10 @@ fn detect_fins(slices: &[Slice], info: &[FinSlice], dx: f64) -> Option<FinSet> {
     let fin_area: f64 = group.clone().map(|k| info[k].span * dx).sum();
     let tip_chord = (2.0 * fin_area / span - root_chord).clamp(0.0, 3.0 * root_chord);
     let k_tip = group.clone().find(|&k| info[k].span >= 0.97 * span)?;
-    let sweep = ((slices[k_tip].x - 0.5 * dx - x_le_root) / 0.97).max(0.0);
+    let sweep = (slices[k_tip].x - 0.5 * dx - x_le_root) / 0.97;
 
     let mut body_r: Vec<f64> = root.iter().map(|&k| slices[k].r_body).collect();
-    body_r.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    body_r.sort_by(|a, b| a.total_cmp(b));
     let body_radius = body_r[body_r.len() / 2];
 
     let mut th: Vec<f64> = Vec::new();
@@ -538,7 +552,7 @@ fn detect_fins(slices: &[Slice], info: &[FinSlice], dx: f64) -> Option<FinSet> {
             }
         }
     }
-    th.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    th.sort_by(|a, b| a.total_cmp(b));
     let thickness = if th.is_empty() { 0.0 } else { th[th.len() / 2] };
 
     Some(FinSet { count, root_chord, tip_chord, span, sweep, thickness, x_le_root, body_radius, cant_deg: 0.0 })
@@ -589,6 +603,25 @@ mod tests {
         assert!(close(f.sweep, rk.sweep, 0.008), "sweep {}", f.sweep);
         assert!(close(f.thickness, rk.thickness, 0.0008), "thickness {}", f.thickness);
         assert!(close(f.x_le_root, rk.length - rk.root_chord, 0.006), "x_le {}", f.x_le_root);
+    }
+
+    #[test]
+    fn forward_swept_fin_keeps_negative_sweep() {
+        let rk = SampleRocket { sweep: -0.03, ..Default::default() };
+        let g = extract(&rk.mesh(), &ExtractOptions::default()).unwrap();
+        let f = g.fins.expect("fins detected");
+        assert!(close(f.sweep, rk.sweep, 0.008), "sweep {}", f.sweep);
+        assert!(f.sweep < -0.01, "sweep {}", f.sweep);
+    }
+
+    #[test]
+    fn size_check_rejects_millimetre_stl() {
+        let g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
+        assert!(check_plausible_size(&g).is_ok());
+        let big: Vec<Triangle> = SampleRocket::default().mesh().iter().map(|t| t.map(|v| v * 1000.0)).collect();
+        let g = extract(&big, &ExtractOptions::default()).unwrap();
+        let e = check_plausible_size(&g).unwrap_err().to_string();
+        assert!(e.contains("stl_scale = 0.001"), "{e}");
     }
 
     #[test]

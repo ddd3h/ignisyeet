@@ -403,7 +403,30 @@ impl AeroTable {
         })
     }
 
+    /// Writes the table as CSV plus a JSON sidecar next to it.
+    ///
+    /// Both files are written to temporary names in the same directory and renamed into place
+    /// (CSV first, sidecar last), so an interrupted or concurrent run never leaves a half-written file.
     pub fn save(&self, csv_path: &Path) -> Result<()> {
+        let json_path = csv_path.with_extension("json");
+        let tmp = |p: &Path| {
+            let mut n = p.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+            n.push(format!(".tmp{}", std::process::id()));
+            p.with_file_name(n)
+        };
+        let (csv_tmp, json_tmp) = (tmp(csv_path), tmp(&json_path));
+        let result = self.save_to(&csv_tmp, &json_tmp).and_then(|()| {
+            std::fs::rename(&csv_tmp, csv_path).with_context(|| format!("cannot write {}", csv_path.display()))?;
+            std::fs::rename(&json_tmp, &json_path).with_context(|| format!("cannot write {}", json_path.display()))
+        });
+        if result.is_err() {
+            let _ = std::fs::remove_file(&csv_tmp);
+            let _ = std::fs::remove_file(&json_tmp);
+        }
+        result
+    }
+
+    fn save_to(&self, csv_path: &Path, json_path: &Path) -> Result<()> {
         let mut f = std::io::BufWriter::new(std::fs::File::create(csv_path).with_context(|| format!("cannot write {}", csv_path.display()))?);
         let na = self.meta.alphas_deg.len();
         match &self.data {
@@ -431,7 +454,8 @@ impl AeroTable {
             }
         }
         let meta = TableMeta { format_version: FORMAT_VERSION, ..self.meta.clone() };
-        std::fs::write(csv_path.with_extension("json"), serde_json::to_string_pretty(&meta)?)?;
+        f.flush()?;
+        std::fs::write(json_path, serde_json::to_string_pretty(&meta)?)?;
         Ok(())
     }
 
@@ -861,6 +885,25 @@ mod tests {
         let (a, b) = (t.lookup(1.23, 0.07), u.lookup(1.23, 0.07));
         assert!((a.cn - b.cn).abs() < 1e-7 && (a.xcp - b.xcp).abs() < 1e-7);
         assert_eq!(u.meta.source_hash, "h");
+    }
+
+    #[test]
+    fn save_leaves_no_temporary_files_and_replaces_atomically() {
+        let (t, _) = table(Extrapolation::Linear);
+        let dir = std::env::temp_dir().join(format!("ignisyeet_aero_atomic_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("t.csv");
+        std::fs::write(&p, "stale").unwrap();
+        t.save(&p).unwrap();
+        t.save(&p).unwrap();
+        let mut names: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        names.sort();
+        assert_eq!(names, ["t.csv", "t.json"]);
+        AeroTable::load(&p).unwrap();
+        // A failing save (missing directory) reports an error and creates nothing.
+        assert!(t.save(&dir.join("no_such_dir").join("t.csv")).is_err());
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

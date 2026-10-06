@@ -279,7 +279,7 @@ IgnisYeet では、抽出した半径分布を断面ごとの円錐台の連な�
 超音速の Busemann の展開は衝撃波が前縁に付いている間だけ成り立ち、衝撃波は迎角が最大の転向角（:math:`M=1.5` で約 12°、:math:`M=2` で約 23°）を超えると離れる。
 OpenRocket のフィンのモデルも、フィンの迎角を失速角 20° で打ち切る :cite:`niskanen`。
 そこで、フィン全体の法線力 :math:`C_N^{\mathrm{fins}}`\ （:eq:`eq-fin-total`）を、:math:`\alpha_1=15^\circ` まではここまでの式のまま使い、
-それより大きな迎角では、フィンを流れに垂直な平板とみなした横流れの値へ単調に近づける。
+それより大きな迎角では、フィンを流れに垂直な平板とみなした横流れの値へなめらかに近づける。
 :math:`\alpha_1` までの式は変えないので、:math:`C_{N\alpha}` と小さい迎角の係数は変わらない。:math:`\alpha_1=15^\circ` では、Busemann の 3 次の項は 1 次の項の約 2 割までにとどまる（遷音速の補間を通して :math:`M\approx1.2` で最大）。
 
 :math:`90^\circ` での値は、平板の垂直抗力から
@@ -294,24 +294,37 @@ OpenRocket のフィンのモデルも、フィンの迎角を失速角 20° で
 亜音速の 1.2 は、縦横比 1〜5 の平板の垂直抗力係数 1.17〜1.2、超音速の 1.7 は、流れに垂直な平板と円板の 1.6〜1.8 の範囲の値である :cite:`hoerner`。
 胴体干渉係数 :math:`K_{fb}` は小さい迎角のポテンシャル流の吹き上げを表すので、この横流れの値には掛けない。
 
-:math:`\alpha_1<\alpha\le90^\circ` では、:math:`t=\alpha-\alpha_1`、:math:`T=90^\circ-\alpha_1` として
+:math:`\alpha_1<\alpha\le90^\circ` では、:math:`t=\alpha-\alpha_1`、:math:`T=90^\circ-\alpha_1`、:math:`s=t/T`、:math:`\Delta=C_{N,90}^{\mathrm{fins}}-C_{N,1}` として
 
 .. math::
    :label: eq-fin-crossflow
 
-   C_N^{\mathrm{fins}} = C_{N,1} + \left(C_{N,90}^{\mathrm{fins}}-C_{N,1}\right)\frac{1-e^{-k\tau}}{1-e^{-kT}},\qquad
-   \tau = T\sin\frac{\pi t}{2T}
+   C_N^{\mathrm{fins}} = C_{N,1} + \Delta\,\frac{1-e^{-u\tau/T}}{1-e^{-u}} + (d_0-d_e)\,b(t),\qquad
+   \tau = T\sin\frac{\pi t}{2T},\qquad b(t)=t\,(1-s)^2
 
-とする。:math:`C_{N,1}` は :math:`\alpha_1` での付着流の値、:math:`k` は :math:`\alpha_1` での傾きが付着流の傾きに一致するように数値的に決める（二分法）。
-:math:`\tau` によって :math:`90^\circ` での傾きは 0 になる（平板は :math:`90^\circ` について対称）。
-:math:`C_{N,90}^{\mathrm{fins}}>C_{N,1}` なら、曲線は :math:`\alpha_1` で値と傾きが連続で、:math:`C_{N,90}^{\mathrm{fins}}` まで単調に増え、それを超えない。
-付着流の値がすでに横流れの値を超える場合（縦横比の大きなフィン）は、両端の傾きを付着流の傾きと 0 にした 3 次 Hermite 補間で :math:`C_{N,90}^{\mathrm{fins}}` に戻す。
+とする。:math:`C_{N,1}` と :math:`d_0` は :math:`\alpha_1` での付着流の値と傾きである。
+:math:`b` は両端で 0 になるこぶ（:math:`b'(0)=1`、:math:`b'(T)=0`）、:math:`d_e` は指数関数の項の :math:`t=0` での傾きで、
+
+.. math::
+   :label: eq-fin-crossflow-slope
+
+   d_e=\frac{\pi}{2}\,\frac{\Delta}{T}\,g(u),\qquad g(u)=\frac{u}{1-e^{-u}}
+
+である。:math:`\Delta>0` では、:math:`u` を :math:`g(u)=d_0T/(\Delta\pi/2)` の解として数値的に決める（二分法）。このとき :math:`d_e=d_0` で、こぶの項は消え、
+曲線は :math:`\alpha_1` で値と傾きが連続で、:math:`C_{N,90}^{\mathrm{fins}}` まで単調に増え、それを超えない（:math:`u` の正負によらない）。
+:math:`u` は :math:`[-20,\,20]` に制限し、付着流の値が横流れの値に近いときや付着流の傾きが 0 に近いときのように、指数関数で担えない傾きの残りはこぶの項が受け持つ。
+サンプル機体は Mach 0 から 3 まで :math:`u=3.7` から 7.4 で、こぶの項は現れない。
+:math:`\Delta\le0`\ （付着流の値がすでに横流れの値以上。縦横比の大きなフィン）では、指数関数の項を :math:`\Delta\,(3s^2-2s^3)` に置き換える。
+式全体は、両端の傾きを :math:`d_0` と 0 にした 3 次 Hermite 補間になり、有界な行き過ぎのあと :math:`C_{N,90}^{\mathrm{fins}}` に戻る。
+どちらの場合も、:math:`t=0` で値と傾きが付着流に一致し、:math:`t=T` で値が :math:`C_{N,90}^{\mathrm{fins}}`、傾きが 0 になる（:math:`\tau` によって :math:`90^\circ` での傾きは 0 になる。平板は :math:`90^\circ` について対称）。
+:math:`\Delta\to0` では、:math:`u` が有界なので指数関数の項と :math:`d_e` は :math:`\Delta` の有界な倍数で、どちらの式も :math:`C_{N,1}+d_0\,b(t)` に近づく。
+そのため、:math:`C_N^{\mathrm{fins}}` は :math:`C_{N,1}`、:math:`C_{N,90}^{\mathrm{fins}}`、:math:`d_0` について連続で、付着流の値が横流れの値を横切る Mach 数や形状でも跳ばない。
 この形（:math:`\alpha_1` の上で折れ、横流れの値で頭打ちになる）は、縦横比の小さい平板の法線力の測定値（面積あたり 30° で約 1.0、45〜90° で 1.1〜1.2）の傾向に沿う :cite:`hoerner`。
 :math:`90^\circ` を超える迎角（後ろ向きの流れ）では :math:`180^\circ-\alpha` の値を使い、:math:`C_N^{\mathrm{fins}}` は :math:`\alpha` について奇関数である。
 
 フィンの圧力中心も、:math:`\alpha_1` までは :eq:`eq-fin-cp` のままで、それより大きい迎角では、平均空力翼弦に対する位置 :math:`\kappa` を、
 両端の傾きを 0 とする 3 次 Hermite 補間で :math:`90^\circ` の 0.5（台形の平面形の図心。流れに垂直な平板の圧力はこの点について対称）へ動かす。
-:math:`90^\circ` を超える迎角では :math:`1-\kappa(180^\circ-\alpha)` とし、亜音速の :math:`180^\circ` では翼弦の 3/4 になる。
+係数表の :math:`90^\circ` を超える行（``aero.alpha_max_deg`` が 90 を超える表だけにある）には :math:`1-\kappa(180^\circ-\alpha)` を入れ、亜音速の :math:`180^\circ` では翼弦の 3/4 になる。ただし、飛翔計算はこの行を読まない。軸対称表の飛翔モデル、6 成分の引き出し、一般表への展開は、全迎角を :math:`\min(\alpha,\,180^\circ-\alpha)` に折り返して表を引くので、尾部を先にした飛翔は、前向きの係数（圧力中心を含む）を :math:`90^\circ` について折り返して使う（:ref:`sec-aero-table`）。
 
 サンプル機体の全体の :math:`C_N`\ （胴体を含む）は、:math:`\alpha=90^\circ` で :math:`M=0.3`、1.2、2.0 のとき 24.2、26.1、26.1 である。
 大迎角のフィンの法線力は経験的な近似で、平板の値の幅（亜音速で 1.17〜2.0、超音速で 1.6〜1.8）と遷音速のつなぎ方の分だけ不確かである（:ref:`sec-lim-aero`）。
@@ -334,10 +347,28 @@ OpenRocket のフィンのモデルも、フィンの迎角を失速角 20° で
    \kappa(M) =
    \begin{cases}
    0.25 & (M\le0.5)\\[2pt]
-   \dfrac{\mathit{AR}\,\beta-0.67}{2\,\mathit{AR}\,\beta-1} & (M\ge2)
+   \kappa_s(\mathit{AR}\,\beta) & (M\ge2)
    \end{cases}
 
-とする :cite:`barrowman,niskanen`\ （超音速側は :math:`[0.25,\,0.5]` に制限）。:math:`0.5<M<2` は\ :eq:`eq-hermite` と同じ形の Hermite 補間でつなぐ（:math:`M=0.5` での傾きは 0、:math:`M=2` での傾きは数値微分）。
+とし、:math:`0.5<M<2` は\ :eq:`eq-hermite` と同じ形の Hermite 補間でつなぐ（:math:`M=0.5` での傾きは 0、:math:`M=2` での傾きは数値微分）:cite:`barrowman,niskanen`。
+:math:`\mathit{AR}=2s^2/A_f` は向かい合う 1 組のフィンの縦横比である。超音速の位置 :math:`\kappa_s` は :math:`x=\mathit{AR}\,\beta` の関数として
+
+.. math::
+   :label: eq-fin-cp-supersonic
+
+   \kappa_s(x) =
+   \begin{cases}
+   0.25 & (x\le0.84)\\[2pt]
+   \text{3 次 Hermite 補間} & (0.84<x<1.2)\\[2pt]
+   \min\!\left(\dfrac{x-0.67}{2x-1},\ 0.5\right) & (x\ge1.2)
+   \end{cases}
+
+とする。:math:`x\ge1.2` の式は Fleeman :cite:`fleeman` の式で、Niskanen :cite:`niskanen` が :math:`M\ge2` に使うものである。:math:`x=1.2` の約 0.38 から、:math:`x\to\infty` で 0.5 に近づく。
+この式は :math:`x=0.5` に極を持ち、:math:`x=0.84` で翼弦の 1/4 まで下がるので、小さい :math:`x` には使わない。
+縦横比の小さい翼の荷重分布は Mach 数によらない（細長翼の極限 :cite:`jones835`）ので、:math:`x\le0.84` では圧力中心を亜音速の位置（翼弦の 1/4）に保つ。
+:math:`0.84<x<1.2` は、:math:`x=0.84` で傾き 0、:math:`x=1.2` で式の傾き :math:`0.34/(2x-1)^2` をとる単調な 3 次 Hermite 補間でつなぐ。
+:math:`\kappa_s` は :math:`[0.25,\,0.5]` の中にあり、Mach 数とフィンの形状について連続である。
+
 :math:`\kappa=0.25` のとき、これは Barrowman のフィン圧力中心 :cite:`barrowman`
 
 .. math::

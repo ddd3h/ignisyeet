@@ -260,6 +260,7 @@ fn run() -> Result<()> {
             let cfg = load_config(&config, &ov, &table)?;
             outfile::lock_dir(&cfg.out_dir())?;
             begin(&cfg, &config, Sub::Dispersion);
+            remove_stale_dispersion_outputs(&cfg);
             incomplete = run_dispersion(&cfg)?
         }
         Cmd::CfdCheck { config, mesh } => {
@@ -350,12 +351,34 @@ fn stored_geometry_warnings(cfg: &Config) -> Vec<String> {
     json.and_then(|j| j.get("warnings").cloned()).and_then(|w| serde_json::from_value(w).ok()).unwrap_or_default()
 }
 
-/// Warning about aero table lookups beyond the tabulated Mach range (held at the edge), if there were any.
-/// Lookups beyond the angle range are not a warning but [`angle_range_reason`].
-fn aero_range_warning(s: &aero::table::OutOfRangeStats) -> Option<String> {
-    let mach = s.mach_below + s.mach_above;
-    (mach > 0)
-        .then(|| format!("aero table: {mach} of {} lookups beyond the Mach range (max Mach {:.2}); Mach is held at the table edge", s.lookups, s.max_mach))
+/// The exit-status-3 message when aero lookups went beyond the table's Mach range (`mach_max` is the last
+/// Mach of the table, `mach_min` the first): the coefficients are held at the edge, which for a table that
+/// stops below the flight Mach number changes the drag and the stability of the whole ascent.
+fn mach_range_reason(s: &aero::table::OutOfRangeStats, mach_min: f64, mach_max: f64) -> Option<String> {
+    let mut parts = Vec::new();
+    if s.mach_above > 0 {
+        let need = (s.max_mach * 10.0).ceil() / 10.0;
+        parts.push(format!(
+            "{NOT_USABLE}: {} of {} lookups beyond the aero table's Mach range (max Mach {} > mach_max {mach_max:.2}): coefficients are held at the edge; build the table up to at least Mach {need:.1}",
+            s.mach_above,
+            s.lookups,
+            fmt_vs(s.max_mach, mach_max, 2)
+        ));
+    }
+    if s.mach_below > 0 {
+        parts.push(format!(
+            "{NOT_USABLE}: {} of {} lookups below the aero table's Mach range (first Mach {mach_min:.2}): coefficients are held at the edge; build the table down to Mach 0",
+            s.mach_below, s.lookups
+        ));
+    }
+    (!parts.is_empty()).then(|| parts.join("; "))
+}
+
+/// The combined range reason (angle and Mach) of a table's lookup statistics.
+fn range_reason(s: &aero::table::OutOfRangeStats, t: &aero::AeroTable) -> Option<String> {
+    let (lo, hi) = (t.meta.machs.first().copied().unwrap_or(0.0), t.meta.machs.last().copied().unwrap_or(0.0));
+    let parts: Vec<String> = [angle_range_reason(s, table_alpha_max(t)), mach_range_reason(s, lo, hi)].into_iter().flatten().collect();
+    (!parts.is_empty()).then(|| parts.join("; "))
 }
 
 /// The exit-status-3 message when aero lookups went beyond the table's angle range (`alpha_max` [deg], the
@@ -388,6 +411,8 @@ fn aero_range_json(s: &aero::table::OutOfRangeStats) -> serde_json::Value {
         "out_of_range": s.any(),
         // False when lookups went beyond the angle range: the run exits with status 3 (RESULTS NOT USABLE).
         "angles_in_range": s.angle_beyond == 0,
+        // False when lookups went beyond the Mach range: the run exits with status 3 as well.
+        "machs_in_range": s.mach_below + s.mach_above == 0,
     })
 }
 
@@ -1537,7 +1562,8 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
         );
     }
     let t0 = std::time::Instant::now();
-    let r = fly(cfg, &simulation(cfg, &p)?, descent)?;
+    let simu = simulation(cfg, &p)?;
+    let r = fly(cfg, &simu, descent)?;
     let general = p.table.kind() == aero::table::TableKind::General;
     u.done_line("Flight simulated", &format!("{descent:?}, {} samples, {} RHS evals", r.samples.len(), r.evals), t0.elapsed());
     let path = out_path(cfg, "trajectory.csv")?;
@@ -1549,10 +1575,12 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
     warnings.extend(size_warnings(cfg, p.table.meta.length, p.table.meta.ref_diameter));
     warnings.extend(grid_warnings(cfg));
     warnings.extend(flight_warnings(cfg, s));
-    warnings.extend(aero_range_warning(&range));
-    let angle = angle_range_reason(&range, table_alpha_max(&p.table));
+    let angle = range_reason(&range, &p.table);
     let mut json = summary_json(cfg, s, &warnings)?;
     json["aero_table_range"] = aero_range_json(&range);
+    if simu.wind.model == sim::WindModel::Profile {
+        json["wind_at_ref_height"] = ref_height_wind_json(&simu.wind);
+    }
     let summary_path = out_path(cfg, "summary.json")?;
     outfile::write(&summary_path, serde_json::to_string_pretty(&json)?)?;
     if u.plain() {
@@ -1591,6 +1619,7 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
         println!();
         u.print_panel(&view::flight_panel(s, descent, true));
     }
+    print_ref_height_wind(&simu.wind);
     print_warnings(&warnings);
     let unstable = stability_reason(s).or(angle);
     if landed {
@@ -1638,8 +1667,25 @@ fn wind_json(w: &sim::Wind) -> serde_json::Map<String, serde_json::Value> {
     m.insert("wind_direction_deg".into(), finite_json(w.direction_deg));
     if w.model == sim::WindModel::Profile {
         m.insert("wind_scale".into(), finite_json(w.profile_scale));
+        m.insert("wind_at_ref_height".into(), ref_height_wind_json(w));
     }
     m
+}
+
+/// `wind_at_ref_height` of summary.json, dispersion_meta.json and dispersion_summary.json (profile winds only):
+/// the nominal profile wind at `wind.ref_height`, `{"height": m, "speed": m/s, "direction_deg": deg it blows from}`.
+/// With `h_lim` = `wind.ref_height`, the keep-out step 1 gives `v_max = W * V_lim / speed` (W = `wind_speed`).
+fn ref_height_wind_json(w: &sim::Wind) -> serde_json::Value {
+    let (speed, direction) = w.at_ref_height();
+    serde_json::json!({ "height": finite_json(w.ref_height), "speed": finite_json(speed), "direction_deg": finite_json(direction) })
+}
+
+/// Prints the nominal profile wind at `wind.ref_height` (plain and rich output, profile winds only).
+fn print_ref_height_wind(w: &sim::Wind) {
+    if w.model == sim::WindModel::Profile && ui().mode != ui::Mode::Quiet {
+        let (speed, direction) = w.at_ref_height();
+        println!("  profile wind at wind.ref_height = {} m: {speed:.2} m/s from {direction:.0} deg (mean wind {:.2} m/s)", w.ref_height, w.speed);
+    }
 }
 
 /// summary.json: the flight summary plus `landed`, the run's `config_hash` and the sanity `warnings`.
@@ -1964,6 +2010,20 @@ fn wind_grid_line(mode: Descent, distances: &[f64], cases: usize) -> String {
     }
 }
 
+/// Removes the result files of an earlier `dispersion` run of the configured mode (wind grid: dispersion.csv and
+/// dispersion_meta.json; Monte Carlo: dispersion_mc.csv and dispersion_summary.json) before the run starts, so
+/// that a failed run leaves no results that look like its own (plot.py would draw them).
+fn remove_stale_dispersion_outputs(cfg: &Config) {
+    let names: [&str; 2] = if cfg.dispersion.mode == sim::DispersionMode::MonteCarlo {
+        ["dispersion_mc.csv", "dispersion_summary.json"]
+    } else {
+        ["dispersion.csv", kml::WIND_GRID_META]
+    };
+    for name in names {
+        let _ = std::fs::remove_file(cfg.out_dir().join(name));
+    }
+}
+
 fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
     let u = ui();
     let p = prepare(cfg)?;
@@ -2025,8 +2085,7 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
         p.table.reset_out_of_range_stats();
         sim::dispersion::replay_wind_grid_ok(&base, &cases, &errors);
     }
-    warnings.extend(aero_range_warning(&p.table.out_of_range_stats()));
-    let angle = angle_range_reason(&p.table.out_of_range_stats(), table_alpha_max(&p.table));
+    let angle = range_reason(&p.table.out_of_range_stats(), &p.table);
     let instab = instability(cases.iter().zip(&results).zip(&errors).map(|((c, s), e)| (c.descent, e.is_none().then_some(s))));
     warnings.extend(instability_warnings(&instab, "wind-grid cases"));
     let path = out_path(cfg, "dispersion.csv")?;
@@ -2049,6 +2108,7 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
         println!();
         u.print_panel(&view::wind_grid_panel(&cases, &results, start.elapsed()));
     }
+    print_ref_height_wind(&base.wind);
     print_warnings(&warnings);
     let incomplete = nominal_stability_reason(nominal.as_ref())
         .or(angle)
@@ -2210,8 +2270,7 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
         warnings.push(format!("{:?}: only {} landed samples: the statistics are rough", d.descent, d.landing.n));
     }
     let range = p.table.out_of_range_stats();
-    warnings.extend(aero_range_warning(&range));
-    let angle = angle_range_reason(&range, table_alpha_max(&p.table));
+    let angle = range_reason(&range, &p.table);
     let path = out_path(cfg, "dispersion_mc.csv")?;
     write_monte_carlo_csv(&path, &r.rows)?;
     let spath = out_path(cfg, "dispersion_summary.json")?;
@@ -2265,15 +2324,17 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
             } else {
                 println!("    max landing distance {:.1} m (sample {})", d.max_landing_distance, d.max_landing_distance_sample.unwrap_or(0));
             }
+            let p999 = d.landing_distance_p999.map_or_else(|| view::P999_NA.to_string(), |p| format!("{p:.1} m"));
             println!(
-                "    landing distance P50 {:.1} m, P90 {:.1} m, P99 {:.1} m, P99.9 {:.1} m (landed samples)",
-                d.landing_distance_p50, d.landing_distance_p90, d.landing_distance_p99, d.landing_distance_p999
+                "    landing distance P50 {:.1} m, P90 {:.1} m, P99 {:.1} m, P99.9 {p999} (landed samples)",
+                d.landing_distance_p50, d.landing_distance_p90, d.landing_distance_p99
             );
         }
     } else if u.rich() {
         println!();
         u.print_panel(&view::monte_carlo_panel(&r.summary, start.elapsed(), r.rows.len()));
     }
+    print_ref_height_wind(&base.wind);
     print_warnings(&warnings);
     if r.summary.descents.iter().all(|d| d.landing.n == 0) {
         if u.mode != ui::Mode::Quiet {
@@ -3182,12 +3243,18 @@ mod tests {
     #[test]
     fn aero_range_warning_and_json() {
         let none = aero::table::OutOfRangeStats { lookups: 10, ..Default::default() };
-        assert!(aero_range_warning(&none).is_none());
         assert_eq!(aero_range_json(&none)["out_of_range"], false);
         assert!(angle_range_reason(&none, 30.0).is_none());
         let s = aero::table::OutOfRangeStats { lookups: 100, mach_above: 7, angle_beyond: 3, max_mach: 2.5, max_abs_alpha_deg: 31.0, ..Default::default() };
-        let w = aero_range_warning(&s).unwrap();
-        assert_eq!(w, "aero table: 7 of 100 lookups beyond the Mach range (max Mach 2.50); Mach is held at the table edge");
+        let w = mach_range_reason(&s, 0.0, 2.0).unwrap();
+        assert_eq!(
+            w,
+            "RESULTS NOT USABLE: 7 of 100 lookups beyond the aero table's Mach range (max Mach 2.50 > mach_max 2.00): coefficients are held at the edge; build the table up to at least Mach 2.5"
+        );
+        assert!(mach_range_reason(&none, 0.0, 2.0).is_none());
+        let below = aero::table::OutOfRangeStats { lookups: 10, mach_below: 2, ..Default::default() };
+        assert!(mach_range_reason(&below, 0.5, 2.0).unwrap().contains("2 of 10 lookups below the aero table's Mach range (first Mach 0.50)"));
+        assert_eq!(aero_range_json(&s)["machs_in_range"], false);
         // Angles beyond the table: results not usable (exit status 3), not a warning.
         let r = angle_range_reason(&s, 30.0).unwrap();
         assert_eq!(
@@ -3195,7 +3262,7 @@ mod tests {
             "RESULTS NOT USABLE: 3 of 100 lookups beyond the aero table's angle range (max |alpha| 31.0 deg > alpha_max 30.0 deg): the descent uses extrapolated coefficients; build the table up to 90 deg"
         );
         assert!(r.starts_with(NOT_USABLE));
-        assert!(aero_range_warning(&aero::table::OutOfRangeStats { mach_above: 0, ..s }).is_none());
+        assert!(mach_range_reason(&aero::table::OutOfRangeStats { mach_above: 0, ..s }, 0.0, 2.0).is_none());
         let wide = aero::table::OutOfRangeStats { max_abs_alpha_deg: 120.0, ..s };
         assert!(angle_range_reason(&wide, 90.0).unwrap().ends_with("build the table up to 180 deg (aero.alpha_max_deg)"));
         let j = aero_range_json(&s);
@@ -3477,6 +3544,25 @@ mod tests {
     }
 
     #[test]
+    fn a_dispersion_run_removes_the_earlier_results_of_its_mode() {
+        let mut cfg = sample_config("stale_disp");
+        let dir = cfg.out_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        let all = ["dispersion.csv", "dispersion_meta.json", "dispersion_mc.csv", "dispersion_summary.json", "summary.json"];
+        let fill = || all.iter().for_each(|n| std::fs::write(dir.join(n), "x").unwrap());
+        let left = || all.iter().filter(|n| dir.join(n).exists()).copied().collect::<Vec<_>>();
+        fill();
+        cfg.dispersion.mode = sim::DispersionMode::WindGrid;
+        remove_stale_dispersion_outputs(&cfg);
+        assert_eq!(left(), ["dispersion_mc.csv", "dispersion_summary.json", "summary.json"]);
+        fill();
+        cfg.dispersion.mode = sim::DispersionMode::MonteCarlo;
+        remove_stale_dispersion_outputs(&cfg);
+        assert_eq!(left(), ["dispersion.csv", "dispersion_meta.json", "summary.json"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn wind_grid_line_marks_failures() {
         assert_eq!(wind_grid_line(Descent::Ballistic, &[10.0, 30.0], 2), "Ballistic: max landing distance 30.0 m");
         let l = wind_grid_line(Descent::Ballistic, &[10.0, 30.0], 3);
@@ -3683,7 +3769,7 @@ mod tests {
         let e = out_path(&cfg, "trajectory.csv").unwrap_err().to_string();
         assert_eq!(
             e,
-            format!("another ignisyeet run is using {0} (lock file {0}/.ignisyeet.lock, pid 1); wait for it or use a different --out", dir.display())
+            format!("another ignisyeet run is using {0} (lock file {0}/.ignisyeet.lock, pid 1); wait for it or use a different --out (if no other run is active, delete {0}/.ignisyeet.lock)", dir.display())
         );
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -3799,9 +3885,15 @@ mod tests {
         let j = serde_json::Value::Object(wind_json(&sim.wind));
         assert_eq!((j["wind_model"].as_str(), j["wind_speed"].as_f64(), j["wind_direction_deg"].as_f64()), (Some("profile"), Some(15.6), Some(90.0)));
         assert_eq!(j["wind_scale"].as_f64(), s.wind_scale);
+        // the nominal wind at wind.ref_height: the scaled profile there, so that v_max = W * V_lim / speed
+        let (ref_h, r) = (sim.wind.ref_height, &j["wind_at_ref_height"]);
+        let at = sim.wind.at(ref_h);
+        assert_eq!(r["height"].as_f64(), Some(ref_h));
+        assert!((r["speed"].as_f64().unwrap() - at.x.hypot(at.y)).abs() < 1e-12 && r["speed"].as_f64().unwrap() > 0.0);
+        assert!(r["direction_deg"].as_f64().is_some_and(|d| (0.0..360.0).contains(&d)));
         assert_eq!(summary_json(&target, &s, &[]).unwrap()["wind_model"], "profile");
         let power = serde_json::Value::Object(wind_json(&simulation(&sample_config("ptarget"), &p).unwrap().wind));
-        assert!(power["wind_model"] == "power" && power.get("wind_scale").is_none());
+        assert!(power["wind_model"] == "power" && power.get("wind_scale").is_none() && power.get("wind_at_ref_height").is_none());
         let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 }

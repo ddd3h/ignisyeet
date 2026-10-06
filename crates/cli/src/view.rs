@@ -592,6 +592,10 @@ pub fn wind_grid_panel(cases: &[Case], results: &[Summary], elapsed: Duration) -
 }
 
 /// Shown instead of the error ellipses when fewer than two samples landed.
+/// Shown instead of the P99.9 landing distance of fewer than 1000 landed samples.
+pub const P999_NA: &str = "n/a (needs \u{2265} 1000 landed samples)";
+/// The same for the narrow panel row.
+pub const P999_NA_SHORT: &str = "n/a (needs 1000+)";
 pub const ELLIPSE_NA: &str = "n/a (needs at least 2 landed samples)";
 
 pub fn monte_carlo_panel(sm: &McSummary, elapsed: Duration, n_rows: usize) -> Panel {
@@ -660,7 +664,7 @@ pub fn monte_carlo_panel(sm: &McSummary, elapsed: Duration, n_rows: usize) -> Pa
                 val(format!("{:.1}", d.landing_distance_p50), "m"),
                 val(format!("{:.1}", d.landing_distance_p90), "m"),
                 val(format!("{:.1}", d.landing_distance_p99), "m"),
-                val(format!("{:.1}", d.landing_distance_p999), "m")
+                d.landing_distance_p999.map_or_else(|| dim(P999_NA_SHORT).to_string(), |p| val(format!("{p:.1}"), "m"))
             ),
         );
     }
@@ -682,7 +686,7 @@ mod tests {
             landing_distance_p50: 5.0,
             landing_distance_p90: 5.0,
             landing_distance_p99: 5.0,
-            landing_distance_p999: 5.0,
+            landing_distance_p999: None,
             landing: sim::dispersion::landing_statistics(&[(3.0, 4.0)]),
             max_landing_distance: 5.0,
             max_landing_distance_sample: Some(0),
@@ -694,7 +698,7 @@ mod tests {
         let text = console::strip_ansi_codes(&ui().render_panel(&p).join("\n")).to_string();
         assert!(text.contains("n/a (needs at least 2 landed samples)"), "{text}");
         assert!(!text.contains("NaN") && !text.contains("nan"), "{text}");
-        assert!(text.contains("P99.9 5.0 m"), "{text}");
+        assert!(text.contains("P99.9") && text.contains(P999_NA_SHORT), "{text}");
     }
 
     #[test]

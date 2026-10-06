@@ -701,7 +701,7 @@ pub fn load_monte_carlo(dir: &Path, hash: &str) -> Result<Option<MonteCarlo>, St
             landing_distance_p50: f("landing_distance_p50"),
             landing_distance_p90: f("landing_distance_p90"),
             landing_distance_p99: f("landing_distance_p99"),
-            landing_distance_p999: f("landing_distance_p999"),
+            landing_distance_p999: d.get("landing_distance_p999").and_then(|x| x.as_f64()),
             landing: PointStats {
                 n: d.get("n").and_then(|x| x.as_u64()).ok_or_else(|| bad("no n"))? as usize,
                 mean_east: f("mean_east"),
@@ -986,7 +986,7 @@ mod tests {
             landing_distance_p50: 50.0,
             landing_distance_p90: 80.0,
             landing_distance_p99: 89.0,
-            landing_distance_p999: 89.9,
+            landing_distance_p999: Some(89.9),
             landing,
             max_landing_distance: 90.0,
             max_landing_distance_sample: Some(5),

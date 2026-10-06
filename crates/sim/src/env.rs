@@ -429,6 +429,13 @@ impl Wind {
         wb * (tau * (t3 - 2.0 * t2 + t) + (-2.0 * t3 + 3.0 * t2) + tau * beta * (t3 - t2))
     }
 
+    /// Horizontal wind at `ref_height` as `(speed [m/s], direction it blows FROM [deg])`, 0 deg when it is calm.
+    pub fn at_ref_height(&self) -> (f64, f64) {
+        let v = self.at(self.ref_height);
+        let s = v.x.hypot(v.y);
+        (s, if s > 1e-9 { direction_from(v.x, v.y) } else { 0.0 })
+    }
+
     /// Wind velocity at height `h` above ground.
     pub fn at(&self, h: f64) -> Vec3 {
         if self.model == WindModel::Profile {

@@ -122,6 +122,7 @@ Coriolis 力と遠心力の項が加わる以外は同じ式を使う（:ref:`se
 ~~~~~~~~~~~~~~~~~~
 
 一般表（6 成分の表）では、ピッチ面とヨー面の静安定余裕を別々に求め、小さいほうで判定する。
+表の符号の約束（:ref:`sec-aero-table`）では、正の迎角で :math:`C_Z=-C_N<0`、正の横滑り角で :math:`C_Y=-C_N<0` で、ノーズ先端まわりのモーメントは :math:`C_m=x_{cp}C_Z/d`、:math:`C_n=-x_{cp}C_Y/d` である。
 重心 :math:`x_{cg}` まわりのモーメント係数は
 
 .. math::
@@ -129,28 +130,43 @@ Coriolis 力と遠心力の項が加わる以外は同じ式を使う（:ref:`se
 
    C_{m,cg}=C_m-\frac{x_{cg}}{d}\,C_Z,\qquad C_{n,cg}=C_n+\frac{x_{cg}}{d}\,C_Y
 
-である。ピッチの余裕は :math:`\beta=0` での、ヨーの余裕は :math:`\alpha=0` での表の傾きから
+である。静的な安定は、角度を戻す向きのモーメントの傾き（復元の微係数）:math:`R` の符号で決まる。
+ピッチ面（:math:`\beta=0`）とヨー面（:math:`\alpha=0`）で、:math:`R` と法線力の傾き :math:`S` を
+
+.. math::
+   :label: eq-margin-restoring
+
+   R_{\mathrm{pitch}}=-\frac{\partial C_{m,cg}}{\partial\alpha}\bigg|_{\beta=0},\quad S_{\mathrm{pitch}}=\frac{\partial C_Z}{\partial\alpha}\bigg|_{\beta=0},\qquad
+   R_{\mathrm{yaw}}=\frac{\partial C_{n,cg}}{\partial\beta}\bigg|_{\alpha=0},\quad S_{\mathrm{yaw}}=\frac{\partial C_Y}{\partial\beta}\bigg|_{\alpha=0}
+
+とし（:math:`R>0` が安定）、余裕を
 
 .. math::
    :label: eq-margin-pitch-yaw
 
-   \mathrm{SM}_{\mathrm{pitch}}=\frac{\partial C_{m,cg}/\partial\alpha}{\partial C_Z/\partial\alpha}\bigg|_{\beta=0}
-   =\frac{x_{cp,\mathrm{pitch}}-x_{cg}}{d},\qquad
-   \mathrm{SM}_{\mathrm{yaw}}=-\frac{\partial C_{n,cg}/\partial\beta}{\partial C_Y/\partial\beta}\bigg|_{\alpha=0}
-   =\frac{x_{cp,\mathrm{yaw}}-x_{cg}}{d}
+   \mathrm{SM}=\frac{R}{|S|}\quad[\mathrm{cal}]
 
-で求める [cal]（正が安定）。傾きは、角度 0 の前後 :math:`\pm\delta` での中心差分で、:math:`\delta` は :math:`0.5^\circ` と、その軸の格子の 0 でない最小の角度の小さいほうである。
-格子が 0 を含めば、どちらも補間した表の 0 での傾きを与える。法線力の傾きが 0 の面では、余裕は求まらない（NaN）。
+とする。物理的な符号 :math:`S<0` では、これは :math:`\mathrm{SM}_{\mathrm{pitch}}=(x_{cp,\mathrm{pitch}}-x_{cg})/d`、:math:`\mathrm{SM}_{\mathrm{yaw}}=(x_{cp,\mathrm{yaw}}-x_{cg})/d` に等しい
+（:math:`x_{cp,\mathrm{pitch}}/d=(\partial C_m/\partial\alpha)/(\partial C_Z/\partial\alpha)`、:math:`x_{cp,\mathrm{yaw}}/d=-(\partial C_n/\partial\beta)/(\partial C_Y/\partial\beta)`）。
+:math:`S>0`\ （法線力が横流れと同じ向きを指す）でも、:math:`R<0`\ （角度を広げるモーメント）なら負の余裕 :math:`R/|S|`\ （不安定）とする。
+:math:`S>0` で :math:`R\ge0` のときは、復元するモーメントを圧力中心の位置で表せないので、その面の余裕は求まらない（NaN）。
+:math:`|S|\le10^{-12}`\ （法線力の傾きが 0）の面も求まらない。理由は、それぞれ
+``the pitch normal-force slope dCz/dalpha is zero at Mach 0.10`` と
+``the yaw normal-force slope dCy/dbeta is positive at Mach 0.10 (the normal force points along the crossflow, a restoring moment cannot be expressed as a margin; check the sign convention of the table)``
+の形（面と Mach 数は例）で残す。
+傾きは、角度 0 の前後 :math:`\pm\delta` での中心差分で、:math:`\delta` は :math:`0.5^\circ` と、その軸の格子の 0 でない最小の角度の小さいほうである。
+格子が 0 を含めば、どちらも補間した表の 0 での傾きを与える。
 判定に使う余裕は :math:`\min(\mathrm{SM}_{\mathrm{pitch}},\mathrm{SM}_{\mathrm{yaw}})` で、ピッチとヨーの連成は考えない。
-軸対称表では、両方の余裕が :math:`(x_{cp}(M,0)-x_{cg})/d` に等しく、判定は飛翔計算の余裕のままである。
 
-* **公称の飛翔**\ （``sim`` と、``dispersion`` の公称の弾道落下）：記録した軌道の点ごとに、その Mach 数と重心で 2 つの余裕を求める。
-  自由飛行（ランチャ離脱から頂点まで、対気速度 10 m/s 超）の最小値と、ランチャ離脱の時刻（前後の点から Mach 数と重心を線形補間）の値から、
-  ``min_stability_cal`` と ``stability_at_rail_exit`` を、それぞれピッチとヨーの小さいほうで置き換える。
-  ``summary.json`` には、面ごとの最小値（自由飛行とランチャ離脱の小さいほう）を ``static_margin_pitch_min_cal`` と ``static_margin_yaw_min_cal`` に書く（:ref:`sec-file-summary`）。
-* **落下分散のケースとサンプル**：軌道の点を記録しないので、飛翔計算の余裕（等価な圧力中心による値）から、
-  Mach 数 0 からその飛翔の最大 Mach 数までの表の Mach 数で求めた :math:`\max|x_{cp,\mathrm{pitch}}-x_{cp,\mathrm{yaw}}|/d` を引いた値を使う。
-  小さな横方向の力の等価な圧力中心は 2 つの圧力中心の間にあるので、この値はピッチとヨーの小さいほうの余裕の下限（安全側）である。
+余裕は、飛翔計算そのものの中で、すべての飛翔（``sim``、``dispersion`` の公称の飛翔、風の格子のケース、モンテカルロのサンプル）について求める。
+自由飛行のうち頂点より前で対気速度が 10 m/s を超える間の、受け入れた積分のステップの始端ごとと、ランチャ離脱の時刻に、その状態の Mach 数と重心で 2 つの余裕を求める。
+軌道の点を記録するかどうか（``sim.output_interval``）には依らない。
+
+* ``min_stability_cal`` と ``stability_at_rail_exit`` は、その時刻のピッチとヨーの余裕の小さいほう（求まったもの）の、それぞれ最小値とランチャ離脱時の値である。
+* ``static_margin_pitch_min_cal`` と ``static_margin_yaw_min_cal`` は、面ごとの最小値（自由飛行とランチャ離脱を合わせたもの）である。どこかで余裕が求まらなかった面は ``null`` になる。
+* 余裕が求まらない時刻があれば、最初のものを ``at t = 0.50 s: …`` の形で ``stability_unknown`` に残し、静的な安定は「判定できない」とする（:ref:`sec-exit-status`）。求まった余裕に負のものがあれば、判定できない余裕があっても不安定とする。
+
+軸対称表では、両方の面の余裕が飛翔計算の余裕 :math:`(x_{cp}-x_{cg})/d`\ （その状態の迎角での表の圧力中心）に等しく、求まらないことはない。
 
 回転運動
 --------

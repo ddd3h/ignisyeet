@@ -2089,17 +2089,22 @@ fn csv_field(s: &str) -> String {
     }
 }
 
+/// `broadside_time` cell of the dispersion CSV files ([`Summary::broadside_time`], s): empty for a failed run.
+fn broadside_field(s: Option<&Summary>) -> String {
+    s.map(|s| s.broadside_time).filter(|t| t.is_finite()).map_or(String::new(), |t| format!("{t:.2}"))
+}
+
 fn write_wind_grid_csv(path: &Path, results: &[sim::Summary], errors: &[Option<String>]) -> Result<()> {
     outfile::write_with(path, |f| write_wind_grid_csv_to(f, results, errors))
 }
 
 fn write_wind_grid_csv_to(f: &mut impl Write, results: &[sim::Summary], errors: &[Option<String>]) -> Result<()> {
-    writeln!(f, "descent,wind_speed,wind_direction_deg,landing_east,landing_north,landing_lat,landing_lon,landing_distance,landing_time,landing_speed,apogee,apogee_time,max_mach,rail_exit_speed,min_stability_cal,landed,error,stable")?;
+    writeln!(f, "descent,wind_speed,wind_direction_deg,landing_east,landing_north,landing_lat,landing_lon,landing_distance,landing_time,landing_speed,apogee,apogee_time,max_mach,rail_exit_speed,min_stability_cal,landed,error,stable,broadside_time")?;
     for (s, e) in results.iter().zip(errors) {
         let mode = if s.descent == Descent::Ballistic { "ballistic" } else { "parachute" };
         writeln!(
             f,
-            "{mode},{},{},{:.2},{:.2},{:.8},{:.8},{:.2},{:.2},{:.2},{:.2},{:.2},{:.4},{:.2},{:.3},{},{},{}",
+            "{mode},{},{},{:.2},{:.2},{:.8},{:.8},{:.2},{:.2},{:.2},{:.2},{:.2},{:.4},{:.2},{:.3},{},{},{},{}",
             s.wind_speed,
             s.wind_direction_deg,
             s.landing_east,
@@ -2116,7 +2121,8 @@ fn write_wind_grid_csv_to(f: &mut impl Write, results: &[sim::Summary], errors: 
             s.min_stability_cal,
             s.landed(),
             csv_field(e.as_deref().unwrap_or("")),
-            stable_flag(s).map_or(String::new(), |b| b.to_string())
+            stable_flag(s).map_or(String::new(), |b| b.to_string()),
+            broadside_field(e.is_none().then_some(s))
         )?;
     }
     f.flush()?;
@@ -2282,7 +2288,7 @@ fn write_monte_carlo_csv_to(f: &mut impl Write, rows: &[sim::dispersion::McRow])
         f,
         "sample,descent,status,thrust_scale,burn_time_scale,dry_mass,cg,cn_scale,ca_scale,elevation_deg,azimuth_deg,roll_deg,wind_speed_delta,wind_direction_deg_delta,parachute_cd_s_scale,\
 wind_speed,wind_direction_deg,landing_east,landing_north,landing_lat,landing_lon,landing_distance,landing_time,landing_speed,apogee,apogee_time,max_mach,rail_exit_speed,min_stability_cal,\
-thrust_misalignment_y_deg,thrust_misalignment_z_deg,thrust_offset_y,thrust_offset_z,fin_cant_deg,cg_lateral_y,cg_lateral_z,cl_scale,clp_scale,stable"
+thrust_misalignment_y_deg,thrust_misalignment_z_deg,thrust_offset_y,thrust_offset_z,fin_cant_deg,cg_lateral_y,cg_lateral_z,cl_scale,clp_scale,stable,broadside_time"
     )?;
     for row in rows {
         let p = &row.perturbation;
@@ -2328,7 +2334,7 @@ thrust_misalignment_y_deg,thrust_misalignment_z_deg,thrust_offset_y,thrust_offse
         }
         writeln!(
             f,
-            ",{},{},{},{},{},{},{},{},{},{}",
+            ",{},{},{},{},{},{},{},{},{},{},{}",
             p.misalignment_y_deg,
             p.misalignment_z_deg,
             p.offset_y,
@@ -2338,7 +2344,8 @@ thrust_misalignment_y_deg,thrust_misalignment_z_deg,thrust_offset_y,thrust_offse
             p.cg_lateral_z,
             p.cl_scale,
             p.clp_scale,
-            row.result.as_ref().ok().and_then(stable_flag).map_or(String::new(), |b| b.to_string())
+            row.result.as_ref().ok().and_then(stable_flag).map_or(String::new(), |b| b.to_string()),
+            broadside_field(row.result.as_ref().ok())
         )?;
     }
     f.flush()?;
@@ -2425,8 +2432,8 @@ mod tests {
         assert!(lines.iter().all(|l| l.len() == lines[0].len()), "{:?}", lines.iter().map(Vec::len).collect::<Vec<_>>());
         // New columns are appended at the end.
         let col = lines[0].iter().position(|c| *c == "cl_scale").unwrap();
-        assert_eq!(col, lines[0].len() - 3);
-        assert_eq!(lines[0][lines[0].len() - 1], "stable");
+        assert_eq!(col, lines[0].len() - 4);
+        assert_eq!(&lines[0][lines[0].len() - 2..], ["stable", "broadside_time"]);
         assert_eq!(lines[1][col], "0.25");
         // The roll change of the rail tilt follows the azimuth.
         let roll = lines[0].iter().position(|c| *c == "roll_deg").unwrap();
@@ -2516,23 +2523,35 @@ mod tests {
     }
 
     #[test]
-    fn dispersion_csv_files_carry_a_stable_column() {
-        let results = [summary_with_margin(0.5), summary_with_margin(-0.3), sim::Summary::failed(Descent::Ballistic, 1.0, 0.0)];
+    fn dispersion_csv_files_carry_stable_and_broadside_columns() {
+        let broad = |s: sim::Summary| sim::Summary { broadside_time: 12.5, ..s };
+        let results = [broad(summary_with_margin(0.5)), broad(summary_with_margin(-0.3)), sim::Summary::failed(Descent::Ballistic, 1.0, 0.0)];
         let errors = [None, None, Some("boom".to_string())];
         let path = std::env::temp_dir().join(format!("ignisyeet_grid_stable_{}.csv", std::process::id()));
         write_wind_grid_csv(&path, &results, &errors).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
-        let last: Vec<&str> = text.lines().map(|l| l.rsplit(',').next().unwrap()).collect();
-        assert_eq!(last, ["stable", "true", "false", ""]);
-        let mc: Vec<sim::dispersion::McRow> = [Ok(summary_with_margin(0.5)), Ok(summary_with_margin(-0.3)), Err("x".to_string())]
+        // `stable`, then `broadside_time` (appended last; empty for a failed run).
+        let last2 = |text: &str| -> Vec<(String, String)> {
+            text.lines()
+                .map(|l| {
+                    let mut it = l.rsplit(',');
+                    let b = it.next().unwrap().to_string();
+                    (it.next().unwrap().to_string(), b)
+                })
+                .collect()
+        };
+        let want = |b: &str| -> Vec<(String, String)> {
+            [("stable", "broadside_time"), ("true", b), ("false", b), ("", "")].iter().map(|(x, y)| (x.to_string(), y.to_string())).collect()
+        };
+        assert_eq!(last2(&text), want("12.50"));
+        let mc: Vec<sim::dispersion::McRow> = [Ok(broad(summary_with_margin(0.5))), Ok(broad(summary_with_margin(-0.3))), Err("x".to_string())]
             .into_iter()
             .map(|result| sim::dispersion::McRow { sample: 0, descent: Descent::Ballistic, perturbation: Default::default(), result })
             .collect();
         write_monte_carlo_csv(&path, &mc).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         let _ = std::fs::remove_file(&path);
-        let last: Vec<&str> = text.lines().map(|l| l.rsplit(',').next().unwrap()).collect();
-        assert_eq!(last, ["stable", "true", "false", ""]);
+        assert_eq!(last2(&text), want("12.50"));
     }
 
     #[test]
@@ -3551,10 +3570,10 @@ mod tests {
         let _ = std::fs::remove_file(&path);
         let lines: Vec<&str> = text.lines().collect();
         assert_eq!(lines.len(), 7, "{text}");
-        assert!(lines[0].ends_with(",landed,error,stable"));
-        assert!(lines[1].ends_with(",true,,true"), "{}", lines[1]);
-        assert!(lines[2].ends_with(",false,\"integration diverged, state \"\"NaN\"\"\","), "{}", lines[2]);
-        assert!(lines[4].ends_with(",false,e2 second line,"), "{}", lines[4]);
+        assert!(lines[0].ends_with(",landed,error,stable,broadside_time"));
+        assert!(lines[1].ends_with(",true,,true,0.00"), "{}", lines[1]);
+        assert!(lines[2].ends_with(",false,\"integration diverged, state \"\"NaN\"\"\",,"), "{}", lines[2]);
+        assert!(lines[4].ends_with(",false,e2 second line,,"), "{}", lines[4]);
     }
 
     #[test]

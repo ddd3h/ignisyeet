@@ -69,20 +69,18 @@
   }
   \draw[cblue, very thick] (\xf,1) -- (\xf+\sw,\ft) -- (\xf+\sw+\tc,\ft) -- (\xb,1);
   % ---- wake strips behind the fin trailing edge -------------------------------------------
-  \def\wa{3.0}\def\wb{5.4}
-  \foreach \xs/\xe in {0/\wa}{
-    \fill[cfillo, fill opacity=0.8] (\xb,1) -- (\xb+\xs,1) -- (\xb+\xs,\ft) -- (\xf+\sw+\tc,\ft) -- (\xb,1) -- cycle;
+  % each trailing-edge point is swept along +x; strip lengths grow geometrically (first = L/4,
+  % ratio 1.5 here; the 4th strip continues beyond the figure)
+  \def\te{\xf+\sw+\tc}
+  \fill[cfillo, fill opacity=0.8] (\xb,1) -- (\xb+8.55,1) -- (\te+8.55,\ft) -- (\te,\ft) -- cycle;
+  \draw[corange, thick, dashed] (\xb,1) -- (\xb+8.55,1);
+  \draw[corange, thick, dashed] (\te,\ft) -- (\te+8.55,\ft);
+  \foreach \d in {1.8,4.5,8.55}{
+    \draw[corange, thin] (\xb+\d,1) -- (\te+\d,\ft);
   }
-  \fill[cfillo, fill opacity=0.8] (\xf+\sw+\tc,\ft) -- (\xb,1) -- (\xt+2.2,1) -- (\xt+2.2,\ft) -- cycle;
-  \draw[corange, thick, dashed] (\xb,1) -- (\xt+2.2,1);
-  \draw[corange, thick, dashed] (\xf+\sw+\tc,\ft) -- (\xt+2.2,\ft);
-  \foreach \xx in {\xt-1.5,\xt+0.1,\xt+2.2}{
-    \draw[corange, thin] (\xx,1) -- (\xx,\ft);
-  }
-  \draw[corange, thin] (\xb,1) -- (\xb,1);
-  \draw[corange, thin] (\xb+0.0,1) -- (\xf+\sw+\tc,\ft);
-  \draw[corange, thick, dotted] (\xt+2.2,1) -- (\xt+3.4,1);
-  \draw[corange, thick, dotted] (\xt+2.2,\ft) -- (\xt+3.4,\ft);
+  \draw[corange, thick, dotted] (\xb+8.55,1) -- (\xb+9.9,1);
+  \draw[corange, thick, dotted] (\te+8.55,\ft) -- (\te+9.9,\ft);
+  \draw[|<->|, corange, thin] (\te,\ft+0.25) -- (\te+1.8,\ft+0.25) node[midway, above, font=\footnotesize, inner sep=1pt] {$L/4$};
   % ---- labels -------------------------------------------------------------------------------
   \node[cink2, anchor=east] at (-0.2,0.9) {ノーズ先端};
   \draw[cink2, ->] (-0.3,0.7) -- (0,0.05);
@@ -93,7 +91,7 @@
   \node[cblue, align=center, anchor=south] at (\xf+1.2,\ft+0.5) {フィン（片面 \texttt{fin\_chord}$\times$\texttt{fin\_span}）\\{\footnotesize スパン方向は翼端側が細かい}};
   \node[cink2, align=center] at (\xb+5.0,-2.3) {尾部フェアリング（荷重に含めない）\\{\footnotesize 底面を塞ぐ円筒 + 半球}};
   \draw[cink2, ->] (\xb+5.0,-1.8) -- (\xb+5.0,-0.7);
-  \node[corange, align=left, anchor=south west] at (\xb+1.8,\ft+0.5) {フィン後流（翼後縁から $+x$ 方向）\\{\footnotesize 4 枚、長さは等比数列で増加}};
+  \node[corange, align=left, anchor=south west] at (\xb+2.6,\ft+0.5) {フィン後流（翼後縁から $+x$ 方向）\\{\footnotesize 4 枚、最初は $L/4$、長さは等比数列で増加}};
   \draw[|<->|, cink] (\xb,-3.5) -- (\xt,-3.5) node[midway, below, font=\footnotesize] {$\texttt{tail\_radii}\cdot r_b$};
   \draw[cink, ->] (\xt+4.2,0) -- node[above] {$x$} (\xt+5.2,0);
 \end{tikzpicture}

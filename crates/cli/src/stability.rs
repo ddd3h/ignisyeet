@@ -32,13 +32,16 @@ pub fn axis_margins(table: &AeroTable, s: &Summary, samples: &[Sample]) -> Optio
     let (mut pitch_min, mut yaw_min) = (f64::INFINITY, f64::INFINITY);
     let before_apogee = |t: f64| !s.apogee_time.is_finite() || t <= s.apogee_time;
     for smp in samples.iter().filter(|x| x.phase == Phase::Free && before_apogee(x.t) && x.airspeed > 10.0) {
-        let (p, y) = table.static_margins(smp.mach, smp.x_cg);
+        let aero::table::StaticMargins { pitch: p, yaw: y, .. } = table.static_margins(smp.mach, smp.x_cg);
         pitch_min = pitch_min.min(p);
         yaw_min = yaw_min.min(y);
     }
     let finite = |v: f64| if v.is_finite() { v } else { f64::NAN };
     let (rail_pitch, rail_yaw) = match rail_exit_state(s.rail_exit_time, samples) {
-        Some((mach, x_cg)) => table.static_margins(mach, x_cg),
+        Some((mach, x_cg)) => {
+            let m = table.static_margins(mach, x_cg);
+            (m.pitch, m.yaw)
+        }
         None => (f64::NAN, f64::NAN),
     };
     Some(AxisMargins { pitch_min: finite(pitch_min), yaw_min: finite(yaw_min), rail_pitch, rail_yaw })
@@ -85,7 +88,7 @@ pub fn max_pitch_yaw_split(table: &AeroTable, max_mach: f64) -> f64 {
     let top = if max_mach.is_finite() { max_mach } else { machs.last().copied().unwrap_or(0.0) };
     let mut split: f64 = 0.0;
     for m in machs.iter().copied().filter(|&m| m <= top).chain([top]) {
-        let (p, y) = table.static_margins(m, 0.0);
+        let aero::table::StaticMargins { pitch: p, yaw: y, .. } = table.static_margins(m, 0.0);
         if p.is_nan() || y.is_nan() {
             return f64::NAN;
         }

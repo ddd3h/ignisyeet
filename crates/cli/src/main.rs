@@ -132,7 +132,8 @@ fn cfd_budget(cfg: &Config) -> cfd::ResourceBudget {
 /// Exit status of a run that finished and wrote its outputs but whose results are incomplete.
 const EXIT_INCOMPLETE: i32 = 3;
 
-/// Start of the exit-status-3 message of a statically unstable flight.
+/// Start of the exit-status-3 message of results that must not be used (a statically unstable flight, aero
+/// lookups beyond the table's angle range).
 const NOT_USABLE: &str = "RESULTS NOT USABLE";
 
 /// The exit-status-3 message when the smallest static margin `margin` [cal] is negative.
@@ -259,25 +260,29 @@ fn stored_geometry_warnings(cfg: &Config) -> Vec<String> {
     json.and_then(|j| j.get("warnings").cloned()).and_then(|w| serde_json::from_value(w).ok()).unwrap_or_default()
 }
 
-/// Warning about aero table lookups outside the tabulated range, if there were any.
+/// Warning about aero table lookups beyond the tabulated Mach range (held at the edge), if there were any.
+/// Lookups beyond the angle range are not a warning but [`angle_range_reason`].
 fn aero_range_warning(s: &aero::table::OutOfRangeStats) -> Option<String> {
-    if !s.any() {
-        return None;
-    }
     let mach = s.mach_below + s.mach_above;
-    let mut parts = Vec::new();
-    if mach > 0 {
-        parts.push(format!("{mach} of {} lookups beyond the Mach range", s.lookups));
-    }
-    if s.angle_beyond > 0 {
-        parts.push(format!("{} of {} lookups beyond the angle range", s.angle_beyond, s.lookups));
-    }
-    Some(format!(
-        "aero table: {} (max Mach {:.2}, max |alpha| {:.1} deg); Mach is held at the table edge, angles are extrapolated",
-        parts.join(", "),
-        s.max_mach,
-        s.max_abs_alpha_deg
-    ))
+    (mach > 0).then(|| format!("aero table: {mach} of {} lookups beyond the Mach range (max Mach {:.2}); Mach is held at the table edge", s.lookups, s.max_mach))
+}
+
+/// The exit-status-3 message when aero lookups went beyond the table's angle range (`alpha_max` [deg], the
+/// last angle of the table): those coefficients are extrapolated, which can create an artificial trim at a
+/// large angle of attack and change a ballistic descent completely.
+fn angle_range_reason(s: &aero::table::OutOfRangeStats, alpha_max: f64) -> Option<String> {
+    (s.angle_beyond > 0).then(|| {
+        let fix = if alpha_max < 90.0 { "build the table up to 90 deg" } else { "build the table up to 180 deg (aero.alpha_max_deg)" };
+        format!(
+            "{NOT_USABLE}: {} of {} lookups beyond the aero table's angle range (max |alpha| {:.1} deg > alpha_max {alpha_max:.1} deg): the descent uses extrapolated coefficients; {fix}",
+            s.angle_beyond, s.lookups, s.max_abs_alpha_deg
+        )
+    })
+}
+
+/// Largest angle of attack [deg] of a table.
+fn table_alpha_max(t: &aero::AeroTable) -> f64 {
+    t.meta.alphas_deg.last().copied().unwrap_or(0.0)
 }
 
 /// The `aero_table_range` object of summary.json.
@@ -290,6 +295,8 @@ fn aero_range_json(s: &aero::table::OutOfRangeStats) -> serde_json::Value {
         "max_mach": s.max_mach,
         "max_abs_alpha_deg": s.max_abs_alpha_deg,
         "out_of_range": s.any(),
+        // False when lookups went beyond the angle range: the run exits with status 3 (RESULTS NOT USABLE).
+        "angles_in_range": s.angle_beyond == 0,
     })
 }
 
@@ -1287,6 +1294,7 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
     warnings.extend(grid_warnings(cfg));
     warnings.extend(flight_warnings(cfg, s));
     warnings.extend(aero_range_warning(&range));
+    let angle = angle_range_reason(&range, table_alpha_max(&p.table));
     let mut json = summary_json(cfg, s, &warnings)?;
     json["aero_table_range"] = aero_range_json(&range);
     if let Some(m) = &axis {
@@ -1326,7 +1334,7 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
         u.print_panel(&view::flight_panel(s, descent, true));
     }
     print_warnings(&warnings);
-    let unstable = unstable_reason(static_margin_min(s));
+    let unstable = unstable_reason(static_margin_min(s)).or(angle);
     if landed {
         write_kml(cfg, kml::Parts { flight: Some(kml::Flight { samples: r.samples, summary: r.summary }), ..Default::default() }, false)?;
         Ok(unstable)
@@ -1656,6 +1664,7 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
         sim::dispersion::replay_wind_grid_ok(&base, &cases, &errors);
     }
     warnings.extend(aero_range_warning(&p.table.out_of_range_stats()));
+    let angle = angle_range_reason(&p.table.out_of_range_stats(), table_alpha_max(&p.table));
     let instab = instability(cases.iter().zip(&results).map(|(c, s)| (c.descent, Some(s))));
     warnings.extend(instability_warnings(&instab, "wind-grid cases"));
     let path = out_path(cfg, "dispersion.csv")?;
@@ -1679,6 +1688,7 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
     }
     print_warnings(&warnings);
     let incomplete = unstable_reason(margin)
+        .or(angle)
         .or_else(|| instability_reason(&instab, "wind-grid cases", "increase the static margin"))
         .or_else(|| (failed > 0).then(|| format!("{failed} of {} wind-grid cases did not land", results.len())));
     if errored == results.len() {
@@ -1828,6 +1838,7 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
     }
     let range = p.table.out_of_range_stats();
     warnings.extend(aero_range_warning(&range));
+    let angle = angle_range_reason(&range, table_alpha_max(&p.table));
     let path = out_path(cfg, "dispersion_mc.csv")?;
     write_monte_carlo_csv(&path, &r.rows)?;
     let spath = out_path(cfg, "dispersion_summary.json")?;
@@ -1910,6 +1921,7 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
         }
     }
     Ok(unstable_reason(margin)
+        .or(angle)
         .or_else(|| instability_reason(&instab, "Monte Carlo samples", "increase the static margin or reduce the CG/aero sigmas"))
         .or_else(|| (failed > 0).then(|| format!("{failed} Monte Carlo runs did not land or failed; the statistics are incomplete"))))
 }
@@ -2444,6 +2456,30 @@ mod tests {
     }
 
     #[test]
+    fn ballistic_descent_beyond_the_table_angles_is_not_usable() {
+        // Sample, ballistic, 4 m/s from the east: the descent turns broadside (alpha ~ 90 deg).
+        let mut cfg = sample_config("angle_range");
+        cfg.wind.speed = 4.0;
+        cfg.wind.direction_deg = 90.0;
+        cfg.output.kml = false;
+        let summary = |cfg: &Config| -> serde_json::Value { serde_json::from_str(&std::fs::read_to_string(cfg.out_dir().join("summary.json")).unwrap()).unwrap() };
+        // Table up to 90 deg (the default): every lookup inside the table.
+        assert_eq!(run_sim(&cfg, Some(Descent::Ballistic)).unwrap(), None);
+        let j = summary(&cfg);
+        assert_eq!((j["aero_table_range"]["angle_beyond"].as_u64(), j["aero_table_range"]["angles_in_range"].as_bool()), (Some(0), Some(true)));
+        let ok_distance = j["landing_distance"].as_f64().unwrap();
+        // Table up to 30 deg: the extrapolated coefficients trim at a large angle; the run is not usable.
+        cfg.aero.alpha_max_deg = 30.0;
+        let why = run_sim(&cfg, Some(Descent::Ballistic)).unwrap().expect("lookups beyond the angle range must be reported");
+        assert!(why.starts_with("RESULTS NOT USABLE: ") && why.contains("lookups beyond the aero table's angle range") && why.contains("> alpha_max 30.0 deg"), "{why}");
+        assert!(why.ends_with("the descent uses extrapolated coefficients; build the table up to 90 deg"), "{why}");
+        let j = summary(&cfg);
+        assert_eq!(j["aero_table_range"]["angles_in_range"].as_bool(), Some(false));
+        assert!(j["landing_distance"].as_f64().unwrap() > 2.0 * ok_distance, "the extrapolated descent drifts far: {j}");
+        let _ = std::fs::remove_dir_all(&cfg.output.dir);
+    }
+
+    #[test]
     fn general_table_unstable_in_yaw_is_not_usable() {
         // The sample's table as a general table, once as it is and once with the yaw centre of
         // pressure moved to 20 % of the length (forward of the CG); pitch is unchanged.
@@ -2527,12 +2563,23 @@ mod tests {
         let none = aero::table::OutOfRangeStats { lookups: 10, ..Default::default() };
         assert!(aero_range_warning(&none).is_none());
         assert_eq!(aero_range_json(&none)["out_of_range"], false);
+        assert!(angle_range_reason(&none, 30.0).is_none());
         let s = aero::table::OutOfRangeStats { lookups: 100, mach_above: 7, angle_beyond: 3, max_mach: 2.5, max_abs_alpha_deg: 31.0, ..Default::default() };
         let w = aero_range_warning(&s).unwrap();
-        assert!(w.contains("7 of 100 lookups beyond the Mach range") && w.contains("3 of 100 lookups beyond the angle range"), "{w}");
-        assert!(w.contains("max Mach 2.50") && w.contains("31.0 deg") && w.contains("held at the table edge"), "{w}");
+        assert_eq!(w, "aero table: 7 of 100 lookups beyond the Mach range (max Mach 2.50); Mach is held at the table edge");
+        // Angles beyond the table: results not usable (exit status 3), not a warning.
+        let r = angle_range_reason(&s, 30.0).unwrap();
+        assert_eq!(
+            r,
+            "RESULTS NOT USABLE: 3 of 100 lookups beyond the aero table's angle range (max |alpha| 31.0 deg > alpha_max 30.0 deg): the descent uses extrapolated coefficients; build the table up to 90 deg"
+        );
+        assert!(r.starts_with(NOT_USABLE));
+        assert!(aero_range_warning(&aero::table::OutOfRangeStats { mach_above: 0, ..s }).is_none());
+        let wide = aero::table::OutOfRangeStats { max_abs_alpha_deg: 120.0, ..s };
+        assert!(angle_range_reason(&wide, 90.0).unwrap().ends_with("build the table up to 180 deg (aero.alpha_max_deg)"));
         let j = aero_range_json(&s);
         assert_eq!((j["mach_above"].as_u64(), j["angle_beyond"].as_u64(), j["out_of_range"].as_bool()), (Some(7), Some(3), Some(true)));
+        assert_eq!((j["angles_in_range"].as_bool(), aero_range_json(&none)["angles_in_range"].as_bool()), (Some(false), Some(true)));
     }
 
     #[test]

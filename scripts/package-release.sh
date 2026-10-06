@@ -37,8 +37,9 @@ dest=$stage/$name
 
 mkdir -p "$dest/bin" "$dest/python" "$out"
 install -m 755 "$binary" "$dest/bin/ignisyeet"
-cp -R "$root/examples" "$dest/examples"
-rm -rf "$dest/examples/out"
+# Only tracked example files: git-ignored outputs (examples/out*, CFD work directories) stay out.
+mkdir -p "$dest/examples"
+(cd "$root" && git ls-files -z examples | tar --null -T - -cf -) | tar -C "$dest" -xf -
 install -m 644 "$root/python/plot.py" "$root/python/requirements.txt" "$root/python/pyproject.toml" "$root/python/uv.lock" "$root/scripts/plot-constraints.txt" "$dest/python/"
 install -m 644 "$root/LICENSE" "$root/NOTICE" "$root/CITATION.cff" "$root/README.md" "$dest/"
 

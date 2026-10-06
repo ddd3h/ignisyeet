@@ -55,6 +55,7 @@ enum Cmd {
     /// Build the aerodynamic coefficient table (cached; --force rebuilds).
     Aero {
         config: PathBuf,
+        /// Rebuild the table even when the cached aero_table.csv matches the configuration (no effect for aero.method = "table").
         #[arg(long)]
         force: bool,
     },
@@ -2395,6 +2396,15 @@ mod tests {
         let s = sim::Summary { min_stability_cal: f64::NAN, ..sample_summary() };
         assert_eq!(free_flight_margin_text(&s), "n/a (airspeed < 10 m/s)");
         assert_eq!(free_flight_margin_text(&sim::Summary { min_stability_cal: 1.234, ..sample_summary() }), "1.23 cal");
+    }
+
+    #[test]
+    fn aero_force_flag_has_help() {
+        use clap::CommandFactory;
+        let mut cmd = Cli::command();
+        let aero = cmd.find_subcommand_mut("aero").unwrap();
+        let force = aero.get_arguments().find(|a| a.get_id() == "force").unwrap();
+        assert!(force.get_help().is_some_and(|h| h.to_string().starts_with("Rebuild the table")));
     }
 
     #[test]

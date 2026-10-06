@@ -127,15 +127,20 @@ fn blame_set(base: &toml::Value, sets: &[String]) -> Option<anyhow::Error> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OutputCfg {
+    #[serde(default = "out_dir")]
     pub dir: PathBuf,
     /// Also write the Google Earth file ignisyeet.kml (flight and dispersion results).
     #[serde(default = "yes")]
     pub kml: bool,
 }
 
+fn out_dir() -> PathBuf {
+    "out".into()
+}
+
 impl Default for OutputCfg {
     fn default() -> Self {
-        Self { dir: "out".into(), kml: true }
+        Self { dir: out_dir(), kml: true }
     }
 }
 
@@ -501,6 +506,18 @@ impl Config {
                     finite(&format!("rocket.fin_override.{k}"), v)?;
                 }
             }
+            // The panel mesh and the CAD surface of the CFD mesh build the fins as biconvex sections of this
+            // thickness and leave fins without thickness out; Barrowman needs it only for the fin drag.
+            let meshed =
+                self.aero.method == AeroMethod::Panel || (self.aero.method == AeroMethod::Cfd && self.aero.cfd.surface == cfd::config::SurfaceKind::PanelMesh);
+            if let (Some(t), true) = (o.thickness, meshed) {
+                if t <= 0.0 {
+                    bail!(
+                        "rocket.fin_override.thickness must be > 0 for aero.method = \"{}\", found {t}: the fins are meshed as biconvex sections of this thickness and fins without thickness would be left out of the mesh",
+                        if self.aero.method == AeroMethod::Panel { "panel" } else { "cfd" }
+                    );
+                }
+            }
         }
         if let Some(a) = m.aft_x {
             non_negative("motor.aft_x", a)?;
@@ -554,7 +571,8 @@ impl Config {
         let step = if general && a.method == AeroMethod::Barrowman { a.general_mach_step } else { a.mach_step };
         let step_key = if general && a.method == AeroMethod::Barrowman { "aero.general_mach_step" } else { "aero.mach_step" };
         let n_mach = ((a.mach_max - a.mach_min) / step).round().max(1.0) + 1.0;
-        let n_alpha = (a.alpha_max_deg / a.alpha_step_deg).round().max(1.0) * 2.0 + 1.0;
+        // One-sided total-angle grid 0..alpha_max (as `AeroTable::build`).
+        let n_alpha = (a.alpha_max_deg / a.alpha_step_deg).round().max(1.0) + 1.0;
         let mut points = n_mach * n_alpha;
         let mut what = format!("{n_mach} Mach x {n_alpha} alpha");
         // Every method but an external table is expanded to the general grid when the table kind is general.
@@ -718,6 +736,9 @@ impl Config {
         }
         if d.wind_speeds.len() * d.directions > MAX_WIND_GRID_CASES {
             bail!("the wind grid would have {} cases (wind_speeds x directions; at most {MAX_WIND_GRID_CASES})", d.wind_speeds.len() * d.directions);
+        }
+        if d.monte_carlo.samples == 0 {
+            bail!("dispersion.monte_carlo.samples must be at least 1");
         }
         if d.monte_carlo.samples > MAX_MC_SAMPLES {
             bail!("dispersion.monte_carlo.samples = {} is too large (at most {MAX_MC_SAMPLES})", d.monte_carlo.samples);
@@ -1190,6 +1211,42 @@ mod tests {
         assert!(e.contains("grid"), "{e}");
         let e = bad("n_slices = 600", "n_slices = 5");
         assert!(e.contains("n_slices") && e.contains("20"), "{e}");
+    }
+
+    #[test]
+    fn aero_grid_cap_counts_the_one_sided_alpha_grid() {
+        // 3001 Mach x 301 alpha (0..90 deg in 0.3 deg) = 903301 points: within the cap of 1e6.
+        let sample = include_str!("../../../examples/sample.toml");
+        let t = sample.replacen("mach_step = 0.02", "mach_step = 0.001", 1).replacen("alpha_step_deg = 1.0", "alpha_step_deg = 0.3", 1);
+        parse(&t).unwrap();
+        let e = parse(&t.replacen("alpha_step_deg = 0.3", "alpha_step_deg = 0.2", 1)).unwrap_err().to_string();
+        assert!(e.contains("(3001 Mach x 451 alpha;"), "{e}");
+    }
+
+    #[test]
+    fn output_without_dir_and_zero_monte_carlo_samples() {
+        let sample = include_str!("../../../examples/sample.toml");
+        let c = parse(&sample.replacen("dir = \"out\"", "", 1)).unwrap();
+        assert_eq!(c.output.dir, PathBuf::from("out"));
+        assert!(c.output.kml);
+        let e = parse(&sample.replacen("samples = 1000", "samples = 0", 1)).unwrap_err().to_string();
+        assert!(e.contains("dispersion.monte_carlo.samples must be at least 1"), "{e}");
+    }
+
+    #[test]
+    fn panel_and_cad_cfd_need_fins_with_thickness() {
+        let sample = include_str!("../../../examples/sample.toml");
+        let fins = "[rocket.fin_override]\nthickness = 0.0\n\n[launch]";
+        let t = sample.replacen("[launch]", fins, 1);
+        // Barrowman uses the thickness only for the fin drag: zero is allowed.
+        parse(&t).unwrap();
+        for method in ["panel", "cfd"] {
+            let e = parse(&t.replacen("method = \"barrowman\"", &format!("method = \"{method}\""), 1)).unwrap_err().to_string();
+            assert!(e.contains("rocket.fin_override.thickness must be > 0"), "{e}");
+        }
+        let ok =
+            sample.replacen("[launch]", "[rocket.fin_override]\nthickness = 0.004\n\n[launch]", 1).replacen("method = \"barrowman\"", "method = \"panel\"", 1);
+        parse(&ok).unwrap();
     }
 
     #[test]

@@ -73,8 +73,71 @@ pub struct AeroModel {
 const TRANSONIC_LO: f64 = 0.9;
 const TRANSONIC_HI: f64 = 1.5;
 
+/// Upper angle of attack [rad] of the attached-flow fin theory (Barrowman linear, Busemann cubic).
+///
+/// Linear fin theory assumes small angles; OpenRocket's fin model (FinSetCalc, after Niskanen 2009) caps the
+/// fin angle of attack at a 20° stall angle. 15° keeps a margin below that and
+/// keeps the Busemann cubic term a correction (it adds at most about 20 % to the linear term at 15°, at
+/// M ≈ 1.2 through the transonic blend) instead of letting it dominate, as it does at large angles where
+/// the expansion is no longer valid (the shock detaches once alpha exceeds the maximum wedge deflection,
+/// 12° at M = 1.5, 23° at M = 2).
+pub const FIN_ALPHA_LINEAR: f64 = 15.0 * PI / 180.0;
+
 fn beta(m: f64) -> f64 {
     (1.0 - m * m).abs().sqrt().max(1e-3)
+}
+
+/// Drag coefficient of a finite flat plate normal to the flow, on its planform area.
+///
+/// Subsonic: 1.2 for plates of aspect ratio 1–5 (Hoerner, Fluid-Dynamic Drag, 1965, ch. 3: 1.17–1.2;
+/// the two-dimensional value 2.0 applies only to very long plates). Supersonic: 1.7, within the
+/// range 1.6–1.8 of plates and disks normal to supersonic flow (Hoerner 1965); the windward face carries
+/// at most the pitot pressure behind the normal shock (pressure coefficient 1.66 at M = 2, 1.76 at M = 3)
+/// and the base adds a suction that falls with Mach. C1 Hermite rise between M = 0.8 and 1.2.
+pub fn plate_cd(m: f64) -> f64 {
+    const SUB: f64 = 1.2;
+    const SUP: f64 = 1.7;
+    if m <= 0.8 {
+        SUB
+    } else if m >= 1.2 {
+        SUP
+    } else {
+        hermite(m, 0.8, 1.2, SUB, SUP, 0.0, 0.0)
+    }
+}
+
+/// Monotone C1 transition from the attached-flow normal force to the crossflow value.
+///
+/// `t` is the angle beyond the validity angle, `t_end` the span up to 90°, `cn1` and `d0` the value and
+/// slope at the validity angle, `cn90` the crossflow value at 90°. Returns
+/// `cn1 + (cn90 - cn1) (1 - e^{-k tau}) / (1 - e^{-k t_end})` with `tau = t_end sin(pi t / (2 t_end))`,
+/// so that the value and slope match at `t = 0`, the value is `cn90` and the slope zero at `t = t_end`, and
+/// the curve is monotone between them when `cn90 > cn1` (any `k`, positive or negative, is monotone).
+/// When the attached-flow value already exceeds the crossflow value (large-aspect-ratio fins, which
+/// stall), a cubic Hermite with zero end slope gives a bounded overshoot that relaxes to `cn90`.
+fn crossflow_blend(t: f64, t_end: f64, cn1: f64, d0: f64, cn90: f64) -> f64 {
+    let t = t.clamp(0.0, t_end);
+    let delta = cn90 - cn1;
+    if delta <= 1e-9 * cn90.abs().max(1e-12) || d0 <= 0.0 {
+        return hermite(t, 0.0, t_end, cn1, cn90, d0, 0.0);
+    }
+    // d/dt at t = 0: delta k (pi/2) / (1 - e^{-k t_end}) = d0, i.e. g(u) = u / (1 - e^{-u}) = r with u = k t_end.
+    let r = d0 * t_end / (delta * PI / 2.0);
+    let g = |u: f64| if u.abs() < 1e-12 { 1.0 } else { u / -(-u).exp_m1() };
+    // g increases from 0 (u -> -inf) through 1 (u = 0) to ~u (u -> +inf).
+    let (mut lo, mut hi) = (-60.0f64, r.max(1.0) + 60.0);
+    for _ in 0..200 {
+        let mid = 0.5 * (lo + hi);
+        if g(mid) < r {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    let u = 0.5 * (lo + hi);
+    let tau = t_end * (PI * t / (2.0 * t_end)).sin();
+    let frac = if u.abs() < 1e-12 { tau / t_end } else { (-u * tau / t_end).exp_m1() / (-u).exp_m1() };
+    cn1 + delta * frac
 }
 
 impl AeroModel {
@@ -138,7 +201,50 @@ impl AeroModel {
     }
 
     /// Fin-set normal force (including body interference) at Mach `m`, angle `a` [rad].
+    ///
+    /// Up to [`FIN_ALPHA_LINEAR`] this is the attached-flow theory of [`fin_cn_attached`](Self::fin_cn_attached)
+    /// (Barrowman linear subsonic, Busemann linear + cubic supersonic). Beyond it the fins are treated as
+    /// flat plates in crossflow: the normal force rises monotonically, C1 at the validity angle, to the
+    /// flat-plate value at 90°,
+    ///
+    /// `CN(90°) = k_N C_D,plate(M) A_fin / A_ref`,
+    ///
+    /// where `k_N` is the Barrowman fin-count factor (N/2 fins effective, the projection of N fins evenly
+    /// spaced in roll) and `C_D,plate` the drag coefficient of a flat plate normal to the flow
+    /// ([`plate_cd`]). The body-interference factor K_fb is a small-angle potential-flow upwash and is not
+    /// applied to the crossflow value. Between the two the curve is the exponential saturation
+    ///
+    /// `CN = CN_1 + (CN_90 - CN_1) (1 - e^{-k tau}) / (1 - e^{-k T})`,  `tau = T sin(pi t / (2 T))`,
+    ///
+    /// with `t = alpha - alpha_1`, `T = 90° - alpha_1`; `k` is chosen so that the slope at `alpha_1` equals the
+    /// attached-flow slope there, and `tau` makes the slope zero at 90° (flat plate symmetric about 90°).
+    /// The resulting shape — a knee above the validity angle levelling off to the crossflow value — follows
+    /// the measured normal force of low-aspect-ratio flat plates, which per unit plate area reaches about
+    /// 1.0 at 30° and 1.1–1.2 between 45° and 90° (Hoerner, Fluid-Dynamic Drag, 1965, ch. 3; Fluid-Dynamic
+    /// Lift, 1985). For the sample fins (4 fins, aspect ratio of an opposing pair 1.3) this model gives 1.05
+    /// per unit area at 30° and M = 0.3. Angles above 90° (reverse flow) are mirrored about 90°; the
+    /// function is odd in `a`.
     pub fn fin_cn(&self, m: f64, a: f64) -> f64 {
+        let sign = a.signum();
+        let a = a.abs().min(PI);
+        let a = if a > PI / 2.0 { PI - a } else { a };
+        if a <= FIN_ALPHA_LINEAR {
+            return sign * self.fin_cn_attached(m, a);
+        }
+        let Some(f) = &self.geom.fins else { return 0.0 };
+        if f.span <= 0.0 || f.area() <= 0.0 {
+            return 0.0;
+        }
+        let a1 = FIN_ALPHA_LINEAR;
+        let cn1 = self.fin_cn_attached(m, a1);
+        let h = 1e-5;
+        let d0 = (cn1 - self.fin_cn_attached(m, a1 - h)) / h;
+        let cn90 = Self::fin_count_factor(f.count) * plate_cd(m) * f.area() / self.geom.ref_area;
+        sign * crossflow_blend(a - a1, PI / 2.0 - a1, cn1, d0, cn90)
+    }
+
+    /// Attached-flow fin-set normal force (Barrowman / Busemann, valid at small `a`).
+    fn fin_cn_attached(&self, m: f64, a: f64) -> f64 {
         let Some(f) = &self.geom.fins else { return 0.0 };
         if f.span <= 0.0 || f.area() <= 0.0 {
             return 0.0;
@@ -169,7 +275,8 @@ impl AeroModel {
         let m2 = m * m;
         let k1 = 2.0 / b;
         let k3 = ((g + 1.0) * m2.powi(4) + (2.0 * g * g - 7.0 * g - 5.0) * m2.powi(3) + 10.0 * (g + 1.0) * m2 * m2 + 8.0) / (6.0 * b.powi(7));
-        // Flat-plate Busemann (both surfaces) with a linear-theory tip-loss factor.
+        // Flat-plate Busemann (both surfaces) with a linear-theory tip-loss factor. The expansion in alpha
+        // holds only for small angles (attached shock); `fin_cn` uses it up to FIN_ALPHA_LINEAR only.
         let ar = 2.0 * f.span * f.span / f.area();
         let tip = (1.0 - 1.0 / (2.0 * b * ar)).clamp(0.5, 1.0);
         self.fin_scale(f) * f.area() / self.geom.ref_area * (2.0 * k1 * a + 2.0 * k3 * a * a * a) * tip
@@ -194,6 +301,28 @@ impl AeroModel {
         f.x_le_root + f.mac_le_offset() + frac * f.mac()
     }
 
+    /// Fin centre of pressure at Mach `m` and angle `a` [rad].
+    ///
+    /// Equal to [`fin_xcp`](Self::fin_xcp) up to [`FIN_ALPHA_LINEAR`]; beyond it the chordwise position
+    /// moves with a C1 smoothstep to the planform centroid at 90°, where the crossflow pressure of a flat
+    /// plate normal to the flow is symmetric about it. For a trapezoidal fin the centroid lies at half the
+    /// mean aerodynamic chord. Above 90° (reverse flow, trailing edge leading) the fraction is mirrored to
+    /// `1 - frac(180° - a)`, reaching three quarters of the mean aerodynamic chord at 180° in subsonic flow.
+    pub fn fin_xcp_at(&self, m: f64, a: f64) -> f64 {
+        let x0 = self.fin_xcp(m);
+        let Some(f) = &self.geom.fins else { return x0 };
+        let base = f.x_le_root + f.mac_le_offset();
+        let mac = f.mac();
+        if mac <= 0.0 {
+            return x0;
+        }
+        let a = a.abs().min(PI);
+        let (a, rev) = if a > PI / 2.0 { (PI - a, true) } else { (a, false) };
+        let frac0 = (x0 - base) / mac;
+        let frac = if a <= FIN_ALPHA_LINEAR { frac0 } else { hermite(a, FIN_ALPHA_LINEAR, PI / 2.0, frac0, 0.5, 0.0, 0.0) };
+        base + if rev { 1.0 - frac } else { frac } * mac
+    }
+
     /// Total normal force coefficient and centre of pressure at Mach `m`, angle `a` [rad].
     pub fn normal(&self, m: f64, a: f64) -> (f64, f64) {
         let a = a.max(1e-6);
@@ -201,7 +330,7 @@ impl AeroModel {
         let cn_body = self.body_s[0] * sa * ca;
         let cn_lift = 1.1 * self.geom.planform_area / self.geom.ref_area * sa * sa;
         let cn_fin = self.fin_cn(m, a);
-        let xf = self.fin_xcp(m);
+        let xf = self.fin_xcp_at(m, a);
         let cn = cn_body + cn_lift + cn_fin;
         let mom = self.body_s[1] * sa * ca + cn_lift * self.geom.planform_centroid + cn_fin * xf;
         (cn, if cn.abs() > 1e-12 { mom / cn } else { 0.0 })
@@ -460,6 +589,137 @@ mod tests {
         assert!((axial_alpha_factor(0.0) - 1.0).abs() < 1e-12);
         assert!((axial_alpha_factor(17f64.to_radians()) - 1.3).abs() < 1e-12);
         assert!(axial_alpha_factor(PI / 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn fin_normal_force_is_bounded_at_large_alpha() {
+        let (m, _) = model();
+        let f = m.geom.fins.clone().unwrap();
+        for i in 0..=60 {
+            let mach = 0.05 * i as f64;
+            let cn90 = m.fin_cn(mach, PI / 2.0);
+            // Flat-plate crossflow: k_N C_D,plate A_fin / A_ref, C_D,plate 1.2 subsonic .. 1.7 supersonic.
+            let expect = AeroModel::fin_count_factor(f.count) * plate_cd(mach) * f.area() / m.geom.ref_area;
+            assert!((cn90 - expect).abs() < 1e-9 * expect, "M={mach}: fin CN(90) {cn90} vs {expect}");
+            assert!(cn90 > 2.0 * 1.2 * f.area() / m.geom.ref_area - 1e-9 && cn90 < 2.0 * 1.7 * f.area() / m.geom.ref_area + 1e-9);
+            // Monotone non-decreasing from 0 to 90 deg, never above the 90 deg value.
+            let mut prev = 0.0;
+            for k in 1..=900 {
+                let a = (0.1 * k as f64).to_radians();
+                let cn = m.fin_cn(mach, a);
+                assert!(cn >= prev - 1e-12, "M={mach}: fin CN decreases at {} deg: {prev} -> {cn}", 0.1 * k as f64);
+                assert!(cn <= cn90 + 1e-12, "M={mach}: fin CN {cn} above its 90 deg value {cn90}");
+                prev = cn;
+            }
+            // Total normal force stays within the crossflow estimate of the whole rocket.
+            let (cn_tot, _) = m.normal(mach, PI / 2.0);
+            assert!(cn_tot < 30.0, "M={mach}: total CN(90) {cn_tot}");
+        }
+        // Mirrored above 90 deg and odd in alpha.
+        let a = 70f64.to_radians();
+        assert!((m.fin_cn(1.2, PI - a) - m.fin_cn(1.2, a)).abs() < 1e-12);
+        assert!((m.fin_cn(1.2, -a) + m.fin_cn(1.2, a)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn small_alpha_fin_normal_force_is_unchanged() {
+        let (m, _) = model();
+        // CNa of the sample rocket before the large-alpha fin model (body + Barrowman/Busemann fins).
+        for (mach, cna) in [(0.3, 11.692), (0.8, 12.239), (1.2, 13.966), (1.5, 14.091), (2.0, 11.193), (3.0, 8.230)] {
+            assert!((m.cna(mach) - cna).abs() < 6e-4, "M={mach}: CNa {} vs {cna}", m.cna(mach));
+        }
+        let f = m.geom.fins.clone().unwrap();
+        for i in 0..=60 {
+            let mach = 0.05 * i as f64;
+            for k in 0..=150 {
+                let a = (0.1 * k as f64).to_radians();
+                assert_eq!(m.fin_cn(mach, a), m.fin_cn_attached(mach, a), "M={mach}, alpha {} deg", 0.1 * k as f64);
+                assert_eq!(m.fin_xcp_at(mach, a), m.fin_xcp(mach));
+            }
+            // Slope at zero: the Barrowman / Busemann linear term.
+            let lin = if mach <= TRANSONIC_LO {
+                m.fin_cn_sub(&f, mach, 1.0)
+            } else if mach >= TRANSONIC_HI {
+                m.fin_cn_sup(&f, mach, 1e-6) / 1e-6
+            } else {
+                continue;
+            };
+            assert!((m.fin_cn(mach, 1e-6) / 1e-6 - lin).abs() < 1e-6 * lin, "M={mach}");
+        }
+    }
+
+    #[test]
+    fn fin_normal_force_is_c1_in_alpha_and_continuous_in_mach() {
+        let (m, _) = model();
+        let a1 = FIN_ALPHA_LINEAR;
+        let h = 1e-6;
+        for i in 0..=60 {
+            let mach = 0.05 * i as f64;
+            // Value and slope match at the validity angle.
+            let (l, r) = (m.fin_cn(mach, a1 - h), m.fin_cn(mach, a1 + h));
+            let c = m.fin_cn(mach, a1);
+            let (dl, dr) = ((c - l) / h, (r - c) / h);
+            assert!((r - l).abs() < 1e-4 * c, "M={mach}: jump at the validity angle");
+            assert!((dl - dr).abs() < 1e-3 * dl, "M={mach}: slope {dl} -> {dr} at the validity angle");
+            // Zero slope at 90 deg (C1 with the mirrored branch).
+            let d90 = (m.fin_cn(mach, PI / 2.0) - m.fin_cn(mach, PI / 2.0 - h)) / h;
+            assert!(d90.abs() < 1e-3, "M={mach}: slope at 90 deg {d90}");
+            let (xl, xr) = (m.fin_xcp_at(mach, a1 - h), m.fin_xcp_at(mach, a1 + h));
+            assert!((xl - xr).abs() < 1e-6);
+        }
+        for deg in [20.0f64, 30.0, 45.0, 60.0, 90.0] {
+            let a = deg.to_radians();
+            let mut prev = m.fin_cn(0.0, a);
+            let mut prev_x = m.fin_xcp_at(0.0, a);
+            let mut mach = 0.0;
+            while mach < 3.0 {
+                mach += 0.002;
+                let cn = m.fin_cn(mach, a);
+                let x = m.fin_xcp_at(mach, a);
+                assert!((cn - prev).abs() < 0.01 * prev, "alpha {deg} deg: fin CN jump at M={mach}: {prev} -> {cn}");
+                assert!((x - prev_x).abs() < 1e-3, "alpha {deg} deg: fin xcp jump at M={mach}");
+                prev = cn;
+                prev_x = x;
+            }
+        }
+    }
+
+    #[test]
+    fn fin_cp_moves_to_the_planform_centroid_at_90_deg() {
+        let (m, _) = model();
+        let f = m.geom.fins.clone().unwrap();
+        let (cr, ct, sw) = (f.root_chord, f.tip_chord, f.sweep);
+        // Area centroid of the trapezoid: integral of c(eta) (x_le(eta) + c(eta)/2) over its area.
+        let xc = f.x_le_root + (sw * (cr + 2.0 * ct) + cr * cr + cr * ct + ct * ct) / (3.0 * (cr + ct));
+        for mach in [0.3, 1.2, 2.0, 3.0] {
+            assert!((m.fin_xcp_at(mach, PI / 2.0) - xc).abs() < 1e-12);
+            let x180 = m.fin_xcp_at(mach, PI);
+            let (base, mac) = (f.x_le_root + f.mac_le_offset(), f.mac());
+            let frac0 = (m.fin_xcp(mach) - base) / mac;
+            assert!((x180 - (base + (1.0 - frac0) * mac)).abs() < 1e-12, "reverse flow at M={mach}");
+        }
+    }
+
+    #[test]
+    fn crossflow_blend_is_monotone_and_matches_its_ends() {
+        let t_end = 75f64.to_radians();
+        for &(cn1, d0, cn90) in &[(2.5, 9.7, 4.6), (3.7, 25.0, 6.5), (1.0, 0.5, 6.0), (1.0, 1e-3, 6.0), (1.0, 200.0, 1.01)] {
+            assert!((crossflow_blend(0.0, t_end, cn1, d0, cn90) - cn1).abs() < 1e-12);
+            assert!((crossflow_blend(t_end, t_end, cn1, d0, cn90) - cn90).abs() < 1e-9);
+            let h = 1e-7;
+            let s0 = (crossflow_blend(h, t_end, cn1, d0, cn90) - cn1) / h;
+            assert!((s0 - d0).abs() < 1e-3 * d0.max(1.0), "slope {s0} vs {d0}");
+            let mut prev = cn1;
+            for k in 1..=1000 {
+                let v = crossflow_blend(t_end * k as f64 / 1000.0, t_end, cn1, d0, cn90);
+                assert!(v >= prev - 1e-12 && v <= cn90 + 1e-12, "({cn1}, {d0}, {cn90}) at step {k}: {v}");
+                prev = v;
+            }
+        }
+        // Attached value above the crossflow value: bounded relaxation to cn90.
+        let v: Vec<f64> = (0..=100).map(|k| crossflow_blend(t_end * k as f64 / 100.0, t_end, 6.0, 10.0, 4.0)).collect();
+        assert!((v[100] - 4.0).abs() < 1e-12);
+        assert!(v.iter().all(|x| x.is_finite() && *x < 6.0 + 10.0 * t_end));
     }
 
     #[test]

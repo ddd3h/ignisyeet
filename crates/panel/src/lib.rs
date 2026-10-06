@@ -20,6 +20,7 @@
 //! and the centre of pressure is `xcp = M_nose / CN`.
 
 pub mod influence;
+pub mod memory;
 pub mod mesh;
 pub mod solver;
 pub mod supersonic;
@@ -429,34 +430,32 @@ pub fn set_memory_limit(bytes: Option<u64>) {
     MEMORY_LIMIT.store(bytes.unwrap_or(0), std::sync::atomic::Ordering::Relaxed);
 }
 
-/// Peak memory [bytes] of the dense solve for `n` panels: the assembled matrix and its LU factor
-/// (two `n x n` f64 matrices coexist), plus the right-hand sides.
+/// Peak memory [bytes] of the dense solve for `n` panels: one `n x n` f64 matrix (assembled, then
+/// LU-factored in place, see [`solver::solve_potential`]), plus the right-hand sides.
 pub fn dense_solve_bytes(n: usize) -> u64 {
     let n = n as u64;
-    16 * n * n + 64 * n
+    8 * n * n + 64 * n
 }
 
-/// Physical memory of the machine [bytes] (`MemTotal` in /proc/meminfo); `None` where it is not available.
-fn physical_memory() -> Option<u64> {
-    let text = std::fs::read_to_string("/proc/meminfo").ok()?;
-    let line = text.lines().find(|l| l.starts_with("MemTotal:"))?;
-    let kb: u64 = line.split_whitespace().nth(1)?.parse().ok()?;
-    Some(kb * 1024)
-}
-
-/// Fails when the dense solve of `n` panels exceeds `limit`, or, without a limit, the physical memory.
+/// Fails when the dense solve of `n` panels exceeds the budget `limit` (`resources.memory_gb`) or the
+/// memory available to this process ([`memory::available`]: available memory, cgroup limit,
+/// address-space limit; physical memory on macOS; no check where none is known).
 pub fn check_memory(n: usize, limit: Option<u64>) -> Result<()> {
-    if limit.is_none() {
-        if let Some(total) = physical_memory() {
-            let need = dense_solve_bytes(n);
-            if need > total {
-                bail!(
-                    "the panel method needs about {:.2} GB for {n} panels (dense matrix), more than the {:.2} GB of memory of this machine; \
-                     use coarser panel settings (body_axial, body_circ, fin_chord, fin_span)",
-                    need as f64 / 1e9,
-                    total as f64 / 1e9
-                );
-            }
+    check_memory_with(n, limit, memory::available())
+}
+
+/// [`check_memory`] with the available memory given.
+pub fn check_memory_with(n: usize, limit: Option<u64>, available: Option<memory::Available>) -> Result<()> {
+    if let Some(a) = available {
+        let need = dense_solve_bytes(n);
+        if need > a.bytes {
+            bail!(
+                "the panel method needs about {:.2} GB for {n} panels (dense matrix), more than the {:.2} GB of memory available to this process ({}); \
+                 use coarser panel settings (body_axial, body_circ, fin_chord, fin_span)",
+                need as f64 / 1e9,
+                a.bytes as f64 / 1e9,
+                a.source
+            );
         }
     }
     if let Some(limit) = limit {
@@ -518,7 +517,7 @@ pub fn build_table_with_progress(
     for (k, &m) in machs_sub.iter().enumerate() {
         progress(PanelStage::Subsonic { index: k, total: n_sub, mach: m });
         let beta = (1.0 - m * m).sqrt();
-        let pot = if (beta - 1.0).abs() < 1e-12 { solver::solve_potential(&mesh) } else { solver::solve_potential(&mesh.scaled_lateral(beta)) };
+        let pot = if (beta - 1.0).abs() < 1e-12 { solver::solve_potential(&mesh)? } else { solver::solve_potential(&mesh.scaled_lateral(beta))? };
         let c = solver::coefficients(&mesh, &pot, beta, s_ref);
         if k == 0 {
             let cp = solver::cp_at_alpha(&pot, beta * 4f64.to_radians());

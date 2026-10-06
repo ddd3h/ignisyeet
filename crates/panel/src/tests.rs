@@ -28,7 +28,7 @@ fn sphere_cp() {
     let mesh = Mesh::body_of_revolution(&st, &r, nc, 0.0).unwrap();
     let (open, over) = mesh.edge_census();
     assert!(open.is_empty() && over == 0, "sphere not watertight");
-    let pot = solve_potential(&mesh);
+    let pot = solve_potential(&mesh).unwrap();
     let mut worst: f64 = 0.0;
     for (p, v) in mesh.panels.iter().zip(&pot.vel[0]) {
         let cp = 1.0 - v.dot(*v);
@@ -46,7 +46,7 @@ fn prolate_spheroid_axial_flow() {
     let st: Vec<f64> = (0..=na).map(|i| a * (1.0 - (PI * i as f64 / na as f64).cos())).collect();
     let r: Vec<f64> = st.iter().map(|&x| b * (1.0 - (x / a - 1.0).powi(2)).max(0.0).sqrt()).collect();
     let mesh = Mesh::body_of_revolution(&st, &r, 24, 0.0).unwrap();
-    let pot = solve_potential(&mesh);
+    let pot = solve_potential(&mesh).unwrap();
     let e = (1.0 - b * b / (a * a)).sqrt();
     let a0 = 2.0 * (1.0 - e * e) / e.powi(3) * (0.5 * ((1.0 + e) / (1.0 - e)).ln() - e);
     let k = a0 / (2.0 - a0);
@@ -65,7 +65,7 @@ fn prolate_spheroid_axial_flow() {
 }
 
 fn alpha_coeffs(mesh: &Mesh, s_ref: f64) -> solver::PotentialCoeffs {
-    let pot = solve_potential(mesh);
+    let pot = solve_potential(mesh).unwrap();
     coefficients(mesh, &pot, 1.0, s_ref)
 }
 
@@ -298,16 +298,30 @@ fn supersonic_comparison_with_barrowman() {
 
 #[test]
 fn memory_estimate_and_check() {
-    assert_eq!(dense_solve_bytes(1000), 16_000_000 + 64_000);
+    assert_eq!(dense_solve_bytes(1000), 8_000_000 + 64_000);
     assert!(check_memory(1000, None).is_ok());
     assert!(check_memory(1000, Some(17_000_000)).is_ok());
-    let e = check_memory(10_000, Some(1_000_000_000)).unwrap_err().to_string();
+    let e = check_memory(20_000, Some(1_000_000_000)).unwrap_err().to_string();
     assert!(e.contains("coarser") && e.contains("resources.memory_gb"), "{e}");
-    // Without a budget, a solve larger than the machine's memory (10^7 panels: 1.6 PB) fails cleanly.
+    // Without a budget, a solve larger than the available memory (10^7 panels: 1.6 PB) fails cleanly.
     if std::path::Path::new("/proc/meminfo").exists() {
         let e = check_memory(10_000_000, None).unwrap_err().to_string();
-        assert!(e.contains("memory of this machine"), "{e}");
+        assert!(e.contains("memory available to this process"), "{e}");
     }
+    // The available memory applies with a budget too, and the error names its source.
+    let a = memory::Available { bytes: 1_000_000, source: "cgroup memory.max minus memory.current".into() };
+    let e = check_memory_with(1000, Some(1 << 40), Some(a.clone())).unwrap_err().to_string();
+    assert!(e.contains("0.01 GB for 1000 panels") && e.contains("cgroup memory.max"), "{e}");
+    assert!(check_memory_with(100, None, Some(a)).is_ok());
+    assert!(check_memory_with(1000, None, None).is_ok());
+}
+
+/// An allocation that cannot succeed is an error with the size, not an abort in the solver.
+#[test]
+fn dense_allocation_failure_is_an_error() {
+    let e = solver::reserve_dense(1 << 31).unwrap_err().to_string();
+    assert!(e.contains("could not allocate the dense panel matrix") && e.contains("2147483648 panels"), "{e}");
+    assert_eq!(solver::reserve_dense(10).unwrap().len(), 100);
 }
 
 #[test]
@@ -376,7 +390,7 @@ fn subsonic_nose_moment_is_the_full_cross_product() {
     let mesh = sphere_mesh(20);
     let c = alpha_coeffs(&mesh, PI);
     // the omitted term alone, for scale
-    let pot = solve_potential(&mesh);
+    let pot = solve_potential(&mesh).unwrap();
     let mut zfx: f64 = 0.0;
     for (i, p) in mesh.panels.iter().enumerate() {
         let cp_a = -2.0 * pot.vel[0][i].dot(pot.vel[1][i]);

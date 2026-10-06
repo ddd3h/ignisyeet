@@ -636,7 +636,8 @@ fn aero_table_inner(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
     if cfg.aero.method == config::AeroMethod::Cfd {
         print_warnings(&cfg.aero.cfd.warnings());
         // Fail early (before the geometry step) when the tools are missing.
-        cfd::check_tools(&cfg.aero.cfd)?;
+        let tools = cfd::check_tools(&cfg.aero.cfd)?;
+        print_warnings(&tools.warnings());
     }
     let start = std::time::Instant::now();
     let step = u.step("Extracting geometry");
@@ -759,7 +760,7 @@ fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
             (Some(p), _) => println!("  {:<21}MISSING  {p}", t.name),
         }
     }
-    for w in opt.warnings() {
+    for w in opt.warnings().into_iter().chain(r.warnings()) {
         println!("  warning: {w}");
     }
     if r.ready(opt) {

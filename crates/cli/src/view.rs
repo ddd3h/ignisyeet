@@ -513,7 +513,12 @@ pub fn flight_panel(sm: &Summary, descent: Descent, g_lat_lon: bool) -> Panel {
         ),
     );
     // Minimum over the rail exit and the free flight (the rail-exit value is in the row above).
-    p.row("min margin", stability(crate::static_margin_min(sm)));
+    let at = if sm.static_margin_min_t.is_finite() && sm.static_margin_min_mach.is_finite() {
+        format!("{s}at {}, Mach {}", val(format!("{:.2}", sm.static_margin_min_t), "s"), val(format!("{:.2}", sm.static_margin_min_mach), ""))
+    } else {
+        String::new()
+    };
+    p.row("min margin", format!("{}{at}", stability(crate::static_margin_min(sm))));
     p.row("apogee", format!("{} {}{s}at {}", style(format!("{:.1} m", sm.apogee)).bold().green(), dim("AGL"), val(format!("{:.2}", sm.apogee_time), "s")));
     if let (Some(t), Some(h)) = (sm.main_deploy_time, sm.main_deploy_altitude) {
         p.row("main deploy", format!("{} {}{s}at {}", style(format!("{h:.1} m")).bold().green(), dim("AGL"), val(format!("{t:.2}"), "s")));
@@ -730,6 +735,12 @@ mod tests {
         };
         let flight = render(&flight_panel(&s, Descent::Parachute, false));
         assert!(flight.contains("main deploy") && flight.contains("300.2 m") && flight.contains("61.50 s"), "{flight}");
+        // The place of the smallest static margin, as in the plain output.
+        let m = Summary { min_stability_cal: 1.8, stability_at_rail_exit: 2.0, static_margin_min_t: 3.25, static_margin_min_mach: 0.87, ..s.clone() };
+        let flight = render(&flight_panel(&m, Descent::Parachute, false));
+        let row = flight.lines().find(|l| l.contains("min margin")).unwrap();
+        assert!(row.contains("1.80 cal") && row.contains("at 3.25 s") && row.contains("Mach 0.87"), "{row}");
+        assert!(!render(&flight_panel(&s, Descent::Parachute, false)).lines().find(|l| l.contains("min margin")).unwrap().contains("Mach"));
     }
 
     #[test]

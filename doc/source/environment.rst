@@ -218,7 +218,7 @@ ECEF 座標での扱いの違いは :ref:`sec-ecef-gravity` で述べる。
       w(h) = w_{\mathrm{ref}}\,\frac{\ln\bigl(\max(h,\,z_0)/z_0\bigr)}{\ln(h_{\mathrm{ref}}/z_0)}
 
    とする。式の上では :math:`h\le z_0` で 0 になる（実際の地面付近の扱いは :ref:`sec-wind-blend`）。:math:`z_0` は開けた草地で 0.01〜0.05 m、樹木や建物のある地表で 0.3〜1 m 程度とされる :cite:`stull`。
-   :math:`0<z_0<h_{\mathrm{ref}}` でなければならない（:numref:`fig-wind-models` 左）。
+   :math:`0<z_0<h_{\mathrm{ref}}/2` でなければならない（:numref:`fig-wind-models` 左）。
 
 ``profile``\ （高度別の表）
    次項の表から、高度ごとの風を与える。

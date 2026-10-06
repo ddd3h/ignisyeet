@@ -39,6 +39,8 @@ IgnisYeet では多くのシミュレータと同様に、燃焼試験などで 
 1 行目がヘッダ、2 行目以降が「時刻 [s] と推力 [N]」の組である。
 時刻 :math:`t_k` の間は線形補間し、最後の時刻を燃焼終了時刻 :math:`t_b` とする。
 先頭が :math:`t=0` でない場合は :math:`(0,0)` を補う。
+先頭が :math:`(0,F)` の曲線（:math:`F\ne0`）では、:math:`t=0` の推力は最初の点の値 :math:`F` で、点火の瞬間から全推力がかかる。先頭が :math:`(0,0)` なら 0 から線形に立ち上がる。
+ファイルの先頭に UTF-8 の BOM があっても読める。
 
 ヘッダのうち、直径、長さ、推進剤質量を使う。全備質量（6 番目の値）は読み込んで検査するが、質量モデルには使わない。
 したがって、空のモータケースの質量は ``rocket.dry_mass`` に含める必要がある（:doc:`usage`）。
@@ -51,6 +53,12 @@ IgnisYeet では多くのシミュレータと同様に、燃焼試験などで 
 * 推力曲線の時刻と推力が有限であること。時刻が 0 以上、推力が 0 以上であること。
 * 時刻が厳密に増加すること（先頭の :math:`t=0` の行だけは、補った :math:`(0,0)` の推力を置き換える）。
 * 全力積が有限で正であること。
+
+エラーにはしないが疑わしい推力曲線は、警告として表示する（:ref:`sec-config-checks`）。
+
+* 最後の点の推力が 0 N でない。モータは燃焼終了で急に切れる（``thrust curve ends at … N instead of 0 N: the motor is cut off abruptly``）。
+* 点が 1 つだけである。推力は :math:`t=0` の 0 N から線形に立ち上がる（``the thrust curve has a single point: the thrust ramps linearly from 0 N at t = 0``）。
+* 燃焼時間が 0.05 s より短い。時刻の列の誤りが疑われる（``burn time … s is shorter than 0.05 s: the motor is an impulse; check the time column``）。
 
 推進剤の消費
 ------------

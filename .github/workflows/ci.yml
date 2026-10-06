@@ -32,7 +32,6 @@ jobs:
       - name: Test
         run: cargo test --release --locked
       - name: Clippy
-        # Existing geom lints fail locally with -D warnings; keep advisory until fixed.
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: Format
         run: cargo fmt --all -- --check

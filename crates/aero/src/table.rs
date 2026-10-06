@@ -19,14 +19,54 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+
+/// Counters of lookups outside the tabulated range (shared by all clones of a table).
+#[derive(Debug, Default)]
+struct RangeCounters {
+    lookups: AtomicU64,
+    mach_below: AtomicU64,
+    mach_above: AtomicU64,
+    angle_beyond: AtomicU64,
+    /// Largest requested Mach and |alpha| [deg] as non-negative f64 bit patterns (monotone in the bits).
+    max_mach: AtomicU64,
+    max_abs_alpha_deg: AtomicU64,
+}
+
+/// Snapshot of the out-of-range lookup statistics of an [`AeroTable`].
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct OutOfRangeStats {
+    /// Total number of lookups.
+    pub lookups: u64,
+    /// Lookups with Mach below the first grid value (clamped to it).
+    pub mach_below: u64,
+    /// Lookups with Mach above the last grid value (clamped to it).
+    pub mach_above: u64,
+    /// Lookups with alpha or beta outside the grid (linearly extrapolated or clamped).
+    pub angle_beyond: u64,
+    /// Largest Mach requested.
+    pub max_mach: f64,
+    /// Largest |alpha| requested [deg].
+    pub max_abs_alpha_deg: f64,
+}
+
+impl OutOfRangeStats {
+    /// True when any lookup left the tabulated range.
+    pub fn any(&self) -> bool {
+        self.mach_below + self.mach_above + self.angle_beyond > 0
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum Extrapolation {
-    /// Continue the slope of the outermost grid cell.
+    /// Continue the slope of the outermost grid cell in the angles (alpha, beta). Mach is never
+    /// extrapolated (see [`AeroTable::lookup`]); the extrapolated coefficients are bounded to
+    /// physically sane signs.
     #[default]
     Linear,
-    /// Hold the value at the grid edge.
+    /// Hold the value at the grid edge in every axis.
     Clamp,
 }
 
@@ -178,6 +218,7 @@ enum TableData {
 pub struct AeroTable {
     pub meta: TableMeta,
     data: TableData,
+    counters: Arc<RangeCounters>,
 }
 
 /// Unit vector of the vehicle velocity relative to the air in body axes for alpha and beta [rad]:
@@ -278,7 +319,7 @@ impl AeroTable {
             extrapolation,
             ..Default::default()
         };
-        Self { meta, data: TableData::Axisymmetric(data) }
+        Self { meta, data: TableData::Axisymmetric(data), counters: Default::default() }
     }
 
     /// Axisymmetric table from an arbitrary function of (Mach, alpha [deg]); used for tests and custom data.
@@ -291,7 +332,7 @@ impl AeroTable {
             }
         }
         let meta = TableMeta { kind: TableKind::Axisymmetric, format_version: FORMAT_VERSION, ..meta };
-        Self { meta, data: TableData::Axisymmetric(data) }
+        Self { meta, data: TableData::Axisymmetric(data), counters: Default::default() }
     }
 
     /// General table from a function of (Mach, alpha [deg], beta [deg]) on `meta`'s grid.
@@ -305,7 +346,7 @@ impl AeroTable {
             }
         }
         let meta = TableMeta { kind: TableKind::General, format_version: FORMAT_VERSION, ..meta };
-        Self { meta, data: TableData::General(data) }
+        Self { meta, data: TableData::General(data), counters: Default::default() }
     }
 
     pub fn kind(&self) -> TableKind {
@@ -402,7 +443,7 @@ impl AeroTable {
             }
         };
         meta.format_version = FORMAT_VERSION;
-        Ok(Self { meta, data })
+        Ok(Self { meta, data, counters: Default::default() })
     }
 
     /// Fills the roll terms (cant forcing and roll damping) of an axisymmetric table from
@@ -436,26 +477,94 @@ impl AeroTable {
         }
     }
 
+    /// Snapshot of the out-of-range lookup statistics (all clones of a table share them).
+    pub fn out_of_range_stats(&self) -> OutOfRangeStats {
+        let c = &self.counters;
+        OutOfRangeStats {
+            lookups: c.lookups.load(Ordering::Relaxed),
+            mach_below: c.mach_below.load(Ordering::Relaxed),
+            mach_above: c.mach_above.load(Ordering::Relaxed),
+            angle_beyond: c.angle_beyond.load(Ordering::Relaxed),
+            max_mach: f64::from_bits(c.max_mach.load(Ordering::Relaxed)),
+            max_abs_alpha_deg: f64::from_bits(c.max_abs_alpha_deg.load(Ordering::Relaxed)),
+        }
+    }
+
+    /// Resets the out-of-range lookup statistics.
+    pub fn reset_out_of_range_stats(&self) {
+        let c = &self.counters;
+        for a in [&c.lookups, &c.mach_below, &c.mach_above, &c.angle_beyond, &c.max_mach, &c.max_abs_alpha_deg] {
+            a.store(0, Ordering::Relaxed);
+        }
+    }
+
+    fn record(&self, m: f64, alpha_deg: f64, angle_out: bool) {
+        let c = &self.counters;
+        c.lookups.fetch_add(1, Ordering::Relaxed);
+        let (lo, hi) = (self.meta.machs.first().copied().unwrap_or(0.0), self.meta.machs.last().copied().unwrap_or(0.0));
+        if m < lo - 1e-9 {
+            c.mach_below.fetch_add(1, Ordering::Relaxed);
+        } else if m > hi + 1e-9 {
+            c.mach_above.fetch_add(1, Ordering::Relaxed);
+        }
+        if angle_out {
+            c.angle_beyond.fetch_add(1, Ordering::Relaxed);
+        }
+        if m.is_finite() && m > 0.0 {
+            c.max_mach.fetch_max(m.to_bits(), Ordering::Relaxed);
+        }
+        let a = alpha_deg.abs();
+        if a.is_finite() && a > 0.0 {
+            c.max_abs_alpha_deg.fetch_max(a.to_bits(), Ordering::Relaxed);
+        }
+    }
+
     /// Coefficients at Mach `m` and total angle of attack `alpha` [rad] (≥ 0) of an axisymmetric table.
+    ///
+    /// Extrapolation rules: Mach is always held at the grid edge (transonic/supersonic trends do not
+    /// continue linearly beyond the table); alpha continues linearly with the
+    /// [`Extrapolation::Linear`] option (a descending rocket needs large angles) and is held with
+    /// `Clamp`. Linearly extrapolated values are bounded: they keep the sign of the edge value
+    /// (CN, CA), CNa and the damping sums stay non-negative, `cl_delta` keeps its sign, the
+    /// centre of pressure stays inside the body and the roll damping is never positive.
+    /// Lookups outside the grid are counted, see [`out_of_range_stats`](Self::out_of_range_stats).
     ///
     /// Panics for a general table; use [`lookup6`](Self::lookup6).
     pub fn lookup(&self, m: f64, alpha: f64) -> AeroCoeffs {
         let TableData::Axisymmetric(data) = &self.data else { panic!("lookup() on a general aero table") };
         let clamp = self.meta.extrapolation == Extrapolation::Clamp;
-        let (i, tm) = locate(&self.meta.machs, m, clamp);
-        let (j, ta) = locate(&self.meta.alphas_deg, alpha.abs().to_degrees(), clamp);
+        let (i, tm) = locate(&self.meta.machs, m, true);
+        let alpha_deg = alpha.abs().to_degrees();
+        let (j, ta) = locate(&self.meta.alphas_deg, alpha_deg, clamp);
         let na = self.meta.alphas_deg.len();
         let at = |ii: usize, jj: usize| &data[ii * na + jj];
-        let mut out = [0.0; N_FIELDS];
         let (i1, j1) = ((i + 1).min(self.meta.machs.len() - 1), (j + 1).min(na - 1));
-        for (k, o) in out.iter_mut().enumerate() {
-            let v00 = at(i, j)[k];
-            let v01 = at(i, j1)[k];
-            let v10 = at(i1, j)[k];
-            let v11 = at(i1, j1)[k];
-            let a0 = v00 + (v01 - v00) * ta;
-            let a1 = v10 + (v11 - v10) * ta;
-            *o = a0 + (a1 - a0) * tm;
+        let interp = |ta: f64| {
+            let mut out = [0.0; N_FIELDS];
+            for (k, o) in out.iter_mut().enumerate() {
+                let (v00, v01, v10, v11) = (at(i, j)[k], at(i, j1)[k], at(i1, j)[k], at(i1, j1)[k]);
+                let a0 = v00 + (v01 - v00) * ta;
+                let a1 = v10 + (v11 - v10) * ta;
+                *o = a0 + (a1 - a0) * tm;
+            }
+            out
+        };
+        let mut out = interp(ta);
+        let extrapolated = !(0.0..=1.0).contains(&ta);
+        let beyond = self.meta.alphas_deg.last().is_some_and(|&last| alpha_deg > last + 1e-9);
+        self.record(m, alpha_deg, beyond);
+        if extrapolated {
+            let edge = interp(ta.clamp(0.0, 1.0));
+            // cn, ca_on, ca_off, cna, damping sums and cl_delta keep the sign of the edge value.
+            for k in [0, 1, 2, 4, 5, 6, 7, 8] {
+                out[k] = keep_sign(out[k], edge[k]);
+            }
+            for k in [4, 5, 6, 7] {
+                out[k] = out[k].max(0.0);
+            }
+            if self.meta.length > 0.0 {
+                out[3] = out[3].clamp(0.0, self.meta.length);
+            }
         }
         AeroCoeffs {
             cn: out[0],
@@ -465,7 +574,7 @@ impl AeroTable {
             cna: out[4],
             damp: [out[5], out[6], out[7]],
             cl_delta: out[8],
-            clp: out[9],
+            clp: out[9].min(0.0),
         }
     }
 
@@ -485,21 +594,40 @@ impl AeroTable {
         };
         let clamp = self.meta.extrapolation == Extrapolation::Clamp;
         let (na, nb) = (self.meta.alphas_deg.len(), self.meta.betas_deg.len());
-        let (i, tm) = locate(&self.meta.machs, m, clamp);
+        // Mach is always held at the grid edge, see `lookup`.
+        let (i, tm) = locate(&self.meta.machs, m, true);
         let (j, ta) = locate(&self.meta.alphas_deg, alpha.to_degrees(), clamp);
         let (k, tb) = locate(&self.meta.betas_deg, beta.to_degrees(), clamp);
+        let extrapolated = !(0.0..=1.0).contains(&ta) || !(0.0..=1.0).contains(&tb);
+        let beyond = |g: &[f64], x: f64| g.len() >= 2 && (x < g[0] - 1e-9 || x > g[g.len() - 1] + 1e-9);
+        self.record(m, alpha.to_degrees(), beyond(&self.meta.alphas_deg, alpha.to_degrees()) || beyond(&self.meta.betas_deg, beta.to_degrees()));
         let (i1, j1, k1) = ((i + 1).min(self.meta.machs.len() - 1), (j + 1).min(na - 1), (k + 1).min(nb - 1));
         let at = |ii: usize, jj: usize, kk: usize| &data[(ii * na + jj) * nb + kk];
-        let mut out = [0.0; N_GEN];
-        for (f, o) in out.iter_mut().enumerate() {
-            let lerp = |a: f64, b: f64, t: f64| a + (b - a) * t;
-            let c = |ii: usize| {
-                let b0 = lerp(at(ii, j, k)[f], at(ii, j, k1)[f], tb);
-                let b1 = lerp(at(ii, j1, k)[f], at(ii, j1, k1)[f], tb);
-                lerp(b0, b1, ta)
-            };
-            *o = lerp(c(i), c(i1), tm);
+        let interp = |ta: f64, tb: f64| {
+            let mut out = [0.0; N_GEN];
+            for (f, o) in out.iter_mut().enumerate() {
+                let lerp = |a: f64, b: f64, t: f64| a + (b - a) * t;
+                let c = |ii: usize| {
+                    let b0 = lerp(at(ii, j, k)[f], at(ii, j, k1)[f], tb);
+                    let b1 = lerp(at(ii, j1, k)[f], at(ii, j1, k1)[f], tb);
+                    lerp(b0, b1, ta)
+                };
+                *o = lerp(c(i), c(i1), tm);
+            }
+            out
+        };
+        let mut out = interp(ta, tb);
+        if extrapolated {
+            // Axial force, roll forcing and damping sums keep the sign of the edge value.
+            let edge = interp(ta.clamp(0.0, 1.0), tb.clamp(0.0, 1.0));
+            for f in [0, 1, 7, 9, 10, 11, 12, 13, 14] {
+                out[f] = keep_sign(out[f], edge[f]);
+            }
+            for f in [9, 10, 11, 12, 13, 14] {
+                out[f] = out[f].max(0.0);
+            }
         }
+        out[8] = out[8].min(0.0);
         Coeffs6::from_arr(out)
     }
 
@@ -508,6 +636,15 @@ impl AeroTable {
             TableData::Axisymmetric(d) => d.len(),
             TableData::General(d) => d.len(),
         }
+    }
+}
+
+/// `v` limited to the sign of the reference value `edge` (zero when it would flip).
+fn keep_sign(v: f64, edge: f64) -> f64 {
+    if edge >= 0.0 {
+        v.max(0.0)
+    } else {
+        v.min(0.0)
     }
 }
 
@@ -561,6 +698,49 @@ mod tests {
         let (tc, _) = table(Extrapolation::Clamp);
         assert!((tc.lookup(0.3, 12f64.to_radians()).cn - a10).abs() < 1e-9);
         assert!((tc.lookup(5.0, 0.0).ca_off - tc.lookup(2.0, 0.0).ca_off).abs() < 1e-12);
+    }
+
+    #[test]
+    fn mach_is_clamped_even_with_linear_extrapolation() {
+        let (t, _) = table(Extrapolation::Linear);
+        let g = t.to_general(angle_axis(180.0, 30.0, 2.0, 10.0), angle_axis(90.0, 30.0, 2.0, 10.0));
+        t.reset_out_of_range_stats();
+        for a in [0.0, 3f64.to_radians(), 9f64.to_radians()] {
+            let (hi, edge) = (t.lookup(6.0, a), t.lookup(2.0, a));
+            assert_eq!((hi.cn, hi.ca_on, hi.ca_off, hi.xcp, hi.cna, hi.clp), (edge.cn, edge.ca_on, edge.ca_off, edge.xcp, edge.cna, edge.clp));
+        }
+        assert_eq!(g.lookup6(9.0, 0.05, 0.02), g.lookup6(2.0, 0.05, 0.02));
+        let s = t.out_of_range_stats();
+        assert_eq!(s.mach_above, 3);
+        assert_eq!(s.lookups, 6);
+        assert!(s.max_mach >= 6.0 && s.any());
+        assert_eq!(g.out_of_range_stats().mach_above, 1);
+    }
+
+    #[test]
+    fn extrapolated_alpha_is_bounded_and_counted() {
+        let (t, _) = table(Extrapolation::Linear);
+        t.reset_out_of_range_stats();
+        for deg in [10.0, 15.0, 40.0, 90.0, 170.0] {
+            let c = t.lookup(0.8, f64::to_radians(deg));
+            assert!(c.clp <= 0.0 && c.cna >= 0.0 && c.cn >= 0.0 && c.ca_on >= 0.0);
+            assert!(c.damp.iter().all(|d| *d >= 0.0));
+            assert!(c.xcp >= 0.0 && c.xcp <= t.meta.length);
+        }
+        assert_eq!(t.out_of_range_stats().angle_beyond, 4);
+        assert!((t.out_of_range_stats().max_abs_alpha_deg - 170.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn clp_never_positive_and_cl_delta_keeps_sign() {
+        let meta = TableMeta { ref_area: 0.01, ref_diameter: 0.1, length: 1.0, machs: vec![0.0, 1.0], alphas_deg: vec![0.0, 10.0], ..Default::default() };
+        // Roll damping grows towards positive and cl_delta towards negative with alpha.
+        let t = AeroTable::from_fn(meta, |_, a| AeroCoeffs { cn: a, xcp: 0.5, cna: 1.0, clp: -0.1 + a * 0.05, cl_delta: 0.5 - a * 0.05, damp: [1.0, 0.5, 0.3], ..Default::default() });
+        for deg in [5.0, 10.0, 20.0, 60.0] {
+            let c = t.lookup(0.5, f64::to_radians(deg));
+            assert!(c.clp <= 0.0, "clp {} at {deg}", c.clp);
+            assert!(c.cl_delta >= 0.0, "cl_delta {} at {deg}", c.cl_delta);
+        }
     }
 
     #[test]

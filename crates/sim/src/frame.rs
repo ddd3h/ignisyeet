@@ -9,9 +9,12 @@
 //!   Attitude is the body-to-ECEF quaternion and `w` the body angular velocity relative to ECEF;
 //!   the Euler equations use the inertial angular velocity w + R^T Omega (see `flight.rs`).
 //!
-//! Gravity in `ecef`: `constant` is g0 and `inverse_square` is g0 (R_e / (R_e + h))^2 (h the
-//! geodetic altitude), both along the local geodetic down so they agree with the flat frame;
-//! `j2` is the full point-mass + J2 vector (with its small horizontal components).
+//! Gravity in `ecef`: `constant` (g0) and `inverse_square` (g0 (R_e / (R_e + h))^2, h the
+//! geodetic altitude) are *effective* gravities (they already include the centrifugal term), taken
+//! along the local geodetic down so they agree with the flat frame. `Frame::gravity` returns the
+//! pure gravitation g_eff + Omega x (Omega x p), so that adding the apparent acceleration
+//! -Omega x (Omega x p) in the equations of motion gives net g_eff. `j2` is the full point-mass +
+//! J2 gravitation vector (with its small horizontal components) and needs no correction.
 //!
 //! Output quantities are always expressed in the launch-site ENU frame.
 
@@ -131,15 +134,23 @@ impl Frame {
         match self.kind {
             EarthModel::Flat => earth.flat_gravity(self.launch_alt, loc.height),
             EarthModel::Ecef => match self.gravity {
-                GravityModel::Constant => loc.up * -G0,
+                GravityModel::Constant => self.gravitation_from_effective(p, loc.up * -G0),
                 GravityModel::InverseSquare => {
                     // Same magnitude law as the flat frame, directed along the geodetic down.
                     let r = R_EARTH / (R_EARTH + self.launch_alt + loc.height);
-                    loc.up * (-G0 * r * r)
+                    self.gravitation_from_effective(p, loc.up * (-G0 * r * r))
                 }
                 GravityModel::J2 => j2_gravity(p),
             },
         }
+    }
+
+    /// Convert an effective (apparent) gravity vector, which already contains the centrifugal
+    /// acceleration, into pure gravitation: g_grav = g_eff + Omega x (Omega x p). The equations
+    /// of motion in the rotating frame add -Omega x (Omega x p) again (`apparent_accel`), so the
+    /// net acceleration equals g_eff exactly, as in the flat frame (no double counting).
+    fn gravitation_from_effective(&self, p: Vec3, g_eff: Vec3) -> Vec3 {
+        g_eff + self.omega.cross(self.omega.cross(p))
     }
 
     /// Coriolis + centrifugal acceleration of a body at `p` moving with velocity `v` relative to
@@ -171,16 +182,41 @@ mod tests {
         assert!((f.local(p).height - 1000.0).abs() < 1e-3);
         let enu = f.position_to_launch_enu(p);
         assert!(enu.x.abs() < 1e-6 && enu.y.abs() < 1e-6 && (enu.z - 1000.0).abs() < 1e-6);
-        // inverse-square gravity points along the geodetic down with magnitude g0 (R/(R+h))^2
+        // gravitation + centrifugal = effective gravity along the geodetic down, magnitude g0 (R/(R+h))^2
         let g = f.gravity(f.origin(), &l0, &earth);
         let r = 6_371_000.0 / (6_371_000.0 + 20.0);
-        assert!((g.norm() - G0 * r * r).abs() < 1e-9);
-        assert!((g.dot(l0.up) + g.norm()).abs() < 1e-9);
+        let net = g + f.apparent_accel(f.origin(), Vec3::ZERO);
+        assert!((net.norm() - G0 * r * r).abs() < 1e-9);
+        assert!((net.dot(l0.up) + net.norm()).abs() < 1e-9);
         // centrifugal acceleration at 34.7 deg: Omega^2 R cos(lat) ~ 0.0277
         let a = f.apparent_accel(f.origin(), Vec3::ZERO);
         assert!((a.norm() - 0.0277).abs() < 0.002, "{}", a.norm());
         // Coriolis on a rising body (up) deflects it west
         let c = f.apparent_accel(Vec3::ZERO, f.from_launch_enu(Vec3::new(0.0, 0.0, 100.0)));
         assert!(f.to_launch_enu(c).x < 0.0);
+    }
+
+    /// Net acceleration at rest (gravitation + centrifugal) must equal the effective gravity,
+    /// purely vertical: no horizontal residual that would make a vertical flight drift north.
+    #[test]
+    fn ecef_net_gravity_has_no_horizontal_residual() {
+        let j2_earth = Earth { model: EarthModel::Ecef, gravity: GravityModel::J2, ..Earth::default() };
+        for gravity in [GravityModel::Constant, GravityModel::InverseSquare] {
+            let earth = Earth { model: EarthModel::Ecef, gravity, ..Earth::default() };
+            let f = Frame::new(&earth, &launch());
+            let fj = Frame::new(&j2_earth, &launch());
+            for h in [0.0, 2_000.0, 20_000.0, 80_000.0] {
+                let p = f.origin() + f.from_launch_enu(Vec3::new(0.0, 0.0, h));
+                let loc = f.local(p);
+                let net = f.gravity(p, &loc, &earth) + f.apparent_accel(p, Vec3::ZERO);
+                let net_enu = f.to_launch_enu(net);
+                assert!(net_enu.y.abs() < 2e-4 && net_enu.x.abs() < 2e-4, "{gravity:?} h={h} net {net_enu:?}");
+                // J2 (already consistent) has the same small horizontal residual scale
+                let locj = fj.local(p);
+                let netj = fj.to_launch_enu(fj.gravity(p, &locj, &j2_earth) + fj.apparent_accel(p, Vec3::ZERO));
+                assert!(netj.y.abs() < 0.05, "j2 north {}", netj.y);
+                assert!((net_enu.y).abs() <= netj.y.abs() + 5e-4);
+            }
+        }
     }
 }

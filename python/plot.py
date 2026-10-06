@@ -18,6 +18,7 @@ With --compare, aero_compare.png overlays CNα, Xcp and CD0 of both aerodynamic 
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
 import matplotlib
@@ -60,6 +61,14 @@ plt.rcParams.update({
     "lines.linewidth": 2.0,
     "font.size": 9,
 })
+
+
+def speed_colors(n):
+    """n distinguishable colours for wind-speed curves: viridis sampled evenly (the light yellow end is left out)."""
+    cmap = plt.get_cmap("viridis")
+    if n == 1:
+        return [cmap(0.35)]
+    return [cmap(0.9 * i / (n - 1)) for i in range(n)]
 
 
 def seq_colors(n):
@@ -273,6 +282,10 @@ def plot_trajectory(out):
     save(fig, out, "trajectory.png")
 
 
+def _finite(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and np.isfinite(v)
+
+
 def ellipse_xy(mean_e, mean_n, semi_major, semi_minor, bearing_deg, n=200):
     """Closed ellipse in (east, north); the major axis points along a bearing clockwise from north."""
     th = np.radians(bearing_deg)
@@ -295,8 +308,12 @@ def plot_dispersion_mc(out):
         ax.scatter(s.landing_east, s.landing_north, s=6, color=SERIES[0], alpha=0.35, linewidths=0, label=f"landing points (n = {st.get('n', len(s))})")
         if st.get("mean_east") is not None and st.get("mean_north") is not None:
             for k, ls in ((1, "-"), (3, "--")):
-                e = st[f"ellipse_{k}sigma"]
-                x, y = ellipse_xy(st["mean_east"], st["mean_north"], e["semi_major"], e["semi_minor"], e["major_axis_bearing_deg"])
+                # With fewer than 2 samples the spread is undefined and the ellipses are null.
+                e = st.get(f"ellipse_{k}sigma") or {}
+                vals = [e.get(f) for f in ("semi_major", "semi_minor", "major_axis_bearing_deg")]
+                if not all(_finite(v) for v in vals):
+                    continue
+                x, y = ellipse_xy(st["mean_east"], st["mean_north"], *vals)
                 ax.plot(x, y, color=SERIES[1], linestyle=ls, linewidth=1.5, label=f"{k}σ ellipse")
             ax.plot([st["mean_east"]], [st["mean_north"]], marker="+", color=SERIES[1], markersize=11, markeredgewidth=2, linestyle="none", label="mean")
         ax.plot([0], [0], marker="*", color=INK, markersize=12, linestyle="none", label="launch site")
@@ -341,7 +358,7 @@ def plot_dispersion_grid(out):
         d = d[ok]
     fig, axs = plt.subplots(1, len(modes), figsize=(7.2 * len(modes), 6), squeeze=False)
     speeds = sorted(d.wind_speed.unique())
-    colors = dict(zip(speeds, seq_colors(len(speeds))))
+    colors = dict(zip(speeds, speed_colors(len(speeds))))
     for ax, mode in zip(axs[0], modes):
         s = d[d.descent == mode]
         for v in speeds:
@@ -361,7 +378,10 @@ def plot_dispersion_grid(out):
         else:
             far = s.landing_distance.max()
             ax.set_title(f"Landing dispersion — {mode} (max {'≥ ' if failed else ''}{far:.0f} m" + (f", {failed} did not land)" if failed else ")"))
-        ax.legend(title="wind speed", loc="upper left", bbox_to_anchor=(1.01, 1.0))
+        # Fastest (outermost) wind first.
+        handles, labels = ax.get_legend_handles_labels()
+        order = list(range(len(labels) - 1))[::-1] + [len(labels) - 1]  # launch site stays last
+        ax.legend([handles[i] for i in order], [labels[i] for i in order], title="wind speed (outermost first)", loc="upper left", bbox_to_anchor=(1.01, 1.0))
     fig.tight_layout()
     save(fig, out, "dispersion.png")
 
@@ -388,6 +408,21 @@ def plot_aero_compare(out, other):
     save(fig, out, "aero_compare.png")
 
 
+def warn_stale(out):
+    """Warn (stderr) when a dispersion output is older than the flight summary: it was written for an earlier configuration.
+
+    config_hash cannot be compared across files: the flight, wind-grid and Monte Carlo hashes cover different
+    configuration sections and differ by design. A dispersion run that follows its flight run is newer.
+    """
+    ref = out / "summary.json"
+    if not ref.exists():
+        return
+    for name in ("dispersion.csv", "dispersion_meta.json", "dispersion_mc.csv", "dispersion_summary.json"):
+        f = out / name
+        if f.exists() and f.stat().st_mtime < ref.stat().st_mtime - 1.0:
+            print(f"warning: {f} is older than {ref}: it was probably written for an earlier configuration; rerun `ignisyeet dispersion` before reading it next to the trajectory", file=sys.stderr)
+
+
 PLOTS = {"geometry": plot_geometry, "aero": plot_aero, "panel": plot_panel, "trajectory": plot_trajectory, "dispersion": plot_dispersion}
 REQUIRES = {"geometry": "geometry.json", "aero": "aero_table.csv", "panel": "panel_cp.csv", "trajectory": "trajectory.csv", "dispersion": ("dispersion.csv", "dispersion_mc.csv")}
 
@@ -398,11 +433,16 @@ def main():
     ap.add_argument("out_dir", type=Path)
     ap.add_argument("--compare", type=Path, metavar="DIR", help="second output directory; overlays its aero_table.csv in aero_compare.png")
     a = ap.parse_args()
+    if not a.out_dir.is_dir():
+        sys.exit(f"error: output directory {a.out_dir} not found; run the ignisyeet commands first")
+    warn_stale(a.out_dir)
     names = list(PLOTS) if a.what == "all" else [a.what]
+    plotted = 0
     for name in names:
         req = REQUIRES[name] if isinstance(REQUIRES[name], tuple) else (REQUIRES[name],)
         if any((a.out_dir / r).exists() for r in req):
             PLOTS[name](a.out_dir)
+            plotted += 1
             if name == "aero" and a.compare is not None:
                 if not (a.compare / "aero_table.csv").exists():
                     raise SystemExit(f"{a.compare / 'aero_table.csv'} not found")
@@ -411,6 +451,8 @@ def main():
             raise SystemExit(f"none of {', '.join(req)} found in {a.out_dir}; run the matching ignisyeet command first")
         else:
             print(f"skip {name}: {' / '.join(req)} not found")
+    if plotted == 0:
+        sys.exit(f"error: nothing to plot in {a.out_dir}")
 
 
 if __name__ == "__main__":

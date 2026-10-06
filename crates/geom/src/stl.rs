@@ -10,7 +10,7 @@ pub type Triangle = [Vec3; 3];
 
 pub fn read_stl(path: &Path) -> Result<Vec<Triangle>> {
     let bytes = std::fs::read(path).with_context(|| format!("cannot read STL {}", path.display()))?;
-    parse_stl(&bytes)
+    parse_stl(&bytes).with_context(|| format!("cannot parse STL {}", path.display()))
 }
 
 pub fn parse_stl(bytes: &[u8]) -> Result<Vec<Triangle>> {
@@ -26,7 +26,17 @@ pub fn parse_stl(bytes: &[u8]) -> Result<Vec<Triangle>> {
     if tris.is_empty() {
         bail!("STL contains no triangles");
     }
+    check_finite(&tris)?;
     Ok(tris)
+}
+
+fn check_finite(tris: &[Triangle]) -> Result<()> {
+    for (i, t) in tris.iter().enumerate() {
+        if t.iter().any(|v| !(v.x.is_finite() && v.y.is_finite() && v.z.is_finite())) {
+            bail!("triangle {i} has a non-finite (NaN or infinite) vertex coordinate");
+        }
+    }
+    Ok(())
 }
 
 fn parse_binary(bytes: &[u8]) -> Result<Vec<Triangle>> {
@@ -93,5 +103,20 @@ mod tests {
         write_stl_binary(&dir, &a).unwrap();
         let b = read_stl(&dir).unwrap();
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn non_finite_vertex_is_rejected_with_triangle_index() {
+        let ascii = b"solid t\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex NaN 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid t\n";
+        let e = parse_stl(ascii).unwrap_err().to_string();
+        assert!(e.contains("triangle 1"), "{e}");
+    }
+
+    #[test]
+    fn read_errors_name_the_file() {
+        let p = std::env::temp_dir().join("ignisyeet_stl_garbage_test.stl");
+        std::fs::write(&p, b"garbage").unwrap();
+        let e = format!("{:#}", read_stl(&p).unwrap_err());
+        assert!(e.contains("ignisyeet_stl_garbage_test.stl") && e.contains("unrecognised"), "{e}");
     }
 }

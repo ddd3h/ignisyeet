@@ -659,7 +659,6 @@ fn geometry(cfg: &Config) -> Result<Geometry> {
     let tris: Vec<_> = geom::stl::read_stl(&stl).with_context(|| format!("cannot read STL {}", stl.display()))?.into_iter().map(|t| t.map(|v| v * s)).collect();
     let opt = ExtractOptions { n_slices: cfg.aero.n_slices, nose_direction: cfg.nose_direction()?, fin_threshold: cfg.aero.fin_threshold };
     let mut g = geom::extract(&tris, &opt).with_context(|| format!("geometry extraction failed for {}", stl.display()))?;
-    *GEOMETRY_WARNINGS.lock().unwrap() = Some(g.warnings.clone());
     if let Some(o) = &cfg.rocket.fin_override {
         let r_body = g.ref_radius;
         let f = g.fins.get_or_insert(geom::FinSet {
@@ -688,9 +687,22 @@ fn geometry(cfg: &Config) -> Result<Geometry> {
     if let Some(f) = g.fins.as_mut() {
         f.cant_deg = cfg.rocket.cant_deg();
     }
-    check_length(cfg, g.length)?;
-    check_cg(cfg, g.length)?;
+    if let Some(w) = g.fins.as_ref().and_then(|f| geom::fin_overhang_warning(f, g.length)) {
+        g.warnings.push(w);
+    }
+    *GEOMETRY_WARNINGS.lock().unwrap() = Some(g.warnings.clone());
+    check_length(cfg, g.length).and_then(|_| check_cg(cfg, g.length)).map_err(|e| with_geometry_warnings(e, &g.warnings))?;
     Ok(g)
+}
+
+/// `e` followed by the plausibility warnings of the geometry extraction, which often name the cause of a
+/// failed check (an open or odd mesh) and would otherwise be lost with the error.
+fn with_geometry_warnings(e: anyhow::Error, warnings: &[String]) -> anyhow::Error {
+    if warnings.is_empty() {
+        return e;
+    }
+    let list: String = warnings.iter().map(|w| format!("\n  geometry warning: {w}")).collect();
+    anyhow::anyhow!("{e:#}{list}")
 }
 
 /// Writes geometry.json and profile.csv; returns their paths.
@@ -1259,7 +1271,7 @@ struct Prepared {
 
 fn prepare(cfg: &Config) -> Result<Prepared> {
     let table = aero_table(cfg, false)?;
-    check_cg(cfg, table.meta.length)?;
+    check_cg(cfg, table.meta.length).map_err(|e| with_geometry_warnings(e, &geometry_warnings(cfg)))?;
     let motor = load_motor(cfg)?;
     check_motor_position(cfg, table.meta.length, motor.length)?;
     let motor_aft_x = cfg.motor.aft_x.unwrap_or(table.meta.length);
@@ -2864,6 +2876,26 @@ mod tests {
         let j = aero_range_json(&s);
         assert_eq!((j["mach_above"].as_u64(), j["angle_beyond"].as_u64(), j["out_of_range"].as_bool()), (Some(7), Some(3), Some(true)));
         assert_eq!((j["angles_in_range"].as_bool(), aero_range_json(&none)["angles_in_range"].as_bool()), (Some(false), Some(true)));
+    }
+
+    #[test]
+    fn failed_geometry_checks_keep_the_geometry_warnings() {
+        let e = anyhow::anyhow!("rocket.cg_dry = 1 m is outside the body");
+        assert_eq!(with_geometry_warnings(e, &[]).to_string(), "rocket.cg_dry = 1 m is outside the body");
+        let e = with_geometry_warnings(anyhow::anyhow!("rocket.cg_dry = 1 m is outside the body"), &["w1".into(), "w2".into()]);
+        assert_eq!(e.to_string(), "rocket.cg_dry = 1 m is outside the body\n  geometry warning: w1\n  geometry warning: w2");
+        // through geometry(): a mesh with a few open edges and a CG behind the body
+        let dir = std::env::temp_dir().join(format!("ignisyeet_geom_warn_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mesh = geom::sample::SampleRocket::default().mesh();
+        geom::stl::write_stl_binary(&dir.join("r.stl"), &mesh[1..]).unwrap();
+        let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
+        cfg.rocket.stl = dir.join("r.stl");
+        cfg.rocket.stl_scale = 1.0;
+        cfg.rocket.cg_dry = 5.0;
+        let e = geometry(&cfg).unwrap_err().to_string();
+        assert!(e.starts_with("rocket.cg_dry = 5 m is outside the body") && e.contains("\n  geometry warning: the STL surface has 3 open edges of"), "{e}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

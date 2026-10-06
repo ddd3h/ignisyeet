@@ -39,13 +39,16 @@ mkdir -p "$dest/bin" "$dest/python" "$out"
 install -m 755 "$binary" "$dest/bin/ignisyeet"
 cp -R "$root/examples" "$dest/examples"
 rm -rf "$dest/examples/out"
-install -m 644 "$root/python/plot.py" "$root/python/requirements.txt" "$root/python/pyproject.toml" "$dest/python/"
+install -m 644 "$root/python/plot.py" "$root/python/requirements.txt" "$root/python/pyproject.toml" "$root/python/uv.lock" "$root/scripts/plot-constraints.txt" "$dest/python/"
 install -m 644 "$root/LICENSE" "$root/NOTICE" "$root/CITATION.cff" "$root/README.md" "$dest/"
 
 tarball=$out/$name.tar.gz
-# Reproducible-ish: fixed ordering, numeric owner.
-tar -C "$stage" --owner=0 --group=0 --numeric-owner -czf "$tarball" "$name" 2>/dev/null \
-  || tar -C "$stage" -czf "$tarball" "$name"
+# GNU tar is required (brew install gnu-tar on macOS).
+tar_cmd=tar
+if command -v gtar >/dev/null 2>&1; then tar_cmd=gtar; fi
+"$tar_cmd" --version | grep -q 'GNU tar' || { echo "GNU tar is required" >&2; exit 1; }
+"$tar_cmd" -C "$stage" --sort=name --mtime="@${SOURCE_DATE_EPOCH:-0}" \
+  --owner=0 --group=0 --numeric-owner -cf - "$name" | gzip -n > "$tarball"
 
 if command -v sha256sum >/dev/null 2>&1; then
   (cd "$out" && sha256sum "$name.tar.gz" > "$name.tar.gz.sha256")

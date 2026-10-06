@@ -298,6 +298,18 @@ fn begin(cfg: &Config, config_path: &Path, sub: Sub) {
     println!();
 }
 
+/// `v` with at least `decimals` decimals, and as many more as it takes for the printed number to lie on the
+/// same side of `limit` as `v` does (1.4977 against 1.5 prints as 1.498, not 1.50), so a warning never
+/// shows a value that looks equal to its threshold. A value equal to the limit is printed plainly.
+fn fmt_vs(v: f64, limit: f64, decimals: usize) -> String {
+    let plain = format!("{v:.decimals$}");
+    if !v.is_finite() || v == limit {
+        return plain;
+    }
+    let ok = |t: &str| t.parse::<f64>().is_ok_and(|p| if v < limit { p < limit } else { p > limit });
+    (decimals..=decimals + 8).map(|d| format!("{v:.d$}")).find(|t| ok(t)).unwrap_or_else(|| format!("{v}"))
+}
+
 /// Prints sanity warnings in every output mode (stdout in plain and rich mode, stderr in quiet mode).
 fn print_warnings(warnings: &[String]) {
     for w in warnings {
@@ -449,18 +461,18 @@ fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: f64) -> Vec<String>
     let margins = [s.min_stability_cal, s.stability_at_rail_exit].into_iter().filter(|m| m.is_finite());
     if let Some(m) = margins.min_by(f64::total_cmp) {
         if m < 0.0 {
-            w.push(format!("static margin {m:.2} cal is negative: the centre of pressure is forward of the CG, the rocket is UNSTABLE"));
+            w.push(format!("static margin {} cal is negative: the centre of pressure is forward of the CG, the rocket is UNSTABLE", fmt_vs(m, 0.0, 2)));
         } else if m < 1.0 {
-            w.push(format!("minimum static margin {m:.2} cal is below 1.0 cal: low static margin"));
+            w.push(format!("minimum static margin {} cal is below 1.0 cal: low static margin", fmt_vs(m, 1.0, 2)));
         } else if m < 1.5 {
-            w.push(format!("minimum static margin {m:.2} cal is below the recommended 1.5 cal (marginal)"));
+            w.push(format!("minimum static margin {} cal is below the recommended 1.5 cal (marginal)", fmt_vs(m, 1.5, 2)));
         }
     }
     w.extend(rail_exit_warnings_at(cfg, s, wind_speed));
     let rec = &cfg.recovery;
     if let (true, Some(_), Some(m)) = (rec.enabled, rec.main_cd_s, rec.main_altitude) {
         if s.apogee.is_finite() && m >= s.apogee {
-            w.push(format!("recovery.main_altitude = {m} m is above the apogee ({:.0} m): the main opens together with the drogue", s.apogee));
+            w.push(format!("recovery.main_altitude = {m} m is above the apogee ({} m): the main opens together with the drogue", fmt_vs(s.apogee, m, 0)));
         }
     }
     let wind = &cfg.wind;
@@ -468,8 +480,8 @@ fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: f64) -> Vec<String>
         if let Some((bottom, top, _)) = wind_profile_extent(cfg) {
             if s.apogee > top {
                 w.push(format!(
-                    "apogee {:.0} m is above the top of the wind profile ({top:.0} m): the wind above {top:.0} m is held at the top value",
-                    s.apogee
+                    "apogee {} m is above the top of the wind profile ({top:.0} m): the wind above {top:.0} m is held at the top value",
+                    fmt_vs(s.apogee, top, 0)
                 ));
             }
             if bottom > 0.0 {
@@ -482,8 +494,8 @@ fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: f64) -> Vec<String>
     let wind_speed = if wind.model == sim::WindModel::Profile { s.wind_speed } else { wind_speed };
     if matches!(wind.model, sim::WindModel::Power | sim::WindModel::Log) && wind_speed != 0.0 && s.apogee > WIND_VALID_HEIGHT {
         w.push(format!(
-            "apogee {:.0} m is above {WIND_VALID_HEIGHT:.0} m, the validity height of the {:?} wind profile: the profile is extrapolated there, and wind.speed = {} m/s is the speed at wind.ref_height = {} m, so the winds aloft and the landing point are model-dependent",
-            s.apogee, wind.model, wind.speed, wind.ref_height
+            "apogee {} m is above {WIND_VALID_HEIGHT:.0} m, the validity height of the {:?} wind profile: the profile is extrapolated there, and wind.speed = {} m/s is the speed at wind.ref_height = {} m, so the winds aloft and the landing point are model-dependent",
+            fmt_vs(s.apogee, WIND_VALID_HEIGHT, 0), wind.model, wind.speed, wind.ref_height
         ));
     }
     w
@@ -511,7 +523,8 @@ fn rail_exit_warnings_at(cfg: &Config, s: &Summary, wind_speed: f64) -> Vec<Stri
     }
     if v < MIN_RAIL_EXIT_SPEED {
         w.push(format!(
-            "rail exit speed {v:.1} m/s is below {MIN_RAIL_EXIT_SPEED:.0} m/s: the fins have little authority at rail exit and the rocket is easily blown off the rail line; use a longer rail or a higher thrust-to-weight ratio"
+            "rail exit speed {} m/s is below {MIN_RAIL_EXIT_SPEED:.0} m/s: the fins have little authority at rail exit and the rocket is easily blown off the rail line; use a longer rail or a higher thrust-to-weight ratio",
+            fmt_vs(v, MIN_RAIL_EXIT_SPEED, 1)
         ));
     }
     let h = cfg.launch.rail_length * cfg.launch.elevation_deg.to_radians().sin();
@@ -525,7 +538,8 @@ fn rail_exit_warnings_at(cfg: &Config, s: &Summary, wind_speed: f64) -> Vec<Stri
         let alpha = wind_speed.atan2(v).to_degrees();
         if alpha > MAX_RAIL_EXIT_WIND_ALPHA_DEG {
             w.push(format!(
-                "the wind angle of attack at rail exit is {alpha:.1} deg (wind {wind_speed:.1} m/s at {h:.1} m, rail exit speed {v:.1} m/s), above {MAX_RAIL_EXIT_WIND_ALPHA_DEG:.0} deg: the rocket will weathercock strongly off the rail"
+                "the wind angle of attack at rail exit is {} deg (wind {wind_speed:.1} m/s at {h:.1} m, rail exit speed {v:.1} m/s), above {MAX_RAIL_EXIT_WIND_ALPHA_DEG:.0} deg: the rocket will weathercock strongly off the rail",
+                fmt_vs(alpha, MAX_RAIL_EXIT_WIND_ALPHA_DEG, 1)
             ));
         }
     }
@@ -557,7 +571,10 @@ fn parachute_warnings(cfg: &Config, s: &Summary) -> Vec<String> {
             s.landing_speed, cfg.recovery.delay
         ));
     } else if s.landing_speed > MAX_PARACHUTE_LANDING_SPEED {
-        w.push(format!("parachute descent landed at {:.1} m/s, which is above {MAX_PARACHUTE_LANDING_SPEED:.0} m/s: check recovery.cd_s", s.landing_speed));
+        w.push(format!(
+            "parachute descent landed at {} m/s, which is above {MAX_PARACHUTE_LANDING_SPEED:.0} m/s: check recovery.cd_s",
+            fmt_vs(s.landing_speed, MAX_PARACHUTE_LANDING_SPEED, 1)
+        ));
     }
     w
 }
@@ -572,7 +589,11 @@ const MAX_DEPLOY_Q: f64 = 2000.0;
 fn deploy_warning(what: &str, speed: Option<f64>, q: Option<f64>, key: &str) -> Option<String> {
     let (v, q) = (speed?, q?);
     (v > MAX_DEPLOY_SPEED || q > MAX_DEPLOY_Q).then(|| {
-        format!("the {what} opens at {v:.0} m/s (q = {:.1} kPa): a canopy is unlikely to survive; the landing point assumes it does - check {key}", q / 1000.0)
+        format!(
+            "the {what} opens at {} m/s (q = {} kPa): a canopy is unlikely to survive; the landing point assumes it does - check {key}",
+            fmt_vs(v, MAX_DEPLOY_SPEED, 0),
+            fmt_vs(q / 1000.0, MAX_DEPLOY_Q / 1000.0, 1)
+        )
     })
 }
 
@@ -589,12 +610,7 @@ fn wind_scale_warning<'a>(cfg: &Config, what: &str, summaries: impl IntoIterator
     let (k, v) = worst;
     let aloft = wind_profile_extent(cfg).map_or(String::new(), |(_, _, vmax)| format!(": winds aloft up to {:.0} m/s", vmax * k));
     // The run with the largest deviation from the profile, up or down.
-    let factor = if k >= 1.0 {
-        // Enough decimals that the printed factor visibly exceeds the limit of 3 (3.01, not 3.0).
-        (1..=6).map(|d| format!("{k:.d$}")).find(|f| f.parse::<f64>().is_ok_and(|v| v > 3.0)).unwrap_or_else(|| format!("{k}"))
-    } else {
-        format!("{k:.2}")
-    };
+    let factor = if k >= 1.0 { fmt_vs(k, 3.0, 1) } else { fmt_vs(k, 1.0 / 3.0, 2) };
     Some(format!("wind profile scaled by a factor of {factor} ({what} {v:.1} m/s vs profile mean {:.1} m/s){aloft}", v / k))
 }
 
@@ -2619,6 +2635,33 @@ mod tests {
             landing_speed: f64::NAN,
             ..s
         }
+    }
+
+    #[test]
+    fn threshold_values_print_on_the_violated_side() {
+        assert_eq!(fmt_vs(1.4977, 1.5, 2), "1.498");
+        assert_eq!(fmt_vs(1.2, 1.5, 2), "1.20");
+        assert_eq!(fmt_vs(-0.001, 0.0, 2), "-0.001");
+        assert_eq!(fmt_vs(15.02, 15.0, 1), "15.02");
+        assert_eq!(fmt_vs(14.97, 15.0, 1), "14.97");
+        assert_eq!(fmt_vs(50.2, 50.0, 0), "50.2");
+        assert_eq!(fmt_vs(1000.4, 1000.0, 0), "1000.4");
+        assert_eq!(fmt_vs(0.3329, 1.0 / 3.0, 2), "0.33");
+        assert_eq!(fmt_vs(1.5, 1.5, 2), "1.50");
+        let cfg = load_sample(include_str!("../../../examples/sample.toml"));
+        let ok = sim::Summary { min_stability_cal: 2.0, stability_at_rail_exit: 2.0, apogee: 500.0, rail_exit_speed: 30.0, ..sample_summary() };
+        let m = |v: f64| flight_warnings(&cfg, &sim::Summary { min_stability_cal: v, ..ok.clone() }).join("\n");
+        assert!(m(1.4977).contains("minimum static margin 1.498 cal is below the recommended 1.5 cal"), "{}", m(1.4977));
+        assert!(m(0.9996).contains("minimum static margin 0.9996 cal is below 1.0 cal"), "{}", m(0.9996));
+        assert!(m(-0.0004).contains("static margin -0.0004 cal is negative"), "{}", m(-0.0004));
+        let slow = sim::Summary { rail_exit_speed: 14.996, ..ok.clone() };
+        let w = flight_warnings(&cfg, &slow).join("\n");
+        assert!(w.contains("rail exit speed 14.996 m/s is below 15 m/s"), "{w}");
+        let fast = sim::Summary { drogue_deploy_speed: Some(50.3), drogue_deploy_q: Some(1500.0), ..ok };
+        assert_eq!(
+            deploy_warning("drogue", fast.drogue_deploy_speed, fast.drogue_deploy_q, "recovery.delay").unwrap(),
+            "the drogue opens at 50.3 m/s (q = 1.5 kPa): a canopy is unlikely to survive; the landing point assumes it does - check recovery.delay"
+        );
     }
 
     #[test]

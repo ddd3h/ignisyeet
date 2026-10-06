@@ -31,6 +31,48 @@ pub struct Config {
     pub resources: ResourcesCfg,
     #[serde(skip)]
     pub base_dir: PathBuf,
+    /// Findings of the loader that do not stop the run (keys that have no effect).
+    #[serde(skip)]
+    pub load_warnings: Vec<String>,
+    /// `--aero-table PATH`: an aero_table.csv built for this configuration in another output directory.
+    #[serde(skip)]
+    pub aero_table_source: Option<PathBuf>,
+}
+
+/// Changes of the configuration given on the command line.
+#[derive(Debug, Clone, Default)]
+pub struct Overrides {
+    /// `--set KEY=VALUE`: dotted TOML key path and a TOML value (a bare word is read as a string).
+    pub set: Vec<String>,
+    /// `--out DIR`: replaces `output.dir`; a relative path is resolved from the current directory.
+    pub out: Option<PathBuf>,
+}
+
+/// Applies one `--set KEY=VALUE` to the raw TOML of the configuration file.
+///
+/// `KEY` is a dotted path of table keys (`wind.profile_mean_speed`, `aero.panel.n_axial`); missing
+/// tables are created. `VALUE` is parsed as a TOML value (`15.6`, `true`, `[5.0, 10.0]`,
+/// `"monte_carlo"`); a value that is not valid TOML is taken as a string, so `wind.model=profile`
+/// needs no quotes. The result is checked like the file itself (unknown keys, types, ranges).
+pub fn apply_set(raw: &mut toml::Value, arg: &str) -> Result<()> {
+    let (key, value) = arg.split_once('=').with_context(|| format!("--set {arg}: expected KEY=VALUE"))?;
+    let key = key.trim();
+    let parts: Vec<&str> = key.split('.').map(str::trim).collect();
+    if parts.iter().any(|p| p.is_empty()) {
+        bail!("--set {arg}: invalid key \"{key}\" (expected a dotted path such as wind.speed)");
+    }
+    let value = value.trim();
+    let parsed = toml::from_str::<toml::Table>(&format!("v = {value}")).ok().and_then(|mut t| t.remove("v"));
+    let value = parsed.unwrap_or_else(|| toml::Value::String(value.to_string()));
+    let mut node = raw;
+    let (last, tables) = parts.split_last().expect("non-empty key");
+    for (i, p) in tables.iter().enumerate() {
+        let t = node.as_table_mut().with_context(|| format!("--set {arg}: {} is not a table", parts[..i].join(".")))?;
+        node = t.entry(p.to_string()).or_insert_with(|| toml::Value::Table(toml::Table::new()));
+    }
+    let t = node.as_table_mut().with_context(|| format!("--set {arg}: {} is not a table", tables.join(".")))?;
+    t.insert(last.to_string(), value);
+    Ok(())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -319,10 +361,21 @@ fn square() -> String {
 }
 
 impl Config {
-    pub fn load(path: &Path) -> Result<Self> {
+    /// Loads the configuration file with the command-line [`Overrides`] applied before validation.
+    pub fn load_with(path: &Path, ov: &Overrides) -> Result<Self> {
         let text = std::fs::read_to_string(path).with_context(|| format!("cannot read config {}", path.display()))?;
-        let raw: toml::Value = toml::from_str(text.strip_prefix('\u{feff}').unwrap_or(&text)).with_context(|| format!("invalid config {}", path.display()))?;
-        Self::from_value(raw, path.parent()).with_context(|| format!("invalid config {}", path.display()))
+        let mut raw: toml::Value =
+            toml::from_str(text.strip_prefix('\u{feff}').unwrap_or(&text)).with_context(|| format!("invalid config {}", path.display()))?;
+        for arg in &ov.set {
+            apply_set(&mut raw, arg)?;
+        }
+        let what = if ov.set.is_empty() { String::new() } else { " with the --set overrides".to_string() };
+        let mut cfg = Self::from_value(raw, path.parent()).with_context(|| format!("invalid config {}{what}", path.display()))?;
+        if let Some(out) = &ov.out {
+            // Relative to the current directory, not to the config file.
+            cfg.output.dir = if out.is_absolute() { out.clone() } else { std::env::current_dir().context("cannot read the current directory")?.join(out) };
+        }
+        Ok(cfg)
     }
 
     pub(crate) fn from_value(raw: toml::Value, dir: Option<&Path>) -> Result<Self> {
@@ -332,9 +385,12 @@ impl Config {
                  to [wind] as speed, direction_deg, ref_height and exponent"
             );
         }
+        let explicit_wind = |k: &str| raw.get("wind").and_then(|w| w.get(k)).is_some();
+        let (explicit_speed, explicit_direction) = (explicit_wind("speed"), explicit_wind("direction_deg"));
         let mut cfg: Config = raw.try_into()?;
         cfg.base_dir = dir.map(Path::to_path_buf).unwrap_or_default();
         cfg.validate()?;
+        cfg.check_profile_targets(explicit_speed, explicit_direction)?;
         Ok(cfg)
     }
 
@@ -637,6 +693,36 @@ impl Config {
         Ok(())
     }
 
+    /// `wind.profile_mean_speed` / `profile_mean_direction_deg` (profile model only) and warnings
+    /// for `wind.speed` / `direction_deg` set in the file although the profile model ignores them.
+    fn check_profile_targets(&mut self, explicit_speed: bool, explicit_direction: bool) -> Result<()> {
+        let w = &self.wind;
+        let profile = w.model == sim::WindModel::Profile;
+        for (key, v) in [("wind.profile_mean_speed", w.profile_mean_speed), ("wind.profile_mean_direction_deg", w.profile_mean_direction_deg)] {
+            if v.is_some() && !profile {
+                bail!("{key} only applies to wind.model = \"profile\" (the model is \"{}\"); set wind.speed / wind.direction_deg instead", model_name(w.model));
+            }
+        }
+        if let Some(v) = w.profile_mean_speed {
+            if !(v.is_finite() && v >= 0.0) {
+                bail!("wind.profile_mean_speed must be a finite number >= 0, found {v}");
+            }
+        }
+        if let Some(v) = w.profile_mean_direction_deg {
+            if !(v.is_finite() && (0.0..=360.0).contains(&v)) {
+                bail!("wind.profile_mean_direction_deg must be between 0 and 360, found {v}");
+            }
+        }
+        if profile && explicit_speed {
+            self.load_warnings.push("wind.speed is ignored for wind.model = \"profile\"; use wind.profile_mean_speed to scale the profile".into());
+        }
+        if profile && explicit_direction {
+            self.load_warnings
+                .push("wind.direction_deg is ignored for wind.model = \"profile\"; use wind.profile_mean_direction_deg to rotate the profile".into());
+        }
+        Ok(())
+    }
+
     /// Wind configuration with the profile path resolved against the config directory.
     pub fn wind_config(&self) -> sim::WindConfig {
         let mut w = self.wind.clone();
@@ -669,6 +755,10 @@ impl Config {
             other => bail!("rocket.nose_direction '{other}' is not one of auto, +x, -x, +y, -y, +z, -z"),
         })
     }
+}
+
+fn model_name(m: sim::WindModel) -> String {
+    serde_json::to_value(m).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default()
 }
 
 /// Largest accepted `sim.dt` [s].
@@ -1048,5 +1138,101 @@ mod tests {
         );
         let e = parse(&t).unwrap_err().to_string();
         assert!(e.contains("roughness_length") && e.contains("ref_height"), "{e}");
+    }
+
+    fn sample_set(sets: &[&str]) -> Result<Config> {
+        let mut raw: toml::Value = toml::from_str(include_str!("../../../examples/sample.toml"))?;
+        for a in sets {
+            apply_set(&mut raw, a)?;
+        }
+        Config::from_value(raw, None)
+    }
+
+    #[test]
+    fn set_overrides_parse_toml_values_and_bare_strings() {
+        let c = sample_set(&[
+            "wind.speed=7.5",
+            "dispersion.mode=monte_carlo",
+            "dispersion.wind_speeds=[2.0, 4.0]",
+            "dispersion.monte_carlo.samples=3",
+            "output.kml=false",
+        ])
+        .unwrap();
+        assert_eq!(c.wind.speed, 7.5);
+        assert_eq!(c.dispersion.mode, sim::DispersionMode::MonteCarlo);
+        assert_eq!(c.dispersion.wind_speeds, vec![2.0, 4.0]);
+        assert_eq!(c.dispersion.monte_carlo.samples, 3);
+        assert!(!c.output.kml);
+        // a quoted TOML string, whitespace around the parts, a new table
+        let c = sample_set(&[" dispersion.mode = \"wind_grid\" ", "rocket.nose_direction=-z", "rocket.fin_override.count=4"]).unwrap();
+        assert_eq!(c.dispersion.mode, sim::DispersionMode::WindGrid);
+        assert_eq!(c.rocket.nose_direction, "-z");
+        assert_eq!(c.rocket.fin_override.as_ref().and_then(|f| f.count), Some(4));
+        // integers are accepted for floats as in the file
+        assert_eq!(sample_set(&["wind.speed=6"]).unwrap().wind.speed, 6.0);
+    }
+
+    #[test]
+    fn set_overrides_are_checked_like_the_file() {
+        let e = sample_set(&["wind.sped=3"]).unwrap_err().to_string();
+        assert!(e.contains("unknown field") && e.contains("sped"), "{e}");
+        let e = format!("{:#}", sample_set(&["wind.speed=-1"]).unwrap_err());
+        assert!(e.contains("wind.speed"), "{e}");
+        let e = format!("{:#}", sample_set(&["wind.speed=fast"]).unwrap_err());
+        assert!(e.contains("invalid type") || e.contains("expected"), "{e}");
+        assert!(sample_set(&["wind.speed"]).unwrap_err().to_string().contains("expected KEY=VALUE"));
+        assert!(sample_set(&["wind..speed=1"]).unwrap_err().to_string().contains("invalid key"));
+        let e = sample_set(&["wind.model.x=1"]).unwrap_err().to_string();
+        assert!(e.contains("wind.model is not a table"), "{e}");
+    }
+
+    #[test]
+    fn load_with_applies_set_and_out() {
+        let dir = std::env::temp_dir().join(format!("ignisyeet_cfg_ov_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("c.toml");
+        std::fs::write(&path, include_str!("../../../examples/sample.toml")).unwrap();
+        let ov = Overrides { set: vec!["wind.speed=9".into()], out: Some("run_a".into()) };
+        let c = Config::load_with(&path, &ov).unwrap();
+        assert_eq!(c.wind.speed, 9.0);
+        // --out is relative to the current directory, not to the config file
+        assert_eq!(c.out_dir(), std::env::current_dir().unwrap().join("run_a"));
+        let abs = Overrides { out: Some(dir.join("abs")), ..Default::default() };
+        assert_eq!(Config::load_with(&path, &abs).unwrap().out_dir(), dir.join("abs"));
+        let bad = Overrides { set: vec!["wind.nope=1".into()], out: None };
+        let e = format!("{:#}", Config::load_with(&path, &bad).unwrap_err());
+        assert!(e.contains("with the --set overrides") && e.contains("nope"), "{e}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn profile_targets_and_ignored_wind_keys() {
+        let profile = ["wind.model=profile", "wind.profile=wind_profile_example.csv"];
+        // the sample sets speed and direction_deg explicitly: both are reported as ignored
+        let c = sample_set(&profile).unwrap();
+        assert_eq!(
+            c.load_warnings,
+            vec![
+                "wind.speed is ignored for wind.model = \"profile\"; use wind.profile_mean_speed to scale the profile".to_string(),
+                "wind.direction_deg is ignored for wind.model = \"profile\"; use wind.profile_mean_direction_deg to rotate the profile".to_string(),
+            ]
+        );
+        // defaults (keys absent) are not reported
+        let text = include_str!("../../../examples/sample.toml").replacen("speed = 4.0 ", "# speed", 1).replacen("direction_deg = 0.0 ", "# direction_deg", 1);
+        let mut raw: toml::Value = toml::from_str(&text).unwrap();
+        for a in profile {
+            apply_set(&mut raw, a).unwrap();
+        }
+        assert!(Config::from_value(raw, None).unwrap().load_warnings.is_empty());
+        // the power model reports nothing
+        assert!(sample_set(&[]).unwrap().load_warnings.is_empty());
+        let c = sample_set(&[profile[0], profile[1], "wind.profile_mean_speed=15.6", "wind.profile_mean_direction_deg=270"]).unwrap();
+        assert_eq!((c.wind.profile_mean_speed, c.wind.profile_mean_direction_deg), (Some(15.6), Some(270.0)));
+        let e = sample_set(&["wind.profile_mean_speed=10"]).unwrap_err().to_string();
+        assert!(e.contains("wind.profile_mean_speed only applies to wind.model = \"profile\" (the model is \"power\")"), "{e}");
+        let e = sample_set(&[profile[0], profile[1], "wind.profile_mean_speed=-1"]).unwrap_err().to_string();
+        assert!(e.contains("wind.profile_mean_speed must be"), "{e}");
+        let e = sample_set(&[profile[0], profile[1], "wind.profile_mean_direction_deg=361"]).unwrap_err().to_string();
+        assert!(e.contains("wind.profile_mean_direction_deg must be between 0 and 360"), "{e}");
     }
 }

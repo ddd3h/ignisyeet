@@ -51,13 +51,21 @@ struct Cli {
 #[derive(Subcommand)]
 enum Cmd {
     /// Extract body profile and fins from the STL (writes geometry.json, profile.csv).
-    Geom { config: PathBuf },
+    Geom {
+        config: PathBuf,
+        #[command(flatten)]
+        ov: ConfigArgs,
+    },
     /// Build the aerodynamic coefficient table (cached; --force rebuilds).
     Aero {
         config: PathBuf,
         /// Rebuild the table even when the cached aero_table.csv matches the configuration (no effect for aero.method = "table").
         #[arg(long)]
         force: bool,
+        #[command(flatten)]
+        ov: ConfigArgs,
+        #[command(flatten)]
+        table: TableArg,
     },
     /// Run one 6-DoF flight with the configured wind (writes trajectory.csv, summary.json). Exits with status 3 when the rocket did not land within sim.max_time or is statically unstable (negative static margin).
     Sim {
@@ -65,9 +73,19 @@ enum Cmd {
         /// Override the descent mode.
         #[arg(long, value_parser = parse_descent)]
         descent: Option<Descent>,
+        #[command(flatten)]
+        ov: ConfigArgs,
+        #[command(flatten)]
+        table: TableArg,
     },
     /// Landing dispersion: wind speed x direction grid (dispersion.csv) or Monte Carlo (dispersion_mc.csv, dispersion_summary.json). Exits with status 3 when any case or sample failed or did not land, or the nominal flight is statically unstable.
-    Dispersion { config: PathBuf },
+    Dispersion {
+        config: PathBuf,
+        #[command(flatten)]
+        ov: ConfigArgs,
+        #[command(flatten)]
+        table: TableArg,
+    },
     /// Check that the CFD tools (SU2, MPI, gmsh) are installed and report their versions.
     CfdCheck {
         config: PathBuf,
@@ -79,6 +97,36 @@ enum Cmd {
     SampleStl { path: PathBuf },
 }
 
+/// Command-line changes of the configuration file.
+#[derive(clap::Args, Clone, Default)]
+struct ConfigArgs {
+    /// Change a configuration key for this run, e.g. --set wind.profile_mean_speed=15.6 or --set dispersion.mode=monte_carlo.
+    /// KEY is the dotted TOML key path, VALUE a TOML value; a bare word that is not a TOML value is taken as a string (quote it, '"..."', when it would read as a number or boolean).
+    /// Repeatable; applied before the configuration is checked (unknown keys and bad values are errors as in the file) and part of the config hash.
+    /// Relative paths in values are resolved from the config file's directory.
+    #[arg(long = "set", value_name = "KEY=VALUE")]
+    set: Vec<String>,
+    /// Write the outputs to DIR instead of output.dir; a relative DIR is resolved from the current directory.
+    #[arg(long, value_name = "DIR")]
+    out: Option<PathBuf>,
+}
+
+impl ConfigArgs {
+    fn overrides(&self) -> config::Overrides {
+        config::Overrides { set: self.set.clone(), out: self.out.clone() }
+    }
+}
+
+/// An aero table to reuse from another output directory.
+#[derive(clap::Args, Clone, Default)]
+struct TableArg {
+    /// Reuse the aero table PATH (an aero_table.csv, or a directory containing one) built in another output directory, e.g. by `ignisyeet aero`.
+    /// It must have been built for the same rocket and aero settings (the same cache key as this configuration), otherwise the run stops with an error.
+    /// The table, its JSON sidecar and the geometry files next to it are copied to the output directory. Not for aero.method = "table".
+    #[arg(long, value_name = "PATH")]
+    aero_table: Option<PathBuf>,
+}
+
 fn parse_descent(s: &str) -> Result<Descent, String> {
     match s {
         "ballistic" => Ok(Descent::Ballistic),
@@ -87,9 +135,12 @@ fn parse_descent(s: &str) -> Result<Descent, String> {
     }
 }
 
-/// Loads the config and applies its `[resources]` (thread pools, priority, memory budget).
-fn load_config(path: &Path) -> Result<Config> {
-    let cfg = Config::load(path)?;
+/// Loads the config with the command-line overrides, prints the loader warnings and applies its
+/// `[resources]` (thread pools, priority, memory budget).
+fn load_config(path: &Path, ov: &ConfigArgs, table: &TableArg) -> Result<Config> {
+    let mut cfg = Config::load_with(path, &ov.overrides())?;
+    cfg.aero_table_source = table.aero_table.clone();
+    print_warnings(&cfg.load_warnings);
     apply_resources(&cfg.resources.resolve());
     Ok(cfg)
 }
@@ -146,8 +197,8 @@ fn main() -> Result<()> {
     ui::init(cli.quiet, cli.no_progress);
     let mut incomplete: Option<String> = None;
     match cli.cmd {
-        Cmd::Geom { config } => {
-            let cfg = load_config(&config)?;
+        Cmd::Geom { config, ov } => {
+            let cfg = load_config(&config, &ov, &TableArg::default())?;
             begin(&cfg, &config, Sub::Geom);
             let step = ui().step("Extracting geometry");
             let g = geometry(&cfg)?;
@@ -163,14 +214,14 @@ fn main() -> Result<()> {
             w.extend(size_warnings(&cfg, g.length, 2.0 * g.ref_radius));
             print_warnings(&w);
         }
-        Cmd::Aero { config, force } => {
-            let cfg = load_config(&config)?;
+        Cmd::Aero { config, force, ov, table } => {
+            let cfg = load_config(&config, &ov, &table)?;
             begin(&cfg, &config, Sub::Aero);
             aero_table_for(&cfg, force, Sub::Aero)?;
             print_warnings(&grid_warnings(&cfg));
         }
-        Cmd::Sim { config, descent } => {
-            let cfg = load_config(&config)?;
+        Cmd::Sim { config, descent, ov, table } => {
+            let cfg = load_config(&config, &ov, &table)?;
             check_descent_override(&cfg, descent)?;
             begin(&cfg, &config, Sub::Sim);
             incomplete = match run_sim(&cfg, descent) {
@@ -181,13 +232,13 @@ fn main() -> Result<()> {
                 }
             }
         }
-        Cmd::Dispersion { config } => {
-            let cfg = load_config(&config)?;
+        Cmd::Dispersion { config, ov, table } => {
+            let cfg = load_config(&config, &ov, &table)?;
             begin(&cfg, &config, Sub::Dispersion);
             incomplete = run_dispersion(&cfg)?
         }
         Cmd::CfdCheck { config, mesh } => {
-            let cfg = load_config(&config)?;
+            let cfg = load_config(&config, &ConfigArgs::default(), &TableArg::default())?;
             return cfd_check(&cfg, &config, mesh);
         }
         Cmd::SampleStl { path } => {
@@ -861,6 +912,9 @@ fn aero_table_inner(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
     match cfg.aero.method {
         config::AeroMethod::Barrowman | config::AeroMethod::Panel | config::AeroMethod::Cfd => {}
         config::AeroMethod::Table => {
+            if cfg.aero_table_source.is_some() {
+                anyhow::bail!("--aero-table cannot be used with aero.method = \"table\": the table is aero.table");
+            }
             let path = cfg.resolve(cfg.aero.table.as_deref().context("aero.table is required when aero.method = \"table\"")?);
             let t = AeroTable::load(&path).with_context(|| format!("cannot load aero table {}", path.display()))?;
             if u.plain() {
@@ -873,6 +927,18 @@ fn aero_table_inner(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
     }
     let path = out_path(cfg, "aero_table.csv")?;
     let hash = source_hash(cfg)?;
+    if let Some(src) = &cfg.aero_table_source {
+        if force {
+            anyhow::bail!("--aero-table and --force cannot be used together");
+        }
+        let t = adopt_aero_table(src, &path, &hash)?;
+        if u.plain() {
+            println!("Using aero table {} ({} rows, cache key {hash}) -> {}", src.display(), t.rows(), path.display());
+        }
+        u.done_line("Aero table", &format!("reused {} ({} rows)", ui::short_path(src), t.rows()), t_start.elapsed());
+        show_table(&t, None, sub);
+        return Ok(t);
+    }
     if !force && path.exists() {
         if let Ok(t) = AeroTable::load(&path) {
             if t.meta.source_hash == hash {
@@ -944,6 +1010,38 @@ fn aero_table_inner(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
     u.done_line("Aero table", &format!("Barrowman, {} rows", table.rows()), start.elapsed());
     show_table(&table, Some(start.elapsed()), sub);
     Ok(table)
+}
+
+/// Files of the aero step that are copied with a reused table (the ones that exist).
+const AERO_SIDE_FILES: [&str; 6] = ["geometry.json", "profile.csv", "aero_drag.csv", "panel_cp.csv", "cfd_report.json", "cfd_cases.csv"];
+
+/// `--aero-table SRC`: loads the table at SRC (a file or a directory with aero_table.csv), checks that
+/// its cache key is `hash` and copies it with its sidecar and the aero side files to `dest`'s directory.
+fn adopt_aero_table(src: &Path, dest: &Path, hash: &str) -> Result<AeroTable> {
+    let src = if src.is_dir() { src.join("aero_table.csv") } else { src.to_path_buf() };
+    let t = AeroTable::load(&src).with_context(|| format!("--aero-table: cannot load aero table {}", src.display()))?;
+    if t.meta.source_hash != hash {
+        anyhow::bail!(
+            "--aero-table: {} was built for another rocket or other aero settings (cache key {} vs {hash} of this configuration); \
+             build it for this configuration with `ignisyeet aero` or leave out --aero-table",
+            src.display(),
+            t.meta.source_hash
+        );
+    }
+    let same = |a: &Path, b: &Path| matches!((a.canonicalize(), b.canonicalize()), (Ok(x), Ok(y)) if x == y);
+    if same(&src, dest) {
+        return Ok(t);
+    }
+    let (sdir, ddir) = (src.parent().unwrap_or(Path::new(".")), dest.parent().unwrap_or(Path::new(".")));
+    let mut files: Vec<(PathBuf, PathBuf)> = vec![(src.with_extension("json"), dest.with_extension("json"))];
+    files.extend(AERO_SIDE_FILES.iter().map(|n| (sdir.join(n), ddir.join(n))).filter(|(a, _)| a.exists()));
+    for (a, b) in &files {
+        std::fs::copy(a, b).with_context(|| format!("cannot copy {} to {}", a.display(), b.display()))?;
+        ui().record(b);
+    }
+    // The CSV last: a run that stops halfway leaves no table without its sidecar.
+    std::fs::copy(&src, dest).with_context(|| format!("cannot copy {} to {}", src.display(), dest.display()))?;
+    Ok(t)
 }
 
 fn aero_grid_len(cfg: &Config) -> usize {
@@ -1425,6 +1523,21 @@ fn finite_json(v: f64) -> serde_json::Value {
     }
 }
 
+/// The nominal wind of a dispersion study for dispersion_meta.json and dispersion_summary.json:
+/// `wind_model`, the nominal `wind_speed` and `wind_direction_deg` (for a profile its mean speed and
+/// the direction of its mean vector) and, for a profile, the nominal `wind_scale` (factor applied
+/// to the CSV speeds; the wind grid and the Monte Carlo draws scale from there).
+fn wind_json(w: &sim::Wind) -> serde_json::Map<String, serde_json::Value> {
+    let mut m = serde_json::Map::new();
+    m.insert("wind_model".into(), serde_json::to_value(w.model).unwrap_or_default());
+    m.insert("wind_speed".into(), finite_json(w.speed));
+    m.insert("wind_direction_deg".into(), finite_json(w.direction_deg));
+    if w.model == sim::WindModel::Profile {
+        m.insert("wind_scale".into(), finite_json(w.profile_scale));
+    }
+    m
+}
+
 /// summary.json: the flight summary plus `landed`, the run's `config_hash` and the sanity `warnings`.
 fn summary_json(cfg: &Config, s: &Summary, warnings: &[String]) -> Result<serde_json::Value> {
     let mut json = serde_json::to_value(s)?;
@@ -1436,6 +1549,7 @@ fn summary_json(cfg: &Config, s: &Summary, warnings: &[String]) -> Result<serde_
     json["max_time"] = cfg.sim.max_time.into();
     // The plots take the altitude from `up` (flat Earth: the integrated height) or from `alt` (ECEF).
     json["earth_model"] = serde_json::to_value(cfg.earth.model)?;
+    json["wind_model"] = serde_json::to_value(cfg.wind.model)?;
     json["config_hash"] = run_hash(cfg, RunKind::Flight).into();
     json["warnings"] = serde_json::json!(warnings);
     Ok(json)
@@ -1725,6 +1839,7 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
     let mut meta = serde_json::json!({ "config_hash": run_hash(cfg, RunKind::WindGrid), "flight_config_hash": run_hash(cfg, RunKind::Flight), "cases": results.len(), "failed": failed, "errored": errored, "warnings": warnings, "aero_table_range": aero_range_json(&p.table.out_of_range_stats()) });
     meta.as_object_mut().unwrap().extend(stability_json(margin).as_object().unwrap().clone());
     meta.as_object_mut().unwrap().extend(instability_json(&instab).as_object().unwrap().clone());
+    meta.as_object_mut().unwrap().extend(wind_json(&base.wind));
     let meta_path = out_path(cfg, kml::WIND_GRID_META)?;
     std::fs::write(&meta_path, serde_json::to_string_pretty(&meta)?)?;
     u.done_line("Wind grid", &format!("{} cases, {failed} failed", results.len()), start.elapsed());
@@ -1903,6 +2018,7 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
     json["aero_table_range"] = aero_range_json(&range);
     json.as_object_mut().unwrap().extend(stability_json(margin).as_object().unwrap().clone());
     json.as_object_mut().unwrap().extend(instability_json(&instab).as_object().unwrap().clone());
+    json.as_object_mut().unwrap().extend(wind_json(&base.wind));
     std::fs::write(&spath, serde_json::to_string_pretty(&json)?)?;
     u.done_line("Monte Carlo", &format!("{} samples x {} descent modes", r.summary.samples, r.summary.descents.len()), start.elapsed());
     if u.plain() {
@@ -3054,5 +3170,122 @@ mod tests {
         assert!(lines[1].ends_with(",true,,true"), "{}", lines[1]);
         assert!(lines[2].ends_with(",false,\"integration diverged, state \"\"NaN\"\"\","), "{}", lines[2]);
         assert!(lines[4].ends_with(",false,e2 second line,"), "{}", lines[4]);
+    }
+
+    #[test]
+    fn set_out_and_aero_table_flags_have_help() {
+        use clap::CommandFactory;
+        let mut cmd = Cli::command();
+        for sub in ["geom", "aero", "sim", "dispersion"] {
+            let c = cmd.find_subcommand_mut(sub).unwrap();
+            let ids: Vec<String> = c.get_arguments().map(|a| a.get_id().to_string()).collect();
+            assert!(ids.contains(&"set".to_string()) && ids.contains(&"out".to_string()), "{sub}: {ids:?}");
+            assert_eq!(ids.contains(&"aero_table".to_string()), sub != "geom", "{sub}");
+        }
+        let cli = Cli::try_parse_from([
+            "ignisyeet",
+            "sim",
+            "c.toml",
+            "--set",
+            "wind.speed=3",
+            "--set",
+            "dispersion.mode=monte_carlo",
+            "--out",
+            "o",
+            "--aero-table",
+            "t",
+        ])
+        .unwrap();
+        let Cmd::Sim { ov, table, .. } = cli.cmd else { panic!("not sim") };
+        assert_eq!(ov.set, vec!["wind.speed=3", "dispersion.mode=monte_carlo"]);
+        assert_eq!((ov.out, table.aero_table), (Some(PathBuf::from("o")), Some(PathBuf::from("t"))));
+    }
+
+    #[test]
+    fn overrides_enter_the_run_hash_but_out_does_not() {
+        let dir = std::env::temp_dir().join(format!("ignisyeet_cli_ovhash_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("c.toml");
+        let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+        let text = include_str!("../../../examples/sample.toml")
+            .replace("\"sample_rocket.stl\"", &format!("{:?}", examples.join("sample_rocket.stl")))
+            .replace("\"sample_motor.eng\"", &format!("{:?}", examples.join("sample_motor.eng")));
+        std::fs::write(&path, text).unwrap();
+        let load = |set: &[&str], out: Option<&str>| {
+            Config::load_with(&path, &config::Overrides { set: set.iter().map(|s| s.to_string()).collect(), out: out.map(PathBuf::from) }).unwrap()
+        };
+        let plain = load(&[], None);
+        let set = load(&["wind.speed=9"], None);
+        assert_ne!(run_hash(&plain, RunKind::Flight), run_hash(&set, RunKind::Flight));
+        // the same value through --set or in the file: the same hash
+        assert_eq!(run_hash(&load(&["wind.speed=4.0"], None), RunKind::Flight), run_hash(&plain, RunKind::Flight));
+        assert_eq!(run_hash(&load(&[], Some("elsewhere")), RunKind::Flight), run_hash(&plain, RunKind::Flight));
+        assert_ne!(source_hash(&load(&["aero.mach_step=0.04"], None)).unwrap(), source_hash(&plain).unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn aero_table_is_reused_from_another_directory_when_the_key_matches() {
+        let a = sample_config("reuse_a");
+        let mut b = sample_config("reuse_b");
+        let _ = std::fs::remove_dir_all(&b.output.dir);
+        let built = aero_table(&a, false).unwrap();
+        b.aero_table_source = Some(a.output.dir.clone());
+        let t = aero_table(&b, false).unwrap();
+        assert_eq!(t.meta.source_hash, built.meta.source_hash);
+        for f in ["aero_table.csv", "aero_table.json", "geometry.json", "profile.csv", "aero_drag.csv"] {
+            assert_eq!(std::fs::read(a.output.dir.join(f)).unwrap(), std::fs::read(b.output.dir.join(f)).unwrap(), "{f}");
+        }
+        // the copy is an ordinary cache hit afterwards
+        b.aero_table_source = None;
+        assert_eq!(aero_table(&b, false).unwrap().meta.source_hash, built.meta.source_hash);
+        // a table of other aero settings is refused
+        let mut c = sample_config("reuse_c");
+        c.aero.mach_step = 0.04;
+        c.aero_table_source = Some(a.output.dir.join("aero_table.csv"));
+        let e = aero_table(&c, false).unwrap_err().to_string();
+        assert!(e.starts_with("--aero-table: ") && e.contains("was built for another rocket or other aero settings"), "{e}");
+        assert!(!c.output.dir.join("aero_table.csv").exists());
+        c.aero.mach_step = 0.02;
+        assert!(aero_table_for(&c, true, Sub::Aero).unwrap_err().to_string().contains("--aero-table and --force"));
+        let mut missing = sample_config("reuse_d");
+        missing.aero_table_source = Some(missing.output.dir.join("nope.csv"));
+        assert!(aero_table(&missing, false).unwrap_err().to_string().contains("--aero-table: cannot load aero table"));
+        for d in [&a.output.dir, &b.output.dir, &c.output.dir, &missing.output.dir] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+
+    #[test]
+    fn profile_targets_fly_like_the_wind_grid_case() {
+        let mut cfg = sample_config("ptarget");
+        cfg.wind.model = sim::WindModel::Profile;
+        cfg.wind.profile = Some("wind_profile_example.csv".into());
+        cfg.recovery.enabled = false;
+        let p = prepare(&cfg).unwrap();
+        let mut grid = cfg.dispersion.clone();
+        grid.mode = sim::DispersionMode::WindGrid;
+        grid.wind_speeds = vec![15.6];
+        grid.directions = 4;
+        let (cases, results) = sim::dispersion::run(&grid, &simulation(&cfg, &p).unwrap(), false).unwrap();
+        let i = cases.iter().position(|c| c.wind_direction_deg == 90.0).unwrap();
+        let mut target = cfg.clone();
+        target.wind.profile_mean_speed = Some(15.6);
+        target.wind.profile_mean_direction_deg = Some(90.0);
+        let sim = simulation(&target, &p).unwrap();
+        let s = sim.run(Descent::Ballistic, false).unwrap().summary;
+        assert_eq!((s.wind_speed, s.wind_direction_deg), (15.6, 90.0));
+        let g = &results[i];
+        assert_eq!((s.landing_east, s.landing_north, s.apogee), (g.landing_east, g.landing_north, g.apogee));
+        assert_eq!(s.wind_scale, g.wind_scale);
+        assert!(s.wind_scale.unwrap() > 1.0);
+        // the dispersion files name the wind model and the nominal scale
+        let j = serde_json::Value::Object(wind_json(&sim.wind));
+        assert_eq!((j["wind_model"].as_str(), j["wind_speed"].as_f64(), j["wind_direction_deg"].as_f64()), (Some("profile"), Some(15.6), Some(90.0)));
+        assert_eq!(j["wind_scale"].as_f64(), s.wind_scale);
+        assert_eq!(summary_json(&target, &s, &[]).unwrap()["wind_model"], "profile");
+        let power = serde_json::Value::Object(wind_json(&simulation(&sample_config("ptarget"), &p).unwrap().wind));
+        assert!(power["wind_model"] == "power" && power.get("wind_scale").is_none());
+        let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 }

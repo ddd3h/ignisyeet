@@ -176,7 +176,7 @@ fn main() -> Result<()> {
             incomplete = match run_sim(&cfg, descent) {
                 Ok(i) => i,
                 Err(e) => {
-                    write_failure_marker(&cfg, &e);
+                    sim_failed(&cfg, &e);
                     return Err(e);
                 }
             }
@@ -1288,6 +1288,26 @@ fn write_failure_marker(cfg: &Config, e: &anyhow::Error) {
     let _ = std::fs::write(dir.join("summary.json"), serde_json::to_string_pretty(&json).unwrap_or_default());
 }
 
+/// File name of the KML document in the output directory.
+const KML_FILE: &str = "ignisyeet.kml";
+
+/// Outputs of a failed `sim` run: the failure marker in summary.json, and ignisyeet.kml (when it exists)
+/// rewritten without the flight layer, so that neither shows the previous run's flight.
+fn sim_failed(cfg: &Config, e: &anyhow::Error) {
+    write_failure_marker(cfg, e);
+    if cfg.output.kml && cfg.out_dir().join(KML_FILE).is_file() {
+        if let Err(k) = write_kml(cfg, kml::Parts::default(), true) {
+            // Do not leave the old flight behind when the file cannot be rewritten.
+            let _ = std::fs::remove_file(cfg.out_dir().join(KML_FILE));
+            if ui().mode != ui::Mode::Quiet {
+                eprintln!("ignisyeet.kml removed: it could not be rewritten without the flight ({k:#})");
+            }
+        } else if ui().mode != ui::Mode::Quiet {
+            println!("  KML written without the flight layer: the simulation failed");
+        }
+    }
+}
+
 fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
     let u = ui();
     remove_stale_flight_outputs(cfg);
@@ -1458,7 +1478,7 @@ fn write_kml(cfg: &Config, mut parts: kml::Parts, skip_flight: bool) -> Result<(
             Err(e) => note("Monte Carlo", e),
         }
     }
-    let path = out_path(cfg, "ignisyeet.kml")?;
+    let path = out_path(cfg, KML_FILE)?;
     let tmp = path.with_extension("kml.tmp");
     std::fs::write(&tmp, kml::combined(&cfg.launch, &parts))?;
     std::fs::rename(&tmp, &path)?;
@@ -2824,6 +2844,25 @@ mod tests {
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(!text.contains("STALE_FLIGHT_MARKER") && text.contains("Launch site") && !text.contains("<name>Flight</name>"), "{text}");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn failed_sim_removes_the_previous_flight_from_the_kml() {
+        let mut cfg = sample_config("failed_kml");
+        cfg.output.kml = true;
+        // A flight that lands: the KML holds its Flight folder.
+        assert_eq!(run_sim(&cfg, Some(Descent::Ballistic)).unwrap(), None);
+        let path = cfg.out_dir().join(KML_FILE);
+        assert!(std::fs::read_to_string(&path).unwrap().contains("<Folder><name>Flight</name>"));
+        // The next run fails (missing motor file): summary.json is the failure marker and the KML has no flight.
+        cfg.motor.eng = "no_such_motor.eng".into();
+        let e = run_sim(&cfg, Some(Descent::Ballistic)).unwrap_err();
+        sim_failed(&cfg, &e);
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains("Launch site") && !text.contains("<Folder><name>Flight</name>"), "{text}");
+        let j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(cfg.out_dir().join("summary.json")).unwrap()).unwrap();
+        assert_eq!(j["failed"].as_bool(), Some(true));
+        let _ = std::fs::remove_dir_all(cfg.out_dir());
     }
 
     #[test]

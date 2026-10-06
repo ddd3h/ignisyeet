@@ -499,7 +499,11 @@ pub fn flight_panel(sm: &Summary, descent: Descent, g_lat_lon: bool) -> Panel {
             stability(sm.stability_at_rail_exit)
         ),
     );
-    p.row("burnout", val(format!("{:.2}", sm.burnout_time), "s"));
+    if sm.burnout_time.is_finite() {
+        p.row("burnout", val(format!("{:.2}", sm.burnout_time), "s"));
+    } else {
+        p.row("burnout", dim("not reached (the flight ended before the end of the thrust curve)").to_string());
+    }
     p.row(
         "max speed",
         format!(

@@ -339,6 +339,7 @@ pub struct Summary {
     pub wind_direction_deg: f64,
     pub rail_exit_time: f64,
     pub rail_exit_speed: f64,
+    /// End of the thrust curve [s]; NaN (`null` in JSON) when the flight ended before it.
     pub burnout_time: f64,
     pub max_speed: f64,
     pub max_mach: f64,
@@ -1188,6 +1189,11 @@ impl<'a> Simulation<'a> {
             sum.min_stability_cal = f64::NAN;
         }
         margins.finish(&mut sum);
+        // The end of the thrust curve counts as burnout only when the flight lasted that long.
+        let t_end = if sum.landed() { sum.landing_time } else { t };
+        if burn > t_end + 1e-9 {
+            sum.burnout_time = f64::NAN;
+        }
         Ok(SimResult { samples, summary: sum, evals: evals.get(), max_quat_norm_error: max_qerr })
     }
 }
@@ -2299,6 +2305,22 @@ mod tests {
         let s = sim.run(Descent::Parachute, false).unwrap().summary;
         assert!((s.drogue_deploy_time.unwrap() - (t_apo + sim.recovery.delay)).abs() < 1e-9);
         assert!(s.landing_time > s.drogue_deploy_time.unwrap());
+    }
+
+    #[test]
+    fn burnout_time_is_reported_only_when_the_flight_reaches_it() {
+        let (table, motor) = vacuum_parts();
+        let mut sim = vacuum_sim(&table, &motor);
+        let s = sim.run(Descent::Ballistic, false).unwrap().summary;
+        assert_eq!(s.burnout_time, VAC_BURN);
+        // The run ends (sim.max_time) before the motor burns out: no burnout.
+        sim.settings.max_time = 0.5 * VAC_BURN;
+        let s = sim.run(Descent::Ballistic, false).unwrap().summary;
+        assert!(s.burnout_time.is_nan(), "burnout {} after a run of {} s", s.burnout_time, sim.settings.max_time);
+        assert!(serde_json::to_value(&s).unwrap()["burnout_time"].is_null());
+        // Ending exactly at burnout reaches it.
+        sim.settings.max_time = VAC_BURN;
+        assert_eq!(sim.run(Descent::Ballistic, false).unwrap().summary.burnout_time, VAC_BURN);
     }
 
     #[test]

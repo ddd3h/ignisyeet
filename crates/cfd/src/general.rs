@@ -172,6 +172,9 @@ pub struct GeneralInput<'a> {
     pub mach_step: f64,
     /// Fin cant [deg] contained in the CFD geometry (the reference of the roll forcing).
     pub fin_cant_ref_deg: f64,
+    /// The CFD wall contains the fin leading / trailing faces (STL surface): the Euler hybrid axial
+    /// force then omits the Barrowman fin-edge drag.
+    pub fin_edges_in_cfd: bool,
 }
 
 fn key(a: f64, b: f64) -> (i64, i64) {
@@ -193,6 +196,24 @@ fn complete(pts: &[(f64, f64, BodyCoeffs6)], shape: ShapeSymmetry, average: bool
                     p.2.cm -= z.cm;
                 }
             }
+        }
+    }
+    // A shape that is mirror-symmetric about y = 0 has CY = Cl = Cn = 0 exactly for flow in the symmetry plane
+    // (beta = 0); with a z = 0 symmetry too, CZ = Cl = Cm = 0 at alpha = 0. Whatever the solver leaves there
+    // (symmetry-plane integration noise of a half domain) is removed, whatever the alpha mode (after the offset
+    // correction, which needs the measured zero-angle values).
+    if matches!(shape, ShapeSymmetry::Axisymmetric | ShapeSymmetry::PitchPlane) {
+        for p in pts.iter_mut().filter(|p| p.1 == 0.0) {
+            p.2.cy = 0.0;
+            p.2.cl = 0.0;
+            p.2.cn = 0.0;
+        }
+    }
+    if shape == ShapeSymmetry::Axisymmetric {
+        for p in pts.iter_mut().filter(|p| p.0 == 0.0) {
+            p.2.cz = 0.0;
+            p.2.cl = 0.0;
+            p.2.cm = 0.0;
         }
     }
     let (mz, my) = match shape {
@@ -343,7 +364,6 @@ fn slopes_of(mach: f64, map: &BTreeMap<(i64, i64), BodyCoeffs6>, d: f64) -> Opti
 /// Builds the general table (see the module documentation).
 pub fn build_general(inp: &GeneralInput) -> Result<(AeroTable, GeneralFill)> {
     let model = inp.model;
-    let linear = inp.extrapolation == Extrapolation::Linear;
     let o = &model.opt;
     let step = if inp.mach_step > 0.0 { inp.mach_step } else { o.mach_step };
     let machs = grid(o.mach_min.max(0.0), o.mach_max, step);
@@ -398,7 +418,7 @@ pub fn build_general(inp: &GeneralInput) -> Result<(AeroTable, GeneralFill)> {
                 let f = field.eval(a, b);
                 let (t, th) = (at(a, b), at(ah, bh));
                 let total = (ah.to_radians().cos() * bh.to_radians().cos()).clamp(-1.0, 1.0).acos();
-                let (ca_on, ca_off) = hybrid_axial(inp.flow, model, m, total.min(std::f64::consts::PI - total), -f[0]);
+                let (ca_on, ca_off) = hybrid_axial(inp.flow, inp.fin_edges_in_cfd, model, m, total.min(std::f64::consts::PI - total), -f[0]);
                 nodes.push([
                     -ca_on + t.cx_on - th.cx_on,
                     -ca_off + t.cx_off - th.cx_off,
@@ -439,7 +459,7 @@ pub fn build_general(inp: &GeneralInput) -> Result<(AeroTable, GeneralFill)> {
             let p = Pchip::new(mx.clone(), cols.iter().map(|c| c.nodes[n][q]).collect());
             for (i, &m) in machs.iter().enumerate() {
                 let v = &mut grid_vals[i * na * nb + n];
-                v[q] = p.eval(m, linear);
+                v[q] = p.eval(m, false);
             }
         }
     }
@@ -461,9 +481,9 @@ pub fn build_general(inp: &GeneralInput) -> Result<(AeroTable, GeneralFill)> {
         .iter()
         .map(|&m| {
             let sums = model.damping_sums(m);
-            let sq = scale_damping(sums, cna_p.eval(m, linear), x_p.eval(m, linear));
+            let sq = scale_damping(sums, cna_p.eval(m, false), x_p.eval(m, false));
             let sr = match (&cna_y, &x_y) {
-                (Some(c), Some(x)) => scale_damping(sums, c.eval(m, linear), x.eval(m, linear)),
+                (Some(c), Some(x)) => scale_damping(sums, c.eval(m, false), x.eval(m, false)),
                 _ => sq,
             };
             (m, sq, sr, clp_at(&fill.clp, model, m))
@@ -536,6 +556,29 @@ mod tests {
     }
 
     #[test]
+    fn symmetry_plane_noise_is_removed_for_symmetric_shapes() {
+        let noisy = |a: f64| {
+            let mut c = analytic(2.0, a, 0.0);
+            c.cy = -0.043;
+            c.cl = 0.01;
+            c.cn = 0.54;
+            (a, 0.0, c)
+        };
+        let pts = vec![noisy(0.0), noisy(2.0), noisy(4.0)];
+        for (average, offset) in [(false, false), (false, true), (true, false)] {
+            for shape in [ShapeSymmetry::Axisymmetric, ShapeSymmetry::PitchPlane] {
+                let map = complete(&pts, shape, average, offset);
+                for &a in &[0.0, 2.0, 4.0] {
+                    let c = map[&key(a, 0.0)];
+                    assert_eq!((c.cy, c.cl, c.cn), (0.0, 0.0, 0.0), "{shape:?} avg={average} off={offset} a={a}");
+                }
+            }
+        }
+        // No symmetry: the values are data.
+        assert_eq!(complete(&pts, ShapeSymmetry::None, false, false)[&key(2.0, 0.0)].cn, 0.54);
+    }
+
+    #[test]
     fn averaging_removes_an_asymmetric_offset() {
         let p = |a: f64, off: f64| {
             let mut c = analytic(1.0, a, 0.0);
@@ -575,6 +618,7 @@ mod tests {
             offset: false,
             mach_step: 0.25,
             fin_cant_ref_deg: 0.0,
+            fin_edges_in_cfd: false,
         };
         let (t, fill) = build_general(&inp).unwrap();
         assert_eq!(t.kind(), aero::table::TableKind::General);
@@ -630,6 +674,7 @@ mod tests {
             offset: false,
             mach_step: 0.5,
             fin_cant_ref_deg: 0.0,
+            fin_edges_in_cfd: false,
         };
         let (t, fill) = build_general(&inp).unwrap();
         assert!(fill.yaw_from_pitch && fill.region.beta_max_deg == 0.0);

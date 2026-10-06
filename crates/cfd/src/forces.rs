@@ -153,13 +153,18 @@ impl BodyCoeffs6 {
 ///   and for power-on the base-pressure contribution over the nozzle exit area is removed,
 ///   `base_cd(M) (A_base - A_base,on) / S`.
 ///
+/// `fin_edges_in_cfd`: the integrated CFD wall already holds the fin leading / trailing faces (STL surface), so
+/// their pressure drag is in `ca_cfd` and the Barrowman fin-edge term is not added again. For the rebuilt
+/// (CAD) geometry the term is kept.
+///
 /// The additions are multiplied by the model's `axial_alpha_factor`, like the Barrowman path.
-pub fn hybrid_axial(flow: FlowModel, model: &AeroModel, mach: f64, alpha_rad: f64, ca_cfd: f64) -> (f64, f64) {
+pub fn hybrid_axial(flow: FlowModel, fin_edges_in_cfd: bool, model: &AeroModel, mach: f64, alpha_rad: f64, ca_cfd: f64) -> (f64, f64) {
     let k = axial_alpha_factor(alpha_rad);
     let (on, off) = (model.cd0(mach, true), model.cd0(mach, false));
     let (add_on, add_off) = match flow {
         FlowModel::Euler => {
-            let t = |b: &aero::model::DragBreakdown| b.friction + b.base + b.fins + b.boattail + b.extra;
+            let fins = |b: &aero::model::DragBreakdown| if fin_edges_in_cfd { 0.0 } else { b.fins };
+            let t = |b: &aero::model::DragBreakdown| b.friction + b.base + fins(b) + b.boattail + b.extra;
             (t(&on), t(&off))
         }
         FlowModel::Rans => {
@@ -243,15 +248,19 @@ mod tests {
     #[test]
     fn hybrid_terms() {
         let m = model(0.0);
-        let (on, off) = hybrid_axial(FlowModel::Euler, &m, 0.5, 0.0, 0.1);
+        let (on, off) = hybrid_axial(FlowModel::Euler, false, &m, 0.5, 0.0, 0.1);
         let b = m.cd0(0.5, false);
         assert!((off - (0.1 + b.friction + b.base + b.fins + b.boattail + b.extra)).abs() < 1e-12);
         assert!((on - off).abs() < 1e-12, "no nozzle: power-on equals power-off");
         let m = model(0.5 * std::f64::consts::PI * 0.05 * 0.05);
-        let (on, off) = hybrid_axial(FlowModel::Euler, &m, 0.5, 0.0, 0.1);
+        let (on, off) = hybrid_axial(FlowModel::Euler, false, &m, 0.5, 0.0, 0.1);
         assert!(on < off);
+        // STL surface: the fin-edge drag is in the CFD wall and is not added again.
+        let (_, off_stl) = hybrid_axial(FlowModel::Euler, true, &m, 0.5, 0.0, 0.1);
+        let b = m.cd0(0.5, false);
+        assert!(b.fins > 0.0 && (off - off_stl - b.fins).abs() < 1e-12);
         // RANS: only extra_cd (and the nozzle correction) are added.
-        let (ron, roff) = hybrid_axial(FlowModel::Rans, &m, 0.5, 0.0, 0.4);
+        let (ron, roff) = hybrid_axial(FlowModel::Rans, false, &m, 0.5, 0.0, 0.4);
         assert!((roff - 0.42).abs() < 1e-12);
         assert!(ron < roff && ron > 0.0);
     }

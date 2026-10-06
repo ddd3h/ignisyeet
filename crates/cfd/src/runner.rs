@@ -36,7 +36,7 @@ use crate::case::{case_hash, case_list, read_done, warm_start_source, write_done
 use crate::config::{AlphaMode, CfdOptions};
 use crate::table::SolvedPoint;
 use crate::forces::{BodyCoeffs, BodyCoeffs6, Su2Coeffs, Su2Coeffs6};
-use crate::history::{summarize, History};
+use crate::history::{summarize, History, StabilityKind};
 use crate::su2cfg::{su2_config_case, CaseFiles, RefDims};
 use crate::tools::{self, ToolReport};
 use crate::CfdStage;
@@ -199,6 +199,7 @@ fn command(setup: &RunSetup, dir: &Path) -> Result<std::process::Command> {
 fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, restart: Option<PathBuf>, tx: &mpsc::Sender<Event>) -> Result<CaseOutcome> {
     let dir = spec.dir(&setup.work);
     let warm = restart.is_some();
+    let kind = StabilityKind::of(&spec);
     let fail = |msg: String| CaseOutcome { spec, result: None, error: Some(msg), cached: false, warm };
     std::fs::create_dir_all(&dir)?;
     for f in ["history.csv", "done.json", "surface_flow.csv", "restart.dat"] {
@@ -251,7 +252,7 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, restart: Opt
                 // Practically converged (typical for RANS / Euler wake limit cycles): residual down 3
                 // orders and the coefficients flat over `stable_window` iterations. Stop SU2 gracefully
                 // (it writes its restart file) before the residual drifts and diverges.
-                if h.rows.len() >= setup.opt.min_iterations && h.residual_drop_from_peak().is_some_and(|d| d >= min_drop) && h.coefficients_stable(setup.opt.stable_window) {
+                if h.rows.len() >= setup.opt.min_iterations && h.residual_drop_from_peak().is_some_and(|d| d >= min_drop) && h.coefficients_stable(setup.opt.stable_window, kind) {
                     child.kill(libc::SIGTERM);
                     let t = Instant::now();
                     while t.elapsed() < Duration::from_secs(30) && child.0.try_wait()?.is_none() {
@@ -279,14 +280,14 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, restart: Opt
     let n = h.rows.len();
     let reached = h.last_residual().is_some_and(|r| r <= minval);
     let window = (n / 4).clamp(2, 100);
-    let accepted = !reached && h.residual_drop_from_peak().is_some_and(|d| d >= min_drop) && h.coefficients_stable(window);
+    let accepted = !reached && h.residual_drop_from_peak().is_some_and(|d| d >= min_drop) && h.coefficients_stable(window, kind);
     if !reached && !accepted {
         let why = if timed_out { "timeout" } else { "iteration limit" };
         return Ok(fail(format!(
             "not converged ({why}): residual {:.2} (target {minval}), drop {:.1} orders, coefficients {}",
             h.last_residual().unwrap_or(f64::NAN),
             h.residual_drop_from_peak().unwrap_or(f64::NAN),
-            if h.coefficients_stable(window) { "stable" } else { "still changing" }
+            if h.coefficients_stable(window, kind) { "stable" } else { "still changing" }
         )));
     }
     let s = summarize(&h, if reached { 1 } else { window }).expect("non-empty history");

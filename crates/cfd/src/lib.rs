@@ -99,12 +99,17 @@ pub struct CfdReport {
     pub fidelity: Option<serde_json::Value>,
     /// STL surface: mirror-symmetry check of the united surface and the domain chosen from it.
     pub symmetry_check: Option<serde_json::Value>,
+    /// The table is constant (edge value held) above this Mach number: the highest solved one, set only when the
+    /// table grid extends beyond it. CFD tables are never extrapolated in Mach.
+    pub mach_clamped_above: Option<f64>,
+    /// Same below the lowest solved Mach number.
+    pub mach_clamped_below: Option<f64>,
 }
 
 /// Message of the missing-tools error.
 pub fn not_installed_message(report: &tools::ToolReport, opt: &CfdOptions) -> String {
     let lines: Vec<String> = report.missing(opt).iter().map(|t| format!("  - {}: {}", t.name, t.problem.as_deref().unwrap_or("unusable"))).collect();
-    format!("SU2 is not installed (see doc / cfd/install.sh)\n{}", lines.join("\n"))
+    format!("SU2 is not installed ({})\n{}", tools::INSTALL_HINT, lines.join("\n"))
 }
 
 /// Fails with the "not installed" error unless SU2, MPI (for more than one rank) and gmsh work.
@@ -388,6 +393,7 @@ pub fn build_table_with_progress(
             offset: cfd.alpha_mode == AlphaMode::Offset,
             mach_step: cfd.general_mach_step,
             fin_cant_ref_deg: cant_ref,
+            fin_edges_in_cfd: cfd.surface == SurfaceKind::Stl,
         };
         let (tab, fill) = general::build_general(&inp).map_err(first_error)?;
         runner::write_cases_csv(&out_dir.join("cfd_cases.csv"), &results, &[], AlphaMode::Single)?;
@@ -415,6 +421,19 @@ pub fn build_table_with_progress(
         report.fin_cant_ref_deg = tab.meta.fin_cant_ref_deg;
         tab
     };
+    let solved_m = results.iter().filter(|r| r.result.is_some()).map(|r| r.spec.mach);
+    let (lo, hi) = solved_m.fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), m| (a.min(m), b.max(m)));
+    if lo <= hi {
+        let eps = 1e-9;
+        report.mach_clamped_above = tab.meta.machs.last().is_some_and(|&m| m > hi + eps).then_some(hi);
+        report.mach_clamped_below = tab.meta.machs.first().is_some_and(|&m| m < lo - eps).then_some(lo);
+        if let Some(m) = report.mach_clamped_above {
+            report.warnings.push(format!("the table is held at its M = {m} values above M = {m} (no Mach extrapolation of the CFD data)"));
+        }
+        if let Some(m) = report.mach_clamped_below {
+            report.warnings.push(format!("the table is held at its M = {m} values below M = {m} (no Mach extrapolation of the CFD data)"));
+        }
+    }
     progress(CfdStage::Done);
     Ok((tab, report))
 }
@@ -495,7 +514,7 @@ mod tests {
             .err()
             .unwrap()
             .to_string();
-        assert!(e.starts_with("SU2 is not installed (see doc / cfd/install.sh)"), "{e}");
+        assert!(e.starts_with("SU2 is not installed (install with `install.sh --cfd`"), "{e}");
         assert!(e.contains("no_such_su2_cfd"));
     }
 }

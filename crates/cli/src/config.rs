@@ -420,6 +420,9 @@ impl Config {
         }
         non_negative("recovery.delay", self.recovery.delay)?;
         self.recovery.validate()?;
+        if self.sim.descent == Some(sim::Descent::Parachute) && !self.recovery.enabled {
+            bail!("sim.descent = \"parachute\" needs recovery.enabled = true");
+        }
 
         let a = &self.aero;
         non_negative("aero.mach_min", a.mach_min)?;
@@ -912,6 +915,16 @@ mod tests {
         assert!(e.contains("recovery.cd_s"), "{e}");
         let off = sample.replacen("cd_s = 3.5", "cd_s = 0.0", 1).replacen("enabled = true", "enabled = false", 1);
         parse(&off).unwrap();
+    }
+
+    #[test]
+    fn parachute_descent_needs_enabled_recovery() {
+        let sample = include_str!("../../../examples/sample.toml");
+        let off = sample.replacen("enabled = true", "enabled = false", 1);
+        let chute = off.replacen("[sim]", "[sim]\ndescent = \"parachute\"", 1);
+        assert_eq!(parse(&chute).unwrap_err().to_string(), "sim.descent = \"parachute\" needs recovery.enabled = true");
+        parse(&off.replacen("[sim]", "[sim]\ndescent = \"ballistic\"", 1)).unwrap();
+        parse(&sample.replacen("[sim]", "[sim]\ndescent = \"parachute\"", 1)).unwrap();
     }
 
     #[test]

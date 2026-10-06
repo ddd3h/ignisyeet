@@ -168,6 +168,7 @@ fn main() -> Result<()> {
         }
         Cmd::Sim { config, descent } => {
             let cfg = load_config(&config)?;
+            check_descent_override(&cfg, descent)?;
             begin(&cfg, &config, Sub::Sim);
             incomplete = match run_sim(&cfg, descent) {
                 Ok(i) => i,
@@ -1131,6 +1132,14 @@ fn simulation<'a>(cfg: &Config, p: &'a Prepared) -> Result<Simulation<'a>> {
         thrust_line: cfg.motor.thrust_line(),
         fin_cant_deg: r.cant_deg(),
     })
+}
+
+/// An error for `--descent parachute` when the recovery is disabled.
+fn check_descent_override(cfg: &Config, descent: Option<Descent>) -> Result<()> {
+    if descent == Some(Descent::Parachute) && !cfg.recovery.enabled {
+        anyhow::bail!("--descent parachute needs recovery.enabled = true");
+    }
+    Ok(())
 }
 
 fn default_descent(cfg: &Config) -> Descent {
@@ -2330,6 +2339,15 @@ mod tests {
         let (_, margin) = nominal_warnings(&cfg, &prepare(&cfg).unwrap(), &simulation(&cfg, &prepare(&cfg).unwrap()).unwrap());
         assert!(margin < 0.0);
         let _ = std::fs::remove_dir_all(&cfg.output.dir);
+    }
+
+    #[test]
+    fn parachute_override_needs_enabled_recovery() {
+        let mut cfg = sample_config("chute_override");
+        assert!(check_descent_override(&cfg, Some(Descent::Parachute)).is_ok());
+        cfg.recovery.enabled = false;
+        assert_eq!(check_descent_override(&cfg, Some(Descent::Parachute)).unwrap_err().to_string(), "--descent parachute needs recovery.enabled = true");
+        assert!(check_descent_override(&cfg, Some(Descent::Ballistic)).is_ok() && check_descent_override(&cfg, None).is_ok());
     }
 
     #[test]

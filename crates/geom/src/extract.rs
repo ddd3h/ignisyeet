@@ -164,20 +164,6 @@ struct Slice {
 
 const N_BINS: usize = 72;
 
-/// Hard size sanity check on the extracted body length (0.1-20 m); a failure almost always means a wrong STL unit.
-pub fn check_plausible_size(g: &Geometry) -> Result<()> {
-    let l = g.length;
-    if !(0.1..=20.0).contains(&l) {
-        let hint = if l > 20.0 {
-            "the STL is probably in millimetres; use stl_scale = 0.001"
-        } else {
-            "the STL is probably in metres already or scaled down; check the STL units"
-        };
-        bail!("body length {l:.3} m is outside 0.1-20 m: check stl_scale ({hint})");
-    }
-    Ok(())
-}
-
 pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
     if opt.n_slices < 20 {
         bail!("n_slices must be at least 20");
@@ -612,16 +598,6 @@ mod tests {
         let f = g.fins.expect("fins detected");
         assert!(close(f.sweep, rk.sweep, 0.008), "sweep {}", f.sweep);
         assert!(f.sweep < -0.01, "sweep {}", f.sweep);
-    }
-
-    #[test]
-    fn size_check_rejects_millimetre_stl() {
-        let g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
-        assert!(check_plausible_size(&g).is_ok());
-        let big: Vec<Triangle> = SampleRocket::default().mesh().iter().map(|t| t.map(|v| v * 1000.0)).collect();
-        let g = extract(&big, &ExtractOptions::default()).unwrap();
-        let e = check_plausible_size(&g).unwrap_err().to_string();
-        assert!(e.contains("stl_scale = 0.001"), "{e}");
     }
 
     #[test]

@@ -73,7 +73,7 @@ method = "barrowman"       # "barrowman" | "panel" | "table" | "cfd"
 mach_min = 0.0
 mach_max = 3.0
 mach_step = 0.02
-alpha_max_deg = 30.0
+alpha_max_deg = 90.0       # ballistic descents reach alpha ~ 90 deg
 alpha_step_deg = 1.0
 n_slices = 600
 fin_threshold = 0.05
@@ -151,6 +151,9 @@ max_time = 3600.0          # runs that do not land within max_time are reported 
 output_interval = 0.05
 # descent = "parachute"    # default: parachute if recovery.enabled else ballistic
 
+# The documented Monte Carlo example is this file with exactly two edits and nothing else changed:
+#   [sim]        integrator = "rk45"
+#   [dispersion] mode = "monte_carlo"      (1000 samples, seed 1 and the sigmas below as they stand)
 [dispersion]
 mode = "wind_grid"         # "wind_grid" | "monte_carlo"
 wind_speeds = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]   # speeds at the [wind] reference height [m/s]

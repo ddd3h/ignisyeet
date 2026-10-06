@@ -203,11 +203,11 @@ CFD（``method = "cfd"``、:doc:`cfd`、:doc:`cfd_internals`）
 
    軸対称表（左）と一般表（右）。部品積み上げ法とパネル法の一般表は、軸対称表を展開して作る。
 
-軸対称表は、既定では Mach 数 0 から 3、全迎角 0 から 30° の格子を持つ。
+軸対称表は、既定では Mach 数 0 から 3、全迎角 0 から 90° の格子を持つ。
 全迎角が機体の軸からのずれの大きさだけを表すので、機体が軸対称なら十分である。
 飛翔計算では、全迎角に対して :math:`\alpha_t'=\min(\alpha_t,\pi-\alpha_t)`、つまり 0 から 90° の範囲で表を引く。
-表が持つのは既定では 0 から 30° までで、それを超える迎角は、設定に応じて線形に外挿するかその端の値で一定とする（:ref:`sec-aero-interp`）。
-付属のサンプルは ``alpha_max_deg = 90`` として、頂点のあとの弾道落下で現れる大きな迎角も表の範囲に収めている。
+既定の ``alpha_max_deg = 90`` で、頂点のあとの弾道落下で現れる大きな迎角（機体が横向きになる 90° 近く）も表の範囲に収まる。
+``alpha_max_deg`` を 90 より小さくした表でその範囲を超えて引くと、結果を使えないものとして終了ステータス 3 で終わる（:ref:`sec-aero-interp`）。
 後ろ向きに飛ぶ（:math:`\alpha_t>90^\circ`）ときは、前向きの係数を引いて軸力の向きを反転する（:ref:`sec-aero-forces`）。
 
 一般表は、迎角 :math:`-180^\circ` から :math:`180^\circ`、横滑り角 :math:`-90^\circ` から :math:`90^\circ` の全範囲を格子で覆う。
@@ -279,7 +279,8 @@ Mach 数は、設定にかかわらず、表の端の値で一定とする。
 **Mach 数** は、設定にかかわらず、表の最小値より小さいときは最小値の、最大値より大きいときは最大値の係数を使う（端の値で一定）。
 遷音速や超音速の係数の傾向は、表の範囲の外で直線的には続かないので、Mach 数の方向には外挿しない。
 
-**迎角と横滑り角** が表の範囲外にあるときは、設定 ``extrapolation`` に従う。
+**迎角と横滑り角** が表の格子の外にあるときは、設定 ``extrapolation`` に従う。
+CFD の表の、解いた迎角より大きい行は、この外挿ではなく部品積み上げ法へのつなぎで埋める（:ref:`sec-cfd-table-build`）。``extrapolation`` が効くのは、表の格子の外の引き出しだけである。
 ``"linear"`` は、最も近い端の区間を使い、:math:`t_\alpha` が :math:`[0,1]` を外れたまま :eq:`eq-bilinear` を評価する（端の区間の傾きをそのまま延長する **線形外挿**）。
 ``"clamp"`` は :math:`t_\alpha` を :math:`[0,1]` に制限し、端の値で一定とする。
 下降中の機体は大きな迎角をとるので、既定は ``"linear"`` である。
@@ -291,16 +292,16 @@ Mach 数は、設定にかかわらず、表の端の値で一定とする。
 * 圧力中心 :math:`x_{cp}` は、機体の内側（ノーズ先端から全長まで）に収める。
 * ロール減衰 :math:`C_{lp}` は、外挿の有無にかかわらず、正にしない（0 以下）。
 
-一般表では、同じ規則を軸力、ロールの強制項、減衰の和（ピッチとヨーの各 3 個）に適用し、減衰の和は 0 以上とする。:math:`C_{lp}` は 0 以下に制限する。
+一般表では、同じ規則を軸力、ロールの強制項（基準のカント角での :math:`C_l` と :math:`C_{l\delta}`）、減衰の和（ピッチとヨーの各 3 個）に適用し、減衰の和は 0 以上とする。:math:`C_{lp}` は 0 以下に制限する。
 :math:`\alpha,\beta` の軸が全範囲を覆うので、一般表で外挿が起こるのは、表の軸が全範囲に満たないときだけである。
 
 表の範囲外の引き出しは、数えている。数えるのは、全引き出しの回数、Mach 数が最小値未満・最大値超の回数、迎角または横滑り角が格子の外の回数、要求された最大の Mach 数と最大の :math:`|\alpha|` である
 （``AeroTable::out_of_range_stats``）。
-範囲外の引き出しがあると、``sim``、``dispersion`` は警告として、引き出しの回数と最大の Mach 数、最大の :math:`|\alpha|` を表示する
-（``aero table: N of M lookups beyond the Mach range`` または ``… beyond the angle range`` の形で、Mach 数は表の端で一定、角度は外挿であることも添える）。
-迎角の範囲外の引き出しは、頂点のあとの弾道落下（機体が反転して尾部を先に落ちる）で起きることが多く、その場合は想定内である。
-上昇中や燃焼中に起きるときは結果に影響するので、``trajectory.csv`` の迎角で時刻を確かめ、``alpha_max_deg`` を大きくして（たとえば 90。サンプルの設定である）表を作り直す。
-表の外は表の端の区間の線形外挿で、部品積み上げ法の大迎角のフィンの頭打ち（:ref:`sec-fin-large-alpha`）は入らないので、約 30° を超える範囲の係数は粗い（:ref:`sec-lim-aero`）。
+Mach 数の範囲外の引き出しがあると、``sim``、``dispersion`` は警告として、その回数と最大の Mach 数を表示する（``aero table: N of M lookups beyond the Mach range (max Mach …); Mach is held at the table edge``）。
+迎角（一般表では迎角または横滑り角）の範囲外の引き出しは、警告ではなく、結果を使えないものとする。
+端の区間からの外挿は、大きな迎角で圧力中心を重心より前へ動かし、見かけの釣り合い（トリム）を作って、弾道落下の経路をまったく変えることがある（サンプルの例は :ref:`sec-exit-status`）。
+そのため、1 回でもあれば ``sim`` と ``dispersion`` は ``RESULTS NOT USABLE: … lookups beyond the aero table's angle range (max |alpha| … deg > alpha_max … deg): the descent uses extrapolated coefficients; build the table up to 90 deg`` の行を書いて終了ステータス 3 で終わり、``aero_table_range`` の ``angles_in_range`` を ``false`` にする。
+表の上限を 90° 以上にして作り直せば、軸対称表では範囲外の引き出しは起きない（飛翔計算は全迎角を :math:`90^\circ` 以下に折り返して引く）。
 範囲外の引き出しがなくても、``summary.json``、``dispersion_meta.json``、``dispersion_summary.json`` の ``aero_table_range`` に、全引き出しの回数などを記録する（:ref:`sec-file-summary`）。
 
 .. _sec-aero-external:

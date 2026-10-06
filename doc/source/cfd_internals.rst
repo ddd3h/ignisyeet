@@ -642,6 +642,8 @@ CFD の座標は機体座標を :math:`y` まわりに 180 度回したもの（
 
 とする。これらの和から :math:`C_{mq}`、:math:`C_{nr}` が決まる関係は :ref:`sec-aero-damping` にある。CFD が直接与えるのは傾きと重心位置だけである。
 
+.. _sec-cfd-table-build:
+
 係数表の作成
 ~~~~~~~~~~~~
 
@@ -649,12 +651,31 @@ CFD の座標は機体座標を :math:`y` まわりに 180 度回したもの（
 
 1. 各 Mach 数の列で、:math:`C_N` とノーズ周りのモーメント :math:`m` は迎角について奇関数とし、原点 :math:`(0,0)` を通る。
    :math:`C_N,m` と CFD の軸力を、迎角について単調な 3 次補間（PCHIP :cite:`fritsch`）する。
-   解いた迎角の範囲を超えるときは、端の傾きを延長する（``extrapolation = "linear"``）か、端の値で一定とする（``"clamp"``）。
-   延長した値は、表の外挿と同じ規則で符号と範囲を制限する（:ref:`sec-aero-interp`）。
+   解いた最大の迎角 :math:`\alpha_e` より大きい表の行は、部品積み上げ法へつなぐ（下記）。端の傾きは延長しない。
 2. :math:`C_{N\alpha}` と :math:`x_{cp}(\alpha\to0)` は、最小の二つの正の迎角を通る奇関数の 3 次式 :math:`c_1\alpha+c_3\alpha^3` から求める（当てはめた傾き :math:`c_1` が最小の迎角での割線の傾きから 5 割を超えてずれるときは、割線の傾きを使う）。
 3. Mach 数の方向にも、各量を係数表の Mach 数の格子に PCHIP で補間する。解いた Mach 数の範囲の外には外挿せず、最小または最大の Mach 数の値で一定とする。
    途中の Mach 数の列が失敗していれば、両隣の列で補間して埋める。最小または最大の Mach 数の列の失敗は補えず、エラーになる。
 4. 軸力に上の項を足し、ピッチ減衰の和を取り替える。``roll_damping`` が真のときは、:math:`C_{lp}` も CFD の値（:ref:`sec-cfd-roll-post`）にする。
+
+解いた迎角より大きい範囲には CFD のデータがない。端の傾きを延長した直線は、最後の区間で圧力中心が動く向きに圧力中心を際限なく動かし、大きな迎角で重心より前に出すことがある。
+そうなると大きな迎角に見かけの安定な釣り合い（トリム）ができ、頂点のあとの弾道落下が、遅く遠くまで流される落下になる。
+そこで、Mach 数の列ごとに、:math:`\alpha_e` での CFD の値（:math:`C_{N,e}`、:math:`x_{cp,e}=m_e/C_{N,e}`、:math:`C_{A,e}`）から部品積み上げ法の値（添字 B）へ移す。
+部品積み上げ法のフィンの法線力は大迎角で有界で（:ref:`sec-fin-large-alpha`）、フィンの圧力中心は平面形の図心へ動く。
+
+.. math::
+   :label: eq-cfd-beyond
+
+   C_N(\alpha) &= C_{N,B}(\alpha)\,\bigl(1+(r-1)\,w(\alpha)\bigr),\qquad r=\frac{C_{N,e}}{C_{N,B}(\alpha_e)}\\
+   x_{cp}(\alpha) &= x_{cp,B}(\alpha)+\bigl(x_{cp,e}-x_{cp,B}(\alpha_e)\bigr)\,w(\alpha)\\
+   C_A(\alpha) &= C_{A,e}\,\frac{f(\alpha)}{f(\alpha_e)}
+
+ここで :math:`f` は部品積み上げ法の軸力の迎角の倍率（:eq:`eq-ca-alpha`）、:math:`w` は :math:`\alpha_e` で 1、:math:`\alpha_r=\min(2\alpha_e,\,90^\circ)` で 0 になる、両端の傾きが 0 の 3 次 Hermite 補間で、:math:`\alpha\ge\alpha_r` では 0 である。
+:math:`r` が正でないとき（:math:`C_{N,e}` と :math:`C_{N,B}(\alpha_e)` の符号が違う）は、比の代わりに差を使い :math:`C_N=C_{N,B}(\alpha)+(C_{N,e}-C_{N,B}(\alpha_e))\,w(\alpha)` とする。
+:math:`x_{cp}` は機体の内側（0 から全長）に制限する。
+値は :math:`\alpha_e` で CFD の値に一致し、:math:`\alpha_r` から先は部品積み上げ法の法線力と圧力中心になる（軸力は CFD の水準に部品積み上げ法の形を掛けたもので、:math:`90^\circ` で 0）。
+表は節点の間を線形に補間するので、値の一致が表として意味のある連続性である。
+このつなぎは ``extrapolation`` の設定によらない。``extrapolation`` は表に記録され、表の格子の外の引き出しだけに効く（:ref:`sec-aero-interp`）。
+``examples/sample_cfd.toml``\ （解く迎角 0、4、8°、``alpha_max_deg = 90``）では、8° から 16° の間でつなぎ、16° から 90° は部品積み上げ法の値になる。
 
 係数表の入力ハッシュ（キャッシュキー）には ``[aero.cfd]`` の設定が含まれるが、結果を変えない資源とパスの項目（``prefix`` ``su2`` ``mpi`` ``ranks_per_case`` ``parallel_cases`` ``timeout_minutes`` ``workdir``）は含まれない。
 ハッシュには、プログラムの版と、空力モデルの版（係数の計算方法が変わると上げる番号）も入る。
@@ -736,7 +757,7 @@ CFD の領域の外の扱い
 
 Mach 数の方向は異なり、解いた Mach 数の範囲の外は、``extrapolation`` にかかわらず、端の値で一定とする。
 表の Mach 数の格子が解いた範囲より広いと、``cfd_report.json`` に ``mach_clamped_above``\ （最大の解いた Mach 数。それより上で一定）または ``mach_clamped_below``\ （最小の解いた Mach 数。それより下で一定）を記録し、同じ内容の警告を ``warnings`` に加える。
-軸対称表では、解いた迎角の外は ``extrapolation`` の規則（線形または端の値で一定）で延ばす。
+軸対称表では、解いた最大の迎角より大きい行を部品積み上げ法へのつなぎ（:eq:`eq-cfd-beyond`）で埋める。
 CFD が与えない項（摩擦、底面、フィン縁、ボートテールの抗力）とピッチ・ヨー減衰の和は、部品積み上げ法（またはパネル法）のモデルから補う（:ref:`sec-cfd-post`）。
 
 .. _sec-cfd-roll-post:

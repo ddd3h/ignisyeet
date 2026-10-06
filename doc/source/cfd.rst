@@ -53,13 +53,13 @@ CFD モードは次の外部プログラムを呼び出す。それぞれの役�
 
 SU2 のバージョンは 8.3.0 に固定している。8.5.0 は AVX-512 命令を持たない CPU で異常終了することが確かめられたためである。
 
-manifold3d は、同じ環境の Python に pip で入れる。
+manifold3d は、同じ環境の Python に pip で入れる。版は 3.5.4 に固定している（動作を確かめた版）。
 
 .. code-block:: sh
 
-   <prefix>/bin/python -m pip install manifold3d
+   <prefix>/bin/python -m pip install manifold3d==3.5.4
 
-インストーラ（``install.sh --cfd``）は、上の版に固定した環境を作ったあとに、これを実行する。
+インストーラ（``install.sh --cfd``）は、上の版に固定した環境を作ったあとに、これを実行する。インストーラの計画の表示、失敗したときの再実行の案内、入っていないときの案内も、この版を示す。
 ツールが見つからないときのエラーにも、``install.sh --cfd`` で入れられることを示す。
 ``cfd-check`` が manifold3d を検査するのは ``surface = "stl"`` のときだけで、それ以外では入っていなくてもよい。
 
@@ -459,7 +459,7 @@ CFD の領域の外
 どこまでが CFD の値かは、``cfd_report.json`` の ``cfd_region`` と ``model_outside_cfd_region`` で確かめる（:ref:`sec-cfd-region-outside`）。
 Mach 数の方向には、``extrapolation`` にかかわらず外挿しない。解いた Mach 数の範囲の外では、表は最小または最大の Mach 数の値で一定になる。
 表の Mach 数の格子が解いた範囲より広いときは、``cfd_report.json`` の ``mach_clamped_above`` と ``mach_clamped_below``\ （一定になる境界の Mach 数。範囲の内側に収まっていれば項目はない）に記録し、同じ内容の警告を出す。
-軸対称表の迎角の方向は、解いた範囲の外を ``extrapolation`` の規則で外挿する。
+軸対称表の迎角の方向は、解いた最大の迎角 :math:`\alpha_e` より大きい行を、部品積み上げ法の値へつなぐ（:math:`\alpha_e` で CFD の値、:math:`\min(2\alpha_e,\,90^\circ)` から先は部品積み上げ法の法線力と圧力中心。:ref:`sec-cfd-table-build`）。端の傾きを延長しないので、大きな迎角で圧力中心が機体の前方へ動き続けることはない。
 
 表の意味と限界
 ~~~~~~~~~~~~~~

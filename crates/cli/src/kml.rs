@@ -521,6 +521,7 @@ fn summary_from_json(v: &serde_json::Value) -> Result<Summary, String> {
         max_speed: f("max_speed"), max_mach: f("max_mach"), max_dyn_pressure: f("max_dyn_pressure"), apogee_time: f("apogee_time"), apogee: f("apogee"), apogee_east: f("apogee_east"),
         apogee_north: f("apogee_north"), min_stability_cal: f("min_stability_cal"), stability_at_rail_exit: f("stability_at_rail_exit"), landing_time: f("landing_time"), landing_east: f("landing_east"),
         landing_north: f("landing_north"), landing_lat: f("landing_lat"), landing_lon: f("landing_lon"), landing_distance: f("landing_distance"), landing_speed: f("landing_speed"),
+        main_deploy_time: v.get("main_deploy_time").and_then(|x| x.as_f64()), main_deploy_altitude: v.get("main_deploy_altitude").and_then(|x| x.as_f64()),
     };
     if !(s.landing_lat.is_finite() && s.landing_lon.is_finite()) {
         return Err("no landing position".into());
@@ -536,7 +537,7 @@ fn summary_from_row(t: &Csv, r: &[String]) -> Result<Summary, String> {
         descent, wind_speed: t.req(r, "wind_speed")?, wind_direction_deg: t.req(r, "wind_direction_deg")?, rail_exit_time: 0.0, rail_exit_speed: g("rail_exit_speed"), burnout_time: f64::NAN, max_speed: 0.0,
         max_mach: g("max_mach"), max_dyn_pressure: 0.0, apogee_time: g("apogee_time"), apogee: g("apogee"), apogee_east: 0.0, apogee_north: 0.0, min_stability_cal: g("min_stability_cal"),
         stability_at_rail_exit: 0.0, landing_time: g("landing_time"), landing_east: t.req(r, "landing_east")?, landing_north: t.req(r, "landing_north")?, landing_lat: t.req(r, "landing_lat")?,
-        landing_lon: t.req(r, "landing_lon")?, landing_distance: g("landing_distance"), landing_speed: g("landing_speed"),
+        landing_lon: t.req(r, "landing_lon")?, landing_distance: g("landing_distance"), landing_speed: g("landing_speed"), main_deploy_time: None, main_deploy_altitude: None,
     })
 }
 
@@ -679,7 +680,7 @@ mod tests {
         Summary {
             descent: Descent::Parachute, wind_speed: 4.0, wind_direction_deg: 0.0, rail_exit_time: 0.2, rail_exit_speed: 20.0, burnout_time: 1.0, max_speed: 1.0, max_mach: 1.0,
             max_dyn_pressure: 1.0, apogee_time: 3.0, apogee: 100.0, apogee_east: 0.0, apogee_north: 0.0, min_stability_cal: 1.0, stability_at_rail_exit: 1.5, landing_time: 6.0,
-            landing_east: -10.0, landing_north: 5.0, landing_lat: 34.7348, landing_lon: 139.4203, landing_distance: 11.2, landing_speed: 5.0,
+            landing_east: -10.0, landing_north: 5.0, landing_lat: 34.7348, landing_lon: 139.4203, landing_distance: 11.2, landing_speed: 5.0, main_deploy_time: None, main_deploy_altitude: None,
         }
     }
 

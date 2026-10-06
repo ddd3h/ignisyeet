@@ -1514,6 +1514,8 @@ mod tests {
             landing_lon: 139.0,
             landing_distance: 22.0,
             landing_speed: 30.0,
+            main_deploy_time: None,
+            main_deploy_altitude: None,
         }
     }
 

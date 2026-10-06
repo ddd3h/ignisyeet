@@ -128,6 +128,39 @@ pub struct Recovery {
     pub cd_s: f64,
     /// Deployment delay after apogee [s].
     pub delay: f64,
+    /// Dual deploy: drag area Cd*S of the main parachute [m^2]. The first parachute (`cd_s`, the
+    /// drogue) deploys at apogee + `delay`; when the rocket descends through `main_altitude` the
+    /// main replaces it, so the total drag area from then on is `main_cd_s` (the drogue is
+    /// released or collapses behind the main; it is not added). Both fields or neither.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub main_cd_s: Option<f64>,
+    /// Dual deploy: main deployment altitude above the launch site [m].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub main_altitude: Option<f64>,
+}
+
+impl Recovery {
+    /// Checks the dual-deploy fields (both or neither, positive and finite).
+    pub fn validate(&self) -> Result<()> {
+        match (self.main_cd_s, self.main_altitude) {
+            (None, None) => Ok(()),
+            (Some(c), Some(a)) => {
+                if !(c.is_finite() && c > 0.0) {
+                    bail!("recovery.main_cd_s must be positive and finite, got {c}");
+                }
+                if !(a.is_finite() && a > 0.0) {
+                    bail!("recovery.main_altitude must be positive and finite, got {a}");
+                }
+                Ok(())
+            }
+            _ => bail!("recovery.main_cd_s and recovery.main_altitude must be given together (dual deploy) or both omitted"),
+        }
+    }
+
+    /// The main parachute (Cd*S, altitude), when configured.
+    pub fn main(&self) -> Option<(f64, f64)> {
+        self.main_cd_s.zip(self.main_altitude)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -258,7 +291,7 @@ pub struct Sample {
     pub cy: f64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Summary {
     pub descent: Descent,
     pub wind_speed: f64,
@@ -283,9 +316,46 @@ pub struct Summary {
     pub landing_lon: f64,
     pub landing_distance: f64,
     pub landing_speed: f64,
+    /// Dual deploy: time of the main parachute deployment [s] (None without a main parachute or when the flight ended before).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub main_deploy_time: Option<f64>,
+    /// Dual deploy: altitude of the main deployment above the launch site [m].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub main_deploy_altitude: Option<f64>,
 }
 
 impl Summary {
+    /// Summary of a run that produced no result (an errored case): every number is NaN.
+    pub fn failed(descent: Descent, wind_speed: f64, wind_direction_deg: f64) -> Self {
+        let n = f64::NAN;
+        Self {
+            descent,
+            wind_speed,
+            wind_direction_deg,
+            rail_exit_time: n,
+            rail_exit_speed: n,
+            burnout_time: n,
+            max_speed: n,
+            max_mach: n,
+            max_dyn_pressure: n,
+            apogee_time: n,
+            apogee: n,
+            apogee_east: n,
+            apogee_north: n,
+            min_stability_cal: n,
+            stability_at_rail_exit: n,
+            landing_time: n,
+            landing_east: n,
+            landing_north: n,
+            landing_lat: n,
+            landing_lon: n,
+            landing_distance: n,
+            landing_speed: n,
+            main_deploy_time: None,
+            main_deploy_altitude: None,
+        }
+    }
+
     /// Whether the flight reached the ground before `max_time`; when false every `landing_*` field is NaN.
     pub fn landed(&self) -> bool {
         self.landing_time.is_finite() && self.landing_east.is_finite() && self.landing_north.is_finite()
@@ -322,6 +392,8 @@ struct Aux {
 struct Ctx {
     frame: Frame,
     rail: Vec3,
+    /// Drag area Cd*S of the canopy currently deployed (drogue, then main) [m^2].
+    cd_s: std::cell::Cell<f64>,
 }
 
 impl<'a> Simulation<'a> {
@@ -559,7 +631,7 @@ impl<'a> Simulation<'a> {
             Phase::Parachute => {
                 let va = s.vel - loc.to_frame(self.wind.at(loc.height));
                 let v = va.norm();
-                let drag = va * (-0.5 * atm.density * v * self.recovery.cd_s / mass);
+                let drag = va * (-0.5 * atm.density * v * cx.cd_s.get() / mass);
                 aux.airspeed = v;
                 aux.mach = v / atm.sound_speed;
                 aux.qdyn = 0.5 * atm.density * v * v;
@@ -628,14 +700,20 @@ impl<'a> Simulation<'a> {
         if !is_pos(dt) {
             bail!("sim.dt must be positive");
         }
+        if self.recovery.enabled {
+            self.recovery.validate()?;
+        }
         let stepper = Stepper::new(self.settings.integrator, self.settings.attitude);
         let adaptive = stepper.adaptive();
         if adaptive && !(is_pos(self.settings.rtol) && is_pos(self.settings.atol) && is_pos(self.settings.output_interval)) {
             bail!("sim.rtol, sim.atol and sim.output_interval must be positive for the adaptive integrators (rk45, dop853)");
         }
         let frame = Frame::new(&self.earth, &self.launch);
-        let cx = Ctx { frame, rail: frame.from_launch_enu(self.rail_dir_enu()) };
+        let cx = Ctx { frame, rail: frame.from_launch_enu(self.rail_dir_enu()), cd_s: Default::default() };
         let mut s = State { pos: frame.origin(), vel: Vec3::ZERO, q: self.initial_attitude(&frame), w: Vec3::ZERO };
+        cx.cd_s.set(self.recovery.cd_s);
+        let main = if self.recovery.enabled { self.recovery.main() } else { None };
+        let mut main_pending = false;
         let mut phase = Phase::Rail;
         let mut t = 0.0;
         let mut samples = Vec::new();
@@ -665,6 +743,8 @@ impl<'a> Simulation<'a> {
             landing_lon: f64::NAN,
             landing_distance: f64::NAN,
             landing_speed: f64::NAN,
+            main_deploy_time: None,
+            main_deploy_altitude: None,
         };
         let mut deploy_at = f64::INFINITY;
         let mut past_apogee = false;
@@ -709,8 +789,13 @@ impl<'a> Simulation<'a> {
             let h;
             let mut next_fsal = None;
             if !adaptive {
-                h = dt;
-                s = stepper.step(&mut f, t, &s, &k1, dt, 0.0, 0.0, phase == Phase::Free).y;
+                // The step that reaches the parachute deployment instant is shortened to end on it.
+                let mut hh = dt;
+                if descent == Descent::Parachute && phase == Phase::Free && deploy_at > t + 1e-12 {
+                    hh = dt.min(deploy_at - t);
+                }
+                h = hh;
+                s = stepper.step(&mut f, t, &s, &k1, hh, 0.0, 0.0, phase == Phase::Free).y;
             } else {
                 // Largest allowed step: output interval, 0.05 s on the rail and during the burn,
                 // trimmed to thrust-curve knots and to the parachute deployment instant.
@@ -757,6 +842,14 @@ impl<'a> Simulation<'a> {
             if !finite_state(&s) {
                 bail!("integration diverged at t = {t:.4} s; reduce sim.dt or tighten rtol/atol");
             }
+            // A state no rocket reaches is a numerical blow-up as well, even when it is still finite.
+            let (speed_now, alt_now) = (s.vel.norm(), frame.local(s.pos).height);
+            if speed_now > MAX_SPEED {
+                bail!("integration diverged at t = {t:.4} s (speed {speed_now:.3e} m/s is not physical); reduce sim.dt or tighten rtol/atol");
+            }
+            if alt_now > MAX_ALTITUDE {
+                bail!("integration diverged at t = {t:.4} s (altitude {alt_now:.3e} m is not physical); reduce sim.dt or tighten rtol/atol");
+            }
             max_qerr = max_qerr.max((crate::lie::quat_norm(s.q) - 1.0).abs());
             let loc_prev = loc;
             loc = frame.local(s.pos);
@@ -784,13 +877,49 @@ impl<'a> Simulation<'a> {
             let (vz_prev, vz) = (prev.vel.dot(loc_prev.up), s.vel.dot(loc.up));
             if phase != Phase::Rail && !past_apogee && vz_prev > 0.0 && vz <= 0.0 {
                 past_apogee = true;
-                // The adaptive integrator takes long steps, so it uses the zero crossing of the
-                // vertical velocity (linear within the step); rk4 keeps the end of the step.
-                let t_apo = if adaptive { t - h + h * vz_prev / (vz_prev - vz) } else { t };
+                // Zero crossing of the vertical velocity (linear within the step); the apogee
+                // position is the cubic Hermite interpolant of the step at that instant.
+                let fa = vz_prev / (vz_prev - vz);
+                let t_apo = t - h + h * fa;
+                let p = hermite_pos(&prev, &s, h, fa);
+                let h_apo = frame.local(p).height;
+                if h_apo >= sum.apogee {
+                    let enu = frame.position_to_launch_enu(p);
+                    sum.apogee = h_apo;
+                    sum.apogee_east = enu.x;
+                    sum.apogee_north = enu.y;
+                }
+                sum.apogee_time = t_apo;
                 deploy_at = t_apo + self.recovery.delay;
             }
-            if descent == Descent::Parachute && phase == Phase::Free && t >= deploy_at {
+            if descent == Descent::Parachute && phase == Phase::Free && t >= deploy_at - 1e-12 {
                 phase = Phase::Parachute;
+                cx.cd_s.set(self.recovery.cd_s);
+                if let Some((main_cd_s, main_alt)) = main {
+                    if loc.height <= main_alt {
+                        // Already below the main altitude: the main deploys at once.
+                        cx.cd_s.set(main_cd_s);
+                        sum.main_deploy_time = Some(t);
+                        sum.main_deploy_altitude = Some(loc.height);
+                    } else {
+                        main_pending = true;
+                    }
+                }
+            } else if main_pending && phase == Phase::Parachute && loc_prev.height > main.unwrap().1 && loc.height <= main.unwrap().1 {
+                // Descent through the main altitude inside this step: go back to the crossing
+                // (cubic Hermite position, linear velocity) and continue with the main's drag area.
+                let (main_cd_s, main_alt) = main.unwrap();
+                let fm = (loc_prev.height - main_alt) / (loc_prev.height - loc.height);
+                let tc = t - h + fm * h;
+                let pc = hermite_pos(&prev, &s, h, fm);
+                s = State { pos: pc, ..lerp_state(&prev, &s, fm) };
+                t = tc;
+                loc = frame.local(s.pos);
+                cx.cd_s.set(main_cd_s);
+                main_pending = false;
+                sum.main_deploy_time = Some(tc);
+                sum.main_deploy_altitude = Some(main_alt);
+                continue;
             }
             if phase == before {
                 fsal = next_fsal;
@@ -830,6 +959,16 @@ impl<'a> Simulation<'a> {
         }
         Ok(SimResult { samples, summary: sum, evals: evals.get(), max_quat_norm_error: max_qerr })
     }
+}
+
+/// Largest speed [m/s] and altitude [m] the integration may reach before it counts as diverged.
+const MAX_SPEED: f64 = 8000.0;
+const MAX_ALTITUDE: f64 = 1.0e6;
+
+/// Cubic Hermite position at fraction `f` of the step `a -> b` of length `h` (positions and velocities at the ends).
+fn hermite_pos(a: &State, b: &State, h: f64, f: f64) -> Vec3 {
+    let (f2, f3) = (f * f, f * f * f);
+    a.pos * (2.0 * f3 - 3.0 * f2 + 1.0) + a.vel * (h * (f3 - 2.0 * f2 + f)) + b.pos * (-2.0 * f3 + 3.0 * f2) + b.vel * (h * (f3 - f2))
 }
 
 fn finite_state(s: &State) -> bool {
@@ -896,7 +1035,7 @@ mod tests {
             motor,
             motor_aft_x: 1.0,
             launch: launch(90.0),
-            recovery: Recovery { enabled: false, cd_s: 0.0, delay: 0.0 },
+            recovery: Recovery { enabled: false, cd_s: 0.0, delay: 0.0, main_cd_s: None, main_altitude: None },
             wind: wind(0.0),
             atmosphere: AtmosphereModel::default(),
             earth: Earth::default(),
@@ -925,7 +1064,7 @@ mod tests {
         let mut sim = vacuum_sim(&table, &motor);
         sim.fin_cant_deg = fin_cant;
         let frame = Frame::new(&sim.earth, &sim.launch);
-        let cx = Ctx { frame, rail: frame.from_launch_enu(sim.rail_dir_enu()) };
+        let cx = Ctx { frame, rail: frame.from_launch_enu(sim.rail_dir_enu()), cd_s: Default::default() };
         let q = sim.initial_attitude(&frame);
         let x_b = q.to_mat().col(0);
         let s = State { pos: frame.origin(), vel: x_b * (50.0 * sign), q, w: Vec3::ZERO };
@@ -962,6 +1101,87 @@ mod tests {
     }
 
     #[test]
+    fn unphysical_state_is_divergence() {
+        let g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
+        let model = AeroModel::new(g, AeroOptions::default());
+        let table = AeroTable::build(&model, String::new(), Extrapolation::Linear);
+        let (_, motor) = sample_parts();
+        let mut sim = sample_sim(&table, &motor, 0.0);
+        sim.settings.dt = 5.0;
+        let e = format!("{:#}", sim.run(Descent::Ballistic, false).err().expect("diverges"));
+        assert!(e.contains("integration diverged at t =") && e.contains("is not physical") && e.contains("reduce sim.dt"), "{e}");
+    }
+
+    /// Terminal speed sqrt(2 m g / (rho Cd S)) with the density at `h` metres.
+    fn terminal(sim: &Simulation, mass: f64, cd_s: f64, h: f64) -> f64 {
+        (2.0 * mass * G0 / (sim.atmosphere.at(sim.launch.altitude + h).density * cd_s)).sqrt()
+    }
+
+    #[test]
+    fn dual_deploy_switches_to_main_terminal_speed() {
+        let g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
+        let model = AeroModel::new(g, AeroOptions::default());
+        let table = AeroTable::build(&model, String::new(), Extrapolation::Linear);
+        let (_, motor) = sample_parts();
+        for integrator in [IntegratorKind::Rk4, IntegratorKind::Rk45] {
+            let mut sim = sample_sim(&table, &motor, 0.0);
+            sim.settings.integrator = integrator;
+            sim.recovery = Recovery { enabled: true, cd_s: 0.4, delay: 1.0, main_cd_s: Some(4.0), main_altitude: Some(300.0) };
+            let r = sim.run(Descent::Parachute, true).unwrap();
+            let sm = &r.summary;
+            assert_eq!(sm.main_deploy_altitude, Some(300.0));
+            let tm = sm.main_deploy_time.unwrap();
+            assert!(tm > sm.apogee_time + 1.0 && tm < sm.landing_time);
+            // Just above the main altitude the drogue is at its terminal speed ...
+            let above = r.samples.iter().filter(|s| s.t < tm && s.alt > 340.0 && s.alt < 400.0 && s.phase == Phase::Parachute).last().unwrap();
+            let vd = terminal(&sim, 8.0, 0.4, above.alt);
+            assert!((above.airspeed / vd - 1.0).abs() < 0.05, "{integrator:?} drogue {} vs {vd}", above.airspeed);
+            // ... and below it the descent settles to the main's terminal speed.
+            let below = r.samples.iter().filter(|s| s.t > tm && s.alt > 5.0).last().unwrap();
+            let vm = terminal(&sim, 8.0, 4.0, below.alt);
+            assert!((below.airspeed / vm - 1.0).abs() < 0.05, "{integrator:?} main {} vs {vm}", below.airspeed);
+            assert!((sm.landing_speed / terminal(&sim, 8.0, 4.0, 0.0) - 1.0).abs() < 0.05, "landing {}", sm.landing_speed);
+            let before = r.samples.iter().filter(|s| s.t <= tm).last().unwrap();
+            assert!(before.alt >= 300.0 - 1e-6 && below.alt < 300.0);
+            // Ballistic descent ignores the main parachute.
+            let b = sim.run(Descent::Ballistic, false).unwrap().summary;
+            assert_eq!(b.main_deploy_time, None);
+        }
+    }
+
+    #[test]
+    fn dual_deploy_main_at_once_when_drogue_deploys_below_main_altitude() {
+        let g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
+        let model = AeroModel::new(g, AeroOptions::default());
+        let table = AeroTable::build(&model, String::new(), Extrapolation::Linear);
+        let (_, motor) = sample_parts();
+        let mut sim = sample_sim(&table, &motor, 0.0);
+        sim.recovery = Recovery { enabled: true, cd_s: 0.4, delay: 1.0, main_cd_s: Some(4.0), main_altitude: Some(1.0e5) };
+        let sm = sim.run(Descent::Parachute, false).unwrap().summary;
+        assert!((sm.main_deploy_time.unwrap() - (sm.apogee_time + 1.0)).abs() < 0.01);
+    }
+
+    #[test]
+    fn dual_deploy_validation() {
+        let mk = |c: Option<f64>, a: Option<f64>| Recovery { enabled: true, cd_s: 1.0, delay: 1.0, main_cd_s: c, main_altitude: a };
+        assert!(mk(None, None).validate().is_ok() && mk(Some(3.0), Some(200.0)).validate().is_ok());
+        for (c, a, needle) in [
+            (Some(3.0), None, "together"),
+            (None, Some(200.0), "together"),
+            (Some(0.0), Some(200.0), "main_cd_s must be positive"),
+            (Some(f64::NAN), Some(200.0), "main_cd_s must be positive"),
+            (Some(3.0), Some(-1.0), "main_altitude must be positive"),
+            (Some(3.0), Some(f64::INFINITY), "main_altitude must be positive"),
+        ] {
+            let e = mk(c, a).validate().unwrap_err().to_string();
+            assert!(e.contains(needle), "{e}");
+        }
+        let r: Recovery = serde_json::from_str(r#"{"enabled":true,"cd_s":1.0,"delay":1.0}"#).unwrap();
+        assert!(r.main().is_none());
+        assert!(serde_json::from_str::<Recovery>(r#"{"enabled":true,"cd_s":1.0,"delay":1.0,"main":2}"#).is_err());
+    }
+
+    #[test]
     fn touchdown_and_rail_exit_are_interpolated() {
         let (table, motor) = vacuum_parts();
         // Vacuum, vertical: touchdown speed equals the launch-apogee drop exactly; coarse dt must not matter.
@@ -995,6 +1215,20 @@ mod tests {
         assert!(r.summary.landing_distance < 1e-6);
     }
 
+    #[test]
+    fn hermite_position_is_exact_for_free_fall_and_gives_the_apogee() {
+        // z(t) = 100 + 40 t - 4.9 t^2 over a step of 7 s starting at t = 1: apogee at t = 40/9.8.
+        let st = |t: f64| State { pos: Vec3::new(0.0, 0.0, 100.0 + 40.0 * t - 4.9 * t * t), vel: Vec3::new(0.0, 0.0, 40.0 - 9.8 * t), q: Quat::IDENTITY, w: Vec3::ZERO };
+        let (a, b, h) = (st(1.0), st(8.0), 7.0);
+        let f = a.vel.z / (a.vel.z - b.vel.z);
+        let p = hermite_pos(&a, &b, h, f);
+        let t_apo = 40.0 / 9.8;
+        assert!((1.0 + h * f - t_apo).abs() < 1e-12);
+        assert!((p.z - (100.0 + 40.0 * t_apo - 4.9 * t_apo * t_apo)).abs() < 1e-9, "{}", p.z);
+        // End of the step would be 4.9 * (8 - 40/9.8)^2 below the apogee.
+        assert!(b.pos.z < p.z - 50.0);
+    }
+
     fn sample_sim<'a>(table: &'a AeroTable, motor: &'a Motor, wind: f64) -> Simulation<'a> {
         Simulation {
             table,
@@ -1002,7 +1236,7 @@ mod tests {
             motor,
             motor_aft_x: 1.5,
             launch: launch(85.0),
-            recovery: Recovery { enabled: true, cd_s: 3.5, delay: 1.0 },
+            recovery: Recovery { enabled: true, cd_s: 3.5, delay: 1.0, main_cd_s: None, main_altitude: None },
             wind: Wind::from_config(&WindConfig { speed: wind, direction_deg: 270.0, ..Default::default() }).unwrap(),
             atmosphere: AtmosphereModel::default(),
             earth: Earth::default(),
@@ -1380,7 +1614,7 @@ mod tests {
 
     /// Integrates the torque-free rotation of a state with the given integrator.
     fn spin_free(sim: &Simulation, i: IntegratorKind, at: AttitudeKind, w0: Vec3, tend: f64) -> (State, Vec3, f64) {
-        let cx = Ctx { frame: Frame::new(&sim.earth, &sim.launch), rail: Vec3::new(0.0, 0.0, 1.0) };
+        let cx = Ctx { frame: Frame::new(&sim.earth, &sim.launch), rail: Vec3::new(0.0, 0.0, 1.0), cd_s: Default::default() };
         let stepper = Stepper::new(i, at);
         let t0 = 100.0; // after burnout: no thrust, no propellant
         let mut s = State { pos: cx.frame.origin(), vel: Vec3::ZERO, q: Quat::IDENTITY, w: w0 };
@@ -1433,7 +1667,7 @@ mod tests {
         let aligned = vacuum_sim(&table, &motor);
         let mut mis = aligned.clone();
         mis.thrust_line = ThrustLine { misalignment_deg: 2.0, misalignment_azimuth_deg: 90.0, offset: [0.0, 0.0] };
-        let cx = Ctx { frame: Frame::new(&aligned.earth, &aligned.launch), rail: Vec3::new(0.0, 0.0, 1.0) };
+        let cx = Ctx { frame: Frame::new(&aligned.earth, &aligned.launch), rail: Vec3::new(0.0, 0.0, 1.0), cd_s: Default::default() };
         let s = State { pos: cx.frame.origin(), vel: Vec3::ZERO, q: Quat::IDENTITY, w: Vec3::ZERO };
         let (a, _) = aligned.deriv(&cx, 1.0, &s, Phase::Free);
         let (b, _) = mis.deriv(&cx, 1.0, &s, Phase::Free);
@@ -1457,7 +1691,7 @@ mod tests {
         let (table, motor) = vacuum_parts();
         let mut sim = vacuum_sim(&table, &motor);
         sim.thrust_line = ThrustLine { misalignment_deg: 0.0, misalignment_azimuth_deg: 0.0, offset: [0.01, 0.0] };
-        let cx = Ctx { frame: Frame::new(&sim.earth, &sim.launch), rail: Vec3::new(0.0, 0.0, 1.0) };
+        let cx = Ctx { frame: Frame::new(&sim.earth, &sim.launch), rail: Vec3::new(0.0, 0.0, 1.0), cd_s: Default::default() };
         let s = State { pos: cx.frame.origin(), vel: Vec3::ZERO, q: Quat::IDENTITY, w: Vec3::ZERO };
         let (b, _) = sim.deriv(&cx, 1.0, &s, Phase::Free);
         // (r_n - r_cg) x (T, 0, 0) with r_n - r_cg = (-lever, 0.01, 0): z component = -0.01 T.

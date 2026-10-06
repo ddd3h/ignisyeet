@@ -249,7 +249,9 @@ impl Perturbation {
         if self.wind_speed != 0.0 || self.wind_direction_deg != 0.0 {
             s.wind = base.wind.with_speed_direction((base.wind.speed + self.wind_speed).max(0.0), (base.wind.direction_deg + self.wind_direction_deg).rem_euclid(360.0));
         }
-        s.recovery.cd_s *= factor(self.parachute_cd_s_scale);
+        let k = factor(self.parachute_cd_s_scale);
+        s.recovery.cd_s *= k;
+        s.recovery.main_cd_s = s.recovery.main_cd_s.map(|c| c * k);
         s
     }
 }
@@ -484,6 +486,24 @@ pub fn run_monte_carlo_with_progress(cfg: &MonteCarloConfig, base: &Simulation, 
 }
 
 fn run_wind_grid(cfg: &DispersionConfig, base: &Simulation, recovery_enabled: bool, progress: &(dyn Fn(&Case, &Summary) + Sync)) -> Result<(Vec<Case>, Vec<Summary>)> {
+    let (cases, results) = run_wind_grid_detailed(cfg, base, recovery_enabled, progress);
+    let summaries = cases
+        .iter()
+        .zip(results)
+        .map(|(c, r)| r.unwrap_or_else(|_| Summary::failed(c.descent, c.wind_speed, c.wind_direction_deg)))
+        .collect();
+    Ok((cases, summaries))
+}
+
+/// Wind-grid study keeping the error of every failed case (the other cases are not affected by it).
+/// Cases and results are in matching order; `progress` is also called for failed cases, with a
+/// NaN [`Summary::failed`].
+pub fn run_wind_grid_detailed(
+    cfg: &DispersionConfig,
+    base: &Simulation,
+    recovery_enabled: bool,
+    progress: &(dyn Fn(&Case, &Summary) + Sync),
+) -> (Vec<Case>, Vec<std::result::Result<Summary, String>>) {
     let n = cfg.directions;
     let mut modes = vec![Descent::Ballistic];
     if recovery_enabled {
@@ -495,18 +515,24 @@ fn run_wind_grid(cfg: &DispersionConfig, base: &Simulation, recovery_enabled: bo
             cfg.wind_speeds.iter().flat_map(move |&v| (0..n).map(move |k| Case { descent: m, wind_speed: v, wind_direction_deg: 360.0 * k as f64 / n as f64 }))
         })
         .collect();
-    let summaries = cases
+    let results = cases
         .par_iter()
         .map(|c| {
             let mut s = base.clone();
             s.wind = base.wind.with_speed_direction(c.wind_speed, c.wind_direction_deg);
-            s.run(c.descent, false).map(|r| {
-                progress(c, &r.summary);
-                r.summary
-            })
+            match s.run(c.descent, false) {
+                Ok(r) => {
+                    progress(c, &r.summary);
+                    Ok(r.summary)
+                }
+                Err(e) => {
+                    progress(c, &Summary::failed(c.descent, c.wind_speed, c.wind_direction_deg));
+                    Err(format!("{e:#}"))
+                }
+            }
         })
-        .collect::<Result<_>>()?;
-    Ok((cases, summaries))
+        .collect();
+    (cases, results)
 }
 
 #[cfg(test)]
@@ -543,7 +569,7 @@ mod tests {
             motor,
             motor_aft_x: 1.0,
             launch: Launch { latitude: 35.0, longitude: 139.0, altitude: 0.0, rail_length: 3.0, elevation_deg: 90.0, azimuth_deg: 0.0, roll_deg: 0.0 },
-            recovery: Recovery { enabled: true, cd_s: 1.0, delay: 1.0 },
+            recovery: Recovery { enabled: true, cd_s: 1.0, delay: 1.0, main_cd_s: None, main_altitude: None },
             wind: Wind::from_config(&WindConfig { model: WindModel::Constant, speed: 5.0, direction_deg: 270.0, ..Default::default() }).unwrap(),
             atmosphere: AtmosphereModel::default(),
             earth: Earth::default(),
@@ -694,6 +720,37 @@ mod tests {
     }
 
     #[test]
+    fn wind_grid_records_errored_cases_instead_of_aborting() {
+        let (t, m) = (table(), motor());
+        let b = base(&t, &m);
+        // An absurd wind speed (1e12 m/s) makes its cases diverge; the finite ones are unaffected.
+        let dcfg = DispersionConfig { wind_speeds: vec![2.0, 1.0e12], directions: 2, ..Default::default() };
+        let (cases, res) = run_wind_grid_detailed(&dcfg, &b, true, &|_, _| {});
+        assert_eq!((cases.len(), res.len()), (8, 8));
+        for (c, r) in cases.iter().zip(&res) {
+            if c.wind_speed > 1e6 {
+                assert!(r.is_err(), "{r:?}");
+            } else {
+                assert!(r.as_ref().unwrap().landed());
+            }
+        }
+        let (cases, sums) = run(&dcfg, &b, true).unwrap();
+        assert_eq!(sums.len(), cases.len());
+        assert_eq!(sums.iter().filter(|s| !s.landed()).count(), 4);
+    }
+
+    #[test]
+    fn parachute_cd_s_scale_applies_to_both_canopies() {
+        let (t, m) = (table(), motor());
+        let mut b = base(&t, &m);
+        b.recovery.main_cd_s = Some(4.0);
+        b.recovery.main_altitude = Some(100.0);
+        let p = Perturbation { parachute_cd_s_scale: 0.5, ..Default::default() };
+        let s = p.simulation(&b, &m);
+        assert_eq!((s.recovery.cd_s, s.recovery.main_cd_s, s.recovery.main_altitude), (1.5, Some(6.0), Some(100.0)));
+    }
+
+    #[test]
     fn thread_count_does_not_change_results() {
         let (t, m) = (table(), motor());
         let b = base(&t, &m);
@@ -801,6 +858,8 @@ mod tests {
             landing_lon: 139.0,
             landing_distance: d,
             landing_speed: 10.0,
+            main_deploy_time: None,
+            main_deploy_altitude: None,
         }
     }
 

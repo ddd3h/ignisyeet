@@ -583,6 +583,9 @@ pub fn wind_grid_panel(cases: &[Case], results: &[Summary], elapsed: Duration) -
     p
 }
 
+/// Shown instead of the error ellipses when fewer than two samples landed.
+pub const ELLIPSE_NA: &str = "n/a (needs at least 2 landed samples)";
+
 pub fn monte_carlo_panel(sm: &McSummary, elapsed: Duration, n_rows: usize) -> Panel {
     let s = sep();
     let mut p = Panel::new("Monte Carlo result");
@@ -610,17 +613,29 @@ pub fn monte_carlo_panel(sm: &McSummary, elapsed: Duration, n_rows: usize) -> Pa
         }
         let (e1, e3) = (d.landing.ellipse_1sigma, d.landing.ellipse_3sigma);
         p.row("mean landing", format!("E {} N {}", val(format!("{:.1}", d.landing.mean_east), "m"), val(format!("{:.1}", d.landing.mean_north), "m")));
-        p.row("apogee", format!("{} {} {}", style(format!("{:.1} m", d.apogee_mean)).bold().green(), dim("+-"), val(format!("{:.1}", d.apogee_std), "m")));
         p.row(
-            "1-sigma",
+            "apogee",
             format!(
-                "{} x {}{s}bearing {} deg",
-                val(format!("{:.1}", e1.semi_major), "m"),
-                val(format!("{:.1}", e1.semi_minor), "m"),
-                val(format!("{:.0}", e1.major_axis_bearing_deg), "")
+                "{} {} {}",
+                style(format!("{:.1} m", d.apogee_mean)).bold().green(),
+                dim("+-"),
+                if d.apogee_std.is_finite() { val(format!("{:.1}", d.apogee_std), "m") } else { dim("n/a").to_string() }
             ),
         );
-        p.row("3-sigma", format!("{} x {}", val(format!("{:.1}", e3.semi_major), "m"), val(format!("{:.1}", e3.semi_minor), "m")));
+        if d.landing.n < 2 {
+            p.row("1/3-sigma", ELLIPSE_NA.to_string());
+        } else {
+            p.row(
+                "1-sigma",
+                format!(
+                    "{} x {}{s}bearing {} deg",
+                    val(format!("{:.1}", e1.semi_major), "m"),
+                    val(format!("{:.1}", e1.semi_minor), "m"),
+                    val(format!("{:.0}", e1.major_axis_bearing_deg), "")
+                ),
+            );
+            p.row("3-sigma", format!("{} x {}", val(format!("{:.1}", e3.semi_major), "m"), val(format!("{:.1}", e3.semi_minor), "m")));
+        }
         let bound = if d.max_landing_distance_is_lower_bound { "\u{2265} " } else { "" };
         p.row(
             "max landing",
@@ -646,6 +661,30 @@ pub fn monte_carlo_panel(sm: &McSummary, elapsed: Duration, n_rows: usize) -> Pa
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn monte_carlo_panel_with_one_landed_sample_has_no_nan_ellipses() {
+        let st = sim::dispersion::DescentStats {
+            descent: Descent::Ballistic,
+            failed: 0,
+            not_landed: 0,
+            complete: true,
+            max_landing_distance_is_lower_bound: false,
+            landing_distance_p50: 5.0,
+            landing_distance_p90: 5.0,
+            landing_distance_p99: 5.0,
+            landing: sim::dispersion::landing_statistics(&[(3.0, 4.0)]),
+            max_landing_distance: 5.0,
+            max_landing_distance_sample: Some(0),
+            apogee_mean: 100.0,
+            apogee_std: f64::NAN,
+        };
+        let sm = sim::dispersion::McSummary { samples: 1, seed: 0, descents: vec![st] };
+        let p = monte_carlo_panel(&sm, Duration::ZERO, 1);
+        let text = console::strip_ansi_codes(&ui().render_panel(&p).join("\n")).to_string();
+        assert!(text.contains("n/a (needs at least 2 landed samples)"), "{text}");
+        assert!(!text.contains("NaN") && !text.contains("nan"), "{text}");
+    }
 
     #[test]
     fn config_panel_shows_integrator_and_attitude() {

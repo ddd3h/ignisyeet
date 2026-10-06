@@ -656,10 +656,11 @@ pub fn monte_carlo_panel(sm: &McSummary, elapsed: Duration, n_rows: usize) -> Pa
         p.row(
             "distance",
             format!(
-                "P50 {}{s}P90 {}{s}P99 {}",
+                "P50 {}{s}P90 {}{s}P99 {}{s}P99.9 {}",
                 val(format!("{:.1}", d.landing_distance_p50), "m"),
                 val(format!("{:.1}", d.landing_distance_p90), "m"),
-                val(format!("{:.1}", d.landing_distance_p99), "m")
+                val(format!("{:.1}", d.landing_distance_p99), "m"),
+                val(format!("{:.1}", d.landing_distance_p999), "m")
             ),
         );
     }
@@ -681,6 +682,7 @@ mod tests {
             landing_distance_p50: 5.0,
             landing_distance_p90: 5.0,
             landing_distance_p99: 5.0,
+            landing_distance_p999: 5.0,
             landing: sim::dispersion::landing_statistics(&[(3.0, 4.0)]),
             max_landing_distance: 5.0,
             max_landing_distance_sample: Some(0),
@@ -692,6 +694,7 @@ mod tests {
         let text = console::strip_ansi_codes(&ui().render_panel(&p).join("\n")).to_string();
         assert!(text.contains("n/a (needs at least 2 landed samples)"), "{text}");
         assert!(!text.contains("NaN") && !text.contains("nan"), "{text}");
+        assert!(text.contains("P99.9 5.0 m"), "{text}");
     }
 
     #[test]

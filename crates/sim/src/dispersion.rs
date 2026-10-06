@@ -419,6 +419,7 @@ pub struct DescentStats {
     pub landing_distance_p50: f64,
     pub landing_distance_p90: f64,
     pub landing_distance_p99: f64,
+    pub landing_distance_p999: f64,
     #[serde(flatten)]
     pub landing: PointStats,
     pub max_landing_distance: f64,
@@ -495,6 +496,7 @@ pub fn summarize(rows: &[McRow], samples: usize, seed: u64) -> McSummary {
                 landing_distance_p50: percentile(&dist, 50.0),
                 landing_distance_p90: percentile(&dist, 90.0),
                 landing_distance_p99: percentile(&dist, 99.0),
+                landing_distance_p999: percentile(&dist, 99.9),
                 landing: landing_statistics(&pts),
                 max_landing_distance: dmax,
                 max_landing_distance_sample: imax,
@@ -1175,6 +1177,7 @@ mod tests {
         assert!(!st.complete && st.max_landing_distance_is_lower_bound);
         assert_eq!(st.max_landing_distance, 300.0);
         assert_eq!((st.landing_distance_p50, st.landing_distance_p90), (200.0, 280.0));
+        assert!((st.landing_distance_p999 - 299.8).abs() < 1e-9, "{}", st.landing_distance_p999);
         let all = summarize(&rows[..3], 3, 1);
         assert!(all.descents[0].complete && !all.descents[0].max_landing_distance_is_lower_bound);
     }

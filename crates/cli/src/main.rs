@@ -2266,8 +2266,8 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
                 println!("    max landing distance {:.1} m (sample {})", d.max_landing_distance, d.max_landing_distance_sample.unwrap_or(0));
             }
             println!(
-                "    landing distance P50 {:.1} m, P90 {:.1} m, P99 {:.1} m (landed samples)",
-                d.landing_distance_p50, d.landing_distance_p90, d.landing_distance_p99
+                "    landing distance P50 {:.1} m, P90 {:.1} m, P99 {:.1} m, P99.9 {:.1} m (landed samples)",
+                d.landing_distance_p50, d.landing_distance_p90, d.landing_distance_p99, d.landing_distance_p999
             );
         }
     } else if u.rich() {

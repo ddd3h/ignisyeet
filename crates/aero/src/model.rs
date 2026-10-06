@@ -106,6 +106,32 @@ pub fn plate_cd(m: f64) -> f64 {
     }
 }
 
+/// Supersonic fin centre of pressure as a fraction of the mean aerodynamic chord, from `ab = A beta`.
+///
+/// For `A beta >= 1.2` the expression of Fleeman (Tactical Missile Design, 2001), used by Niskanen
+/// (2009) for M >= 2: `(A beta - 0.67) / (2 A beta - 1)`, which rises from 0.38 at 1.2 to 0.5 as
+/// `A beta -> inf`. It has a pole at `A beta = 0.5` and falls to the quarter chord at `A beta = 0.84`,
+/// so it is not used for small `A beta`. There the low-aspect-ratio (slender-wing) limit applies: the
+/// loading of a low-aspect-ratio wing does not depend on Mach number (R. T. Jones, "Properties of
+/// low-aspect-ratio pointed wings at speeds below and above the speed of sound", NACA Report 835,
+/// 1946), so the centre of pressure keeps its subsonic position, the quarter chord, for
+/// `A beta <= 0.84`. Between 0.84 and 1.2 a monotone C1 cubic Hermite in `A beta` joins the two
+/// (zero slope at 0.84, the slope of the expression at 1.2). The result is continuous in Mach and in
+/// the fin geometry and lies in [0.25, 0.5].
+pub fn supersonic_fin_cp_fraction(ab: f64) -> f64 {
+    const LO: f64 = 0.84;
+    const HI: f64 = 1.2;
+    let fleeman = |x: f64| (x - 0.67) / (2.0 * x - 1.0);
+    if ab <= LO {
+        0.25
+    } else if ab >= HI {
+        fleeman(ab).min(0.5)
+    } else {
+        let d_hi = 0.34 / (2.0 * HI - 1.0).powi(2);
+        hermite(ab, LO, HI, 0.25, fleeman(HI), 0.0, d_hi)
+    }
+}
+
 /// Bounds of the shape parameter `u = k t_end` of [`crossflow_blend`]. Within them the transition is the
 /// pure exponential saturation; beyond them (the attached-flow value close to the crossflow value, or
 /// an attached-flow slope near zero) `u` is held and the remaining slope goes into a bump that vanishes
@@ -312,13 +338,14 @@ impl AeroModel {
     }
 
     /// Fin centre of pressure (distance aft of the nose tip) at Mach `m`.
+    ///
+    /// Subsonic (M <= 0.5): the quarter chord of the mean aerodynamic chord (Barrowman). Supersonic
+    /// (M >= 2): the fraction [`supersonic_fin_cp_fraction`] of the MAC from `A beta`, `A` the aspect
+    /// ratio of an opposing fin pair `2 s^2 / A_fin`. In between a C1 Hermite in Mach (Niskanen 2009).
     pub fn fin_xcp(&self, m: f64) -> f64 {
         let Some(f) = &self.geom.fins else { return 0.0 };
         let ar = 2.0 * f.span * f.span / f.area().max(1e-12);
-        let sup = |m: f64| {
-            let ab = ar * beta(m);
-            ((ab - 0.67) / (2.0 * ab - 1.0)).clamp(0.25, 0.5)
-        };
+        let sup = |m: f64| supersonic_fin_cp_fraction(ar * beta(m));
         let frac = if m <= 0.5 {
             0.25
         } else if m >= 2.0 {
@@ -868,6 +895,50 @@ mod tests {
             let t = t_end * k as f64 / 50.0;
             let (l, r) = (crossflow_blend(t, t_end, 1.0, -1e-9, 3.0), crossflow_blend(t, t_end, 1.0, 1e-9, 3.0));
             assert!((l - r).abs() < 1e-6, "d0 through 0, t = {t}: {l} vs {r}");
+        }
+    }
+
+    #[test]
+    fn supersonic_fin_cp_is_continuous_for_small_aspect_ratio() {
+        // Aspect ratio of an opposing pair 2 s^2 / A = 0.25: AR beta passes 0.5 at Mach sqrt(5).
+        let m = rect_fins(0.0125, 0.10);
+        let f = m.geom.fins.clone().unwrap();
+        assert!((2.0 * f.span * f.span / f.area() - 0.25).abs() < 1e-12);
+        let (base, mac) = (f.x_le_root + f.mac_le_offset(), f.mac());
+        let frac = |mach: f64| (m.fin_xcp(mach) - base) / mac;
+        let mut mach = 0.0;
+        let mut prev = frac(mach);
+        while mach < 6.0 {
+            mach += 1e-3;
+            let x = frac(mach);
+            assert!((0.25 - 1e-12..=0.5 + 1e-12).contains(&x), "Mach {mach}: CP fraction {x}");
+            assert!((x - prev).abs() < 2e-3, "fin CP jumps at Mach {mach}: {prev} -> {x} of the MAC");
+            prev = x;
+        }
+        // The fraction itself: monotone, in [0.25, 0.5], C1 at the joins, Fleeman's value beyond 1.2.
+        let mut prev = supersonic_fin_cp_fraction(0.0);
+        for k in 1..=10000 {
+            let x = supersonic_fin_cp_fraction(k as f64 * 1e-3);
+            assert!(x >= prev - 1e-15 && (0.25..=0.5).contains(&x), "A beta {}: {x}", k as f64 * 1e-3);
+            prev = x;
+        }
+        for x0 in [0.84, 1.2] {
+            let h = 1e-7;
+            let (l, c, r) = (supersonic_fin_cp_fraction(x0 - h), supersonic_fin_cp_fraction(x0), supersonic_fin_cp_fraction(x0 + h));
+            assert!(((c - l) / h - (r - c) / h).abs() < 1e-4, "slope jump at A beta = {x0}");
+        }
+        assert!((supersonic_fin_cp_fraction(2.25) - (2.25 - 0.67) / 3.5).abs() < 1e-15);
+        // Other aspect ratios: continuous as well.
+        for (span, chord) in [(0.03, 0.10), (0.05, 0.10), (0.15, 0.10)] {
+            let m = rect_fins(span, chord);
+            let mut prev = m.fin_xcp(0.0);
+            let mut mach = 0.0;
+            while mach < 6.0 {
+                mach += 1e-3;
+                let x = m.fin_xcp(mach);
+                assert!((x - prev).abs() < 2e-3 * chord, "span {span}: fin CP jumps at Mach {mach}");
+                prev = x;
+            }
         }
     }
 }

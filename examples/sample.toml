@@ -175,8 +175,9 @@ cg = 0.01                  # absolute [m]: dry centre of gravity
 # cn_scale sigma covering the method spread (compare with method = "panel").
 cn_scale = 0.10            # relative: normal force CN, CN_alpha and pitch damping
 ca_scale = 0.15            # relative: axial force / drag CA, power on and off
-elevation_deg = 0.5        # absolute [deg]: rail elevation
-azimuth_deg = 1.0          # absolute [deg]: rail azimuth
+elevation_deg = 0.5        # absolute [deg]: rail tilt (pointing error), isotropic: one normal in the
+                           # rail's vertical plane and one across it; the tilt angle is Rayleigh distributed
+azimuth_deg = 1.0          # absolute [deg]: azimuth setting error, rotation of the rail about the vertical
 wind_speed = 1.0           # absolute [m/s]: around [wind] speed (clamped at 0)
 wind_direction_deg = 15.0  # absolute [deg]: around [wind] direction_deg
 parachute_cd_s_scale = 0.1 # relative: parachute Cd*S

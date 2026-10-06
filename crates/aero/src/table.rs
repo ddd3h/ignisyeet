@@ -474,6 +474,14 @@ impl AeroTable {
         let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
         let header: Vec<&str> = text.lines().next().unwrap_or("").split(',').map(str::trim).collect();
         let nc = if meta.kind == TableKind::General { 3 } else { 2 };
+        // Values are read by position, so the header must name the columns in the expected order
+        // (an axisymmetric table may omit the two roll columns: version-1 files).
+        let expected_header = if meta.kind == TableKind::General { HEADER_GEN } else { HEADER };
+        let expected: Vec<&str> = expected_header.split(',').collect();
+        let ok = header.len() == expected.len() || (meta.kind == TableKind::Axisymmetric && header.len() == N_FIELDS_V1 + 2);
+        if !ok || !header.iter().zip(&expected).all(|(h, e)| h.eq_ignore_ascii_case(e)) {
+            bail!("aero table {}: unexpected CSV header `{}`; expected `{expected_header}`", csv_path.display(), header.join(","));
+        }
         let rows = text.lines().enumerate().skip(1).filter(|(_, l)| !l.trim().is_empty()).map(|(ln, line)| {
             let v = line.split(',').map(|s| s.trim().parse::<f64>()).collect::<Result<Vec<f64>, _>>().with_context(|| format!("bad row {} in {}: {line}", ln + 1, csv_path.display()))?;
             Ok::<_, anyhow::Error>((ln + 1, v))
@@ -903,6 +911,27 @@ mod tests {
         // A failing save (missing directory) reports an error and creates nothing.
         assert!(t.save(&dir.join("no_such_dir").join("t.csv")).is_err());
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_rejects_a_reordered_or_renamed_header() {
+        let (t, _) = table(Extrapolation::Linear);
+        let dir = std::env::temp_dir().join(format!("ignisyeet_aero_hdr_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("t.csv");
+        t.save(&p).unwrap();
+        AeroTable::load(&p).unwrap();
+        let text = std::fs::read_to_string(&p).unwrap();
+        let (first, rest) = text.split_once('\n').unwrap();
+        let swapped = first.replace("cn,ca_on,ca_off", "ca_on,cn,ca_off");
+        assert_ne!(swapped, first);
+        std::fs::write(&p, format!("{swapped}\n{rest}")).unwrap();
+        let e = AeroTable::load(&p).unwrap_err().to_string();
+        assert!(e.contains("unexpected CSV header") && e.contains("expected `mach,alpha_deg,cn,ca_on"), "{e}");
+        // Case and surrounding blanks are tolerated.
+        std::fs::write(&p, format!("{}\n{rest}", first.to_uppercase().replace(',', " , "))).unwrap();
+        AeroTable::load(&p).unwrap();
         let _ = std::fs::remove_dir_all(&dir);
     }
 

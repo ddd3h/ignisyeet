@@ -327,12 +327,16 @@ fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: f64) -> Vec<String>
     }
     let wind = &cfg.wind;
     if wind.model == sim::WindModel::Profile {
-        if let Some(top) = wind_profile_top(cfg) {
+        if let Some((bottom, top, _)) = wind_profile_extent(cfg) {
             if s.apogee > top {
                 w.push(format!("apogee {:.0} m is above the top of the wind profile ({top:.0} m): the wind above {top:.0} m is held at the top value", s.apogee));
             }
+            if bottom > 0.0 {
+                w.push(format!("the wind profile starts at {bottom:.0} m: the wind below is held at the lowest row"));
+            }
         }
     }
+    w.extend(parachute_warnings(cfg, s));
     // the profile model takes its speed from the table, not from wind.speed
     let wind_speed = if wind.model == sim::WindModel::Profile { s.wind_speed } else { wind_speed };
     if matches!(wind.model, sim::WindModel::Power | sim::WindModel::Log) && wind_speed != 0.0 && s.apogee > WIND_VALID_HEIGHT {
@@ -344,11 +348,51 @@ fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: f64) -> Vec<String>
     w
 }
 
-/// Top altitude [m] of the wind profile table, when it can be read.
-fn wind_profile_top(cfg: &Config) -> Option<f64> {
+/// Landing speed [m/s] above which a parachute descent is reported as too fast.
+const MAX_PARACHUTE_LANDING_SPEED: f64 = 15.0;
+
+/// Warnings about the parachute of a parachute-descent run that landed: it never deployed before
+/// landing, or the descent speed at landing is high.
+fn parachute_warnings(cfg: &Config, s: &Summary) -> Vec<String> {
+    let mut w = Vec::new();
+    if !(cfg.recovery.enabled && s.descent == Descent::Parachute && s.landed()) {
+        return w;
+    }
+    if s.drogue_deploy_time.is_none() {
+        w.push(format!(
+            "parachute descent landed at {:.0} m/s: the parachute did not deploy before landing (recovery.delay = {} s)",
+            s.landing_speed, cfg.recovery.delay
+        ));
+    } else if s.landing_speed > MAX_PARACHUTE_LANDING_SPEED {
+        w.push(format!(
+            "parachute descent landed at {:.1} m/s, which is above {MAX_PARACHUTE_LANDING_SPEED:.0} m/s: check recovery.cd_s",
+            s.landing_speed
+        ));
+    }
+    w
+}
+
+/// Warning when a wind-profile run (`what` names the study: "wind grid" or "Monte Carlo sample")
+/// scaled the profile by more than 3 or, for a nonzero wind, by less than 1/3: the largest
+/// deviation among `summaries`, with the resulting winds aloft.
+fn wind_scale_warning<'a>(cfg: &Config, what: &str, summaries: impl IntoIterator<Item = &'a Summary>) -> Option<String> {
+    let extreme = |k: f64| (k.ln()).abs();
+    let worst = summaries
+        .into_iter()
+        .filter_map(|s| s.wind_scale.map(|k| (k, s.wind_speed)))
+        .filter(|&(k, v)| k.is_finite() && k > 0.0 && (k > 3.0 || (k < 1.0 / 3.0 && v > 0.0)))
+        .max_by(|a, b| extreme(a.0).total_cmp(&extreme(b.0)))?;
+    let (k, v) = worst;
+    let aloft = wind_profile_extent(cfg).map_or(String::new(), |(_, _, vmax)| format!(": winds aloft up to {:.0} m/s", vmax * k));
+    Some(format!("wind profile scaled by up to {k:.1} ({what} {v:.1} m/s vs profile mean {:.1} m/s){aloft}", v / k))
+}
+
+/// (lowest altitude, top altitude, largest speed) of the wind profile table, when it can be read.
+fn wind_profile_extent(cfg: &Config) -> Option<(f64, f64, f64)> {
     let path = cfg.resolve(cfg.wind.profile.as_deref()?);
     let text = std::fs::read_to_string(path).ok()?;
-    sim::env::parse_wind_profile(strip_bom(&text)).ok()?.last().map(|p| p.height)
+    let rows = sim::env::parse_wind_profile(strip_bom(&text)).ok()?;
+    Some((rows.first()?.height, rows.last()?.height, rows.iter().map(|p| p.speed).fold(0.0, f64::max)))
 }
 
 /// `text` without a leading UTF-8 byte-order mark.
@@ -1205,6 +1249,12 @@ fn nominal_warnings(cfg: &Config, p: &Prepared, base: &Simulation) -> Vec<String
         Ok(r) => w.extend(flight_warnings_at(cfg, &r.summary, ref_speed)),
         Err(e) => w.push(format!("the nominal flight could not be simulated ({e:#}): stability and wind-model checks were skipped")),
     }
+    if cfg.recovery.enabled {
+        // The parachute descent is flown as well: it may never deploy or land too fast.
+        if let Ok(r) = base.run(Descent::Parachute, false) {
+            w.extend(parachute_warnings(cfg, &r.summary));
+        }
+    }
     w
 }
 
@@ -1239,9 +1289,9 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
             pb.inc(1);
         });
         pb.finish_and_clear();
-        r
+        r?
     } else {
-        sim::dispersion::run_wind_grid_detailed(&cfg.dispersion, &base, cfg.recovery.enabled, &|_, _| {})
+        sim::dispersion::run_wind_grid_detailed(&cfg.dispersion, &base, cfg.recovery.enabled, &|_, _| {})?
     };
     let (results, errors) = split_wind_grid(&cases, detailed);
     let mut modes: Vec<Descent> = Vec::new();
@@ -1259,6 +1309,7 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
         ));
     }
     warnings.extend(wind_grid_error_warnings(&cases, &errors));
+    warnings.extend(wind_scale_warning(cfg, "wind grid", results.iter()));
     warnings.extend(aero_range_warning(&p.table.out_of_range_stats()));
     let path = out_path(cfg, "dispersion.csv")?;
     write_wind_grid_csv(&path, &results, &errors)?;
@@ -1377,6 +1428,7 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
             d.descent, d.failed, r.summary.samples, d.not_landed, cfg.sim.max_time
         ));
     }
+    warnings.extend(wind_scale_warning(cfg, "Monte Carlo sample", r.rows.iter().filter_map(|row| row.result.as_ref().ok())));
     let range = p.table.out_of_range_stats();
     warnings.extend(aero_range_warning(&range));
     let path = out_path(cfg, "dispersion_mc.csv")?;
@@ -1566,7 +1618,7 @@ mod tests {
             landing_distance: 22.0,
             landing_speed: 30.0,
             main_deploy_time: None,
-            main_deploy_altitude: None,
+            main_deploy_altitude: None, drogue_deploy_time: None, wind_scale: None,
         }
     }
 
@@ -1748,6 +1800,61 @@ mod tests {
         cfg.wind.speed = 0.0;
         assert!(flight_warnings(&cfg, &high).is_empty());
         assert_eq!(strip_bom("\u{feff}a"), "a");
+    }
+
+    #[test]
+    fn profile_warning_when_the_table_starts_above_the_ground() {
+        let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
+        let dir = std::env::temp_dir().join(format!("ignisyeet_wprof_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("w.csv"), "altitude_m,speed,direction_deg\n150,3,270\n6000,10,270\n").unwrap();
+        cfg.wind.model = sim::WindModel::Profile;
+        cfg.wind.profile = Some(dir.join("w.csv"));
+        let s = sim::Summary { min_stability_cal: 2.0, stability_at_rail_exit: 2.0, apogee: 500.0, ..sample_summary() };
+        let w = flight_warnings(&cfg, &s);
+        assert_eq!(w, vec!["the wind profile starts at 150 m: the wind below is held at the lowest row".to_string()]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn wind_scale_warning_texts() {
+        let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
+        let dir = std::env::temp_dir().join(format!("ignisyeet_wscale_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("w.csv"), "altitude_m,speed,direction_deg\n0,1,270\n6000,5,270\n").unwrap();
+        cfg.wind.model = sim::WindModel::Profile;
+        cfg.wind.profile = Some(dir.join("w.csv"));
+        let run = |k: f64, v: f64| sim::Summary { wind_scale: Some(k), wind_speed: v, ..sample_summary() };
+        // within 1/3 .. 3: no warning; non-profile runs have no scale
+        assert!(wind_scale_warning(&cfg, "wind grid", [&run(1.0, 3.0), &run(2.9, 8.7), &run(0.4, 1.2), &sim::Summary { wind_scale: None, ..sample_summary() }]).is_none());
+        // calm case (v = 0, k = 0) is not a warning
+        assert!(wind_scale_warning(&cfg, "wind grid", [&run(0.0, 0.0)]).is_none());
+        // the largest deviation is named, with the winds aloft (largest row 5 m/s x k)
+        let w = wind_scale_warning(&cfg, "wind grid", [&run(4.5, 9.0), &run(2.0, 4.0), &run(3.5, 7.0)]).unwrap();
+        assert_eq!(w, "wind profile scaled by up to 4.5 (wind grid 9.0 m/s vs profile mean 2.0 m/s): winds aloft up to 22 m/s");
+        let w = wind_scale_warning(&cfg, "Monte Carlo sample", [&run(0.1, 0.3)]).unwrap();
+        assert!(w.starts_with("wind profile scaled by up to 0.1 (Monte Carlo sample 0.3 m/s vs profile mean 3.0 m/s)"), "{w}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn parachute_warnings_texts() {
+        let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
+        cfg.recovery.enabled = true;
+        cfg.recovery.delay = 5000.0;
+        let base = sim::Summary { descent: Descent::Parachute, landing_time: 100.0, landing_east: 1.0, landing_north: 1.0, ..sample_summary() };
+        let never = sim::Summary { drogue_deploy_time: None, landing_speed: 178.0, ..base.clone() };
+        let w = parachute_warnings(&cfg, &never);
+        assert_eq!(w, vec!["parachute descent landed at 178 m/s: the parachute did not deploy before landing (recovery.delay = 5000 s)".to_string()]);
+        let fast = sim::Summary { drogue_deploy_time: Some(10.0), landing_speed: 22.04, ..base.clone() };
+        assert_eq!(parachute_warnings(&cfg, &fast), vec!["parachute descent landed at 22.0 m/s, which is above 15 m/s: check recovery.cd_s".to_string()]);
+        let ok = sim::Summary { drogue_deploy_time: Some(10.0), landing_speed: 6.0, ..base.clone() };
+        assert!(parachute_warnings(&cfg, &ok).is_empty());
+        // ballistic runs, disabled recovery and unlanded runs are not judged
+        assert!(parachute_warnings(&cfg, &sim::Summary { descent: Descent::Ballistic, ..never.clone() }).is_empty());
+        assert!(parachute_warnings(&cfg, &unlanded(never.clone())).is_empty());
+        cfg.recovery.enabled = false;
+        assert!(parachute_warnings(&cfg, &never).is_empty());
     }
 
     #[test]

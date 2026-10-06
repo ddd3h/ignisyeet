@@ -2,6 +2,7 @@
 // Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 mod config;
 mod kml;
+mod stability;
 mod ui;
 mod view;
 
@@ -1220,7 +1221,12 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
         );
     }
     let t0 = std::time::Instant::now();
-    let r = fly(cfg, &simulation(cfg, &p)?, descent)?;
+    let mut r = fly(cfg, &simulation(cfg, &p)?, descent)?;
+    // General aero table: the verdict uses the separate pitch and yaw margins.
+    let axis = stability::axis_margins(&p.table, &r.summary, &r.samples);
+    if let Some(m) = &axis {
+        stability::apply(&mut r.summary, m);
+    }
     u.done_line("Flight simulated", &format!("{descent:?}, {} samples, {} RHS evals", r.samples.len(), r.evals), t0.elapsed());
     let path = out_path(cfg, "trajectory.csv")?;
     write_trajectory(&path, &r.samples)?;
@@ -1233,13 +1239,25 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
     warnings.extend(aero_range_warning(&range));
     let mut json = summary_json(cfg, s, &warnings)?;
     json["aero_table_range"] = aero_range_json(&range);
+    if let Some(m) = &axis {
+        json["static_margin_pitch_min_cal"] = finite_json(min_finite(m.pitch_min, m.rail_pitch));
+        json["static_margin_yaw_min_cal"] = finite_json(min_finite(m.yaw_min, m.rail_yaw));
+    }
     let summary_path = out_path(cfg, "summary.json")?;
     std::fs::write(&summary_path, serde_json::to_string_pretty(&json)?)?;
     if u.plain() {
         println!("Flight ({descent:?}, wind {:.1} m/s from {:.0} deg)", s.wind_speed, s.wind_direction_deg);
         println!("  rail exit       {:.2} s, {:.1} m/s, stability {:.2} cal", s.rail_exit_time, s.rail_exit_speed, s.stability_at_rail_exit);
         println!("  max speed       {:.1} m/s (Mach {:.2}), max q {:.1} kPa", s.max_speed, s.max_mach, s.max_dyn_pressure / 1000.0);
-        println!("  min static margin {:.2} cal (free flight {:.2} cal)", static_margin_min(s), s.min_stability_cal);
+        let free = if s.min_stability_cal.is_finite() { format!("{:.2} cal", s.min_stability_cal) } else { "n/a (airspeed < 10 m/s)".to_string() };
+        println!("  min static margin {:.2} cal (free flight {free})", static_margin_min(s));
+        if let Some(m) = &axis {
+            println!(
+                "  pitch / yaw     {:.2} cal / {:.2} cal (general aero table: smallest margin in each plane)",
+                min_finite(m.pitch_min, m.rail_pitch),
+                min_finite(m.yaw_min, m.rail_yaw)
+            );
+        }
         println!("  apogee          {:.1} m at {:.2} s", s.apogee, s.apogee_time);
         if let (Some(t), Some(h)) = (s.main_deploy_time, s.main_deploy_altitude) {
             println!("  main deploy     {h:.1} m at {t:.2} s");
@@ -1272,6 +1290,20 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
             }
         }
         Ok(unstable.or_else(|| Some(format!("the flight did not land within sim.max_time = {} s", cfg.sim.max_time))))
+    }
+}
+
+/// The smaller finite value (NaN when neither is finite).
+fn min_finite(a: f64, b: f64) -> f64 {
+    [a, b].into_iter().filter(|v| v.is_finite()).min_by(f64::total_cmp).unwrap_or(f64::NAN)
+}
+
+/// A finite number as JSON, null otherwise.
+fn finite_json(v: f64) -> serde_json::Value {
+    if v.is_finite() {
+        v.into()
+    } else {
+        serde_json::Value::Null
     }
 }
 
@@ -1396,8 +1428,13 @@ fn nominal_warnings(cfg: &Config, p: &Prepared, base: &Simulation) -> (Vec<Strin
         sim::DispersionMode::MonteCarlo => cfg.wind.speed + 2.0 * cfg.dispersion.monte_carlo.wind_speed,
     };
     let mut margin = f64::NAN;
-    match base.run(Descent::Ballistic, false) {
-        Ok(r) => {
+    // A general table needs the samples for the pitch and yaw margins.
+    let general = p.table.kind() == aero::table::TableKind::General;
+    match base.run(Descent::Ballistic, general) {
+        Ok(mut r) => {
+            if let Some(m) = stability::axis_margins(&p.table, &r.summary, &r.samples) {
+                stability::apply(&mut r.summary, &m);
+            }
             margin = static_margin_min(&r.summary);
             w.extend(flight_warnings_at(cfg, &r.summary, ref_speed))
         }
@@ -1524,7 +1561,11 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
     } else {
         sim::dispersion::run_wind_grid_detailed(&cfg.dispersion, &base, cfg.recovery.enabled, &|_, _| {})?
     };
-    let (results, errors) = split_wind_grid(&cases, detailed);
+    let (mut results, errors) = split_wind_grid(&cases, detailed);
+    // General aero table: lower bound of the smaller of the pitch and yaw margins.
+    for s in &mut results {
+        stability::apply_bound(&p.table, s);
+    }
     let mut modes: Vec<Descent> = Vec::new();
     for c in &cases {
         if !modes.contains(&c.descent) {
@@ -1682,7 +1723,7 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
     let u = ui();
     let start = std::time::Instant::now();
     let mc = &cfg.dispersion.monte_carlo;
-    let r = if u.progress_on() {
+    let mut r = if u.progress_on() {
         let total = mc.samples * if cfg.recovery.enabled { 2 } else { 1 };
         let pb = u.bar_with(total as u64, "Monte Carlo", DISP_T, rate_key);
         let far = FarthestLanding::new();
@@ -1696,6 +1737,10 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
     } else {
         sim::dispersion::run_monte_carlo(mc, base, cfg.recovery.enabled)?
     };
+    // General aero table: lower bound of the smaller of the pitch and yaw margins.
+    for s in r.rows.iter_mut().filter_map(|x| x.result.as_mut().ok()) {
+        stability::apply_bound(&p.table, s);
+    }
     let failed: usize = r.summary.descents.iter().map(|d| d.failed).sum();
     for d in r.summary.descents.iter().filter(|d| d.failed > 0) {
         warnings.push(format!(
@@ -2274,6 +2319,43 @@ mod tests {
         assert!(why.starts_with("RESULTS NOT USABLE") && why.contains("UNSTABLE"), "{why}");
         let (_, margin) = nominal_warnings(&cfg, &prepare(&cfg).unwrap(), &simulation(&cfg, &prepare(&cfg).unwrap()).unwrap());
         assert!(margin < 0.0);
+        let _ = std::fs::remove_dir_all(&cfg.output.dir);
+    }
+
+    #[test]
+    fn general_table_unstable_in_yaw_is_not_usable() {
+        // The sample's table as a general table, once as it is and once with the yaw centre of
+        // pressure moved to 20 % of the length (forward of the CG); pitch is unchanged.
+        let mut cfg = sample_config("yaw_unstable");
+        let t = prepare(&cfg).unwrap().table;
+        let (alphas, betas) = general_axes();
+        let g = t.to_general(alphas, betas);
+        let (d, x_yaw) = (t.meta.ref_diameter, 0.2 * t.meta.length);
+        let bad = AeroTable::general_from_fn(g.meta.clone(), |m, a, b| {
+            let mut c = g.lookup6(m, a.to_radians(), b.to_radians());
+            c.cn = -x_yaw * c.cy / d;
+            c
+        });
+        std::fs::create_dir_all(&cfg.output.dir).unwrap();
+        let (good_path, bad_path) = (cfg.output.dir.join("good_table.csv"), cfg.output.dir.join("bad_table.csv"));
+        g.save(&good_path).unwrap();
+        bad.save(&bad_path).unwrap();
+        cfg.aero.method = config::AeroMethod::Table;
+        cfg.aero.table = Some(good_path);
+        assert!(run_sim(&cfg, Some(Descent::Ballistic)).unwrap().is_none());
+        let j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(cfg.out_dir().join("summary.json")).unwrap()).unwrap();
+        let (pitch, yaw) = (j["static_margin_pitch_min_cal"].as_f64().unwrap(), j["static_margin_yaw_min_cal"].as_f64().unwrap());
+        assert!(pitch > 1.0 && (pitch - yaw).abs() < 1e-9 && j["stable"].as_bool() == Some(true), "{pitch} {yaw}");
+        cfg.aero.table = Some(bad_path);
+        let why = run_sim(&cfg, Some(Descent::Ballistic)).unwrap().expect("a yaw-unstable rocket must be reported");
+        assert!(why.starts_with("RESULTS NOT USABLE") && why.contains("UNSTABLE"), "{why}");
+        let j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(cfg.out_dir().join("summary.json")).unwrap()).unwrap();
+        assert!(j["static_margin_pitch_min_cal"].as_f64().unwrap() > 1.0 && j["static_margin_yaw_min_cal"].as_f64().unwrap() < 0.0, "{j}");
+        assert_eq!(j["stable"].as_bool(), Some(false));
+        // The dispersion verdict of the nominal flight as well.
+        let p = prepare(&cfg).unwrap();
+        let (_, margin) = nominal_warnings(&cfg, &p, &simulation(&cfg, &p).unwrap());
+        assert!(margin < 0.0, "{margin}");
         let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 

@@ -125,7 +125,7 @@ ref_height = 2.0
 # For real predictions use model = "profile" with measured winds aloft.
 exponent = 6.0             # power law v = v_ref (h/h_ref)^(1/n)
 roughness_length = 0.03    # log model [m]
-# profile = "wind.csv"     # profile model: CSV with columns altitude_m,speed,direction_deg
+# profile = "wind_profile_example.csv"  # profile model: CSV altitude_m,speed,direction_deg (path relative to this file)
 
 [sim]
 integrator = "rk4"         # "rk4" | "rk45" | "dop853"

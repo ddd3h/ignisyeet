@@ -296,6 +296,11 @@ fn size_warnings(cfg: &Config, length: f64, diameter: f64) -> Vec<String> {
 const WIND_VALID_HEIGHT: f64 = 1000.0;
 
 /// Warnings about the flight itself: static margin, centre of pressure, wind-model validity, no landing.
+/// Smallest static margin of the flight including the rail-exit value [cal] (NaN when none is finite).
+pub(crate) fn static_margin_min(s: &Summary) -> f64 {
+    [s.min_stability_cal, s.stability_at_rail_exit].into_iter().filter(|m| m.is_finite()).min_by(f64::total_cmp).unwrap_or(f64::NAN)
+}
+
 fn flight_warnings(cfg: &Config, s: &Summary) -> Vec<String> {
     flight_warnings_at(cfg, s, cfg.wind.speed)
 }
@@ -321,6 +326,15 @@ fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: f64) -> Vec<String>
         }
     }
     let wind = &cfg.wind;
+    if wind.model == sim::WindModel::Profile {
+        if let Some(top) = wind_profile_top(cfg) {
+            if s.apogee > top {
+                w.push(format!("apogee {:.0} m is above the top of the wind profile ({top:.0} m): the wind above {top:.0} m is held at the top value", s.apogee));
+            }
+        }
+    }
+    // the profile model takes its speed from the table, not from wind.speed
+    let wind_speed = if wind.model == sim::WindModel::Profile { s.wind_speed } else { wind_speed };
     if matches!(wind.model, sim::WindModel::Power | sim::WindModel::Log) && wind_speed != 0.0 && s.apogee > WIND_VALID_HEIGHT {
         w.push(format!(
             "apogee {:.0} m is above {WIND_VALID_HEIGHT:.0} m, the validity height of the {:?} wind profile: the profile is extrapolated there, and wind.speed = {} m/s is the speed at wind.ref_height = {} m, so the winds aloft and the landing point are model-dependent",
@@ -328,6 +342,18 @@ fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: f64) -> Vec<String>
         ));
     }
     w
+}
+
+/// Top altitude [m] of the wind profile table, when it can be read.
+fn wind_profile_top(cfg: &Config) -> Option<f64> {
+    let path = cfg.resolve(cfg.wind.profile.as_deref()?);
+    let text = std::fs::read_to_string(path).ok()?;
+    sim::env::parse_wind_profile(strip_bom(&text)).ok()?.last().map(|p| p.height)
+}
+
+/// `text` without a leading UTF-8 byte-order mark.
+pub(crate) fn strip_bom(text: &str) -> &str {
+    text.strip_prefix('\u{feff}').unwrap_or(text)
 }
 
 /// An error when the body length (metres, after `rocket.stl_scale`) is not that of a rocket.
@@ -352,7 +378,7 @@ fn check_cg(cfg: &Config, length: f64) -> Result<()> {
 
 fn load_motor(cfg: &Config) -> Result<Motor> {
     let eng = cfg.resolve(&cfg.motor.eng);
-    let mut motor = Motor::load(&eng).with_context(|| format!("cannot read motor file {}", eng.display()))?;
+    let mut motor = Motor::load(&eng)?;
     if let Some(m) = cfg.motor.propellant_mass {
         motor.propellant_mass = m;
     }
@@ -895,7 +921,11 @@ fn prepare(cfg: &Config) -> Result<Prepared> {
     check_cg(cfg, table.meta.length)?;
     let motor = load_motor(cfg)?;
     let motor_aft_x = cfg.motor.aft_x.unwrap_or(table.meta.length);
-    Ok(Prepared { table, motor, motor_aft_x, geometry_warnings: geometry_warnings(cfg) })
+    let mut geometry_warnings = geometry_warnings(cfg);
+    if cfg.aero.method == config::AeroMethod::Table {
+        geometry_warnings.extend(table.sanity_warnings());
+    }
+    Ok(Prepared { table, motor, motor_aft_x, geometry_warnings })
 }
 
 fn simulation<'a>(cfg: &Config, p: &'a Prepared) -> Result<Simulation<'a>> {
@@ -1016,7 +1046,7 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
         println!("Flight ({descent:?}, wind {:.1} m/s from {:.0} deg)", s.wind_speed, s.wind_direction_deg);
         println!("  rail exit       {:.2} s, {:.1} m/s, stability {:.2} cal", s.rail_exit_time, s.rail_exit_speed, s.stability_at_rail_exit);
         println!("  max speed       {:.1} m/s (Mach {:.2}), max q {:.1} kPa", s.max_speed, s.max_mach, s.max_dyn_pressure / 1000.0);
-        println!("  min stability   {:.2} cal", s.min_stability_cal);
+        println!("  min static margin {:.2} cal (free flight {:.2} cal)", static_margin_min(s), s.min_stability_cal);
         println!("  apogee          {:.1} m at {:.2} s", s.apogee, s.apogee_time);
         if landed {
             println!("  landing         {:.1} s, E {:.1} m, N {:.1} m ({:.6}, {:.6}), {:.1} m/s", s.landing_time, s.landing_east, s.landing_north, s.landing_lat, s.landing_lon, s.landing_speed);
@@ -1645,6 +1675,33 @@ mod tests {
         assert_eq!((j["static_margin_min_cal"].as_f64(), j["stable"].as_bool()), (Some(-0.1), Some(false)));
         let rail = sim::Summary { stability_at_rail_exit: -0.3, ..ok };
         assert_eq!(summary_json(&cfg, &rail, &[]).unwrap()["stable"].as_bool(), Some(false));
+    }
+
+    #[test]
+    fn profile_warning_when_apogee_is_above_the_table_top() {
+        let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
+        cfg.wind.model = sim::WindModel::Profile;
+        cfg.wind.profile = Some("wind_profile_example.csv".into());
+        let base = sim::Summary { min_stability_cal: 2.0, stability_at_rail_exit: 2.0, wind_speed: 4.0, ..sample_summary() };
+        let low = sim::Summary { apogee: 4440.7, ..base.clone() };
+        assert!(flight_warnings(&cfg, &low).is_empty());
+        let high = sim::Summary { apogee: 7000.0, ..base };
+        let w = flight_warnings(&cfg, &high);
+        assert_eq!(w, vec!["apogee 7000 m is above the top of the wind profile (6000 m): the wind above 6000 m is held at the top value".to_string()]);
+        // the extrapolation warning is gated on the effective speed of the table, not on wind.speed
+        cfg.wind.model = sim::WindModel::Power;
+        cfg.wind.speed = 0.0;
+        assert!(flight_warnings(&cfg, &high).is_empty());
+        assert_eq!(strip_bom("\u{feff}a"), "a");
+    }
+
+    #[test]
+    fn min_static_margin_includes_the_rail_exit_value() {
+        let s = sim::Summary { min_stability_cal: 2.0, stability_at_rail_exit: 1.1, ..sample_summary() };
+        assert_eq!(static_margin_min(&s), 1.1);
+        let panel = view::flight_panel(&s, Descent::Ballistic, false);
+        let text = console::strip_ansi_codes(&ui().render_panel(&panel).join("\n")).to_string();
+        assert!(text.contains("min static margin") && text.contains("1.10 cal") && text.contains("free flight 2.00 cal"), "{text}");
     }
 
     #[test]

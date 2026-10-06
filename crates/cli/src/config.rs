@@ -310,7 +310,7 @@ fn square() -> String {
 impl Config {
     pub fn load(path: &Path) -> Result<Self> {
         let text = std::fs::read_to_string(path).with_context(|| format!("cannot read config {}", path.display()))?;
-        let raw: toml::Value = toml::from_str(&text).with_context(|| format!("invalid config {}", path.display()))?;
+        let raw: toml::Value = toml::from_str(text.strip_prefix('\u{feff}').unwrap_or(&text)).with_context(|| format!("invalid config {}", path.display()))?;
         Self::from_value(raw, path.parent()).with_context(|| format!("invalid config {}", path.display()))
     }
 
@@ -418,8 +418,22 @@ impl Config {
         positive("aero.alpha_max_deg", a.alpha_max_deg)?;
         positive("aero.alpha_step_deg", a.alpha_step_deg)?;
         positive("aero.general_mach_step", a.general_mach_step)?;
-        if a.n_slices == 0 {
-            bail!("aero.n_slices must be at least 1");
+        if a.mach_max > MACH_LIMIT {
+            bail!("aero.mach_max = {} is too large for a rocket flight (<= {MACH_LIMIT})", a.mach_max);
+        }
+        if a.alpha_max_deg > 180.0 {
+            bail!("aero.alpha_max_deg = {} is outside (0, 180]", a.alpha_max_deg);
+        }
+        let n_mach = ((a.mach_max - a.mach_min) / a.mach_step).round().max(1.0) + 1.0;
+        let n_alpha = (a.alpha_max_deg / a.alpha_step_deg).round().max(1.0) * 2.0 + 1.0;
+        if n_mach * n_alpha > MAX_AERO_GRID_POINTS {
+            bail!(
+                "the aero table grid would have about {:.3e} points ({n_mach} Mach x {n_alpha} alpha; at most {MAX_AERO_GRID_POINTS:e}): increase aero.mach_step / aero.alpha_step_deg or reduce aero.mach_max / aero.alpha_max_deg",
+                n_mach * n_alpha
+            );
+        }
+        if a.n_slices < MIN_SLICES {
+            bail!("aero.n_slices = {} is too small: the geometry extraction needs at least {MIN_SLICES} slices", a.n_slices);
         }
         non_negative("aero.fin_threshold", a.fin_threshold)?;
 
@@ -430,13 +444,27 @@ impl Config {
         positive("wind.exponent", w.exponent)?;
         positive("wind.roughness_length", w.roughness_length)?;
         positive("wind.ground_blend_height", w.ground_blend_height)?;
+        if w.model == sim::WindModel::Log && 2.0 * w.roughness_length >= w.ref_height {
+            bail!("wind.roughness_length ({}) must be smaller than half of wind.ref_height ({}) for the log profile", w.roughness_length, w.ref_height);
+        }
 
         let s = &self.sim;
         positive("sim.dt", s.dt)?;
+        if s.dt > MAX_DT {
+            bail!("sim.dt = {} s is too large for a rocket flight (<= {MAX_DT} s; 0.002 s is typical)", s.dt);
+        }
         positive("sim.max_time", s.max_time)?;
         positive("sim.output_interval", s.output_interval)?;
+        if s.output_interval > s.max_time {
+            bail!("sim.output_interval = {} s exceeds sim.max_time = {} s", s.output_interval, s.max_time);
+        }
         positive("sim.rtol", s.rtol)?;
         positive("sim.atol", s.atol)?;
+        for (k, v) in [("rtol", s.rtol), ("atol", s.atol)] {
+            if v > MAX_TOL {
+                bail!("sim.{k} = {v} is too loose for a rocket flight (<= {MAX_TOL:e}; 1e-8 is typical)");
+            }
+        }
 
         let d = &self.dispersion;
         for (i, v) in d.wind_speeds.iter().enumerate() {
@@ -565,6 +593,17 @@ impl Config {
         })
     }
 }
+
+/// Largest accepted `sim.dt` [s].
+const MAX_DT: f64 = 0.05;
+/// Largest accepted `sim.rtol` and `sim.atol`.
+const MAX_TOL: f64 = 1e-3;
+/// Largest accepted `aero.mach_max`.
+const MACH_LIMIT: f64 = 10.0;
+/// Largest accepted number of aero table grid points.
+const MAX_AERO_GRID_POINTS: f64 = 1e6;
+/// Fewest accepted `aero.n_slices` (the geometry extraction requires this many).
+const MIN_SLICES: usize = 20;
 
 #[cfg(test)]
 mod tests {
@@ -771,5 +810,36 @@ mod tests {
     #[test]
     fn default_max_time_is_one_hour() {
         assert_eq!(SimCfg::default().max_time, 3600.0);
+    }
+
+    #[test]
+    fn integrator_and_aero_grid_bounds() {
+        let sample = include_str!("../../../examples/sample.toml");
+        let bad = |from: &str, to: &str| parse(&sample.replacen(from, to, 1)).unwrap_err().to_string();
+        let e = bad("dt = 0.002", "dt = 5.0");
+        assert!(e.contains("sim.dt = 5 s is too large for a rocket flight (<= 0.05 s; 0.002 s is typical)"), "{e}");
+        let e = bad("rtol = 1e-7", "rtol = 1.0");
+        assert!(e.contains("sim.rtol") && e.contains("too loose"), "{e}");
+        let e = bad("atol = 1e-6", "atol = 1.0");
+        assert!(e.contains("sim.atol"), "{e}");
+        let e = bad("alpha_max_deg = 30.0", "alpha_max_deg = 1e9");
+        assert!(e.contains("alpha_max_deg"), "{e}");
+        let e = bad("mach_max = 3.0", "mach_max = 1000");
+        assert!(e.contains("mach_max"), "{e}");
+        let e = bad("mach_step = 0.02", "mach_step = 1e-6");
+        assert!(e.contains("grid"), "{e}");
+        let e = bad("n_slices = 600", "n_slices = 5");
+        assert!(e.contains("n_slices") && e.contains("20"), "{e}");
+    }
+
+    #[test]
+    fn log_wind_needs_room_above_the_blend() {
+        let sample = include_str!("../../../examples/sample.toml");
+        let t = sample
+            .replacen("model = \"power\"", "model = \"log\"", 1)
+            .replacen("ref_height = 2.0", "ref_height = 0.5", 1)
+            .replacen("roughness_length = 0.03", "roughness_length = 0.3\nground_blend_height = 0.1", 1);
+        let e = parse(&t).unwrap_err().to_string();
+        assert!(e.contains("roughness_length") && e.contains("ref_height"), "{e}");
     }
 }

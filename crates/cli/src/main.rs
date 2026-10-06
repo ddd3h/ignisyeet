@@ -1756,7 +1756,7 @@ mod tests {
         assert_eq!(static_margin_min(&s), 1.1);
         let panel = view::flight_panel(&s, Descent::Ballistic, false);
         let text = console::strip_ansi_codes(&ui().render_panel(&panel).join("\n")).to_string();
-        assert!(text.contains("min static margin") && text.contains("1.10 cal") && text.contains("free flight 2.00 cal"), "{text}");
+        assert!(text.contains("min margin") && text.contains("min margin     1.10 cal"), "{text}");
     }
 
     #[test]

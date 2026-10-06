@@ -318,7 +318,8 @@ pub fn flight_panel(sm: &Summary, descent: Descent, g_lat_lon: bool) -> Panel {
     p.row("rail exit", format!("{}{s}{}{s}stability {}", val(format!("{:.2}", sm.rail_exit_time), "s"), val(format!("{:.1}", sm.rail_exit_speed), "m/s"), stability(sm.stability_at_rail_exit)));
     p.row("burnout", val(format!("{:.2}", sm.burnout_time), "s"));
     p.row("max speed", format!("{} {}{s}max q {}", style(format!("{:.1} m/s", sm.max_speed)).bold().yellow(), dim(format!("(Mach {:.2})", sm.max_mach)), val(format!("{:.1}", sm.max_dyn_pressure / 1000.0), "kPa")));
-    p.row("min static margin", format!("{}{s}free flight {}", stability(crate::static_margin_min(sm)), stability(sm.min_stability_cal)));
+    // Minimum over the rail exit and the free flight (the rail-exit value is in the row above).
+    p.row("min margin", stability(crate::static_margin_min(sm)));
     p.row("apogee", format!("{} {}{s}at {}", style(format!("{:.1} m", sm.apogee)).bold().green(), dim("AGL"), val(format!("{:.2}", sm.apogee_time), "s")));
     if let (Some(t), Some(h)) = (sm.main_deploy_time, sm.main_deploy_altitude) {
         p.row("main deploy", format!("{} {}{s}at {}", style(format!("{h:.1} m")).bold().green(), dim("AGL"), val(format!("{t:.2}"), "s")));

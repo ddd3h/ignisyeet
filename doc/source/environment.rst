@@ -131,9 +131,11 @@
 ----
 
 重力のモデルは ``[earth]`` の ``gravity`` で選ぶ。
+``constant`` と ``inverse_square`` は **有効重力**\ （地表で測る重力。自転による遠心力を含む）の大きさを与え、``j2`` は遠心力を含まない万有引力を与える。
+ECEF 座標での扱いの違いは :ref:`sec-ecef-gravity` で述べる。
 
 ``constant``
-   大きさ :math:`g_0=9.80665\ \mathrm{m/s^2}` 一定で、下向き（:math:`-\bm{e}_U`）に働く。
+   大きさ :math:`g_0=9.80665\ \mathrm{m/s^2}` 一定で、下向き（:math:`-\bm{e}_U`）に働く有効重力である。
 
 ``inverse_square``\ （既定）
    大きさを万有引力の法則に従って高度とともに減らす。
@@ -144,7 +146,7 @@
       \bm{g}(z_U) = -g_0\left(\frac{R_\oplus}{R_\oplus+h_0+z_U}\right)^2\bm{e}_U,\qquad R_\oplus=6\,371\ \mathrm{km}
 
    :math:`h_0` は射点標高である。平面地球モードでは向きが ENU の :math:`-z_U` 方向、ECEF モードでは現在位置の測地的な下向き :math:`-\bm{e}_U` で、
-   大きさは同じ法則（:math:`z_U` は射点標高からの高さ）で与える。
+   大きさは同じ法則（:math:`z_U` は射点標高からの高さ）で与える。これも有効重力（遠心力を含む）である。
 
 ``j2``\ （ECEF モードのみ）
    WGS84 の点質量に第 2 帯球調和係数 :math:`J_2` を加えた重力ポテンシャル :cite:`hofmann` から求める。
@@ -163,6 +165,7 @@
 
    定数は :math:`GM=3.986\,004\,418\times10^{14}\ \mathrm{m^3/s^2}`、:math:`J_2=1.082\,626\,68\times10^{-3}`、:math:`a=6\,378\,137\ \mathrm{m}` である :cite:`wgs84`。
    この式は万有引力だけで、遠心力は含まない（ECEF モードでは\ :eq:`eq-ecef-accel` の遠心加速度として別に加える）。
+   有効重力は、この万有引力に遠心加速度 :math:`-\bm{\Omega}\times(\bm{\Omega}\times\bm{r})` を足したものに当たる（:eq:`eq-g-effective`）。
    鉛直方向以外にも小さな成分（赤道向きに約 :math:`3J_2g\sin\phi\cos\phi`）を持つ。
    平面地球モードでは地球の形が定義できないので、``gravity = "j2"`` はエラーになる。
 

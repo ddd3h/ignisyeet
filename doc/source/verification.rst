@@ -20,13 +20,13 @@
    * - ``geom::math``
      - 対称行列の固有値分解、クォータニオンと回転行列の相互変換、3×3 行列の逆行列・積・転置・行列式
    * - ``geom::stl``
-     - ASCII 形式とバイナリ形式の STL が同じ三角形を与えるか
+     - ASCII 形式とバイナリ形式の STL が同じ三角形を与えるか。見出しが ``solid`` で始まり ``facet`` を含むバイナリ形式をバイナリとして読み、末尾に改行のない ASCII 形式を ASCII として読むか（``binary_stl_with_a_solid_header_is_read_as_binary``）
    * - ``aero::atmosphere``
      - 標準大気の代表値、温度差 0 での標準大気との一致、温度差を加えた大気の静水圧平衡、一定大気
    * - ``aero::model``、``panel``、``aero::table``
      - 部品積み上げ法、パネル法、係数表の検証（解析解、手計算、連続性、展開、保存と読み込み）。内容は :ref:`sec-vaero-barrowman`、:ref:`sec-vaero-table`、:ref:`sec-vaero-panel` にまとめる
    * - ``sim::motor``
-     - 推力曲線の読み込み、力積の積分、推進剤の消費、燃焼時間・推力の伸縮（モンテカルロ用）、:math:`t=0` の推力、BOM、推力曲線の警告
+     - 推力曲線の読み込み、力積の積分、推進剤の消費、燃焼時間・推力の伸縮（モンテカルロ用）、:math:`t=0` の推力、BOM、推力曲線の警告、推力の終わりの時刻（末尾の推力 0 の点を数えない）
    * - ``sim::env``
      - 風モデル（一定・べき法則・対数則・高度別の表）、地面付近の接続（連続性・傾き・上空で不変・非負で単調・設定の検証）、対数則の粗度長が基準高度の半分より小さいこと、表の検証（負の高度の行の拒否を含む）、:math:`J_2` 重力の大きさと向き、平面地球での :math:`J_2` の拒否
    * - ``sim::frame``
@@ -56,17 +56,27 @@
        ``summary.json`` の着地・ハッシュ・警告（``summary_json_records_landing_hash_and_warnings``）、風の格子の最大着地距離の表示（``wind_grid_line_marks_failures``）、
        サンプルの飛翔が着地して警告が一つであること（``sample_flight_lands_and_warns_about_the_extrapolated_wind``）、
        KML が古い出力と着地しなかったケースを除くこと（``stale_outputs_are_skipped``、``unlanded_wind_grid_rows_are_left_out``）、
-       静的に不安定なサンプルを降下モードごとに数えて終了ステータス 3 にすること（``unstable_samples_are_counted_per_mode_and_make_the_run_unusable``）、CSV の ``stable`` 列（``dispersion_csv_files_carry_a_stable_column``）、
+       静的に不安定なサンプルを降下モードごとに数えて終了ステータス 3 にすること（``unstable_samples_are_counted_per_mode_and_make_the_run_unusable``）、CSV の ``stable`` と ``broadside_time`` の列（``dispersion_csv_files_carry_stable_and_broadside_columns``）、
+       横向きに落ちた弾道落下の警告と数（10 s 以下とパラシュート降下は数えない。``broadside_ballistic_falls_are_warned_and_counted``）、
+       しきい値を破った側に読める桁数での数値の表示（``threshold_values_print_on_the_violated_side``）、
+       形の誤った ``--set`` が終了ステータス 2 の使い方の誤りになること（``malformed_set_is_a_usage_error_with_exit_status_2``）、``sim.dt`` の下限と ``rk4`` のステップ数の上限（``dt_has_a_lower_bound_and_a_step_count_limit``）、
+       範囲外の整数の ``--set`` のエラー（``set_shape_is_checked_by_the_parser_and_huge_integers_are_named``）、
+       出力ファイルの書き込みが一時ファイルを残さないこと、動いている実行の印のある出力先を拒み、止まった実行の印を消すこと（``write_is_atomic_and_leaves_no_temp_file``、``live_lock_is_refused_and_stale_lock_is_cleaned``、``output_directory_of_a_live_run_is_refused``）、
        実行のハッシュが外部の係数表の付属 JSON を含むこと（``run_hash_covers_the_aero_table_sidecar``）、既定のモータ位置の検査（``default_motor_position_is_checked_against_the_body``）、
        ランチャ離脱の風による迎角の警告が、風の格子の最大の風速とモンテカルロの公称の風速 + 2 :math:`\sigma` を使うこと（``rail_exit_wind_warning_uses_the_reference_speed_of_the_study``）、
        失敗した ``sim`` が古い結果の代わりに失敗の印を残すこと（``a_failed_sim_leaves_a_failure_marker_not_the_old_results``）、着地したサンプルが 1 つのときの誤差楕円の表示（``monte_carlo_panel_with_one_landed_sample_has_no_nan_ellipses``）、
        一般表の展開を数える格子の上限（``general_table_expansion_counts_for_every_method_that_expands``）、KML の説明欄の CDATA を二重にエスケープしないこと
+   * - ``python/test_plot.py``
+     - 作図の見出しの帯と印（``uv run --project python python -m unittest discover -s python`` で実行する）。問題のない落下分散に帯がないこと、
+       不安定・判定できない・迎角の範囲外の結果が ``RESULTS NOT USABLE``、失敗と着地しないケースが ``INCOMPLETE``、横向きの落下が ``CAUTION`` になること、
+       風の格子とモンテカルロの図で不安定、判定できない、横向きに落ちた着地点に印が付き、飛翔経路の図に帯が出ること（``Usability`` の各テスト）
    * - ``sim::geo``
      - 測地座標と ECEF の往復変換、ENU の北方向 1 km の緯度差
    * - ``sim::flight``
      - 真空中の鉛直飛翔と解析解の比較、横風に対する風見効果と流され、ECEF と平面地球の一致、Coriolis 力による西向きのずれ、``rk45`` と ``rk4`` の一致、積分法と姿勢の更新法の全組合せの一致、``dop853`` の評価回数、厳しい許容誤差での着地、
        ロール（定常ロール角速度、カントの基準）、慣性テンソル（符号、乾燥重心の横ずれ、トルクなしの回転）、推力の傾きとノズルのオフセット、一般表の飛翔、ランチャ上のロール角、二段開傘と頂点の補間と発散の検出（:ref:`sec-verify-dual`）、
-       ステップ内の事象（ランチャ離脱からの再開、同じステップの着地と開傘、``max_time``、推力曲線の折れ点。:ref:`sec-verify-events`）
+       ステップ内の事象（ランチャ離脱からの再開、同じステップの着地と開傘、``max_time``、推力曲線の折れ点。:ref:`sec-verify-events`）、
+       小迎角の静安定余裕と最小の位置、横向きの落下の時間、燃焼中の開傘の延期、着地の状態を含む最大値（:ref:`sec-verify-margin`）
 
 形状抽出
 --------
@@ -322,6 +332,23 @@ ECEF 座標での積分
 * **モーターの推力**：推力曲線の最初の節点が :math:`(0,F)` のとき、:math:`t=0` の推力は :math:`F` である。最初の節点が :math:`(0,0)` なら 0 から線形に立ち上がる。
   先頭に BOM のある ``.eng``、係数表、風の表を読める。
 
+.. _sec-verify-margin:
+
+静安定余裕、横向きの落下、開傘の延期、最大値
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* **小迎角の余裕**\ （``axisymmetric_margin_is_the_small_angle_margin``）：テストの機体を無風と 9 m/s の風で飛ばし、軸対称表の最小静安定余裕が、各時刻（頂点まで、対気速度 10 m/s 超）の Mach 数と重心で求めた迎角 0 の余裕の最小値と 0.02 cal 以内で一致する。
+  ピッチとヨーの最小値は判定値に等しく、最小はランチャ離脱の時刻にあり（燃焼中に重心が前へ移るため）、``static_margin_min_t`` は離脱の時刻、``static_margin_min_mach`` は離脱時の Mach 数と 0.01 以内で一致する。
+  風による離脱時の余裕の差は 0.01 cal 未満である。一方、その時刻の迎角での表示 ``stability_cal`` の最小値は、9 m/s の風で判定値より 0.3 cal 以上小さい。
+* **横向きの落下の時間**\ （``broadside_time_of_the_ballistic_descent``）：``broadside_time`` が、頂点のあと迎角 60° から 120° の記録点の数 × 出力間隔と、出力間隔の 2 倍 + 0.05 s 以内で一致する。
+  テストの機体は 10 s 以下で ``fell_broadside`` は偽、パラシュート降下では 0 である。重心を後ろ（圧力中心より後ろ）に置いた機体では 1 s を超える。
+* **燃焼中の開傘**\ （``deployment_waits_for_burnout_when_the_motor_still_burns``）：300 N で 2 s のあと 70 N（重さより小さい）が 20 s まで続く推力で、頂点 + 1 s が燃焼中になる。
+  開傘は燃焼の終わりの時刻に起こり、``deploy_delayed`` に頂点 + 1 s の時刻と推力 70 N が残る。自由飛行の推力は燃焼の終わりまで 70 N で、パラシュート降下の推力は 0、質量は乾燥質量である。
+  遅れが燃焼の終わりより後になる設定と、弾道落下では、``deploy_delayed`` は書かれない。
+* **着地の状態を含む最大値**\ （``maxima_include_the_touchdown_state``）：真空で落下する飛翔では最も速いのが着地の瞬間で、``rk4`` と ``rk45`` のどちらでも、``max_speed`` が着地速度に、``max_mach`` と ``max_dyn_pressure`` が着地速度の値に一致する。
+* **頂点の時刻**\ （``apogee_time_is_the_zero_of_the_hermite_vertical_velocity``）：高さ :math:`z(t)=100+40t-3t^2-0.2t^3` の 3 次の運動（ステップのエルミート補間が厳密になる）の :math:`t=1` から 8 のステップで、
+  頂点の時刻が鉛直速度の零点 :math:`(-6+\sqrt{132})/1.2` と :math:`10^{-12}` 以内で、その位置が :math:`10^{-9}` m 以内で一致する（鉛直速度の線形補間では 3.93 s になる）。
+
 ``dop853`` と Lie 群による姿勢積分の検証
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -378,8 +405,9 @@ ECEF 座標での積分
   （:math:`10^{-9}` 以内）。ノズルは重心より後ろにあるので :math:`+y_b` まわりの角加速度が :math:`(x_{\mathrm{aft}}-x_{cg})T\sin\varepsilon/I_{yy}` になり、傾きが 0 なら 0 である
   （``misaligned_thrust_points_along_azimuth_and_pitches``）。
 * **ノズルのオフセット**：:math:`y_b` 方向に 0.01 m のオフセットを与えると、:math:`z_b` まわりの角加速度が :math:`-0.01\,T/I_{zz}` になる（``nozzle_offset_gives_moment_about_the_cg``）。
-* **一般表の飛翔**：サンプル機体の軸対称表と、それを展開した一般表で飛翔を比べる（無風と 5 m/s の風）。頂点高度の差は 0.03 m 以内（要求は 0.5 m）、
-  最小静安定余裕の差は 0.1 cal 未満で、迎角と横滑り角はすべて有限である（``general_table_flight_matches_axisymmetric_table``）。
+* **一般表の飛翔**：サンプル機体の軸対称表と、それを展開した一般表で飛翔を比べる（無風と 5 m/s の風）。頂点高度の差は 0.03 m 以内（要求は 0.5 m）である。
+  一般表の最小静安定余裕は、軸対称表の飛翔の各時刻（頂点まで、対気速度 10 m/s 超）で一般表の余裕の定義（:ref:`sec-static-margin-general`）から求めた最小値と 0.02 cal 以内で一致し、迎角と横滑り角はすべて有限である（``general_table_flight_matches_axisymmetric_table``）。
+  一般表の余裕は 0 から 2° の割線の傾きから求めるので、軸対称表の余裕より約 0.2 cal 小さい。
   設定ファイルのサンプルを一般表で飛ばしても、頂点高度は 4440.7 m に 0.5 m 以内で一致する（``general_table_sample_matches_axisymmetric_apogee``）。
 * **ランチャ上のロール角**：仰角 80° で ``roll_deg`` を 90° にすると、:math:`+x_b` は変わらず、:math:`+y_b` が元の :math:`+z_b` に、:math:`+z_b` が元の :math:`-y_b` になる
   （``launch_roll_rotates_the_body_about_the_rail``）。

@@ -11,6 +11,8 @@ use std::f64::consts::PI;
 pub enum NoseShape {
     Cone,
     TangentOgive,
+    /// Spherical cap; `nose_length` is taken as the sphere radius (equal to `radius` for a true hemisphere).
+    Hemisphere,
 }
 
 #[derive(Debug, Clone)]
@@ -30,6 +32,16 @@ pub struct SampleRocket {
     /// Axial gap between root trailing edge and the base.
     pub fin_offset_from_base: f64,
     pub segments: usize,
+    /// Length of a conical boattail at the aft end of the body (0 = none).
+    pub boattail_length: f64,
+    /// Radius at the end of the boattail.
+    pub boattail_end_radius: f64,
+    /// Protruding nozzle: cylinder behind the base (length, radius); length 0 = none.
+    /// The mesh is longer than `length` by the nozzle length.
+    pub nozzle_length: f64,
+    pub nozzle_radius: f64,
+    /// Axial position of a launch lug / rail button box on the body surface (None = none).
+    pub lug_x: Option<f64>,
 }
 
 impl Default for SampleRocket {
@@ -47,6 +59,11 @@ impl Default for SampleRocket {
             thickness: 0.004,
             fin_offset_from_base: 0.0,
             segments: 72,
+            boattail_length: 0.0,
+            boattail_end_radius: 0.0,
+            nozzle_length: 0.0,
+            nozzle_radius: 0.0,
+            lug_x: None,
         }
     }
 }
@@ -59,6 +76,10 @@ impl SampleRocket {
             NoseShape::TangentOgive => {
                 let rho = (r * r + l * l) / (2.0 * r);
                 ((rho * rho - (l - x).powi(2)).sqrt() + r - rho).max(0.0)
+            }
+            NoseShape::Hemisphere => {
+                let u = (x / l).clamp(0.0, 1.0);
+                r * (1.0 - (1.0 - u) * (1.0 - u)).sqrt()
             }
         }
     }
@@ -74,9 +95,29 @@ impl SampleRocket {
             })
             .collect();
         let n_body = 40;
+        let x_bt = self.length - self.boattail_length;
+        let body_end = if self.boattail_length > 0.0 { x_bt } else { self.length };
         for i in 1..=n_body {
-            let x = self.nose_length + (self.length - self.nose_length) * i as f64 / n_body as f64;
+            let x = self.nose_length + (body_end - self.nose_length) * i as f64 / n_body as f64;
             prof.push((x, self.radius));
+        }
+        if self.boattail_length > 0.0 {
+            for i in 1..=20 {
+                let u = i as f64 / 20.0;
+                prof.push((x_bt + self.boattail_length * u, self.radius + (self.boattail_end_radius - self.radius) * u));
+            }
+        }
+        // Base radius and total mesh length (a protruding nozzle continues behind the base).
+        let r_base = if self.boattail_length > 0.0 { self.boattail_end_radius } else { self.radius };
+        let mut x_end = self.length;
+        let mut r_end = r_base;
+        if self.nozzle_length > 0.0 {
+            prof.push((self.length, self.nozzle_radius));
+            x_end = self.length + self.nozzle_length;
+            r_end = self.nozzle_radius;
+            for i in 1..=10 {
+                prof.push((self.length + self.nozzle_length * i as f64 / 10.0, self.nozzle_radius));
+            }
         }
         let m = self.segments;
         let ring = |x: f64, r: f64, j: usize| {
@@ -96,15 +137,32 @@ impl SampleRocket {
                 tris.push([a0, b1, b0]);
             }
         }
-        let base = Vec3::new(self.length, 0.0, 0.0);
+        let base = Vec3::new(x_end, 0.0, 0.0);
         for j in 0..m {
-            tris.push([base, ring(self.length, self.radius, j), ring(self.length, self.radius, j + 1)]);
+            tris.push([base, ring(x_end, r_end, j), ring(x_end, r_end, j + 1)]);
+        }
+        if let Some(x) = self.lug_x {
+            tris.extend(self.lug_box(x));
         }
         for k in 0..self.fin_count {
             let phi = 2.0 * PI * k as f64 / self.fin_count as f64 + PI / self.fin_count as f64;
             tris.extend(self.fin_box(phi));
         }
         tris
+    }
+
+    /// Small box (25 mm long, 12 mm wide, 10 mm high) standing on the body surface at angle 0.
+    fn lug_box(&self, x: f64) -> Vec<Triangle> {
+        let (hl, hw, h) = (0.0125, 0.006, 0.010);
+        let r0 = self.radius - 0.002;
+        let c = |dx: f64, dy: f64, r: f64| Vec3::new(x + dx, r, dy);
+        let (lo, hi) = (r0, self.radius + h);
+        let v = [
+            c(-hl, -hw, lo), c(hl, -hw, lo), c(hl, hw, lo), c(-hl, hw, lo),
+            c(-hl, -hw, hi), c(hl, -hw, hi), c(hl, hw, hi), c(-hl, hw, hi),
+        ];
+        let quads = [[0, 3, 2, 1], [4, 5, 6, 7], [0, 1, 5, 4], [1, 2, 6, 5], [2, 3, 7, 6], [3, 0, 4, 7]];
+        quads.iter().flat_map(|q| [[v[q[0]], v[q[1]], v[q[2]]], [v[q[0]], v[q[2]], v[q[3]]]]).collect()
     }
 
     fn fin_box(&self, phi: f64) -> Vec<Triangle> {

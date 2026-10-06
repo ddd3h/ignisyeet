@@ -149,6 +149,10 @@ pub struct Geometry {
     pub fins: Option<FinSet>,
     pub frame: Frame,
     pub profile: Vec<ProfilePoint>,
+    /// Plausibility findings of the extraction (orientation, proportions, protrusions); empty when
+    /// nothing is suspicious.
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
 
 struct Slice {
@@ -216,13 +220,38 @@ pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
 
     let mut slices = slice_mesh(&local, xmin, length, opt.n_slices);
     let n = slices.len();
-    let flip = match opt.nose_direction {
-        Some(_) => false,
-        None => {
-            let k = (n / 30).max(2);
-            let front: f64 = slices[..k].iter().map(|s| s.r_body).sum();
-            let back: f64 = slices[n - k..].iter().map(|s| s.r_body).sum();
-            front > back
+    let dx = length / n as f64;
+    let (r_max, r_note) = reference_radius(&slices);
+    if r_max <= 0.0 {
+        bail!("could not determine body radius");
+    }
+    let mut warnings: Vec<String> = Vec::new();
+    warnings.extend(r_note);
+
+    // Orientation. The fin set is the most reliable cue (fins sit in the aft part of the body);
+    // the radius at the extreme ends (a pointed or rounded nose tip is smaller than the base end,
+    // also with a boattail or a protruding nozzle) is the fallback.
+    let fin_thr = opt.fin_threshold * r_max;
+    let fins_fwd = {
+        let info: Vec<FinSlice> = slices.iter().map(|s| fin_slice(s, fin_thr)).collect();
+        detect_fins(&slices, &info, dx)
+    };
+    let fin_pos = fins_fwd.as_ref().map(|f| (f.x_le_root + 0.5 * f.root_chord) / length);
+    let front_tip: f64 = slices.iter().take(2).map(|s| s.r_body).sum();
+    let back_tip: f64 = slices.iter().rev().take(2).map(|s| s.r_body).sum();
+    let shape_flip = front_tip > back_tip;
+    let flip = match (opt.nose_direction, fin_pos) {
+        (Some(_), _) => false,
+        (None, Some(p)) if (p - 0.5).abs() > 0.08 => {
+            let by_fins = p < 0.5;
+            if by_fins != shape_flip {
+                warnings.push("the nose/tail shape and the fin position suggest opposite orientations; the fin position was used (set nose_direction to override)".into());
+            }
+            by_fins
+        }
+        (None, _) => {
+            warnings.push("orientation decided from the end radii only (no clear fin set); check the extracted nose/tail or set nose_direction".into());
+            shape_flip
         }
     };
     let (aft, nose_offset) = if flip {
@@ -234,12 +263,6 @@ pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
     } else {
         (ex, xmin)
     };
-
-    let dx = length / n as f64;
-    let r_max = slices.iter().map(|s| s.r_body).fold(0.0, f64::max);
-    if r_max <= 0.0 {
-        bail!("could not determine body radius");
-    }
 
     // Nose.
     let i_nose = slices.iter().position(|s| s.r_body >= 0.999 * r_max).unwrap_or(0);
@@ -277,9 +300,31 @@ pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
         plan_x += 2.0 * r * dx * slices[i].x;
     }
 
-    let fin_thr = opt.fin_threshold * r_max;
     let fin_info: Vec<FinSlice> = slices.iter().map(|s| fin_slice(s, fin_thr)).collect();
     let fins = detect_fins(&slices, &fin_info, dx);
+
+    // Plausibility checks.
+    let d = 2.0 * r_max;
+    if length / d < 3.0 || length / d > 40.0 {
+        warnings.push(format!("length/diameter ratio {:.1} is unusual for a rocket (length {length:.3} m, diameter {d:.3} m); check the STL scale and units", length / d));
+    }
+    if nose_len < 0.4 * d || nose_len > 8.0 * d {
+        warnings.push(format!("detected nose length {nose_len:.3} m ({:.1} calibers) is implausible", nose_len / d));
+    }
+    if base_radius < 0.6 * r_max {
+        warnings.push(format!("the base radius is only {:.0} % of the body radius (protruding nozzle or strong boattail); base drag uses this radius", 100.0 * base_radius / r_max));
+    }
+    if let Some(f) = &fins {
+        let xc = (f.x_le_root + 0.5 * f.root_chord) / length;
+        if f.x_le_root < 0.5 * length {
+            warnings.push(format!("the fin root leading edge is at {:.0} % of the length, in the forward half; the body may be reversed (nose_direction)", 100.0 * f.x_le_root / length));
+        } else if xc < 0.6 {
+            warnings.push(format!("the fins are centred at {:.0} % of the length, unusually far forward", 100.0 * xc));
+        }
+        if f.span > 2.0 * d {
+            warnings.push(format!("the fin span {:.3} m exceeds two body diameters ({d:.3} m)", f.span));
+        }
+    }
 
     let profile = slices
         .iter()
@@ -301,7 +346,26 @@ pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
         fins,
         frame: Frame { axis_point: [c.x, c.y, c.z], aft_direction: [aft.x, aft.y, aft.z], nose_offset },
         profile,
+        warnings,
     })
+}
+
+/// Reference (maximum body) radius that ignores short protrusions: the largest per-slice radius,
+/// unless it exceeds the 90th percentile by more than 15 %, which only a short ring or collar
+/// does (a cone-only or boattailed body stays below that ratio); then the percentile is used.
+fn reference_radius(slices: &[Slice]) -> (f64, Option<String>) {
+    let max = slices.iter().map(|s| s.r_body).fold(0.0, f64::max);
+    let mut v: Vec<f64> = slices.iter().map(|s| s.r_body).filter(|&r| r > 0.0).collect();
+    if v.is_empty() {
+        return (0.0, None);
+    }
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let p90 = v[((v.len() - 1) as f64 * 0.9) as usize];
+    if max <= 1.15 * p90 {
+        (max, None)
+    } else {
+        (p90, Some(format!("a short feature with radius {max:.4} m exceeds the typical body radius {p90:.4} m and was ignored")))
+    }
 }
 
 fn slice_mesh(local: &[[Vec3; 3]], xmin: f64, length: f64, n: usize) -> Vec<Slice> {
@@ -537,5 +601,86 @@ mod tests {
         let f = g.fins.unwrap();
         assert_eq!(f.count, 3);
         assert!(close(f.x_le_root, rk.length - 0.05 - rk.root_chord, 0.006));
+    }
+
+    use crate::sample::SampleRocket as Rk;
+
+    /// Rotate the mesh so the nose points to -x (reversed relative to the sample mesh).
+    fn reversed(tris: &[Triangle], length: f64) -> Vec<Triangle> {
+        tris.iter().map(|t| t.map(|v| Vec3::new(length - v.x, v.y, -v.z))).collect()
+    }
+
+    fn check(rk: &Rk, mesh: &[Triangle], body_len: f64) -> Geometry {
+        let g = extract(mesh, &ExtractOptions::default()).unwrap();
+        let mesh_len = body_len;
+        assert!(close(g.length, mesh_len, 0.01), "length {}", g.length);
+        assert!(close(g.nose.length, rk.nose_length, 0.02), "nose {} vs {}", g.nose.length, rk.nose_length);
+        let f = g.fins.as_ref().expect("fins");
+        assert_eq!(f.count, rk.fin_count);
+        let x_le = rk.length - rk.fin_offset_from_base - rk.root_chord;
+        assert!(close(f.x_le_root, x_le, 0.01), "fin x_le {} vs {x_le}", f.x_le_root);
+        g
+    }
+
+    #[test]
+    fn hemispherical_nose_with_long_boattail_is_oriented_correctly() {
+        // Regression: this body was detected backwards (fins at x = 0.15 m).
+        let rk = Rk { nose_shape: NoseShape::Hemisphere, nose_length: 0.05, boattail_length: 0.15, boattail_end_radius: 0.035, fin_offset_from_base: 0.15, ..Default::default() };
+        let g = check(&rk, &rk.mesh(), rk.length);
+        assert!(g.boattail.is_some());
+        assert!(close(g.base_radius, 0.035, 0.002));
+        assert!(g.warnings.is_empty(), "{:?}", g.warnings);
+        // Reversed in the mesh: oriented correctly as well (nose length and fin position checked).
+        let g2 = check(&rk, &reversed(&rk.mesh(), rk.length), rk.length);
+        assert!(g2.warnings.is_empty(), "{:?}", g2.warnings);
+    }
+
+    #[test]
+    fn reversed_sample_rocket_is_flipped_automatically() {
+        let rk = Rk::default();
+        let g = check(&rk, &reversed(&rk.mesh(), rk.length), rk.length);
+        assert!(g.warnings.is_empty(), "{:?}", g.warnings);
+        assert!(g.profile.first().unwrap().r < 0.02 && g.profile.last().unwrap().r > 0.045);
+    }
+
+    #[test]
+    fn launch_lug_does_not_disturb_nose_or_fins() {
+        let rk = Rk { lug_x: Some(0.8), ..Default::default() };
+        let g = check(&rk, &rk.mesh(), rk.length);
+        assert!(close(g.ref_radius, rk.radius, 0.0005), "radius {}", g.ref_radius);
+        // Lug close to the nose.
+        let rk = Rk { lug_x: Some(0.45), ..Default::default() };
+        let g = check(&rk, &rk.mesh(), rk.length);
+        assert!(close(g.ref_radius, rk.radius, 0.0005));
+    }
+
+    #[test]
+    fn protruding_nozzle_keeps_nose_detection_and_warns() {
+        let rk = Rk { nozzle_length: 0.06, nozzle_radius: 0.02, ..Default::default() };
+        let g = check(&rk, &rk.mesh(), rk.length + rk.nozzle_length);
+        assert!(close(g.ref_radius, rk.radius, 0.0005));
+        assert!(g.warnings.iter().any(|w| w.contains("base radius")), "{:?}", g.warnings);
+        // Reversed nozzle body is also recognised.
+        let g = check(&rk, &reversed(&rk.mesh(), rk.length + rk.nozzle_length), rk.length + rk.nozzle_length);
+        assert!(g.profile.first().unwrap().r < 0.02);
+    }
+
+    #[test]
+    fn plausible_rocket_has_no_warnings_and_odd_proportions_warn() {
+        let g = extract(&Rk::default().mesh(), &ExtractOptions::default()).unwrap();
+        assert!(g.warnings.is_empty(), "{:?}", g.warnings);
+        // A stubby body: length/diameter < 3.
+        let rk = Rk { length: 0.28, nose_length: 0.1, root_chord: 0.08, tip_chord: 0.04, sweep: 0.03, span: 0.03, ..Default::default() };
+        let g = extract(&rk.mesh(), &ExtractOptions::default()).unwrap();
+        assert!(g.warnings.iter().any(|w| w.contains("length/diameter")), "{:?}", g.warnings);
+    }
+
+    #[test]
+    fn explicit_nose_direction_is_respected_and_forward_fins_warn() {
+        let rk = Rk::default();
+        // Declare the nose at the tail end (+x; the true nose points to -x): no automatic flip, warning about the forward fins.
+        let opt = ExtractOptions { nose_direction: Some(Vec3::new(1.0, 0.0, 0.0)), ..Default::default() };
+        let g = extract(&rk.mesh(), &opt).unwrap();
+        assert!(g.warnings.iter().any(|w| w.contains("forward half")), "{:?}", g.warnings);
     }
 }

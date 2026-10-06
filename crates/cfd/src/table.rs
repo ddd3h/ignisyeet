@@ -291,7 +291,7 @@ pub fn build_from_points_roll(
 
     let mut rows: Vec<Vec<AeroCoeffs>> = Vec::with_capacity(machs.len());
     for &m in &machs {
-        let (cna, xcp0) = (cna_p.eval(m, linear), x0_p.eval(m, linear));
+        let (cna, xcp0) = (cna_p.eval(m, false), x0_p.eval(m, false));
         let damp = scale_damping(model.damping_sums(m), cna, xcp0);
         let (cl_delta, _) = model.roll_terms(m);
         let clp = crate::general::clp_at(roll, model, m);
@@ -299,9 +299,9 @@ pub fn build_from_points_roll(
             .iter()
             .enumerate()
             .map(|(j, &a)| {
-                let (cn, mom) = if a == 0.0 { (0.0, 0.0) } else { (cn_p[j].eval(m, linear), mom_p[j].eval(m, linear)) };
+                let (cn, mom) = if a == 0.0 { (0.0, 0.0) } else { (cn_p[j].eval(m, false), mom_p[j].eval(m, false)) };
                 let xcp = if cn.abs() > 1e-9 { mom / cn } else { xcp0 };
-                let (ca_on, ca_off) = hybrid_axial(flow, model, m, a.to_radians(), ca_p[j].eval(m, linear));
+                let (ca_on, ca_off) = hybrid_axial(flow, false, model, m, a.to_radians(), ca_p[j].eval(m, false));
                 AeroCoeffs { cn, ca_on, ca_off, xcp, cna, damp, cl_delta, clp }
             })
             .collect();
@@ -451,6 +451,13 @@ mod tests {
         let (a16, a24) = (16f64.to_radians(), 24f64.to_radians());
         assert!((cl.lookup(2.0, a24).cn - cl.lookup(2.0, a16).cn).abs() < 1e-12);
         assert!(lin.lookup(2.0, a24).cn != cl.lookup(2.0, a24).cn);
+        // Beyond the solved Mach range the edge values are held for both modes (no end-slope continuation).
+        for t in [&lin, &cl] {
+            for &mach in &[3.5, 4.0] {
+                let (e, h) = (t.lookup(mach, a16), t.lookup(3.0, a16));
+                assert!((e.cn - h.cn).abs() < 1e-12 && (e.cna - h.cna).abs() < 1e-12 && (e.xcp - h.xcp).abs() < 1e-12);
+            }
+        }
         // Mach beyond the last solved value: clamp holds the M = 3 value.
         assert!((cl.lookup(4.0, a16).cn - cl.lookup(3.0, a16).cn).abs() < 1e-12);
     }

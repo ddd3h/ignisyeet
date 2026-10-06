@@ -172,6 +172,9 @@ pub struct GeneralInput<'a> {
     pub mach_step: f64,
     /// Fin cant [deg] contained in the CFD geometry (the reference of the roll forcing).
     pub fin_cant_ref_deg: f64,
+    /// The CFD wall contains the fin leading / trailing faces (STL surface): the Euler hybrid axial
+    /// force then omits the Barrowman fin-edge drag.
+    pub fin_edges_in_cfd: bool,
 }
 
 fn key(a: f64, b: f64) -> (i64, i64) {
@@ -343,7 +346,6 @@ fn slopes_of(mach: f64, map: &BTreeMap<(i64, i64), BodyCoeffs6>, d: f64) -> Opti
 /// Builds the general table (see the module documentation).
 pub fn build_general(inp: &GeneralInput) -> Result<(AeroTable, GeneralFill)> {
     let model = inp.model;
-    let linear = inp.extrapolation == Extrapolation::Linear;
     let o = &model.opt;
     let step = if inp.mach_step > 0.0 { inp.mach_step } else { o.mach_step };
     let machs = grid(o.mach_min.max(0.0), o.mach_max, step);
@@ -398,7 +400,7 @@ pub fn build_general(inp: &GeneralInput) -> Result<(AeroTable, GeneralFill)> {
                 let f = field.eval(a, b);
                 let (t, th) = (at(a, b), at(ah, bh));
                 let total = (ah.to_radians().cos() * bh.to_radians().cos()).clamp(-1.0, 1.0).acos();
-                let (ca_on, ca_off) = hybrid_axial(inp.flow, model, m, total.min(std::f64::consts::PI - total), -f[0]);
+                let (ca_on, ca_off) = hybrid_axial(inp.flow, inp.fin_edges_in_cfd, model, m, total.min(std::f64::consts::PI - total), -f[0]);
                 nodes.push([
                     -ca_on + t.cx_on - th.cx_on,
                     -ca_off + t.cx_off - th.cx_off,
@@ -439,7 +441,7 @@ pub fn build_general(inp: &GeneralInput) -> Result<(AeroTable, GeneralFill)> {
             let p = Pchip::new(mx.clone(), cols.iter().map(|c| c.nodes[n][q]).collect());
             for (i, &m) in machs.iter().enumerate() {
                 let v = &mut grid_vals[i * na * nb + n];
-                v[q] = p.eval(m, linear);
+                v[q] = p.eval(m, false);
             }
         }
     }
@@ -461,9 +463,9 @@ pub fn build_general(inp: &GeneralInput) -> Result<(AeroTable, GeneralFill)> {
         .iter()
         .map(|&m| {
             let sums = model.damping_sums(m);
-            let sq = scale_damping(sums, cna_p.eval(m, linear), x_p.eval(m, linear));
+            let sq = scale_damping(sums, cna_p.eval(m, false), x_p.eval(m, false));
             let sr = match (&cna_y, &x_y) {
-                (Some(c), Some(x)) => scale_damping(sums, c.eval(m, linear), x.eval(m, linear)),
+                (Some(c), Some(x)) => scale_damping(sums, c.eval(m, false), x.eval(m, false)),
                 _ => sq,
             };
             (m, sq, sr, clp_at(&fill.clp, model, m))
@@ -575,6 +577,7 @@ mod tests {
             offset: false,
             mach_step: 0.25,
             fin_cant_ref_deg: 0.0,
+            fin_edges_in_cfd: false,
         };
         let (t, fill) = build_general(&inp).unwrap();
         assert_eq!(t.kind(), aero::table::TableKind::General);
@@ -630,6 +633,7 @@ mod tests {
             offset: false,
             mach_step: 0.5,
             fin_cant_ref_deg: 0.0,
+            fin_edges_in_cfd: false,
         };
         let (t, fill) = build_general(&inp).unwrap();
         assert!(fill.yaw_from_pitch && fill.region.beta_max_deg == 0.0);

@@ -62,6 +62,9 @@ pub fn apply_set(raw: &mut toml::Value, arg: &str) -> Result<()> {
         bail!("--set {arg}: invalid key \"{key}\" (expected a dotted path such as wind.speed)");
     }
     let value = value.trim();
+    if is_bare_integer(value) && value.parse::<i64>().is_err() {
+        bail!("--set {arg}: integer out of range (TOML integers are at most {})", i64::MAX);
+    }
     let parsed = toml::from_str::<toml::Table>(&format!("v = {value}")).ok().and_then(|mut t| t.remove("v"));
     let value = parsed.unwrap_or_else(|| toml::Value::String(value.to_string()));
     let mut node = raw;
@@ -73,6 +76,21 @@ pub fn apply_set(raw: &mut toml::Value, arg: &str) -> Result<()> {
     let t = node.as_table_mut().with_context(|| format!("--set {arg}: {} is not a table", tables.join(".")))?;
     t.insert(last.to_string(), value);
     Ok(())
+}
+
+/// True for an optionally signed run of decimal digits (a TOML integer without underscores).
+fn is_bare_integer(v: &str) -> bool {
+    let d = v.strip_prefix(['+', '-']).unwrap_or(v);
+    !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// Checks the shape KEY=VALUE of one `--set` argument (a clap value parser: a malformed one is a usage error).
+pub fn parse_set_arg(arg: &str) -> std::result::Result<String, String> {
+    match arg.split_once('=') {
+        None => Err(format!("expected KEY=VALUE, got \"{arg}\"")),
+        Some((k, _)) if k.split('.').any(|p| p.trim().is_empty()) => Err(format!("invalid key \"{}\" (expected a dotted path such as wind.speed)", k.trim())),
+        Some(_) => Ok(arg.to_string()),
+    }
 }
 
 /// Applies the `--set` overrides in order (see [`apply_set`]); returns a warning for each key given
@@ -585,7 +603,13 @@ impl Config {
         if s.dt > MAX_DT {
             bail!("sim.dt = {} s is too large for a rocket flight (<= {MAX_DT} s; 0.002 s is typical)", s.dt);
         }
+        if s.dt < MIN_DT {
+            bail!("sim.dt = {} s is too small (>= {MIN_DT:e} s): the run would take days; 0.002 s is typical", s.dt);
+        }
         positive("sim.max_time", s.max_time)?;
+        if !s.integrator.is_adaptive() && s.max_time / s.dt > MAX_STEPS {
+            bail!("sim.max_time / sim.dt = {:.3e} steps is too many (at most {MAX_STEPS:e}): increase sim.dt or reduce sim.max_time", s.max_time / s.dt);
+        }
         positive("sim.output_interval", s.output_interval)?;
         if s.output_interval < MIN_OUTPUT_INTERVAL {
             bail!(
@@ -811,6 +835,9 @@ const MACH_LIMIT: f64 = 10.0;
 const MAX_AERO_GRID_POINTS: f64 = 1e6;
 /// Smallest sim.output_interval [s] and largest number of output rows (max_time / output_interval).
 const MIN_OUTPUT_INTERVAL: f64 = 1e-4;
+/// Smallest sim.dt [s] and largest number of steps (max_time / dt).
+const MIN_DT: f64 = 1e-5;
+const MAX_STEPS: f64 = 1e8;
 const MAX_OUTPUT_ROWS: f64 = 1e7;
 const MAX_DIRECTIONS: usize = 360;
 const MAX_WIND_SPEEDS: usize = 100;
@@ -977,6 +1004,29 @@ mod tests {
         assert!(e.contains("sim.output_interval") && e.contains("too small"), "{e}");
         let e = sample_with("output_interval = 0.05", "output_interval = 0.0002").unwrap_err().to_string();
         assert!(e.contains("output rows"), "{e}");
+    }
+
+    #[test]
+    fn dt_has_a_lower_bound_and_a_step_count_limit() {
+        let e = sample_with("dt = 0.002", "dt = 1e-9").unwrap_err().to_string();
+        assert!(e.contains("sim.dt = 0.000000001 s is too small (>= 1e-5 s)"), "{e}");
+        assert!(sample_with("dt = 0.002", "dt = 1e-4").is_ok());
+        let e = sample_with("dt = 0.002", "dt = 1e-5").unwrap_err().to_string();
+        assert!(e.contains("sim.max_time / sim.dt = 3.600e8 steps is too many (at most 1e8)"), "{e}");
+        // the adaptive integrators do not step with dt
+        let rk45 = include_str!("../../../examples/sample.toml").replace("integrator = \"rk4\"", "integrator = \"rk45\"").replace("dt = 0.002", "dt = 1e-5");
+        assert!(parse(&rk45).is_ok());
+    }
+
+    #[test]
+    fn set_shape_is_checked_by_the_parser_and_huge_integers_are_named() {
+        assert_eq!(parse_set_arg("wind.speed=3").unwrap(), "wind.speed=3");
+        assert!(parse_set_arg("wind.speed").unwrap_err().contains("expected KEY=VALUE"));
+        assert!(parse_set_arg("wind..speed=3").unwrap_err().contains("invalid key"));
+        let e = sample_set(&["dispersion.monte_carlo.seed=18446744073709551615"]).unwrap_err().to_string();
+        assert_eq!(e, "--set dispersion.monte_carlo.seed=18446744073709551615: integer out of range (TOML integers are at most 9223372036854775807)");
+        assert!(sample_set(&["dispersion.monte_carlo.seed=9223372036854775807"]).is_ok());
+        assert!(sample_set(&["dispersion.monte_carlo.seed=-9223372036854775809"]).unwrap_err().to_string().contains("integer out of range"));
     }
 
     #[test]

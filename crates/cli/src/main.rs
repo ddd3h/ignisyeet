@@ -2,6 +2,7 @@
 // Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 mod config;
 mod kml;
+mod outfile;
 mod ui;
 mod view;
 
@@ -104,7 +105,7 @@ struct ConfigArgs {
     /// KEY is the dotted TOML key path, VALUE a TOML value; a bare word that is not a TOML value is taken as a string (quote it, '"..."', when it would read as a number or boolean).
     /// Repeatable; applied before the configuration is checked (unknown keys and bad values are errors as in the file) and part of the config hash.
     /// Relative paths in values are resolved from the config file's directory.
-    #[arg(long = "set", value_name = "KEY=VALUE")]
+    #[arg(long = "set", value_name = "KEY=VALUE", value_parser = config::parse_set_arg)]
     set: Vec<String>,
     /// Write the outputs to DIR instead of output.dir; a relative DIR is resolved from the current directory.
     #[arg(long, value_name = "DIR")]
@@ -198,12 +199,19 @@ fn stability_reason(st: &Stability) -> Option<String> {
 }
 
 fn main() -> Result<()> {
+    let r = run();
+    outfile::unlock_all();
+    r
+}
+
+fn run() -> Result<()> {
     let cli = Cli::parse();
     ui::init(cli.quiet, cli.no_progress);
     let mut incomplete: Option<String> = None;
     match cli.cmd {
         Cmd::Geom { config, ov } => {
             let cfg = load_config(&config, &ov, &TableArg::default())?;
+            outfile::lock_dir(&cfg.out_dir())?;
             begin(&cfg, &config, Sub::Geom);
             let step = ui().step("Extracting geometry");
             let g = geometry(&cfg)?;
@@ -221,12 +229,14 @@ fn main() -> Result<()> {
         }
         Cmd::Aero { config, force, ov, table } => {
             let cfg = load_config(&config, &ov, &table)?;
+            outfile::lock_dir(&cfg.out_dir())?;
             begin(&cfg, &config, Sub::Aero);
             aero_table_for(&cfg, force, Sub::Aero)?;
             print_warnings(&grid_warnings(&cfg));
         }
         Cmd::Sim { config, descent, ov, table } => {
             let cfg = load_config(&config, &ov, &table)?;
+            outfile::lock_dir(&cfg.out_dir())?;
             check_descent_override(&cfg, descent)?;
             begin(&cfg, &config, Sub::Sim);
             incomplete = match run_sim(&cfg, descent) {
@@ -239,11 +249,13 @@ fn main() -> Result<()> {
         }
         Cmd::Dispersion { config, ov, table } => {
             let cfg = load_config(&config, &ov, &table)?;
+            outfile::lock_dir(&cfg.out_dir())?;
             begin(&cfg, &config, Sub::Dispersion);
             incomplete = run_dispersion(&cfg)?
         }
         Cmd::CfdCheck { config, mesh } => {
             let cfg = load_config(&config, &ConfigArgs::default(), &TableArg::default())?;
+            outfile::lock_dir(&cfg.out_dir())?;
             return cfd_check(&cfg, &config, mesh);
         }
         Cmd::SampleStl { path } => {
@@ -264,6 +276,7 @@ fn main() -> Result<()> {
         } else {
             eprintln!("ignisyeet: INCOMPLETE RESULTS: {why} (exit status {EXIT_INCOMPLETE})");
         }
+        outfile::unlock_all();
         std::process::exit(EXIT_INCOMPLETE);
     }
     Ok(())
@@ -677,7 +690,7 @@ fn show_geometry(g: &Geometry, panel: bool) {
 
 fn out_path(cfg: &Config, name: &str) -> Result<PathBuf> {
     let dir = cfg.out_dir();
-    std::fs::create_dir_all(&dir).with_context(|| format!("cannot create {}", dir.display()))?;
+    outfile::lock_dir(&dir)?;
     let p = dir.join(name);
     ui().record(&p);
     Ok(p)
@@ -746,13 +759,14 @@ fn write_geometry(cfg: &Config, g: &Geometry) -> Result<Vec<PathBuf>> {
         }
     }
     let (json_path, csv_path) = (out_path(cfg, "geometry.json")?, out_path(cfg, "profile.csv")?);
-    std::fs::write(&json_path, serde_json::to_string_pretty(&json)?)?;
-    let mut f = std::io::BufWriter::new(std::fs::File::create(&csv_path)?);
-    writeln!(f, "x,r,fin_span")?;
-    for p in &g.profile {
-        writeln!(f, "{:.6},{:.6},{:.6}", p.x, p.r, p.fin_span)?;
-    }
-    f.flush()?;
+    outfile::write(&json_path, serde_json::to_string_pretty(&json)?)?;
+    outfile::write_with(&csv_path, |f| {
+        writeln!(f, "x,r,fin_span")?;
+        for p in &g.profile {
+            writeln!(f, "{:.6},{:.6},{:.6}", p.x, p.r, p.fin_span)?;
+        }
+        Ok(())
+    })?;
     Ok(vec![json_path, csv_path])
 }
 
@@ -1035,28 +1049,30 @@ fn aero_table_inner(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
     pb.finish_and_clear();
     table.save(&path)?;
 
-    let mut f = std::io::BufWriter::new(std::fs::File::create(out_path(cfg, "aero_drag.csv")?)?);
-    writeln!(f, "mach,reynolds,friction,nose,base,fins,boattail,extra,cd_off,cd_on,cna,xcp")?;
-    for &m in &table.meta.machs {
-        let off = model.cd0(m, false);
-        let on = model.cd0(m, true);
-        let c = table.lookup(m, 0.0);
-        writeln!(
-            f,
-            "{m},{:.6e},{:.6e},{:.6e},{:.6e},{:.6e},{:.6e},{:.6e},{:.6e},{:.6e},{:.6e},{:.6e}",
-            off.reynolds,
-            off.friction,
-            off.nose,
-            off.base,
-            off.fins,
-            off.boattail,
-            off.extra,
-            off.total(),
-            on.total(),
-            c.cna,
-            c.xcp
-        )?;
-    }
+    outfile::write_with(&out_path(cfg, "aero_drag.csv")?, |f| {
+        writeln!(f, "mach,reynolds,friction,nose,base,fins,boattail,extra,cd_off,cd_on,cna,xcp")?;
+        for &m in &table.meta.machs {
+            let off = model.cd0(m, false);
+            let on = model.cd0(m, true);
+            let c = table.lookup(m, 0.0);
+            writeln!(
+                f,
+                "{m},{:.6e},{:.6e},{:.6e},{:.6e},{:.6e},{:.6e},{:.6e},{:.6e},{:.6e},{:.6e},{:.6e}",
+                off.reynolds,
+                off.friction,
+                off.nose,
+                off.base,
+                off.fins,
+                off.boattail,
+                off.extra,
+                off.total(),
+                on.total(),
+                c.cna,
+                c.xcp
+            )?;
+        }
+        Ok(())
+    })?;
     let c = table.lookup(0.3, 0.0);
     if u.plain() {
         println!("Aero table: {} rows in {:.2?} -> {}", table.rows(), start.elapsed(), path.display());
@@ -1159,7 +1175,7 @@ fn cfd_table(cfg: &Config, g: Geometry, hash: String, path: &Path, start: std::t
     pb.finish_and_clear();
     let (table, report) = built?;
     table.save(path)?;
-    std::fs::write(out_path(cfg, "cfd_report.json")?, serde_json::to_string_pretty(&report)?)?;
+    outfile::write(&out_path(cfg, "cfd_report.json")?, serde_json::to_string_pretty(&report)?)?;
     ui().record(&out_dir.join("cfd_cases.csv"));
     if u.plain() {
         println!(
@@ -1272,13 +1288,15 @@ fn panel_table(cfg: &Config, g: Geometry, hash: String, path: &Path, start: std:
     pb.finish_and_clear();
     let (table, report) = built?;
     table.save(path)?;
-    panel::write_surface_cp(&out_path(cfg, "panel_cp.csv")?, &report)?;
-    let mut f = std::io::BufWriter::new(std::fs::File::create(out_path(cfg, "aero_drag.csv")?)?);
-    writeln!(f, "mach,cd_off,cd_on,cna,xcp")?;
-    for &m in &table.meta.machs {
-        let c = table.lookup(m, 0.0);
-        writeln!(f, "{m},{:.6e},{:.6e},{:.6e},{:.6e}", c.ca_off, c.ca_on, c.cna, c.xcp)?;
-    }
+    outfile::write_via_path(&out_path(cfg, "panel_cp.csv")?, |tmp| panel::write_surface_cp(tmp, &report))?;
+    outfile::write_with(&out_path(cfg, "aero_drag.csv")?, |f| {
+        writeln!(f, "mach,cd_off,cd_on,cna,xcp")?;
+        for &m in &table.meta.machs {
+            let c = table.lookup(m, 0.0);
+            writeln!(f, "{m},{:.6e},{:.6e},{:.6e},{:.6e}", c.ca_off, c.ca_on, c.cna, c.xcp)?;
+        }
+        Ok(())
+    })?;
     let c = table.lookup(0.3, 0.0);
     if u.plain() {
         println!("Panel method: {} panels + {} wake panels, subsonic solves {:.2} s", report.panels, report.wake_panels, report.solve_seconds);
@@ -1438,7 +1456,7 @@ fn write_failure_marker(cfg: &Config, e: &anyhow::Error) {
     let dir = cfg.out_dir();
     let _ = std::fs::create_dir_all(&dir);
     let json = serde_json::json!({ "failed": true, "error": format!("{e:#}") });
-    let _ = std::fs::write(dir.join("summary.json"), serde_json::to_string_pretty(&json).unwrap_or_default());
+    let _ = outfile::write(&dir.join("summary.json"), serde_json::to_string_pretty(&json).unwrap_or_default());
 }
 
 /// File name of the KML document in the output directory.
@@ -1491,7 +1509,7 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
     let mut json = summary_json(cfg, s, &warnings)?;
     json["aero_table_range"] = aero_range_json(&range);
     let summary_path = out_path(cfg, "summary.json")?;
-    std::fs::write(&summary_path, serde_json::to_string_pretty(&json)?)?;
+    outfile::write(&summary_path, serde_json::to_string_pretty(&json)?)?;
     if u.plain() {
         println!("Flight ({descent:?}, wind {:.1} m/s from {:.0} deg)", s.wind_speed, s.wind_direction_deg);
         println!("  rail exit       {:.2} s, {:.1} m/s, stability {:.2} cal", s.rail_exit_time, s.rail_exit_speed, s.stability_at_rail_exit);
@@ -1645,9 +1663,7 @@ fn write_kml(cfg: &Config, mut parts: kml::Parts, skip_flight: bool) -> Result<(
         }
     }
     let path = out_path(cfg, KML_FILE)?;
-    let tmp = path.with_extension("kml.tmp");
-    std::fs::write(&tmp, kml::combined(&cfg.launch, &parts))?;
-    std::fs::rename(&tmp, &path)?;
+    outfile::write(&path, kml::combined(&cfg.launch, &parts))?;
     if u.plain() {
         println!("  -> {}", path.display());
     }
@@ -1655,7 +1671,10 @@ fn write_kml(cfg: &Config, mut parts: kml::Parts, skip_flight: bool) -> Result<(
 }
 
 fn write_trajectory(path: &Path, samples: &[sim::flight::Sample]) -> Result<()> {
-    let mut f = std::io::BufWriter::new(std::fs::File::create(path)?);
+    outfile::write_with(path, |f| write_trajectory_to(f, samples))
+}
+
+fn write_trajectory_to(f: &mut impl Write, samples: &[sim::flight::Sample]) -> Result<()> {
     writeln!(f, "t,phase,east,north,up,lat,lon,alt,vel_e,vel_n,vel_u,airspeed,mach,alpha_deg,thrust,mass,x_cg,x_cp,stability_cal,dyn_pressure,cn,ca,pitch_deg,heading_deg,wx,wy,wz,beta_deg,roll_rate,cl,cy")?;
     for s in samples {
         let phase = match s.phase {
@@ -1940,7 +1959,7 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
     meta.as_object_mut().unwrap().extend(instability_json(&instab).as_object().unwrap().clone());
     meta.as_object_mut().unwrap().extend(wind_json(&base.wind));
     let meta_path = out_path(cfg, kml::WIND_GRID_META)?;
-    std::fs::write(&meta_path, serde_json::to_string_pretty(&meta)?)?;
+    outfile::write(&meta_path, serde_json::to_string_pretty(&meta)?)?;
     u.done_line("Wind grid", &format!("{} cases, {failed} failed", results.len()), start.elapsed());
     if u.plain() {
         println!("Dispersion: {} cases in {:.2?} -> {}, {}", results.len(), start.elapsed(), path.display(), meta_path.display());
@@ -2015,7 +2034,10 @@ fn csv_field(s: &str) -> String {
 }
 
 fn write_wind_grid_csv(path: &Path, results: &[sim::Summary], errors: &[Option<String>]) -> Result<()> {
-    let mut f = std::io::BufWriter::new(std::fs::File::create(path)?);
+    outfile::write_with(path, |f| write_wind_grid_csv_to(f, results, errors))
+}
+
+fn write_wind_grid_csv_to(f: &mut impl Write, results: &[sim::Summary], errors: &[Option<String>]) -> Result<()> {
     writeln!(f, "descent,wind_speed,wind_direction_deg,landing_east,landing_north,landing_lat,landing_lon,landing_distance,landing_time,landing_speed,apogee,apogee_time,max_mach,rail_exit_speed,min_stability_cal,landed,error,stable")?;
     for (s, e) in results.iter().zip(errors) {
         let mode = if s.descent == Descent::Ballistic { "ballistic" } else { "parachute" };
@@ -2119,7 +2141,7 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
     json.as_object_mut().unwrap().extend(stability_json(nominal).as_object().unwrap().clone());
     json.as_object_mut().unwrap().extend(instability_json(&instab).as_object().unwrap().clone());
     json.as_object_mut().unwrap().extend(wind_json(&base.wind));
-    std::fs::write(&spath, serde_json::to_string_pretty(&json)?)?;
+    outfile::write(&spath, serde_json::to_string_pretty(&json)?)?;
     u.done_line("Monte Carlo", &format!("{} samples x {} descent modes", r.summary.samples, r.summary.descents.len()), start.elapsed());
     if u.plain() {
         println!(
@@ -2196,7 +2218,10 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
 }
 
 fn write_monte_carlo_csv(path: &Path, rows: &[sim::dispersion::McRow]) -> Result<()> {
-    let mut f = std::io::BufWriter::new(std::fs::File::create(path)?);
+    outfile::write_with(path, |f| write_monte_carlo_csv_to(f, rows))
+}
+
+fn write_monte_carlo_csv_to(f: &mut impl Write, rows: &[sim::dispersion::McRow]) -> Result<()> {
     writeln!(
         f,
         "sample,descent,status,thrust_scale,burn_time_scale,dry_mass,cg,cn_scale,ca_scale,elevation_deg,azimuth_deg,roll_deg,wind_speed_delta,wind_direction_deg_delta,parachute_cd_s_scale,\
@@ -3398,6 +3423,33 @@ mod tests {
         assert!(lines[1].ends_with(",true,,true"), "{}", lines[1]);
         assert!(lines[2].ends_with(",false,\"integration diverged, state \"\"NaN\"\"\","), "{}", lines[2]);
         assert!(lines[4].ends_with(",false,e2 second line,"), "{}", lines[4]);
+    }
+
+    #[test]
+    fn malformed_set_is_a_usage_error_with_exit_status_2() {
+        for bad in ["wind.speed", "=3", "wind..speed=3"] {
+            let e = Cli::try_parse_from(["ignisyeet", "sim", "c.toml", "--set", bad]).err().expect("usage error");
+            assert_eq!(e.exit_code(), 2, "{bad}");
+            assert!(e.to_string().contains("--set"), "{e}");
+        }
+        assert!(Cli::try_parse_from(["ignisyeet", "sim", "c.toml", "--set", "wind.nosuchkey=3"]).is_ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn output_directory_of_a_live_run_is_refused() {
+        let dir = std::env::temp_dir().join(format!("ignisyeet_cli_lock_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(outfile::LOCK_FILE), "1\n").unwrap();
+        let mut cfg = Config::from_value(toml::from_str(include_str!("../../../examples/sample.toml")).unwrap(), Some(&dir)).unwrap();
+        cfg.output.dir = dir.clone();
+        let e = out_path(&cfg, "trajectory.csv").unwrap_err().to_string();
+        assert_eq!(
+            e,
+            format!("another ignisyeet run is using {0} (lock file {0}/.ignisyeet.lock, pid 1); wait for it or use a different --out", dir.display())
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

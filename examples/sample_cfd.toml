@@ -154,8 +154,10 @@ thrust_scale = 0.03        # relative: thrust (total impulse scales, propellant 
 burn_time_scale = 0.02     # relative: burn time stretch at constant impulse
 dry_mass = 0.1             # relative: dry mass (inertia scales with it)
 cg = 0.01                  # absolute [m]: dry centre of gravity
-# The Barrowman method's fin normal force is about 25 % lower than panel/CFD for this geometry: for keep-out work use a
-# cn_scale sigma covering the method spread (compare with method = "panel").
+# cn_scale is the uncertainty of one aero method. sigma = 0.10 does not cover the gap between the methods: the
+# Barrowman fin normal force is 23-32 % lower than panel/CFD for this geometry. For keep-out work that gap is covered
+# separately by running both aero methods, barrowman and panel, and taking the larger maximum
+# (step 6 of the keep-out procedure in the documentation, dispersion chapter).
 cn_scale = 0.10            # relative: normal force CN, CN_alpha and pitch damping
 ca_scale = 0.15            # relative: axial force / drag CA, power on and off
 elevation_deg = 0.5        # absolute [deg]: rail tilt (pointing error), isotropic: one normal in the

@@ -434,6 +434,18 @@ impl AeroModel {
         (cl_delta, clp)
     }
 
+    /// Centre of pressure at zero angle of attack [m aft of the nose tip]: Σ CNa_i x_i / Σ CNa_i of
+    /// [`damping_sums`](Self::damping_sums); at the nose tip (0) when the slopes sum to zero (a
+    /// finless body closing to a point), as [`body_xcp`](Self::body_xcp).
+    pub fn xcp0(&self, m: f64) -> f64 {
+        let s = self.damping_sums(m);
+        if s[0].abs() > 1e-12 {
+            s[1] / s[0]
+        } else {
+            0.0
+        }
+    }
+
     /// Sums Σ CNa_i, Σ CNa_i x_i, Σ CNa_i x_i² used for pitch damping.
     pub fn damping_sums(&self, m: f64) -> [f64; 3] {
         let h = 1e-4;

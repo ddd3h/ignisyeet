@@ -352,7 +352,7 @@ impl AeroTable {
             let roll = model.roll_terms(m);
             for &a in &alphas_deg {
                 let ar = a.to_radians();
-                let (cn, xcp) = if a == 0.0 { (0.0, s[1] / s[0]) } else { model.normal(m, ar) };
+                let (cn, xcp) = if a == 0.0 { (0.0, model.xcp0(m)) } else { model.normal(m, ar) };
                 let k = axial_alpha_factor(ar);
                 data.push([cn, cd_on * k, cd_off * k, xcp, cna, s[0], s[1], s[2], roll.0, roll.1]);
             }
@@ -1404,6 +1404,21 @@ mod tests {
         std::fs::write(&jp, good.to_string()).unwrap();
         assert!(load_err(&p).contains("t.csv"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn closed_finless_body_has_a_finite_zero_angle_centre_of_pressure() {
+        // A finless body of revolution closing to a point at the tail: the body normal-force slope
+        // sums to zero, the zero-angle centre of pressure s1 / s0 is undefined.
+        let mut g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
+        g.fins = None;
+        g.base_radius = 0.0;
+        let model = AeroModel::new(g, AeroOptions::default());
+        assert!(model.damping_sums(0.5)[0].abs() < 1e-12);
+        let t = AeroTable::build(&model, String::new(), Extrapolation::Linear);
+        let TableData::Axisymmetric(d) = &t.data else { unreachable!() };
+        assert!(d.iter().all(|r| r.iter().all(|x| x.is_finite())), "non-finite cell");
+        assert_eq!(t.lookup(0.5, 0.0).xcp, model.body_xcp());
     }
 
     #[test]

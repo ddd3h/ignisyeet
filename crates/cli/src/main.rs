@@ -1434,6 +1434,8 @@ fn summary_json(cfg: &Config, s: &Summary, warnings: &[String]) -> Result<serde_
     json["static_margin_min_cal"] = margin.map_or(serde_json::Value::Null, Into::into);
     json["stable"] = margin.is_none_or(|m| m >= 0.0).into();
     json["max_time"] = cfg.sim.max_time.into();
+    // The plots take the altitude from `up` (flat Earth: the integrated height) or from `alt` (ECEF).
+    json["earth_model"] = serde_json::to_value(cfg.earth.model)?;
     json["config_hash"] = run_hash(cfg, RunKind::Flight).into();
     json["warnings"] = serde_json::json!(warnings);
     Ok(json)
@@ -2612,6 +2614,10 @@ mod tests {
         assert_eq!(j["landed"], true);
         assert_eq!(j["warnings"][0], "w1");
         assert_eq!(j["config_hash"], run_hash(&cfg, RunKind::Flight));
+        assert_eq!(j["earth_model"], "flat");
+        let mut ecef = cfg.clone();
+        ecef.earth.model = sim::EarthModel::Ecef;
+        assert_eq!(summary_json(&ecef, &sample_summary(), &[]).unwrap()["earth_model"], "ecef");
         let j = summary_json(&cfg, &unlanded(sample_summary()), &[]).unwrap();
         assert_eq!(j["landed"], false);
         assert!(j["landing_east"].is_null() && j["max_time"] == cfg.sim.max_time);

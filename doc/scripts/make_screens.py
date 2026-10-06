@@ -35,6 +35,7 @@ from PIL import Image, ImageDraw, ImageFont
 FONTS = "/usr/share/fonts/truetype/dejavu/"
 CJK_FONTS = ["/usr/share/fonts/opentype/ipafont-gothic/ipag.ttf", "/usr/share/fonts/truetype/fonts-japanese-gothic.ttf", "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf"]
 COLS, ROWS = 100, 80
+TALL = 240  # rows of a pty whose whole session is drawn (nothing scrolls off the top)
 SCALE = 2
 SIZE = 15 * SCALE
 BG, FG = (30, 31, 34), (216, 216, 212)
@@ -46,13 +47,13 @@ ANSI = {
 }
 
 
-def capture(cmd, cwd, env_extra=None, timeout=120):
-    """Runs cmd in a pty; returns a list of (time, bytes) chunks."""
-    env = dict(os.environ, TERM="xterm-256color", LANG="C.UTF-8", LC_ALL="C.UTF-8", COLUMNS=str(COLS), LINES=str(ROWS))
+def capture(cmd, cwd, env_extra=None, timeout=120, rows=ROWS):
+    """Runs cmd in a pty of COLS x rows; returns a list of (time, bytes) chunks."""
+    env = dict(os.environ, TERM="xterm-256color", LANG="C.UTF-8", LC_ALL="C.UTF-8", COLUMNS=str(COLS), LINES=str(rows))
     env.pop("NO_COLOR", None)
     env.update(env_extra or {})
     master, slave = pty.openpty()
-    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", ROWS, COLS, 0, 0))
+    fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", rows, COLS, 0, 0))
     p = subprocess.Popen(cmd, cwd=cwd, env=env, stdin=slave, stdout=slave, stderr=slave, close_fds=True)
     os.close(slave)
     chunks, t0 = [], time.time()
@@ -72,8 +73,8 @@ def capture(cmd, cwd, env_extra=None, timeout=120):
     return chunks
 
 
-def replay(chunks):
-    screen = pyte.Screen(COLS, ROWS)
+def replay(chunks, rows=ROWS):
+    screen = pyte.Screen(COLS, rows)
     stream = pyte.ByteStream(screen)
     for _, data in chunks:
         stream.feed(data)
@@ -246,6 +247,25 @@ def anonymise(screen, real):
     return screen
 
 
+def scratch_home():
+    """A new empty directory /tmp/iXXXX, exactly as long as FAKE_HOME, so that anonymise() can replace it in the images
+    without changing any line length."""
+    while True:
+        work = Path("/tmp") / ("i" + secrets.token_hex(2))
+        try:
+            work.mkdir()
+            return work
+        except FileExistsError:
+            continue
+
+
+def clean_path(home):
+    """PATH of a fresh account: the tool directories in its home and the system directories, nothing of the machine's owner
+    and none of the build's virtual environment."""
+    std = [d for d in ("/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin") if Path(d).is_dir()]
+    return ":".join([str(home / ".cargo" / "bin"), str(home / ".local" / "bin")] + std)
+
+
 def row_of(screen, text, start=0):
     """Index of the first row at or after start that contains text."""
     return next(i for i, l in enumerate(lines_of(screen)) if i >= start and text in l)
@@ -282,13 +302,7 @@ def install_screens(root, out):
               ("Darwin", "x86_64"): "x86_64-apple-darwin", ("Darwin", "arm64"): "aarch64-apple-darwin"}[(system, machine)]
     # The work directory (also HOME) gets a name exactly as long as FAKE_HOME so that it can be replaced in the images without
     # changing any line length: /tmp/iXXXX shows as /home/user.
-    while True:
-        work = Path("/tmp") / ("i" + secrets.token_hex(2))
-        try:
-            work.mkdir()
-            break
-        except FileExistsError:
-            continue
+    work = scratch_home()
     try:
         home = work
         (home / ".cargo" / "bin").mkdir(parents=True)
@@ -336,15 +350,17 @@ def install_screens(root, out):
             render(scr, out / "screen_install_done.png", row_of(scr, "to PATH in") - 1)
             assert "ready" in "\n".join(lines_of(scr)), "install did not finish"
 
-            # verification in a shell-like session (the PATH line is what the installer suggested)
+            # verification in a shell-like session (the PATH line is what the installer suggested).  Each command is quoted, so
+            # it is echoed as typed (~ not expanded) and then run.  The pty is tall enough for the whole session: the sim
+            # output does not scroll the version banner off the top.
             env["PATH"] = ":".join([str(home / ".local" / "bin")] + env["PATH"].split(":"))
             script = (
-                'run() { printf "\033[38;5;78m$\033[0m %s\n" "$*"; eval "$*"; }\n'
-                'run ignisyeet --version\n'
-                'run cp -r ~/.local/share/ignisyeet/current/examples ignisyeet-examples\n'
-                'run cd ignisyeet-examples\n'
-                'run ignisyeet sim sample.toml\n')
-            scr = anonymise(replay(capture(["bash", "-c", script], home, env)), home_s)
+                'run() { printf "\033[38;5;78m$\033[0m %s\n" "$1"; eval "$1"; }\n'
+                "run 'ignisyeet --version'\n"
+                "run 'cp -r ~/.local/share/ignisyeet/current/examples ignisyeet-examples'\n"
+                "run 'cd ignisyeet-examples'\n"
+                "run 'ignisyeet sim sample.toml'\n")
+            scr = anonymise(replay(capture(["bash", "-c", script], home, env, rows=TALL), TALL), home_s)
             cut = after_config(scr)
             render(scr, out / "screen_install_check.png", 0, row_of(scr, "ignisyeet sim") + 1)  # version and the command
             render(scr, out / "screen_install_check_sim.png", cut)
@@ -375,8 +391,16 @@ def main():
         (work / f"{name}.toml").write_text(s)
         return f"examples/out/screens/{name}.toml"
 
-    # 1. sim: final screen of the sample configuration.
-    scr = replay(capture([bin_, "sim", "examples/sample.toml"], root))
+    # 1. sim: final screen of the sample configuration, run on a copy of examples/ without earlier output (no cached aero
+    # table, no stale file of another command), so every build shows the same first run.
+    fresh = Path(tempfile.mkdtemp(prefix="ignisyeet-screens-"))
+    try:
+        (fresh / "examples").mkdir()
+        for name in ("sample.toml", "sample_rocket.stl", "sample_motor.eng"):
+            shutil.copy(root / "examples" / name, fresh / "examples" / name)
+        scr = replay(capture([bin_, "sim", "examples/sample.toml"], fresh))
+    finally:
+        shutil.rmtree(fresh, ignore_errors=True)
     cut = after_config(scr)
     render(scr, out / "screen_sim_start.png", 0, cut)  # banner and configuration panel
     render(scr, out / "screen_sim_result.png", cut)  # steps, result panel, written files
@@ -396,13 +420,25 @@ def main():
         scr = replay(chunks[: max(1, len(chunks) // 2)])
     render(scr, out / "screen_aero_panel.png", after_config(scr))
 
-    # 4. install.sh: developer + CFD plan in dry-run mode (detects existing tools, changes nothing).
-    home = os.environ.get("HOME", str(root))
-    # Hide the documentation build's own virtual environment so the installer reports the system python.
-    path = ":".join(d for d in os.environ.get("PATH", "").split(":") if ".venv" not in d)
-    env = {"PATH": path, "VIRTUAL_ENV": ""}
-    scr = replay(capture(["bash", "install.sh", "--developer", "--cfd", "--dry-run", "-y", "--dir", f"{home}/ignisyeet"], root, env))
-    render(scr, out / "screen_install.png")
+    # 4. install.sh: developer + CFD plan in dry-run mode (detects existing tools, changes nothing).  It runs in a scratch
+    # HOME (drawn as /home/user) with a clean PATH, so no path of the build machine appears.  The tools the build machine
+    # has (cargo, uv, micromamba and its environments) are linked into that HOME where a fresh account keeps them.
+    home = scratch_home()
+    try:
+        real_home = Path(os.environ.get("HOME", "/nonexistent"))
+        links = {".cargo/bin/cargo": shutil.which("cargo"), ".local/bin/uv": shutil.which("uv"),
+                 ".local/bin/micromamba": shutil.which("micromamba"), ".local/share/micromamba": real_home / ".local" / "share" / "micromamba"}
+        for rel, target in links.items():
+            if target and Path(target).exists():
+                (home / rel).parent.mkdir(parents=True, exist_ok=True)
+                (home / rel).symlink_to(target)  # not resolved: a rustup proxy picks the tool by its file name
+        env = {"HOME": str(home), "PATH": clean_path(home), "SHELL": "/bin/bash", "VIRTUAL_ENV": "", "USER": "user", "LOGNAME": "user",
+               "RUSTUP_HOME": os.environ.get("RUSTUP_HOME", str(real_home / ".rustup")),  # a rustup proxy needs the real toolchains
+               "CONDA_PREFIX": "", "MAMBA_ROOT_PREFIX": "", "IGNISYEET_CFD_PREFIX": "", "IGNISYEET_DIR": ""}
+        scr = replay(capture(["bash", str(root / "install.sh"), "--developer", "--cfd", "--dry-run", "-y", "--dir", f"{home}/ignisyeet"], home, env))
+        render(anonymise(scr, str(home)), out / "screen_install.png")
+    finally:
+        shutil.rmtree(home, ignore_errors=True)
 
     # 5. install.sh: a real user-role install, check and uninstall in a temporary HOME.
     install_screens(root, out)

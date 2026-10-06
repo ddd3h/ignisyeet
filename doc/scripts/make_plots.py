@@ -239,7 +239,7 @@ def theory(f):
     f.save(fig, "wind_models")
 
     # Adaptive step control: safety factor curve.
-    err = np.logspace(-3, 2, 400)
+    err = np.logspace(-5, 4, 600)  # wide enough to show both clamps (err < 1.9e-4: 5, err > 1.8e3: 0.2)
     fac = np.clip(0.9 * err ** (-0.2), 0.2, 5.0)
     fig, ax = plt.subplots(figsize=(5.6, 3.3))
     ax.plot(err, fac, color=SERIES[0])
@@ -382,8 +382,10 @@ def rigid_body(f):
     axs[0].set_xlabel("時刻 $t$ [s]")
     axs[0].set_ylabel("姿勢の誤差 [rad]")
     axs[0].legend(loc="lower right")
-    axs[1].semilogy(t[1:], np.maximum(d_nrm[1:], 1e-17), color=SERIES[1], label="RK4（正規化前）")
-    axs[1].semilogy(t[1:], np.maximum(d_lie[1:], 1e-17), color=SERIES[0], label="RKMK + RK4")
+    # exact zeros (|q| = 1 to the last bit) have no place on a log axis: those steps are left out (gaps)
+    axs[1].semilogy(t[1:], np.where(np.array(d_nrm[1:]) > 0, d_nrm[1:], np.nan), color=SERIES[1], label="RK4（正規化前）")
+    axs[1].semilogy(t[1:], np.where(np.array(d_lie[1:]) > 0, d_lie[1:], np.nan), color=SERIES[0], label="RKMK + RK4")
+    axs[1].text(0.02, 0.02, "厳密に 0 の時刻は描かない（線の切れ目）", transform=axs[1].transAxes, color=INK2, fontsize=8)
     axs[1].set_xlabel("時刻 $t$ [s]")
     axs[1].set_ylabel("$\\left|\\,|q|-1\\right|$")
     axs[1].legend(loc="center right")
@@ -481,7 +483,8 @@ def from_outputs(f, out):
     # Trajectory: side view and ground track.
     body = traj[traj.phase != "parachute"]
     fig, axs = plt.subplots(1, 2, figsize=(7.8, 3.5))
-    for ph, c, lab in (("rail", SERIES[2], "ランチャ"), ("free", SERIES[0], "自由飛行"), ("parachute", SERIES[1], "パラシュート降下")):
+    # The rail run (5 m, a fraction of a second) is too short to see at this scale: drawn, but not in the legend.
+    for ph, c, lab in (("rail", SERIES[2], None), ("free", SERIES[0], "自由飛行"), ("parachute", SERIES[1], "パラシュート降下")):
         s = traj[traj.phase == ph]
         axs[0].plot(s.t, s.up, color=c, label=lab)
         axs[1].plot(s.east, s.north, color=c, label=lab)
@@ -497,10 +500,11 @@ def from_outputs(f, out):
     fig.tight_layout()
     f.save(fig, "trajectory")
 
-    # Flight states during powered and coasting flight.
+    # Flight states during the ascent (powered flight and coast up to apogee).
     asc = body[(body.vel_u >= 0) & (body.airspeed > 10)]
-    free = body[body.phase == "free"]
-    panels = [("mach", "Mach 数", body), ("alpha_deg", "迎角 $\\alpha$ [deg]", free), ("stability_cal", "静安定余裕 [cal]", asc), ("dyn_pressure", "動圧 $q$ [kPa]", body)]
+    free = asc[asc.phase == "free"]
+    # every panel shows the ascent only (vertical velocity >= 0, airspeed > 10 m/s); alpha from rail exit on
+    panels = [("mach", "Mach 数", asc), ("alpha_deg", "迎角 $\\alpha$ [deg]", free), ("stability_cal", "静安定余裕 [cal]", asc), ("dyn_pressure", "動圧 $q$ [kPa]", asc)]
     fig, axs = plt.subplots(2, 2, figsize=(7.8, 5.2))
     for ax, (col, lab, d) in zip(axs.flat, panels):
         y = d[col] / 1000 if col == "dyn_pressure" else d[col]
@@ -558,8 +562,36 @@ def monte_carlo(f, out):
     f.save(fig, "dispersion_mc")
 
 
+def fin_side_quads(x, rho):
+    """Panel outlines (n, 4, 2) in (x, rho) of one fin side, rebuilt from its panel centroids; None if not a structured grid.
+
+    The panel mesh writes the side panels of a fin chord station by chord station, root to tip within
+    a station (mesh.rs), so the centroids form an n_chord x n_span grid in file order. The corners are
+    the means of the four surrounding centroids, with one row of centroids extrapolated linearly
+    beyond every edge of the grid (root, tip, leading and trailing edge).
+    """
+    x, rho = np.asarray(x, float), np.asarray(rho, float)
+    drops = np.flatnonzero(np.diff(rho) < 0)
+    if len(x) < 4 or len(drops) == 0:
+        return None
+    ns = int(drops[0]) + 1
+    if ns < 2 or len(x) % ns:
+        return None
+    nc = len(x) // ns
+    g = np.stack([x, rho], axis=-1).reshape(nc, ns, 2)
+    if nc < 2 or np.any(np.diff(g[:, :, 1], axis=1) <= 0) or np.any(np.diff(g[:, :, 0], axis=0) <= 0):
+        return None
+    p = np.empty((nc + 2, ns + 2, 2))
+    p[1:-1, 1:-1] = g
+    p[0, 1:-1], p[-1, 1:-1] = 2 * g[0] - g[1], 2 * g[-1] - g[-2]
+    p[:, 0], p[:, -1] = 2 * p[:, 1] - p[:, 2], 2 * p[:, -2] - p[:, -3]
+    v = 0.25 * (p[:-1, :-1] + p[1:, :-1] + p[:-1, 1:] + p[1:, 1:])
+    return np.stack([v[:-1, :-1], v[1:, :-1], v[1:, 1:], v[:-1, 1:]], axis=2).reshape(-1, 4, 2)
+
+
 def panel_method(f, out, pn):
     """Barrowman (out) versus panel method (pn): coefficients, surface Cp and flight histories."""
+    from matplotlib.collections import PolyCollection
     from matplotlib.colors import TwoSlopeNorm
     import matplotlib.tri as mtri
 
@@ -580,12 +612,12 @@ def panel_method(f, out, pn):
     lim = max(float(np.percentile(np.abs(d.cp), 99)), 0.1)
     norm = TwoSlopeNorm(vmin=-lim, vcenter=0.0, vmax=lim)
 
-    def tri(ax, x, y, c, max_dy, y_scale=1.0):
+    def tri(ax, x, y, c, max_dy, y_scale=1.0, shading="gouraud"):
         # Delaunay on (x, y_scale*y) so the panels are near-square (no slivers along narrow columns).
         x, y = np.asarray(x), np.asarray(y)
         t = mtri.Triangulation(x, y, mtri.Triangulation(x, y * y_scale).triangles)
         t.set_mask(np.ptp(np.asarray(y)[t.triangles], axis=1) > max_dy)
-        return ax.tripcolor(t, np.asarray(c), cmap="RdBu_r", norm=norm, shading="gouraud", rasterized=True)
+        return ax.tripcolor(t, np.asarray(c), cmap="RdBu_r", norm=norm, shading=shading, rasterized=True)
 
     body, fin = d[d.part == "body"], d[d.part == "fin"]
     fig = plt.figure(figsize=(7.8, 5.4), layout="constrained")
@@ -602,15 +634,23 @@ def panel_method(f, out, pn):
     k = fin[np.abs(np.angle(np.exp(1j * (phi - np.radians(45))))) < np.radians(20)]
     side = k.ny * (-np.sin(np.radians(45))) + k.nz * np.cos(np.radians(45))
     rho = np.hypot(k.y, k.z)
-    for col, (sel, lab) in enumerate(((side > 0, "フィン（$+$ 側の面）"), (side <= 0, "フィン（$-$ 側の面）"))):
+    # |side| > 0.5 keeps the two side faces; the tip-cap panels (radial normal, side ~ 0) belong to neither.
+    for col, (sel, lab) in enumerate(((side > 0.5, "フィン（$+$ 側の面）"), (side < -0.5, "フィン（$-$ 側の面）"))):
         a = fig.add_subplot(gs[1, col])
-        tri(a, k.x[sel].values, rho[sel].values, k.cp[sel].values, 1e9)
+        x, r, c = k.x[sel].values, rho[sel].values, k.cp[sel].values
+        quads = fin_side_quads(x, r)
+        if quads is not None:
+            # one flat-coloured quad per panel (outline rebuilt from the centroid grid), no interpolation
+            a.add_collection(PolyCollection(quads, array=c, cmap="RdBu_r", norm=norm, edgecolors="face", linewidths=0.2, rasterized=True))
+            a.autoscale_view()
+        else:
+            tri(a, x, r, c, 1e9, shading="flat")
         a.set_xlabel("先端からの距離 $x$ [m]")
         a.set_ylabel("軸からの距離 [m]")
         a.text(0.03, 0.96, lab, transform=a.transAxes, va="top", color=INK, fontsize=9)
         a.set_aspect("equal", adjustable="datalim")
         a.grid(False)
-    cb = fig.colorbar(sc, ax=fig.axes, shrink=0.85, pad=0.02)
+    cb = fig.colorbar(sc, ax=fig.axes, shrink=0.85, pad=0.02, extend="both")
     cb.outline.set_visible(False)
     cb.set_label("圧力係数 $C_p$")
     f.save(fig, "panel_cp")
@@ -689,7 +729,7 @@ def cfd_study(f, out, pn, data):
             ax.plot([0], [cf[0]], "D", color=c, markersize=6, markerfacecolor="white")
             ax.axhline(cf[0], color=c, linewidth=0.7, linestyle=":")
         else:
-            ax.axhline(summ["M0.8"]["cn_extrapolated"], color=c, linewidth=0.7, linestyle=":")
+            ax.axhline(summ["M0.8"]["cn_extrapolated"], color=c, linewidth=0.7, linestyle=":", label=f"$M=0.8$ の推定値 $C_N={summ['M0.8']['cn_extrapolated']:.3f}$（非単調、外挿式なし）")
     ax.set_xlim(left=-0.03)
     ax.set_xlabel("代表格子幅 $h=N_{cell}^{-1/3}$ [$10^{-2}$]")
     ax.set_ylabel("$C_N$（$\\alpha=4^\\circ$）")
@@ -716,6 +756,61 @@ def cfd_study(f, out, pn, data):
     f.save(fig, "cfd_asymmetry")
 
 
+def orient_outward(p, t):
+    """Triangles `t` (indices into points `p`) with a consistent winding whose normals point out of the body.
+
+    The wall mesh of the CFD case is not wound consistently (the fin patches run opposite to the body).
+    The winding is propagated across every edge shared by exactly two triangles; each connected piece
+    is then turned so that its enclosed signed volume, taken about the piece's centroid, is positive.
+    """
+    from collections import deque
+
+    t = np.asarray(t).copy()
+    n = len(t)
+    e = np.concatenate([t[:, [0, 1]], t[:, [1, 2]], t[:, [2, 0]]])
+    owner = np.tile(np.arange(n), 3)
+    key = np.sort(e, axis=1).astype(np.int64)
+    key = key[:, 0] * len(p) + key[:, 1]
+    order = np.argsort(key, kind="stable")
+    _, first, count = np.unique(key[order], return_index=True, return_counts=True)
+    a, b = order[first[count == 2]], order[first[count == 2] + 1]
+    # two neighbours wound the same way traverse their shared edge in opposite directions
+    flip_rel = e[a, 0] == e[b, 0]
+    nbr = [[] for _ in range(n)]
+    for i, j, s in zip(owner[a], owner[b], flip_rel):
+        nbr[i].append((j, s))
+        nbr[j].append((i, s))
+    flip = np.full(n, -1, dtype=np.int8)
+    comp = np.full(n, -1)
+    for seed in range(n):
+        if flip[seed] >= 0:
+            continue
+        flip[seed], comp[seed] = 0, seed
+        q = deque([seed])
+        while q:
+            u = q.popleft()
+            for v, s in nbr[u]:
+                if flip[v] < 0:
+                    flip[v], comp[v] = flip[u] ^ s, seed
+                    q.append(v)
+    t[flip == 1] = t[flip == 1][:, ::-1]
+    tri = p[t]
+    nrm = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+    cen = tri.mean(axis=1)
+    for c in np.unique(comp):
+        m = comp == c
+        if np.einsum("ij,ij->", cen[m] - cen[m].mean(axis=0), nrm[m]) < 0:
+            t[m] = t[m][:, ::-1]
+    return t
+
+
+def facing(tri3, elev, azim):
+    """Mask of the triangles (n, 3, 3) whose normal points towards an orthographic camera at (elev, azim) [deg]."""
+    e, a = np.radians(elev), np.radians(azim)
+    eye = np.array([np.cos(e) * np.cos(a), np.cos(e) * np.sin(a), np.sin(e)])
+    return np.cross(tri3[:, 1] - tri3[:, 0], tri3[:, 2] - tri3[:, 0]) @ eye > 0
+
+
 def cfd_fields(f, fields):
     """Sample-rocket CFD meshes and flow fields (doc/data/cfd/fields, extracted by extract_cfd_fields.py)."""
     from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
@@ -726,6 +821,7 @@ def cfd_fields(f, fields):
     div_cmap = LinearSegmentedColormap.from_list("div", ["#104281", "#5598e7", "#f0efec", "#f19a6c", "#b23f0f"])
     body_c = "#c9c8c3"
     cases = [("m0.800_a04.00", "$M_\\infty=0.8$"), ("m2.000_a04.00", "$M_\\infty=2.0$")]
+    VIEW_NOSE, VIEW_FIN = (20, 60), (25, 120)  # camera on the +y side: the outer face of the half model (y >= 0)
 
     def shaded(tri3, base):
         n = np.cross(tri3[:, 1] - tri3[:, 0], tri3[:, 2] - tri3[:, 0])
@@ -742,18 +838,21 @@ def cfd_fields(f, fields):
 
     # surface mesh: nose tip and fin root (half model, outer side)
     w = np.load(fields / "mesh_wall.npz")
-    p, t = w["points"].astype(float), w["triangles"]
+    p = w["points"].astype(float)
+    t = orient_outward(p, w["triangles"])  # outward normals: faces turned away from the camera are culled below
     cen = p[t].mean(axis=1)
     fig = plt.figure(figsize=(10, 4.2))
     for k, (rect, sel, view, lab) in enumerate((
-        ([0.0, 0.02, 0.4, 0.96], (cen[:, 0] < 0.09), (20, -60), "ノーズ先端"),
-        ([0.42, 0.0, 0.58, 1.0], (cen[:, 0] > 1.27) & (cen[:, 0] < 1.40) & (cen[:, 2] > -0.01) & (cen[:, 1] > -1e-3) & (np.hypot(cen[:, 1], cen[:, 2]) < 0.085), (25, -120), "フィンの付け根（前縁側）"),
+        ([0.0, 0.02, 0.4, 0.96], (cen[:, 0] < 0.09), VIEW_NOSE, "ノーズ先端"),
+        ([0.42, 0.0, 0.58, 1.0], (cen[:, 0] > 1.27) & (cen[:, 0] < 1.40) & (cen[:, 2] > -0.01) & (cen[:, 1] > -1e-3) & (np.hypot(cen[:, 1], cen[:, 2]) < 0.085), VIEW_FIN, "フィンの付け根（前縁側）"),
     )):
         ax = fig.add_axes(rect, projection="3d")
         tri3 = p[t[sel]]
+        frame3d(ax, tri3.reshape(-1, 3))
+        tri3 = tri3[facing(tri3, *view)]
         face = shaded(tri3, np.array(matplotlib.colors.to_rgb("#e3eefb")))
         ax.add_collection3d(Poly3DCollection(tri3, facecolors=face, edgecolors=(0.06, 0.16, 0.32, 0.9), linewidths=0.25, rasterized=True))
-        frame3d(ax, tri3.reshape(-1, 3))
+        ax.set_proj_type("ortho")
         ax.view_init(elev=view[0], azim=view[1])
         ax.text2D(0.03, 0.95, lab, transform=ax.transAxes, color=INK2, fontsize=10)
     f.save(fig, "cfd_mesh_surface")
@@ -806,7 +905,8 @@ def cfd_fields(f, fields):
         cp = d["wall_cp"].astype(float)
         pm = p * np.array([1, -1, 1])
         cpf_all = np.concatenate([cp[t].mean(axis=1)] * 2)
-        tri_all = np.concatenate([p[t], pm[t]])
+        # the mirror image reverses the winding: reverse the vertex order to keep the normals outward
+        tri_all = np.concatenate([p[t], pm[t[:, ::-1]]])
         cen_all = tri_all.mean(axis=1)[:, 0]
         lim = float(np.percentile(np.abs(cpf_all), 99.5))
         norm = TwoSlopeNorm(vmin=-lim, vcenter=0.0, vmax=lim)
@@ -815,10 +915,12 @@ def cfd_fields(f, fields):
             (cen_all > 1.2, [0.3, 0.5 - 0.5 * k, 0.56, 0.48], (-22, -55)),
         )):
             ax = fig.add_axes(rect, projection="3d")
+            frame3d(ax, tri_all[sel].reshape(-1, 3))
+            sel = sel & facing(tri_all, *view)  # back-face culling; the depth sort hides the rest
             tri3 = tri_all[sel]
             face = shaded(tri3, div_cmap(norm(cpf_all[sel]))[:, :3])
-            ax.add_collection3d(Poly3DCollection(tri3, facecolors=face, edgecolors="none", rasterized=True))
-            frame3d(ax, tri3.reshape(-1, 3))
+            ax.add_collection3d(Poly3DCollection(tri3, facecolors=face, edgecolors=face, linewidths=0.3, rasterized=True))
+            ax.set_proj_type("ortho")
             ax.view_init(elev=view[0], azim=view[1])
             if j == 0:
                 ax.text2D(0.0, 1.0, lab + "、$\\alpha=4^\\circ$", transform=ax.transAxes, color=INK, fontsize=10)

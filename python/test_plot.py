@@ -117,6 +117,45 @@ class PanelPlot(unittest.TestCase):
         self.assertAlmostEqual(np.degrees(self.draw([45, 135, -135, -45])) % 90, 45.0, places=3)
 
 
+class FinSideQuads(unittest.TestCase):
+    def grid(self):
+        """Corners of a swept 4 x 3 panel grid on a uniform (affine) lattice and the centroids in file order."""
+        i, j = np.meshgrid(np.arange(5), np.arange(4), indexing="ij")
+        v = np.stack([1.3 + 0.02 * i + 0.01 * j, 0.05 + 0.03 * j], axis=-1)
+        c = 0.25 * (v[:-1, :-1] + v[1:, :-1] + v[:-1, 1:] + v[1:, 1:])  # chord-major, root to tip
+        return v, c.reshape(-1, 2)
+
+    def test_uniform_grid_recovers_the_panel_corners(self):
+        v, c = self.grid()
+        q = plot.fin_side_quads(c[:, 0], c[:, 1])
+        self.assertEqual(q.shape, (12, 4, 2))
+        np.testing.assert_allclose(q[0], [v[0, 0], v[1, 0], v[1, 1], v[0, 1]], atol=1e-12)
+        np.testing.assert_allclose(q[-1], [v[3, 2], v[4, 2], v[4, 3], v[3, 3]], atol=1e-12)
+        np.testing.assert_allclose(q.mean(axis=1), c, atol=1e-12)
+
+    def test_unordered_centroids_are_not_a_grid(self):
+        _, c = self.grid()
+        c = c[np.random.default_rng(1).permutation(len(c))]
+        self.assertIsNone(plot.fin_side_quads(c[:, 0], c[:, 1]))
+
+
+class Trajectory3d(unittest.TestCase):
+    def test_equal_axes_and_no_legend_entry_for_a_short_rail(self):
+        t = np.linspace(0, 100, 201)
+        tr = pd.DataFrame({"t": t, "east": -5 * t, "north": -60 * t, "up": 4000 * np.sin(np.pi * t / 200)})
+        tr["phase"] = np.where(t < 0.6, "rail", np.where(t < 50, "free", "parachute"))
+        tr.loc[tr.phase == "rail", ["east", "north", "up"]] = [[0, 0, 0], [0.5, 0.5, 5.0]]
+        fig = plot.plt.figure()
+        ax = fig.add_subplot(projection="3d")
+        plot.draw_path_3d(ax, tr)
+        spans = [np.ptp(lim) for lim in (ax.get_xlim(), ax.get_ylim(), ax.get_zlim())]
+        np.testing.assert_allclose(spans, spans[0])
+        self.assertGreaterEqual(spans[0], 6000.0)  # north runs 0.5 .. -6000 m
+        self.assertEqual(ax.get_zlim()[0], 0.0)
+        self.assertEqual([h.get_label() for h in ax.get_legend_handles_labels()[0]], ["free", "parachute", "launch site"])
+        plot.plt.close(fig)
+
+
 class TrajectoryAltitude(unittest.TestCase):
     def frame(self):
         t = np.linspace(0, 10, 11)

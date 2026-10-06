@@ -1129,7 +1129,7 @@ mod tests {
             .lines()
             .map(|l| {
                 let mut c: Vec<String> = l.split(',').map(String::from).collect();
-                if c[0].parse::<f64>().map_or(false, |m| (m - 0.3).abs() < 1e-9) && c[1].parse::<f64>().map_or(false, |a| a == 0.0) {
+                if c[0].parse::<f64>().is_ok_and(|m| (m - 0.3).abs() < 1e-9) && c[1].parse::<f64>().is_ok_and(|a| a == 0.0) {
                     c[4] = "-1".into();
                 }
                 c.join(",")

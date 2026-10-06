@@ -58,7 +58,7 @@ impl MassProperties {
         self.ixy_dry == 0.0
             && self.ixz_dry == 0.0
             && self.iyz_dry == 0.0
-            && self.izz_dry.map_or(true, |z| z == self.iyy_dry)
+            && self.izz_dry.is_none_or(|z| z == self.iyy_dry)
             && self.cg_lateral_dry == [0.0, 0.0]
     }
 }
@@ -1167,15 +1167,15 @@ mod tests {
             let tm = sm.main_deploy_time.unwrap();
             assert!(tm > sm.apogee_time + 1.0 && tm < sm.landing_time);
             // Just above the main altitude the drogue is at its terminal speed ...
-            let above = r.samples.iter().filter(|s| s.t < tm && s.alt > 340.0 && s.alt < 400.0 && s.phase == Phase::Parachute).last().unwrap();
+            let above = r.samples.iter().rfind(|s| s.t < tm && s.alt > 340.0 && s.alt < 400.0 && s.phase == Phase::Parachute).unwrap();
             let vd = terminal(&sim, 8.0, 0.4, above.alt);
             assert!((above.airspeed / vd - 1.0).abs() < 0.05, "{integrator:?} drogue {} vs {vd}", above.airspeed);
             // ... and below it the descent settles to the main's terminal speed.
-            let below = r.samples.iter().filter(|s| s.t > tm && s.alt > 5.0).last().unwrap();
+            let below = r.samples.iter().rfind(|s| s.t > tm && s.alt > 5.0).unwrap();
             let vm = terminal(&sim, 8.0, 4.0, below.alt);
             assert!((below.airspeed / vm - 1.0).abs() < 0.05, "{integrator:?} main {} vs {vm}", below.airspeed);
             assert!((sm.landing_speed / terminal(&sim, 8.0, 4.0, 0.0) - 1.0).abs() < 0.05, "landing {}", sm.landing_speed);
-            let before = r.samples.iter().filter(|s| s.t <= tm).last().unwrap();
+            let before = r.samples.iter().rfind(|s| s.t <= tm).unwrap();
             assert!(before.alt >= 300.0 - 1e-6 && below.alt < 300.0);
             // Ballistic descent ignores the main parachute.
             let b = sim.run(Descent::Ballistic, false).unwrap().summary;

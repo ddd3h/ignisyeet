@@ -467,7 +467,7 @@ mod tests {
         let mut h1 = q1.clone();
         h1.z_mirror = false;
         h1.domain = "stl_half".into();
-        let hashes = [&s1, &q1, &q2, &h1].map(|p| mesh_hash(p));
+        let hashes = [&s1, &q1, &q2, &h1].map(mesh_hash);
         for i in 0..4 {
             for j in 0..i {
                 assert_ne!(hashes[i], hashes[j], "{i} {j}");

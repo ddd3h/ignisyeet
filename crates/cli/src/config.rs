@@ -854,7 +854,7 @@ mod tests {
     #[test]
     fn enabled_recovery_needs_a_positive_drag_area() {
         let sample = include_str!("../../../examples/sample.toml");
-        let e = parse(&sample.replacen("cd_s = 3.5", "cd_s = 0.0", 1)).err().expect("cd_s = 0 accepted").to_string();
+        let e = parse(&sample.replacen("cd_s = 3.5", "cd_s = 0.0", 1)).expect_err("cd_s = 0 accepted").to_string();
         assert!(e.contains("recovery.cd_s"), "{e}");
         let off = sample.replacen("cd_s = 3.5", "cd_s = 0.0", 1).replacen("enabled = true", "enabled = false", 1);
         parse(&off).unwrap();

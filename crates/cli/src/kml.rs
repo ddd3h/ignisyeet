@@ -842,7 +842,7 @@ mod tests {
         let (f, w, m) = (Flight { samples: flight(), summary: summary() }, wind_grid_part(), mc_part());
         crate::write_trajectory(&dir.join("trajectory.csv"), &f.samples).unwrap();
         std::fs::write(dir.join("summary.json"), serde_json::to_string_pretty(&with_hash(&f.summary, H)).unwrap()).unwrap();
-        crate::write_wind_grid_csv(&dir.join("dispersion.csv"), &w.results).unwrap();
+        crate::write_wind_grid_csv(&dir.join("dispersion.csv"), &w.results, &vec![None; w.results.len()]).unwrap();
         std::fs::write(dir.join(WIND_GRID_META), serde_json::json!({ "config_hash": H }).to_string()).unwrap();
         crate::write_monte_carlo_csv(&dir.join("dispersion_mc.csv"), &m.rows).unwrap();
         let mc_summary = sim::dispersion::summarize(&m.rows, m.rows.len(), 1);
@@ -881,7 +881,7 @@ mod tests {
         let dir = temp_dir("stale");
         let (f, w, m) = (Flight { samples: flight(), summary: summary() }, wind_grid_part(), mc_part());
         crate::write_trajectory(&dir.join("trajectory.csv"), &f.samples).unwrap();
-        crate::write_wind_grid_csv(&dir.join("dispersion.csv"), &w.results).unwrap();
+        crate::write_wind_grid_csv(&dir.join("dispersion.csv"), &w.results, &vec![None; w.results.len()]).unwrap();
         crate::write_monte_carlo_csv(&dir.join("dispersion_mc.csv"), &m.rows).unwrap();
         let mc_summary = sim::dispersion::summarize(&m.rows, m.rows.len(), 1);
         // No hash at all (older output): stale.
@@ -911,7 +911,7 @@ mod tests {
         w.results[2].landing_lat = f64::NAN;
         w.results[2].landing_lon = f64::NAN;
         w.results[2].landing_distance = f64::NAN;
-        crate::write_wind_grid_csv(&dir.join("dispersion.csv"), &w.results).unwrap();
+        crate::write_wind_grid_csv(&dir.join("dispersion.csv"), &w.results, &vec![None; w.results.len()]).unwrap();
         std::fs::write(dir.join(WIND_GRID_META), serde_json::json!({ "config_hash": H }).to_string()).unwrap();
         assert_eq!(load_wind_grid(&dir, H).unwrap().unwrap().cases.len(), 4);
         let _ = std::fs::remove_dir_all(&dir);

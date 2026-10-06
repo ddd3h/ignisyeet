@@ -113,6 +113,15 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
         p.section("Recovery");
         if cfg.recovery.enabled {
             p.row("parachute", format!("Cd*S {}{s}deploys {} after apogee", val(format!("{:.2}", cfg.recovery.cd_s), "m2"), val(format!("{:.1}", cfg.recovery.delay), "s")));
+            if let Some((cd_s, alt)) = cfg.recovery.main() {
+                p.row("main parachute", format!("main Cd*S {}{s}deploys at {}", val(format!("{:.2}", cd_s), "m2"), val(format!("{:.0}", alt), "m")));
+            }
+            let v = |cd_s: f64| crate::chute_speed(cfg.rocket.dry_mass, cd_s);
+            let speeds = match cfg.recovery.main_cd_s {
+                Some(main) => format!("drogue {}{s}main {}", val(format!("{:.1}", v(cfg.recovery.cd_s)), "m/s"), val(format!("{:.1}", v(main)), "m/s")),
+                None => val(format!("{:.1}", v(cfg.recovery.cd_s)), "m/s").to_string(),
+            };
+            p.row("terminal speed", format!("{speeds} {}", dim("(sea level, dry mass)")));
         } else {
             p.row("parachute", dim("disabled (ballistic descent)").to_string());
         }
@@ -311,6 +320,9 @@ pub fn flight_panel(sm: &Summary, descent: Descent, g_lat_lon: bool) -> Panel {
     p.row("max speed", format!("{} {}{s}max q {}", style(format!("{:.1} m/s", sm.max_speed)).bold().yellow(), dim(format!("(Mach {:.2})", sm.max_mach)), val(format!("{:.1}", sm.max_dyn_pressure / 1000.0), "kPa")));
     p.row("min static margin", format!("{}{s}free flight {}", stability(crate::static_margin_min(sm)), stability(sm.min_stability_cal)));
     p.row("apogee", format!("{} {}{s}at {}", style(format!("{:.1} m", sm.apogee)).bold().green(), dim("AGL"), val(format!("{:.2}", sm.apogee_time), "s")));
+    if let (Some(t), Some(h)) = (sm.main_deploy_time, sm.main_deploy_altitude) {
+        p.row("main deploy", format!("{} {}{s}at {}", style(format!("{h:.1} m")).bold().green(), dim("AGL"), val(format!("{t:.2}"), "s")));
+    }
     if !sm.landed() {
         p.row("landing", style("DID NOT LAND within sim.max_time").red().bold().to_string());
         return p;
@@ -405,6 +417,23 @@ mod tests {
         let lines = ui().render_panel(&p).join("\n");
         let plain = console::strip_ansi_codes(&lines).to_string();
         assert!(plain.contains("dop853") && plain.contains("attitude lie_group") && plain.contains("rtol"), "{plain}");
+    }
+
+    #[test]
+    fn dual_deploy_is_shown_in_the_config_and_flight_panels() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+        let text = include_str!("../../../examples/sample.toml").replacen("delay = 1.0", "delay = 1.0\nmain_cd_s = 8.0\nmain_altitude = 300.0", 1);
+        let cfg = Config::from_value(toml::from_str(&text).unwrap(), Some(&dir)).unwrap();
+        let render = |p: &Panel| console::strip_ansi_codes(&ui().render_panel(p).join("\n")).to_string();
+        let plain = render(&config_panel(&cfg, &dir.join("sample.toml"), Sub::Sim, None));
+        assert!(plain.contains("main Cd*S 8.00 m2") && plain.contains("deploys at 300 m"), "{plain}");
+        assert!(plain.contains("drogue") && plain.contains("main") && plain.contains("m/s"), "{plain}");
+        let single = render(&config_panel(&Config::from_value(toml::from_str(include_str!("../../../examples/sample.toml")).unwrap(), Some(&dir)).unwrap(), &dir.join("sample.toml"), Sub::Sim, None));
+        assert!(!single.contains("main Cd*S") && !single.contains("drogue"), "{single}");
+        let s = Summary { main_deploy_time: Some(61.5), main_deploy_altitude: Some(300.2), landing_time: 100.0, ..Summary::failed(Descent::Parachute, 1.0, 0.0) };
+        let s = Summary { landing_time: 100.0, landing_east: 1.0, landing_north: 2.0, landing_distance: 3.0, landing_speed: 5.0, landing_lat: 0.0, landing_lon: 0.0, ..s };
+        let flight = render(&flight_panel(&s, Descent::Parachute, false));
+        assert!(flight.contains("main deploy") && flight.contains("300.2 m") && flight.contains("61.50 s"), "{flight}");
     }
 
     #[test]

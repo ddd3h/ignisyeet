@@ -407,6 +407,7 @@ impl Config {
         finite("launch.roll_deg", l.roll_deg)?;
         non_negative("recovery.cd_s", self.recovery.cd_s)?;
         non_negative("recovery.delay", self.recovery.delay)?;
+        self.recovery.validate()?;
 
         let a = &self.aero;
         non_negative("aero.mach_min", a.mach_min)?;
@@ -778,6 +779,25 @@ mod tests {
             let old = key_of(prefix);
             let e = parse(&sample.replacen(&old, line, 1)).err().unwrap_or_else(|| panic!("`{line}` was accepted")).to_string();
             assert!(e.contains(key), "`{line}`: {e}");
+        }
+    }
+
+    #[test]
+    fn dual_deploy_fields_are_validated_at_load() {
+        let sample = include_str!("../../../examples/sample.toml");
+        let with = |lines: &str| sample.replacen("delay = 1.0", &format!("delay = 1.0\n{lines}"), 1);
+        let ok = parse(&with("main_cd_s = 8.0\nmain_altitude = 300.0")).unwrap();
+        assert_eq!(ok.recovery.main(), Some((8.0, 300.0)));
+        assert_eq!(parse(sample).unwrap().recovery.main(), None);
+        for (lines, key) in [
+            ("main_cd_s = 8.0", "recovery.main_cd_s and recovery.main_altitude"),
+            ("main_altitude = 300.0", "recovery.main_cd_s and recovery.main_altitude"),
+            ("main_cd_s = -1.0\nmain_altitude = 300.0", "recovery.main_cd_s must be positive"),
+            ("main_cd_s = 8.0\nmain_altitude = 0.0", "recovery.main_altitude must be positive"),
+            ("main_cd_s = 8.0\nmain_altitude = nan", "recovery.main_altitude must be positive"),
+        ] {
+            let e = parse(&with(lines)).err().unwrap_or_else(|| panic!("`{lines}` accepted")).to_string();
+            assert!(e.contains(key), "`{lines}`: {e}");
         }
     }
 

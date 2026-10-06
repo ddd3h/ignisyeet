@@ -922,6 +922,7 @@ fn prepare(cfg: &Config) -> Result<Prepared> {
     let motor = load_motor(cfg)?;
     let motor_aft_x = cfg.motor.aft_x.unwrap_or(table.meta.length);
     let mut geometry_warnings = geometry_warnings(cfg);
+    geometry_warnings.extend(motor.warnings());
     if cfg.aero.method == config::AeroMethod::Table {
         geometry_warnings.extend(table.sanity_warnings());
     }
@@ -962,6 +963,12 @@ fn default_descent(cfg: &Config) -> Descent {
     cfg.sim.descent.unwrap_or(if cfg.recovery.enabled { Descent::Parachute } else { Descent::Ballistic })
 }
 
+/// Rough terminal speed [m/s] of a rocket of `mass` [kg] under a canopy of drag area `cd_s` [m^2] (sea-level
+/// density 1.1 kg/m^3 as the progress estimate and the plain summary use).
+pub(crate) fn chute_speed(mass: f64, cd_s: f64) -> f64 {
+    (2.0 * mass * 9.80665 / (1.1 * cd_s.max(1e-3))).sqrt()
+}
+
 const SIM_T: &str = "  {spinner:.cyan} {prefix:<12.bold} {bar} {percent:>3}%  T+{simt:.cyan}  {elapsed:.dim}  ETA {eta_precise:.yellow}\n      {msg}";
 
 /// Flies the configured rocket once, with a live progress bar when a terminal is attached.
@@ -977,7 +984,7 @@ fn fly(cfg: &Config, sim: &Simulation, descent: Descent) -> Result<sim::SimResul
     let mass = cfg.rocket.dry_mass + sim.motor.propellant_mass;
     // Ideal burnout speed (reduced for drag) before the real one is known.
     let dv_est = (sim.motor.total_impulse() / (mass - 0.5 * sim.motor.propellant_mass).max(1e-3) - G * sim.motor.burn_time()).max(50.0);
-    let v_chute = (2.0 * mass * G / (1.1 * cfg.recovery.cd_s.max(1e-3))).sqrt();
+    let v_chute = chute_speed(mass, cfg.recovery.main_cd_s.unwrap_or(cfg.recovery.cd_s));
     let max_time = cfg.sim.max_time;
     let descent_time = move |h: f64| match descent {
         Descent::Parachute => h / v_chute + cfg.recovery.delay,
@@ -1221,18 +1228,19 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
     }
     let start = std::time::Instant::now();
     let total = sim::dispersion::wind_grid_runs(&cfg.dispersion, cfg.recovery.enabled);
-    let (cases, results) = if u.progress_on() {
+    let (cases, detailed) = if u.progress_on() {
         let pb = u.bar_with(total as u64, "Wind grid", DISP_T, rate_key);
         let far = FarthestLanding::new();
-        let r = sim::dispersion::run_with_progress(&cfg.dispersion, &base, cfg.recovery.enabled, &|c, s| {
+        let r = sim::dispersion::run_wind_grid_detailed(&cfg.dispersion, &base, cfg.recovery.enabled, &|c, s| {
             pb.set_message(far.update(c.descent, s.landing_distance));
             pb.inc(1);
         });
         pb.finish_and_clear();
-        r?
+        r
     } else {
-        sim::dispersion::run(&cfg.dispersion, &base, cfg.recovery.enabled)?
+        sim::dispersion::run_wind_grid_detailed(&cfg.dispersion, &base, cfg.recovery.enabled, &|_, _| {})
     };
+    let (results, errors) = split_wind_grid(&cases, detailed);
     let mut modes: Vec<Descent> = Vec::new();
     for c in &cases {
         if !modes.contains(&c.descent) {
@@ -1247,10 +1255,12 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
             cfg.sim.max_time
         ));
     }
+    warnings.extend(wind_grid_error_warnings(&cases, &errors));
     warnings.extend(aero_range_warning(&p.table.out_of_range_stats()));
     let path = out_path(cfg, "dispersion.csv")?;
-    write_wind_grid_csv(&path, &results)?;
-    let meta = serde_json::json!({ "config_hash": run_hash(cfg, RunKind::WindGrid), "flight_config_hash": run_hash(cfg, RunKind::Flight), "cases": results.len(), "failed": failed, "warnings": warnings, "aero_table_range": aero_range_json(&p.table.out_of_range_stats()) });
+    write_wind_grid_csv(&path, &results, &errors)?;
+    let errored = errors.iter().flatten().count();
+    let meta = serde_json::json!({ "config_hash": run_hash(cfg, RunKind::WindGrid), "flight_config_hash": run_hash(cfg, RunKind::Flight), "cases": results.len(), "failed": failed, "errored": errored, "warnings": warnings, "aero_table_range": aero_range_json(&p.table.out_of_range_stats()) });
     std::fs::write(out_path(cfg, kml::WIND_GRID_META)?, serde_json::to_string_pretty(&meta)?)?;
     u.done_line("Wind grid", &format!("{} cases, {failed} failed", results.len()), start.elapsed());
     if u.plain() {
@@ -1277,16 +1287,54 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
     Ok(incomplete)
 }
 
-fn write_wind_grid_csv(path: &Path, results: &[sim::Summary]) -> Result<()> {
+/// Splits the per-case results of the wind grid into summaries (a failed case becomes [`Summary::failed`],
+/// which never counts as landed) and the error message of each failed case.
+fn split_wind_grid(cases: &[sim::dispersion::Case], detailed: Vec<std::result::Result<Summary, String>>) -> (Vec<Summary>, Vec<Option<String>>) {
+    cases
+        .iter()
+        .zip(detailed)
+        .map(|(c, r)| match r {
+            Ok(s) => (s, None),
+            Err(e) => (Summary::failed(c.descent, c.wind_speed, c.wind_direction_deg), Some(e)),
+        })
+        .unzip()
+}
+
+/// Warnings naming the first failed wind-grid cases with their error (the rest are counted).
+fn wind_grid_error_warnings(cases: &[sim::dispersion::Case], errors: &[Option<String>]) -> Vec<String> {
+    const SHOWN: usize = 3;
+    let failed: Vec<(&sim::dispersion::Case, &String)> = cases.iter().zip(errors).filter_map(|(c, e)| e.as_ref().map(|e| (c, e))).collect();
+    let mut w: Vec<String> = failed
+        .iter()
+        .take(SHOWN)
+        .map(|(c, e)| format!("wind-grid case {} m/s from {:.0}\u{b0} ({}): {e}", c.wind_speed, c.wind_direction_deg, descent_name(c.descent)))
+        .collect();
+    if failed.len() > SHOWN {
+        w.push(format!("{} more wind-grid cases failed with an error (see the error column of dispersion.csv)", failed.len() - SHOWN));
+    }
+    w
+}
+
+/// A CSV field kept on one line (line breaks become spaces), quoted when it holds a comma or quote.
+fn csv_field(s: &str) -> String {
+    let s = s.replace(['\n', '\r'], " ");
+    if s.contains([',', '"']) {
+        format!("\"{}\"", s.replace('"', "\"\""))
+    } else {
+        s
+    }
+}
+
+fn write_wind_grid_csv(path: &Path, results: &[sim::Summary], errors: &[Option<String>]) -> Result<()> {
     let mut f = std::io::BufWriter::new(std::fs::File::create(path)?);
-    writeln!(f, "descent,wind_speed,wind_direction_deg,landing_east,landing_north,landing_lat,landing_lon,landing_distance,landing_time,landing_speed,apogee,apogee_time,max_mach,rail_exit_speed,min_stability_cal,landed")?;
-    for s in results {
+    writeln!(f, "descent,wind_speed,wind_direction_deg,landing_east,landing_north,landing_lat,landing_lon,landing_distance,landing_time,landing_speed,apogee,apogee_time,max_mach,rail_exit_speed,min_stability_cal,landed,error")?;
+    for (s, e) in results.iter().zip(errors) {
         let mode = if s.descent == Descent::Ballistic { "ballistic" } else { "parachute" };
         writeln!(
             f,
-            "{mode},{},{},{:.2},{:.2},{:.8},{:.8},{:.2},{:.2},{:.2},{:.2},{:.2},{:.4},{:.2},{:.3},{}",
+            "{mode},{},{},{:.2},{:.2},{:.8},{:.8},{:.2},{:.2},{:.2},{:.2},{:.2},{:.4},{:.2},{:.3},{},{}",
             s.wind_speed, s.wind_direction_deg, s.landing_east, s.landing_north, s.landing_lat, s.landing_lon, s.landing_distance,
-            s.landing_time, s.landing_speed, s.apogee, s.apogee_time, s.max_mach, s.rail_exit_speed, s.min_stability_cal, s.landed()
+            s.landing_time, s.landing_speed, s.apogee, s.apogee_time, s.max_mach, s.rail_exit_speed, s.min_stability_cal, s.landed(), csv_field(e.as_deref().unwrap_or(""))
         )?;
     }
     f.flush()?;
@@ -1889,5 +1937,65 @@ mod tests {
         }
         }
         let _ = std::fs::remove_dir_all(&cfg.output.dir);
+    }
+
+    #[test]
+    fn dual_deploy_summary_json_and_terminal_speeds() {
+        let cfg = load_sample(include_str!("../../../examples/sample.toml"));
+        let none = summary_json(&cfg, &sample_summary(), &[]).unwrap();
+        assert!(none["main_deploy_time"].is_null() && none["main_deploy_altitude"].is_null());
+        let s = sim::Summary { main_deploy_time: Some(61.5), main_deploy_altitude: Some(300.2), ..sample_summary() };
+        let j = summary_json(&cfg, &s, &[]).unwrap();
+        assert_eq!((j["main_deploy_time"].as_f64(), j["main_deploy_altitude"].as_f64()), (Some(61.5), Some(300.2)));
+        // a larger canopy is slower: v ~ 1/sqrt(Cd*S)
+        let (drogue, main) = (chute_speed(10.0, 0.5), chute_speed(10.0, 2.0));
+        assert!((drogue / main - 2.0).abs() < 1e-9 && main > 0.0);
+    }
+
+    #[test]
+    fn motor_warnings_reach_the_prepared_warnings() {
+        let mut cfg = sample_config("motorwarn");
+        let p = prepare(&cfg).unwrap();
+        assert!(p.geometry_warnings.iter().all(|w| !w.contains("thrust curve")), "{:?}", p.geometry_warnings);
+        std::fs::create_dir_all(&cfg.output.dir).unwrap();
+        let eng = cfg.output.dir.join("abrupt.eng");
+        std::fs::write(&eng, "ABRUPT 75 500 0 3.0 4.5 X\n0.00 0\n0.20 2400\n2.00 2000\n").unwrap();
+        cfg.motor.eng = eng;
+        let p = prepare(&cfg).unwrap();
+        assert!(p.geometry_warnings.iter().any(|w| w.contains("thrust curve ends at 2000 N")), "{:?}", p.geometry_warnings);
+        let _ = std::fs::remove_dir_all(&cfg.output.dir);
+    }
+
+    #[test]
+    fn wind_grid_errors_are_kept_listed_and_written_to_the_csv() {
+        use sim::dispersion::Case;
+        let case = |v: f64, d: f64| Case { descent: Descent::Parachute, wind_speed: v, wind_direction_deg: d };
+        let cases: Vec<Case> = (0..6).map(|i| case(7.0, 90.0 * i as f64)).collect();
+        let ok = sim::Summary { landing_east: 1.0, landing_north: 2.0, landing_distance: 2.2, landing_time: 10.0, ..sample_summary() };
+        let detailed: Vec<std::result::Result<sim::Summary, String>> = vec![
+            Ok(ok.clone()),
+            Err("integration diverged, state \"NaN\"".into()),
+            Ok(ok.clone()),
+            Err("e2\nsecond line".into()),
+            Err("e3".into()),
+            Err("e4".into()),
+        ];
+        let (results, errors) = split_wind_grid(&cases, detailed);
+        assert_eq!(errors.iter().flatten().count(), 4);
+        assert!(results[0].landed() && !results[1].landed() && results[1].wind_speed == 7.0 && results[1].wind_direction_deg == 90.0);
+        let w = wind_grid_error_warnings(&cases, &errors);
+        assert_eq!(w.len(), 4);
+        assert!(w[0].starts_with("wind-grid case 7 m/s from 90\u{b0} (parachute): integration diverged"), "{w:?}");
+        assert!(w[3].starts_with("1 more wind-grid cases failed") && w[3].contains("error column"), "{w:?}");
+        let path = std::env::temp_dir().join(format!("ignisyeet_cli_gridcsv_{}.csv", std::process::id()));
+        write_wind_grid_csv(&path, &results, &errors).unwrap();
+        let text = std::fs::read_to_string(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 7, "{text}");
+        assert!(lines[0].ends_with(",landed,error"));
+        assert!(lines[1].ends_with(",true,"), "{}", lines[1]);
+        assert!(lines[2].ends_with(",false,\"integration diverged, state \"\"NaN\"\"\""), "{}", lines[2]);
+        assert!(lines[4].ends_with(",false,e2 second line"), "{}", lines[4]);
     }
 }

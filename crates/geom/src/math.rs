@@ -193,15 +193,13 @@ pub fn sym_eigen(a: [[f64; 3]; 3]) -> ([f64; 3], [Vec3; 3]) {
             let t = if theta == 0.0 { 1.0 } else { t };
             let c = 1.0 / (t * t + 1.0).sqrt();
             let s = t * c;
-            for k in 0..3 {
-                let akp = a[k][p];
-                let akq = a[k][q];
-                a[k][p] = c * akp - s * akq;
-                a[k][q] = s * akp + c * akq;
+            for row in a.iter_mut() {
+                let (akp, akq) = (row[p], row[q]);
+                row[p] = c * akp - s * akq;
+                row[q] = s * akp + c * akq;
             }
-            for k in 0..3 {
-                let apk = a[p][k];
-                let aqk = a[q][k];
+            let (rp, rq) = (a[p], a[q]);
+            for (k, (&apk, &aqk)) in rp.iter().zip(rq.iter()).enumerate() {
                 a[p][k] = c * apk - s * aqk;
                 a[q][k] = s * apk + c * aqk;
             }
@@ -214,7 +212,7 @@ pub fn sym_eigen(a: [[f64; 3]; 3]) -> ([f64; 3], [Vec3; 3]) {
         }
     }
     let mut idx = [0usize, 1, 2];
-    idx.sort_by(|&i, &j| a[j][j].partial_cmp(&a[i][i]).unwrap());
+    idx.sort_by(|&i, &j| a[j][j].total_cmp(&a[i][i]));
     let vals = [a[idx[0]][idx[0]], a[idx[1]][idx[1]], a[idx[2]][idx[2]]];
     let vecs = idx.map(|j| Vec3::new(v[0][j], v[1][j], v[2][j]).normalized());
     (vals, vecs)

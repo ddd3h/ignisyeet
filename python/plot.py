@@ -78,7 +78,12 @@ def seq_colors(n):
     return [SEQ[round(i * (len(SEQ) - 1) / (n - 1))] for i in range(n)]
 
 
+SAVED = 0  # figures written so far: a plot function that draws nothing leaves it unchanged
+
+
 def save(fig, out, name):
+    global SAVED
+    SAVED += 1
     path = out / "plots" / name
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=150, bbox_inches="tight")
@@ -130,8 +135,12 @@ def axisymmetric_view(t):
 
 
 def plot_aero(out):
-    d = pd.read_csv(out / "aero_drag.csv")
     t = axisymmetric_view(pd.read_csv(out / "aero_table.csv"))
+    if (out / "aero_drag.csv").exists():
+        d = pd.read_csv(out / "aero_drag.csv")
+    else:
+        # CFD tables have no per-Mach drag file (no component breakdown): the alpha = 0 rows give the totals.
+        d = t[t.alpha_deg == 0].sort_values("mach").rename(columns={"ca_off": "cd_off", "ca_on": "cd_on"})
     fig, axs = plt.subplots(2, 2, figsize=(11, 7.5))
 
     ax = axs[0, 0]
@@ -351,6 +360,8 @@ def plot_dispersion_mc(out):
 def plot_dispersion(out):
     if (out / "dispersion_mc.csv").exists() and (out / "dispersion_summary.json").exists():
         plot_dispersion_mc(out)
+    elif (out / "dispersion_mc.csv").exists():
+        print("skip dispersion_mc: dispersion_summary.json not found (run `ignisyeet dispersion` again)")
     if (out / "dispersion.csv").exists():
         plot_dispersion_grid(out)
 
@@ -465,8 +476,12 @@ def main():
     for name in names:
         req = REQUIRES[name] if isinstance(REQUIRES[name], tuple) else (REQUIRES[name],)
         if any((a.out_dir / r).exists() for r in req):
+            before = SAVED
             PLOTS[name](a.out_dir)
-            plotted += 1
+            if SAVED > before:
+                plotted += 1
+            elif a.what != "all":
+                raise SystemExit(f"error: nothing to plot for {name} in {a.out_dir}")
             if name == "aero" and a.compare is not None:
                 if not (a.compare / "aero_table.csv").exists():
                     raise SystemExit(f"{a.compare / 'aero_table.csv'} not found")

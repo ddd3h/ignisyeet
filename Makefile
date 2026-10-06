@@ -3,9 +3,10 @@
 # Convenience wrapper. CONFIG selects the configuration file.
 CONFIG ?= examples/sample.toml
 BIN ?= $(or $(CARGO_TARGET_DIR),target)/release/ignisyeet
-# Output directory: [output] dir of the configuration (basic or literal TOML string), relative to the configuration file.
+# Output directory: [output] dir of the configuration (basic or literal TOML string; indentation, a quoted key and
+# spaces inside the table header are accepted), relative to the configuration file.
 # The shell computes it so that directories containing spaces work (make's $(dir) splits on whitespace).
-OUT_SHELL := $(shell d=$$(dirname "$(CONFIG)"); r=$$(awk '/^\[/{s=($$0 ~ /^\[output\]/)} s && /^dir[ \t]*=/{match($$0,/"[^"]*"|\047[^\047]*\047/); print substr($$0,RSTART+1,RLENGTH-2); exit}' "$(CONFIG)"); if [ -z "$$r" ]; then printf '%s' "$$d/out"; elif [ "$$(printf %.1s "$$r")" = / ]; then printf '%s' "$$r"; else printf '%s' "$$d/$$r"; fi)
+OUT_SHELL := $(shell d=$$(dirname "$(CONFIG)"); r=$$(awk '/^[ \t]*\[/{s=($$0 ~ /^[ \t]*\[[ \t]*("output"|\047output\047|output)[ \t]*\]/)} s && /^[ \t]*("dir"|\047dir\047|dir)[ \t]*=/{sub(/^[^=]*=[ \t]*/,""); if (match($$0,/^("[^"]*"|\047[^\047]*\047)/)) print substr($$0,RSTART+1,RLENGTH-2); exit}' "$(CONFIG)"); if [ -z "$$r" ]; then printf '%s' "$$d/out"; elif [ "$$(printf %.1s "$$r")" = / ]; then printf '%s' "$$r"; else printf '%s' "$$d/$$r"; fi)
 OUT ?= $(OUT_SHELL)
 # Plot command; without uv: make plot PLOT="python python/plot.py" (inside a venv with python/requirements.txt)
 PLOT ?= uv run --project python python/plot.py

@@ -2373,6 +2373,39 @@ mod tests {
     use super::*;
 
     #[test]
+    fn makefile_reads_indented_and_quoted_output_dirs() {
+        // Skipped where make is not installed.
+        if std::process::Command::new("make").arg("--version").output().is_err() {
+            return;
+        }
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let dir = std::env::temp_dir().join(format!("ignisyeet_makefile_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cases = [
+            ("[rocket]\nx = 1\n  [ output ]  # c\n  \"dir\" = \"res dir\"\n", "res dir"),
+            ("[output]\ndir='lit'\n", "lit"),
+            ("[output]\n\tdir\t= \"/abs/x\"   # comment\n", "/abs/x"),
+            ("[output]\nkml = true\n[wind]\ndir = \"no\"\n", "out"),
+            ("[output.sub]\ndir = \"no\"\n", "out"),
+        ];
+        for (i, (text, want)) in cases.iter().enumerate() {
+            let cfg = dir.join(format!("c{i}.toml"));
+            std::fs::write(&cfg, text).unwrap();
+            let out = std::process::Command::new("make")
+                .args(["-s", "--no-print-directory", "-f"])
+                .arg(root.join("Makefile"))
+                .args(["--eval", "show: ; @echo \"$(OUT)\"", "show"])
+                .arg(format!("CONFIG={}", cfg.display()))
+                .output()
+                .unwrap();
+            let got = String::from_utf8_lossy(&out.stdout).trim_end().to_string();
+            let want = if want.starts_with('/') { want.to_string() } else { format!("{}/{want}", dir.display()) };
+            assert_eq!(got, want, "{text}");
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn table_method_loads_external_table() {
         let dir = std::env::temp_dir().join("ignisyeet_cli_table_test");
         std::fs::create_dir_all(&dir).unwrap();

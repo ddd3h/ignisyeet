@@ -41,10 +41,11 @@
      - 乱数の再現性、標準偏差 0 での公称飛翔との一致、風向のばらつき、共分散・誤差楕円、失敗サンプル、ばらつきの反映、
        ロールと非対称の標準偏差が最初の 11 項目の乱数を動かさないことと、6 項目の反映。
        パーセンタイルの線形補間（``percentiles_interpolate``）、着地しないサンプルが統計を不完全にし最大着地距離を下限にすること（``non_landing_samples_make_statistics_incomplete``）、
-       短い ``max_time`` で着地なしの要約になること（``short_max_time_gives_unlanded_summaries``）、6 項目の標準偏差の検査（``new_monte_carlo_sigmas_are_validated``）、
+       短い ``max_time`` で着地なしの要約になること（``short_max_time_gives_unlanded_summaries``）、着地したサンプルが 1000 未満では P99.9 が ``null`` になること、6 項目の標準偏差の検査（``new_monte_carlo_sigmas_are_validated``）、
        レールの傾きの回転（``rail_tilt_rotates_the_axis``）、鉛直のレールでの等方性（``rail_tilt_spread_is_isotropic_for_a_vertical_rail``）、
        範囲外の射角のサンプルの失敗（``rail_elevation_outside_the_valid_range_fails_the_sample``）、すべての降下モードの静安定余裕（``every_dispersion_run_reports_its_stability``）、
-       既定の乱数が変わらないこと（200 サンプルの和の固定値との比較）と、``truncate_sigma`` が標準正規乱数を切り詰め、内側の値を変えないこと（``default_draws_are_unchanged_and_truncation_clips_the_standard_normal``）、P99.9 の補間
+       既定の乱数が変わらないこと（200 サンプルの和の固定値との比較）と、``truncate_sigma`` が標準正規乱数を切り詰め、内側の値を変えないこと（``default_draws_are_unchanged_and_truncation_clips_the_standard_normal``）、P99.9 の補間、
+       0・負・非数・無限大の ``truncate_sigma`` をモンテカルロ解析の入口で拒み、与えた値を ``summarize`` が記録すること（``monte_carlo_validates_and_reports_truncate_sigma``）
    * - ``ignisyeet``\ （``cli``）
      - 設定ファイルの読み込み（ロール・慣性テンソル・推力の傾き・``table_kind`` の項目を含む）、未知のセクションの拒否、モード間の整合性、外部係数表の読み込み、
        ロール項のない外部表への補完、
@@ -62,6 +63,9 @@
        しきい値を破った側に読める桁数での数値の表示（``threshold_values_print_on_the_violated_side``）、
        形の誤った ``--set`` が終了ステータス 2 の使い方の誤りになること（``malformed_set_is_a_usage_error_with_exit_status_2``）、``sim.dt`` の下限と ``rk4`` のステップ数の上限（``dt_has_a_lower_bound_and_a_step_count_limit``）、
        範囲外の整数の ``--set`` のエラー（``set_shape_is_checked_by_the_parser_and_huge_integers_are_named``）、
+       Mach 数の範囲外の引き出しが ``RESULTS NOT USABLE`` の文と ``machs_in_range = false`` になること（``aero_range_warning_and_json``）、
+       ``dispersion`` が、実行の最初に同じモードの前回の結果だけを消すこと（``a_dispersion_run_removes_the_earlier_results_of_its_mode``）、
+       ``profile`` の風の ``wind_at_ref_height`` が ``wind.ref_height`` での表の風に等しく、ほかの風モデルでは書かれないこと（``profile_targets_fly_like_the_wind_grid_case`` の中の確認）、
        出力ファイルの書き込みが一時ファイルを残さないこと、動いている実行の印のある出力先を拒み、止まった実行の印を消すこと（``write_is_atomic_and_leaves_no_temp_file``、``live_lock_is_refused_and_stale_lock_is_cleaned``、``output_directory_of_a_live_run_is_refused``）、
        実行のハッシュが外部の係数表の付属 JSON を含むこと（``run_hash_covers_the_aero_table_sidecar``）、既定のモータ位置の検査（``default_motor_position_is_checked_against_the_body``）、
        ランチャ離脱の風による迎角の警告が、風の格子の最大の風速とモンテカルロの公称の風速 + 2 :math:`\sigma` を使うこと（``rail_exit_wind_warning_uses_the_reference_speed_of_the_study``）、
@@ -76,7 +80,9 @@
      - 作図の見出しの帯と印（``uv run --project python python -m unittest discover -s python`` で実行する）。問題のない落下分散に帯がないこと、
        不安定・判定できない・迎角の範囲外の結果が ``RESULTS NOT USABLE``、失敗と着地しないケースが ``INCOMPLETE``、横向きの落下が ``CAUTION`` になること、
        風の格子とモンテカルロの図で不安定、判定できない、横向きに落ちた着地点に印が付き、飛翔経路の図に帯が出ること（``Usability`` の各テスト）、
-       モンテカルロの図に P99.9 が出ること、風の格子の線が横向きのケースで切れて印は残ること、飛翔経路の図の余裕の欄がランチャを離れたあとの圧力中心と重心の距離であること
+       モンテカルロの図に P99.9 が出ることと、P99.9 のない統計では ``(P99.9 needs ≥ 1000 landed samples)`` と添えること、風の格子の線が横向きのケースで切れて印は残ること、飛翔経路の図の余裕の欄がランチャを離れたあとの圧力中心と重心の距離であること、
+       一般表の :math:`C_{N\alpha}` と :math:`x_{cp}` が迎角 0 の前後の符号つきの中心差分（負の迎角がなければ片側差分）で求まり、求まらない値が NaN になること、
+       失敗した ``sim`` の印があっても落下分散の結果どうしの設定の違いを警告すること、結果のない落下分散の古い PNG を消すこと
    * - ``sim::geo``
      - 測地座標と ECEF の往復変換、ENU の北方向 1 km の緯度差
    * - ``sim::flight``
@@ -311,6 +317,10 @@ ECEF 座標での積分
 
 * **ランチャ離脱からの再開**\ （``free_flight_restarts_at_the_interpolated_rail_exit``）：射角 60°、重力一定の真空で、ランチャ上の加速度とそのあとの加速度はどちらも一定なので、
   離脱の時刻から自由飛行を始めれば、刻み 0.05 s の ``rk4`` でも厳密である。離脱の時刻と速度は解析解と :math:`10^{-9}` で、燃焼中の自由飛行の位置は :math:`10^{-7}` m で一致する。
+* **離脱の速度**\ （``rail_exit_velocity_is_the_derivative_of_the_hermite_position``）：真空・鉛直で、推力が時間に線形に増える（300 N から毎秒 2000 N、10 kg）と、加速度は時間に線形、位置は三次式になり、ステップのエルミート補間は厳密である。
+  刻み 0.05 s の ``rk4`` で、3 m のレールの離脱の時刻が解析解と :math:`10^{-7}` s 以内、離脱速度が :math:`10^{-5}` m/s 以内で一致する。離脱速度はエルミート補間の時間微分で、速度の線形補間ではこの精度にならない。
+* **ランチャ上で後ろへ動かないこと**\ （``a_thrust_dip_on_the_rail_never_moves_the_rocket_backward``）：真空・鉛直の 3 m のレールで、300 N を 0.2 s、20 N（重さより小さい）を 1.5 s まで、そのあと 300 N を与える（10 kg）。
+  ``rk4``、``rk45``、``dop853`` のどれでも、ランチャ上の記録点の高さは減らず、速さは負にならない。機体は約 1.45 m（:math:`\pm0.02` m）で止まって推力が戻るまで同じ位置に速度 0 でとどまり、1.5 s より後に離脱する。
 * **着地と開傘が同じステップにあるとき**\ （``touchdown_before_deployment_in_the_same_step_wins``）：刻み 10 s で頂点と着地が 1 つのステップに入る設定で、開傘の時刻が着地より後ろなら開傘せず、
   頂点と着地の時刻が解析解と :math:`10^{-9}` s で一致する。開傘が着地より前（1 s 前）なら、開傘の時刻は頂点 + ``delay`` ちょうどで、着地はその後である。
 * **sim.max_time**\ （``no_landing_is_accepted_after_max_time``）：``rk4`` と ``rk45`` で、``max_time`` を着地の 0.01 s 前にすると着地せず、出力の時刻は ``max_time`` を超えない。0.01 s 後にすれば着地する。
@@ -344,7 +354,7 @@ ECEF 座標での積分
 静安定余裕、横向きの落下、開傘の延期、最大値
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-* **小迎角の余裕**\ （``axisymmetric_margin_is_the_small_angle_margin``）：テストの機体を無風と 9 m/s の風で飛ばし、軸対称表の最小静安定余裕が、各時刻（頂点まで、対気速度 10 m/s 超）の Mach 数と重心で求めた迎角 0 の余裕の最小値と 0.02 cal 以内で一致する。
+* **小迎角の余裕**\ （``axisymmetric_margin_is_the_small_angle_margin``）：テストの機体を無風と 9 m/s の風で飛ばし、軸対称表の最小静安定余裕が、各時刻（頂点まで、対気速度 10 m/s 超）の Mach 数と重心で求めた小迎角の余裕（:eq:`eq-margin-axisym`）の最小値と 0.02 cal 以内で一致する。
   ピッチとヨーの最小値は判定値に等しく、最小はランチャ離脱の時刻にあり（燃焼中に重心が前へ移るため）、``static_margin_min_t`` は離脱の時刻、``static_margin_min_mach`` は離脱時の Mach 数と 0.01 以内で一致する。
   風による離脱時の余裕の差は 0.01 cal 未満である。一方、その時刻の迎角での表示 ``stability_cal`` の最小値は、9 m/s の風で判定値より 0.3 cal 以上小さい。
 * **横向きの落下の時間**\ （``broadside_time_of_the_ballistic_descent``）：``broadside_time`` が、頂点のあと迎角 60° から 120° の記録点の数 × 出力間隔と、出力間隔の 2 倍 + 0.05 s 以内で一致する。
@@ -414,7 +424,7 @@ ECEF 座標での積分
 * **ノズルのオフセット**：:math:`y_b` 方向に 0.01 m のオフセットを与えると、:math:`z_b` まわりの角加速度が :math:`-0.01\,T/I_{zz}` になる（``nozzle_offset_gives_moment_about_the_cg``）。
 * **一般表の飛翔**：サンプル機体の軸対称表と、それを展開した一般表で飛翔を比べる（無風と 5 m/s の風）。頂点高度の差は 0.03 m 以内（要求は 0.5 m）である。
   一般表の最小静安定余裕は、軸対称表の飛翔の各時刻（頂点まで、対気速度 10 m/s 超）で一般表の余裕の定義（:ref:`sec-static-margin-general`）から求めた最小値と 0.02 cal 以内で一致し、迎角と横滑り角はすべて有限である（``general_table_flight_matches_axisymmetric_table``）。
-  一般表の余裕は 0 から 2° の割線の傾きから求めるので、軸対称表の余裕より約 0.2 cal 小さい。
+  一般表の余裕は 0 から 2° の割線の傾きから求めるので、0 から 1° の割線から求める軸対称表の余裕より約 0.1 cal 小さい。
   設定ファイルのサンプルを一般表で飛ばしても、頂点高度は 4440.7 m に 0.5 m 以内で一致する（``general_table_sample_matches_axisymmetric_apogee``）。
 * **ランチャ上のロール角**：仰角 80° で ``roll_deg`` を 90° にすると、:math:`+x_b` は変わらず、:math:`+y_b` が元の :math:`+z_b` に、:math:`+z_b` が元の :math:`-y_b` になる
   （``launch_roll_rotates_the_body_about_the_rail``）。

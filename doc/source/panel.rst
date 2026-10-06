@@ -324,6 +324,7 @@ Green の恒等式を外部領域に適用すると、:math:`\Phi` は表面 :ma
 
 係数行列 :math:`A` は密な :math:`n\times n` 行列で、``faer`` による部分ピボット付き LU 分解で解く。
 組み立てた行列をそのまま分解する（in place）ので、:math:`n\times n` の行列は 1 つだけで、必要なメモリは :math:`8n^2+64n` バイト（既定のメッシュの表面 5888 枚で約 278 MB）である。
+この見積もりは 128 ビットの整数で計算し、64 ビットの最大値で頭打ちにする（約 :math:`1.5\times10^9` 枚から）。どれほど大きなパネル数でも、桁あふれせずにメモリの上限と比べられる。
 行の順に組み立てた行列を列の順に読むと :math:`A^\top` になるので、:math:`A^\top` を分解し、転置した因子で :math:`A\bm x=\bm b` を解く。
 解く前に、必要な量を、このプロセスが使えるメモリの最小の値と比べる。Linux では ``/proc/meminfo`` の ``MemAvailable``、cgroup の上限（v2 の ``memory.max`` から ``memory.current`` を引いた値、v1 の ``memory.limit_in_bytes`` から ``memory.usage_in_bytes`` を引いた値）、
 アドレス空間の上限 ``RLIMIT_AS``\ （``ulimit -v``）から確保済みのアドレス空間（``/proc/self/status`` の ``VmSize``）を引いた値、macOS では物理メモリ（``sysctl hw.memsize``）である。
@@ -568,8 +569,20 @@ Prandtl–Glauert の規則 :cite:`glauert` を三次元の物体に拡張した
 
    C_p=\frac{4}{\gamma+1}\left(\sin^2\beta_s-\frac{1}{M^2}\right)
 
-である（:math:`\gamma=1.4`）。:math:`\delta` が最大偏向角を超えて衝撃波が離脱するときは、修正 Newton 則 :math:`C_p=C_{p,\max}\sin^2\delta` を使う :cite:`anderson`。
+である（:math:`\gamma=1.4`）。
+:math:`\delta` が最大偏向角 :math:`\delta_d` を超えて衝撃波が離脱するときは、修正 Newton 則 :cite:`anderson` の :math:`\sin^2\delta` の形を、離脱の角度で付いた衝撃波の値から始まるように縮めた
+
+.. math::
+   :label: eq-pn-detached
+
+   C_p=C_{p,d}+\bigl(C_{p,\max}-C_{p,d}\bigr)\,\frac{\sin^2\delta-\sin^2\delta_d}{\cos^2\delta_d}\qquad(\delta_d<\delta\le90^\circ)
+
+を使う。:math:`C_{p,d}` は :math:`\delta_d` での付いた衝撃波の圧力係数（:eq:`eq-pn-wedge` を最大偏向角に対応する衝撃波角で評価した値）、
 :math:`C_{p,\max}` は垂直衝撃波の後ろのよどみ点圧力の係数である。
+この式は :math:`\delta=\delta_d` で :math:`C_{p,d}` に、:math:`90^\circ` で :math:`C_{p,\max}` になり、圧力係数は傾斜角についても Mach 数についても離脱の前後で連続である。
+修正 Newton 則 :math:`C_{p,\max}\sin^2\delta` をそのまま使うと、離脱の角度で圧力係数が下へ跳ぶ（:math:`M=2` のくさびでは、離脱の角度 22.97° で 0.945 から 0.25 へ）。
+連続であることは、:math:`M=1.05` から 5 で 0.01° 刻みに傾斜角を走査し、離脱の前後の差が :math:`10^{-3}` 未満で、:math:`C_p` が傾斜角について減らず、:math:`90^\circ` で :math:`C_{p,\max}` になることで確かめている（``fin_cp_is_continuous_across_shock_detachment``）。
+:math:`M\le1` では修正 Newton 則 :math:`C_p=C_{p,\max}\sin^2\delta` を使う。
 
 膨張（:math:`\delta<0`）のとき、Mach 数 :math:`M` の流れが角度 :math:`|\delta|` だけ膨張する Prandtl–Meyer 膨張 :cite:`liepmann,naca1135` を使う。
 Prandtl–Meyer 関数
@@ -610,7 +623,10 @@ Taylor–Maccoll の接線円すい
 この積分を飛翔計算の中で毎回行うと遅いので、あらかじめ表にする。Mach 数 :math:`1.02` から :math:`0.04` 刻みで 150 点、
 各 Mach 数で衝撃波角を Mach 角に近い側に細かく（半径方向に等比数列で）600 点とり、円すい半角 0.25° 刻みの圧力係数に整理する。
 表の範囲内は線形に内挿し、最初の区間の下側は :math:`C_p\propto\delta^2` とする。
-離脱限界を超えるとき、および :math:`M\le1.0` では表が使えず、修正 Newton 則に切り替わる。
+表の各 Mach 数の行は、その行の最後の角度 :math:`\delta_d`\ （離脱限界）までの値を持つ。
+:math:`\delta_d` を超える角度では、その行の最後の値を :math:`C_{p,d}` として :eq:`eq-pn-detached` で :math:`C_{p,\max}` まで上げ、そのうえで隣り合う行を Mach 数について内挿する。
+したがって、円すいの圧力係数も、角度と Mach 数について離脱の前後で連続である（``cone_cp_is_continuous_across_shock_detachment``）。
+表の Mach 数の範囲より下（:math:`M\le1.0`）では、修正 Newton 則 :math:`C_{p,\max}\sin^2\delta` を使う。
 
 回転体の傾斜と迎角の増分
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -625,7 +641,7 @@ Taylor–Maccoll の接線円すい
 
    C_p = C_{p,0}(\delta_0) + 4\sin\delta_0\cos\delta_0\,(\delta-\delta_0)
 
-とし、結果を :math:`[-2/(\gamma M^2),\,C_{p,\max}]` に制限する。:math:`C_{p,0}` は :math:`\delta_0>0` なら接線円すい（離脱時は Newton 則）、
+とし、結果を :math:`[-2/(\gamma M^2),\,C_{p,\max}]` に制限する。:math:`C_{p,0}` は :math:`\delta_0>0` なら接線円すい（離脱後は :eq:`eq-pn-detached`）、
 :math:`\delta_0<0`\ （ボートテールなど）なら Prandtl–Meyer 膨張、:math:`\delta_0=0`\ （円筒）なら 0 である。
 右辺の第 2 項は迎角（や回転）による傾斜角の変化を、傾き :math:`4\sin\delta_0\cos\delta_0` で線形に足すものである。
 
@@ -642,7 +658,7 @@ Taylor–Maccoll の接線円すい
 
 フィンも傾斜角からくさびと膨張で圧力を決めるが、厚みによる傾きを基準にし、翼端の三次元効果を粗く補正する。
 
-フィンのパネルは、傾斜角 :math:`\delta>0` なら接線くさび（離脱時は Newton 則）、:math:`\delta<0` なら Prandtl–Meyer 膨張とする。
+フィンのパネルは、傾斜角 :math:`\delta>0` なら接線くさび（離脱後は :eq:`eq-pn-detached`）、:math:`\delta<0` なら Prandtl–Meyer 膨張とする。
 フィンは迎角 0 でも厚みのために傾斜 :math:`\delta_0`\ （前縁側の面は圧縮、後縁側は膨張）を持つので、
 迎角による変化分は :math:`C_p(\delta)-C_p(\delta_0)` で、
 
@@ -773,7 +789,8 @@ Mach 数が :math:`M_{lo}=\min(` ``transonic[0]``\ :math:`,\ ` 最後の亜音�
 ----
 
 * 扱う流れは非粘性・渦なしで、実測（風洞試験や飛翔試験）との比較はまだない。
-* 遷音速は補間であり、遷音速の物理は計算していない。:math:`C_{N\alpha}` のピークが過大になりうる。
+* 遷音速は補間であり、遷音速の物理は計算していない。
+* 低い超音速の小迎角では、局所傾斜法の法線力が大きく出る（サンプルの :math:`M=1.2` で、迎角 2〜4° の :math:`C_N` が Euler の CFD より約 20 % 大きい。:ref:`sec-lim-panel`）。:math:`C_{N\alpha}` のピークはここにある。
 * 尾部フェアリングは、後端の剥離領域を固体で置き換えた近似である。
 * ロール項は部品積み上げ法のモデルの値で、パネルの解からは求めていない。カントはメッシュに反映されない。
 * 超音速の翼端やフィンどうしの干渉の扱いは粗い。底面・フィン縁・追加抗力は経験式である。

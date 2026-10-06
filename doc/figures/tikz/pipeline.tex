@@ -15,10 +15,10 @@
   \node[rust] (aero) at (7.0,0) {空力解析\\{\footnotesize\ttfamily aero}};
   \node[file] (tab) at (7.0,-2.6) {aero\_table.csv\\（キャッシュ）};
   \node[rust] (sim) at (12.6,0) {6自由度飛翔計算\\{\footnotesize\ttfamily sim}};
-  \node[rust] (disp) at (12.6,-5.2) {落下分散\\（風グリッド・並列）};
+  \node[rust] (disp) at (12.6,-5.2) {落下分散\\{\footnotesize 風グリッド・モンテカルロ}\\{\footnotesize\ttfamily dispersion}};
   \node[file] (traj) at (16.8,0) {trajectory.csv\\summary.json};
   \node[py] (plot) at (16.8,-2.6) {作図\\{\footnotesize\ttfamily python/plot.py}};
-  \node[file] (dcsv) at (16.8,-5.2) {dispersion.csv};
+  \node[file] (dcsv) at (16.8,-5.2) {dispersion.csv\\{\rmfamily または}\\dispersion\_mc.csv\\dispersion\_summary.json};
 
   \draw[arr] (stl) -- (geom);
   \draw[arr] (geom) -- node[above, font=\footnotesize]{形状} (aero);

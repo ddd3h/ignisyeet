@@ -3,6 +3,7 @@
 /out/
 /examples/out/
 /examples/out_cfd/
+/runs/
 .venv/
 __pycache__/
 .claude/

@@ -1583,8 +1583,9 @@ fn wind_json(w: &sim::Wind) -> serde_json::Map<String, serde_json::Value> {
 fn summary_json(cfg: &Config, s: &Summary, warnings: &[String]) -> Result<serde_json::Value> {
     let mut json = serde_json::to_value(s)?;
     json["landed"] = s.landed().into();
-    // Smallest static margin of the flight, including the rail exit; `stable` is false when it is negative and
-    // null when the static stability could not be evaluated (`stability_unknown` says why).
+    // Smallest static margin of the flight, including the rail exit (the rail-exit value alone when
+    // `min_stability_cal` is null because the airspeed never exceeded 10 m/s); `stable` is false when it is
+    // negative and null when the static stability could not be evaluated (`stability_unknown` says why).
     let margin = s.static_margin_min();
     json["static_margin_min_cal"] = margin.is_finite().then_some(margin).map_or(serde_json::Value::Null, Into::into);
     json["stable"] = s.stability().as_bool().into();

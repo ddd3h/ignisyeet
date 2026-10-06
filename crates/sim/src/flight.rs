@@ -350,14 +350,18 @@ pub struct Summary {
     pub apogee_east: f64,
     pub apogee_north: f64,
     /// Smallest static margin (x_cp - x_cg) / reference diameter [cal], sampled once per integration
-    /// step only while the rocket is in free flight (after rail exit) before apogee and its airspeed
-    /// exceeds 10 m/s. The slow part near apogee and the descent (tumbling, parachute) are not
-    /// included; NaN when no step qualified. The value at rail exit is `stability_at_rail_exit`.
+    /// step only while the rocket is in free flight (from the rail-exit state on) before apogee and
+    /// its airspeed exceeds 10 m/s. The rail-exit state counts when its airspeed exceeds 10 m/s; the
+    /// slow part near apogee and the descent (tumbling, parachute) are not included. NaN (`null` in
+    /// JSON) when no state qualified, e.g. a flight whose airspeed never exceeds 10 m/s before
+    /// apogee; `stability_at_rail_exit` is evaluated regardless of the airspeed, so
+    /// [`static_margin_min`](Self::static_margin_min) still has a value then.
     ///
     /// Axisymmetric table: from the tabulated centre of pressure. General table: the smaller of the
     /// pitch and yaw margins of [`AeroTable::static_margins`] at the step's Mach number and CG.
     pub min_stability_cal: f64,
-    /// Static margin at the rail-exit state [cal] (general table: the smaller of pitch and yaw).
+    /// Static margin at the rail-exit state [cal] (general table: the smaller of pitch and yaw),
+    /// evaluated at any airspeed.
     pub stability_at_rail_exit: f64,
     /// Smallest pitch-plane static margin [cal] over the steps of `min_stability_cal` and the rail
     /// exit. Axisymmetric table: the smaller of `min_stability_cal` and `stability_at_rail_exit`.
@@ -453,7 +457,9 @@ impl Summary {
         self.landing_time.is_finite() && self.landing_east.is_finite() && self.landing_north.is_finite()
     }
 
-    /// Smallest static margin of the flight including the rail exit [cal] (NaN when none is finite).
+    /// Smallest static margin of the flight including the rail exit [cal]: the smaller of
+    /// `min_stability_cal` and `stability_at_rail_exit`, the rail-exit value alone when
+    /// `min_stability_cal` is NaN (airspeed never above 10 m/s); NaN when neither is finite.
     pub fn static_margin_min(&self) -> f64 {
         [self.min_stability_cal, self.stability_at_rail_exit].into_iter().filter(|m| m.is_finite()).min_by(f64::total_cmp).unwrap_or(f64::NAN)
     }
@@ -944,6 +950,8 @@ impl<'a> Simulation<'a> {
         let mut deploy_at = f64::INFINITY;
         let mut past_apogee = false;
         let mut margins = MarginTrack::new();
+        // Time of the rail exit, whose margins are added to `margins` once, when the rail is left.
+        let mut rail_exit_tracked_at: Option<f64> = None;
         let evals = std::cell::Cell::new(0u64);
         let mut h_ctrl = dt;
         let mut max_qerr = 0.0f64;
@@ -978,7 +986,8 @@ impl<'a> Simulation<'a> {
             sum.max_speed = sum.max_speed.max(speed);
             sum.max_mach = sum.max_mach.max(aux.mach);
             sum.max_dyn_pressure = sum.max_dyn_pressure.max(aux.qdyn);
-            if phase == Phase::Free && !past_apogee && aux.airspeed > 10.0 {
+            // The rail-exit state was tracked when the rail was left (the first free-flight step starts there).
+            if phase == Phase::Free && !past_apogee && aux.airspeed > 10.0 && rail_exit_tracked_at != Some(t) {
                 let m = margins.add(&self.margins(&aux), t);
                 sum.min_stability_cal = sum.min_stability_cal.min(m);
             }
@@ -1072,6 +1081,10 @@ impl<'a> Simulation<'a> {
                     sum.rail_exit_speed = s.vel.norm();
                     let (_, aux) = self.deriv(&cx, t, &s, phase);
                     sum.stability_at_rail_exit = margins.add(&self.margins(&aux), t);
+                    if aux.airspeed > 10.0 {
+                        sum.min_stability_cal = sum.min_stability_cal.min(sum.stability_at_rail_exit);
+                    }
+                    rail_exit_tracked_at = Some(t);
                 } else {
                     fsal = next_fsal;
                 }
@@ -2203,6 +2216,8 @@ mod tests {
         assert_eq!(quiet.stability(), Stability::Stable);
         // An axisymmetric table: pitch = yaw = the existing margin.
         let a = sample_sim(&table, &motor, 5.0).run(Descent::Ballistic, false).unwrap().summary;
+        // The rail exit (above 10 m/s) is part of the free-flight minimum.
+        assert!(a.rail_exit_speed > 10.0 && a.min_stability_cal <= a.stability_at_rail_exit, "{a:?}");
         let m = a.min_stability_cal.min(a.stability_at_rail_exit);
         assert_eq!((a.static_margin_pitch_min_cal, a.static_margin_yaw_min_cal), (m, m));
     }

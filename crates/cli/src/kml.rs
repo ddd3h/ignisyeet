@@ -45,7 +45,8 @@ fn coord(lat: f64, lon: f64, alt: f64) -> String {
 
 /// HTML description (CDATA); every line is escaped and lines are joined with `<br>`.
 fn desc(lines: &[String]) -> String {
-    let body: Vec<String> = lines.iter().map(|l| esc(l)).collect();
+    // Inside CDATA nothing is an entity: only the terminator needs a guard.
+    let body: Vec<String> = lines.iter().map(|l| l.replace("]]>", "]]]]><![CDATA[>")).collect();
     format!("<description><![CDATA[{}]]></description>", body.join("<br>"))
 }
 
@@ -857,8 +858,13 @@ mod tests {
     fn escaping() {
         assert_eq!(esc("a<b>&\"c'"), "a&lt;b&gt;&amp;&quot;c&apos;");
         let doc = document("A & B <x>", &["1 < 2 & 3".into()], "");
-        assert!(doc.contains("<name>A &amp; B &lt;x&gt;</name>") && doc.contains("1 &lt; 2 &amp; 3"));
         check_xml(&doc);
+        // names are plain XML text; descriptions sit in CDATA and are not escaped a second time
+        assert!(doc.contains("<name>A &amp; B &lt;x&gt;</name>") && doc.contains("<![CDATA[1 < 2 & 3]]>"), "{doc}");
+        check_xml(&doc);
+        let tricky = desc(&["a ]]> b & c".to_string()]);
+        assert!(!tricky.contains("&amp;") && tricky.contains("a ]]]]><![CDATA[> b & c"), "{tricky}");
+        check_xml(&format!("<r>{tricky}</r>"));
     }
 
     #[test]

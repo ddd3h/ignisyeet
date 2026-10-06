@@ -1452,7 +1452,11 @@ azimuth_deg = 0.0"#;
 
     #[test]
     fn every_dispersion_run_reports_its_stability() {
-        let (t, m) = (table(), motor());
+        // A table with a normal force: the static margin is that of the force the flight applies
+        // (the fixture `table()` has CN = 0, whose margin is unknown).
+        let t =
+            AeroTable::from_fn(table().meta, |_, a| AeroCoeffs { cn: 2.0 * a.to_radians(), xcp: 0.5, cna: 2.0, ca_on: 0.5, ca_off: 0.5, ..Default::default() });
+        let m = motor();
         let b = base(&t, &m);
         let r = run_monte_carlo(&MonteCarloConfig { samples: 4, ..Default::default() }, &b, true).unwrap();
         for row in &r.rows {

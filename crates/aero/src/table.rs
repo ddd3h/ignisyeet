@@ -834,14 +834,18 @@ impl AeroTable {
     ///
     /// The slopes are central differences at +-delta, delta = the smaller of 0.5 deg and the
     /// smallest nonzero grid angle of that axis (both give the slope of the interpolated table
-    /// at zero when the grid holds zero). An axisymmetric table uses its zero-angle slopes in both
-    /// planes: `S = -CNa`, `R = CNa (x_cp(m, 0) - x_cg) / d` with `x_cp(m, 0)` the ratio of the
-    /// interpolated moment slope CNa x_cp to CNa (see [`lookup`](Self::lookup)), so the margin is
-    /// `(x_cp(m, 0) - x_cg) / d` for `CNa > 0`, unknown for `CNa = 0`, `R / |CNa|` (unstable) for
-    /// `CNa < 0` with a destabilising moment and unknown for `CNa < 0` with a restoring one. A
-    /// general table expanded from it gives the same value when x_cp does not vary within the
-    /// first angle cell. Pitch-yaw coupling is not considered. The lookups are not counted in the
-    /// range statistics.
+    /// at zero when the grid holds zero, i.e. the secant over the first angle cell). An
+    /// axisymmetric table uses the same rule on its alpha axis, in both planes, through the
+    /// interpolant the flight applies ([`lookup`](Self::lookup): Mach-interpolated CN and nose
+    /// moment CN x_cp). With `CN_d`, `x_cp,d` the values at the total angle delta,
+    /// `S = -CN_d / delta` and `R = CN_d (x_cp,d - x_cg) / (d delta)`, so the margin is
+    /// `(x_cp,d - x_cg) / d` for `CN_d > 0`, unknown for `CN_d = 0`, `R / |S|` (unstable) for
+    /// `CN_d < 0` with a destabilising moment and unknown for `CN_d < 0` with a restoring one.
+    /// With `CN(0) = 0`, CN and CN x_cp are linear in alpha over the first cell, so `x_cp,d` is the
+    /// centre of pressure of the first nonzero angle row (Mach-interpolated): the point where the
+    /// flight applies the normal force at every small angle. The tabulated zero-angle `xcp` and
+    /// `cna` columns do not enter. A general table expanded from it gives the same value.
+    /// Pitch-yaw coupling is not considered. The lookups are not counted in the range statistics.
     pub fn static_margins(&self, m: f64, x_cg: f64) -> StaticMargins {
         let d = self.meta.ref_diameter;
         let mut unknown = Vec::new();
@@ -860,14 +864,18 @@ impl AeroTable {
                 f64::NAN
             }
         };
+        let delta = |axis: &[f64]| axis.iter().map(|a| a.abs()).filter(|a| *a > 1e-9).fold(0.5f64, f64::min).to_radians();
         if self.meta.kind == TableKind::Axisymmetric {
-            // Zero-angle slopes: dCz/dalpha = -CNa, -dCm_cg/dalpha = (CNa x_cp - CNa x_cg) / d (x_cp is
-            // the ratio of the interpolated moment slope to CNa, see `lookup`).
-            let c = self.lookup_rec(m, 0.0, false);
-            let mg = plane(-c.cna, c.cna * (c.xcp - x_cg) / d, "normal-force slope CNa", "negative");
+            // Secant slopes of the interpolant the flight applies (the central differences of the
+            // symmetric expansion): dCz/dalpha = -CN(delta) / delta and -dCm_cg/dalpha =
+            // CN(delta) (x_cp(delta) - x_cg) / (d delta), x_cp(delta) the ratio of the interpolated
+            // nose moment to CN. Not the zero-angle row: with CN(0) = 0 the interpolated moment over
+            // the first cell carries the first nonzero row's centre of pressure.
+            let da = delta(&self.meta.alphas_deg);
+            let c = self.lookup_rec(m, da, false);
+            let mg = plane(-c.cn / da, c.cn * (c.xcp - x_cg) / (d * da), "normal-force slope dCN/dalpha", "negative");
             return StaticMargins { pitch: mg, yaw: mg, unknown: (!unknown.is_empty()).then(|| unknown.join("; ")) };
         }
-        let delta = |axis: &[f64]| axis.iter().map(|a| a.abs()).filter(|a| *a > 1e-9).fold(0.5f64, f64::min).to_radians();
         let (da, db) = (delta(&self.meta.alphas_deg), delta(&self.meta.betas_deg));
         let (p, n) = (self.lookup6_rec(m, da, 0.0, false), self.lookup6_rec(m, -da, 0.0, false));
         let dcz = p.cz - n.cz;
@@ -1618,13 +1626,44 @@ mod tests {
         // Zero slope: unknown.
         let m = mk(0.0).static_margins(0.5, 0.9);
         assert!(m.pitch.is_nan() && m.yaw.is_nan(), "{m:?}");
-        assert!(m.unknown.unwrap().contains("normal-force slope CNa is zero at Mach 0.50"));
+        assert!(m.unknown.unwrap().contains("normal-force slope dCN/dalpha is zero at Mach 0.50"));
         // Negative slope with x_cp aft of the CG: the moment is destabilising, -3 cal.
         let m = mk(-2.0).static_margins(0.5, 0.9);
         assert!((m.pitch + 3.0).abs() < 1e-9 && (m.yaw + 3.0).abs() < 1e-9 && m.unknown.is_none(), "{m:?}");
         // Negative slope with x_cp ahead of the CG: restoring, but no margin can be given.
         let m = mk(-2.0).static_margins(0.5, 1.4);
         assert!(m.pitch.is_nan() && m.yaw.is_nan(), "{m:?}");
-        assert!(m.unknown.unwrap().contains("normal-force slope CNa is negative at Mach 0.50"));
+        assert!(m.unknown.unwrap().contains("normal-force slope dCN/dalpha is negative at Mach 0.50"));
+    }
+
+    #[test]
+    fn axisymmetric_static_margins_use_the_centre_of_pressure_the_lookup_applies() {
+        // Tabulated x_cp 1.2 m at alpha 0 but 0.8 m from the first nonzero row on; CG 1.0 m, d = 0.1 m.
+        // CN(0) = 0, so the interpolated CN and CN x_cp put the applied centre of pressure of every
+        // small angle at the first row's 0.8 m: -2 cal, not the +2 cal of the zero-angle row.
+        let meta = TableMeta { ref_area: 0.01, ref_diameter: 0.1, length: 1.5, machs: vec![0.0, 1.0], alphas_deg: vec![0.0, 2.0, 10.0], ..Default::default() };
+        let t = AeroTable::from_fn(meta, |m, a| AeroCoeffs {
+            cn: 2.0 * (1.0 + m) * a.to_radians(),
+            cna: 2.0 * (1.0 + m),
+            xcp: if a == 0.0 { 1.2 } else { 0.8 + 0.1 * m },
+            ca_on: 0.5,
+            ca_off: 0.6,
+            ..Default::default()
+        });
+        let m = t.static_margins(0.0, 1.0);
+        assert!((m.pitch + 2.0).abs() < 1e-9 && (m.yaw + 2.0).abs() < 1e-9 && m.unknown.is_none(), "{m:?}");
+        // Between the Mach nodes the margin is that of the Mach-interpolated force and moment, the
+        // same as the centre of pressure the lookup applies at a small angle.
+        for mach in [0.0, 0.3, 0.5, 1.0, 1.4] {
+            let applied = (t.lookup(mach, 0.01f64.to_radians()).xcp - 1.0) / 0.1;
+            let m = t.static_margins(mach, 1.0);
+            assert!((m.pitch - applied).abs() < 1e-9 && (m.yaw - applied).abs() < 1e-9, "Mach {mach}: {m:?} vs {applied}");
+        }
+        // The general expansion of the table gives the same margins.
+        let g = t.to_general(angle_axis(90.0, 30.0, 2.0, 10.0), angle_axis(90.0, 30.0, 2.0, 10.0));
+        for mach in [0.0, 0.5, 1.0] {
+            let (a, b) = (t.static_margins(mach, 1.0), g.static_margins(mach, 1.0));
+            assert!((a.pitch - b.pitch).abs() < 1e-9 && (a.yaw - b.yaw).abs() < 1e-9, "Mach {mach}: {a:?} vs {b:?}");
+        }
     }
 }

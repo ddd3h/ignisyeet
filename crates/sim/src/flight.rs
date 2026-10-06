@@ -364,8 +364,9 @@ pub struct Summary {
     ///
     /// Every margin of the summary is the small-angle (alpha -> 0) static margin of
     /// [`AeroTable::static_margins`] at the state's Mach number and CG, for both table kinds:
-    /// axisymmetric table (x_cp(Mach, alpha = 0) - x_cg) / d, general table the smaller of the pitch
-    /// and yaw margins from the slopes at zero angle. The angle of attack the state flies at does not
+    /// axisymmetric table (x_cp - x_cg) / d with x_cp the centre of pressure the interpolated table
+    /// applies at small angles (that of the first nonzero angle row), general table the smaller of
+    /// the pitch and yaw margins from the slopes at zero angle. The angle of attack the state flies at does not
     /// enter, so the slow high-angle arc over apogee and the rail exit in a strong crosswind do not
     /// count as instability; the margin at the current angle is only the `stability_cal` column of
     /// the trajectory ([`Sample::stability_cal`]).

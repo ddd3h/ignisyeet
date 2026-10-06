@@ -707,6 +707,7 @@ pub fn load_monte_carlo(dir: &Path, hash: &str) -> Result<Option<MonteCarlo>, St
             ca_scale: g("ca_scale"),
             elevation_deg: g("elevation_deg"),
             azimuth_deg: g("azimuth_deg"),
+            roll_deg: g("roll_deg"),
             wind_speed: g("wind_speed_delta"),
             wind_direction_deg: g("wind_direction_deg_delta"),
             parachute_cd_s_scale: g("parachute_cd_s_scale"),

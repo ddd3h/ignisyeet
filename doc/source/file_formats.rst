@@ -443,7 +443,8 @@ CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surf
 降下モード ``descent``、基準風 ``wind_speed`` と ``wind_direction_deg``\ （``profile`` では表の平均風速 :math:`W` と平均風の風向 :math:`\Psi`。:ref:`sec-wind-profile`）、ランチャ離脱の時刻 ``rail_exit_time`` と速度 ``rail_exit_speed``、燃焼終了時刻 ``burnout_time``\ （推力曲線の終わりの時刻。飛翔がそれより前に終わったときは ``null``）、
 最大速度 ``max_speed``、最大 Mach 数 ``max_mach``、最大動圧 ``max_dyn_pressure``、頂点の時刻 ``apogee_time`` と高度 ``apogee``\ （射点からの高さ）と位置 ``apogee_east`` ``apogee_north``、
 最小静安定余裕 ``min_stability_cal`` とランチャ離脱時の値 ``stability_at_rail_exit``\ （``min_stability_cal`` は、ランチャ離脱の時刻（自由飛行はここから始まる）から頂点までのうち対気速度が 10 m/s を超える間に、積分のステップの始端ごとに測った最小値である。
-ランチャ離脱の時刻の値を含む。頂点付近の遅い部分と降下は含まない。該当するステップがなければ ``NaN``。一般表では、各ステップのピッチとヨーの余裕の小さいほう。:ref:`sec-static-margin-general`）、
+離脱時の対気速度が 10 m/s を超えるときは、ランチャ離脱の時刻の値を含む。頂点付近の遅い部分と降下は含まない。
+該当する時刻がなければ（頂点までに対気速度が 10 m/s を超えない飛翔など）``null`` である。``stability_at_rail_exit`` は対気速度によらず求める。一般表では、各ステップのピッチとヨーの余裕の小さいほう。:ref:`sec-static-margin-general`）、
 ランチャ離脱の値と着地の値は、ステップ内の補間（位置は三次エルミート補間、残りは両端の線形補間）で求めた状態の値である（:ref:`sec-rail`、:ref:`sec-landing`）、
 着地の時刻 ``landing_time``、位置 ``landing_east`` ``landing_north`` ``landing_lat`` ``landing_lon``、射点からの距離 ``landing_distance``、着地速度 ``landing_speed`` を持つ。
 ``landing_speed`` は着地の瞬間の **地面に対する速さ** で、水平方向の流され（風による移動）の速さを含む。降下率（鉛直の速さ）ではないので、パラシュート降下で風が強いと、降下率より大きい。
@@ -461,7 +462,8 @@ CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surf
      - 二段開傘（``recovery.main_cd_s`` と ``recovery.main_altitude``）のメインが開傘した時刻 [s] と射点からの高さ [m]（:ref:`sec-dual-deploy`）。
        メインがない設定、弾道落下、メインの開傘より前に飛翔が終わった場合は ``null`` である
    * - ``static_margin_min_cal``
-     - ``min_stability_cal``\ （ランチャ離脱の時刻を含む）と ``stability_at_rail_exit`` のうち、求まったものの小さいほう [cal]（結果パネルの ``min margin`` と同じ）。どちらも求まらなければ ``null``
+     - ``min_stability_cal`` と ``stability_at_rail_exit`` のうち、求まったものの小さいほう [cal]（結果パネルの ``min margin`` と同じ）。
+       ``min_stability_cal`` が ``null``\ （対気速度が 10 m/s を超えなかった）なら ``stability_at_rail_exit`` の値で、どちらも求まらなければ ``null``
    * - ``stable``
      - 静的に安定なら ``true``、不安定（求まった余裕のどれかが負）なら ``false``、判定できない（求まらない余裕がある、またはどの余裕も求めなかった）なら ``null``。
        ``false`` と ``null`` のとき、``sim`` は着地したかどうかにかかわらず終了ステータス 3 で終わる（:ref:`sec-exit-status`）
@@ -488,7 +490,7 @@ CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surf
    * - ``config_hash``
      - この結果を計算した設定のハッシュ（16 桁の 16 進数）。出力先と計算資源（``[output]`` と ``[resources]``）、``[dispersion]`` を除く設定と、STL、モータ、風のプロファイル、外部の係数表（CSV と、基準面積・基準直径・全長などを持つ付属の JSON）の内容から計算する。KML は、現在の設定のハッシュと一致するものだけをまとめる（:ref:`sec-kml`）
    * - ``warnings``
-     - 警告の文字列の配列（空のこともある。:ref:`sec-config-checks`）
+     - 警告の文字列の配列（空のこともある。:ref:`sec-config-checks`）。設定の読み込み時の警告（``profile`` で使わない ``wind.speed`` と ``wind.direction_deg``、2 回以上指定した ``--set`` のキー）が先頭で、計算中の警告が続く。``dispersion_meta.json`` と ``dispersion_summary.json`` の ``warnings`` も同じ順である
    * - ``aero_table_range``
      - 係数表の範囲外の引き出しの集計。全引き出しの回数 ``lookups``、Mach 数が表の最小値未満・最大値超の回数 ``mach_below`` ``mach_above``、迎角または横滑り角が格子の外の回数 ``angle_beyond``、要求された最大の Mach 数 ``max_mach`` と最大の :math:`|\alpha|` [deg] ``max_abs_alpha_deg``、範囲外が 1 回でもあったか ``out_of_range``\ （真偽値）、迎角の範囲外がなかったか ``angles_in_range``\ （真偽値。``false`` のときは結果を使えず、終了ステータス 3 で終わる。:ref:`sec-exit-status`）
 

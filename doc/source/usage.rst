@@ -167,6 +167,8 @@ Barrowman 法やパネル法だけを使うなら要らない。既定は ``n``\
 
    手順 6：ダウンロード中の画面。進行バーと、取得済みのサイズ・全体のサイズが出る。
 
+.. _sec-install-path:
+
 手順 7　完了と PATH の設定
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -191,6 +193,8 @@ Barrowman 法やパネル法だけを使うなら要らない。既定は ``n``\
    :alt: インストール完了の枠と PATH の案内
 
    手順 7：完了の画面。PATH の質問（ここでは ``n``）、結果の枠、``PATH`` に追加する行が出る。
+
+.. _sec-install-check:
 
 手順 8　動作を確認する
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -435,8 +439,9 @@ CFD 以外の部分は Windows でも ``cargo check`` が通るが、インス�
 ``method = "cfd"`` の出力には ``aero_drag.csv`` がない（:ref:`sec-file-drag`）ので、空力の図は、``aero_table.csv`` の迎角 0 の行から求めた全体の抗力係数で描く（抗力の内訳は含まない）。
 一般表（``aero_table.csv`` が :math:`C_X` などの 6 成分の列を持つ）でも ``aero_drag.csv`` がない。このときは横滑り角 0 の面で、:math:`C_D=-C_X`、:math:`C_{N\alpha}=|C_Z|/\alpha`\ （最小の正の迎角）、:math:`x_{cp}=C_m\,d/C_Z`\ （:math:`d` は ``aero_table.json`` の基準直径）を Mach 数ごとに求めて描く。
 パネル法の圧力係数の図（``panel``）では、``panel_cp.csv`` のフィンのパネルから、機軸から最も遠い点の方位にあるフィンを選んで描く。フィンのパネルがなければ胴体だけを描く。
-風の格子の図では、風速ごとの線を、外側（風速が大きい）から順に並ぶ凡例とともに、viridis から取った区別しやすい色で描く。
-``wind.model = "profile"`` の結果では、凡例の見出しが ``profile mean speed (outermost first)`` になる（それ以外は ``wind speed (outermost first)``）。風モデルは ``dispersion_meta.json``、``dispersion_summary.json``、``summary.json`` の順に、最初に ``wind_model`` を持つファイルで決める（``wind_model`` のないファイルは、``wind_scale`` があれば ``profile`` とみなす）。
+風の格子の図では、風速ごとの線を、風速の大きい順に並ぶ凡例とともに、viridis から取った区別しやすい色で描く。
+最も大きい風速の線が最も外側とは限らない（弾道落下では、途中の風速で最も遠くなることがある）ので、凡例は外側の順ではなく風速の順である。
+``wind.model = "profile"`` の結果では、凡例の見出しが ``profile mean speed, highest first`` になる（それ以外は ``wind speed, highest first``）。風モデルは ``dispersion_meta.json``、``dispersion_summary.json``、``summary.json`` の順に、最初に ``wind_model`` を持つファイルで決める（``wind_model`` のないファイルは、``wind_scale`` があれば ``profile`` とみなす）。
 二段開傘の飛翔では、軌跡の図にメインの開傘の位置を四角の印で示す。
 
 ``python/plot.py`` は ``geometry`` ``aero`` ``trajectory`` ``dispersion`` のいずれかを選んで描くこともできる。
@@ -458,6 +463,9 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
 
 自分の機体で計算するときは、``examples/sample.toml`` をコピーして編集し、
 ``make all CONFIG=path/to/rocket.toml`` とすればよい。
+
+結果を保安距離（保安域の半径）の検討に使うときは、1 回の ``dispersion`` で済ませず、:ref:`sec-dispersion-safety` の手順に従う。
+風の格子を上限の風速まで細かくし、最も遠い風での機体のばらつき、回収系の故障、両方の空力の手法を計算して、すべての最大値の最大に余裕を足す。
 
 .. _sec-run-troubleshooting:
 
@@ -654,11 +662,14 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
    設定の項目 ``KEY`` を ``VALUE`` に変える（``geom``、``aero``、``sim``、``dispersion``）。``KEY`` は TOML のキーを ``.`` でつないだもの（``wind.profile_mean_speed``、``aero.panel.body_axial``）で、ない表は作る。
    ``VALUE`` は TOML の値として読む（``15.6``、``true``、``[5.0, 10.0]``、``"monte_carlo"``）。TOML の値として読めない語は文字列とみなすので、``wind.model=profile`` に引用符はいらない。
    数や真偽値に読める文字列は ``'"..."'`` のように引用符で囲む。何度でも指定でき、指定した順に設定ファイルの内容へ上書きしてから、ファイルと同じ検査（未知のキー、型、範囲）を行う。
+   同じキーを 2 回以上指定すると、最後の値を使い、``--set wind.speed given more than once; the last value (8) is used`` の形の警告を出す（数は例）。
    検査でエラーになると、メッセージは ``invalid config <ファイル> with the --set overrides`` で始まる。
+   型の誤りと未知のキーでは、原因の行が、その ``--set`` で始まる（``--set rocket.dry_mass=abc: invalid type: string "abc", expected f64``、``--set wind.nope=1: unknown field `nope`, expected one of …``）。
+   範囲の誤りは、ファイルの場合と同じ、キーの名前を含むメッセージになる。
    ``KEY=VALUE`` の形でないと ``--set …: expected KEY=VALUE``、キーに空の部分があると ``--set …: invalid key "…" (expected a dotted path such as wind.speed)``、表でない項目の下にキーを作ろうとすると ``--set …: wind.model is not a table`` の形のエラーになる。
    値の中の相対パス（``wind.profile`` など）は、ファイルの中と同じく設定ファイルのディレクトリから解釈する。
    ``--set`` で変えた値は設定のハッシュ（``config_hash`` と係数表のキャッシュのキー）に入る。同じ値をファイルに書いた場合と同じハッシュになる。
-   ``--set`` は項目を消せない。省略した場合と同じにしたい項目（二段開傘の ``recovery.main_cd_s`` と ``main_altitude`` など）は、元の設定ファイルに書かず、必要な計算でだけ ``--set`` で加える。
+   ``--set`` は項目を消せない。省略した場合と同じにしたい項目（二段開傘の ``recovery.main_cd_s`` と ``main_altitude`` など）は、元の設定ファイルに書かず、必要な計算でだけ ``--set`` で加える（保安距離の手順での使い方は :ref:`sec-dispersion-safety`）。
 
 ``--out DIR``
    出力先を ``output.dir`` の代わりに ``DIR`` にする（``geom``、``aero``、``sim``、``dispersion``）。相対パスは、設定ファイルのディレクトリではなく **現在のディレクトリ** から解釈する。出力先は設定のハッシュに入らない。
@@ -762,7 +773,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
 
 入力ファイルが読めないときは、エラーにファイルのパスを示す（STL、モータの ``.eng``、風のプロファイル、外部の係数表とその付随ファイル）。
 STL は、頂点の座標に有限でない値（``NaN`` や ``inf``）があると、三角形の番号を示してエラーにする。
-STL の表面が閉じていない（開いた辺が辺の 1 % を超える）ときもエラーにする（:ref:`sec-geometry-warnings`）。
+STL の表面が閉じていない（開いた辺が辺の 1 % を超えるか、機体の基準直径の 0.1 倍より幅の広い穴がある）ときもエラーにする（:ref:`sec-geometry-warnings`）。
 バイナリ STL は、見出しに書かれた三角形の数に必要なバイト数よりファイルが短いと、``binary STL declares 3 triangles (needs 234 bytes) but the file has 191 bytes: the file is truncated or corrupt`` の形（数は例）で、宣言した数、必要なバイト数、実際のバイト数を示してエラーにする。
 ``.eng`` の検査は :ref:`sec-propulsion-eng` に、外部の係数表の検査は :ref:`sec-aero-table-format` にある。
 
@@ -774,6 +785,9 @@ STL の表面が閉じていない（開いた辺が辺の 1 % を超える）�
   ``motor.aft_x`` を省略したときの既定値は機体の全長なので、モータが機体より長い場合にこの検査に掛かる。
   メッセージは ``motor.aft_x = 0.2 m puts the motor outside the body: the motor is … m long and the body … m, so motor.aft_x (the motor's aft end, measured aft of the nose tip) must be between … and … m`` の形である。
   省略したときは先頭が ``motor.aft_x (default: the body length … m) puts the motor outside the body`` になる。
+
+全長と乾燥重心の検査のエラーでは、形状の抽出の警告（:ref:`sec-geometry-warnings`）を、メッセージの後に 1 行ずつ ``geometry warning: …`` の形で続ける。
+検査に掛かった原因（STL の欠陥や尺度の誤り）が、警告に出ていることが多いからである。
 
 積分が発散して状態に有限でない値が現れたときも、エラーにする（``integration diverged at t = … s; reduce sim.dt or tighten rtol/atol, or check the aero table and mass properties``。:ref:`sec-integrators`）。外部の係数表や質量特性の誤りでも発散するので、メッセージはそれらの確認も促す。
 値が有限でも、速さが 8 km/s を超えるか高さが 1000 km を超えたときは、発散とみなして同じ形のエラーにする。
@@ -791,16 +805,21 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 エラーにはしないが疑わしい点は、警告として表示する。警告は ``-q`` を含むすべての出力モードで出す。
 プレーンモードと端末の表示では標準出力に、``-q`` では標準エラー出力に ``warning:`` の行で書く。
 ``sim`` では ``summary.json`` の ``warnings`` にも、``dispersion`` では ``dispersion_meta.json`` と ``dispersion_summary.json`` の ``warnings`` にも同じ文を残す。
+設定の読み込み時に出す警告（``profile`` で使わない ``wind.speed`` と ``wind.direction_deg``、2 回以上指定した ``--set`` のキー）は、配列の先頭に入る。
 警告の内容は次のとおりである。
 
 * 機体の直径が 0.005 から 3 m の範囲を外れている（``rocket.stl_scale`` の誤りが疑われる。mm 単位の STL なら ``0.001``）。``geom`` でも表示する。全長の範囲外は、STL から作る機体ではエラーである（上記）。``method = "table"`` の外部の表では、表の ``length`` と ``ref_diameter`` について、全長 0.1 から 20 m、直径 0.005 から 3 m の範囲外を警告にする。
-* 静安定余裕（自由飛行中の最小値とランチャ離脱時の値の小さいほう。自由飛行中の最小値は、ランチャ離脱の時刻から頂点までのうち対気速度が 10 m/s を超える間に、積分のステップの始端ごとに測った値で、ランチャ離脱の時刻を含む）が、0 cal 未満（``UNSTABLE``。圧力中心が重心より前にある）、0 以上 1.0 cal 未満（``low static margin``。不安定とは呼ばない）、1.0 cal 以上 1.5 cal 未満（``marginal``。推奨の 1.5 cal を下回る）である。
+* 静安定余裕（自由飛行中の最小値とランチャ離脱時の値の小さいほう。自由飛行中の最小値は、ランチャ離脱の時刻から頂点までのうち対気速度が 10 m/s を超える間に、積分のステップの始端ごとに測った値で、離脱時の対気速度が 10 m/s を超えればランチャ離脱の時刻の値を含む。ランチャ離脱時の値は対気速度によらず求める）が、0 cal 未満（``UNSTABLE``。圧力中心が重心より前にある）、0 以上 1.0 cal 未満（``low static margin``。不安定とは呼ばない）、1.0 cal 以上 1.5 cal 未満（``marginal``。推奨の 1.5 cal を下回る）である。
   静安定余裕を求められなかった（一般表で法線力の傾きが 0 か物理的でない向きの面がある。:ref:`sec-static-margin-general`）ときは、``static stability could not be evaluated (…): the results are not usable until it is`` の形で理由を示す（終了ステータス 3。:ref:`sec-exit-status`）。
 * 風のモデルが ``profile`` で、頂点が表の最上端の高度より高い（``apogee … m is above the top of the wind profile (… m): the wind above … m is held at the top value``）。表より上の風は最上端の値で一定になる。
+  ``dispersion`` では、風の格子のケースまたはモンテカルロ解析のサンプルのうち、頂点が表の最上端より高いものの数と最も高い頂点をまとめて示す
+  （``108 of 108 wind-grid cases reach above the top of the wind profile (3000 m), up to 4500 m: the wind above is held at the top value`` の形。例の表を 3000 m で切った表で、風速 3 つ、36 方位の格子を計算した表示。モンテカルロ解析では ``Monte Carlo samples``）。
+  風の格子では、同じ風（風速と風向）の弾道落下とパラシュート降下を 1 つの飛翔として数える。
 * 風のモデルが ``power`` または ``log`` で、頂点が地上 1000 m を超え、風速が 0 でない（``dispersion`` の風の格子では、最大の風速が 0 でないとき）。判定に使う風速は、実際にその飛翔で使う基準風速である（``profile`` では ``wind.speed`` ではなく表から求めた値）。これらのプロファイルは基準高さ ``wind.ref_height`` の風速 ``wind.speed`` を上空に外挿するので、上空の風と着地点はモデル依存になる（実際の予測には ``model = "profile"`` を使う）。
 * 風のモデルが ``profile`` で、表の最下行が地上 0 m より上にある（``the wind profile starts at … m: the wind below is held at the lowest row``）。
-* 風のモデルが ``profile`` なのに、設定ファイル（または ``--set``）に ``wind.speed`` や ``wind.direction_deg`` が書いてある。``profile`` ではこれらを使わないので、``wind.speed is ignored for wind.model = "profile"; use wind.profile_mean_speed to scale the profile`` と ``wind.direction_deg is ignored for wind.model = "profile"; use wind.profile_mean_direction_deg to rotate the profile`` を出す（:ref:`sec-wind-scaling`）。書いていない（既定値のままの）ときは出さない。設定の読み込み時に表示する警告で、``summary.json`` などの ``warnings`` には入らない。
-* 風のモデルが ``profile`` の風の格子またはモンテカルロ解析で、表の拡大率 :math:`k`\ （:ref:`sec-wind-scaling`）が 3 を超えるか 1/3 を下回るケースがある。最も極端なケースの拡大率と、表の風速の最大値を拡大した値を示す（``wind profile scaled by a factor of … (wind grid … m/s vs profile mean … m/s): winds aloft up to … m/s``。倍率は 1 以上なら小数 1 桁、1 未満なら 2 桁で示す。モンテカルロ解析では ``wind grid`` が ``Monte Carlo sample`` になる）。
+* 風のモデルが ``profile`` なのに、設定ファイル（または ``--set``）に ``wind.speed`` や ``wind.direction_deg`` が書いてある。``profile`` ではこれらを使わないので、``wind.speed is ignored for wind.model = "profile"; use wind.profile_mean_speed to scale the profile`` と ``wind.direction_deg is ignored for wind.model = "profile"; use wind.profile_mean_direction_deg to rotate the profile`` を出す（:ref:`sec-wind-scaling`）。書いていない（既定値のままの）ときは出さない。設定の読み込み時に表示する警告で、``summary.json`` などの ``warnings`` の先頭にも入る。
+* 同じキーの ``--set`` を 2 回以上指定した（``--set wind.speed given more than once; the last value (8) is used`` の形。:ref:`sec-cli-overrides`）。設定の読み込み時に表示し、``warnings`` の先頭にも入る。
+* 風のモデルが ``profile`` の風の格子またはモンテカルロ解析で、表の拡大率 :math:`k`\ （:ref:`sec-wind-scaling`）が 3 を超えるか 1/3 を下回るケースがある。最も極端なケースの拡大率と、表の風速の最大値を拡大した値を示す（``wind profile scaled by a factor of … (wind grid … m/s vs profile mean … m/s): winds aloft up to … m/s``。倍率は、1 未満なら小数 2 桁で、3 を超えるときは 3 より大きいと読める最小の桁数（小数 1〜6 桁。3.014 は ``3.01``、3.0004 は ``3.0004``）で示す。モンテカルロ解析では ``wind grid`` が ``Monte Carlo sample`` になる）。
 * パラシュート降下が着地した飛翔（``sim`` と、``dispersion`` の公称の飛翔）で、開傘しないまま着地した（``parachute descent landed at … m/s: the parachute did not deploy before landing (recovery.delay = … s)``）か、着地速度が 15 m/s を超える（``… which is above 15 m/s: check recovery.cd_s``）。
 * パラシュート降下の飛翔（``sim`` と、``dispersion`` の公称の飛翔。着地しなかった飛翔も含む）で、パラシュートが開いたときの対気速度が 50 m/s を超えるか、動圧が 2 kPa を超える（``the parachute opens at 129 m/s (q = 7.2 kPa): a canopy is unlikely to survive; the landing point assumes it does - check recovery.delay`` の形。数は例）。一般の模型ロケットのパラシュートは頂点付近での開傘（動圧は数百 Pa）を前提に作られているので、この速さでは壊れるおそれがあるが、着地点はパラシュートが壊れないものとして計算している。二段開傘では ``the parachute`` の代わりに ``the drogue`` と ``the main`` について判定し、メインの文の末尾は ``check recovery.main_altitude`` である。開傘時の対気速度と動圧は ``summary.json`` に残る（:ref:`sec-file-summary`）。
 * ``sim.max_time`` までに着地しない。
@@ -862,7 +881,7 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 
 静的な安定は、安定・不安定・判定できない、の 3 通りである。
 一般表で、ある面の法線力の傾きが 0 か、横流れと同じ向きの力（物理的でない符号）と復元するモーメントの組合せで余裕を cal で表せないとき、その面の余裕は求まらない（:ref:`sec-static-margin-general`）。
-求まった余裕に負のものがあれば不安定とし、そうでなく求まらない余裕があれば「判定できない」とする。どの時刻でも余裕を求めなかった飛翔（ランチャを離れず、頂点までに対気速度が 10 m/s を超えなかった）も判定できない。
+求まった余裕に負のものがあれば不安定とし、そうでなく求まらない余裕があれば「判定できない」とする。どの時刻でも余裕を求めなかった飛翔（ランチャを離れなかった飛翔。ランチャを離れれば、離脱時の値は対気速度によらず求める）も判定できない。
 ``sim`` は、判定できないとき ``RESULTS NOT USABLE: static stability could not be evaluated (at t = 0.50 s: the yaw normal-force slope dCy/dbeta is zero at Mach 0.10)`` の形の行（括弧内は理由の例）を書いて終了ステータス 3 で終わる。
 ``summary.json`` の ``stable`` は ``null`` になり、``stability_unknown`` に理由を書く。
 ``dispersion`` では、公称の飛翔が判定できないときに同じ行を書き、判定できないケースやサンプルがあると ``RESULTS NOT USABLE: 1 of 3 wind-grid cases (ballistic): static stability could not be evaluated (first: …)`` の形の行を書く。
@@ -1710,7 +1729,7 @@ GitHub では同じ番号のタグ ``vX.Y.Z`` と GitHub Release で管理する
 push とプルリクエストでは、ワークフロー ``ci.yml`` が ``cargo build --release --locked`` と ``cargo test --release --locked`` を実行し、
 例題で ``geom``、``aero``、``sim``、風の格子の ``dispersion``、モンテカルロの ``dispersion``、``python/plot.py`` を通しで動かし、
 ``python/plot.py`` の単体テスト（``python/test_plot.py``）も実行し、
-``sim.max_time`` を短くした飛翔が終了ステータス 3 で終わることも確かめる（clippy と rustfmt は ``-D warnings`` と ``--check`` で実行し、違反があるとジョブが失敗する。ShellCheck は助言のみで、失敗してもジョブは落ちない）。
+``sim.max_time`` を短くした飛翔が終了ステータス 3 で終わることも確かめる（clippy と rustfmt は ``-D warnings`` と ``--check`` で実行し、違反があるとジョブが失敗する。ShellCheck（``install.sh`` と ``scripts/*.sh``）も、指摘があるとジョブが失敗する。誤検出は、理由を書いた ``# shellcheck disable=SCxxxx`` の行で個別に除く）。
 別のジョブが、必要な最低の Rust の版 1.87 で ``cargo build --locked`` を実行する。
 ワークフロー ``docs.yml`` は、プルリクエストと ``main`` への push で HTML のドキュメントを警告をエラーとして（``-W``）ビルドする。GitHub Pages への公開は ``main`` への push（と手動の実行）のときだけで、プルリクエストではビルドだけを行う。
 ワークフローが使う Action は、コミットの SHA で固定している。

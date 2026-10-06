@@ -50,7 +50,7 @@ STL には単位がないので、CAD で mm 単位で作った機体なら設�
 
 * 胴体は **軸対称**\ （回転体）であり、フィンは同じ形のものが機軸まわりに等間隔に並ぶ。
 * フィンは台形（後退角つき）で近似する。クリップトデルタや楕円フィンも等価な台形として扱われる。
-* STL の表面は閉じている（穴のない、ソリッドとして書き出した）必要がある。開いた辺が辺の 1 % を超えるとエラーにする（:ref:`sec-geometry-warnings`）。閉じた殻が複数あってもよく、内部の構造（隔壁やモータ）が含まれていても、各断面で外側の点だけを使うので影響しない。
+* STL の表面は閉じている（穴のない、ソリッドとして書き出した）必要がある。開いた辺が辺の 1 % を超えるか、基準直径の 0.1 倍より幅の広い穴があるとエラーにする（:ref:`sec-geometry-warnings`）。閉じた殻が複数あってもよく、内部の構造（隔壁やモータ）が含まれていても、各断面で外側の点だけを使うので影響しない。
 
 機軸の決定
 ----------
@@ -296,12 +296,23 @@ STL を任意に回転・平行移動しても同じ結果になることを自�
      - 基準半径を 90 パーセンタイルから決めた（上の「胴体半径の決定」）
    * - ノーズの向きを端の半径だけで決めた、または、端の形とフィンの位置が逆の向きを示した
      - 向きを確認するか、``nose_direction`` で指定する
+   * - 底面半径（最後の断面の胴体半径）が基準半径の 1.05 倍を超える
+     - フィンが胴体の底面より後ろへ突き出している可能性がある（``the aft end of the mesh is wider than the body (radius … m vs … m): the fins probably extend behind the body base; Barrowman's fin-body interference assumes the body continues behind the fin root chord, and base drag uses this radius (check the fins, or set rocket.fin_override)``）
+   * - フィン（検出したもの、または ``rocket.fin_override``）の後縁が、根元でも翼端でも、機体の後端より後ろにある
+     - 部品積み上げ法の胴体干渉の式は、フィンの根元翼弦の後ろまで胴体が続くことを前提にする（``the fin trailing edge at 1.6000 m lies aft of the body end at 1.5000 m: Barrowman's fin-body interference assumes that the body continues behind the fin root chord``。サンプルで ``fin_override`` の ``x_le_root`` を 1.40 m にした例）
    * - 表面に開いた辺（1 つの三角形にしか使われない辺）が辺の 1 % 以下ある、または 3 つ以上の三角形に共有される辺（非多様体の辺）がある
      - 小さなメッシュの欠陥である（``the STL surface has … open and … non-manifold (shared by more than two triangles) edges of …: small mesh defects, check the extracted geometry``。該当する種類だけを書く）
 
 辺の数え方では、バウンディングボックスの対角線の :math:`10^{-7}` 倍より近い頂点を同じ点とみなし、2 つの頂点が重なってつぶれた三角形は除く。
-開いた辺が辺の 1 % を超えるときは、表面が閉じていない（穴がある、殻だけの面である）として、警告ではなくエラーにする
-（``the STL surface is not closed: … open edges of … (… %): the geometry extraction needs a closed (watertight) surface; repair the mesh (close the holes) or export the rocket as a solid``）。
+表面が閉じていない（穴がある、殻だけの面である）ときは、警告ではなくエラーにする。判定は次の 2 つで、どちらかに当たればエラーである。
+
+* 開いた辺が辺の 1 % を超える（``the STL surface is not closed: … open edges of … (… %): the geometry extraction needs a closed (watertight) surface; repair the mesh (close the holes) or export the rocket as a solid``）。
+* 穴の幅が、基準直径（基準半径の 2 倍）の 0.1 倍を超える。つながった開いた辺の輪を 1 つの穴とし、輪が囲む面積（ベクトル面積の大きさ）を差し渡し（輪の頂点どうしの最大距離の推定値）で割った平均の幅で判定する。
+  細長い三角形が 1 枚欠けた穴は長くても幅が小さく、端面が丸ごと欠けた穴は直径の約 0.39 倍、フィンの側面が欠けた穴は直径の数割になる。
+  細かいメッシュでは端面が欠けても開いた辺が 1 % に届かないことがあるので、この判定で見つける。
+  メッセージは穴の差し渡しと、その基準直径（``body diameter``）に対する割合を示す
+  （``the STL surface is not closed: a hole bounded by 72 open edges is 0.100 m across (100 % of the body diameter 0.100 m): the geometry extraction needs a closed (watertight) surface; repair the mesh (close the holes) or export the rocket as a solid``。サンプルの STL から底面の 72 枚の三角形を除いた例。開いた辺は約 2 万本の辺の 0.3 % で、1 % の判定には掛からない）。
+
 形状の抽出は閉じた表面を前提とするので、穴をふさぐか、ソリッドとして書き出し直す。
 
 STL の尺度の誤りは、``geometry`` の警告のほかに、機体の大きさが妥当な範囲を外れたときにも知らせる。全長が 0.1 から 20 m の範囲の外にあるとエラーにし、直径が 0.005 から 3 m の範囲の外にあると警告する（:ref:`sec-config-checks`）。

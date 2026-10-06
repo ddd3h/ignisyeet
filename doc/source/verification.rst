@@ -84,6 +84,8 @@
 * ``plausible_rocket_has_no_warnings_and_odd_proportions_warn``：標準的な機体には警告がなく、寸詰まりの機体には全長と直径の比の警告が出る。
 * ``explicit_nose_direction_is_respected_and_forward_fins_warn``：``nose_direction`` の指定は覆されず、フィンが前半にあれば警告が出る。
 * ``open_surfaces_are_rejected_and_small_defects_warned``：サンプル機体の閉じた表面には開いた辺も非多様体の辺もない。三角形 1 枚の面は ``the STL surface is not closed`` のエラーになり、三角形を 1 枚除いた表面は 3 本の開いた辺の警告、三角形を 1 枚重ねた表面は 3 本の非多様体の辺の警告になる。
+  開いた辺が 1 % 未満でも、機体の半分だけの表面、底面を除いた表面（``a hole bounded by … open edges is 0.100 m across (100 % of the body diameter 0.100 m)``）、フィンの平らな側面を 1 枚除いた表面は、穴の幅の判定でエラーになる。
+* ``fins_behind_the_body_base_warn``：サンプル機体にはフィンの後縁の警告が出ない。根元の後縁または後退した翼端が機体の後端より後ろにあるフィンは ``the fin trailing edge at … lies aft of the body end at …`` の警告になり、フィンが底面より後ろへ突き出したメッシュは ``the aft end of the mesh is wider than the body`` の警告になる。
 
 空力モデル
 ----------

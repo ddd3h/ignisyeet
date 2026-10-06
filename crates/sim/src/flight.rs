@@ -1130,6 +1130,20 @@ impl<'a> Simulation<'a> {
 
             if phase == Phase::Rail {
                 let along = |p: Vec3| (p - frame.origin()).dot(cx.rail) - self.launch.rail_length;
+                let (v0, v1) = (prev.vel.dot(cx.rail), s.vel.dot(cx.rail));
+                if v1 < 0.0 {
+                    // The rocket is held where it stops (eq. rail: a = 0 for v <= 0 and a < 0), but a
+                    // step that brakes it can end with a small negative speed. It stops instead at
+                    // the zero of the step's linear velocity (the Hermite position there), at rest,
+                    // never behind its position at the start of the step nor the rail base.
+                    let fz = if v0 > 0.0 { v0 / (v0 - v1) } else { 0.0 };
+                    let travelled = |p: Vec3| along(p) + self.launch.rail_length;
+                    let stop = travelled(hermite_pos(&prev, &s, h, fz)).max(travelled(prev.pos)).max(0.0);
+                    s = State { pos: frame.origin() + cx.rail * stop, vel: Vec3::ZERO, ..s };
+                    loc = frame.local(s.pos);
+                    fsal = None;
+                    continue;
+                }
                 if along(s.pos) >= 0.0 {
                     // The step overshoots the rail end: find the crossing on the cubic Hermite
                     // interpolant of the step (exact for constant acceleration) and restart the
@@ -1653,6 +1667,33 @@ mod tests {
         assert!((last.t - r.summary.landing_time).abs() < 1e-12 && last.up.abs() < 1e-9);
         let vl = (last.vel_e.powi(2) + last.vel_n.powi(2) + last.vel_u.powi(2)).sqrt();
         assert!((vl - r.summary.landing_speed).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_thrust_dip_on_the_rail_never_moves_the_rocket_backward() {
+        // Vacuum, vertical rail of 3 m, 10 kg: 300 N for 0.2 s (to 4.0 m/s, 0.40 m), a dip to 20 N
+        // (decelerates at 7.8 m/s^2: comes to rest at about 1.45 m after 0.72 s and is held there),
+        // then 300 N again until it leaves the rail.
+        let (table, _) = vacuum_parts();
+        let motor = Motor::new("dip".into(), 0.05, 0.3, 0.0, vec![(0.0, 300.0), (0.2, 300.0), (0.201, 20.0), (1.5, 20.0), (1.501, 300.0), (3.0, 300.0)]);
+        for integrator in [IntegratorKind::Rk4, IntegratorKind::Rk45, IntegratorKind::Dop853] {
+            let mut sim = vacuum_sim(&table, &motor);
+            sim.settings.integrator = integrator;
+            sim.settings.output_interval = 0.002;
+            let r = sim.run(Descent::Ballistic, true).unwrap();
+            let rail: Vec<&Sample> = r.samples.iter().filter(|s| s.phase == Phase::Rail).collect();
+            assert!(rail.len() > 100, "{integrator:?}: {} rail samples", rail.len());
+            for w in rail.windows(2) {
+                let (a, b) = (w[0], w[1]);
+                assert!(b.up >= a.up - 1e-12 && b.up >= -1e-12, "{integrator:?}: moved backward at t = {}: {} -> {}", b.t, a.up, b.up);
+                assert!(b.vel_u >= 0.0, "{integrator:?}: negative rail velocity {} at t = {}", b.vel_u, b.t);
+            }
+            // Held at the stop point until the thrust returns.
+            let held: Vec<&&Sample> = rail.iter().filter(|s| s.t > 0.95 && s.t < 1.5).collect();
+            assert!(held.iter().all(|s| s.vel_u == 0.0 && (s.up - held[0].up).abs() < 1e-12), "{integrator:?}");
+            assert!((held[0].up - 1.45).abs() < 0.02, "{integrator:?}: stopped at {} m", held[0].up);
+            assert!(r.summary.rail_exit_time > 1.5, "{integrator:?}");
+        }
     }
 
     #[test]

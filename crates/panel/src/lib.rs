@@ -7,7 +7,9 @@
 //! * subsonic Mach numbers: Morino/Dirichlet constant-source/doublet panel solution with the
 //!   Goethert compressibility transformation (`solver`), with an empirical viscous cross-flow term;
 //! * supersonic Mach numbers: local-inclination methods (`supersonic`);
-//! * transonic band: cubic Hermite blend in Mach number between the two regimes;
+//! * transonic band: cubic Hermite blend in Mach number between the two regimes, of the
+//!   normal force and its nose moment (the centre of pressure is their ratio; monotone slopes) and
+//!   of the axial force;
 //! * axial force: surface-integrated skin friction (`viscous`), supersonic wave drag, plus the
 //!   base / fin-edge / boattail / extra terms of `aero::AeroModel`.
 //!
@@ -183,12 +185,40 @@ struct Ctx<'a> {
     sup: supersonic::SupersonicPanels,
 }
 
-fn to_arr(c: &AeroCoeffs) -> [f64; 8] {
-    [c.cn, c.ca_on, c.ca_off, c.xcp, c.cna, c.damp[0], c.damp[1], c.damp[2]]
+/// The quantities the transonic band blends in Mach number, all linear in the flow solution: per
+/// angle the normal force, its nose moment `cn * xcp` and the axial forces; per column the
+/// zero-angle normal-force slope, its nose moment `cna * x_cp(0)` and the damping sums. `x0` is the
+/// column's zero-angle centre of pressure.
+fn to_linear(c: &AeroCoeffs, x0: f64) -> [f64; 9] {
+    [c.cn, c.cn * c.xcp, c.ca_on, c.ca_off, c.cna, c.cna * x0, c.damp[0], c.damp[1], c.damp[2]]
 }
 
-fn from_arr(a: [f64; 8]) -> AeroCoeffs {
-    AeroCoeffs { cn: a[0], ca_on: a[1], ca_off: a[2], xcp: a[3], cna: a[4], damp: [a[5], a[6], a[7]], ..Default::default() }
+/// Indices of the axial forces in [`to_linear`].
+const AXIAL: [usize; 2] = [2, 3];
+
+/// End slopes of the transonic Hermite blend from `f0` to `f1` over a band `width` wide, limited
+/// (Fritsch-Carlson) so the blend stays between the edge values: a slope against the change across
+/// the band is dropped and the pair is scaled down to at most three times the mean slope. The raw
+/// slopes are finite differences of each regime at its edge, which near the low supersonic end vary
+/// steeply with Mach number and would otherwise make the band overshoot.
+fn monotone_slopes(f0: f64, f1: f64, width: f64, d0: f64, d1: f64) -> (f64, f64) {
+    let s = (f1 - f0) / width;
+    if s.abs() <= 1e-12 * (f0.abs() + f1.abs()).max(1e-300) {
+        return (0.0, 0.0);
+    }
+    let (a, b) = ((d0 / s).max(0.0), (d1 / s).max(0.0));
+    let r = a.hypot(b);
+    let k = if r > 3.0 { 3.0 / r } else { 1.0 };
+    (k * a * s, k * b * s)
+}
+
+/// Coefficients from blended [`to_linear`] values: the centre of pressure is the blended moment over
+/// the blended normal force (at zero angle, or with no normal force, the zero-angle one from the
+/// blended slope and its moment), so force, moment and slope stay consistent.
+fn from_linear(a: [f64; 9]) -> AeroCoeffs {
+    let x0 = if a[4].abs() > 1e-12 { a[5] / a[4] } else { 0.0 };
+    let xcp = if a[0].abs() > 1e-12 { a[1] / a[0] } else { x0 };
+    AeroCoeffs { cn: a[0], ca_on: a[2], ca_off: a[3], xcp, cna: a[4], damp: [a[6], a[7], a[8]], ..Default::default() }
 }
 
 impl Ctx<'_> {
@@ -460,13 +490,21 @@ pub fn build_table_with_progress(
             let (f0, f0m, f1, f1p, h) = band.as_ref().unwrap();
             (0..f0.len())
                 .map(|j| {
-                    let (a0, am, a1, ap) = (to_arr(&f0[j]), to_arr(&f0m[j]), to_arr(&f1[j]), to_arr(&f1p[j]));
-                    let mut out = [0.0; 8];
-                    for q in 0..8 {
-                        let (d0, d1) = ((a0[q] - am[q]) / h, (ap[q] - a1[q]) / h);
+                    // Blend the force and its nose moment (not the centre of pressure, a ratio) and
+                    // the zero-angle slope with its moment, then derive the centres of pressure.
+                    let lin = |c: &[AeroCoeffs]| to_linear(&c[j], c[0].xcp);
+                    let (a0, am, a1, ap) = (lin(f0), lin(f0m), lin(f1), lin(f1p));
+                    let mut out = [0.0; 9];
+                    for q in 0..9 {
+                        let (mut d0, mut d1) = ((a0[q] - am[q]) / h, (ap[q] - a1[q]) / h);
+                        // The axial force keeps its slopes (they shape the transonic drag rise);
+                        // the normal force, moment and slopes stay between the edge values.
+                        if !AXIAL.contains(&q) {
+                            (d0, d1) = monotone_slopes(a0[q], a1[q], m_hi - m_lo, d0, d1);
+                        }
                         out[q] = hermite(m, m_lo, m_hi, a0[q], a1[q], d0, d1);
                     }
-                    from_arr(out)
+                    from_linear(out)
                 })
                 .collect()
         }

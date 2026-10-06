@@ -6,6 +6,8 @@
 //! [`aero::AeroTable`] with the same layout as the Barrowman path:
 //! * subsonic Mach numbers: Morino/Dirichlet constant-source/doublet panel solution with the
 //!   Goethert compressibility transformation (`solver`), with an empirical viscous cross-flow term;
+//!   above the attached-flow angle (15°) the normal force and its moment relax to the component
+//!   build-up model, whose fins carry the flat-plate crossflow force (see [`relax_to_large_angle`]);
 //! * supersonic Mach numbers: local-inclination methods (`supersonic`);
 //! * transonic band: cubic Hermite blend in Mach number between the two regimes, of the
 //!   normal force and its nose moment (the centre of pressure is their ratio; monotone slopes) and
@@ -23,7 +25,7 @@ pub mod solver;
 pub mod supersonic;
 pub mod viscous;
 
-use aero::model::axial_alpha_factor;
+use aero::model::{axial_alpha_factor, FIN_ALPHA_LINEAR};
 use aero::table::{AeroCoeffs, TableMeta};
 use aero::{AeroModel, AeroOptions, AeroTable, Extrapolation};
 use anyhow::{bail, Result};
@@ -221,6 +223,42 @@ fn from_linear(a: [f64; 9]) -> AeroCoeffs {
     AeroCoeffs { cn: a[0], ca_on: a[2], ca_off: a[3], xcp, cna: a[4], damp: [a[6], a[7], a[8]], ..Default::default() }
 }
 
+/// Angle [rad] from which the subsonic columns equal the component build-up model: twice the
+/// attached-flow angle [`FIN_ALPHA_LINEAR`] (30°).
+pub const LARGE_ANGLE_RELAXED: f64 = 2.0 * FIN_ALPHA_LINEAR;
+
+/// Large-angle value of a subsonic panel quantity (normal force or its nose moment) at `a` [rad] above
+/// [`FIN_ALPHA_LINEAR`].
+///
+/// The subsonic panel solution is linear potential flow, `CN_alpha sin a cos a`, plus the body crossflow
+/// term. It holds at small angles only: at 90° its potential part vanishes, so the fins carry no normal
+/// force and the centre of pressure falls to the body planform centroid. Beyond the attached-flow angle
+/// `a1 = FIN_ALPHA_LINEAR` the quantity therefore relaxes to the component build-up value `B(a)`
+/// ([`AeroModel::normal`]: body, body crossflow and the fin flat-plate crossflow at the fin planform
+/// centroid, see [`AeroModel::fin_cn`] and [`AeroModel::fin_xcp_at`]):
+///
+/// `P(a) = B(a) + (D + D' (a - a1)) w(a)`,  `D = P_panel(a1) - B(a1)`,  `D' = P_panel'(a1) - B'(a1)`,
+///
+/// with `w` a C1 smoothstep from 1 at `a1` to 0 at [`LARGE_ANGLE_RELAXED`]. Value and slope match the
+/// panel result at `a1`; from `LARGE_ANGLE_RELAXED` on the value is `B(a)`.
+fn relax_to_large_angle(a: f64, panel: impl Fn(f64) -> f64, barrowman: impl Fn(f64) -> f64) -> f64 {
+    let (a1, ar) = (FIN_ALPHA_LINEAR, LARGE_ANGLE_RELAXED);
+    let b = barrowman(a);
+    if a >= ar {
+        return b;
+    }
+    if a <= a1 {
+        return panel(a);
+    }
+    let h = 1e-6;
+    let p1 = panel(a1);
+    let b1 = barrowman(a1);
+    let dp = (p1 - panel(a1 - h)) / h;
+    let db = (barrowman(a1 + h) - barrowman(a1 - h)) / (2.0 * h);
+    let w = hermite(a, a1, ar, 1.0, 0.0, 0.0, 0.0);
+    b + ((p1 - b1) + (dp - db) * (a - a1)) * w
+}
+
 impl Ctx<'_> {
     /// Viscous cross-flow normal force and its nose moment at angle `a`.
     fn cross_flow(&self, a: f64) -> (f64, f64) {
@@ -254,10 +292,24 @@ impl Ctx<'_> {
         let (on, off) = (self.model.cd0(m, true), self.model.cd0(m, false));
         let fr = self.fric.ca(m, self.aero);
         let ca = |b: &aero::model::DragBreakdown| fr + b.nose + b.base + b.fins + b.boattail + b.extra;
+        let potential = |a: f64| {
+            let (cl, ml) = self.cross_flow(a);
+            (d[0] * a.sin() * a.cos() + cl, d[1] * a.sin() * a.cos() + ml)
+        };
         self.column_from(
             |a| {
-                let (cl, ml) = self.cross_flow(a);
-                (d[0] * a.sin() * a.cos() + cl, d[1] * a.sin() * a.cos() + ml)
+                if a <= FIN_ALPHA_LINEAR {
+                    return potential(a);
+                }
+                let barrowman = |a: f64| {
+                    let (cn, x) = self.model.normal(m, a);
+                    (cn, cn * x)
+                };
+                let cn = relax_to_large_angle(a, |a| potential(a).0, |a| barrowman(a).0);
+                let mom = relax_to_large_angle(a, |a| potential(a).1, |a| barrowman(a).1);
+                // Keep the centre of pressure on the body during the transition.
+                let x = if cn.abs() > 1e-12 { (mom / cn).clamp(0.0, self.geom.length.max(0.0)) } else { 0.0 };
+                (cn, cn * x)
             },
             d,
             ca(&on),

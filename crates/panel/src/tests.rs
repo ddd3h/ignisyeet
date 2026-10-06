@@ -316,3 +316,47 @@ fn build_table_fails_early_over_memory_budget() {
     let r = check_memory(Mesh::from_geometry(&g, &coarse()).unwrap().panels.len(), Some(1000));
     assert!(r.is_err());
 }
+
+/// Beyond the attached-flow angle the subsonic columns relax to the component build-up model, whose
+/// fins carry the flat-plate crossflow force at their planform centroid: from twice that angle on the
+/// normal force and centre of pressure are the Barrowman values, and the transition is continuous and
+/// monotone from the potential-flow result, which is unchanged up to the attached-flow angle.
+#[test]
+fn subsonic_large_angles_carry_the_fin_crossflow() {
+    use aero::model::FIN_ALPHA_LINEAR;
+    let g = geometry(&SampleRocket::default());
+    let aero = AeroOptions { mach_min: 0.0, mach_max: 0.6, mach_step: 0.3, alpha_max_deg: 120.0, alpha_step_deg: 1.0, ..Default::default() };
+    let opt = PanelOptions { subsonic_machs: vec![0.0, 0.3, 0.6], ..coarse() };
+    let (t, _) = build_table(&g, &opt, &aero, "t".into(), Extrapolation::Linear).unwrap();
+    let model = AeroModel::new(g.clone(), aero.clone());
+    let a1 = FIN_ALPHA_LINEAR.to_degrees();
+    let cl = |a: f64| 1.1 * g.planform_area / g.ref_area * a.sin().powi(2);
+    for &m in &t.meta.machs {
+        let c0 = t.lookup(m, 0.0);
+        // attached-flow rows: potential flow `sin a cos a` plus the body crossflow term
+        for deg in [1.0, 5.0, 10.0, a1] {
+            let a = f64::to_radians(deg);
+            let c = t.lookup(m, a);
+            let cn = c0.cna * a.sin() * a.cos() + cl(a);
+            let mom = c0.cna * c0.xcp * a.sin() * a.cos() + cl(a) * g.planform_centroid;
+            assert!((c.cn - cn).abs() < 1e-9 * cn.abs().max(1.0), "M={m} {deg}°: CN {} vs {cn}", c.cn);
+            assert!((c.xcp - mom / cn).abs() < 1e-9, "M={m} {deg}°: xcp {} vs {}", c.xcp, mom / cn);
+        }
+        for deg in [2.0 * a1, 45.0, 60.0, 90.0, 110.0] {
+            let a = f64::to_radians(deg);
+            let c = t.lookup(m, a);
+            let (bcn, bx) = model.normal(m, a);
+            assert!((c.cn - bcn).abs() < 1e-9 * bcn.abs(), "M={m} {deg}°: CN {} vs Barrowman {bcn}", c.cn);
+            assert!((c.xcp - bx).abs() < 1e-9, "M={m} {deg}°: xcp {} vs Barrowman {bx}", c.xcp);
+        }
+        // At 90° the fin crossflow holds the centre of pressure aft of the body planform centroid.
+        assert!(t.lookup(m, f64::to_radians(90.0)).xcp > g.planform_centroid + 0.05);
+        // continuous and monotone through the transition
+        let mut prev = t.lookup(m, f64::to_radians(a1)).cn;
+        for deg in (a1.round() as i32 + 1)..=(2.0 * a1).round() as i32 {
+            let c = t.lookup(m, f64::to_radians(deg as f64)).cn;
+            assert!(c > prev && c - prev < 1.0, "M={m} {deg}°: CN {prev} -> {c}");
+            prev = c;
+        }
+    }
+}

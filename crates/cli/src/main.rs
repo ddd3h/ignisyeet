@@ -861,7 +861,7 @@ fn aero_options(cfg: &Config) -> Result<AeroOptions> {
 
 /// Version of the aerodynamic model and of the table layout. Bump it whenever a change of the code
 /// alters the coefficients computed from the same inputs, so that older cached tables are rebuilt.
-const MODEL_VERSION: u32 = 6;
+const MODEL_VERSION: u32 = 7;
 
 /// The part of the aero settings that determines the table: unused method blocks and the
 /// resource/path-only CFD fields do not change the coefficients and are left out.

@@ -478,6 +478,47 @@ class Usability(unittest.TestCase):
             self.assertEqual(banner(fig), "")
             self.assertFalse(any("unstable" in x for x in labels(fig)))
 
+    def test_monte_carlo_plot_shows_the_p999(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self.mc_csv(out)
+            st = {"descent": "ballistic", "n": 6, "failed": 1, "mean_east": 25.0, "mean_north": 12.5, "max_landing_distance": 60.0,
+                  "landing_distance_p50": 20.0, "landing_distance_p90": 40.0, "landing_distance_p99": 50.0, "landing_distance_p999": 55.0}
+            (out / "dispersion_summary.json").write_text(json.dumps({**self.CLEAN, "samples": 7, "descents": [st]}))
+            fig = capture_figures(plot.plot_dispersion_mc, out)["dispersion_mc.png"]
+            text = "\n".join(t.get_text() for ax in fig.axes for t in ax.texts)
+            self.assertIn("P50 / P90 / P99 / P99.9: 20 / 40 / 50 / 55 m", text)
+
+    def test_grid_outline_breaks_at_broadside_cases(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            rows = []
+            for d in (0.0, 90.0, 180.0, 270.0):
+                far = d == 90.0
+                e, n = (3000.0, 0.0) if far else (100.0 * np.sin(np.radians(d)), 100.0 * np.cos(np.radians(d)))
+                rows.append({"descent": "ballistic", "wind_speed": 4.0, "wind_direction_deg": d, "landing_east": e, "landing_north": n, "landing_distance": np.hypot(e, n), "landed": True, "stable": "true", "broadside_time": 140.0 if far else 0.0})
+            df = pd.DataFrame(rows)
+            e, n = plot.grid_polyline(df)
+            self.assertTrue(np.isnan(e[1]) and np.isnan(n[1]))
+            self.assertEqual(int(np.isnan(e).sum()), 1)
+            self.assertEqual((e[0], e[-1]), (e[0], e[0]))  # closed outline
+            df.to_csv(out / "dispersion.csv", index=False)
+            (out / "dispersion_meta.json").write_text(json.dumps({**self.CLEAN, "cases": 4, "failed": 0}))
+            fig = capture_figures(plot.plot_dispersion_grid, out)["dispersion.png"]
+            ax = fig.axes[0]
+            # no line segment reaches the broadside landing; its marker is still drawn
+            for line in ax.get_lines():
+                if line.get_linestyle() == "-":
+                    x = np.asarray(line.get_xdata(), dtype=float)
+                    self.assertFalse(np.any(x == 3000.0))
+            self.assertTrue(any(np.any(np.asarray(l.get_xdata(), dtype=float) == 3000.0) for l in ax.get_lines() if l.get_marker() == "o"))
+            self.assertIn("fell broadside (1)", labels(fig))
+
+    def test_stability_panel_is_the_cp_cg_separation_off_the_rail(self):
+        src = (HERE / "plot.py").read_text()
+        self.assertIn("CP–CG separation at the flown α [cal]", src)
+        self.assertNotIn('"Static margin [cal] (ascent)"', src)
+
     def test_trajectory_plots_show_the_banner(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)

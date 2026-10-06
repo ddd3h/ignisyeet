@@ -386,13 +386,14 @@ def plot_trajectory(out):
     tr = tr.assign(height=height, vert_vel=vert_vel)
     body = tr[tr.phase != "parachute"]
     free = body[body.phase == "free"]
-    asc = body[(body.vert_vel >= 0) & (body.airspeed > 10)]
+    # Ascent off the rail: on the rail the angle of attack is the wind's, not a flown one.
+    asc = body[(body.vert_vel >= 0) & (body.airspeed > 10) & (body.phase != "rail")]
     panels = [
         ("height", "Altitude above launch site [m]", tr),
         ("airspeed", "Airspeed [m/s]", body),
         ("mach", "Mach", body),
         ("alpha_deg", "Angle of attack [deg]", free),
-        ("stability_cal", "Static margin [cal] (ascent)", asc),
+        ("stability_cal", "CP–CG separation at the flown α [cal] (ascent)", asc),
         ("dyn_pressure", "Dynamic pressure [Pa]", body),
         ("thrust", "Thrust [N]", body[body.t <= body.t[body.thrust > 0].max() * 1.2] if (body.thrust > 0).any() else body),
         ("mass", "Mass [kg]", body),
@@ -654,7 +655,11 @@ def plot_dispersion_mc(out):
             lines.append(f"max distance {ge}{far:.0f} m")
         pct = [st.get(f"landing_distance_p{q}") for q in (50, 90, 99)]
         if all(v is not None for v in pct):
-            lines.append("P50 / P90 / P99: " + " / ".join(f"{v:.0f}" for v in pct) + " m")
+            p999 = st.get("landing_distance_p999")
+            if p999 is not None:
+                lines.append("P50 / P90 / P99 / P99.9: " + " / ".join(f"{v:.0f}" for v in pct + [p999]) + " m")
+            else:
+                lines.append("P50 / P90 / P99: " + " / ".join(f"{v:.0f}" for v in pct) + " m")
         if st.get("complete") is False:
             lines.append("statistics incomplete")
         if lines:
@@ -699,6 +704,16 @@ def profile_wind(out):
     return False
 
 
+def grid_polyline(r):
+    """East and north of the closed outline of one wind speed's landing points `r` (sorted by direction), with a
+    break (NaN) at every case that fell broadside: such a landing lies far off the outline of its neighbours,
+    and a line through it would cut across the figure. Broadside cases keep their markers."""
+    _, _, broadside = run_flags(r)
+    e = r.landing_east.where(~broadside).to_numpy(dtype=float)
+    n = r.landing_north.where(~broadside).to_numpy(dtype=float)
+    return np.append(e, e[:1]), np.append(n, n[:1])
+
+
 def plot_dispersion_grid(out):
     d = pd.read_csv(out / "dispersion.csv")
     modes = [m for m in ("ballistic", "parachute") if (d.descent == m).any()]
@@ -716,9 +731,9 @@ def plot_dispersion_grid(out):
             r = s[s.wind_speed == v].sort_values("wind_direction_deg")
             if r.empty:
                 continue
-            e = np.append(r.landing_east.values, r.landing_east.values[:1])
-            n = np.append(r.landing_north.values, r.landing_north.values[:1])
-            ax.plot(e, n, "-o", color=colors[v], markersize=4, linewidth=1.5, label=f"{v:g} m/s")
+            e, n = grid_polyline(r)
+            ax.plot(e, n, "-", color=colors[v], linewidth=1.5)
+            ax.plot(r.landing_east, r.landing_north, "o", color=colors[v], markersize=4, label=f"{v:g} m/s")
         ax.plot([0], [0], marker="*", color=INK, markersize=12, linestyle="none", label="launch site")
         n_speed = len(ax.get_legend_handles_labels()[1]) - 1  # speed curves drawn before the launch site
         mark_runs(ax, s)

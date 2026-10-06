@@ -91,9 +91,19 @@ def save(fig, out, name):
     print(f"wrote {path}")
 
 
+def remove_old_plots(out, names):
+    """Removes plots/<name> of an earlier run for a plot that is skipped now, so that no stale figure stays."""
+    for name in names:
+        f = out / "plots" / name
+        if f.exists():
+            f.unlink()
+            print(f"removed {f} (plot skipped; the file was from an earlier run)")
+
+
 def plot_geometry(out):
     if not (out / "profile.csv").exists():
         print("skip geometry: profile.csv not found (run `ignisyeet geom` again)")
+        remove_old_plots(out, PNGS["geometry"])
         return
     g = json.loads((out / "geometry.json").read_text())
     p = pd.read_csv(out / "profile.csv")
@@ -362,10 +372,10 @@ def plot_trajectory(out):
     save(fig, out, "trajectory_3d.png")
 
     # Rigid-body panels cover powered flight and coast; the parachute descent only adds a flat tail.
-    # Altitude above the launch site is geodetic alt minus the launch altitude (as in summary.json), not the
-    # launch tangent-plane coordinate `up`, which differs from it on an ECEF Earth; the ascent test uses the
-    # rate of that altitude (the local vertical velocity).
-    tr = tr.assign(height=altitude_above_launch(tr), vert_vel=vertical_velocity(tr))
+    # Altitude above the launch site as summary.json reports the apogee: the integrated height `up` on a flat
+    # Earth, the geodetic alt minus the launch altitude on an ECEF Earth (see height_and_vertical_velocity).
+    height, vert_vel = height_and_vertical_velocity(tr, summ)
+    tr = tr.assign(height=height, vert_vel=vert_vel)
     body = tr[tr.phase != "parachute"]
     free = body[body.phase == "free"]
     asc = body[(body.vert_vel >= 0) & (body.airspeed > 10)]
@@ -405,6 +415,37 @@ def plot_trajectory(out):
         a.text(0.97, 0.06, f"did not land within {summ.get('max_time', tr.t.max()):g} s", transform=a.transAxes, ha="right", color=SERIES[7])
     fig.tight_layout()
     save(fig, out, "trajectory.png")
+
+
+def flat_earth(tr, summ):
+    """True for a flat-Earth run: summary.json's `earth_model`, or, for a summary without it, the touchdown row.
+
+    A flat-Earth touchdown row has up = 0 exactly while its alt (converted from the tangent-plane position)
+    carries the curvature drop; an ECEF touchdown has alt at the launch altitude and a negative tangent-plane
+    up. When neither tells (no landing, short range), the default earth.model = "flat" is assumed.
+    """
+    model = summ.get("earth_model")
+    if model in ("flat", "ecef"):
+        return model == "flat"
+    if summ.get("landed") is True and len(tr) > 1:
+        up_end, h_end = tr.up.iloc[-1], tr.alt.iloc[-1] - tr.alt.iloc[0]
+        if up_end == 0.0 and abs(h_end) > 1e-3:
+            return True
+        if abs(h_end) <= 1e-3 and up_end < -1e-3:
+            return False
+    return True
+
+
+def height_and_vertical_velocity(tr, summ):
+    """Height above the launch site [m] and its rate [m/s], as summary.json measures the apogee.
+
+    Flat Earth: the integrated height `up` and `vel_u` (the exported alt is converted from the tangent-plane
+    position and adds about distance^2 / (2 R), 16 m at 14 km). ECEF: geodetic alt minus the launch altitude
+    and its rate (the tangent-plane `up` falls below the true height with distance).
+    """
+    if flat_earth(tr, summ):
+        return tr.up, tr.vel_u
+    return altitude_above_launch(tr), vertical_velocity(tr)
 
 
 def altitude_above_launch(tr):
@@ -482,10 +523,14 @@ def plot_dispersion_mc(out):
 def plot_dispersion(out):
     if (out / "dispersion_mc.csv").exists() and (out / "dispersion_summary.json").exists():
         plot_dispersion_mc(out)
-    elif (out / "dispersion_mc.csv").exists():
-        print("skip dispersion_mc: dispersion_summary.json not found (run `ignisyeet dispersion` again)")
+    else:
+        if (out / "dispersion_mc.csv").exists():
+            print("skip dispersion_mc: dispersion_summary.json not found (run `ignisyeet dispersion` again)")
+        remove_old_plots(out, ["dispersion_mc.png"])
     if (out / "dispersion.csv").exists():
         plot_dispersion_grid(out)
+    else:
+        remove_old_plots(out, ["dispersion.png"])
 
 
 def profile_wind(out):
@@ -608,6 +653,8 @@ def warn_stale(out):
 
 
 PLOTS = {"geometry": plot_geometry, "aero": plot_aero, "panel": plot_panel, "trajectory": plot_trajectory, "dispersion": plot_dispersion}
+# Files each plot writes; a skipped plot removes them (an old figure must not pass for the current run).
+PNGS = {"geometry": ["geometry.png"], "aero": ["aero.png"], "panel": ["panel.png"], "trajectory": ["trajectory_3d.png", "trajectory.png"], "dispersion": ["dispersion.png", "dispersion_mc.png"]}
 REQUIRES = {"geometry": "geometry.json", "aero": "aero_table.csv", "panel": "panel_cp.csv", "trajectory": "trajectory.csv", "dispersion": ("dispersion.csv", "dispersion_mc.csv")}
 
 
@@ -621,6 +668,7 @@ def main():
         sys.exit(f"error: output directory {a.out_dir} not found; run the ignisyeet commands first")
     failed = last_sim_failure(a.out_dir)
     if failed is not None and a.what == "trajectory":
+        remove_old_plots(a.out_dir, PNGS["trajectory"])
         sys.exit(f"error: the last sim run failed: {failed}; not plotting the old trajectory")
     if failed is None:
         warn_stale(a.out_dir)
@@ -630,21 +678,26 @@ def main():
         req = REQUIRES[name] if isinstance(REQUIRES[name], tuple) else (REQUIRES[name],)
         if name == "trajectory" and failed is not None:
             print(f"skip trajectory: the last sim run failed: {failed}; not plotting the old trajectory")
+            remove_old_plots(a.out_dir, PNGS[name])
         elif any((a.out_dir / r).exists() for r in req):
             before = SAVED
             PLOTS[name](a.out_dir)
             if SAVED > before:
                 plotted += 1
-            elif a.what != "all":
-                raise SystemExit(f"error: nothing to plot for {name} in {a.out_dir}")
+            else:
+                remove_old_plots(a.out_dir, PNGS[name])
+                if a.what != "all":
+                    raise SystemExit(f"error: nothing to plot for {name} in {a.out_dir}")
             if name == "aero" and a.compare is not None:
                 if not (a.compare / "aero_table.csv").exists():
                     raise SystemExit(f"{a.compare / 'aero_table.csv'} not found")
                 plot_aero_compare(a.out_dir, a.compare)
         elif a.what != "all":
+            remove_old_plots(a.out_dir, PNGS[name])
             raise SystemExit(f"none of {', '.join(req)} found in {a.out_dir}; run the matching ignisyeet command first")
         else:
             print(f"skip {name}: {' / '.join(req)} not found")
+            remove_old_plots(a.out_dir, PNGS[name])
     if plotted == 0:
         sys.exit(f"error: nothing to plot in {a.out_dir}")
 

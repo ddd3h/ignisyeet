@@ -67,6 +67,20 @@ class FailedRun(unittest.TestCase):
             self.assertNotEqual(r.returncode, 0)
             self.assertIn("the last sim run failed: state diverged; not plotting the old trajectory", r.stderr)
 
+    def test_failed_run_removes_the_old_trajectory_plots(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            (out / "plots").mkdir()
+            for name in ("trajectory.png", "trajectory_3d.png", "aero.png"):
+                (out / "plots" / name).write_bytes(b"old")
+            (out / "summary.json").write_text(json.dumps({"failed": True, "error": "state diverged"}))
+            r = self.run_plot(out)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertFalse((out / "plots" / "trajectory.png").exists())
+            self.assertFalse((out / "plots" / "trajectory_3d.png").exists())
+            self.assertTrue((out / "plots" / "aero.png").exists(), "plots of other kinds are kept")
+            self.assertIn("removed", r.stdout)
+
     def test_a_normal_summary_is_not_a_failure(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
@@ -176,6 +190,65 @@ class TrajectoryAltitude(unittest.TestCase):
         np.testing.assert_allclose(plot.vertical_velocity(tr), np.gradient(tr.alt, tr.t))
         tr.loc[3, "t"] = tr.t[2]  # time not strictly increasing: fall back to vel_u
         np.testing.assert_allclose(plot.vertical_velocity(tr), tr.vel_u)
+
+
+class FlatEarthAltitude(unittest.TestCase):
+    def frame(self, flat):
+        t = np.linspace(0, 10, 11)
+        drop = np.linspace(0, 16, 11)  # curvature drop over the downrange distance
+        h = np.array([0, 10, 30, 60, 100, 120, 110, 80, 40, 10, 0.0])
+        if flat:
+            # Flat Earth: up is the integrated height (0 at touchdown); alt is converted from the tangent plane.
+            up, alt = h, 20.0 + h + drop
+        else:
+            # ECEF: alt is the true height; the tangent-plane up falls below it.
+            up, alt = h - drop, 20.0 + h
+        return pd.DataFrame({"t": t, "up": up, "alt": alt, "vel_u": np.gradient(up, t)}), h
+
+    def test_flat_earth_uses_up_and_vel_u(self):
+        tr, h = self.frame(True)
+        height, vv = plot.height_and_vertical_velocity(tr, {"earth_model": "flat"})
+        np.testing.assert_allclose(height, h)
+        np.testing.assert_allclose(vv, tr.vel_u)
+
+    def test_ecef_uses_alt_minus_launch_altitude(self):
+        tr, h = self.frame(False)
+        height, vv = plot.height_and_vertical_velocity(tr, {"earth_model": "ecef"})
+        np.testing.assert_allclose(height, h)
+        np.testing.assert_allclose(vv, np.gradient(tr.alt, tr.t))
+
+    def test_model_detected_from_the_touchdown_without_earth_model(self):
+        self.assertTrue(plot.flat_earth(self.frame(True)[0], {"landed": True}))
+        self.assertFalse(plot.flat_earth(self.frame(False)[0], {"landed": True}))
+        # Nothing to tell from: the default earth.model (flat).
+        self.assertTrue(plot.flat_earth(self.frame(False)[0], {"landed": False}))
+
+
+class SkippedPlots(unittest.TestCase):
+    def test_skipped_plot_removes_its_old_png_and_keeps_the_others(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            (out / "plots").mkdir()
+            for name in ("dispersion.png", "dispersion_mc.png", "geometry.png"):
+                (out / "plots" / name).write_bytes(b"old")
+            # geometry.json without profile.csv: the geometry plot is skipped.
+            (out / "geometry.json").write_text("{}")
+            r = subprocess.run([sys.executable, str(HERE / "plot.py"), "all", str(out)], capture_output=True, text=True)
+            self.assertNotEqual(r.returncode, 0)  # nothing plotted at all
+            for name in ("dispersion.png", "dispersion_mc.png", "geometry.png"):
+                self.assertFalse((out / "plots" / name).exists(), name)
+            self.assertIn("plot skipped", r.stdout)
+
+    def test_grid_only_removes_the_old_monte_carlo_png(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            (out / "plots").mkdir()
+            (out / "plots" / "dispersion_mc.png").write_bytes(b"old")
+            rows = [["ballistic", v, d, 100.0 * v * np.sin(np.radians(d)), 100.0 * v * np.cos(np.radians(d)), 100.0 * v, True] for v in (1.0, 2.0) for d in (0, 90, 180, 270)]
+            pd.DataFrame(rows, columns=["descent", "wind_speed", "wind_direction_deg", "landing_east", "landing_north", "landing_distance", "landed"]).to_csv(out / "dispersion.csv", index=False)
+            plot.plot_dispersion(out)
+            self.assertTrue((out / "plots" / "dispersion.png").stat().st_size > 3)
+            self.assertFalse((out / "plots" / "dispersion_mc.png").exists())
 
 
 class StaleOutputs(unittest.TestCase):

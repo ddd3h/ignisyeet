@@ -1146,10 +1146,11 @@ impl<'a> Simulation<'a> {
                 }
                 if along(s.pos) >= 0.0 {
                     // The step overshoots the rail end: find the crossing on the cubic Hermite
-                    // interpolant of the step (exact for constant acceleration) and restart the
+                    // interpolant of the step (exact for a cubic position, e.g. linearly varying
+                    // acceleration; the exit velocity is its derivative) and restart the
                     // integration there in free flight.
                     let fe = bisect(|f| along(hermite_pos(&prev, &s, h, f)), along(prev.pos));
-                    s = State { pos: hermite_pos(&prev, &s, h, fe), ..lerp_state(&prev, &s, fe) };
+                    s = event_state(&prev, &s, h, fe);
                     t = t0 + fe * h;
                     loc = frame.local(s.pos);
                     phase = Phase::Free;
@@ -1229,8 +1230,8 @@ impl<'a> Simulation<'a> {
                 sum.landing_lat = lat;
                 sum.landing_lon = lon;
                 sum.landing_distance = enu.x.hypot(enu.y);
-                // Full touchdown state: Hermite position, the rest linear between the last two states.
-                let st = State { pos: p, ..lerp_state(&prev, &s, f) };
+                // Full touchdown state: Hermite position and velocity, the rest linear between the last two states.
+                let st = event_state(&prev, &s, h, f);
                 sum.landing_speed = st.vel.norm();
                 // The touchdown state counts for the maxima as every step start does.
                 let (_, aux) = self.deriv(&cx, sum.landing_time, &st, phase);
@@ -1252,10 +1253,10 @@ impl<'a> Simulation<'a> {
                 break;
             }
             if let Some(fe) = f_event {
-                // Go back to the event instant (cubic Hermite position, linear velocity) unless
+                // Go back to the event instant (cubic Hermite position and velocity) unless
                 // the step ends on it, and continue from there with the new drag area.
                 if fe < 1.0 {
-                    s = State { pos: hermite_pos(&prev, &s, h, fe), ..lerp_state(&prev, &s, fe) };
+                    s = event_state(&prev, &s, h, fe);
                     t = if f_deploy.is_some() { deploy_at } else { t0 + fe * h };
                     loc = frame.local(s.pos);
                 }
@@ -1369,6 +1370,13 @@ const MAX_ALTITUDE: f64 = 1.0e6;
 fn hermite_pos(a: &State, b: &State, h: f64, f: f64) -> Vec3 {
     let (f2, f3) = (f * f, f * f * f);
     a.pos * (2.0 * f3 - 3.0 * f2 + 1.0) + a.vel * (h * (f3 - 2.0 * f2 + f)) + b.pos * (-2.0 * f3 + 3.0 * f2) + b.vel * (h * (f3 - f2))
+}
+
+/// State at fraction `f` of the step `a` -> `b` (length `h`) for an event inside the step (rail exit,
+/// deployment, touchdown): position and velocity of the step's cubic Hermite interpolant (the
+/// velocity is the time derivative of the position), attitude and angular rate linear.
+fn event_state(a: &State, b: &State, h: f64, f: f64) -> State {
+    State { pos: hermite_pos(a, b, h, f), vel: hermite_vel(a, b, h, f), ..lerp_state(a, b, f) }
 }
 
 /// Velocity of the cubic Hermite interpolant of a step (derivative of [`hermite_pos`] in time).
@@ -1667,6 +1675,33 @@ mod tests {
         assert!((last.t - r.summary.landing_time).abs() < 1e-12 && last.up.abs() < 1e-9);
         let vl = (last.vel_e.powi(2) + last.vel_n.powi(2) + last.vel_u.powi(2)).sqrt();
         assert!((vl - r.summary.landing_speed).abs() < 1e-9);
+    }
+
+    #[test]
+    fn rail_exit_velocity_is_the_derivative_of_the_hermite_position() {
+        // Vacuum, vertical: thrust ramping linearly (300 N + 2000 N/s, 10 kg) gives a linearly growing
+        // acceleration, a cubic position and a quadratic velocity. The step's cubic Hermite
+        // interpolant is exact for it (RK4 integrates it exactly), so with a coarse step the exit
+        // speed is exact when it is the Hermite derivative; a linear velocity interpolation is not.
+        let (table, _) = vacuum_parts();
+        let motor = Motor::new("ramp".into(), 0.05, 0.3, 0.0, vec![(0.0, 300.0), (1.0, 2300.0), (2.0, 2300.0)]);
+        let mut sim = vacuum_sim(&table, &motor);
+        sim.settings.dt = 0.05;
+        let r = sim.run(Descent::Ballistic, false).unwrap();
+        let (a0, j) = (300.0 / VAC_M - G0, 200.0);
+        let x = |t: f64| 0.5 * a0 * t * t + j * t * t * t / 6.0;
+        let (mut lo, mut hi) = (0.0, 1.0);
+        for _ in 0..100 {
+            let mid = 0.5 * (lo + hi);
+            if x(mid) < 3.0 {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        let v_exit = a0 * lo + 0.5 * j * lo * lo;
+        assert!((r.summary.rail_exit_time - lo).abs() < 1e-7, "{} vs {lo}", r.summary.rail_exit_time);
+        assert!((r.summary.rail_exit_speed - v_exit).abs() < 1e-5, "{} vs {v_exit}", r.summary.rail_exit_speed);
     }
 
     #[test]

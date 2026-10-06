@@ -312,7 +312,12 @@ pub struct Sample {
     pub thrust: f64,
     pub mass: f64,
     pub x_cg: f64,
+    /// Centre of pressure [m aft of the nose] at the state's current angle of attack (general table:
+    /// of the transverse force at the current angles).
     pub x_cp: f64,
+    /// (x_cp - x_cg) / d [cal] at the state's current angle of attack: a display of where the
+    /// normal force acts at that angle, not the static margin. The stability verdict uses the
+    /// small-angle margin of [`Summary::min_stability_cal`].
     pub stability_cal: f64,
     pub dyn_pressure: f64,
     pub cn: f64,
@@ -349,19 +354,24 @@ pub struct Summary {
     pub apogee: f64,
     pub apogee_east: f64,
     pub apogee_north: f64,
-    /// Smallest static margin (x_cp - x_cg) / reference diameter [cal], sampled once per integration
-    /// step only while the rocket is in free flight (from the rail-exit state on) before apogee and
-    /// its airspeed exceeds 10 m/s. The rail-exit state counts when its airspeed exceeds 10 m/s; the
-    /// slow part near apogee and the descent (tumbling, parachute) are not included. NaN (`null` in
-    /// JSON) when no state qualified, e.g. a flight whose airspeed never exceeds 10 m/s before
-    /// apogee; `stability_at_rail_exit` is evaluated regardless of the airspeed, so
-    /// [`static_margin_min`](Self::static_margin_min) still has a value then.
+    /// Smallest static margin [cal], sampled once per integration step only while the rocket is in
+    /// free flight (from the rail-exit state on) before apogee and its airspeed exceeds 10 m/s. The
+    /// rail-exit state counts when its airspeed exceeds 10 m/s; the slow part near apogee and the
+    /// descent (tumbling, parachute) are not included. NaN (`null` in JSON) when no state qualified,
+    /// e.g. a flight whose airspeed never exceeds 10 m/s before apogee; `stability_at_rail_exit` is
+    /// evaluated regardless of the airspeed, so [`static_margin_min`](Self::static_margin_min) still
+    /// has a value then.
     ///
-    /// Axisymmetric table: from the tabulated centre of pressure. General table: the smaller of the
-    /// pitch and yaw margins of [`AeroTable::static_margins`] at the step's Mach number and CG.
+    /// Every margin of the summary is the small-angle (alpha -> 0) static margin of
+    /// [`AeroTable::static_margins`] at the state's Mach number and CG, for both table kinds:
+    /// axisymmetric table (x_cp(Mach, alpha = 0) - x_cg) / d, general table the smaller of the pitch
+    /// and yaw margins from the slopes at zero angle. The angle of attack the state flies at does not
+    /// enter, so the slow high-angle arc over apogee and the rail exit in a strong crosswind do not
+    /// count as instability; the margin at the current angle is only the `stability_cal` column of
+    /// the trajectory ([`Sample::stability_cal`]).
     pub min_stability_cal: f64,
-    /// Static margin at the rail-exit state [cal] (general table: the smaller of pitch and yaw),
-    /// evaluated at any airspeed.
+    /// Small-angle static margin at the rail-exit state [cal] (general table: the smaller of pitch
+    /// and yaw), evaluated at any airspeed.
     pub stability_at_rail_exit: f64,
     /// Smallest pitch-plane static margin [cal] over the steps of `min_stability_cal` and the rail
     /// exit. Axisymmetric table: the smaller of `min_stability_cal` and `stability_at_rail_exit`.
@@ -371,10 +381,24 @@ pub struct Summary {
     /// Smallest yaw-plane static margin [cal], as `static_margin_pitch_min_cal`.
     #[serde(default = "nan")]
     pub static_margin_yaw_min_cal: f64,
+    /// Time [s] of the state with the smallest static margin
+    /// ([`static_margin_min`](Self::static_margin_min)); NaN (`null` in JSON) when no margin was
+    /// evaluated.
+    #[serde(default = "nan")]
+    pub static_margin_min_t: f64,
+    /// Mach number of the state with the smallest static margin; NaN as `static_margin_min_t`.
+    #[serde(default = "nan")]
+    pub static_margin_min_mach: f64,
     /// Why the static stability could not be evaluated (the first step where a margin was
     /// missing); None when every margin was evaluated.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stability_unknown: Option<String>,
+    /// Ballistic descent: time [s] after apogee the rocket flew with an angle of attack between 60
+    /// and 120 deg (broadside to the flow). A long broadside fall is a trim at large angles, whose
+    /// aerodynamics (axisymmetric table: the nose-first coefficients mirrored at 180 deg - alpha)
+    /// are not validated; see [`fell_broadside`](Self::fell_broadside). 0 for the parachute descent.
+    #[serde(default)]
+    pub broadside_time: f64,
     pub landing_time: f64,
     pub landing_east: f64,
     pub landing_north: f64,
@@ -433,7 +457,10 @@ impl Summary {
             stability_at_rail_exit: n,
             static_margin_pitch_min_cal: n,
             static_margin_yaw_min_cal: n,
+            static_margin_min_t: n,
+            static_margin_min_mach: n,
             stability_unknown: None,
+            broadside_time: n,
             landing_time: n,
             landing_east: n,
             landing_north: n,
@@ -462,6 +489,12 @@ impl Summary {
     /// `min_stability_cal` is NaN (airspeed never above 10 m/s); NaN when neither is finite.
     pub fn static_margin_min(&self) -> f64 {
         [self.min_stability_cal, self.stability_at_rail_exit].into_iter().filter(|m| m.is_finite()).min_by(f64::total_cmp).unwrap_or(f64::NAN)
+    }
+
+    /// Whether the ballistic descent fell broadside (angle of attack 60 to 120 deg) for more than
+    /// [`BROADSIDE_LIMIT`] seconds, see `broadside_time`.
+    pub fn fell_broadside(&self) -> bool {
+        self.broadside_time > BROADSIDE_LIMIT
     }
 
     /// Static-stability verdict: unstable when an evaluated margin is negative, unknown when a margin
@@ -500,6 +533,13 @@ impl Stability {
         }
     }
 }
+
+/// Broadside time [s] above which a ballistic descent counts as fallen broadside, see
+/// [`Summary::fell_broadside`].
+pub const BROADSIDE_LIMIT: f64 = 10.0;
+
+/// Angle-of-attack band [rad] of a broadside fall (60 to 120 deg).
+const BROADSIDE_ALPHA: std::ops::RangeInclusive<f64> = (std::f64::consts::PI / 3.0)..=(2.0 * std::f64::consts::PI / 3.0);
 
 fn nan() -> f64 {
     f64::NAN
@@ -596,16 +636,12 @@ impl<'a> Simulation<'a> {
         of(c).or_else(|| of(&self.lookup6(mach, 0.5f64.to_radians(), 0.0)))
     }
 
-    /// Pitch and yaw static margins [cal] at a free-flight state (`aux` from [`deriv`](Self::deriv)).
-    /// General table: [`AeroTable::static_margins`] at the state's Mach number and CG; axisymmetric
-    /// table: the tabulated centre of pressure of the state in both planes.
+    /// Pitch and yaw static margins [cal] at a free-flight state (`aux` from [`deriv`](Self::deriv)):
+    /// the small-angle margins of [`AeroTable::static_margins`] at the state's Mach number and CG,
+    /// for both table kinds. The state's own angle of attack does not enter (see
+    /// [`Summary::min_stability_cal`]).
     fn margins(&self, aux: &Aux) -> StaticMargins {
-        if self.table.kind() == TableKind::General {
-            self.table.static_margins(aux.mach, aux.x_cg)
-        } else {
-            let m = (aux.x_cp - aux.x_cg) / self.table.meta.ref_diameter;
-            StaticMargins { pitch: m, yaw: m, unknown: None }
-        }
+        self.table.static_margins(aux.mach, aux.x_cg)
     }
 
     /// Mass, CG and inertia at time t.
@@ -758,7 +794,8 @@ impl<'a> Simulation<'a> {
                         let kq = (c.sq[2] - 2.0 * x_cg * c.sq[1] + x_cg * x_cg * c.sq[0]).max(0.0);
                         let kr = (c.sr[2] - 2.0 * x_cg * c.sr[1] + x_cg * x_cg * c.sr[0]).max(0.0);
                         m_body += Vec3::new(0.0, -s.w.y * kq, -s.w.z * kr) * (qs / v);
-                        // Effective centre of pressure of the transverse force (for the stability margin).
+                        // Effective centre of pressure of the transverse force at the current angles (the
+                        // trajectory's `stability_cal` display; the summary margins use `margins`).
                         let x_cp = self.eff_xcp(&c, mach).unwrap_or(f64::NAN);
                         aux = Aux { airspeed: v, mach, alpha, qdyn: qd, cn: c.cy.hypot(c.cz), ca: -cx, x_cp, beta, cl, cy: c.cy, ..aux };
                     } else {
@@ -930,7 +967,10 @@ impl<'a> Simulation<'a> {
             stability_at_rail_exit: f64::NAN,
             static_margin_pitch_min_cal: f64::NAN,
             static_margin_yaw_min_cal: f64::NAN,
+            static_margin_min_t: f64::NAN,
+            static_margin_min_mach: f64::NAN,
             stability_unknown: None,
+            broadside_time: 0.0,
             landing_time: f64::NAN,
             landing_east: f64::NAN,
             landing_north: f64::NAN,
@@ -972,6 +1012,8 @@ impl<'a> Simulation<'a> {
                 self.deriv(&cx, tt, st, phase)
             };
             let (k1, aux) = fsal.take().unwrap_or_else(|| f(t, &s));
+            // Ballistic descent broadside to the flow: the step counts with the angle at its start.
+            let broadside = descent == Descent::Ballistic && phase == Phase::Free && past_apogee && BROADSIDE_ALPHA.contains(&aux.alpha);
             if want_samples && t + 1e-9 >= next_out {
                 let smp = self.sample(&cx, t, &s, phase, &aux);
                 if let Some(o) = observer.as_mut() {
@@ -988,7 +1030,7 @@ impl<'a> Simulation<'a> {
             sum.max_dyn_pressure = sum.max_dyn_pressure.max(aux.qdyn);
             // The rail-exit state was tracked when the rail was left (the first free-flight step starts there).
             if phase == Phase::Free && !past_apogee && aux.airspeed > 10.0 && rail_exit_tracked_at != Some(t) {
-                let m = margins.add(&self.margins(&aux), t);
+                let m = margins.add(&self.margins(&aux), t, aux.mach);
                 sum.min_stability_cal = sum.min_stability_cal.min(m);
             }
             if t >= max_time - 1e-9 {
@@ -1051,6 +1093,9 @@ impl<'a> Simulation<'a> {
             }
             t = if hh >= limit - t0 { limit } else { t0 + hh };
             let h = t - t0;
+            if broadside {
+                sum.broadside_time += h;
+            }
             if !finite_state(&s) {
                 bail!("integration diverged at t = {t:.4} s; reduce sim.dt or tighten rtol/atol, or check the aero table and mass properties");
             }
@@ -1080,7 +1125,7 @@ impl<'a> Simulation<'a> {
                     sum.rail_exit_time = t;
                     sum.rail_exit_speed = s.vel.norm();
                     let (_, aux) = self.deriv(&cx, t, &s, phase);
-                    sum.stability_at_rail_exit = margins.add(&self.margins(&aux), t);
+                    sum.stability_at_rail_exit = margins.add(&self.margins(&aux), t, aux.mach);
                     if aux.airspeed > 10.0 {
                         sum.min_stability_cal = sum.min_stability_cal.min(sum.stability_at_rail_exit);
                     }
@@ -1135,6 +1180,10 @@ impl<'a> Simulation<'a> {
                 let enu = frame.position_to_launch_enu(p);
                 let (lat, lon, _) = frame.lla(p);
                 sum.landing_time = t0 + f * h;
+                if broadside {
+                    // Only the part of the step before the touchdown.
+                    sum.broadside_time -= (1.0 - f) * h;
+                }
                 sum.landing_east = enu.x;
                 sum.landing_north = enu.y;
                 sum.landing_lat = lat;
@@ -1216,6 +1265,10 @@ impl<'a> Simulation<'a> {
 struct MarginTrack {
     pitch: f64,
     yaw: f64,
+    /// Smallest evaluated margin of either plane, and the time and Mach number where it occurred.
+    min: f64,
+    min_t: f64,
+    min_mach: f64,
     pitch_missing: bool,
     yaw_missing: bool,
     unknown: Option<String>,
@@ -1223,11 +1276,25 @@ struct MarginTrack {
 
 impl MarginTrack {
     fn new() -> Self {
-        Self { pitch: f64::INFINITY, yaw: f64::INFINITY, pitch_missing: false, yaw_missing: false, unknown: None }
+        Self {
+            pitch: f64::INFINITY,
+            yaw: f64::INFINITY,
+            min: f64::INFINITY,
+            min_t: f64::NAN,
+            min_mach: f64::NAN,
+            pitch_missing: false,
+            yaw_missing: false,
+            unknown: None,
+        }
     }
 
-    /// Adds the margins `m` at time `t`; returns the smaller evaluated margin (NaN when neither is).
-    fn add(&mut self, m: &StaticMargins, t: f64) -> f64 {
+    /// Adds the margins `m` at time `t` and Mach number `mach`; returns the smaller evaluated margin
+    /// (NaN when neither is).
+    fn add(&mut self, m: &StaticMargins, t: f64, mach: f64) -> f64 {
+        let smaller = m.pitch.min(m.yaw);
+        if smaller < self.min {
+            (self.min, self.min_t, self.min_mach) = (smaller, t, mach);
+        }
         self.pitch = self.pitch.min(m.pitch);
         self.yaw = self.yaw.min(m.yaw);
         self.pitch_missing |= m.pitch.is_nan();
@@ -1235,7 +1302,7 @@ impl MarginTrack {
         if let (None, Some(why)) = (&self.unknown, &m.unknown) {
             self.unknown = Some(format!("at t = {t:.2} s: {why}"));
         }
-        m.pitch.min(m.yaw)
+        smaller
     }
 
     /// Writes the pitch and yaw minima and the reason into `sum`.
@@ -1243,6 +1310,9 @@ impl MarginTrack {
         let done = |v: f64, missing: bool| if missing || !v.is_finite() { f64::NAN } else { v };
         sum.static_margin_pitch_min_cal = done(self.pitch, self.pitch_missing);
         sum.static_margin_yaw_min_cal = done(self.yaw, self.yaw_missing);
+        if self.min.is_finite() {
+            (sum.static_margin_min_t, sum.static_margin_min_mach) = (self.min_t, self.min_mach);
+        }
         sum.stability_unknown = self.unknown;
     }
 }
@@ -2156,8 +2226,8 @@ mod tests {
             );
             assert!((a.summary.apogee - b.summary.apogee).abs() < 0.5, "wind {wind} apogee");
             // The general table's margin is the small-angle slope over its first 2 deg cell, the
-            // axisymmetric one the tabulated centre of pressure at the flight's angle of attack: compare
-            // the general margin with its definition along the axisymmetric flight.
+            // axisymmetric one the tabulated centre of pressure at alpha = 0: compare the general
+            // margin with its definition along the axisymmetric flight.
             let reference = a
                 .samples
                 .iter()
@@ -2168,6 +2238,63 @@ mod tests {
             assert!((reference - b.summary.min_stability_cal).abs() < 0.02, "stability");
             assert!(b.samples.iter().all(|s| s.alpha_deg.is_finite() && s.beta_deg.is_finite()));
         }
+    }
+
+    /// The axisymmetric verdict uses the small-angle margin at the state's Mach number and CG, not the
+    /// centre of pressure at the angle of attack the state flies at: a crosswind at the rail exit and
+    /// the slow high-angle arc over apogee do not lower it, and the location of the minimum is kept.
+    #[test]
+    fn axisymmetric_margin_is_the_small_angle_margin() {
+        let (table, motor) = sample_parts();
+        let calm = sample_sim(&table, &motor, 0.0).run(Descent::Ballistic, true).unwrap();
+        let windy = sample_sim(&table, &motor, 9.0).run(Descent::Ballistic, true).unwrap();
+        for r in [&calm, &windy] {
+            let s = &r.summary;
+            let exit = r.samples.iter().find(|x| x.phase == Phase::Free).unwrap();
+            let reference = r
+                .samples
+                .iter()
+                .filter(|x| x.phase == Phase::Free && x.t <= s.apogee_time && x.airspeed > 10.0)
+                .map(|x| table.static_margins(x.mach, x.x_cg).min())
+                .fold(f64::INFINITY, f64::min);
+            assert!((reference - s.static_margin_min()).abs() < 0.02, "{reference} {s:?}");
+            assert_eq!(s.static_margin_min(), s.static_margin_pitch_min_cal);
+            assert_eq!(s.static_margin_min(), s.static_margin_yaw_min_cal);
+            // The minimum of the sample rocket is at the rail exit (the CG moves forward during the burn).
+            assert_eq!(s.static_margin_min(), s.stability_at_rail_exit);
+            assert_eq!(s.static_margin_min_t, s.rail_exit_time);
+            assert!((s.static_margin_min_mach - exit.mach).abs() < 0.01, "{s:?} {exit:?}");
+            assert_eq!(s.stability(), Stability::Stable);
+        }
+        // The wind changes the rail-exit Mach number only through the airspeed, not the margin.
+        assert!((calm.summary.stability_at_rail_exit - windy.summary.stability_at_rail_exit).abs() < 0.01, "{:?}", (calm.summary, windy.summary));
+        // The trajectory's display at the current angle of attack does drop with the wind angle
+        // at the rail exit and over apogee.
+        let display = |r: &SimResult| {
+            r.samples.iter().filter(|x| x.phase == Phase::Free && x.t <= r.summary.apogee_time).map(|x| x.stability_cal).fold(f64::INFINITY, f64::min)
+        };
+        assert!(display(&windy) < windy.summary.static_margin_min() - 0.3, "{} {}", display(&windy), windy.summary.static_margin_min());
+    }
+
+    /// Ballistic descents broadside to the flow are timed; the sample rocket falls nose first.
+    #[test]
+    fn broadside_time_of_the_ballistic_descent() {
+        let (table, motor) = sample_parts();
+        let sim = sample_sim(&table, &motor, 3.0);
+        let bal = sim.run(Descent::Ballistic, true).unwrap();
+        let s = &bal.summary;
+        // Reference: the recorded samples after apogee with alpha in 60..120 deg, each standing for an output interval.
+        let dt = sim.settings.output_interval;
+        let n = bal.samples.iter().filter(|x| x.t > s.apogee_time && x.phase == Phase::Free && (60.0..=120.0).contains(&x.alpha_deg)).count();
+        assert!((s.broadside_time - n as f64 * dt).abs() <= 2.0 * dt + 0.05, "{} vs {}", s.broadside_time, n as f64 * dt);
+        assert!(s.broadside_time < BROADSIDE_LIMIT && !s.fell_broadside(), "{s:?}");
+        assert_eq!(sim.run(Descent::Parachute, false).unwrap().summary.broadside_time, 0.0);
+        // A rocket with its CG far aft (CP ahead of the CG) falls partly broadside.
+        let tail_heavy = Simulation { mass: MassProperties::axisymmetric(8.0, 1.45, 0.02, 1.5), ..sample_sim(&table, &motor, 3.0) };
+        let t = tail_heavy.run(Descent::Ballistic, true).unwrap();
+        let n = t.samples.iter().filter(|x| x.t > t.summary.apogee_time && (60.0..=120.0).contains(&x.alpha_deg)).count();
+        assert!((t.summary.broadside_time - n as f64 * dt).abs() <= 2.0 * dt + 0.05, "{} vs {}", t.summary.broadside_time, n as f64 * dt);
+        assert!(t.summary.broadside_time > 1.0, "{:?}", t.summary);
     }
 
     /// General table of the sample rocket with the yaw centre of pressure moved by `yaw_shift` [m] (aft

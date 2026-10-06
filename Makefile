@@ -26,10 +26,10 @@ aero: build
 	$(BIN) aero $(CONFIG)
 
 sim: build
-	$(BIN) sim $(CONFIG)
+	$(BIN) sim $(CONFIG) || [ $$? -eq 3 ]
 
 dispersion: build
-	$(BIN) dispersion $(CONFIG)
+	$(BIN) dispersion $(CONFIG) || [ $$? -eq 3 ]
 
 plot:
 	$(PLOT) all $(OUT)

@@ -585,6 +585,31 @@ fn wind_scale_warning<'a>(cfg: &Config, what: &str, summaries: impl IntoIterator
     Some(format!("wind profile scaled by a factor of {factor} ({what} {v:.1} m/s vs profile mean {:.1} m/s){aloft}", v / k))
 }
 
+/// Warning when flights of a wind-profile dispersion study (`what`: "wind-grid cases" or "Monte
+/// Carlo samples") reach above the top of the profile table. `flights` gives a key per flight
+/// (the rows of one wind-grid wind or one Monte Carlo sample share the ascent) and its apogee (NaN
+/// for a failed run).
+fn profile_top_warning(cfg: &Config, what: &str, flights: impl IntoIterator<Item = ((u64, u64), f64)>) -> Option<String> {
+    if cfg.wind.model != sim::WindModel::Profile {
+        return None;
+    }
+    let (_, top, _) = wind_profile_extent(cfg)?;
+    let mut apogee: std::collections::HashMap<(u64, u64), f64> = std::collections::HashMap::new();
+    for (k, a) in flights {
+        let e = apogee.entry(k).or_insert(f64::NAN);
+        *e = e.max(a);
+    }
+    let above: Vec<f64> = apogee.values().copied().filter(|&a| a > top).collect();
+    let highest = above.iter().copied().fold(f64::NAN, f64::max);
+    (!above.is_empty()).then(|| {
+        format!(
+            "{} of {} {what} reach above the top of the wind profile ({top:.0} m), up to {highest:.0} m: the wind above is held at the top value",
+            above.len(),
+            apogee.len()
+        )
+    })
+}
+
 /// (lowest altitude, top altitude, largest speed) of the wind profile table, when it can be read.
 fn wind_profile_extent(cfg: &Config) -> Option<(f64, f64, f64)> {
     let path = cfg.resolve(cfg.wind.profile.as_deref()?);
@@ -1884,6 +1909,15 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
     }
     warnings.extend(wind_grid_error_warnings(&cases, &errors));
     warnings.extend(wind_scale_warning(cfg, "wind grid", results.iter()));
+    warnings.extend(profile_top_warning(
+        cfg,
+        "wind-grid cases",
+        cases
+            .iter()
+            .zip(&results)
+            .zip(&errors)
+            .map(|((c, s), e)| ((c.wind_speed.to_bits(), c.wind_direction_deg.to_bits()), if e.is_none() { s.apogee } else { f64::NAN })),
+    ));
     if errored > 0 {
         // Rebuild the lookup statistics from the cases that completed: a diverged state is not a flight.
         p.table.reset_out_of_range_stats();
@@ -2042,6 +2076,11 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
         ));
     }
     warnings.extend(wind_scale_warning(cfg, "Monte Carlo sample", r.rows.iter().filter_map(|row| row.result.as_ref().ok())));
+    warnings.extend(profile_top_warning(
+        cfg,
+        "Monte Carlo samples",
+        r.rows.iter().map(|row| ((row.sample as u64, 0), row.result.as_ref().map_or(f64::NAN, |s| s.apogee))),
+    ));
     if r.rows.iter().any(|x| x.result.as_ref().err().is_some_and(|e| e != sim::dispersion::NOT_LANDED)) {
         // Rebuild the lookup statistics from the runs that completed: a diverged state is not a flight.
         p.table.reset_out_of_range_stats();
@@ -2942,6 +2981,22 @@ mod tests {
         assert_eq!((j["static_margin_min_cal"].as_f64(), j["stable"].as_bool()), (Some(-0.1), Some(false)));
         let rail = sim::Summary { stability_at_rail_exit: -0.3, ..ok };
         assert_eq!(summary_json(&cfg, &rail, &[]).unwrap()["stable"].as_bool(), Some(false));
+    }
+
+    #[test]
+    fn dispersion_warning_when_flights_reach_above_the_profile_top() {
+        let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
+        let flights = [((0, 0), 5000.0), ((0, 0), 5000.0), ((1, 0), 6500.0), ((1, 0), 6400.0), ((2, 0), f64::NAN), ((3, 0), 7200.0)];
+        // power model: no profile, no warning
+        assert!(profile_top_warning(&cfg, "Monte Carlo samples", flights).is_none());
+        cfg.wind.model = sim::WindModel::Profile;
+        cfg.wind.profile = Some("wind_profile_example.csv".into());
+        let (_, top, _) = wind_profile_extent(&cfg).unwrap();
+        assert_eq!(
+            profile_top_warning(&cfg, "Monte Carlo samples", flights).unwrap(),
+            format!("2 of 4 Monte Carlo samples reach above the top of the wind profile ({top:.0} m), up to 7200 m: the wind above is held at the top value")
+        );
+        assert!(profile_top_warning(&cfg, "wind-grid cases", [((0, 0), 100.0)]).is_none());
     }
 
     #[test]

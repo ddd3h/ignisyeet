@@ -384,7 +384,8 @@ fn monte_carlo_folder(site: &Launch, rows: &[McRow], stats: &[DescentStats], doc
                 0.0,
                 true,
             ));
-            for (k, name) in [(&l.ellipse_1sigma, "1-sigma ellipse"), (&l.ellipse_3sigma, "3-sigma ellipse")] {
+            // The ellipses need at least two samples (NaN otherwise).
+            for (k, name) in [(&l.ellipse_1sigma, "1-sigma ellipse"), (&l.ellipse_3sigma, "3-sigma ellipse")].into_iter().filter(|(k, _)| k.semi_major.is_finite() && k.semi_minor.is_finite()) {
                 let ring = ellipse_ring(origin, l.mean_east, l.mean_north, k, 72);
                 let col = if name.starts_with('1') { mid } else { c3 };
                 body.push_str(&ground_line(
@@ -413,7 +414,7 @@ fn monte_carlo_folder(site: &Launch, rows: &[McRow], stats: &[DescentStats], doc
         body.push_str("</Folder>\n</Folder>\n");
     }
     let d = ["Monte Carlo landing dispersion; failed samples are excluded. Ellipses are 1-sigma and 3-sigma of the landing-point covariance.".to_string()];
-    doc.push("Monte Carlo: failed samples are excluded; ellipses are 1-sigma and 3-sigma of the landing-point covariance.".to_string());
+    doc.push("Monte Carlo: failed and non-landed samples are excluded; ellipses are 1-sigma and 3-sigma of the landing-point covariance.".to_string());
     folder("Dispersion \u{2013} Monte Carlo", &d, &body)
 }
 
@@ -779,6 +780,16 @@ mod tests {
         assert!(!kml.contains("<extrude>1</extrude>") && !kml.contains("<extrude>"));
         assert!(!kml.contains("<PolyStyle>") && !kml.contains("<Polygon>") && !kml.contains("<fill>"));
         assert!(kml.contains("<LineStyle>") && kml.contains("1-sigma ellipse") && kml.contains("<name>Powered flight"));
+    }
+
+    #[test]
+    fn single_landed_sample_has_mean_but_no_ellipse() {
+        let mut mc = mc_part();
+        mc.rows.truncate(1);
+        mc.stats[0].landing = sim::dispersion::landing_statistics(&[(-50.0, 30.0)]);
+        let kml = combined(&site(), &Parts { monte_carlo: Some(mc), ..Default::default() });
+        check_xml(&kml);
+        assert!(kml.contains("Mean landing") && !kml.contains("1-sigma ellipse") && !kml.contains("NaN"));
     }
 
     fn folders(kml: &str) -> Vec<String> {

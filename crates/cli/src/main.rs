@@ -149,9 +149,14 @@ fn main() -> Result<()> {
             begin(&cfg, &config, Sub::Geom);
             let step = ui().step("Extracting geometry");
             let g = geometry(&cfg)?;
-            write_geometry(&cfg, &g)?;
+            let files = write_geometry(&cfg, &g)?;
             step.done(&view::geometry_detail(&g));
             show_geometry(&g, true);
+            if ui().plain() {
+                for f in &files {
+                    println!("  -> {}", f.display());
+                }
+            }
             let mut w = g.warnings.clone();
             w.extend(size_warnings(&cfg, g.length, 2.0 * g.ref_radius));
             print_warnings(&w);
@@ -567,7 +572,8 @@ fn geometry(cfg: &Config) -> Result<Geometry> {
     Ok(g)
 }
 
-fn write_geometry(cfg: &Config, g: &Geometry) -> Result<()> {
+/// Writes geometry.json and profile.csv; returns their paths.
+fn write_geometry(cfg: &Config, g: &Geometry) -> Result<Vec<PathBuf>> {
     // Body axes in STL coordinates, so inertia products, CG offsets and the thrust offset can be given in body axes.
     let mut json = serde_json::to_value(g)?;
     let [bx, by, bz] = g.frame.body_basis();
@@ -576,13 +582,15 @@ fn write_geometry(cfg: &Config, g: &Geometry) -> Result<()> {
             o.insert(k.into(), serde_json::json!([v.x, v.y, v.z]));
         }
     }
-    std::fs::write(out_path(cfg, "geometry.json")?, serde_json::to_string_pretty(&json)?)?;
-    let mut f = std::io::BufWriter::new(std::fs::File::create(out_path(cfg, "profile.csv")?)?);
+    let (json_path, csv_path) = (out_path(cfg, "geometry.json")?, out_path(cfg, "profile.csv")?);
+    std::fs::write(&json_path, serde_json::to_string_pretty(&json)?)?;
+    let mut f = std::io::BufWriter::new(std::fs::File::create(&csv_path)?);
     writeln!(f, "x,r,fin_span")?;
     for p in &g.profile {
         writeln!(f, "{:.6},{:.6},{:.6}", p.x, p.r, p.fin_span)?;
     }
-    Ok(())
+    f.flush()?;
+    Ok(vec![json_path, csv_path])
 }
 
 fn print_geometry(g: &Geometry) {
@@ -2321,6 +2329,16 @@ mod tests {
         assert!(why.starts_with("RESULTS NOT USABLE") && why.contains("UNSTABLE"), "{why}");
         let (_, margin) = nominal_warnings(&cfg, &prepare(&cfg).unwrap(), &simulation(&cfg, &prepare(&cfg).unwrap()).unwrap());
         assert!(margin < 0.0);
+        let _ = std::fs::remove_dir_all(&cfg.output.dir);
+    }
+
+    #[test]
+    fn geometry_outputs_are_listed() {
+        let cfg = sample_config("geom_files");
+        let files = write_geometry(&cfg, &geometry(&cfg).unwrap()).unwrap();
+        let names: Vec<_> = files.iter().map(|f| f.file_name().unwrap().to_string_lossy().into_owned()).collect();
+        assert_eq!(names, ["geometry.json", "profile.csv"]);
+        assert!(files.iter().all(|f| f.is_file()));
         let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 

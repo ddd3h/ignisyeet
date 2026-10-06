@@ -746,9 +746,10 @@ impl AeroTable {
         };
         let mut out = interp(ta, tb);
         if extrapolated {
-            // Axial force, roll forcing and damping sums keep the sign of the edge value.
+            // Axial force, roll forcing (the tabulated `cl` at the reference cant and `cl_delta`) and
+            // damping sums keep the sign of the edge value.
             let edge = interp(ta.clamp(0.0, 1.0), tb.clamp(0.0, 1.0));
-            for f in [0, 1, 7, 9, 10, 11, 12, 13, 14] {
+            for f in [0, 1, 4, 7, 9, 10, 11, 12, 13, 14] {
                 out[f] = keep_sign(out[f], edge[f]);
             }
             for f in [9, 10, 11, 12, 13, 14] {
@@ -1173,6 +1174,34 @@ mod tests {
             assert!((back.cz - t.lookup6(0.5, a, 0.0).cz).abs() < 1e-12);
             assert!((back.cm * d / back.cz - t.lookup(0.5, a).xcp).abs() < 1e-12, "{deg} deg");
         }
+    }
+
+    #[test]
+    fn general_extrapolation_keeps_the_sign_of_the_roll_forcing() {
+        // Roll forcing falling with alpha: positive on the grid, it would cross zero beyond it.
+        let meta = TableMeta {
+            ref_area: 0.01,
+            ref_diameter: 0.1,
+            length: 1.5,
+            machs: vec![0.0, 1.0],
+            alphas_deg: vec![0.0, 10.0, 20.0],
+            betas_deg: vec![-10.0, 0.0, 10.0],
+            extrapolation: Extrapolation::Linear,
+            ..Default::default()
+        };
+        let g = AeroTable::general_from_fn(meta, |_, a, _| Coeffs6 {
+            cx_on: -0.5,
+            cx_off: -0.6,
+            cl: 0.02 - 0.0009 * a,
+            cl_delta: 0.3 - 0.01 * a,
+            ..Default::default()
+        });
+        let edge = g.lookup6(0.5, 20f64.to_radians(), 0.0);
+        assert!((edge.cl - 0.002).abs() < 1e-12);
+        let c = g.lookup6(0.5, 40f64.to_radians(), 0.0);
+        assert_eq!((c.cl, c.cl_delta), (0.0, 0.0), "{c:?}");
+        // Inside the grid the values are unchanged.
+        assert!((g.lookup6(0.5, 15f64.to_radians(), 0.0).cl - (0.02 - 0.0009 * 15.0)).abs() < 1e-12);
     }
 
     /// General table with linear Cz = kz alpha, Cm = km alpha, Cy = ky beta, Cn = kn beta (d = 0.1 m).

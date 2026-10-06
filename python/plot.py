@@ -212,11 +212,17 @@ def plot_aero(out):
     save(fig, out, "aero.png")
 
 
-def _tri(ax, x, y, c, norm, cmap, max_dy):
-    """Smooth-shaded triangulated Cp map; triangles spanning gaps (fin footprints, seams) are masked."""
+def _tri(ax, x, y, c, norm, cmap, max_dy, y_scale=1.0):
+    """Smooth-shaded triangulated Cp map; triangles spanning gaps (fin footprints, seams) are masked.
+
+    The Delaunay triangulation is built on (x, y_scale * y) so that the panels are close to square in
+    the triangulation (for the unrolled body: y in degrees, y_scale = body radius in m per degree);
+    otherwise long slivers along the narrow panel columns smear values along the body.
+    """
     import matplotlib.tri as mtri
 
-    tri = mtri.Triangulation(x, y)
+    x, y = np.asarray(x), np.asarray(y)
+    tri = mtri.Triangulation(x, y, mtri.Triangulation(x, y * y_scale).triangles)
     yy = np.asarray(y)[tri.triangles]
     tri.set_mask(np.ptp(yy, axis=1) > max_dy)
     return ax.tripcolor(tri, np.asarray(c), cmap=cmap, norm=norm, shading="gouraud")
@@ -249,7 +255,8 @@ def plot_panel(out):
 
     ax = fig.add_subplot(gs[0, :])
     th = np.degrees(np.arctan2(body.z, body.y))
-    sc = _tri(ax, body.x.values, th.values, body.cp.values, norm, cmap, 25.0)
+    r_body = float(np.median(np.hypot(body.y, body.z)))
+    sc = _tri(ax, body.x.values, th.values, body.cp.values, norm, cmap, 25.0, y_scale=np.radians(1.0) * r_body)
     ax.set_xlabel("x aft of nose tip [m]")
     ax.set_ylabel("θ [deg]  (y: 0°, z: 90°)")
     ax.set_yticks([-180, -90, 0, 90, 180])

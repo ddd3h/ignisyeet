@@ -580,8 +580,10 @@ def panel_method(f, out, pn):
     lim = max(float(np.percentile(np.abs(d.cp), 99)), 0.1)
     norm = TwoSlopeNorm(vmin=-lim, vcenter=0.0, vmax=lim)
 
-    def tri(ax, x, y, c, max_dy):
-        t = mtri.Triangulation(x, y)
+    def tri(ax, x, y, c, max_dy, y_scale=1.0):
+        # Delaunay on (x, y_scale*y) so the panels are near-square (no slivers along narrow columns).
+        x, y = np.asarray(x), np.asarray(y)
+        t = mtri.Triangulation(x, y, mtri.Triangulation(x, y * y_scale).triangles)
         t.set_mask(np.ptp(np.asarray(y)[t.triangles], axis=1) > max_dy)
         return ax.tripcolor(t, np.asarray(c), cmap="RdBu_r", norm=norm, shading="gouraud", rasterized=True)
 
@@ -590,7 +592,8 @@ def panel_method(f, out, pn):
     gs = fig.add_gridspec(2, 2, height_ratios=[1, 1.15])
     ax = fig.add_subplot(gs[0, :])
     th = np.degrees(np.arctan2(body.z, body.y))
-    sc = tri(ax, body.x.values, th.values, body.cp.values, 25.0)
+    r_body = float(np.median(np.hypot(body.y, body.z)))
+    sc = tri(ax, body.x.values, th.values, body.cp.values, 25.0, y_scale=np.radians(1.0) * r_body)
     ax.set_xlabel("先端からの距離 $x$ [m]")
     ax.set_ylabel("周方向角 $\\theta$ [deg]")
     ax.set_yticks([-180, -90, 0, 90, 180])

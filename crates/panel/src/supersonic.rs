@@ -4,10 +4,11 @@
 //!
 //! Each panel sees the freestream at the local inclination `delta` between its plane and the
 //! flow (`delta > 0`: compression).
-//! * Fin panels: tangent wedge (exact oblique shock, weak branch) for compression, modified
-//!   Newtonian beyond the detachment limit, Prandtl–Meyer expansion from the freestream for
-//!   expansion (leeward shadow), clipped at the vacuum limit.
-//! * Body panels: tangent cone (Taylor–Maccoll, cached table; modified Newtonian beyond
+//! * Fin panels: tangent wedge (exact oblique shock, weak branch) for compression, beyond the
+//!   detachment limit a Newtonian-shaped rise from the attached value at detachment to the
+//!   stagnation value at 90 deg ([`detached_cp`]), Prandtl–Meyer expansion from the freestream
+//!   for expansion (leeward shadow), clipped at the vacuum limit.
+//! * Body panels: tangent cone (Taylor–Maccoll, cached table; the same detached rise beyond
 //!   detachment) on the axisymmetric slope `delta0` (Prandtl–Meyer for boattail slopes). The
 //!   change of inclination caused by incidence or pitch rate is applied as a linearised
 //!   increment with the slender-body slope `4 sin d0 cos d0`. A 2-D expansion on the leeward side
@@ -111,6 +112,42 @@ pub fn cp_max(m: f64) -> f64 {
 /// Modified Newtonian pressure coefficient.
 pub fn newton_cp(m: f64, delta: f64) -> f64 {
     cp_max(m) * delta.sin().powi(2)
+}
+
+/// Pressure coefficient at inclination `delta` beyond the shock-detachment angle `delta_d`, where
+/// the attached (wedge or cone) value is `cp_d`:
+///
+/// `Cp = cp_d + (Cp_max - cp_d) (sin^2 delta - sin^2 delta_d) / cos^2 delta_d`.
+///
+/// The modified-Newtonian shape in `sin^2 delta`, rescaled so that it starts at the attached value
+/// at detachment (continuous in inclination and Mach) and reaches the stagnation value `Cp_max`
+/// at 90 deg, as modified Newtonian does. Plain modified Newtonian `Cp_max sin^2 delta` would drop
+/// at detachment (Mach 2 wedge: 0.945 to 0.25 at 22.97 deg).
+pub fn detached_cp(m: f64, delta: f64, delta_d: f64, cp_d: f64) -> f64 {
+    let c2 = delta_d.cos().powi(2);
+    if c2 <= 1e-12 {
+        return cp_max(m);
+    }
+    let w = ((delta.sin().powi(2) - delta_d.sin().powi(2)) / c2).clamp(0.0, 1.0);
+    cp_d + (cp_max(m) - cp_d) * w
+}
+
+/// Wedge detachment: `(maximum deflection, attached Cp there)` at supersonic Mach `m`.
+fn wedge_detachment(m: f64) -> (f64, f64) {
+    let bm = beta_at_max_deflection(m);
+    (deflection(m, bm), 4.0 / (G + 1.0) * (bm.sin().powi(2) - 1.0 / (m * m)))
+}
+
+/// Compression Cp of a fin panel: tangent wedge while the shock is attached, [`detached_cp`]
+/// beyond detachment; modified Newtonian at Mach <= 1.
+fn wedge_or_detached(m: f64, delta: f64) -> f64 {
+    if m <= 1.0 {
+        return newton_cp(m, delta);
+    }
+    wedge_cp(m, delta).unwrap_or_else(|| {
+        let (dd, cpd) = wedge_detachment(m);
+        detached_cp(m, delta, dd, cpd)
+    })
 }
 
 // ------------------------------------------------------------------------------------------
@@ -224,25 +261,49 @@ impl ConeTable {
         ConeTable { rows }
     }
 
-    fn lookup(&self, m: f64, delta: f64) -> Option<f64> {
+    /// Mach row pair and weight of `m`.
+    fn rows_at(m: f64) -> (usize, f64) {
         let x = ((m - CONE_M0) / CONE_DM).clamp(0.0, (CONE_NM - 1) as f64 - 1e-9);
         let i = x as usize;
-        let w = x - i as f64;
-        let d = delta.to_degrees() / CONE_DD;
+        (i, x - i as f64)
+    }
+
+    /// Cp of one Mach row at `d` table steps; `None` at or beyond its detachment limit.
+    fn row_cp(r: &ConeRow, d: f64) -> Option<f64> {
         let k = d as usize;
-        let at = |r: &ConeRow| -> Option<f64> {
-            if k + 1 >= r.cp.len() {
-                return None;
-            }
-            if k == 0 {
-                // Cone pressure grows quadratically from zero.
-                return Some(r.cp[1] * d * d);
-            }
-            let f = d - k as f64;
-            Some(r.cp[k] + f * (r.cp[k + 1] - r.cp[k]))
-        };
-        let (a, b) = (at(&self.rows[i])?, at(&self.rows[i + 1])?);
+        if k + 1 >= r.cp.len() {
+            return None;
+        }
+        if k == 0 {
+            // Cone pressure grows quadratically from zero.
+            return Some(r.cp[1] * d * d);
+        }
+        let f = d - k as f64;
+        Some(r.cp[k] + f * (r.cp[k + 1] - r.cp[k]))
+    }
+
+    fn lookup(&self, m: f64, delta: f64) -> Option<f64> {
+        let (i, w) = Self::rows_at(m);
+        let d = delta.to_degrees() / CONE_DD;
+        let (a, b) = (Self::row_cp(&self.rows[i], d)?, Self::row_cp(&self.rows[i + 1], d)?);
         Some(a + w * (b - a))
+    }
+
+    /// Cp at Mach `m` and cone angle `delta` with the detached rise: each Mach row past its own
+    /// detachment limit (last tabulated angle, Cp there) continues with [`detached_cp`] (stagnation
+    /// value of `m`), and the rows are interpolated in Mach. Continuous in angle and Mach; equal to
+    /// [`lookup`](Self::lookup) where both rows are attached.
+    fn cp_or_detached(&self, m: f64, delta: f64) -> f64 {
+        let (i, w) = Self::rows_at(m);
+        let d = delta.to_degrees() / CONE_DD;
+        let at = |r: &ConeRow| {
+            Self::row_cp(r, d).unwrap_or_else(|| {
+                let kd = r.cp.len() - 1;
+                detached_cp(m, delta, (kd as f64 * CONE_DD).to_radians(), r.cp[kd])
+            })
+        };
+        let (a, b) = (at(&self.rows[i]), at(&self.rows[i + 1]));
+        a + w * (b - a)
     }
 }
 
@@ -259,8 +320,13 @@ pub fn cone_cp(m: f64, delta: f64) -> Option<f64> {
     cone_table().lookup(m, delta)
 }
 
-fn cone_or_newton(m: f64, delta: f64) -> f64 {
-    cone_cp(m, delta).unwrap_or_else(|| newton_cp(m, delta))
+/// Compression Cp of a body panel: tangent cone while the shock is attached, [`detached_cp`]
+/// beyond detachment; modified Newtonian below the cone table's Mach range.
+fn cone_or_detached(m: f64, delta: f64) -> f64 {
+    if m <= CONE_M0 - 0.02 {
+        return newton_cp(m, delta);
+    }
+    cone_table().cp_or_detached(m, delta)
 }
 
 /// Body-panel pressure coefficient: axisymmetric part at slope `delta0` plus a linearised
@@ -271,7 +337,7 @@ fn cone_or_newton(m: f64, delta: f64) -> f64 {
 /// parts; the second-order cross-flow load is added by the empirical cross-flow term.
 pub fn body_cp(m: f64, delta: f64, delta0: f64) -> f64 {
     let (cp0, slope) = if delta0 > 1e-12 {
-        let c = cone_or_newton(m, delta0);
+        let c = cone_or_detached(m, delta0);
         (c, 4.0 * delta0.sin() * delta0.cos())
     } else if delta0 < -1e-12 {
         (expansion_cp(m, -delta0), 4.0 * delta0.sin() * delta0.cos())
@@ -286,11 +352,10 @@ pub fn panel_cp(m: f64, delta: f64, part: Part) -> f64 {
     if delta.abs() < 1e-12 {
         0.0
     } else if delta > 0.0 {
-        let attached = match part {
-            Part::Body => cone_cp(m, delta),
-            Part::Fin | Part::Tail => wedge_cp(m, delta),
-        };
-        attached.unwrap_or_else(|| newton_cp(m, delta))
+        match part {
+            Part::Body => cone_or_detached(m, delta),
+            Part::Fin | Part::Tail => wedge_or_detached(m, delta),
+        }
     } else {
         expansion_cp(m, -delta)
     }
@@ -412,6 +477,73 @@ mod tests {
         let lin = -2.0 * d / 3f64.sqrt();
         assert!((expansion_cp(2.0, d) - lin).abs() < 0.02 * lin.abs(), "{} vs {lin}", expansion_cp(2.0, d));
         assert!((expansion_cp(2.0, 3.0) + 2.0 / (G * 4.0)).abs() < 1e-9);
+    }
+
+    /// Largest jump of `f` between neighbouring samples of `xs`.
+    fn max_jump(xs: impl Iterator<Item = f64>, f: impl Fn(f64) -> f64) -> f64 {
+        let v: Vec<f64> = xs.map(f).collect();
+        v.windows(2).map(|w| (w[1] - w[0]).abs()).fold(0.0, f64::max)
+    }
+
+    #[test]
+    fn fin_cp_is_continuous_across_shock_detachment() {
+        // Mach 2: detachment at about 22.97 deg (attached Cp about 0.945 there, modified Newtonian 0.25).
+        let (m, dd) = (2.0, deflection(2.0, beta_at_max_deflection(2.0)));
+        assert!((dd.to_degrees() - 22.97).abs() < 0.02, "{}", dd.to_degrees());
+        let e = 1e-7;
+        let (below, above) = (panel_cp(m, dd - e, Part::Fin), panel_cp(m, dd + e, Part::Fin));
+        assert!((below - 0.945).abs() < 0.01 && (above - below).abs() < 2e-3, "{below} {above}");
+        // In inclination at several Mach numbers: continuous at detachment (the attached weak branch
+        // approaches it with a square-root slope, so the limit is taken), no jump on a 0.01 deg scan,
+        // never decreasing, up to Cp_max at 90 deg.
+        for m in [1.05, 1.2, 1.5, 2.0, 3.0, 5.0] {
+            let (dd, e) = (wedge_detachment(m).0, 1e-10);
+            let (below, above) = (panel_cp(m, dd - e, Part::Fin), panel_cp(m, dd + e, Part::Fin));
+            assert!((above - below).abs() < 1e-3, "Mach {m}: {below} {above}");
+            let step = 0.01f64.to_radians();
+            let j = max_jump((1..9000).map(|k| k as f64 * step), |d| panel_cp(m, d, Part::Fin));
+            assert!(j < 0.02, "Mach {m}: jump {j}");
+            let mut prev = 0.0;
+            for k in 1..9000 {
+                let cp = panel_cp(m, k as f64 * step, Part::Fin);
+                assert!(cp >= prev - 1e-9, "Mach {m}, {} deg: {cp} < {prev}", k as f64 * 0.01);
+                prev = cp;
+            }
+            assert!((panel_cp(m, std::f64::consts::FRAC_PI_2, Part::Fin) - cp_max(m)).abs() < 1e-9);
+        }
+        // In Mach at fixed inclination (detachment Mach of 10, 20, 30 deg wedges crossed): no jump.
+        for deg in [4.0, 10.0, 20.0, 30.0] {
+            let d = f64::to_radians(deg);
+            let j = max_jump((0..4000).map(|k| 1.001 + k as f64 * 0.001), |m| panel_cp(m, d, Part::Fin));
+            assert!(j < 0.03, "{deg} deg: jump {j}");
+            // The detachment Mach of this wedge (bisection) and the limit there.
+            let (mut lo, mut hi) = (1.0001, 5.0);
+            for _ in 0..80 {
+                let mid = 0.5 * (lo + hi);
+                if wedge_detachment(mid).0 < d {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            let (below, above) = (panel_cp(lo, d, Part::Fin), panel_cp(hi, d, Part::Fin));
+            assert!(wedge_cp(lo, d).is_none() && wedge_cp(hi, d).is_some() && (above - below).abs() < 1e-3, "{deg} deg: {below} {above}");
+        }
+    }
+
+    #[test]
+    fn cone_cp_is_continuous_across_shock_detachment() {
+        for m in [1.2, 1.5, 2.0, 3.0] {
+            let step = 0.01f64.to_radians();
+            let j = max_jump((1..9000).map(|k| k as f64 * step), |d| panel_cp(m, d, Part::Body));
+            assert!(j < 5e-3, "Mach {m}: jump {j}");
+            assert!((panel_cp(m, std::f64::consts::FRAC_PI_2, Part::Body) - cp_max(m)).abs() < 1e-9);
+        }
+        for deg in [20.0, 40.0] {
+            let d = f64::to_radians(deg);
+            let j = max_jump((0..3000).map(|k| 1.2 + k as f64 * 0.001), |m| panel_cp(m, d, Part::Body));
+            assert!(j < 5e-3, "{deg} deg: jump {j}");
+        }
     }
 
     #[test]

@@ -502,15 +502,18 @@ fn run_wind_grid(cfg: &DispersionConfig, base: &Simulation, recovery_enabled: bo
     Ok((cases, summaries))
 }
 
+/// Cases and per-case results (the error text of a failed case) of a wind-grid study.
+pub type WindGridRuns = (Vec<Case>, Vec<std::result::Result<Summary, String>>);
+
 /// Wind-grid study keeping the error of every failed case (the other cases are not affected by it).
 /// Cases and results are in matching order; `progress` is also called for failed cases, with a
-/// NaN [`Summary::failed`].
+/// NaN [`Summary::failed`]. Errors for a calm wind profile, which cannot be scaled to the grid.
 pub fn run_wind_grid_detailed(
     cfg: &DispersionConfig,
     base: &Simulation,
     recovery_enabled: bool,
     progress: &(dyn Fn(&Case, &Summary) + Sync),
-) -> Result<(Vec<Case>, Vec<std::result::Result<Summary, String>>)> {
+) -> Result<WindGridRuns> {
     // A calm wind profile cannot be scaled to the grid speeds: stop before any case runs.
     base.wind.check_scalable()?;
     let n = cfg.directions;

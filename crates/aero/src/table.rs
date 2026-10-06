@@ -443,9 +443,11 @@ impl AeroTable {
     pub fn load(csv_path: &Path) -> Result<Self> {
         let json_path = csv_path.with_extension("json");
         let json = std::fs::read_to_string(&json_path).with_context(|| format!("cannot read aero table metadata {}", json_path.display()))?;
-        let mut meta: TableMeta = serde_json::from_str(&json).with_context(|| format!("bad aero table metadata {}", json_path.display()))?;
+        let json = json.strip_prefix('\u{feff}').unwrap_or(&json);
+        let mut meta: TableMeta = serde_json::from_str(json).with_context(|| format!("bad aero table metadata {}", json_path.display()))?;
         validate_meta(&meta).with_context(|| format!("invalid aero table metadata {}", json_path.display()))?;
         let text = std::fs::read_to_string(csv_path).with_context(|| format!("cannot read aero table {}", csv_path.display()))?;
+        let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
         let header: Vec<&str> = text.lines().next().unwrap_or("").split(',').map(str::trim).collect();
         let nc = if meta.kind == TableKind::General { 3 } else { 2 };
         let rows = text.lines().enumerate().skip(1).filter(|(_, l)| !l.trim().is_empty()).map(|(ln, line)| {
@@ -705,6 +707,37 @@ impl AeroTable {
         }
         out[8] = out[8].min(0.0);
         Coeffs6::from_arr(out)
+    }
+
+    /// Sanity warnings for a table that was not built by this program: a negative axial force
+    /// coefficient (`ca_on` or `ca_off`) at zero angle of attack is thrust-like drag. One message
+    /// per column, naming the first offending Mach number.
+    pub fn sanity_warnings(&self) -> Vec<String> {
+        let (na, nb) = (self.meta.alphas_deg.len(), self.meta.betas_deg.len().max(1));
+        let Some(ia) = self.meta.alphas_deg.iter().position(|a| a.abs() < 1e-9) else { return Vec::new() };
+        let ib = self.meta.betas_deg.iter().position(|b| b.abs() < 1e-9).unwrap_or(0);
+        let mut out = Vec::new();
+        for (name, field) in [("ca_on", 0usize), ("ca_off", 1)] {
+            let values: Vec<(f64, f64)> = self
+                .meta
+                .machs
+                .iter()
+                .enumerate()
+                .map(|(i, &m)| {
+                    let ca = match &self.data {
+                        TableData::Axisymmetric(d) => d[i * na + ia][1 + field],
+                        TableData::General(d) => -d[(i * na + ia) * nb + ib][field],
+                    };
+                    (m, ca)
+                })
+                .filter(|&(_, ca)| ca < 0.0)
+                .collect();
+            if let Some(&(m, ca)) = values.first() {
+                let more = if values.len() > 1 { format!("; {} Mach values in all", values.len()) } else { String::new() };
+                out.push(format!("aero table: {name} at Mach {m}, alpha 0 is {ca:.2} (negative axial force / thrust-like drag{more})"));
+            }
+        }
+        out
     }
 
     pub fn rows(&self) -> usize {
@@ -1001,5 +1034,30 @@ mod tests {
         let (TableData::General(a), TableData::General(b)) = (&g.data, &w.data) else { panic!() };
         assert!(a.iter().flatten().zip(b.iter().flatten()).all(|(x, y)| x.to_bits() == y.to_bits()));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_strips_a_utf8_bom_and_warns_about_negative_axial_force() {
+        let (dir, p, t) = loadable_files("bom");
+        assert!(t.sanity_warnings().is_empty());
+        let text = std::fs::read_to_string(&p).unwrap();
+        let lines: Vec<String> = text
+            .lines()
+            .map(|l| {
+                let mut c: Vec<String> = l.split(',').map(String::from).collect();
+                if c[0].parse::<f64>().map_or(false, |m| (m - 0.3).abs() < 1e-9) && c[1].parse::<f64>().map_or(false, |a| a == 0.0) {
+                    c[4] = "-1".into();
+                }
+                c.join(",")
+            })
+            .collect();
+        std::fs::write(&p, format!("\u{feff}{}\n", lines.join("\n"))).unwrap();
+        let jp = p.with_extension("json");
+        let json = std::fs::read_to_string(&jp).unwrap();
+        std::fs::write(&jp, format!("\u{feff}{json}")).unwrap();
+        let back = AeroTable::load(&p).unwrap();
+        let w = back.sanity_warnings();
+        assert_eq!(w, vec!["aero table: ca_off at Mach 0.3, alpha 0 is -1.00 (negative axial force / thrust-like drag)".to_string()]);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

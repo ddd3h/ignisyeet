@@ -672,17 +672,35 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - 正
    * - ``dispersion.wind_speeds`` の各要素、``[dispersion.monte_carlo]`` の各標準偏差
      - 0 以上
+   * - ``dispersion.wind_speeds``
+     - 1 個以上の要素（空のリストはエラー）
+   * - ``atmosphere.density`` ``sound_speed`` ``viscosity``\ （``model = "constant"``）
+     - 有限で正
+   * - ``atmosphere.temperature_offset``\ （``model = "us1976"``）
+     - 有限で、−186.946 K より大きい（モデルの範囲で最も低い標準温度 186.946 K に足して、絶対温度が正になる値）
 
-さらに、形状を抽出したあとで、乾燥重心 ``rocket.cg_dry`` が機体の全長より後方にあるとエラーにする（``stl_scale`` や ``cg_dry`` の単位の誤りを、飛翔計算の前に見つけるためである）。
+``[launch]`` と ``[recovery]`` に未知のキーがあると、キーの名前を示してエラーにする（``rol_deg`` のような綴りの誤りが黙って無視されないようにするためである）。
+
+入力ファイルが読めないときは、エラーにファイルのパスを示す（STL、モータの ``.eng``、風のプロファイル、外部の係数表とその付随ファイル）。
+STL は、頂点の座標に有限でない値（``NaN`` や ``inf``）があると、三角形の番号を示してエラーにする。
+``.eng`` の検査は :ref:`sec-propulsion-eng` に、外部の係数表の検査は :ref:`sec-aero-table-format` にある。
+
+さらに、形状を抽出したあとで、次の場合にエラーにする（``stl_scale`` や ``cg_dry`` の単位の誤りを、飛翔計算の前に見つけるためである）。
+
+* ``rocket.stl_scale`` を掛けた機体の全長が 0.1 m から 20 m の範囲の外にある。メッセージは ``body length … m is outside the plausible 0.1-20 m range: check the STL units and rocket.stl_scale`` の形で、``stl_scale`` の現在の値と、mm 単位の STL なら ``0.001`` であることを添える。
+* 乾燥重心 ``rocket.cg_dry`` が機体の全長より後方にある。
+
+積分が発散して状態に有限でない値が現れたときも、エラーにする（``integration diverged at t = … s; reduce sim.dt or tighten rtol/atol``。:ref:`sec-integrators`）。
+モンテカルロ解析では、そのサンプルを失敗として数える。
 
 エラーにはしないが疑わしい点は、警告として表示する。警告は ``-q`` を含むすべての出力モードで出す。
 プレーンモードと端末の表示では標準出力に、``-q`` では標準エラー出力に ``warning:`` の行で書く。
 ``sim`` では ``summary.json`` の ``warnings`` にも、``dispersion`` では ``dispersion_meta.json`` と ``dispersion_summary.json`` の ``warnings`` にも同じ文を残す。
 警告の内容は次のとおりである。
 
-* 機体の大きさが、全長 0.1 から 30 m、直径 0.005 から 3 m の範囲を外れている（``rocket.stl_scale`` の誤りが疑われる。mm 単位の STL なら ``0.001``）。``geom`` でも表示する。
-* 静安定余裕（飛翔中の最小値とランチャ離脱時の値の小さいほう）が、0 cal 未満（圧力中心が重心より前にあり不安定）、0 以上 1.0 cal 未満（``low static margin``）、1.0 cal 以上 1.5 cal 未満（推奨の 1.5 cal を下回る）である。
-* 風のモデルが ``power`` または ``log`` で、頂点が地上 1000 m を超える。これらのプロファイルは基準高さ ``wind.ref_height`` の風速 ``wind.speed`` を上空に外挿するので、上空の風と着地点はモデル依存になる（実際の予測には ``model = "profile"`` を使う）。
+* 機体の直径が 0.005 から 3 m の範囲を外れている（``rocket.stl_scale`` の誤りが疑われる。mm 単位の STL なら ``0.001``）。``geom`` でも表示する。全長の範囲外は、STL から作る機体ではエラーである（上記）。``method = "table"`` の外部の表では、表の ``length`` と ``ref_diameter`` について、全長 0.1 から 20 m、直径 0.005 から 3 m の範囲外を警告にする。
+* 静安定余裕（飛翔中の最小値とランチャ離脱時の値の小さいほう）が、0 cal 未満（``UNSTABLE``。圧力中心が重心より前にある）、0 以上 1.0 cal 未満（``low static margin``。不安定とは呼ばない）、1.0 cal 以上 1.5 cal 未満（``marginal``。推奨の 1.5 cal を下回る）である。
+* 風のモデルが ``power`` または ``log`` で、頂点が地上 1000 m を超え、風速が 0 でない（``dispersion`` の風の格子では、最大の風速が 0 でないとき）。これらのプロファイルは基準高さ ``wind.ref_height`` の風速 ``wind.speed`` を上空に外挿するので、上空の風と着地点はモデル依存になる（実際の予測には ``model = "profile"`` を使う）。
 * ``sim.max_time`` までに着地しない。
 * 係数表の範囲外の引き出しがある。回数、最大の Mach 数、最大の :math:`|\alpha|` を ``aero table: 370888 of 10106213 lookups beyond the angle range (max Mach 1.51, max |alpha| 90.0 deg); Mach is held at the table edge, angles are extrapolated`` の形で表示する（パネル法のサンプルの ``dispersion`` での表示。Mach 数の範囲外があるときは ``… lookups beyond the Mach range`` も並ぶ）。
   迎角の範囲外の引き出しは、頂点のあとの弾道落下（機体が反転し、尾部を先にして落ちる）で起きることが多く、その場合は想定内である。
@@ -703,7 +721,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
    * - 値
      - 意味
    * - 0
-     - 成功
+     - 成功。着地した飛翔は、静的に不安定でも 0 で終わる（``summary.json`` の ``stable`` と ``static_margin_min_cal`` で確かめる）
    * - 1
      - エラー（不正な設定、入力ファイルがない、処理の失敗、``cfd-check`` で必要なツールが足りない、など）
    * - 2
@@ -713,7 +731,8 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
        標準エラー出力に ``INCOMPLETE RESULTS`` の行を書く
 
 着地しなかった飛翔は、着地点が存在しない。``summary.json`` の ``landed`` が ``false`` になり、着地に関する項目は ``null`` になる（:ref:`sec-file-summary`）。
-着地しなかった結果は KML に入れない。
+着地しなかった結果は KML に入れない。``sim`` が着地しなかったときは、前回の飛翔が KML に残らないよう、飛翔の層を除いた ``ignisyeet.kml`` を書き直す（``output.kml = true`` のとき）。
+モンテカルロ解析の誤差楕円は、着地したサンプルが 2 つ未満の降下モードでは KML に入れない。
 
 設定ファイル
 ------------

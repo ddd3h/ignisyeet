@@ -75,6 +75,37 @@ pub fn apply_set(raw: &mut toml::Value, arg: &str) -> Result<()> {
     Ok(())
 }
 
+/// Applies the `--set` overrides in order (see [`apply_set`]); returns a warning for each key given
+/// more than once, whose last value is the one used.
+pub fn apply_sets(raw: &mut toml::Value, sets: &[String]) -> Result<Vec<String>> {
+    let mut last: Vec<(String, String, usize)> = Vec::new();
+    for arg in sets {
+        apply_set(raw, arg)?;
+        let (key, value) = arg.split_once('=').expect("checked by apply_set");
+        let key = key.split('.').map(str::trim).collect::<Vec<_>>().join(".");
+        match last.iter_mut().find(|(k, _, _)| *k == key) {
+            Some(e) => {
+                e.1 = value.trim().to_string();
+                e.2 += 1;
+            }
+            None => last.push((key, value.trim().to_string(), 1)),
+        }
+    }
+    Ok(last.into_iter().filter(|e| e.2 > 1).map(|(k, v, _)| format!("--set {k} given more than once; the last value ({v}) is used")).collect())
+}
+
+/// The error of the first `--set` override that alone makes the configuration `base` fail to read
+/// (a value of the wrong type, an unknown key), with the override named; None when `base` itself
+/// fails or no single override does.
+fn blame_set(base: &toml::Value, sets: &[String]) -> Option<anyhow::Error> {
+    base.clone().try_into::<Config>().ok()?;
+    sets.iter().find_map(|arg| {
+        let mut raw = base.clone();
+        apply_set(&mut raw, arg).ok()?;
+        raw.try_into::<Config>().err().map(|e| anyhow::anyhow!("--set {}: {e}", arg.trim()))
+    })
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OutputCfg {
@@ -366,11 +397,13 @@ impl Config {
         let text = std::fs::read_to_string(path).with_context(|| format!("cannot read config {}", path.display()))?;
         let mut raw: toml::Value =
             toml::from_str(text.strip_prefix('\u{feff}').unwrap_or(&text)).with_context(|| format!("invalid config {}", path.display()))?;
-        for arg in &ov.set {
-            apply_set(&mut raw, arg)?;
-        }
+        let base = raw.clone();
+        let repeated = apply_sets(&mut raw, &ov.set)?;
         let what = if ov.set.is_empty() { String::new() } else { " with the --set overrides".to_string() };
-        let mut cfg = Self::from_value(raw, path.parent()).with_context(|| format!("invalid config {}{what}", path.display()))?;
+        let mut cfg = Self::from_value(raw, path.parent())
+            .map_err(|e| blame_set(&base, &ov.set).unwrap_or(e))
+            .with_context(|| format!("invalid config {}{what}", path.display()))?;
+        cfg.load_warnings.splice(0..0, repeated);
         if let Some(out) = &ov.out {
             // Relative to the current directory, not to the config file.
             cfg.output.dir = if out.is_absolute() { out.clone() } else { std::env::current_dir().context("cannot read the current directory")?.join(out) };
@@ -1208,7 +1241,20 @@ mod tests {
         assert_eq!(Config::load_with(&path, &abs).unwrap().out_dir(), dir.join("abs"));
         let bad = Overrides { set: vec!["wind.nope=1".into()], out: None };
         let e = format!("{:#}", Config::load_with(&path, &bad).unwrap_err());
-        assert!(e.contains("with the --set overrides") && e.contains("nope"), "{e}");
+        assert!(e.contains("with the --set overrides") && e.contains("--set wind.nope=1: unknown field `nope`"), "{e}");
+        // a value of the wrong type names the override
+        let bad = Overrides { set: vec!["wind.speed=5".into(), "rocket.dry_mass=abc".into()], out: None };
+        let e = format!("{:#}", Config::load_with(&path, &bad).unwrap_err());
+        assert!(e.contains("with the --set overrides: --set rocket.dry_mass=abc: invalid type: string \"abc\", expected f64"), "{e}");
+        // a range error keeps its own message (it names the key)
+        let bad = Overrides { set: vec!["wind.speed=-1".into()], out: None };
+        let e = format!("{:#}", Config::load_with(&path, &bad).unwrap_err());
+        assert!(e.contains("wind.speed") && !e.contains("--set wind.speed=-1:"), "{e}");
+        // a repeated key: the last value is used, with a warning
+        let twice = Overrides { set: vec!["wind.speed=3".into(), "wind.direction_deg=90".into(), " wind . speed = 8 ".into()], out: None };
+        let c = Config::load_with(&path, &twice).unwrap();
+        assert_eq!(c.wind.speed, 8.0);
+        assert_eq!(c.load_warnings, vec!["--set wind.speed given more than once; the last value (8) is used".to_string()]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

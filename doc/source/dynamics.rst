@@ -423,7 +423,7 @@ Dormand–Prince 法（``rk45``）
    \bm{y}_{n+1}&=\bm{y}_n+h\sum_{j=1}^{6}b_j\bm{k}_j,\qquad
    \bm{k}_7=\bm{f}(t+h,\ \bm{y}_{n+1})
 
-とする。係数は\ :eq:`eq-butcher` の Butcher 表 :cite:`dormand` のとおりで、5 次の解の重み :math:`b_j` は第 6 段の行（:math:`c_6=1`）と同じで、第 7 段の重みは 0 である（第 7 段 :math:`\bm{k}_7` は誤差の推定にだけ使う）。
+とする。係数は\ :eq:`eq-butcher` の Butcher 表 :cite:`dormand` のとおりで、5 次の解の重み :math:`b_j` は第 7 段の行 :math:`a_{7j}`\ （:math:`c_7=1`）と同じで、:math:`b_7=0` である。第 7 段 :math:`\bm{k}_7` は終点 :math:`(t+h,\ \bm{y}_{n+1})` の傾きである。
 
 .. math::
    :label: eq-butcher
@@ -801,7 +801,7 @@ RKMK 法の 1 ステップ
      - 同上
    * - ``dop853``
      - 制御（``rtol``、``atol``）
-     - 13（FSAL）
+     - 12（FSAL）
      - 13 / 12
      - 同上
 

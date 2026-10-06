@@ -103,7 +103,11 @@ impl History {
     /// The force coefficients (`CFx`, `CFz`, `CMy`, or `CD`, `CL`) are flat over the last `window`
     /// rows: the means of the two half windows differ by less than 2 % of the force scale (+ 5e-4)
     /// and the inter-quartile range stays below 4 times that. Moment tolerance: 25 % of the force scale.
-    pub fn coefficients_stable(&self, window: usize) -> bool {
+    ///
+    /// `kind` adds the coefficients the case is run for: `CFy` and `CMz` for sideslip (same tolerances as
+    /// the normal force and the pitching moment), `CMx` for roll-rate cases (3 % of its own mean + 2e-5,
+    /// since the rolling moment is much smaller than the force scale).
+    pub fn coefficients_stable(&self, window: usize, kind: StabilityKind) -> bool {
         let n = self.rows.len();
         if n < window.max(4) {
             return false;
@@ -131,7 +135,44 @@ impl History {
         // about 12 reference lengths times that. The inter-quartile range ignores isolated spikes.
         let scale = [fx, fz].iter().flatten().map(|s| s.0.abs()).fold(0.0, f64::max);
         let ok = |s: Option<(f64, f64, f64)>, tol: f64| s.is_none_or(|(_, drift, spread)| drift <= tol && spread <= 4.0 * tol);
-        ok(fx, 0.02 * scale + 5e-4) && ok(fz, 0.02 * scale + 5e-4) && ok(my, 0.25 * scale + 5e-3)
+        let mut stable = ok(fx, 0.02 * scale + 5e-4) && ok(fz, 0.02 * scale + 5e-4) && ok(my, 0.25 * scale + 5e-3);
+        match kind {
+            StabilityKind::Pitch => {}
+            StabilityKind::Sideslip => {
+                let (fy, mz) = (stats(&["CFy"]), stats(&["CMz"]));
+                let scale = scale.max(fy.map_or(0.0, |s| s.0.abs()));
+                stable = stable && ok(fy, 0.02 * scale + 5e-4) && ok(mz, 0.25 * scale + 5e-3);
+            }
+            StabilityKind::Roll => {
+                let mx = stats(&["CMx"]);
+                let tol = 0.03 * mx.map_or(0.0, |s| s.0.abs()) + 2e-5;
+                stable = stable && ok(mx, tol);
+            }
+        }
+        stable
+    }
+}
+
+/// Which extra coefficients [`History::coefficients_stable`] checks besides the axial / normal force and pitching moment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StabilityKind {
+    /// Angle of attack only (`CFx`, `CFz`, `CMy`).
+    Pitch,
+    /// Sideslip case: also `CFy` and `CMz`.
+    Sideslip,
+    /// Roll-rate case: also `CMx` (the roll-damping signal).
+    Roll,
+}
+
+impl StabilityKind {
+    pub fn of(spec: &crate::case::CaseSpec) -> Self {
+        if spec.is_roll() {
+            Self::Roll
+        } else if spec.beta_deg != 0.0 {
+            Self::Sideslip
+        } else {
+            Self::Pitch
+        }
     }
 }
 
@@ -205,5 +246,33 @@ mod tests {
         assert!(s.cfz.is_none() && s.cmy.is_none());
         assert!(summarize(&History::parse("\"a\",\"b\"\n").unwrap(), 1).is_none());
         assert!(History::parse("").is_err());
+    }
+
+    /// Synthetic history of `n` rows: constant forces, `CMx` ramping from `mx0` to `mx1`, `CFy` from `fy0` to `fy1`.
+    fn synthetic(n: usize, mx: (f64, f64), fy: (f64, f64)) -> History {
+        let mut t = String::from("\"Iteration\",\"rms[Rho]\",\"CFx\",\"CFy\",\"CFz\",\"CMx\",\"CMy\",\"CMz\"\n");
+        for i in 0..n {
+            let f = i as f64 / (n - 1) as f64;
+            t += &format!("{i},{},0.3,{},0.1,{},-0.5,{}\n", -1.0 - 0.1 * i as f64, fy.0 + (fy.1 - fy.0) * f, mx.0 + (mx.1 - mx.0) * f, 0.2);
+        }
+        History::parse(&t).unwrap()
+    }
+
+    #[test]
+    fn roll_and_sideslip_cases_check_their_own_coefficients() {
+        // CMx still drifting by 50 % over the window: the force-only check would accept it.
+        let h = synthetic(60, (1e-3, 1.5e-3), (0.0, 0.0));
+        assert!(h.coefficients_stable(40, StabilityKind::Pitch));
+        assert!(h.coefficients_stable(40, StabilityKind::Sideslip));
+        assert!(!h.coefficients_stable(40, StabilityKind::Roll));
+        assert!(synthetic(60, (1e-3, 1e-3), (0.0, 0.0)).coefficients_stable(40, StabilityKind::Roll));
+        // CFy drifting (sideslip only).
+        let h = synthetic(60, (0.0, 0.0), (0.05, 0.15));
+        assert!(h.coefficients_stable(40, StabilityKind::Pitch));
+        assert!(!h.coefficients_stable(40, StabilityKind::Sideslip));
+        let spec = |a: f64, b: f64, r: f64| crate::case::CaseSpec { mach: 1.0, alpha_deg: a, beta_deg: b, roll_hat: r };
+        assert_eq!(StabilityKind::of(&spec(2.0, 0.0, 0.0)), StabilityKind::Pitch);
+        assert_eq!(StabilityKind::of(&spec(2.0, 3.0, 0.0)), StabilityKind::Sideslip);
+        assert_eq!(StabilityKind::of(&spec(0.0, 0.0, 0.01)), StabilityKind::Roll);
     }
 }

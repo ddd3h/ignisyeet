@@ -20,7 +20,7 @@ CFD の出力なら :doc:`cfd` と :doc:`cfd_internals` で述べる。
 表の種類は付随ファイルの ``kind`` で決まり、``"axisymmetric"``\ （軸対称表。既定）と ``"general"``\ （一般表）がある。
 表の概念と、軸対称表と一般表の関係は :ref:`sec-aero-table` と :doc:`aero_coefficients` にある。
 
-CSV の値は、``mach`` ``alpha_deg`` ``beta_deg`` の格子の値を除いて、指数表記で有効数字 10 桁（小数点以下 9 桁）で書かれる。
+CSV の値は、``mach`` ``alpha_deg`` ``beta_deg`` の格子の値を除いて、指数表記で書かれる。桁数は、読み戻したときに元の倍精度の値とビットまで一致する最短の表記である（書いて読んでも値は変わらない）。
 CSV は、1 行目が見出し、2 行目以降が格子点 1 つにつき 1 行で、空行は読み飛ばす。
 
 .. _sec-file-axisym:
@@ -163,7 +163,7 @@ Mach 数の刻みは、作り方で異なる。
      - ``"axisymmetric"``\ （既定）または ``"general"``
    * - ``source_hash``
      - 必須
-     - 入力のハッシュ値。``aero`` は STL の内容、設定値、プログラムのバージョンから計算した FNV-1a の値（16 桁の 16 進数）を書き、保存済みの表を使うかの判定に使う。外部の表では任意の文字列でよい
+     - 入力のハッシュ値。``aero`` は STL の内容、抽出した形状（縮尺、機首方向、フィンの上書き、カントを適用した後のもの）、設定値、プログラムのバージョンから計算した FNV-1a の値（16 桁の 16 進数）を書き、保存済みの表を使うかの判定に使う。外部の表では任意の文字列でよい
    * - ``ref_area``
      - 必須
      - 基準面積 [m\ :sup:`2`]
@@ -197,8 +197,18 @@ Mach 数の刻みは、作り方で異なる。
 読み込み時の検査
 ~~~~~~~~~~~~~~~~
 
-CSV の行数が、``machs`` と ``alphas_deg``\ （一般表では ``betas_deg`` も）の積に一致しないと、``aero table size does not match its metadata`` のエラーになる。
-値が数として読めない行、列数が合わない行もエラーである。
+表を読み込むときは、次を検査する。違反があるとエラーにして、メッセージにファイル名（行に関するものは行番号も）を示す。
+
+* 付随ファイルと CSV が読めること。付随ファイルが無い、JSON として読めないときは、そのファイルの名前を示す。
+* 基準面積 ``ref_area``、基準直径 ``ref_diameter``、全長 ``length`` が有限で正であること。``fin_cant_ref_deg`` が有限であること。
+* ``moment_ref`` が ``"nose_tip"`` であること。ほかの値は、シミュレータが重心まわりへの移し替えをノーズ先端まわりのモーメントから行うので受け付けない。
+* ``machs`` と ``alphas_deg``\ （一般表では ``betas_deg`` も）が空でなく、有限で、厳密に増加すること。
+* CSV の行数が、``machs`` と ``alphas_deg``\ （一般表では ``betas_deg`` も）の積に一致すること。
+* 各行の格子の座標が、付随ファイルの格子から決まる位置の値に一致すること。行は、Mach 数を最も外側、次に迎角、一般表では最も内側を横滑り角として並べる。
+  つまり :math:`i` 番目の行の座標は、付随ファイルの軸から一意に決まる。並びが違う行は、行番号と期待される格子点を示してエラーにする（比較の許容は相対 :math:`10^{-6}`）。
+* 格子の列以外のすべての値が有限であること（``NaN`` と ``inf`` は、列の位置と見出しを示してエラーにする）。
+* 値が数として読めない行、列数が合わない行。
+
 一般表の行は 18 個の値を全部持たなければならない。軸対称表の行は、12 列の形式か、後述のバージョン 1 の 10 列（格子の 2 列に値 8 個）の形式である。
 
 .. _sec-file-v1:
@@ -222,8 +232,8 @@ CSV の行数が、``machs`` と ``alphas_deg``\ （一般表では ``betas_deg`
 
 * 付随ファイルは CSV と同じ名前で拡張子が ``.json`` のファイルで、必須の項目（``source_hash`` ``ref_area`` ``ref_diameter`` ``length`` ``machs`` ``alphas_deg`` ``extrapolation``）をすべて書く。
 * 軸対称表の ``alpha_deg`` は全迎角 :math:`\alpha_t`、一般表の ``alpha_deg`` は迎角 :math:`\alpha`、``beta_deg`` は横滑り角 :math:`\beta` である。軸対称表の ``cn`` は法線力係数、一般表の ``cn`` はヨーモーメント係数 :math:`C_n` で、意味が違う（:ref:`sec-aero-cn-cz`）。
-* モーメントはノーズ先端まわり（``moment_ref = "nose_tip"``）で、:math:`qSd` で無次元化する。
-* 一般表は ``kind = "general"`` とし、``betas_deg`` を書く。格子は不等間隔でもよい。
+* モーメントはノーズ先端まわり（``moment_ref = "nose_tip"``。ほかの値は読み込みでエラー）で、:math:`qSd` で無次元化する。
+* 一般表は ``kind = "general"`` とし、``betas_deg`` を書く。格子は不等間隔でもよいが、各軸は厳密に増加させ、CSV の行は Mach 数、迎角、横滑り角の順（横滑り角が最も内側）に並べる。軸対称表も Mach 数、全迎角の順に並べる。
 * 軸対称な外部の表は、``aero.table_kind = "general"`` で一般表に展開できる（展開した表は書き出さない）。外部の表が最初から一般表なら、そのまま使う。
 * ロール項がすべて 0 の表には、前節のとおり部品積み上げ法のロール項が補われる。
 
@@ -429,8 +439,9 @@ CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surf
 
 ``sim`` が書く、1 回の飛翔の要約である。
 降下モード ``descent``、基準風 ``wind_speed`` と ``wind_direction_deg``、ランチャ離脱の時刻 ``rail_exit_time`` と速度 ``rail_exit_speed``、燃焼終了時刻 ``burnout_time``、
-最大速度 ``max_speed``、最大 Mach 数 ``max_mach``、最大動圧 ``max_dyn_pressure``、頂点の時刻 ``apogee_time`` と高度 ``apogee``（射点からの高さ）と位置 ``apogee_east`` ``apogee_north``、
+最大速度 ``max_speed``、最大 Mach 数 ``max_mach``、最大動圧 ``max_dyn_pressure``、頂点の時刻 ``apogee_time`` と高度 ``apogee``\ （射点からの高さ）と位置 ``apogee_east`` ``apogee_north``、
 最小静安定余裕 ``min_stability_cal`` とランチャ離脱時の値 ``stability_at_rail_exit``、
+ランチャ離脱の値と着地の値は、ステップ間の線形補間で求めた状態の値である（:ref:`sec-rail`、:ref:`sec-landing`）、
 着地の時刻 ``landing_time``、位置 ``landing_east`` ``landing_north`` ``landing_lat`` ``landing_lon``、射点からの距離 ``landing_distance``、着地速度 ``landing_speed`` を持つ。
 これに加えて、次の項目を書く。
 
@@ -442,6 +453,10 @@ CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surf
      - 内容
    * - ``landed``
      - ``sim.max_time`` までに着地したか（真偽値）。``false`` のとき、着地に関する 7 項目（``landing_time`` から ``landing_speed`` まで）は ``null`` である
+   * - ``static_margin_min_cal``
+     - 飛翔中の最小値とランチャ離脱時の値のうち、小さいほう [cal]。どちらも有限でなければ ``null``
+   * - ``stable``
+     - ``static_margin_min_cal`` が 0 以上なら ``true``\ （静的に安定）、負なら ``false``。``null`` のときは ``true``。着地した飛翔は、静的に不安定でも終了コード 0 で終わるので、安定かどうかはこの項目で確かめる（:ref:`sec-exit-status`）
    * - ``max_time``
      - 打ち切り時刻 ``sim.max_time`` [s]
    * - ``config_hash``
@@ -449,7 +464,7 @@ CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surf
    * - ``warnings``
      - 警告の文字列の配列（空のこともある。:ref:`sec-config-checks`）
    * - ``aero_table_range``
-     - 係数表の範囲外の引き出しの集計。全引き出しの回数 ``lookups``、Mach 数が表の最小値未満・最大値超の回数 ``mach_below`` ``mach_above``、迎角または横滑り角が格子の外の回数 ``angle_beyond``、要求された最大の Mach 数 ``max_mach`` と最大の :math:`|\alpha|` [deg] ``max_abs_alpha_deg``、範囲外が 1 回でもあったか ``out_of_range``（真偽値）
+     - 係数表の範囲外の引き出しの集計。全引き出しの回数 ``lookups``、Mach 数が表の最小値未満・最大値超の回数 ``mach_below`` ``mach_above``、迎角または横滑り角が格子の外の回数 ``angle_beyond``、要求された最大の Mach 数 ``max_mach`` と最大の :math:`|\alpha|` [deg] ``max_abs_alpha_deg``、範囲外が 1 回でもあったか ``out_of_range``\ （真偽値）
 
 .. _sec-file-trajectory:
 
@@ -486,7 +501,7 @@ CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surf
 ``dispersion_meta.json``
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-``mode = "wind_grid"`` が ``dispersion.csv`` と並べて書く。項目は、設定のハッシュ ``config_hash``（風の格子について、``mode`` と ``[dispersion.monte_carlo]`` を除いた設定から計算する）、
+``mode = "wind_grid"`` が ``dispersion.csv`` と並べて書く。項目は、設定のハッシュ ``config_hash``\ （風の格子について、``mode`` と ``[dispersion.monte_carlo]`` を除いた設定から計算する）、
 ケース数 ``cases``、着地しなかったケースの数 ``failed``、警告の文字列の配列 ``warnings``、係数表の範囲外の引き出しの集計 ``aero_table_range``\ （項目は :ref:`sec-file-summary` と同じ）である。
 KML は、このファイルのハッシュが現在の設定と一致するときだけ ``dispersion.csv`` を読み込む。
 
@@ -507,10 +522,11 @@ KML は、このファイルのハッシュが現在の設定と一致すると�
 ``dispersion_summary.json``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``mode = "monte_carlo"`` が書く。全体の項目はサンプル数 ``samples``、乱数の種 ``seed``、降下モードごとの配列 ``descents``、設定のハッシュ ``config_hash``（モンテカルロについて、``mode`` と風の格子の設定を除いた設定から計算する）、警告の配列 ``warnings``、係数表の範囲外の引き出しの集計 ``aero_table_range``\ （項目は :ref:`sec-file-summary` と同じ）である。
+``mode = "monte_carlo"`` が書く。全体の項目はサンプル数 ``samples``、乱数の種 ``seed``、降下モードごとの配列 ``descents``、設定のハッシュ ``config_hash``\ （モンテカルロについて、``mode`` と風の格子の設定を除いた設定から計算する）、警告の配列 ``warnings``、係数表の範囲外の引き出しの集計 ``aero_table_range``\ （項目は :ref:`sec-file-summary` と同じ）である。
 ``descents`` の各要素は、降下モード ``descent``、着地したサンプル数 ``n``、失敗数 ``failed``、そのうち着地しなかった数 ``not_landed``、着地点の平均と共分散行列、
 :math:`1\sigma` と :math:`3\sigma` の誤差楕円（長半径、短半径、長軸の方位）、最大着地距離 ``max_landing_distance`` とそのサンプル番号、
-着地距離のパーセンタイル ``landing_distance_p50`` ``landing_distance_p90`` ``landing_distance_p99``（着地したサンプルについて、線形補間で求める）、頂点高度の平均と標準偏差を持つ（:ref:`sec-mc`）。
+着地距離のパーセンタイル ``landing_distance_p50`` ``landing_distance_p90`` ``landing_distance_p99``\ （着地したサンプルについて、線形補間で求める）、頂点高度の平均と標準偏差を持つ（:ref:`sec-mc`）。
 失敗したサンプルは、どの統計にも入らない。``failed`` が 1 以上のとき、``complete`` は ``false`` で、統計は着地したサンプルだけを表し、真のばらつきはこれより大きいか不明である。
 同じとき ``max_landing_distance_is_lower_bound`` が ``true`` になり、最大着地距離は下限である。
-着地したサンプルが一つもなければ、統計と距離の項目は ``null`` である。
+着地点の平均は着地したサンプルが 1 つ以上、標準偏差・共分散・誤差楕円・頂点高度の標準偏差は 2 つ以上のとき求まる。サンプルが足りない統計は ``null`` である
+（着地したサンプルが一つもなければ、統計と距離の項目はすべて ``null``）。

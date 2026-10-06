@@ -223,7 +223,10 @@ pub struct SimCfg {
     /// Tolerances of the adaptive integrators (rk45, dop853).
     pub rtol: f64,
     pub atol: f64,
+    /// Flight time limit [s] (default 3600). A flight still airborne at this time did not land: `sim`
+    /// warns, writes `landed = false` to summary.json and exits with status 3.
     pub max_time: f64,
+    /// Interval between trajectory samples [s].
     pub output_interval: f64,
     /// Descent mode for `sim`: "parachute" or "ballistic". Defaults to parachute when recovery is enabled.
     pub descent: Option<sim::Descent>,
@@ -231,7 +234,7 @@ pub struct SimCfg {
 
 impl Default for SimCfg {
     fn default() -> Self {
-        Self { integrator: sim::IntegratorKind::Rk4, attitude: sim::AttitudeKind::Normalize, dt: 0.002, rtol: 1e-7, atol: 1e-6, max_time: 1200.0, output_interval: 0.05, descent: None }
+        Self { integrator: sim::IntegratorKind::Rk4, attitude: sim::AttitudeKind::Normalize, dt: 0.002, rtol: 1e-7, atol: 1e-6, max_time: 3600.0, output_interval: 0.05, descent: None }
     }
 }
 
@@ -324,7 +327,148 @@ impl Config {
         Ok(cfg)
     }
 
+    /// Range checks of every numeric key (finite, signs, bounds); errors name the key.
+    fn validate_numbers(&self) -> Result<()> {
+        fn finite(key: &str, v: f64) -> Result<()> {
+            if !v.is_finite() {
+                bail!("{key} must be a finite number, found {v}");
+            }
+            Ok(())
+        }
+        fn positive(key: &str, v: f64) -> Result<()> {
+            if !(v.is_finite() && v > 0.0) {
+                bail!("{key} must be a finite number > 0, found {v}");
+            }
+            Ok(())
+        }
+        fn non_negative(key: &str, v: f64) -> Result<()> {
+            if !(v.is_finite() && v >= 0.0) {
+                bail!("{key} must be a finite number >= 0, found {v}");
+            }
+            Ok(())
+        }
+        fn range(key: &str, v: f64, lo: f64, hi: f64) -> Result<()> {
+            if !(v.is_finite() && (lo..=hi).contains(&v)) {
+                bail!("{key} must be between {lo} and {hi}, found {v}");
+            }
+            Ok(())
+        }
+        let (r, m, l) = (&self.rocket, &self.motor, &self.launch);
+        positive("rocket.stl_scale", r.stl_scale)?;
+        positive("rocket.dry_mass", r.dry_mass)?;
+        finite("rocket.cg_dry", r.cg_dry)?;
+        if r.cg_dry < 0.0 {
+            bail!("rocket.cg_dry must be >= 0 (measured aft of the nose tip), found {}", r.cg_dry);
+        }
+        positive("rocket.ixx_dry", r.ixx_dry)?;
+        positive("rocket.iyy_dry", r.iyy_dry)?;
+        if let Some(z) = r.izz_dry {
+            positive("rocket.izz_dry", z)?;
+        }
+        for (k, v) in [("ixy_dry", r.ixy_dry), ("ixz_dry", r.ixz_dry), ("iyz_dry", r.iyz_dry), ("fin_cant_deg", r.fin_cant_deg)] {
+            finite(&format!("rocket.{k}"), v)?;
+        }
+        finite("rocket.cg_lateral_dry[0]", r.cg_lateral_dry[0])?;
+        finite("rocket.cg_lateral_dry[1]", r.cg_lateral_dry[1])?;
+        non_negative("rocket.roughness", r.roughness)?;
+        non_negative("rocket.extra_cd", r.extra_cd)?;
+        if let Some(o) = &r.fin_override {
+            for (k, v) in [("root_chord", o.root_chord), ("tip_chord", o.tip_chord), ("span", o.span), ("thickness", o.thickness)] {
+                if let Some(v) = v {
+                    non_negative(&format!("rocket.fin_override.{k}"), v)?;
+                }
+            }
+            for (k, v) in [("sweep", o.sweep), ("x_le_root", o.x_le_root), ("cant_deg", o.cant_deg)] {
+                if let Some(v) = v {
+                    finite(&format!("rocket.fin_override.{k}"), v)?;
+                }
+            }
+        }
+        if let Some(a) = m.aft_x {
+            non_negative("motor.aft_x", a)?;
+        }
+        non_negative("motor.nozzle_exit_diameter", m.nozzle_exit_diameter)?;
+        if let Some(p) = m.propellant_mass {
+            non_negative("motor.propellant_mass", p)?;
+        }
+        finite("motor.misalignment_deg", m.misalignment_deg)?;
+        finite("motor.misalignment_azimuth_deg", m.misalignment_azimuth_deg)?;
+        finite("motor.misalignment_offset[0]", m.misalignment_offset[0])?;
+        finite("motor.misalignment_offset[1]", m.misalignment_offset[1])?;
+
+        range("launch.latitude", l.latitude, -90.0, 90.0)?;
+        range("launch.longitude", l.longitude, -180.0, 180.0)?;
+        finite("launch.altitude", l.altitude)?;
+        positive("launch.rail_length", l.rail_length)?;
+        if !(l.elevation_deg.is_finite() && l.elevation_deg > 0.0 && l.elevation_deg <= 90.0) {
+            bail!("launch.elevation_deg must be in (0, 90], found {}", l.elevation_deg);
+        }
+        finite("launch.azimuth_deg", l.azimuth_deg)?;
+        finite("launch.roll_deg", l.roll_deg)?;
+        non_negative("recovery.cd_s", self.recovery.cd_s)?;
+        non_negative("recovery.delay", self.recovery.delay)?;
+
+        let a = &self.aero;
+        non_negative("aero.mach_min", a.mach_min)?;
+        finite("aero.mach_max", a.mach_max)?;
+        if a.mach_max <= a.mach_min {
+            bail!("aero.mach_max ({}) must be greater than aero.mach_min ({})", a.mach_max, a.mach_min);
+        }
+        positive("aero.mach_step", a.mach_step)?;
+        positive("aero.alpha_max_deg", a.alpha_max_deg)?;
+        positive("aero.alpha_step_deg", a.alpha_step_deg)?;
+        positive("aero.general_mach_step", a.general_mach_step)?;
+        if a.n_slices == 0 {
+            bail!("aero.n_slices must be at least 1");
+        }
+        non_negative("aero.fin_threshold", a.fin_threshold)?;
+
+        let w = &self.wind;
+        non_negative("wind.speed", w.speed)?;
+        finite("wind.direction_deg", w.direction_deg)?;
+        positive("wind.ref_height", w.ref_height)?;
+        positive("wind.exponent", w.exponent)?;
+        positive("wind.roughness_length", w.roughness_length)?;
+        positive("wind.ground_blend_height", w.ground_blend_height)?;
+
+        let s = &self.sim;
+        positive("sim.dt", s.dt)?;
+        positive("sim.max_time", s.max_time)?;
+        positive("sim.output_interval", s.output_interval)?;
+        positive("sim.rtol", s.rtol)?;
+        positive("sim.atol", s.atol)?;
+
+        let d = &self.dispersion;
+        for (i, v) in d.wind_speeds.iter().enumerate() {
+            non_negative(&format!("dispersion.wind_speeds[{i}]"), *v)?;
+        }
+        let mc = &d.monte_carlo;
+        for (k, v) in [
+            ("thrust_scale", mc.thrust_scale),
+            ("burn_time_scale", mc.burn_time_scale),
+            ("dry_mass", mc.dry_mass),
+            ("cg", mc.cg),
+            ("cn_scale", mc.cn_scale),
+            ("ca_scale", mc.ca_scale),
+            ("elevation_deg", mc.elevation_deg),
+            ("azimuth_deg", mc.azimuth_deg),
+            ("wind_speed", mc.wind_speed),
+            ("wind_direction_deg", mc.wind_direction_deg),
+            ("parachute_cd_s_scale", mc.parachute_cd_s_scale),
+            ("thrust_misalignment_deg", mc.thrust_misalignment_deg),
+            ("thrust_offset", mc.thrust_offset),
+            ("fin_cant_deg", mc.fin_cant_deg),
+            ("cg_lateral", mc.cg_lateral),
+            ("cl_scale", mc.cl_scale),
+            ("clp_scale", mc.clp_scale),
+        ] {
+            non_negative(&format!("dispersion.monte_carlo.{k} (1-sigma)"), v)?;
+        }
+        Ok(())
+    }
+
     fn validate(&self) -> Result<()> {
+        self.validate_numbers()?;
         if !matches!(self.rocket.fin_le.as_str(), "rounded" | "sharp") {
             bail!("rocket.fin_le must be \"rounded\" or \"sharp\"");
         }
@@ -546,5 +690,77 @@ mod tests {
     fn table_method_requires_table() {
         let text = include_str!("../../../examples/sample.toml").replace("method = \"barrowman\"", "method = \"table\"");
         assert!(parse(&text).unwrap_err().to_string().contains("aero.table"));
+    }
+
+    fn sample_with(from: &str, to: &str) -> Result<Config> {
+        let sample = include_str!("../../../examples/sample.toml");
+        assert!(sample.contains(from), "sample has no `{from}`");
+        parse(&sample.replacen(from, to, 1))
+    }
+
+    #[test]
+    fn rejects_out_of_range_and_non_finite_numbers() {
+        let sample = include_str!("../../../examples/sample.toml");
+        let key_of = |line_start: &str| {
+            sample.lines().find(|l| l.trim_start().starts_with(line_start)).unwrap_or_else(|| panic!("no line {line_start}")).split('#').next().unwrap().trim_end().to_string()
+        };
+        // (existing line prefix, replacement line, expected key in the message)
+        let cases = [
+            ("latitude", "latitude = 91.0", "launch.latitude"),
+            ("longitude", "longitude = 181.0", "launch.longitude"),
+            ("latitude", "latitude = nan", "launch.latitude"),
+            ("elevation_deg", "elevation_deg = 0.0", "launch.elevation_deg"),
+            ("elevation_deg", "elevation_deg = 95.0", "launch.elevation_deg"),
+            ("rail_length", "rail_length = 0.0", "launch.rail_length"),
+            ("azimuth_deg = 270", "azimuth_deg = inf", "launch.azimuth_deg"),
+            ("dry_mass", "dry_mass = -1.0", "rocket.dry_mass"),
+            ("dry_mass", "dry_mass = nan", "rocket.dry_mass"),
+            ("cg_dry", "cg_dry = nan", "rocket.cg_dry"),
+            ("cg_dry", "cg_dry = -0.1", "rocket.cg_dry"),
+            ("cd_s", "cd_s = -1.0", "recovery.cd_s"),
+            ("max_time", "max_time = 0.0", "sim.max_time"),
+            ("dt", "dt = 0.0", "sim.dt"),
+            ("output_interval", "output_interval = inf", "sim.output_interval"),
+            ("rtol", "rtol = -1.0", "sim.rtol"),
+            ("atol", "atol = 0.0", "sim.atol"),
+            ("speed", "speed = -1.0", "wind.speed"),
+            ("mach_min", "mach_min = -0.1", "aero.mach_min"),
+            ("mach_max", "mach_max = 0.0", "aero.mach_max"),
+            ("alpha_max_deg", "alpha_max_deg = 0.0", "aero.alpha_max_deg"),
+            ("alpha_step_deg", "alpha_step_deg = 0.0", "aero.alpha_step_deg"),
+            ("roughness =", "roughness = -1e-6", "rocket.roughness"),
+            ("extra_cd", "extra_cd = -0.1", "rocket.extra_cd"),
+            ("stl_scale", "stl_scale = 0.0", "rocket.stl_scale"),
+        ];
+        for (prefix, line, key) in cases {
+            let old = key_of(prefix);
+            let e = parse(&sample.replacen(&old, line, 1)).err().unwrap_or_else(|| panic!("`{line}` was accepted")).to_string();
+            assert!(e.contains(key), "`{line}`: {e}");
+        }
+    }
+
+    #[test]
+    fn rejects_bad_motor_and_monte_carlo_values() {
+        let sample = include_str!("../../../examples/sample.toml");
+        // The six new sigmas are commented out in the sample, so they are added under the header.
+        for (line, key) in [
+            ("thrust_misalignment_deg = -1.0", "thrust_misalignment_deg"),
+            ("thrust_offset = -0.001", "thrust_offset"),
+            ("fin_cant_deg = -0.2", "fin_cant_deg"),
+            ("cg_lateral = nan", "cg_lateral"),
+            ("cl_scale = -0.1", "cl_scale"),
+            ("clp_scale = -0.1", "clp_scale"),
+        ] {
+            let e = parse(&sample.replace("[dispersion.monte_carlo]", &format!("[dispersion.monte_carlo]\n{line}"))).err().unwrap_or_else(|| panic!("{line} accepted")).to_string();
+            assert!(e.contains(key), "{line}: {e}");
+        }
+        let e = parse(&sample.replace("wind_speed = 1.0 ", "wind_speed = -1.0 ")).unwrap_err().to_string();
+        assert!(e.contains("monte_carlo.wind_speed"), "{e}");
+        assert!(sample_with("nozzle_exit_diameter = 0.03", "nozzle_exit_diameter = -0.03").unwrap_err().to_string().contains("motor.nozzle_exit_diameter"));
+    }
+
+    #[test]
+    fn default_max_time_is_one_hour() {
+        assert_eq!(SimCfg::default().max_time, 3600.0);
     }
 }

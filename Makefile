@@ -3,7 +3,9 @@
 # Convenience wrapper. CONFIG selects the configuration file.
 CONFIG ?= examples/sample.toml
 BIN = target/release/ignisyeet
-OUT ?= $(dir $(CONFIG))out
+# Output directory: [output] dir of the configuration, relative to the configuration file.
+OUT_RAW = $(shell awk '/^\[/{s=($$0 ~ /^\[output\]/)} s && /^dir[ \t]*=/{match($$0,/"[^"]*"/); print substr($$0,RSTART+1,RLENGTH-2); exit}' $(CONFIG))
+OUT ?= $(if $(filter /%,$(OUT_RAW)),$(OUT_RAW),$(dir $(CONFIG))$(if $(OUT_RAW),$(OUT_RAW),out))
 # Plot command; without uv: make plot PLOT="python python/plot.py" (inside a venv with python/requirements.txt)
 PLOT ?= uv run --project python python/plot.py
 

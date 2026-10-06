@@ -207,16 +207,16 @@ make all                        # uses examples/sample.toml
 make all CONFIG=my/rocket.toml  # to use your own configuration file
 ```
 
-`make all` is equivalent to running the following commands in order.
+`make all` runs the targets `aero`, `sim`, `dispersion` and `plot` in order; the plots are read from the `output.dir` of the configuration file. The equivalent commands are as follows.
 
 ```sh
-./target/release/ignisyeet geom       examples/sample.toml   # geometry.json, profile.csv
 ./target/release/ignisyeet aero       examples/sample.toml   # aero_table.csv/.json, aero_drag.csv
 ./target/release/ignisyeet sim        examples/sample.toml   # trajectory.csv, summary.json
-./target/release/ignisyeet sim        examples/sample.toml --descent ballistic
 ./target/release/ignisyeet dispersion examples/sample.toml   # dispersion.csv
 uv run --project python python/plot.py all examples/out      # plots/*.png
 ```
+
+`make geom` extracts the geometry on its own (geometry.json, profile.csv), and `sim --descent ballistic` flies the ballistic descent.
 
 To plot with `pip` instead of uv, create a virtual environment first.
 

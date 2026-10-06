@@ -243,6 +243,21 @@ pub fn geometry_detail(g: &Geometry) -> String {
     format!("L {:.3} m {d} D {:.4} m {d} {fins}", g.length, 2.0 * g.ref_radius, d = ui().g().dot)
 }
 
+/// (CNa [/rad], Xcp [m], CA power-off, CA power-on) at `mach` for alpha -> 0. A general table has no
+/// axisymmetric lookup, so CNa and Xcp come from its six-component coefficients at a small angle of attack.
+fn preview(t: &AeroTable, mach: f64) -> (f64, f64, f64, f64) {
+    if t.kind() == aero::table::TableKind::Axisymmetric {
+        let c = t.lookup(mach, 0.0);
+        return (c.cna, c.xcp, c.ca_off, c.ca_on);
+    }
+    let a = 1f64.to_radians();
+    let c = t.lookup6(mach, a, 0.0);
+    let cna = c.cz.abs() / a;
+    let xcp = if c.cz.abs() > 1e-12 { c.cm * t.meta.ref_diameter / c.cz } else { f64::NAN };
+    let c0 = t.lookup6(mach, 0.0, 0.0);
+    (cna, xcp, -c0.cx_off, -c0.cx_on)
+}
+
 /// Coefficient preview of an aerodynamic table (alpha -> 0).
 pub fn table_panel(t: &AeroTable, elapsed: Option<Duration>) -> Panel {
     let s = sep();
@@ -259,14 +274,14 @@ pub fn table_panel(t: &AeroTable, elapsed: Option<Duration>) -> Panel {
         if target < lo - 1e-9 || target > hi + 1e-9 {
             continue;
         }
-        let c = t.lookup(target, 0.0);
+        let (cna, xcp, ca_off, ca_on) = preview(t, target);
         p.text(format!(
             "{}{}{}{}{}",
             pad_left(&style(format!("{target:.1}")).cyan().bold().to_string(), 6),
-            pad_left(&format!("{:.3}", c.cna), 13),
-            pad_left(&format!("{:.4}", c.xcp), 11),
-            pad_left(&format!("{:.3}", c.ca_off), 15),
-            pad_left(&format!("{:.3}", c.ca_on), 14)
+            pad_left(&format!("{cna:.3}"), 13),
+            pad_left(&format!("{xcp:.4}"), 11),
+            pad_left(&format!("{ca_off:.3}"), 15),
+            pad_left(&format!("{ca_on:.3}"), 14)
         ));
     }
     p
@@ -294,6 +309,10 @@ pub fn flight_panel(sm: &Summary, descent: Descent, g_lat_lon: bool) -> Panel {
     p.row("max speed", format!("{} {}{s}max q {}", style(format!("{:.1} m/s", sm.max_speed)).bold().yellow(), dim(format!("(Mach {:.2})", sm.max_mach)), val(format!("{:.1}", sm.max_dyn_pressure / 1000.0), "kPa")));
     p.row("min stability", stability(sm.min_stability_cal));
     p.row("apogee", format!("{} {}{s}at {}", style(format!("{:.1} m", sm.apogee)).bold().green(), dim("AGL"), val(format!("{:.2}", sm.apogee_time), "s")));
+    if !sm.landed() {
+        p.row("landing", style("DID NOT LAND within sim.max_time").red().bold().to_string());
+        return p;
+    }
     p.row("landing", format!("E {} N {}{s}{} downrange", val(format!("{:.1}", sm.landing_east), "m"), val(format!("{:.1}", sm.landing_north), "m"), style(format!("{:.0} m", sm.landing_distance)).bold().cyan()));
     p.row("", format!("t = {}{s}impact speed {}", val(format!("{:.1}", sm.landing_time), "s"), val(format!("{:.1}", sm.landing_speed), "m/s")));
     if g_lat_lon {
@@ -318,17 +337,27 @@ pub fn wind_grid_panel(cases: &[Case], results: &[Summary], elapsed: Duration) -
     }
     for &m in &modes {
         let idx: Vec<usize> = (0..cases.len()).filter(|&i| cases[i].descent == m).collect();
-        let (worst, far) = idx.iter().map(|&i| (i, results[i].landing_distance)).fold((idx[0], 0.0), |a, b| if b.1 > a.1 { b } else { a });
-        let mean = idx.iter().map(|&i| results[i].landing_distance).sum::<f64>() / idx.len() as f64;
+        let landed: Vec<usize> = idx.iter().copied().filter(|&i| results[i].landed()).collect();
+        let failed = idx.len() - landed.len();
         let nm = if m == Descent::Ballistic { style("ballistic").red() } else { style("parachute").green() };
+        if landed.is_empty() {
+            p.text(format!("{}{}{}", pad(&nm.bold().to_string(), w[0]), pad_left(&idx.len().to_string(), w[1]), style("  NO CASE LANDED").red().bold()));
+            continue;
+        }
+        let (worst, far) = landed.iter().map(|&i| (i, results[i].landing_distance)).fold((landed[0], 0.0), |a, b| if b.1 > a.1 { b } else { a });
+        let mean = landed.iter().map(|&i| results[i].landing_distance).sum::<f64>() / landed.len() as f64;
+        let far_txt = if failed > 0 { format!("\u{2265} {far:.1} m") } else { format!("{far:.1} m") };
         p.text(format!(
             "{}{}{}{}{}",
             pad(&nm.bold().to_string(), w[0]),
             pad_left(&idx.len().to_string(), w[1]),
-            pad_left(&style(format!("{far:.1} m")).bold().cyan().to_string(), w[2]),
+            pad_left(&style(far_txt).bold().cyan().to_string(), w[2]),
             pad_left(&format!("{mean:.1} m"), w[3]),
             pad_left(&dim(format!("{:.0} m/s from {:.0} deg", cases[worst].wind_speed, cases[worst].wind_direction_deg)).to_string(), w[4])
         ));
+        if failed > 0 {
+            p.text(style(format!("  {failed} of {} cases did not land: the maximum is a lower bound", idx.len())).red().bold().to_string());
+        }
     }
     p
 }
@@ -341,8 +370,11 @@ pub fn monte_carlo_panel(sm: &McSummary, elapsed: Duration, n_rows: usize) -> Pa
     for d in &sm.descents {
         let nm = if d.descent == Descent::Ballistic { style("Ballistic").red().bold() } else { style("Parachute").green().bold() };
         p.section(&nm.to_string());
-        let failed = if d.failed > 0 { style(format!("{} failed", d.failed)).red().to_string() } else { dim("0 failed").to_string() };
+        let failed = if d.failed > 0 { style(format!("{} failed or did not land", d.failed)).red().bold().to_string() } else { dim("0 failed").to_string() };
         p.row("samples", format!("{} ok{s}{failed}", val(d.landing.n, "")));
+        if !d.complete {
+            p.row("", style("STATISTICS INCOMPLETE (missing samples excluded)").red().bold().to_string());
+        }
         if d.landing.n == 0 {
             continue;
         }
@@ -351,7 +383,9 @@ pub fn monte_carlo_panel(sm: &McSummary, elapsed: Duration, n_rows: usize) -> Pa
         p.row("apogee", format!("{} {} {}", style(format!("{:.1} m", d.apogee_mean)).bold().green(), dim("+-"), val(format!("{:.1}", d.apogee_std), "m")));
         p.row("1-sigma", format!("{} x {}{s}bearing {} deg", val(format!("{:.1}", e1.semi_major), "m"), val(format!("{:.1}", e1.semi_minor), "m"), val(format!("{:.0}", e1.major_axis_bearing_deg), "")));
         p.row("3-sigma", format!("{} x {}", val(format!("{:.1}", e3.semi_major), "m"), val(format!("{:.1}", e3.semi_minor), "m")));
-        p.row("max landing", format!("{}  {}", style(format!("{:.1} m", d.max_landing_distance)).bold().cyan(), dim(format!("(sample {})", d.max_landing_distance_sample.unwrap_or(0)))));
+        let bound = if d.max_landing_distance_is_lower_bound { "\u{2265} " } else { "" };
+        p.row("max landing", format!("{}  {}", style(format!("{bound}{:.1} m", d.max_landing_distance)).bold().cyan(), dim(format!("(sample {})", d.max_landing_distance_sample.unwrap_or(0)))));
+        p.row("distance", format!("P50 {}{s}P90 {}{s}P99 {}", val(format!("{:.1}", d.landing_distance_p50), "m"), val(format!("{:.1}", d.landing_distance_p90), "m"), val(format!("{:.1}", d.landing_distance_p99), "m")));
     }
     p
 }
@@ -369,6 +403,31 @@ mod tests {
         let lines = ui().render_panel(&p).join("\n");
         let plain = console::strip_ansi_codes(&lines).to_string();
         assert!(plain.contains("dop853") && plain.contains("attitude lie_group") && plain.contains("rtol"), "{plain}");
+    }
+
+    #[test]
+    fn table_panel_renders_a_general_table() {
+        let meta = aero::table::TableMeta {
+            source_hash: String::new(),
+            ref_area: 0.01,
+            ref_diameter: 0.1,
+            length: 1.0,
+            machs: vec![0.0, 3.0],
+            alphas_deg: vec![0.0, 30.0],
+            extrapolation: aero::Extrapolation::Clamp,
+            ..Default::default()
+        };
+        let axi = AeroTable::from_fn(meta, |_, a| aero::AeroCoeffs { cn: 3.0 * a.to_radians(), ca_off: 0.4, ca_on: 0.3, xcp: 0.7, cna: 3.0, ..Default::default() });
+        let general = axi.to_general(aero::table::angle_axis(30.0, 30.0, 2.0, 10.0), aero::table::angle_axis(30.0, 30.0, 2.0, 10.0));
+        assert_eq!(general.kind(), aero::table::TableKind::General);
+        let plain = |t: &AeroTable| console::strip_ansi_codes(&ui().render_panel(&table_panel(t, None)).join("\n")).to_string();
+        let g = plain(&general);
+        assert!(g.contains("0.7000") && g.contains("0.400") && g.contains("0.300"), "{g}");
+        // Same preview as the axisymmetric table it was expanded from (CNa within the one-degree finite difference).
+        let a = plain(&axi);
+        assert!(a.contains("0.7000"), "{a}");
+        let (cna, xcp, _, _) = preview(&general, 0.3);
+        assert!((cna - 3.0).abs() < 0.05 && (xcp - 0.7).abs() < 1e-6, "{cna} {xcp}");
     }
 }
 

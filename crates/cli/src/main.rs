@@ -11,7 +11,7 @@ use clap::{Parser, Subcommand};
 use config::Config;
 use geom::{ExtractOptions, Geometry};
 use serde::Serialize;
-use sim::{Descent, Motor, Simulation};
+use sim::{Descent, Motor, Simulation, Summary};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use ui::ui;
@@ -32,7 +32,9 @@ const LONG_VERSION: &str = concat!(
     version,
     long_version = LONG_VERSION,
     about = "IgnisYeet by 西濱大将 (NISHIHAMA Daisuke): STL-based rocket aerodynamics, 6-DoF trajectory and landing dispersion",
-    after_help = "Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke). License GPL-3.0-or-later: <https://www.gnu.org/licenses/>. This is free software; there is NO WARRANTY."
+    after_help = "Exit status: 0 success; 1 error (invalid configuration, missing input, failed step); 2 usage error; \
+3 the run finished and wrote its outputs but the results are incomplete (a flight did not land within sim.max_time, or dispersion cases/samples failed or did not land).\n\n\
+Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke). License GPL-3.0-or-later: <https://www.gnu.org/licenses/>. This is free software; there is NO WARRANTY."
 )]
 struct Cli {
     /// Only print errors and the paths of the written files.
@@ -55,14 +57,14 @@ enum Cmd {
         #[arg(long)]
         force: bool,
     },
-    /// Run one 6-DoF flight with the configured wind (writes trajectory.csv, summary.json).
+    /// Run one 6-DoF flight with the configured wind (writes trajectory.csv, summary.json). Exits with status 3 when the rocket did not land within sim.max_time.
     Sim {
         config: PathBuf,
         /// Override the descent mode.
         #[arg(long, value_parser = parse_descent)]
         descent: Option<Descent>,
     },
-    /// Landing dispersion: wind speed x direction grid (dispersion.csv) or Monte Carlo (dispersion_mc.csv, dispersion_summary.json).
+    /// Landing dispersion: wind speed x direction grid (dispersion.csv) or Monte Carlo (dispersion_mc.csv, dispersion_summary.json). Exits with status 3 when any case or sample failed or did not land.
     Dispersion { config: PathBuf },
     /// Check that the CFD tools (SU2, MPI, gmsh) are installed and report their versions.
     CfdCheck {
@@ -125,9 +127,13 @@ fn cfd_budget(cfg: &Config) -> cfd::ResourceBudget {
     cfd::ResourceBudget { threads: r.threads, memory_bytes: r.memory_bytes }
 }
 
+/// Exit status of a run that finished and wrote its outputs but whose results are incomplete.
+const EXIT_INCOMPLETE: i32 = 3;
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     ui::init(cli.quiet, cli.no_progress);
+    let mut incomplete: Option<String> = None;
     match cli.cmd {
         Cmd::Geom { config } => {
             let cfg = load_config(&config)?;
@@ -137,6 +143,7 @@ fn main() -> Result<()> {
             write_geometry(&cfg, &g)?;
             step.done(&view::geometry_detail(&g));
             show_geometry(&g, true);
+            print_warnings(&size_warnings(&cfg, g.length, 2.0 * g.ref_radius));
         }
         Cmd::Aero { config, force } => {
             let cfg = load_config(&config)?;
@@ -146,12 +153,12 @@ fn main() -> Result<()> {
         Cmd::Sim { config, descent } => {
             let cfg = load_config(&config)?;
             begin(&cfg, &config, Sub::Sim);
-            run_sim(&cfg, descent)?
+            incomplete = run_sim(&cfg, descent)?
         }
         Cmd::Dispersion { config } => {
             let cfg = load_config(&config)?;
             begin(&cfg, &config, Sub::Dispersion);
-            run_dispersion(&cfg)?
+            incomplete = run_dispersion(&cfg)?
         }
         Cmd::CfdCheck { config, mesh } => {
             let cfg = load_config(&config)?;
@@ -173,6 +180,10 @@ fn main() -> Result<()> {
         }
     }
     ui().finish();
+    if let Some(why) = incomplete {
+        eprintln!("ignisyeet: INCOMPLETE RESULTS: {why} (exit status {EXIT_INCOMPLETE})");
+        std::process::exit(EXIT_INCOMPLETE);
+    }
     Ok(())
 }
 
@@ -190,6 +201,79 @@ fn begin(cfg: &Config, config_path: &Path, sub: Sub) {
     let motor = if matches!(sub, Sub::Sim | Sub::Dispersion) { load_motor(cfg).ok() } else { None };
     ui().print_panel(&view::config_panel(cfg, config_path, sub, motor.as_ref()));
     println!();
+}
+
+/// Prints sanity warnings in every output mode (stdout in plain and rich mode, stderr in quiet mode).
+fn print_warnings(warnings: &[String]) {
+    for w in warnings {
+        match ui().mode {
+            ui::Mode::Quiet => eprintln!("warning: {w}"),
+            _ => ui().warn(w),
+        }
+    }
+}
+
+/// Plausible size range of a rocket body; outside it `rocket.stl_scale` is most likely wrong.
+const LENGTH_RANGE: (f64, f64) = (0.1, 30.0);
+const DIAMETER_RANGE: (f64, f64) = (0.005, 3.0);
+
+/// Warnings about the size of the body (`length`, `diameter` in metres).
+fn size_warnings(cfg: &Config, length: f64, diameter: f64) -> Vec<String> {
+    let mut w = Vec::new();
+    if !(LENGTH_RANGE.0..=LENGTH_RANGE.1).contains(&length) {
+        w.push(format!(
+            "body length {length:.4} m is outside the plausible {}-{} m range: check rocket.stl_scale (now {}; 0.001 converts millimetres to metres)",
+            LENGTH_RANGE.0, LENGTH_RANGE.1, cfg.rocket.stl_scale
+        ));
+    }
+    if !(DIAMETER_RANGE.0..=DIAMETER_RANGE.1).contains(&diameter) {
+        w.push(format!(
+            "body diameter {diameter:.4} m is outside the plausible {}-{} m range: check rocket.stl_scale (now {})",
+            DIAMETER_RANGE.0, DIAMETER_RANGE.1, cfg.rocket.stl_scale
+        ));
+    }
+    w
+}
+
+/// Height above ground up to which the power-law and log wind profiles are meaningful [m].
+const WIND_VALID_HEIGHT: f64 = 1000.0;
+
+/// Warnings about the flight itself: static margin, centre of pressure, wind-model validity, no landing.
+fn flight_warnings(cfg: &Config, s: &Summary) -> Vec<String> {
+    let mut w = Vec::new();
+    if !s.landed() {
+        w.push(format!(
+            "THE FLIGHT DID NOT LAND within sim.max_time = {} s: there is no landing point; raise sim.max_time or check the descent (parachute, drag area, launch angle)",
+            cfg.sim.max_time
+        ));
+    }
+    let margins = [s.min_stability_cal, s.stability_at_rail_exit].into_iter().filter(|m| m.is_finite());
+    if let Some(m) = margins.min_by(f64::total_cmp) {
+        if m < 0.0 {
+            w.push(format!("static margin {m:.2} cal is negative: the centre of pressure is forward of the CG, the rocket is UNSTABLE"));
+        } else if m < 1.0 {
+            w.push(format!("minimum static margin {m:.2} cal is below 1.0 cal: the rocket is UNSTABLE"));
+        } else if m < 1.5 {
+            w.push(format!("minimum static margin {m:.2} cal is below the recommended 1.5 cal (marginal)"));
+        }
+    }
+    let wind = &cfg.wind;
+    if matches!(wind.model, sim::WindModel::Power | sim::WindModel::Log) && s.apogee > WIND_VALID_HEIGHT {
+        w.push(format!(
+            "apogee {:.0} m is above {WIND_VALID_HEIGHT:.0} m, the validity height of the {:?} wind profile: the profile is extrapolated there, and wind.speed = {} m/s is the speed at wind.ref_height = {} m, so the winds aloft and the landing point are model-dependent",
+            s.apogee, wind.model, wind.speed, wind.ref_height
+        ));
+    }
+    w
+}
+
+/// An error when the dry CG lies outside the body (`length` in metres, CG measured aft of the nose tip).
+fn check_cg(cfg: &Config, length: f64) -> Result<()> {
+    let cg = cfg.rocket.cg_dry;
+    if cg > length {
+        anyhow::bail!("rocket.cg_dry = {cg} m is outside the body: it is measured aft of the nose tip and the body is {length:.4} m long (check rocket.stl_scale and the unit of cg_dry)");
+    }
+    Ok(())
 }
 
 fn load_motor(cfg: &Config) -> Result<Motor> {
@@ -251,6 +335,7 @@ fn geometry(cfg: &Config) -> Result<Geometry> {
     if let Some(f) = g.fins.as_mut() {
         f.cant_deg = cfg.rocket.cant_deg();
     }
+    check_cg(cfg, g.length)?;
     Ok(g)
 }
 
@@ -314,6 +399,30 @@ fn aero_options(cfg: &Config) -> AeroOptions {
     }
 }
 
+/// Version of the aerodynamic model and of the table layout. Bump it whenever a change of the code
+/// alters the coefficients computed from the same inputs, so that older cached tables are rebuilt.
+const MODEL_VERSION: u32 = 2;
+
+/// The part of the aero settings that determines the table: unused method blocks and the
+/// resource/path-only CFD fields do not change the coefficients and are left out.
+fn aero_inputs(cfg: &Config) -> Result<serde_json::Value> {
+    let mut v = serde_json::to_value(&cfg.aero)?;
+    if let Some(o) = v.as_object_mut() {
+        o.remove("table");
+        if cfg.aero.method != config::AeroMethod::Panel {
+            o.remove("panel");
+        }
+        if cfg.aero.method != config::AeroMethod::Cfd {
+            o.remove("cfd");
+        } else if let Some(c) = o.get_mut("cfd").and_then(|c| c.as_object_mut()) {
+            for k in ["prefix", "su2", "mpi", "ranks_per_case", "parallel_cases", "timeout_minutes", "workdir"] {
+                c.remove(k);
+            }
+        }
+    }
+    Ok(v)
+}
+
 fn source_hash(cfg: &Config) -> Result<String> {
     let mut h = 0xcbf2_9ce4_8422_2325u64;
     fnv1a(&mut h, &std::fs::read(cfg.resolve(&cfg.rocket.stl))?);
@@ -323,23 +432,70 @@ fn source_hash(cfg: &Config) -> Result<String> {
         nose: &'a str,
         fins: &'a Option<config::FinOverride>,
         cant_deg: f64,
-        aero: &'a config::AeroCfg,
+        aero: serde_json::Value,
         atmosphere: &'a sim::AtmosphereConfig,
         opt: AeroOptions,
         version: &'a str,
+        model_version: u32,
     }
     let inputs = Inputs {
         scale: cfg.rocket.stl_scale,
         nose: &cfg.rocket.nose_direction,
         fins: &cfg.rocket.fin_override,
         cant_deg: cfg.rocket.cant_deg(),
-        aero: &cfg.aero,
+        aero: aero_inputs(cfg)?,
         atmosphere: &cfg.atmosphere,
         opt: aero_options(cfg),
         version: env!("CARGO_PKG_VERSION"),
+        model_version: MODEL_VERSION,
     };
     fnv1a(&mut h, serde_json::to_string(&inputs)?.as_bytes());
     Ok(format!("{h:016x}"))
+}
+
+/// Which result file a run hash belongs to; each depends on the part of the configuration that produced it.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RunKind {
+    Flight,
+    WindGrid,
+    MonteCarlo,
+}
+
+/// Identifies the configuration (and the input files) a result was computed with: written into
+/// summary.json, dispersion_meta.json and dispersion_summary.json, and compared when the KML is
+/// assembled from files of earlier runs. Output location and resources do not enter.
+fn run_hash(cfg: &Config, kind: RunKind) -> String {
+    let mut v = serde_json::to_value(cfg).unwrap_or_default();
+    if let Some(o) = v.as_object_mut() {
+        o.remove("output");
+        o.remove("resources");
+        match kind {
+            RunKind::Flight => {
+                o.remove("dispersion");
+            }
+            RunKind::WindGrid | RunKind::MonteCarlo => {
+                if let Some(d) = o.get_mut("dispersion").and_then(|d| d.as_object_mut()) {
+                    d.remove("mode");
+                    let drop: &[&str] = if kind == RunKind::WindGrid { &["monte_carlo"] } else { &["wind_speeds", "directions"] };
+                    for k in drop {
+                        d.remove(*k);
+                    }
+                }
+            }
+        }
+    }
+    let mut h = 0xcbf2_9ce4_8422_2325u64;
+    fnv1a(&mut h, v.to_string().as_bytes());
+    fnv1a(&mut h, env!("CARGO_PKG_VERSION").as_bytes());
+    fnv1a(&mut h, &MODEL_VERSION.to_le_bytes());
+    let mut files = vec![cfg.resolve(&cfg.rocket.stl), cfg.resolve(&cfg.motor.eng)];
+    files.extend(cfg.wind.profile.as_deref().map(|p| cfg.resolve(p)));
+    files.extend(cfg.aero.table.as_deref().map(|p| cfg.resolve(p)));
+    for f in files {
+        // An unreadable file hashes as empty: the run itself reports the real error.
+        fnv1a(&mut h, &std::fs::read(&f).unwrap_or_default());
+    }
+    format!("{h:016x}")
 }
 
 /// Load the cached table when its inputs are unchanged, otherwise rebuild and save it.
@@ -556,7 +712,7 @@ fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
         }
     } else {
         println!("CFD mode is not available: {}", cfd::not_installed_message(&r, opt).lines().next().unwrap_or(""));
-        return Ok(());
+        anyhow::bail!("CFD tools are missing");
     }
     if mesh {
         let g = geometry(cfg)?;
@@ -649,6 +805,7 @@ struct Prepared {
 
 fn prepare(cfg: &Config) -> Result<Prepared> {
     let table = aero_table(cfg, false)?;
+    check_cg(cfg, table.meta.length)?;
     let motor = load_motor(cfg)?;
     let motor_aft_x = cfg.motor.aft_x.unwrap_or(table.meta.length);
     Ok(Prepared { table, motor, motor_aft_x })
@@ -741,7 +898,9 @@ fn fly(cfg: &Config, sim: &Simulation, descent: Descent) -> Result<sim::SimResul
     r
 }
 
-fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<()> {
+/// Flies once and writes trajectory.csv, summary.json and the KML. Returns why the results are
+/// incomplete (the flight did not land), which makes the process exit with [`EXIT_INCOMPLETE`].
+fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
     let u = ui();
     let p = prepare(cfg)?;
     let descent = descent.unwrap_or_else(|| default_descent(cfg));
@@ -753,24 +912,47 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<()> {
     u.done_line("Flight simulated", &format!("{descent:?}, {} samples, {} RHS evals", r.samples.len(), r.evals), t0.elapsed());
     let path = out_path(cfg, "trajectory.csv")?;
     write_trajectory(&path, &r.samples)?;
-    std::fs::write(out_path(cfg, "summary.json")?, serde_json::to_string_pretty(&r.summary)?)?;
     let s = &r.summary;
+    let landed = s.landed();
+    let mut warnings = size_warnings(cfg, p.table.meta.length, p.table.meta.ref_diameter);
+    warnings.extend(flight_warnings(cfg, s));
+    std::fs::write(out_path(cfg, "summary.json")?, serde_json::to_string_pretty(&summary_json(cfg, s, &warnings)?)?)?;
     if u.plain() {
         println!("Flight ({descent:?}, wind {:.1} m/s from {:.0} deg)", s.wind_speed, s.wind_direction_deg);
         println!("  rail exit       {:.2} s, {:.1} m/s, stability {:.2} cal", s.rail_exit_time, s.rail_exit_speed, s.stability_at_rail_exit);
         println!("  max speed       {:.1} m/s (Mach {:.2}), max q {:.1} kPa", s.max_speed, s.max_mach, s.max_dyn_pressure / 1000.0);
         println!("  min stability   {:.2} cal", s.min_stability_cal);
         println!("  apogee          {:.1} m at {:.2} s", s.apogee, s.apogee_time);
-        println!("  landing         {:.1} s, E {:.1} m, N {:.1} m ({:.6}, {:.6}), {:.1} m/s", s.landing_time, s.landing_east, s.landing_north, s.landing_lat, s.landing_lon, s.landing_speed);
+        if landed {
+            println!("  landing         {:.1} s, E {:.1} m, N {:.1} m ({:.6}, {:.6}), {:.1} m/s", s.landing_time, s.landing_east, s.landing_north, s.landing_lat, s.landing_lon, s.landing_speed);
+        } else {
+            println!("  landing         NONE: the rocket did not reach the ground within sim.max_time = {} s", cfg.sim.max_time);
+        }
         println!("  -> {}", path.display());
     } else if u.rich() {
         println!();
         u.print_panel(&view::flight_panel(s, descent, true));
-        if s.min_stability_cal < 1.5 {
-            u.warn(format!("minimum stability {:.2} cal is below the recommended 1.5 cal", s.min_stability_cal));
-        }
     }
-    write_kml(cfg, kml::Parts { flight: Some(kml::Flight { samples: r.samples, summary: r.summary }), ..Default::default() })
+    print_warnings(&warnings);
+    if landed {
+        write_kml(cfg, kml::Parts { flight: Some(kml::Flight { samples: r.samples, summary: r.summary }), ..Default::default() })?;
+        Ok(None)
+    } else {
+        if u.mode != ui::Mode::Quiet {
+            println!("  KML not updated: the flight has no landing point");
+        }
+        Ok(Some(format!("the flight did not land within sim.max_time = {} s", cfg.sim.max_time)))
+    }
+}
+
+/// summary.json: the flight summary plus `landed`, the run's `config_hash` and the sanity `warnings`.
+fn summary_json(cfg: &Config, s: &Summary, warnings: &[String]) -> Result<serde_json::Value> {
+    let mut json = serde_json::to_value(s)?;
+    json["landed"] = s.landed().into();
+    json["max_time"] = cfg.sim.max_time.into();
+    json["config_hash"] = run_hash(cfg, RunKind::Flight).into();
+    json["warnings"] = serde_json::json!(warnings);
+    Ok(json)
 }
 
 /// Writes `ignisyeet.kml`: the parts given are used as they are, the others are read back from the
@@ -782,28 +964,32 @@ fn write_kml(cfg: &Config, mut parts: kml::Parts) -> Result<()> {
     }
     let u = ui();
     let dir = cfg.out_dir();
+    // A file of an earlier run with a different configuration is stale: it is left out and always reported.
     let note = |what: &str, e: String| {
+        let stale = e.starts_with(kml::STALE);
         let msg = format!("KML: {what} left out ({e})");
         match u.mode {
+            ui::Mode::Plain if stale => u.warn(msg),
             ui::Mode::Plain => println!("  {msg}"),
             ui::Mode::Rich => u.warn(msg),
+            ui::Mode::Quiet if stale => eprintln!("warning: {msg}"),
             ui::Mode::Quiet => {}
         }
     };
     if parts.flight.is_none() {
-        match kml::load_flight(&dir) {
+        match kml::load_flight(&dir, &run_hash(cfg, RunKind::Flight)) {
             Ok(f) => parts.flight = f,
             Err(e) => note("flight", e),
         }
     }
     if parts.wind_grid.is_none() {
-        match kml::load_wind_grid(&dir) {
+        match kml::load_wind_grid(&dir, &run_hash(cfg, RunKind::WindGrid)) {
             Ok(w) => parts.wind_grid = w,
             Err(e) => note("wind grid", e),
         }
     }
     if parts.monte_carlo.is_none() {
-        match kml::load_monte_carlo(&dir) {
+        match kml::load_monte_carlo(&dir, &run_hash(cfg, RunKind::MonteCarlo)) {
             Ok(m) => parts.monte_carlo = m,
             Err(e) => note("Monte Carlo", e),
         }
@@ -867,12 +1053,36 @@ impl FarthestLanding {
     }
 }
 
-fn run_dispersion(cfg: &Config) -> Result<()> {
+/// Warnings of the nominal configuration: body size, and stability, wind-model validity and landing of the nominal flight.
+fn nominal_warnings(cfg: &Config, p: &Prepared, base: &Simulation) -> Vec<String> {
+    let mut w = size_warnings(cfg, p.table.meta.length, p.table.meta.ref_diameter);
+    match base.run(Descent::Ballistic, false) {
+        Ok(r) => w.extend(flight_warnings(cfg, &r.summary)),
+        Err(e) => w.push(format!("the nominal flight could not be simulated ({e:#}): stability and wind-model checks were skipped")),
+    }
+    w
+}
+
+/// Max landing distance line of one descent mode of the wind grid; `distances` are those of the cases that landed.
+fn wind_grid_line(mode: Descent, distances: &[f64], cases: usize) -> String {
+    let failed = cases - distances.len();
+    let far = distances.iter().copied().fold(0.0, f64::max);
+    if distances.is_empty() {
+        format!("{mode:?}: NO CASE LANDED ({failed} of {cases} failed): no landing distance available")
+    } else if failed > 0 {
+        format!("{mode:?}: max landing distance \u{2265} {far:.1} m ({failed} of {cases} cases did not land: lower bound)")
+    } else {
+        format!("{mode:?}: max landing distance {far:.1} m")
+    }
+}
+
+fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
     let u = ui();
     let p = prepare(cfg)?;
     let base = simulation(cfg, &p)?;
+    let mut warnings = nominal_warnings(cfg, &p, &base);
     if cfg.dispersion.mode == sim::DispersionMode::MonteCarlo {
-        return run_monte_carlo(cfg, &base);
+        return run_monte_carlo(cfg, &base, warnings);
     }
     let start = std::time::Instant::now();
     let total = sim::dispersion::wind_grid_runs(&cfg.dispersion, cfg.recovery.enabled);
@@ -888,38 +1098,59 @@ fn run_dispersion(cfg: &Config) -> Result<()> {
     } else {
         sim::dispersion::run(&cfg.dispersion, &base, cfg.recovery.enabled)?
     };
+    let mut modes: Vec<Descent> = Vec::new();
+    for c in &cases {
+        if !modes.contains(&c.descent) {
+            modes.push(c.descent);
+        }
+    }
+    let failed = results.iter().filter(|s| !s.landed()).count();
+    if failed > 0 {
+        warnings.push(format!(
+            "{failed} of {} wind-grid cases did not land within sim.max_time = {} s: they are excluded from the landing distances, so the maximum landing distance is only a lower bound",
+            results.len(),
+            cfg.sim.max_time
+        ));
+    }
     let path = out_path(cfg, "dispersion.csv")?;
     write_wind_grid_csv(&path, &results)?;
-    u.done_line("Wind grid", &format!("{} cases", results.len()), start.elapsed());
+    let meta = serde_json::json!({ "config_hash": run_hash(cfg, RunKind::WindGrid), "cases": results.len(), "failed": failed, "warnings": warnings });
+    std::fs::write(out_path(cfg, kml::WIND_GRID_META)?, serde_json::to_string_pretty(&meta)?)?;
+    u.done_line("Wind grid", &format!("{} cases, {failed} failed", results.len()), start.elapsed());
     if u.plain() {
         println!("Dispersion: {} cases in {:.2?} -> {}", results.len(), start.elapsed(), path.display());
-        let mut modes: Vec<Descent> = Vec::new();
-        for c in &cases {
-            if !modes.contains(&c.descent) {
-                modes.push(c.descent);
-            }
-        }
         for &m in &modes {
-            let far = results.iter().filter(|s| s.descent == m).map(|s| s.landing_distance).fold(0.0, f64::max);
-            println!("  {m:?}: max landing distance {far:.1} m");
+            let mine: Vec<&Summary> = results.iter().filter(|s| s.descent == m).collect();
+            let landed: Vec<f64> = mine.iter().filter(|s| s.landed()).map(|s| s.landing_distance).collect();
+            println!("  {}", wind_grid_line(m, &landed, mine.len()));
         }
     } else if u.rich() {
         println!();
         u.print_panel(&view::wind_grid_panel(&cases, &results, start.elapsed()));
     }
-    write_kml(cfg, kml::Parts { wind_grid: Some(kml::WindGrid { cases, results }), ..Default::default() })
+    print_warnings(&warnings);
+    let incomplete = (failed > 0).then(|| format!("{failed} of {} wind-grid cases did not land", results.len()));
+    let (cases, results): (Vec<_>, Vec<_>) = cases.into_iter().zip(results).filter(|(_, s)| s.landed()).unzip();
+    if results.is_empty() {
+        if u.mode != ui::Mode::Quiet {
+            println!("  KML: wind grid left out (no case landed)");
+        }
+        return Ok(incomplete);
+    }
+    write_kml(cfg, kml::Parts { wind_grid: Some(kml::WindGrid { cases, results }), ..Default::default() })?;
+    Ok(incomplete)
 }
 
 fn write_wind_grid_csv(path: &Path, results: &[sim::Summary]) -> Result<()> {
     let mut f = std::io::BufWriter::new(std::fs::File::create(path)?);
-    writeln!(f, "descent,wind_speed,wind_direction_deg,landing_east,landing_north,landing_lat,landing_lon,landing_distance,landing_time,landing_speed,apogee,apogee_time,max_mach,rail_exit_speed,min_stability_cal")?;
+    writeln!(f, "descent,wind_speed,wind_direction_deg,landing_east,landing_north,landing_lat,landing_lon,landing_distance,landing_time,landing_speed,apogee,apogee_time,max_mach,rail_exit_speed,min_stability_cal,landed")?;
     for s in results {
         let mode = if s.descent == Descent::Ballistic { "ballistic" } else { "parachute" };
         writeln!(
             f,
-            "{mode},{},{},{:.2},{:.2},{:.8},{:.8},{:.2},{:.2},{:.2},{:.2},{:.2},{:.4},{:.2},{:.3}",
+            "{mode},{},{},{:.2},{:.2},{:.8},{:.8},{:.2},{:.2},{:.2},{:.2},{:.2},{:.4},{:.2},{:.3},{}",
             s.wind_speed, s.wind_direction_deg, s.landing_east, s.landing_north, s.landing_lat, s.landing_lon, s.landing_distance,
-            s.landing_time, s.landing_speed, s.apogee, s.apogee_time, s.max_mach, s.rail_exit_speed, s.min_stability_cal
+            s.landing_time, s.landing_speed, s.apogee, s.apogee_time, s.max_mach, s.rail_exit_speed, s.min_stability_cal, s.landed()
         )?;
     }
     f.flush()?;
@@ -934,7 +1165,7 @@ fn descent_name(d: Descent) -> &'static str {
     }
 }
 
-fn run_monte_carlo(cfg: &Config, base: &Simulation) -> Result<()> {
+fn run_monte_carlo(cfg: &Config, base: &Simulation, mut warnings: Vec<String>) -> Result<Option<String>> {
     let u = ui();
     let start = std::time::Instant::now();
     let mc = &cfg.dispersion.monte_carlo;
@@ -952,28 +1183,54 @@ fn run_monte_carlo(cfg: &Config, base: &Simulation) -> Result<()> {
     } else {
         sim::dispersion::run_monte_carlo(mc, base, cfg.recovery.enabled)?
     };
+    let failed: usize = r.summary.descents.iter().map(|d| d.failed).sum();
+    for d in r.summary.descents.iter().filter(|d| d.failed > 0) {
+        warnings.push(format!(
+            "{:?}: {} of {} Monte Carlo samples did not land or failed ({} did not land within sim.max_time = {} s): the statistics are INCOMPLETE and the maximum landing distance is only a lower bound",
+            d.descent, d.failed, r.summary.samples, d.not_landed, cfg.sim.max_time
+        ));
+    }
     let path = out_path(cfg, "dispersion_mc.csv")?;
     write_monte_carlo_csv(&path, &r.rows)?;
     let spath = out_path(cfg, "dispersion_summary.json")?;
-    std::fs::write(&spath, serde_json::to_string_pretty(&r.summary)?)?;
+    let mut json = serde_json::to_value(&r.summary)?;
+    json["config_hash"] = run_hash(cfg, RunKind::MonteCarlo).into();
+    json["warnings"] = serde_json::json!(warnings);
+    std::fs::write(&spath, serde_json::to_string_pretty(&json)?)?;
     u.done_line("Monte Carlo", &format!("{} samples x {} descent modes", r.summary.samples, r.summary.descents.len()), start.elapsed());
     if u.plain() {
         println!("Monte Carlo: {} samples x {} descent modes in {:.2?} -> {}, {}", r.summary.samples, r.summary.descents.len(), start.elapsed(), path.display(), spath.display());
         for d in &r.summary.descents {
-            println!("  {:?}: {} ok, {} failed", d.descent, d.landing.n, d.failed);
+            println!("  {:?}: {} ok, {} failed or did not land", d.descent, d.landing.n, d.failed);
+            if !d.complete {
+                println!("    STATISTICS INCOMPLETE: {} of {} samples are missing from them", d.failed, r.summary.samples);
+            }
             if d.landing.n == 0 {
+                println!("    no sample landed: no landing statistics available");
                 continue;
             }
             let (e1, e3) = (d.landing.ellipse_1sigma, d.landing.ellipse_3sigma);
             println!("    mean landing E {:.1} m, N {:.1} m; apogee {:.1} +- {:.1} m", d.landing.mean_east, d.landing.mean_north, d.apogee_mean, d.apogee_std);
             println!("    1-sigma ellipse {:.1} x {:.1} m, 3-sigma {:.1} x {:.1} m, major axis bearing {:.0} deg", e1.semi_major, e1.semi_minor, e3.semi_major, e3.semi_minor, e1.major_axis_bearing_deg);
-            println!("    max landing distance {:.1} m (sample {})", d.max_landing_distance, d.max_landing_distance_sample.unwrap_or(0));
+            if d.max_landing_distance_is_lower_bound {
+                println!("    max landing distance \u{2265} {:.1} m ({} samples did not land or failed; sample {} is the farthest that landed)", d.max_landing_distance, d.failed, d.max_landing_distance_sample.unwrap_or(0));
+            } else {
+                println!("    max landing distance {:.1} m (sample {})", d.max_landing_distance, d.max_landing_distance_sample.unwrap_or(0));
+            }
+            println!("    landing distance P50 {:.1} m, P90 {:.1} m, P99 {:.1} m (landed samples)", d.landing_distance_p50, d.landing_distance_p90, d.landing_distance_p99);
         }
     } else if u.rich() {
         println!();
         u.print_panel(&view::monte_carlo_panel(&r.summary, start.elapsed(), r.rows.len()));
     }
-    write_kml(cfg, kml::Parts { monte_carlo: Some(kml::MonteCarlo { rows: r.rows.clone(), stats: r.summary.descents.clone() }), ..Default::default() })?;
+    print_warnings(&warnings);
+    if r.summary.descents.iter().all(|d| d.landing.n == 0) {
+        if u.mode != ui::Mode::Quiet {
+            println!("  KML: Monte Carlo left out (no sample landed)");
+        }
+    } else {
+        write_kml(cfg, kml::Parts { monte_carlo: Some(kml::MonteCarlo { rows: r.rows.clone(), stats: r.summary.descents.clone() }), ..Default::default() })?;
+    }
     for row in r.rows.iter().filter(|x| x.result.is_err()).take(3) {
         let msg = format!("failed: sample {} ({}): {}", row.sample, descent_name(row.descent), row.result.as_ref().unwrap_err());
         match u.mode {
@@ -982,7 +1239,7 @@ fn run_monte_carlo(cfg: &Config, base: &Simulation) -> Result<()> {
             ui::Mode::Quiet => eprintln!("{msg}"),
         }
     }
-    Ok(())
+    Ok((failed > 0).then(|| format!("{failed} Monte Carlo runs did not land or failed; the statistics are incomplete")))
 }
 
 fn write_monte_carlo_csv(path: &Path, rows: &[sim::dispersion::McRow]) -> Result<()> {
@@ -1128,6 +1385,136 @@ mod tests {
         let b = load(&text.replace("threads = 0 ", "threads = 1 ").replace("memory_gb = 0 ", "memory_gb = 4 ").replace("nice = 0 ", "nice = 5 "));
         assert_eq!((b.resources.threads, b.resources.nice), (1, 5));
         assert_eq!(source_hash(&a).unwrap(), source_hash(&b).unwrap());
+    }
+
+    fn load_sample(text: &str) -> Config {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+        Config::from_value(toml::from_str(text).unwrap(), Some(&dir)).unwrap()
+    }
+
+    #[test]
+    fn cache_key_ignores_unused_blocks_and_cfd_resources_but_not_the_model() {
+        let text = include_str!("../../../examples/sample.toml");
+        let base = source_hash(&load_sample(text)).unwrap();
+        // Panel settings are not used by the Barrowman method.
+        assert_eq!(base, source_hash(&load_sample(&text.replace("body_axial = 80", "body_axial = 90"))).unwrap());
+        // A [aero.cfd] block is unused unless method = "cfd".
+        let with_cfd = |extra: &str| format!("{text}\n[aero.cfd]\nmodel = \"rans\"\nmachs = [0.5, 2.0]\nalphas_deg = [0, 4]\n{extra}");
+        let barrowman_cfd = source_hash(&load_sample(&with_cfd(""))).unwrap();
+        assert_eq!(base, barrowman_cfd);
+        // With method = "cfd" only the resource/path fields are ignored; physical settings are not.
+        let cfd_text = |extra: &str| with_cfd(extra).replace("method = \"barrowman\"", "method = \"cfd\"");
+        let plain = source_hash(&load_sample(&cfd_text(""))).unwrap();
+        for resource in ["prefix = \"/opt/su2\"", "su2 = \"SU2_CFD2\"", "mpi = \"mpiexec\"", "ranks_per_case = 3", "parallel_cases = 2", "timeout_minutes = 5.0", "workdir = \"elsewhere\""] {
+            assert_eq!(plain, source_hash(&load_sample(&cfd_text(resource))).unwrap(), "{resource}");
+        }
+        assert_ne!(plain, source_hash(&load_sample(&cfd_text("iterations = 77"))).unwrap());
+        assert_ne!(base, plain);
+        // The aero settings of the Barrowman method still matter.
+        assert_ne!(base, source_hash(&load_sample(&text.replace("mach_step = 0.02", "mach_step = 0.04"))).unwrap());
+    }
+
+    #[test]
+    fn model_version_is_part_of_the_cache_key() {
+        // The version constant enters the hashed inputs; this guards against removing it.
+        let src = include_str!("main.rs");
+        assert!(src.contains("model_version: MODEL_VERSION"));
+    }
+
+    #[test]
+    fn run_hash_follows_the_configuration_but_not_output_or_resources() {
+        let text = include_str!("../../../examples/sample.toml");
+        let a = load_sample(text);
+        let flight = |c: &Config| run_hash(c, RunKind::Flight);
+        let same = load_sample(&text.replace("dir = \"out\"", "dir = \"elsewhere\"").replace("threads = 0 ", "threads = 1 "));
+        assert_eq!(flight(&a), flight(&same));
+        let windier = load_sample(&text.replace("speed = 4.0 ", "speed = 5.0 "));
+        assert_ne!(flight(&a), flight(&windier));
+        // Dispersion settings do not make a flight stale, but do make the wind grid stale.
+        let other_grid = load_sample(&text.replace("directions = 8", "directions = 12"));
+        assert_eq!(flight(&a), flight(&other_grid));
+        assert_ne!(run_hash(&a, RunKind::WindGrid), run_hash(&other_grid, RunKind::WindGrid));
+        assert_eq!(run_hash(&a, RunKind::MonteCarlo), run_hash(&other_grid, RunKind::MonteCarlo));
+    }
+
+    fn unlanded(s: sim::Summary) -> sim::Summary {
+        sim::Summary { landing_time: f64::NAN, landing_east: f64::NAN, landing_north: f64::NAN, landing_lat: f64::NAN, landing_lon: f64::NAN, landing_distance: f64::NAN, landing_speed: f64::NAN, ..s }
+    }
+
+    #[test]
+    fn stability_wind_and_landing_warnings() {
+        let cfg = load_sample(include_str!("../../../examples/sample.toml"));
+        let ok = sim::Summary { min_stability_cal: 2.0, stability_at_rail_exit: 2.0, apogee: 500.0, ..sample_summary() };
+        assert!(flight_warnings(&cfg, &ok).is_empty());
+        let marginal = sim::Summary { min_stability_cal: 1.2, ..ok.clone() };
+        assert!(flight_warnings(&cfg, &marginal).iter().any(|w| w.contains("1.20 cal") && w.contains("marginal")));
+        let unstable = sim::Summary { min_stability_cal: 0.6, ..ok.clone() };
+        assert!(flight_warnings(&cfg, &unstable).iter().any(|w| w.contains("UNSTABLE")));
+        let forward = sim::Summary { min_stability_cal: -0.4, ..ok.clone() };
+        assert!(flight_warnings(&cfg, &forward).iter().any(|w| w.contains("forward of the CG")));
+        // The margin at rail exit counts too.
+        let rail = sim::Summary { stability_at_rail_exit: 0.9, ..ok.clone() };
+        assert!(flight_warnings(&cfg, &rail).iter().any(|w| w.contains("0.90 cal")));
+        // The sample wind is a power law: apogees above 1000 m are an extrapolation.
+        let high = sim::Summary { apogee: 4440.7, ..ok.clone() };
+        let w = flight_warnings(&cfg, &high);
+        assert!(w.iter().any(|w| w.contains("extrapolated") && w.contains("wind.ref_height")), "{w:?}");
+        let mut constant = cfg.clone();
+        constant.wind.model = sim::WindModel::Constant;
+        assert!(flight_warnings(&constant, &high).is_empty());
+        let w = flight_warnings(&cfg, &unlanded(ok));
+        assert!(w.iter().any(|w| w.contains("DID NOT LAND") && w.contains("sim.max_time")), "{w:?}");
+    }
+
+    #[test]
+    fn implausible_size_and_cg_outside_the_body() {
+        let cfg = load_sample(include_str!("../../../examples/sample.toml"));
+        assert!(size_warnings(&cfg, 2.0, 0.1).is_empty());
+        let w = size_warnings(&cfg, 2000.0, 100.0);
+        assert!(w.len() == 2 && w.iter().all(|w| w.contains("stl_scale")), "{w:?}");
+        assert!(size_warnings(&cfg, 0.01, 0.1).iter().any(|w| w.contains("length")));
+        let mut c = cfg.clone();
+        c.rocket.cg_dry = 3.0;
+        let e = check_cg(&c, 2.0).unwrap_err().to_string();
+        assert!(e.contains("rocket.cg_dry") && e.contains("outside the body"), "{e}");
+        assert!(check_cg(&cfg, 2.0).is_ok());
+        // The real geometry check accepts the sample and rejects a CG beyond its length.
+        let g = geometry(&cfg).unwrap();
+        c.rocket.cg_dry = g.length + 0.5;
+        assert!(geometry(&c).unwrap_err().to_string().contains("rocket.cg_dry"));
+    }
+
+    #[test]
+    fn summary_json_records_landing_hash_and_warnings() {
+        let cfg = load_sample(include_str!("../../../examples/sample.toml"));
+        let j = summary_json(&cfg, &sample_summary(), &["w1".to_string()]).unwrap();
+        assert_eq!(j["landed"], true);
+        assert_eq!(j["warnings"][0], "w1");
+        assert_eq!(j["config_hash"], run_hash(&cfg, RunKind::Flight));
+        let j = summary_json(&cfg, &unlanded(sample_summary()), &[]).unwrap();
+        assert_eq!(j["landed"], false);
+        assert!(j["landing_east"].is_null() && j["max_time"] == cfg.sim.max_time);
+    }
+
+    #[test]
+    fn wind_grid_line_marks_failures() {
+        assert_eq!(wind_grid_line(Descent::Ballistic, &[10.0, 30.0], 2), "Ballistic: max landing distance 30.0 m");
+        let l = wind_grid_line(Descent::Ballistic, &[10.0, 30.0], 3);
+        assert!(l.contains("\u{2265} 30.0 m") && l.contains("1 of 3"), "{l}");
+        let l = wind_grid_line(Descent::Parachute, &[], 4);
+        assert!(l.contains("NO CASE LANDED") && !l.contains("0.0 m"), "{l}");
+    }
+
+    #[test]
+    fn sample_flight_lands_and_warns_about_the_extrapolated_wind() {
+        let cfg = sample_config("warn");
+        let p = prepare(&cfg).unwrap();
+        let (r, _) = fly_sample(&cfg, &p, Descent::Parachute);
+        assert!(r.summary.landed());
+        let w = flight_warnings(&cfg, &r.summary);
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(w[0].contains("extrapolated"));
+        let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 
     /// examples/sample.toml (barrowman aero), output in a private temp directory.

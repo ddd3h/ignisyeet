@@ -464,14 +464,31 @@ fn read_json(path: &Path) -> Result<serde_json::Value, String> {
     serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// `trajectory.csv` + `summary.json` in `dir`.
-pub fn load_flight(dir: &Path) -> Result<Option<Flight>, String> {
+/// Prefix of the error of an output file written by a different configuration than the current one.
+pub const STALE: &str = "stale";
+
+/// Name of the sidecar of `dispersion.csv` (config hash, failures and warnings of the wind grid).
+pub const WIND_GRID_META: &str = "dispersion_meta.json";
+
+/// Checks the `config_hash` of a written JSON file against the current configuration's `expected`.
+fn check_hash(v: &serde_json::Value, expected: &str, path: &Path) -> Result<(), String> {
+    match v.get("config_hash").and_then(|h| h.as_str()) {
+        Some(h) if h == expected => Ok(()),
+        Some(_) => Err(format!("{STALE}: {} was written with a different configuration; rerun the command to include it", path.display())),
+        None => Err(format!("{STALE}: {} has no config_hash (written by an older version); rerun the command to include it", path.display())),
+    }
+}
+
+/// `trajectory.csv` + `summary.json` in `dir`; `hash` is the flight hash of the current configuration.
+pub fn load_flight(dir: &Path, hash: &str) -> Result<Option<Flight>, String> {
     let (csv, json) = (dir.join("trajectory.csv"), dir.join("summary.json"));
     if !json.exists() {
         return Ok(None);
     }
     let Some(t) = Csv::read(&csv)? else { return Ok(None) };
-    let summary = summary_from_json(&read_json(&json)?).map_err(|e| format!("{}: {e}", json.display()))?;
+    let v = read_json(&json)?;
+    check_hash(&v, hash, &json)?;
+    let summary = summary_from_json(&v).map_err(|e| format!("{}: {e}", json.display()))?;
     let mut samples = Vec::with_capacity(t.rows.len());
     for r in &t.rows {
         let phase = match t.text(r, "phase") {
@@ -522,30 +539,39 @@ fn summary_from_row(t: &Csv, r: &[String]) -> Result<Summary, String> {
     })
 }
 
-/// `dispersion.csv` in `dir`.
-pub fn load_wind_grid(dir: &Path) -> Result<Option<WindGrid>, String> {
+/// `dispersion.csv` in `dir` (cases that did not land are left out); `hash` is the wind-grid hash of the current configuration.
+pub fn load_wind_grid(dir: &Path, hash: &str) -> Result<Option<WindGrid>, String> {
     let path = dir.join("dispersion.csv");
     let Some(t) = Csv::read(&path)? else { return Ok(None) };
+    let meta = dir.join(WIND_GRID_META);
+    if !meta.exists() {
+        return Err(format!("{STALE}: {} has no {WIND_GRID_META} (written by an older version); rerun the command to include it", path.display()));
+    }
+    check_hash(&read_json(&meta)?, hash, &meta)?;
     let (mut cases, mut results) = (Vec::new(), Vec::new());
     for r in &t.rows {
+        if t.text(r, "landed") == Some("false") {
+            continue;
+        }
         let s = summary_from_row(&t, r).map_err(|e| format!("{}: {e}", path.display()))?;
         cases.push(Case { descent: s.descent, wind_speed: s.wind_speed, wind_direction_deg: s.wind_direction_deg });
         results.push(s);
     }
     if cases.is_empty() {
-        return Err(format!("{}: no rows", path.display()));
+        return Err(format!("{}: no case landed", path.display()));
     }
     Ok(Some(WindGrid { cases, results }))
 }
 
-/// `dispersion_mc.csv` + `dispersion_summary.json` in `dir`.
-pub fn load_monte_carlo(dir: &Path) -> Result<Option<MonteCarlo>, String> {
+/// `dispersion_mc.csv` + `dispersion_summary.json` in `dir`; `hash` is the Monte Carlo hash of the current configuration.
+pub fn load_monte_carlo(dir: &Path, hash: &str) -> Result<Option<MonteCarlo>, String> {
     let (csv, json) = (dir.join("dispersion_mc.csv"), dir.join("dispersion_summary.json"));
     if !json.exists() {
         return Ok(None);
     }
     let Some(t) = Csv::read(&csv)? else { return Ok(None) };
     let v = read_json(&json)?;
+    check_hash(&v, hash, &json)?;
     let bad = |what: &str| format!("{}: {what}", json.display());
     let ell = |e: &serde_json::Value| Ellipse {
         semi_major: e["semi_major"].as_f64().unwrap_or(f64::NAN),
@@ -559,6 +585,12 @@ pub fn load_monte_carlo(dir: &Path) -> Result<Option<MonteCarlo>, String> {
         stats.push(DescentStats {
             descent: d.get("descent").and_then(|x| x.as_str()).and_then(parse_descent).ok_or_else(|| bad("bad descent"))?,
             failed: d.get("failed").and_then(|x| x.as_u64()).unwrap_or(0) as usize,
+            not_landed: d.get("not_landed").and_then(|x| x.as_u64()).unwrap_or(0) as usize,
+            complete: d.get("complete").and_then(|x| x.as_bool()).unwrap_or(false),
+            max_landing_distance_is_lower_bound: d.get("max_landing_distance_is_lower_bound").and_then(|x| x.as_bool()).unwrap_or(false),
+            landing_distance_p50: f("landing_distance_p50"),
+            landing_distance_p90: f("landing_distance_p90"),
+            landing_distance_p99: f("landing_distance_p99"),
             landing: PointStats {
                 n: d.get("n").and_then(|x| x.as_u64()).ok_or_else(|| bad("no n"))? as usize,
                 mean_east: f("mean_east"),
@@ -737,7 +769,7 @@ mod tests {
         }
         let pts: Vec<(f64, f64)> = rows.iter().filter_map(|r| r.result.as_ref().ok()).map(|s| (s.landing_east, s.landing_north)).collect();
         let landing = sim::dispersion::landing_statistics(&pts);
-        let stats = vec![DescentStats { descent: Descent::Parachute, failed: 1, landing, max_landing_distance: 90.0, max_landing_distance_sample: Some(5), apogee_mean: 100.0, apogee_std: 0.0 }];
+        let stats = vec![DescentStats { descent: Descent::Parachute, failed: 1, not_landed: 0, complete: false, max_landing_distance_is_lower_bound: true, landing_distance_p50: 50.0, landing_distance_p90: 80.0, landing_distance_p99: 89.0, landing, max_landing_distance: 90.0, max_landing_distance_sample: Some(5), apogee_mean: 100.0, apogee_std: 0.0 }];
         MonteCarlo { rows, stats }
     }
 
@@ -774,6 +806,14 @@ mod tests {
         assert!(kml.contains("1-sigma ellipse") && kml.contains("Mean landing") && kml.contains("<name>#5</name>") && !kml.contains("<name>#4</name>"));
     }
 
+    const H: &str = "0123456789abcdef";
+
+    fn with_hash<T: serde::Serialize>(v: &T, hash: &str) -> serde_json::Value {
+        let mut j = serde_json::to_value(v).unwrap();
+        j["config_hash"] = hash.into();
+        j
+    }
+
     fn temp_dir(name: &str) -> std::path::PathBuf {
         let d = std::env::temp_dir().join(format!("ignisyeet_kml_{name}_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
@@ -785,29 +825,30 @@ mod tests {
     fn loaders_round_trip_written_files() {
         let dir = temp_dir("roundtrip");
         // Nothing written yet: every part is absent, not an error.
-        assert!(load_flight(&dir).unwrap().is_none() && load_wind_grid(&dir).unwrap().is_none() && load_monte_carlo(&dir).unwrap().is_none());
+        assert!(load_flight(&dir, H).unwrap().is_none() && load_wind_grid(&dir, H).unwrap().is_none() && load_monte_carlo(&dir, H).unwrap().is_none());
 
         let (f, w, m) = (Flight { samples: flight(), summary: summary() }, wind_grid_part(), mc_part());
         crate::write_trajectory(&dir.join("trajectory.csv"), &f.samples).unwrap();
-        std::fs::write(dir.join("summary.json"), serde_json::to_string_pretty(&f.summary).unwrap()).unwrap();
+        std::fs::write(dir.join("summary.json"), serde_json::to_string_pretty(&with_hash(&f.summary, H)).unwrap()).unwrap();
         crate::write_wind_grid_csv(&dir.join("dispersion.csv"), &w.results).unwrap();
+        std::fs::write(dir.join(WIND_GRID_META), serde_json::json!({ "config_hash": H }).to_string()).unwrap();
         crate::write_monte_carlo_csv(&dir.join("dispersion_mc.csv"), &m.rows).unwrap();
         let mc_summary = sim::dispersion::summarize(&m.rows, m.rows.len(), 1);
-        std::fs::write(dir.join("dispersion_summary.json"), serde_json::to_string_pretty(&mc_summary).unwrap()).unwrap();
+        std::fs::write(dir.join("dispersion_summary.json"), serde_json::to_string_pretty(&with_hash(&mc_summary, H)).unwrap()).unwrap();
 
-        let lf = load_flight(&dir).unwrap().unwrap();
+        let lf = load_flight(&dir, H).unwrap().unwrap();
         assert_eq!(lf.samples.len(), f.samples.len());
         for (a, b) in lf.samples.iter().zip(&f.samples) {
             assert!(a.phase == b.phase && (a.t - b.t).abs() < 1e-3 && (a.alt - b.alt).abs() < 1e-2 && (a.lat - b.lat).abs() < 1e-7 && (a.thrust - b.thrust).abs() < 1e-2);
         }
         assert!((lf.summary.apogee - 100.0).abs() < 1e-9 && lf.summary.descent == Descent::Parachute && (lf.summary.landing_lat - 34.7348).abs() < 1e-9);
 
-        let lw = load_wind_grid(&dir).unwrap().unwrap();
+        let lw = load_wind_grid(&dir, H).unwrap().unwrap();
         assert_eq!(lw.cases.len(), 5);
         assert!(lw.cases[1].descent == Descent::Ballistic || lw.cases[1].descent == Descent::Parachute);
         assert!((lw.results[1].wind_direction_deg - 90.0).abs() < 1e-9 && (lw.results[1].landing_east + 10.0).abs() < 1e-2);
 
-        let lm = load_monte_carlo(&dir).unwrap().unwrap();
+        let lm = load_monte_carlo(&dir, H).unwrap().unwrap();
         assert_eq!(lm.rows.len(), 6);
         assert!(lm.rows[4].result.is_err() && lm.rows[5].result.is_ok());
         assert_eq!(lm.stats.len(), 1);
@@ -824,15 +865,56 @@ mod tests {
     }
 
     #[test]
+    fn stale_outputs_are_skipped() {
+        let dir = temp_dir("stale");
+        let (f, w, m) = (Flight { samples: flight(), summary: summary() }, wind_grid_part(), mc_part());
+        crate::write_trajectory(&dir.join("trajectory.csv"), &f.samples).unwrap();
+        crate::write_wind_grid_csv(&dir.join("dispersion.csv"), &w.results).unwrap();
+        crate::write_monte_carlo_csv(&dir.join("dispersion_mc.csv"), &m.rows).unwrap();
+        let mc_summary = sim::dispersion::summarize(&m.rows, m.rows.len(), 1);
+        // No hash at all (older output): stale.
+        std::fs::write(dir.join("summary.json"), serde_json::to_string(&f.summary).unwrap()).unwrap();
+        std::fs::write(dir.join("dispersion_summary.json"), serde_json::to_string(&mc_summary).unwrap()).unwrap();
+        for e in [load_flight(&dir, H).err().unwrap(), load_wind_grid(&dir, H).err().unwrap(), load_monte_carlo(&dir, H).err().unwrap()] {
+            assert!(e.starts_with(STALE), "{e}");
+        }
+        // A different hash: stale; the matching hash loads.
+        std::fs::write(dir.join("summary.json"), serde_json::to_string(&with_hash(&f.summary, "other")).unwrap()).unwrap();
+        std::fs::write(dir.join(WIND_GRID_META), serde_json::json!({ "config_hash": "other" }).to_string()).unwrap();
+        std::fs::write(dir.join("dispersion_summary.json"), serde_json::to_string(&with_hash(&mc_summary, "other")).unwrap()).unwrap();
+        assert!(load_flight(&dir, H).err().unwrap().starts_with(STALE));
+        assert!(load_wind_grid(&dir, H).err().unwrap().starts_with(STALE));
+        assert!(load_monte_carlo(&dir, H).err().unwrap().starts_with(STALE));
+        assert!(load_flight(&dir, "other").unwrap().is_some() && load_wind_grid(&dir, "other").unwrap().is_some() && load_monte_carlo(&dir, "other").unwrap().is_some());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unlanded_wind_grid_rows_are_left_out() {
+        let dir = temp_dir("unlanded");
+        let mut w = wind_grid_part();
+        w.results[2].landing_time = f64::NAN;
+        w.results[2].landing_east = f64::NAN;
+        w.results[2].landing_north = f64::NAN;
+        w.results[2].landing_lat = f64::NAN;
+        w.results[2].landing_lon = f64::NAN;
+        w.results[2].landing_distance = f64::NAN;
+        crate::write_wind_grid_csv(&dir.join("dispersion.csv"), &w.results).unwrap();
+        std::fs::write(dir.join(WIND_GRID_META), serde_json::json!({ "config_hash": H }).to_string()).unwrap();
+        assert_eq!(load_wind_grid(&dir, H).unwrap().unwrap().cases.len(), 4);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn loaders_tolerate_bad_files() {
         let dir = temp_dir("bad");
         std::fs::write(dir.join("trajectory.csv"), "t,phase\n0,sideways\n").unwrap();
         std::fs::write(dir.join("summary.json"), "{ not json").unwrap();
         std::fs::write(dir.join("dispersion.csv"), "descent,wind_speed\nballistic,1\n").unwrap();
-        assert!(load_flight(&dir).is_err() && load_wind_grid(&dir).is_err());
+        assert!(load_flight(&dir, H).is_err() && load_wind_grid(&dir, H).is_err());
         // A summary without its CSV counts as absent.
         std::fs::write(dir.join("dispersion_summary.json"), "{}").unwrap();
-        assert!(load_monte_carlo(&dir).unwrap().is_none());
+        assert!(load_monte_carlo(&dir, H).unwrap().is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

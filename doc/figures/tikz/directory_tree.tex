@@ -1,3 +1,5 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 \tikzset{
   folder/.pic={
     \fill[cblue!80] (0,0.06) -- (0,0.27) -- (0.13,0.27) -- (0.17,0.22) -- (0.36,0.22) -- (0.36,0.06) -- cycle;
@@ -39,7 +41,7 @@
   \entry{5}{2}{folder}{aero/}{標準大気、空力モデル、係数表（保存・内挿・外挿）}
   \entry{6}{2}{folder}{panel/}{パネル法の空力解析（亜音速 Morino 法、超音速局所傾斜法）}
   \entry{7}{2}{folder}{cfd/}{CFD による空力解析（gmsh のメッシュ、SU2 のケース実行、係数表の作成）}
-  \entry{8}{2}{folder}{sim/}{推力曲線、6 自由度飛翔、測地座標変換}
+  \entry{8}{2}{folder}{sim/}{推力曲線、6 自由度飛翔と積分法、風・大気・重力、座標変換、落下分散}
   \entry{9}{2}{folder}{cli/}{ignisyeet コマンドと設定ファイル}
   \entry{10}{1}{folder}{python/}{作図（plot.py、uv プロジェクト）}
   \entry{11}{1}{folder}{examples/}{サンプルの設定・STL・推力曲線（推力曲線は架空のもの）}

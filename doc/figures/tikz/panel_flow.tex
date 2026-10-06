@@ -20,9 +20,9 @@
   \node[note] at ([yshift=4mm]s4.north) {解く};
   \node[note] at ([yshift=4mm]s6.north) {得るもの};
   % Mach regimes
-  \node[loc, minimum width=62mm, text width=60mm] (sub) at (3.15,-4.2) {亜音速（$M\le0.8$）\\Morino の定式化 + Göthert の変換};
-  \node[loc, minimum width=40mm, text width=38mm] (tr) at (9.0,-4.2) {遷音速（$0.8$〜$1.2$）\\Hermite 補間};
-  \node[loc, minimum width=56mm, text width=54mm] (sup) at (14.6,-4.2) {超音速（$M\ge1.2$）\\局所傾斜法};
+  \node[loc, minimum width=62mm] (sub) at (3.15,-4.2) {亜音速（$M\le0.8$）\\Morino の定式化 + Göthert の変換};
+  \node[loc, minimum width=40mm] (tr) at (9.0,-4.2) {遷音速（$0.8$〜$1.2$）\\Hermite 補間};
+  \node[loc, minimum width=56mm] (sup) at (14.6,-4.2) {超音速（$M\ge1.2$）\\局所傾斜法};
   \draw[arr] (sub.north) -- ++(0,0.6) -| ([xshift=-6mm]s4.south);
   \node[note, anchor=north] at ([yshift=-1mm]sub.south) {手順 1〜6 をすべて通る};
   \node[note, anchor=north] at ([yshift=-1mm]tr.south) {両側の値と傾きをつなぐだけ};

@@ -5,7 +5,7 @@
   \foreach \j in {0,...,3} \draw[cgrid] (0,\j*1.2) -- (6,\j*1.2);
   \foreach \i in {0,...,4} \foreach \j in {0,...,3} \fill[cink2] (\i*1.5,\j*1.2) circle (1.5pt);
   \draw[->, cink] (0,-0.3) -- (7.6,-0.3) node[right] {Mach $M$};
-  \draw[->, cink] (-0.3,0) -- (-0.3,4.2) node[above] {迎角 $\alpha$};
+  \draw[->, cink] (-0.3,0) -- (-0.3,5.2) node[above] {迎角 $\alpha$};
   % cell
   \fill[cfill] (1.5,1.2) rectangle (3,2.4);
   \draw[cblue, thick] (1.5,1.2) rectangle (3,2.4);
@@ -16,9 +16,15 @@
   \fill[cblue] (2.4,1.65) circle (2pt) node[right] {内挿点};
   \draw[cblue, |<->|] (1.5,0.95) -- (2.4,0.95) node[midway, below, font=\footnotesize] {$t_M$};
   \draw[cblue, |<->|] (1.25,1.2) -- (1.25,1.65) node[midway, left, font=\footnotesize] {$t_\alpha$};
-  % extrapolation
-  \draw[corange, thick, dashed] (4.5,1.2) -- (7.2,1.2);
-  \draw[corange, thick, dashed] (4.5,2.4) -- (7.2,2.4);
-  \fill[corange] (6.9,1.9) circle (2pt) node[right, align=left] {外挿点\\$t_M>1$};
+  % extrapolation in alpha (beyond the last alpha row)
+  \draw[corange, thick, dashed] (3,3.6) -- (3,4.9);
+  \draw[corange, thick, dashed] (4.5,3.6) -- (4.5,4.9);
+  \fill[corange] (3.75,4.4) circle (2pt);
+  \node[corange, right, align=left] at (4.6,4.4) {外挿点\\$t_\alpha>1$};
+  % Mach is clamped to the table edge
+  \draw[cink2, thick, ->, dashed] (7.2,1.8) -- (6.08,1.8);
+  \draw[cink2, fill=white, thick] (7.2,1.8) circle (2pt);
+  \fill[cink2] (6,1.8) circle (2pt);
+  \node[cink2, right, align=left, font=\footnotesize] at (7.3,1.8) {$M$ は範囲外でも\\端の値にクランプ};
   \draw[cink2, decorate, decoration={brace, amplitude=4pt, mirror}] (0,-0.55) -- (6,-0.55) node[midway, below=4pt, font=\footnotesize] {テーブルの範囲};
 \end{tikzpicture}

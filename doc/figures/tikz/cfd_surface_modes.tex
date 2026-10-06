@@ -1,6 +1,6 @@
 % SPDX-License-Identifier: GPL-3.0-or-later
 % Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
-% CFD wall surface modes: panel_mesh (rebuilt body of revolution + trapezoidal fins) vs stl (union and remesh of the input).
+% CFD wall surface modes: panel_mesh (rebuilt body of revolution + trapezoidal fins) vs stl (repair in Rust, union and remesh of the input in Python).
 \begin{tikzpicture}[
   font=\footnotesize,
   box/.style={draw=cblue, fill=cfill, thick, rounded corners=3pt, minimum width=33mm, minimum height=12mm, align=center},
@@ -22,11 +22,16 @@
   % mode (b)
   \node[font=\small\bfseries, anchor=west] at (-2,-2.6) {(b) \texttt{stl}};
   \node[file] (b1) at (0,-4) {入力の STL\\\scriptsize 重なった閉じた殻};
-  \node[boxo] (b2) at (4.4,-4) {修復と和\\\scriptsize Euler では底面にフェアリング};
-  \node[boxo] (b3) at (8.8,-4) {再メッシュ\\\scriptsize \texttt{wall\_size} で作り直す};
+  \node[box] (b2) at (4.4,-4) {修復\\\scriptsize Euler では底面にフェアリング};
+  \node[boxo] (b3) at (8.8,-4) {和と再メッシュ\\\scriptsize \texttt{wall\_size} で作り直す};
   \node[res] (b4) at (13.2,-4) {CFD の壁面\\\scriptsize 入力に近いが同一でない};
   \draw[arr] (b1) -- (b2);
   \draw[arr] (b2) -- (b3);
   \draw[arr] (b3) -- (b4);
   \node[font=\scriptsize, cink2, anchor=north, align=center] at (13.2,-4.9) {形状の忠実度の報告で\\ずれを確かめる};
+  % legend
+  \node[box, minimum width=8mm, minimum height=4mm, anchor=west] (l1) at (-2,-6.3) {};
+  \node[right=1mm of l1, font=\scriptsize] {Rust};
+  \node[boxo, minimum width=8mm, minimum height=4mm, right=14mm of l1] (l2) {};
+  \node[right=1mm of l2, font=\scriptsize] {Python（OpenCASCADE、manifold3d、gmsh）};
 \end{tikzpicture}

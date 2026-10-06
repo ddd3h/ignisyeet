@@ -1,9 +1,10 @@
 % SPDX-License-Identifier: GPL-3.0-or-later
 % Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
-% (a) cross section through the fin region: nodes and fin footprints; (b) biconvex fin section along the chord.
+% (a) cross section through the fin region: nodes and fin footprints (fin of constant thickness 2h along the span); (b) biconvex fin section along the chord.
 \begin{tikzpicture}[font=\small]
   \def\R{2.0}
-  \def\dl{7}      % half angle of the (exaggerated) fin strip [deg]
+  \def\w{0.22}    % (exaggerated) half thickness h of the fin, constant along the span
+  \pgfmathsetmacro{\dl}{asin(\w/\R)}  % half angle of the root strip, arcsin(h/r) [deg]
   \def\rt{3.6}    % fin tip radius
   % (a) cross section
   \begin{scope}
@@ -13,7 +14,7 @@
     \foreach \k in {0,1,2,3}{
       \pgfmathsetmacro{\ph}{90*\k+45}
       \begin{scope}[rotate=\ph]
-        \fill[cfill, draw=cblue, very thick] ({sqrt(\R*\R-0.0)*cos(\dl)},{-\R*sin(\dl)}) -- (\rt,{-0.06}) -- (\rt,0.06) -- ({\R*cos(\dl)},{\R*sin(\dl)}) -- cycle;
+        \fill[cfill] ({\R*cos(\dl)},{-\w}) -- (\rt,{-\w}) -- (\rt,\w) -- ({\R*cos(\dl)},\w) -- cycle;
       \end{scope}
       % body nodes between fins: 11 panels per sector
       \foreach \q in {0,...,11}{
@@ -30,11 +31,11 @@
     \foreach \k in {0,1,2,3}{
       \pgfmathsetmacro{\ph}{90*\k+45}
       \begin{scope}[rotate=\ph]
-        \draw[cblue, very thick] ({\R*cos(\dl)},{-\R*sin(\dl)}) -- (\rt,{-0.06}) -- (\rt,0.06) -- ({\R*cos(\dl)},{\R*sin(\dl)});
+        \draw[cblue, very thick] ({\R*cos(\dl)},{-\w}) -- (\rt,{-\w}) -- (\rt,\w) -- ({\R*cos(\dl)},\w);
       \end{scope}
     }
     \node[cink] at (0,0) {胴体断面};
-    \node[corange, align=left, anchor=west] at (\rt+0.2,2.9) {フィンの根元は\\周方向の 2 節点\\$\theta=\varphi_k\pm\delta$};
+    \node[corange, align=left, anchor=west] at (\rt+0.2,2.9) {フィンの根元は\\周方向の 2 節点\\$\theta=\varphi_k\pm\arcsin(h/r)$\\（厚みは誇張）};
     \draw[corange, ->] ({\rt+0.2},2.5) to[bend left=10] ({\R*cos(45+\dl)+0.15},{\R*sin(45+\dl)+0.1});
     \node[cink2, align=left, anchor=west] at (\rt+0.2,-1.6) {扇形ごとに\\周方向 $n_c/N$ 分割\\（$N$ 枚のフィン）};
     \draw[cink2, ->] ({\rt+0.2},-1.6) to[bend right=10] ({\R*cos(-30)+0.05},{\R*sin(-30)});

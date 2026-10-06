@@ -18,7 +18,7 @@
     \draw[->, thick, cink] (0,0,0) -- (0,3.4,0) node[above left] {$y_b$};
     \draw[->, thick, cink] (0,0,0) -- (0,0,2.8) node[above] {$z_b$};
     \draw[->, very thick, corange] (0,0,0) -- (1.3,0,0) node[below right, font=\footnotesize] {$F_x$};
-    \draw[->, very thick, corange] (0,0,0) -- (0,1.3,0) node[left, font=\footnotesize] {$F_y$};
+    \draw[->, very thick, corange] (0,0,0) -- (0,1.3,0) node[above right, inner sep=1.5pt, font=\footnotesize] {$F_y$};
     \draw[->, very thick, corange] (0,0,0) -- (0,0,1.2) node[left, font=\footnotesize] {$F_z$};
     % right-handed rotations: about x (y to z), about y (z to x), about z (x to y)
     \draw[->, thick, cblue] plot[domain=30:300, samples=40] ({2.2},{0.4*cos(\x)},{0.4*sin(\x)});
@@ -28,6 +28,6 @@
     \draw[->, thick, cblue] plot[domain=30:300, samples=40] ({0.4*cos(\x)},{0.4*sin(\x)},{2.0});
     \node[cblue, font=\footnotesize] at (0.55,0.0,2.45) {$M_z$};
     \fill[cink] (0,0,0) circle (1.6pt);
-    \node[cink2, font=\footnotesize, anchor=north west] at (0.15,0,-0.35) {基準点（ノーズ先端）};
+    \node[cink2, font=\footnotesize, anchor=north east] at (-0.08,0,-0.78) {基準点（ノーズ先端）};
   \end{scope}
 \end{tikzpicture}

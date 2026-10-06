@@ -87,6 +87,9 @@ def save(fig, out, name):
 
 
 def plot_geometry(out):
+    if not (out / "profile.csv").exists():
+        print("skip geometry: profile.csv not found (run `ignisyeet geom` again)")
+        return
     g = json.loads((out / "geometry.json").read_text())
     p = pd.read_csv(out / "profile.csv")
     fig, ax = plt.subplots(figsize=(11, 3.2))
@@ -352,6 +355,19 @@ def plot_dispersion(out):
         plot_dispersion_grid(out)
 
 
+def profile_wind(out):
+    """True when the outputs come from a wind.model = "profile" run: summary.json / dispersion_meta.json carry `wind_scale`."""
+    for name in ("dispersion_meta.json", "summary.json"):
+        f = out / name
+        if f.exists():
+            try:
+                if "wind_scale" in json.loads(f.read_text()):
+                    return True
+            except (OSError, ValueError):
+                pass
+    return False
+
+
 def plot_dispersion_grid(out):
     d = pd.read_csv(out / "dispersion.csv")
     modes = [m for m in ("ballistic", "parachute") if (d.descent == m).any()]
@@ -385,7 +401,7 @@ def plot_dispersion_grid(out):
         # Fastest (outermost) wind first.
         handles, labels = ax.get_legend_handles_labels()
         order = list(range(len(labels) - 1))[::-1] + [len(labels) - 1]  # launch site stays last
-        ax.legend([handles[i] for i in order], [labels[i] for i in order], title="wind speed (outermost first)", loc="upper left", bbox_to_anchor=(1.01, 1.0))
+        ax.legend([handles[i] for i in order], [labels[i] for i in order], title=("profile mean speed" if profile_wind(out) else "wind speed") + " (outermost first)", loc="upper left", bbox_to_anchor=(1.01, 1.0))
     fig.tight_layout()
     save(fig, out, "dispersion.png")
 

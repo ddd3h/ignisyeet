@@ -7,8 +7,7 @@
   \draw[cblue, very thick] (0,0) .. controls (0,1.7) and (4,2.1) .. (\xe,0) .. controls (4,-2.1) and (0,-1.7) .. (0,0);
   \node[cink, align=center] at (3.8,0) {内部 $V_i$\\$\Phi_i=0$};
   % wake
-  \draw[corange, very thick, dashed] (\xe,0) -- (11.6,0);
-  \draw[corange, very thick] (\xe,0.04) -- (11.6,0.04);
+  \draw[corange, very thick] (\xe,0) -- (11.6,0);
   \node[corange, align=center] at (10.0,-0.75) {後流 $W$\\{\footnotesize 二重層のみ}\\$\mu_w=\mu_u-\mu_l$};
   % free stream
   \foreach \y in {-2.4,-1.2,0,1.2,2.4}{
@@ -16,8 +15,8 @@
   }
   \node[cink2] at (-2.7,3.1) {$\bm U$（一様流）};
   % normal at a surface point
-  \coordinate (P) at (4.0,1.52);
-  \draw[cink, ->, thick] (P) -- ++(0.15,0.85) node[above right] {$\bm n$};
+  \coordinate (P) at (2.5,1.425);  % Bezier point t = 1/2 of the upper surface
+  \draw[cink, ->, thick] (P) -- ++(-0.03,0.9) node[above] {$\bm n$};
   \fill[cink] (P) circle (1.6pt);
   \node[cblue, align=left, anchor=west] at (3.0,3.5) {$S$ 上：doublet $\mu$、source $\sigma=-\bm n\!\cdot\!\bm U$\\{\footnotesize 外側の $\Phi=\mu$（内部 $\Phi_i=0$ との差）}};
   \node[cblue] at (-0.55,1.7) {表面 $S$};

@@ -429,7 +429,8 @@ CFD 以外の部分は Windows でも ``cargo check`` が通るが、インス�
 ``OUT=...`` で上書きもできる。``[output] dir`` は、基本文字列（``"..."``）でもリテラル文字列（``'...'``）でも読める。
 
 ``sim`` や ``dispersion`` が終了ステータス 3（結果は書いたが不完全。:ref:`sec-exit-status`）で終わっても、``make all`` は作図まで進める。
-作図のあと、``results are INCOMPLETE (exit status 3)`` で始まるメッセージ（この 3 は ``ignisyeet`` の終了ステータス）を出して失敗する。
+作図のあと、``make: results are INCOMPLETE or NOT USABLE (exit status 3): see the lines above`` のメッセージ（この 3 は ``ignisyeet`` の終了ステータス）を出して失敗する。
+静的に不安定な結果（``RESULTS NOT USABLE``）も、このメッセージで知らせる。
 ``make`` 自体の終了ステータスは、GNU make の規則で 2 になる。
 ステータス 3 以外の失敗では、その場で止まる。
 
@@ -441,7 +442,10 @@ CFD 以外の部分は Windows でも ``cargo check`` が通るが、インス�
 ``sim`` が失敗した出力ディレクトリ（``summary.json`` が失敗の印）では、``python/plot.py trajectory`` は ``error: the last sim run failed: …; not plotting the old trajectory`` で終了ステータス 1 になり、
 ``all`` は ``skip trajectory: the last sim run failed: …`` と表示して、飛翔経路の図だけを描かない（古い結果を描かない）。
 ``dispersion_mc.csv`` があって ``dispersion_summary.json`` がないときは、``skip dispersion_mc: dispersion_summary.json not found (run `ignisyeet dispersion` again)`` と表示して、モンテカルロの図を描かない。
-``dispersion.csv`` などの落下分散の結果が、``summary.json`` と別の飛翔の設定で計算されたもの（``dispersion_meta.json`` と ``dispersion_summary.json`` の ``flight_config_hash`` が ``summary.json`` の ``config_hash`` と一致しない、またはない）なら、標準エラー出力に警告を出す。
+``summary.json`` の ``config_hash`` と、``dispersion_meta.json`` と ``dispersion_summary.json`` の ``flight_config_hash`` のうち、存在するものどうしを比べ、どれか 2 つが違えば、ファイル名とハッシュを並べた警告（``… were written for different flight configurations (…); rerun `ignisyeet sim` and `ignisyeet dispersion` before reading the plots together``）を標準エラー出力に出す。
+``summary.json`` がなくても、2 つの落下分散の結果どうしを比べる。読めないファイルと、``flight_config_hash`` のない落下分散のファイルも警告する。
+飛翔経路の図の高度は、``trajectory.csv`` の測地高度 ``alt`` から射点の高度（最初の行の ``alt``）を引いた値で、``summary.json`` の頂点高度と同じ定義である（``earth.model = "ecef"`` では接平面の座標 ``up`` と違う）。上昇中の判定にも、この高度の時間変化を使う。
+パネル法の圧力係数の図（``panel``）では、``panel_cp.csv`` のフィンのパネルから、機軸から最も遠い点の方位にあるフィンを選んで描く。フィンのパネルがなければ胴体だけを描く。
 風の格子の図では、風速ごとの線を、外側（風速が大きい）から順に並ぶ凡例とともに、viridis から取った区別しやすい色で描く。
 ``wind.model = "profile"`` の結果では、凡例の見出しが ``profile mean speed (outermost first)`` になる（それ以外は ``wind speed (outermost first)``）。
 二段開傘の飛翔では、軌跡の図にメインの開傘の位置を四角の印で示す。
@@ -504,13 +508,13 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
 
 ``dispersion``
    終わったケース数のバーに、1 秒あたりの処理数、経過時間、ETA を表示する。2 行目には、ここまでの最大着地距離（弾道落下とパラシュート降下）を示す。
-   ``monte_carlo`` ではサンプル数が分母になる。
+   分母は、風の格子では風速 × 風向 × 降下モードのケース数、``monte_carlo`` ではサンプル数 × 降下モードの数（パラシュートが有効なら 2）である。
 
 .. figure:: _generated/screens/screen_dispersion.png
    :width: 100%
    :alt: dispersion（モンテカルロ）の実行中の画面
 
-   ``dispersion``\ （``mode = "monte_carlo"``）の実行中。処理数、1 秒あたりの処理数、ETA と、ここまでの最大着地距離を表示する。
+   ``dispersion``\ （``mode = "monte_carlo"``）の実行中。処理数、1 秒あたりの処理数、ETA と、ここまでの最大着地距離を表示する。処理数は、弾道落下とパラシュート降下を別々に数える。
 
 完了すると結果パネルを出す。``sim`` では Flight result パネルにランチャ離脱、最大速度・最大動圧、頂点、着地点などをまとめる。
 最後に、書き出したファイルの一覧（パスとサイズ）と、全体の所要時間を表示する。
@@ -525,7 +529,8 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
 パラシュートを使う設定の設定パネルには、終端降下速度の見積り（``terminal speed``）が並ぶ。
 これは :math:`\sqrt{2mg/(\rho\,C_DS)}` に海面の標準密度 :math:`\rho=1.225\ \mathrm{kg/m^3}` と乾燥質量 :math:`m` を入れた値で、サンプルでは 6.0 m/s である。
 飛翔の計算結果ではなく簡易な見積りなので、着地速度（地面に対する速さで、横方向の速度を含む。サンプルでは 7.1 m/s）とは一致しない。
-結果パネルの静安定余裕の行（``min margin``）には、自由飛行中の最小値とランチャ離脱時の値の小さいほうを示す。自由飛行中の最小値は、ランチャ離脱の時刻（自由飛行はここから始まる）から頂点までのうち対気速度が 10 m/s を超える間の値で、ランチャ離脱の時刻の値を含む。プレーンモードでは ``min static margin X cal (free flight Y cal)`` の 1 行で、自由飛行中の最小値 ``Y`` も添える。
+結果パネルの静安定余裕の行（``min margin``）には、自由飛行中の最小値とランチャ離脱時の値の小さいほうを示す。自由飛行中の最小値は、ランチャ離脱の時刻（自由飛行はここから始まる）から頂点までのうち対気速度が 10 m/s を超える間の値で、ランチャ離脱の時刻の値を含む。プレーンモードでは ``min static margin X cal (free flight Y cal)`` の 1 行で、自由飛行中の最小値 ``Y`` も添える。対気速度が頂点まで 10 m/s を超えなかったときは、``Y cal`` の代わりに ``n/a (airspeed < 10 m/s)`` と書く。
+一般表（6 成分の表）では、続けて ``pitch / yaw     X cal / Y cal (general aero table: smallest margin in each plane)`` の行に、ピッチとヨーの面ごとの最小の余裕を示す（:ref:`sec-static-margin-general`）。
 
 結果パネルの静安定余裕には判定の印が付く。
 
@@ -564,7 +569,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - 上で述べた表示（バナー、パネル、色）。進捗バーは標準エラー出力が端末のときだけ出す。
    * - 標準出力をパイプ・リダイレクトした
      - プレーンモード。バナー、パネル、色、進捗バーを出さず、行単位の出力（``Flight (...)`` や ``rail exit ...`` など）を書く。
-       書き出したファイルは ``-> パス`` の行に並べる（``sim`` は ``trajectory.csv`` と ``summary.json``、``dispersion`` は結果の CSV と JSON）。
+       書き出したファイルは ``-> パス`` の行に並べる（``geom`` は ``geometry.json`` と ``profile.csv``、``sim`` は ``trajectory.csv`` と ``summary.json``、``dispersion`` は結果の CSV と JSON）。
        ``ignisyeet sim ... | tee log.txt`` のように記録しても制御文字が混ざらない。
    * - ``-q`` / ``--quiet``
      - エラーと、書き出したファイルのパスだけを表示する。スクリプトから呼ぶときに使う。
@@ -597,7 +602,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - STL から形状を抽出し、``geometry.json`` と ``profile.csv`` を書き出す。抽出結果の確認用。
    * - ``aero <config> [--force]``
      - 空力係数表 ``aero_table.csv`` を作る。入力（STL と空力関係の設定）が前回と同じなら保存済みの表を使う。
-       ``--force`` を付けると必ず作り直す。
+       ``--force`` を付けると、保存済みの表が設定と一致していても作り直す（``aero.method = "table"`` では効果がない）。
    * - ``sim <config> [--descent ballistic|parachute]``
      - 設定した風で 1 回飛翔させ、``trajectory.csv`` と ``summary.json`` を書き出す。``sim.max_time`` までに着地しなかったとき、または静的に不安定なときは、結果を書いたうえで終了ステータス 3 で終わる（:ref:`sec-exit-status`）。
        実行の最初に、出力先の古い ``trajectory.csv`` と ``summary.json`` を消す。実行がエラーで終わったときは、``summary.json`` に失敗の印 ``{"failed": true, "error": "…"}`` だけを書く（:ref:`sec-file-summary`）。
@@ -647,6 +652,9 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - 0 以上。``recovery.enabled = true`` のときは正（0 ではパラシュートが減速しない）
    * - ``recovery.main_cd_s`` と ``recovery.main_altitude``
      - 両方を指定するか、両方とも省略する。指定するときは、どちらも有限で正
+   * - ``sim.descent = "parachute"``
+     - ``recovery.enabled = true`` のときだけ（``sim.descent = "parachute" needs recovery.enabled = true``）。
+       コマンドラインの ``sim --descent parachute`` も同じで、回収系が無効なら ``--descent parachute needs recovery.enabled = true`` のエラーにする
    * - ``aero.mach_min`` と ``aero.mach_max``
      - ``mach_min`` は 0 以上、``mach_max`` は ``mach_min`` より大きい
    * - ``aero.mach_step``、``aero.alpha_max_deg``、``aero.alpha_step_deg``、``aero.general_mach_step``
@@ -695,6 +703,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
 
 入力ファイルが読めないときは、エラーにファイルのパスを示す（STL、モータの ``.eng``、風のプロファイル、外部の係数表とその付随ファイル）。
 STL は、頂点の座標に有限でない値（``NaN`` や ``inf``）があると、三角形の番号を示してエラーにする。
+STL の表面が閉じていない（開いた辺が辺の 1 % を超える）ときもエラーにする（:ref:`sec-geometry-warnings`）。
 バイナリ STL は、見出しに書かれた三角形の数に必要なバイト数よりファイルが短いと、``binary STL declares 3 triangles (needs 234 bytes) but the file has 191 bytes: the file is truncated or corrupt`` の形（数は例）で、宣言した数、必要なバイト数、実際のバイト数を示してエラーにする。
 ``.eng`` の検査は :ref:`sec-propulsion-eng` に、外部の係数表の検査は :ref:`sec-aero-table-format` にある。
 
@@ -711,6 +720,13 @@ STL は、頂点の座標に有限でない値（``NaN`` や ``inf``）がある
 値が有限でも、速さが 8 km/s を超えるか高さが 1000 km を超えたときは、発散とみなして同じ形のエラーにする。
 モンテカルロ解析では、そのサンプルを失敗として数える。風の格子では、そのケースだけを失敗として記録し、ほかのケースの計算は続ける（:ref:`sec-wind-grid-failed`）。
 
+飛翔計算の前に、重心まわりの慣性テンソルを、乾燥時と、燃焼中（燃焼時間を 32 等分した時刻と推力曲線の点の時刻）について検査する。
+主慣性モーメントがすべて有限で正で、最大と最小の比が 10\ :sup:`8` 以下でなければ、
+``inertia tensor is singular or ill-conditioned at t = … s (principal moments …, …, … kg m^2; the largest may be at most 1e8 times the smallest): check rocket.ixx_dry, iyy_dry, izz_dry and the products of inertia``
+の形のエラーにする（:ref:`sec-inertia-tensor`）。
+回収系が無効な機体をパラシュート降下で飛ばそうとすると、``the parachute descent needs recovery.enabled = true (with recovery disabled there is no parachute to deploy); fly the ballistic descent or enable [recovery]`` のエラーにする。
+回収系が有効なときは、飛翔計算の前にも ``recovery.cd_s`` が有限で正であること（``recovery.cd_s must be positive and finite when recovery.enabled = true, got …``）と、``recovery.delay`` が有限で 0 以上であること（``recovery.delay must be non-negative and finite, got …``）を確かめる。
+
 UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設定ファイル、``.eng``、外部の係数表とその JSON、風のプロファイルの表）。
 
 エラーにはしないが疑わしい点は、警告として表示する。警告は ``-q`` を含むすべての出力モードで出す。
@@ -723,7 +739,7 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 * 風のモデルが ``profile`` で、頂点が表の最上端の高度より高い（``apogee … m is above the top of the wind profile (… m): the wind above … m is held at the top value``）。表より上の風は最上端の値で一定になる。
 * 風のモデルが ``power`` または ``log`` で、頂点が地上 1000 m を超え、風速が 0 でない（``dispersion`` の風の格子では、最大の風速が 0 でないとき）。判定に使う風速は、実際にその飛翔で使う基準風速である（``profile`` では ``wind.speed`` ではなく表から求めた値）。これらのプロファイルは基準高さ ``wind.ref_height`` の風速 ``wind.speed`` を上空に外挿するので、上空の風と着地点はモデル依存になる（実際の予測には ``model = "profile"`` を使う）。
 * 風のモデルが ``profile`` で、表の最下行が地上 0 m より上にある（``the wind profile starts at … m: the wind below is held at the lowest row``）。
-* 風のモデルが ``profile`` の風の格子またはモンテカルロ解析で、表の拡大率 :math:`k`\ （:ref:`sec-wind-scaling`）が 3 を超えるか 1/3 を下回るケースがある。最も極端なケースの拡大率と、表の風速の最大値を拡大した値を示す（``wind profile scaled by up to … (wind grid … m/s vs profile mean … m/s): winds aloft up to … m/s``。モンテカルロ解析では ``wind grid`` が ``Monte Carlo sample`` になる）。
+* 風のモデルが ``profile`` の風の格子またはモンテカルロ解析で、表の拡大率 :math:`k`\ （:ref:`sec-wind-scaling`）が 3 を超えるか 1/3 を下回るケースがある。最も極端なケースの拡大率と、表の風速の最大値を拡大した値を示す（``wind profile scaled by a factor of … (wind grid … m/s vs profile mean … m/s): winds aloft up to … m/s``。倍率は 1 以上なら小数 1 桁、1 未満なら 2 桁で示す。モンテカルロ解析では ``wind grid`` が ``Monte Carlo sample`` になる）。
 * パラシュート降下が着地した飛翔（``sim`` と、``dispersion`` の公称の飛翔）で、開傘しないまま着地した（``parachute descent landed at … m/s: the parachute did not deploy before landing (recovery.delay = … s)``）か、着地速度が 15 m/s を超える（``… which is above 15 m/s: check recovery.cd_s``）。
 * ``sim.max_time`` までに着地しない。
 * 二段開傘で、メインの開傘高度 ``recovery.main_altitude`` が頂点の高度以上である（``recovery.main_altitude = … m is above the apogee (… m): the main opens together with the drogue``）。
@@ -732,6 +748,8 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
   風速 :math:`W` は、``sim`` では設定の風、``dispersion`` の風の格子では格子の最大の風速、モンテカルロ解析では公称の風速に風速の標準偏差の 2 倍を足した値である。
   離脱速度は公称の飛翔の値である。
 * モータの推力曲線の疑わしい点。最後の点が 0 N でない（``thrust curve ends at … N instead of 0 N: the motor is cut off abruptly``）、点が 1 つだけ（``the thrust curve has a single point: the thrust ramps linearly from 0 N at t = 0``）、燃焼時間が 0.05 s より短い（``burn time … s is shorter than 0.05 s: the motor is an impulse; check the time column``）。
+* 係数表の格子が粗い。Mach 数の刻みが 0.1 を超える（``aero.mach_step = … is coarse (> 0.1): the coefficients are interpolated linearly between the Mach rows, which smooths over the transonic drag rise and shifts the apogee (0.02 is typical)``。部品積み上げ法の一般表では ``aero.general_mach_step``）か、迎角の刻みが 5° を超える（``aero.alpha_step_deg = … is coarse (> 5 deg): the normal force and centre of pressure are interpolated linearly between the rows (1 deg is typical)``）。
+  ``aero``、``sim``、``dispersion`` で表示する。外部の係数表（``method = "table"``）は、表そのものの格子なので対象外である。
 * 外部の係数表（``method = "table"``）で、迎角 0 の軸力係数 ``ca_on`` または ``ca_off`` が負である（``aero table: ca_off at Mach …, alpha 0 is … (negative axial force / thrust-like drag)``）。列ごとに、最初の Mach 数を示す。
 * ``dispersion`` で、静的に不安定なケースまたはサンプルがある。降下モードごとに数と最小の静安定余裕を示す（:ref:`sec-dispersion-unstable`）。
 * モンテカルロ解析で、着地したサンプルが 30 未満の降下モードがある（``only … landed samples: the statistics are rough``）。
@@ -1373,10 +1391,10 @@ CFD の準備は ``ignisyeet cfd-check 設定ファイル [--mesh]`` で確か�
      - 相対。軸力（抗力）係数 :math:`C_A`\ （燃焼中・燃焼後）
    * - ``elevation_deg``
      - ``0.5``
-     - 絶対 [deg]。レールの向きの設置誤差 :math:`\sigma_{\mathrm{tilt}}`。公称の軸を、面内（射角）と面に垂直な 2 方向の独立な傾きで等方に傾ける。傾けた射角が :math:`(0,90]` の外のサンプルは失敗になる（:ref:`sec-mc-rail`）
+     - 絶対 [deg]。レールの向きの設置誤差 :math:`\sigma_{\mathrm{tilt}}`。公称の軸を、面内（射角）と面に垂直な 2 方向の独立な傾きで等方に傾ける。機体はレールとともに回る（ロール角も変わる）。傾けた射角が :math:`(0,90]` の外のサンプルは失敗になる（:ref:`sec-mc-rail`）
    * - ``azimuth_deg``
      - ``1.0``
-     - 絶対 [deg]。射方位の設定誤差。傾けたレールを鉛直軸の周りに回す（水平方向の効果は :math:`\sigma\cos(\text{射角})`）
+     - 絶対 [deg]。射方位の設定誤差。傾けたレールを機体ごと鉛直軸の周りに回す（水平方向の効果は :math:`\sigma\cos(\text{射角})`）
    * - ``wind_speed``
      - ``1.0``
      - 絶対 [m/s]。基準風速（``[wind]`` の ``speed`` の周りに分布し、0 未満は 0 にする）。``profile`` では表の平均風速 :math:`W` の周りの揺らぎで、表を :math:`\max(W+\delta,0)/W` 倍する（:ref:`sec-wind-scaling`）。表がほぼ無風（平均 0.1 m/s 未満）で、この値が 0 でないときはエラー
@@ -1606,6 +1624,7 @@ push とプルリクエストでは、ワークフロー ``ci.yml`` が ``cargo 
 ``python/plot.py`` の単体テスト（``python/test_plot.py``）も実行し、
 ``sim.max_time`` を短くした飛翔が終了ステータス 3 で終わることも確かめる（clippy と rustfmt は ``-D warnings`` と ``--check`` で実行し、違反があるとジョブが失敗する。ShellCheck は助言のみで、失敗してもジョブは落ちない）。
 別のジョブが、必要な最低の Rust の版 1.87 で ``cargo build --locked`` を実行する。
+ワークフロー ``docs.yml`` は、プルリクエストと ``main`` への push で HTML のドキュメントを警告をエラーとして（``-W``）ビルドする。GitHub Pages への公開は ``main`` への push（と手動の実行）のときだけで、プルリクエストではビルドだけを行う。
 ワークフローが使う Action は、コミットの SHA で固定している。
 書式は ``rustfmt.toml``\ （``max_width = 160``）で定める。Rust のツールチェーンは ``rust-toolchain.toml``\ （stable、rustfmt と clippy を含む）で指定し、``Cargo.toml`` の ``rust-version``\ （1.87）が必要な最低の版を定める。
 

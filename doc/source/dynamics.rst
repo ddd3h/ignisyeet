@@ -113,7 +113,44 @@ Coriolis 力と遠心力の項が加わる以外は同じ式を使う（:ref:`se
    x_{cp}=\frac{d\,(C_mC_Z-C_nC_Y)}{C_Y^2+C_Z^2}
 
 を使う。:math:`C_m=x_{cp}C_Z/d,\ C_n=-x_{cp}C_Y/d` から逆算した値で、横方向の力が 0 に近いときは迎角 :math:`0.5^\circ` の値で代える。
-この等価な圧力中心は表示と診断のための値であり、非対称な機体の静安定の尺度ではない（:ref:`sec-aero-xcp`）。
+この値は、横方向の力の向きで重み付けしたピッチとヨーの圧力中心の平均にあたり、ピッチ面とヨー面の圧力中心が違う機体では、その間の値になる。
+一般表の静的な安定の判定には、次に述べるピッチとヨーの別々の余裕を使う。
+
+.. _sec-static-margin-general:
+
+一般表の静安定余裕
+~~~~~~~~~~~~~~~~~~
+
+一般表（6 成分の表）では、ピッチ面とヨー面の静安定余裕を別々に求め、小さいほうで判定する。
+重心 :math:`x_{cg}` まわりのモーメント係数は
+
+.. math::
+   :label: eq-cm-cg
+
+   C_{m,cg}=C_m-\frac{x_{cg}}{d}\,C_Z,\qquad C_{n,cg}=C_n+\frac{x_{cg}}{d}\,C_Y
+
+である。ピッチの余裕は :math:`\beta=0` での、ヨーの余裕は :math:`\alpha=0` での表の傾きから
+
+.. math::
+   :label: eq-margin-pitch-yaw
+
+   \mathrm{SM}_{\mathrm{pitch}}=\frac{\partial C_{m,cg}/\partial\alpha}{\partial C_Z/\partial\alpha}\bigg|_{\beta=0}
+   =\frac{x_{cp,\mathrm{pitch}}-x_{cg}}{d},\qquad
+   \mathrm{SM}_{\mathrm{yaw}}=-\frac{\partial C_{n,cg}/\partial\beta}{\partial C_Y/\partial\beta}\bigg|_{\alpha=0}
+   =\frac{x_{cp,\mathrm{yaw}}-x_{cg}}{d}
+
+で求める [cal]（正が安定）。傾きは、角度 0 の前後 :math:`\pm\delta` での中心差分で、:math:`\delta` は :math:`0.5^\circ` と、その軸の格子の 0 でない最小の角度の小さいほうである。
+格子が 0 を含めば、どちらも補間した表の 0 での傾きを与える。法線力の傾きが 0 の面では、余裕は求まらない（NaN）。
+判定に使う余裕は :math:`\min(\mathrm{SM}_{\mathrm{pitch}},\mathrm{SM}_{\mathrm{yaw}})` で、ピッチとヨーの連成は考えない。
+軸対称表では、両方の余裕が :math:`(x_{cp}(M,0)-x_{cg})/d` に等しく、判定は飛翔計算の余裕のままである。
+
+* **公称の飛翔**\ （``sim`` と、``dispersion`` の公称の弾道落下）：記録した軌道の点ごとに、その Mach 数と重心で 2 つの余裕を求める。
+  自由飛行（ランチャ離脱から頂点まで、対気速度 10 m/s 超）の最小値と、ランチャ離脱の時刻（前後の点から Mach 数と重心を線形補間）の値から、
+  ``min_stability_cal`` と ``stability_at_rail_exit`` を、それぞれピッチとヨーの小さいほうで置き換える。
+  ``summary.json`` には、面ごとの最小値（自由飛行とランチャ離脱の小さいほう）を ``static_margin_pitch_min_cal`` と ``static_margin_yaw_min_cal`` に書く（:ref:`sec-file-summary`）。
+* **落下分散のケースとサンプル**：軌道の点を記録しないので、飛翔計算の余裕（等価な圧力中心による値）から、
+  Mach 数 0 からその飛翔の最大 Mach 数までの表の Mach 数で求めた :math:`\max|x_{cp,\mathrm{pitch}}-x_{cp,\mathrm{yaw}}|/d` を引いた値を使う。
+  小さな横方向の力の等価な圧力中心は 2 つの圧力中心の間にあるので、この値はピッチとヨーの小さいほうの余裕の下限（安全側）である。
 
 回転運動
 --------
@@ -171,7 +208,9 @@ CAD ソフトの多くは慣性乗積を :math:`+\int xy\,\mathrm{d}m` の符号
 
    \dot{\bm{\omega}} = I^{-1}\left(\bm{M}_b-\bm{\omega}\times(I\bm{\omega})\right)
 
-とする。設定を読むときに、:math:`I` が正定値でなければエラーにする。
+とする。飛翔計算の前に、乾燥時と燃焼中（燃焼時間を 32 等分した時刻と推力曲線の点の時刻）の重心まわりの :math:`I` の固有値（主慣性モーメント）を求め、
+すべてが有限で正で、最大と最小の比（条件数）が :math:`10^8` 以下であることを確かめる。満たさなければ、時刻と主慣性モーメントを示してエラーにする（:ref:`sec-config-checks`）。
+逆行列を単位行列などで代えて計算を続けることはない。
 質量の時間変化による :math:`\dot I` の項は無視する（:ref:`sec-lim-motion`）。
 
 空力モーメント
@@ -513,7 +552,7 @@ Dormand–Prince 法（``rk45``）
 .. figure:: _generated/plots/step_factor.*
    :width: 75%
 
-   規格化誤差と刻み幅の倍率。誤差が許容値の 0.9 倍の 5 乗根より小さければ刻み幅を広げ、1 を超えると縮めてやり直す。
+   規格化誤差と刻み幅の倍率。:math:`\mathrm{err}<0.9^5\approx0.59` なら広げ、:math:`\mathrm{err}>1` なら縮めてやり直す。
 
 刻み幅の上限と調整
 ^^^^^^^^^^^^^^^^^^

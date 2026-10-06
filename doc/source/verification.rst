@@ -83,6 +83,7 @@
 * ``protruding_nozzle_keeps_nose_detection_and_warns``：突き出したノズルがあってもノーズを検出でき、底面半径の警告が出る。
 * ``plausible_rocket_has_no_warnings_and_odd_proportions_warn``：標準的な機体には警告がなく、寸詰まりの機体には全長と直径の比の警告が出る。
 * ``explicit_nose_direction_is_respected_and_forward_fins_warn``：``nose_direction`` の指定は覆されず、フィンが前半にあれば警告が出る。
+* ``open_surfaces_are_rejected_and_small_defects_warned``：サンプル機体の閉じた表面には開いた辺も非多様体の辺もない。三角形 1 枚の面は ``the STL surface is not closed`` のエラーになり、三角形を 1 枚除いた表面は 3 本の開いた辺の警告、三角形を 1 枚重ねた表面は 3 本の非多様体の辺の警告になる。
 
 空力モデル
 ----------
@@ -349,6 +350,9 @@ ECEF 座標での積分
   （``axisymmetric_reference_cant_with_equal_cant_keeps_table_roll``）。
 * **慣性テンソルの符号**：点質量 :math:`m=2` kg を :math:`(0.3,-0.2,0)` m に置いた平行軸の項が :math:`I_{xy}=-mxy`、:math:`I_{xx}=my^2`、:math:`I_{yy}=mx^2`、:math:`I_{zz}=m(x^2+y^2)` になる
   （``point_mass_inertia_sign``。:math:`10^{-15}` 以内）。
+* **一般表の静安定余裕**\ （``static_margins_separate_pitch_and_yaw``、``static_margins_of_an_axisymmetric_expansion_equal_the_axisymmetric_margin``）：ピッチの圧力中心 1.2 m、ヨーの圧力中心 0.6 m、重心 0.9 m、:math:`d=0.1` m の一般表で、余裕はピッチ :math:`+3`、ヨー :math:`-3` cal になる（:math:`10^{-9}` 以内）。軸対称表を展開した一般表では、Mach 数の格子点で軸対称表の余裕と :math:`10^{-9}` で一致する。
+  ピッチで安定・ヨーで不安定な表で飛ばすと、判定はヨーの余裕で不安定になり、``sim`` は ``RESULTS NOT USABLE`` を返し、``summary.json`` の ``static_margin_yaw_min_cal`` は負、``stable`` は ``false`` になる（``general_table_unstable_in_yaw_is_not_usable``）。落下分散の下限は、2 つの圧力中心の差 6 cal だけ余裕を下げる（``pitch_stable_yaw_unstable_flight_is_unstable``）。
+* **慣性テンソルの検査**\ （``ill_conditioned_inertia_is_an_error``）：主慣性モーメントの比が :math:`10^{8}` を超える乾燥の慣性テンソル、:math:`I_{xx}=0`、負の :math:`I_{xx}` は、``inertia tensor is singular or ill-conditioned`` のエラーになり、条件のよい非対称なテンソルは飛ぶ。
 * **乾燥重心の横ずれ**：乾燥重心を :math:`y_b` 方向に 0.02 m ずらすと、推進剤を含めた重心の横ずれが :math:`m_dy_d/m` になり、慣性乗積 :math:`I_{xy}` が
   :math:`-\sum m\,\Delta x\,\Delta y`（重心からの距離で、乾燥部分と推進剤の和）と :math:`10^{-12}` で一致する。慣性テンソルの行列式は正である
   （``off_axis_dry_cg_gives_product_of_inertia_with_propellant``）。
@@ -394,6 +398,7 @@ ECEF 座標での積分
   射角 45°、射方位 30° のレールでは、面内の 1° が射角 46°、射方位の回転 2° が射方位 32° になり、面に垂直な 0.01° は射方位を :math:`0.01^\circ/\cos45^\circ` だけ動かし、射角は 2 次の量しか変えず、公称の軸との角度は 0.01° ちょうどである（:math:`10^{-9}` 以内）。
   鉛直のレールで傾きの標準偏差だけを与えた 200 サンプルの弾道落下（無風）は、1σ 楕円の短半径が長半径の 0.7 倍を超え、全方位に同じように広がる（``rail_tilt_spread_is_isotropic_for_a_vertical_rail``）。
   射角 2°、:math:`\sigma_{\mathrm{tilt}}=3^\circ` の 20 サンプルのうち、傾けた射角が 0° 以下になるものは、``perturbed rail elevation … deg is outside (0, 90]`` の文で失敗し、残りは飛ぶ（``rail_elevation_outside_the_valid_range_fails_the_sample``）。
+* **機体ごとの回転**\ （``small_rail_tilt_moves_the_body_axes_only_a_little``）：鉛直と傾いたレール（ロール角を含む 5 通り）に、:math:`10^{-3}`\ ° から 0.5° の傾きと鉛直軸まわりの回転を与えると、機体座標の 3 軸はどれも、回転角の和以上には動かない（記録した射角・射方位・ロール角の変化から作り直した飛翔の姿勢でも同じ）。鉛直のレールを面内に :math:`10^{-3}`\ ° 傾けると、射方位とロール角がともに 180° 変わる。標準偏差 :math:`10^{-3}`\ ° で引いた 50 サンプルでも、飛ばす機体の軸の動きは :math:`10^{-2}`\ ° 未満である（``drawn_rail_perturbation_turns_the_body_with_the_rail``）。
 * **ロールと非対称の項**：ロールと非対称の標準偏差を 0 にした設定と、すべて有効にした設定で、最初の 11 項目の引いた値が完全に一致し、標準偏差 0 の項目は 0 を引く。
   有効にした項目は 0 でない値を引く（``old_seeds_reproduce_the_old_draws_and_new_sigmas_do_not_move_them``。先頭の乱数は ``seed`` 11 の最初の正規乱数と一致する）。
   公称の傾き 1° に :math:`z_b` 方向 1° を足すと傾きは :math:`\sqrt2` °、方位は 45° になり、公称のオフセット :math:`(0.001,0)` m に :math:`z_b` 方向 0.002 m を足すと :math:`(0.001,0.002)` m、

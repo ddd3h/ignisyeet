@@ -443,7 +443,7 @@ CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surf
 降下モード ``descent``、基準風 ``wind_speed`` と ``wind_direction_deg``\ （``profile`` では表の平均風速 :math:`W` と平均風の風向 :math:`\Psi`。:ref:`sec-wind-profile`）、ランチャ離脱の時刻 ``rail_exit_time`` と速度 ``rail_exit_speed``、燃焼終了時刻 ``burnout_time``、
 最大速度 ``max_speed``、最大 Mach 数 ``max_mach``、最大動圧 ``max_dyn_pressure``、頂点の時刻 ``apogee_time`` と高度 ``apogee``\ （射点からの高さ）と位置 ``apogee_east`` ``apogee_north``、
 最小静安定余裕 ``min_stability_cal`` とランチャ離脱時の値 ``stability_at_rail_exit``\ （``min_stability_cal`` は、ランチャ離脱の時刻（自由飛行はここから始まる）から頂点までのうち対気速度が 10 m/s を超える間に、積分のステップの始端ごとに測った最小値である。
-ランチャ離脱の時刻の値を含む。頂点付近の遅い部分と降下は含まない。該当するステップがなければ ``NaN``）、
+ランチャ離脱の時刻の値を含む。頂点付近の遅い部分と降下は含まない。該当するステップがなければ ``NaN``。一般表では、記録した軌道の点で求めたピッチとヨーの余裕の小さいほう。:ref:`sec-static-margin-general`）、
 ランチャ離脱の値と着地の値は、ステップ内の補間（位置は三次エルミート補間、残りは両端の線形補間）で求めた状態の値である（:ref:`sec-rail`、:ref:`sec-landing`）、
 着地の時刻 ``landing_time``、位置 ``landing_east`` ``landing_north`` ``landing_lat`` ``landing_lon``、射点からの距離 ``landing_distance``、着地速度 ``landing_speed`` を持つ。
 ``landing_speed`` は着地の瞬間の **地面に対する速さ** で、水平方向の流され（風による移動）の速さを含む。降下率（鉛直の速さ）ではないので、パラシュート降下で風が強いと、降下率より大きい。
@@ -464,6 +464,8 @@ CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surf
      - ``min_stability_cal``\ （ランチャ離脱の時刻を含む）と ``stability_at_rail_exit`` のうち小さいほう [cal]（結果パネルの ``min margin`` と同じ）。どちらも有限でなければ ``null``
    * - ``stable``
      - ``static_margin_min_cal`` が 0 以上なら ``true``\ （静的に安定）、負なら ``false``。``null`` のときは ``true``。``false`` のとき、``sim`` は着地したかどうかにかかわらず終了ステータス 3 で終わる（:ref:`sec-exit-status`）
+   * - ``static_margin_pitch_min_cal`` / ``static_margin_yaw_min_cal``
+     - 一般表（6 成分の表）のときだけ書く。ピッチ面とヨー面の静安定余裕の、自由飛行中とランチャ離脱時の小さいほう [cal]（:ref:`sec-static-margin-general`）。求まらなければ ``null``
    * - ``drogue_deploy_time``
      - （ドローグ、または単一の）パラシュートが開いた時刻 [s]。開傘は、頂点の時刻に ``recovery.delay`` を足した時刻に、刻み幅によらず正確に起こる（:ref:`sec-integrators`）。弾道落下と、開傘する前に着地した飛翔では、この項目を書かない
    * - ``wind_scale``
@@ -494,7 +496,7 @@ CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surf
 
 時刻歴で、位置（``east`` ``north`` ``up``、``lat`` ``lon`` ``alt``）、速度、``airspeed``、``mach``、``thrust``、``mass``、``x_cg``、``x_cp``、``stability_cal``\ （静安定余裕）、``dyn_pressure``、姿勢と角速度を持つ。
 ``phase`` は ``rail``、``free``、``parachute`` のいずれかである。
-``alpha_deg`` は全迎角 :math:`\alpha_t`、``x_cp`` は一般表では等価な圧力中心（:eq:`eq-xcp-eff`。表示用の値で、非対称な機体の安定性の尺度ではない）である。
+``alpha_deg`` は全迎角 :math:`\alpha_t`、``x_cp`` は一般表では等価な圧力中心（:eq:`eq-xcp-eff`）である。一般表の ``stability_cal`` はこの値から求めた余裕で、安定の判定にはピッチとヨーの別々の余裕を使う（:ref:`sec-static-margin-general`）。
 末尾の 4 列は、``beta_deg``\ （横滑り角 :math:`\beta` [deg]）、``roll_rate``\ （ロール角速度 :math:`\omega_x` [rad/s]）、
 ``cl``\ （ロールの係数 :math:`C_l^{\mathrm{tot}}`、:eq:`eq-cl-total`）、``cy``\ （一般表の :math:`C_Y`。軸対称表では 0）である。
 
@@ -515,6 +517,7 @@ CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surf
 列 ``error`` は、積分がエラーで止まったケースのエラーの文である（改行は空白に替え、コンマや引用符を含むときは引用符で囲む）。エラーのないケースでは空である。
 エラーで止まったケースは、``landed = false`` で、``wind_speed`` と ``wind_direction_deg`` 以外の数値の列が ``NaN`` になる（:ref:`sec-wind-grid-failed`）。
 最後の列 ``stable`` は、そのケースが静的に安定か（``min_stability_cal`` とランチャ離脱時の余裕のうち小さいほうが 0 以上なら ``true``、負なら ``false``）である。余裕が求まらないケースでは空である（:ref:`sec-dispersion-unstable`）。
+一般表では、``min_stability_cal`` と判定は、ピッチとヨーの余裕の下限（:ref:`sec-static-margin-general`）である。
 
 .. _sec-file-dispersion:
 
@@ -537,11 +540,11 @@ KML は、このファイルのハッシュが現在の設定と一致すると�
 
 .. code-block:: text
 
-   sample,descent,status,thrust_scale,burn_time_scale,dry_mass,cg,cn_scale,ca_scale,elevation_deg,azimuth_deg,wind_speed_delta,wind_direction_deg_delta,parachute_cd_s_scale,wind_speed,wind_direction_deg,landing_east,landing_north,landing_lat,landing_lon,landing_distance,landing_time,landing_speed,apogee,apogee_time,max_mach,rail_exit_speed,min_stability_cal,thrust_misalignment_y_deg,thrust_misalignment_z_deg,thrust_offset_y,thrust_offset_z,fin_cant_deg,cg_lateral_y,cg_lateral_z,cl_scale,clp_scale,stable
+   sample,descent,status,thrust_scale,burn_time_scale,dry_mass,cg,cn_scale,ca_scale,elevation_deg,azimuth_deg,roll_deg,wind_speed_delta,wind_direction_deg_delta,parachute_cd_s_scale,wind_speed,wind_direction_deg,landing_east,landing_north,landing_lat,landing_lon,landing_distance,landing_time,landing_speed,apogee,apogee_time,max_mach,rail_exit_speed,min_stability_cal,thrust_misalignment_y_deg,thrust_misalignment_z_deg,thrust_offset_y,thrust_offset_z,fin_cant_deg,cg_lateral_y,cg_lateral_z,cl_scale,clp_scale,stable
 
 ``status`` は ``ok`` または ``failed`` で、失敗した行は結果の列が空欄になる。``sim.max_time`` までに着地しなかったサンプルも ``failed`` である。
 ``thrust_scale`` から ``parachute_cd_s_scale`` までは引いたばらつきで、相対のものは割合、``wind_speed_delta`` と ``wind_direction_deg_delta`` は風速・風向のずれである。
-``elevation_deg`` と ``azimuth_deg`` は、引いた値そのものではなく、実際に飛ばしたレールの射角と射方位の公称値からの変化 [deg] である（射方位は :math:`(-180^\circ,180^\circ]` に折り返す。:ref:`sec-mc-rail`）。
+``elevation_deg`` と ``azimuth_deg`` は、引いた値そのものではなく、実際に飛ばしたレールの射角と射方位の公称値からの変化 [deg]、``roll_deg`` は機体のロール角の公称値からの変化 [deg] である（射方位とロール角は :math:`(-180^\circ,180^\circ]` に折り返す。:ref:`sec-mc-rail`）。
 ``wind_speed`` と ``wind_direction_deg`` はそのサンプルの基準風速・風向（``profile`` では表の平均風速 :math:`W` と平均風の風向 :math:`\Psi` を拡大・回転した値）、続く列は着地点（ENU と緯度経度）、着地距離、着地時刻、着地速度、頂点、頂点時刻、最大 Mach 数、ランチャ離脱速度、最小静安定余裕である。
 続く 9 列（``thrust_misalignment_y_deg`` から ``clp_scale``）は、ロールと非対称について引いた値である。
 最後の列 ``stable`` は、そのサンプルが静的に安定か（最小の静安定余裕とランチャ離脱時の余裕のうち小さいほうが 0 以上なら ``true``、負なら ``false``）で、失敗したサンプルなど余裕が求まらない行では空である（:ref:`sec-dispersion-unstable`）。

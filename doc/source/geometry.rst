@@ -296,5 +296,12 @@ STL を任意に回転・平行移動しても同じ結果になることを自�
      - 基準半径を 90 パーセンタイルから決めた（上の「胴体半径の決定」）
    * - ノーズの向きを端の半径だけで決めた、または、端の形とフィンの位置が逆の向きを示した
      - 向きを確認するか、``nose_direction`` で指定する
+   * - 表面に開いた辺（1 つの三角形にしか使われない辺）が辺の 1 % 以下ある、または 3 つ以上の三角形に共有される辺（非多様体の辺）がある
+     - 小さなメッシュの欠陥である（``the STL surface has … open and … non-manifold (shared by more than two triangles) edges of …: small mesh defects, check the extracted geometry``。該当する種類だけを書く）
+
+辺の数え方では、バウンディングボックスの対角線の :math:`10^{-7}` 倍より近い頂点を同じ点とみなし、2 つの頂点が重なってつぶれた三角形は除く。
+開いた辺が辺の 1 % を超えるときは、表面が閉じていない（穴がある、殻だけの面である）として、警告ではなくエラーにする
+（``the STL surface is not closed: … open edges of … (… %): the geometry extraction needs a closed (watertight) surface; repair the mesh (close the holes) or export the rocket as a solid``）。
+形状の抽出は閉じた表面を前提とするので、穴をふさぐか、ソリッドとして書き出し直す。
 
 STL の尺度の誤りは、``geometry`` の警告のほかに、機体の大きさが妥当な範囲を外れたときにも知らせる。全長が 0.1 から 20 m の範囲の外にあるとエラーにし、直径が 0.005 から 3 m の範囲の外にあると警告する（:ref:`sec-config-checks`）。

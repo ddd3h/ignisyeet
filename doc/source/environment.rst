@@ -294,8 +294,18 @@ ECEF 座標での扱いの違いは :ref:`sec-ecef-gravity` で述べる。
 表の最下端より低いところでは最下端の値、最上端より高いところでは最上端の値を **一定** に保つ（外挿しない）。
 :numref:`fig-wind-models` 右は、上の例の成分を補間したものである。
 
-``profile`` では ``speed`` と ``direction_deg`` は使わない。代わりに、表から基準高度 ``ref_height`` での風を求め、
-それを基準風速・基準風向として扱う（``summary.json`` などにはこの値が出る。無風なら風向は 0° とする）。
+``profile`` では ``speed`` と ``direction_deg`` は使わない。代わりに、表全体の代表風を基準風として扱う（``summary.json`` などにはこの値が出る）。
+代表風速 :math:`W` は、表の最下行から最上行までの高度範囲での平均風速
+
+.. math::
+   :label: eq-wind-profile-mean
+
+   W=\frac{1}{h_N-h_1}\int_{h_1}^{h_N}\bigl|\bm{w}(h)\bigr|\,\mathrm{d}h
+
+であり（台形則で評価する。1 行だけの表ではその行の風速）、代表風向 :math:`\Psi` は、同じ範囲で平均した風速ベクトル
+:math:`\overline{\bm{w}}=\frac{1}{h_N-h_1}\int\bm{w}\,\mathrm{d}h` が吹いてくる方位である。
+平均ベクトルがほぼ 0 のとき（互いに逆向きの風が打ち消し合うとき）は、基準高度 ``ref_height`` での風向を使う（そこも無風なら 0°）。
+:math:`W` はベクトルの大きさの平均なので、風向が高度で変わる表では平均ベクトルの大きさ :math:`|\overline{\bm{w}}|` より大きい。
 
 .. _fig-wind-models:
 
@@ -311,18 +321,32 @@ ECEF 座標での扱いの違いは :ref:`sec-ecef-gravity` で述べる。
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 落下分散（:doc:`dispersion`）では、基準風速と基準風向だけを変えた風を何度も作る。
-``constant``, ``power``, ``log`` では ``speed`` と ``direction_deg`` を差し替えるだけである。
-``profile`` では、表の形（高度ごとの風速比と風向のねじれ）を保つために、基準風速を :math:`w_{\mathrm{ref}}\to w'`、
-基準風向を :math:`\psi_{\mathrm{ref}}\to\psi'` に変えるとき、
+``constant``, ``power``, ``log`` では ``speed`` と ``direction_deg`` を差し替えるだけである。したがって風速格子の値は基準高度 ``ref_height`` での風速である。
+``profile`` では、表の形（高度ごとの風速比と風向のねじれ）を保つために、代表風速を :math:`W\to W'`、
+代表風向を :math:`\Psi\to\Psi'` に変えるとき、
 
 .. math::
    :label: eq-wind-scale
 
-   w_i' = \frac{w'}{w_{\mathrm{ref}}}\,w_i,\qquad
-   \psi_i' = (\psi_i+\psi'-\psi_{\mathrm{ref}})\bmod 360^\circ
+   w_i' = k\,w_i,\quad k=\frac{W'}{W},\qquad
+   \psi_i' = (\psi_i+\Psi'-\Psi)\bmod 360^\circ
 
-と、表の **すべての** 風速を同じ比で拡大し、すべての風向を同じ角度だけ回転する。
-基準高度で表の風が 0 のときは比が定義できないので、全高度で一様な風速 :math:`w'`、風向 :math:`\psi'` の一定風に置き換える。
+と、表の **すべての** 風速を同じ比 :math:`k` で拡大し、すべての風向を同じ角度だけ回転する。
+結果の表の代表風速は :math:`W'`、代表風向は :math:`\Psi'` になる。
+風速格子（``wind_speeds``、``directions``）の値は、``profile`` では表の平均風速 :math:`W` と平均風の風向 :math:`\Psi` に対する値である。
+地上 2 m の風ではないので、地上風の測定値を風速格子にそのまま使ってはならない（選び方は :ref:`sec-dispersion-safety`）。
+
+モンテカルロ法の風速の揺らぎ :math:`\delta`\ （``wind_speed``、単位 m/s）は、``profile`` では平均風速 :math:`W` に対する揺らぎであり、
+:math:`k=\max(W+\delta,\,0)/W` で表を拡大する。:math:`k\ge0` なので、揺らぎで風向が反転することはない。
+
+表の平均風速が 0.1 m/s 未満（ほぼ無風）の表は拡大できない。風速格子、および風速の揺らぎが 0 でないモンテカルロ法では、
+一様な風へ置き換えることはせず、エラーにする。このときは ``model = "constant"`` または ``"power"`` で風速格子を作る。
+単一の飛翔（``ignisyeet sim``）は拡大しないので、ほぼ無風の表でも実行できる。
+
+拡大率 :math:`k` が 3 を超える、または 1/3 を下回るケースがあると、警告を出す。
+表の風は上空ほど強いのが普通で、拡大は上空の風速にも同じ比で効くので、:math:`k` が大きいと上空の風が非現実的に強くなるからである。
+``summary.json`` の ``wind_scale`` は、その飛翔で使った :math:`k`\ （CSV の表そのままなら 1）である。``profile`` 以外のモデルでは出力しない。
+表の最下行が地上高度 0 m より上にあるときは、それより下の風は最下行の値に保たれる（警告を出す）。
 
 風向の定義
 ~~~~~~~~~~

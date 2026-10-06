@@ -239,7 +239,7 @@ def theory(f):
     f.save(fig, "wind_models")
 
     # Adaptive step control: safety factor curve.
-    err = np.logspace(-3, 2, 400)
+    err = np.logspace(-5, 4, 600)  # wide enough to show both clamps (err < 1.9e-4: 5, err > 1.8e3: 0.2)
     fac = np.clip(0.9 * err ** (-0.2), 0.2, 5.0)
     fig, ax = plt.subplots(figsize=(5.6, 3.3))
     ax.plot(err, fac, color=SERIES[0])
@@ -382,8 +382,10 @@ def rigid_body(f):
     axs[0].set_xlabel("時刻 $t$ [s]")
     axs[0].set_ylabel("姿勢の誤差 [rad]")
     axs[0].legend(loc="lower right")
-    axs[1].semilogy(t[1:], np.maximum(d_nrm[1:], 1e-17), color=SERIES[1], label="RK4（正規化前）")
-    axs[1].semilogy(t[1:], np.maximum(d_lie[1:], 1e-17), color=SERIES[0], label="RKMK + RK4")
+    # exact zeros (|q| = 1 to the last bit) have no place on a log axis: those steps are left out (gaps)
+    axs[1].semilogy(t[1:], np.where(np.array(d_nrm[1:]) > 0, d_nrm[1:], np.nan), color=SERIES[1], label="RK4（正規化前）")
+    axs[1].semilogy(t[1:], np.where(np.array(d_lie[1:]) > 0, d_lie[1:], np.nan), color=SERIES[0], label="RKMK + RK4")
+    axs[1].text(0.02, 0.02, "厳密に 0 の時刻は描かない（線の切れ目）", transform=axs[1].transAxes, color=INK2, fontsize=8)
     axs[1].set_xlabel("時刻 $t$ [s]")
     axs[1].set_ylabel("$\\left|\\,|q|-1\\right|$")
     axs[1].legend(loc="center right")
@@ -481,7 +483,8 @@ def from_outputs(f, out):
     # Trajectory: side view and ground track.
     body = traj[traj.phase != "parachute"]
     fig, axs = plt.subplots(1, 2, figsize=(7.8, 3.5))
-    for ph, c, lab in (("rail", SERIES[2], "ランチャ"), ("free", SERIES[0], "自由飛行"), ("parachute", SERIES[1], "パラシュート降下")):
+    # The rail run (5 m, a fraction of a second) is too short to see at this scale: drawn, but not in the legend.
+    for ph, c, lab in (("rail", SERIES[2], None), ("free", SERIES[0], "自由飛行"), ("parachute", SERIES[1], "パラシュート降下")):
         s = traj[traj.phase == ph]
         axs[0].plot(s.t, s.up, color=c, label=lab)
         axs[1].plot(s.east, s.north, color=c, label=lab)
@@ -497,10 +500,11 @@ def from_outputs(f, out):
     fig.tight_layout()
     f.save(fig, "trajectory")
 
-    # Flight states during powered and coasting flight.
+    # Flight states during the ascent (powered flight and coast up to apogee).
     asc = body[(body.vel_u >= 0) & (body.airspeed > 10)]
-    free = body[body.phase == "free"]
-    panels = [("mach", "Mach 数", body), ("alpha_deg", "迎角 $\\alpha$ [deg]", free), ("stability_cal", "静安定余裕 [cal]", asc), ("dyn_pressure", "動圧 $q$ [kPa]", body)]
+    free = asc[asc.phase == "free"]
+    # every panel shows the ascent only (vertical velocity >= 0, airspeed > 10 m/s); alpha from rail exit on
+    panels = [("mach", "Mach 数", asc), ("alpha_deg", "迎角 $\\alpha$ [deg]", free), ("stability_cal", "静安定余裕 [cal]", asc), ("dyn_pressure", "動圧 $q$ [kPa]", asc)]
     fig, axs = plt.subplots(2, 2, figsize=(7.8, 5.2))
     for ax, (col, lab, d) in zip(axs.flat, panels):
         y = d[col] / 1000 if col == "dyn_pressure" else d[col]
@@ -725,7 +729,7 @@ def cfd_study(f, out, pn, data):
             ax.plot([0], [cf[0]], "D", color=c, markersize=6, markerfacecolor="white")
             ax.axhline(cf[0], color=c, linewidth=0.7, linestyle=":")
         else:
-            ax.axhline(summ["M0.8"]["cn_extrapolated"], color=c, linewidth=0.7, linestyle=":")
+            ax.axhline(summ["M0.8"]["cn_extrapolated"], color=c, linewidth=0.7, linestyle=":", label=f"$M=0.8$ の推定値 $C_N={summ['M0.8']['cn_extrapolated']:.3f}$（非単調、外挿式なし）")
     ax.set_xlim(left=-0.03)
     ax.set_xlabel("代表格子幅 $h=N_{cell}^{-1/3}$ [$10^{-2}$]")
     ax.set_ylabel("$C_N$（$\\alpha=4^\\circ$）")

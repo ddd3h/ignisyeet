@@ -3,7 +3,8 @@
 //! Skin friction by surface integration and the empirical axial-force increments.
 //!
 //! Local friction coefficient of a flat plate at running length `x_s` (nose tip for the body,
-//! fin leading edge for the fins), Reynolds number `Re_x = V x_s / nu` at the reference altitude:
+//! fin leading edge for the fins), Reynolds number `Re_x = V x_s / nu` in the configured atmosphere
+//! (`AeroOptions::atmosphere`) at the reference altitude:
 //! * compressibility by the Eckert reference temperature with an adiabatic wall,
 //!   `T*/T = 1 + 0.032 M^2 + 0.58 (Tw/T - 1)`, `Tw/T = 1 + r (g-1)/2 M^2`, `r = 0.89`;
 //!   `Re* = Re_x (T*/T)^-1.76` (power-law viscosity) and `cf = cf_inc(Re*) / (T*/T)`;
@@ -15,7 +16,7 @@
 //! additional drag come from `aero::AeroModel` (same flags as the Barrowman path).
 
 use crate::mesh::Mesh;
-use aero::atmosphere::{us76, GAMMA};
+use aero::atmosphere::GAMMA;
 use aero::AeroOptions;
 
 const RECOVERY: f64 = 0.89;
@@ -60,7 +61,7 @@ impl Friction {
 
     /// Friction axial-force coefficient at Mach `m` (Reynolds number floored at M = 0.05).
     pub fn ca(&self, m: f64, aero: &AeroOptions) -> f64 {
-        let atm = us76(aero.reference_altitude);
+        let atm = aero.atmosphere.at(aero.reference_altitude);
         let v = m.max(0.05) * atm.sound_speed;
         let nu = atm.kinematic_viscosity();
         let sum: f64 = self.run.iter().zip(&self.axial_area).map(|(&x, &a)| cf_local(v * x / nu, m, x, aero.roughness) * a).sum();
@@ -81,5 +82,23 @@ mod tests {
         assert!((cf_local(1e5, 0.0, 1.0, 0.0) - 0.664 / 1e5f64.sqrt()).abs() < 1e-9);
         // Compressibility lowers cf.
         assert!(cf_local(1e7, 2.0, 1.0, 0.0) < cf);
+    }
+
+    /// The friction Reynolds number uses the configured atmosphere (temperature offset, constant
+    /// model), as the Barrowman skin friction does.
+    #[test]
+    fn friction_uses_the_configured_atmosphere() {
+        use aero::atmosphere::AtmosphereModel;
+        let f = Friction { run: vec![0.1, 0.5, 1.0], axial_area: vec![0.01, 0.02, 0.03], s_ref: 0.01, wetted_area: 0.06 };
+        let base = AeroOptions { roughness: 0.0, ..Default::default() };
+        let hot = AeroOptions { atmosphere: AtmosphereModel::us1976(30.0).unwrap(), ..base.clone() };
+        let (c0, c1) = (f.ca(0.3, &base), f.ca(0.3, &hot));
+        // Hotter air: higher kinematic viscosity at the same Mach number despite the faster flow -> lower Re -> higher cf.
+        assert!(c1 > c0 * 1.001, "{c0} vs {c1}");
+        let atm = hot.atmosphere.at(hot.reference_altitude);
+        let v = 0.3 * atm.sound_speed;
+        let nu = atm.kinematic_viscosity();
+        let expect: f64 = f.run.iter().zip(&f.axial_area).map(|(&x, &a)| cf_local(v * x / nu, 0.3, x, 0.0) * a).sum::<f64>() / f.s_ref;
+        assert!((c1 - expect).abs() < 1e-15, "{c1} vs {expect}");
     }
 }

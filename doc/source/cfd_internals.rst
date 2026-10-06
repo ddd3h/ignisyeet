@@ -27,7 +27,8 @@ IgnisYeet の CFD モードは、次の外部プログラムを呼び出して�
 .. figure:: _generated/tikz/cfd_pipeline.*
    :width: 100%
 
-   CFD モードの処理の流れ。橙は gmsh、OpenCASCADE、Manifold を呼ぶ処理（Python）、青は Rust 側の処理（SU2 の実行と後処理）である。
+   CFD モードの処理の流れ。橙は gmsh、OpenCASCADE、Manifold を呼ぶ処理（Python）、青は Rust 側の処理（STL の修復、SU2 の実行と後処理）である。
+   STL の修復（頂点の溶接、面の向きの統一、水密の確認）は Rust で行い、重なった殻の和だけを Python（Manifold）で求める。
    STL モードの内訳は :numref:`fig-cfd-stl-pipeline` に示す。
 
 支配方程式
@@ -441,7 +442,7 @@ z 対称メッシュ
 .. figure:: _generated/plots/cfd_mesh_surface.*
    :width: 100%
 
-   サンプル機体の壁面のメッシュ（``wall_size`` 2 mm、半モデル）。左はノーズ先端（先端から 9 cm）、右はフィンの付け根の前縁側。
+   サンプル機体の壁面のメッシュ（``wall_size`` 2 mm、半モデル）。どちらも :math:`+y` 側から機体の外側の面を見た図で、左はノーズ先端（先端から 9 cm。先端が右を向く）、右はフィンの付け根の前縁側。
 
 体積メッシュの様子は、対称面（:math:`y=0`）での断面で分かる（:numref:`fig-cfd-mesh-section`）。
 壁面の近くでは要素が 2 mm で、壁から離れるにつれ\ :eq:`eq-cfd-size` に従って大きくなり、遠方境界（半径 30 m）では最大の大きさ 3 m に達する。

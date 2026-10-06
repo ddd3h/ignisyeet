@@ -330,7 +330,7 @@ CAD ソフトの多くは慣性乗積を :math:`+\int xy\,\mathrm{d}m` の符号
 .. figure:: _generated/tikz/phases.*
    :width: 100%
 
-   飛翔の段階と、段階が切り替わる条件。
+   飛翔の段階と、段階が切り替わる条件。パラシュート降下でも、開傘の前に着地すれば自由飛行から着地する。二段開傘では、``main_altitude`` 以下でメイン降下に切り替わる。
 
 .. _sec-rail:
 
@@ -553,6 +553,7 @@ Dormand–Prince 法（``rk45``）
    :width: 75%
 
    規格化誤差と刻み幅の倍率。:math:`\mathrm{err}<0.9^5\approx0.59` なら広げ、:math:`\mathrm{err}>1` なら縮めてやり直す。
+   倍率は :math:`\mathrm{err}<1.9\times10^{-4}` で上限の 5、:math:`\mathrm{err}>1.8\times10^{3}` で下限の 0.2 になる。
 
 刻み幅の上限と調整
 ^^^^^^^^^^^^^^^^^^
@@ -811,7 +812,7 @@ RKMK 法の 1 ステップ
    :width: 100%
 
    トルクのない剛体（:math:`I=\mathrm{diag}(1,2,3)`、刻み :math:`h=0.05` s）の姿勢の誤差（左）とクォータニオンのノルムの誤差（右）。
-   参照解は RKMK 法（Dormand–Prince 5 次、:math:`h=1` ms）である。RK4 の「正規化前」は、毎ステップの正規化で取り除かれる偏差を示す。
+   参照解は RKMK 法（Dormand–Prince 5 次、:math:`h=1` ms）である。RK4 の「正規化前」は、毎ステップの正規化で取り除かれる偏差を示す。値がちょうど 0 の点は対数軸に描けないので省いた。
 
 同じ問題の結果を :numref:`fig-rigid-body-attitude` に示す。刻み :math:`h=0.01` s の RKMK 法（``rk4`` の表）では、:math:`\bigl||\bm{q}|-1\bigr|` の最大値は :math:`5.8\times10^{-15}`、
 エネルギーの相対誤差は :math:`7.1\times10^{-12}`、角運動量の大きさの相対誤差は :math:`4.6\times10^{-12}` である（実測）。

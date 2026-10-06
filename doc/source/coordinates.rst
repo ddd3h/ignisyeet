@@ -55,7 +55,8 @@ ECEF モードでも、位置・速度などの **出力** は常に射点の EN
 .. figure:: _generated/tikz/body_frame.*
    :width: 85%
 
-   機体座標系と機体に働く力。迎角 :math:`\alpha` は機軸と対気速度 :math:`\bm{v}_a` のなす角である。
+   機体座標系と機体に働く力。迎角 :math:`\alpha` は機軸と対気速度 :math:`\bm{v}_a` のなす角で、図は :math:`\bm{v}_a` が :math:`+z_b` 側に傾いた正の迎角である。
+   静安定余裕は、圧力中心と重心の距離を基準直径で割った :math:`(x_{cp}-x_{cg})/d` [cal] である。
 
 .. _sec-body-basis:
 

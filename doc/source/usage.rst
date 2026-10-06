@@ -430,7 +430,7 @@ CFD 以外の部分は Windows でも ``cargo check`` が通るが、インス�
 実行ファイルは ``$CARGO_TARGET_DIR/release/ignisyeet``\ （未設定なら ``target/release/ignisyeet``）で、``BIN=...`` で上書きもできる。設定ファイルと出力先のパスに空白があっても動く。
 
 ``make`` が図を読む出力ディレクトリ（``OUT``）は、設定ファイルの ``[output] dir``\ （設定ファイルのあるディレクトリからの相対パス。絶対パスならそのまま、未指定なら ``out``）から決まる。
-``OUT=...`` で上書きもできる。``[output] dir`` は、基本文字列（``"..."``）でもリテラル文字列（``'...'``）でも読める。
+``OUT=...`` で上書きもできる。``[output] dir`` は、基本文字列（``"..."``）でもリテラル文字列（``'...'``）でも読め、行頭の字下げ、引用符で囲んだキー（``"dir"``）、見出しの中の空白（``[ output ]``）も受け付ける。``[output]`` に ``dir`` を書かなければ、設定ファイルのある場所の ``out`` になる（``ignisyeet`` の既定と同じ）。
 
 図の内容と描き方の細部は :ref:`sec-plots` にまとめた。
 
@@ -543,7 +543,15 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
 パラシュートを使う設定の設定パネルには、終端降下速度の見積り（``terminal speed``）が並ぶ。
 これは :math:`\sqrt{2mg/(\rho\,C_DS)}` に海面の標準密度 :math:`\rho=1.225\ \mathrm{kg/m^3}` と乾燥質量 :math:`m` を入れた値で、サンプルでは 6.0 m/s である。
 飛翔の計算結果ではなく簡易な見積りなので、着地速度（地面に対する速さで、横方向の速度を含む。サンプルでは 7.1 m/s）とは一致しない。
-結果パネルの静安定余裕の行（``min margin``）には、自由飛行中の最小値とランチャ離脱時の値の小さいほうと、それをとった時刻と Mach 数（``at 0.25 s, Mach 0.13``）を示す。余裕は迎角 0 の極限の小迎角の余裕で、その状態が飛んでいる迎角は入らない（:ref:`sec-static-margin-general`）。自由飛行中の最小値は、ランチャ離脱の時刻（自由飛行はここから始まる）から頂点までのうち対気速度が 10 m/s を超える間の値で、ランチャ離脱の時刻の値を含む。プレーンモードでは ``min static margin 2.09 cal at t = 0.25 s, Mach 0.13 (free flight 2.09 cal)`` の 1 行で（サンプルの値）、自由飛行中の最小値も添える。サンプルでは、燃焼中に重心が前へ移るので、最小はランチャ離脱の時刻にある。対気速度が頂点まで 10 m/s を超えなかったときは、``Y cal`` の代わりに ``n/a (airspeed < 10 m/s)`` と書く。
+結果パネルの静安定余裕の行（``min margin``）は次のとおりである。
+
+* 自由飛行中の最小値とランチャ離脱時の値の小さいほうと、それをとった時刻と Mach 数（``at 0.25 s, Mach 0.13``）を示す。
+* 余裕は迎角 0 の極限の小迎角の余裕で、その状態が飛んでいる迎角は入らない（:ref:`sec-static-margin-general`）。
+* 自由飛行中の最小値は、ランチャ離脱の時刻（自由飛行はここから始まる）から頂点までのうち対気速度が 10 m/s を超える間の値で、ランチャ離脱の時刻の値を含む。
+* プレーンモードでは ``min static margin 2.09 cal at t = 0.25 s, Mach 0.13 (free flight 2.09 cal)`` の 1 行で（サンプルの値）、自由飛行中の最小値も添える。
+* サンプルでは、燃焼中に重心が前へ移るので、最小はランチャ離脱の時刻にある。
+* 対気速度が頂点まで 10 m/s を超えなかったときは、``Y cal`` の代わりに ``n/a (airspeed < 10 m/s)`` と書く。
+
 一般表（6 成分の表）では、続けて ``pitch / yaw     X cal / Y cal (general aero table: smallest margin in each plane)`` の行に、ピッチとヨーの面ごとの最小の余裕を示す（:ref:`sec-static-margin-general`）。
 静安定余裕が求まらなかった面があるときは（:ref:`sec-static-margin-general`）、警告 ``static stability could not be evaluated (…): the results are not usable until it is`` を出し、終了ステータス 3 で終わる（:ref:`sec-exit-status`）。
 
@@ -587,7 +595,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
        書き出したファイルは ``-> パス`` の行に並べる（``geom`` は ``geometry.json`` と ``profile.csv``、``sim`` は ``trajectory.csv`` と ``summary.json``、``dispersion`` は結果の CSV と JSON）。
        ``ignisyeet sim ... | tee log.txt`` のように記録しても制御文字が混ざらない。
    * - ``-q`` / ``--quiet``
-     - エラーと、書き出したファイルのパスだけを表示する。スクリプトから呼ぶときに使う。
+     - エラー、警告、書き出したファイルのパスだけを表示する（ヘルプの文は ``Only print errors, warnings and the paths of the written files``）。警告は標準エラー出力に ``warning:`` の行で書く。スクリプトから呼ぶときに使う。
    * - ``--no-progress``
      - 進捗バーとスピナーを出さない。枠付きの要約は表示する。ログに残したい場合などに使う。
    * - ``NO_COLOR`` が空でない値で設定されている
@@ -599,7 +607,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
 
 .. code-block:: sh
 
-   ./target/release/ignisyeet sim examples/sample.toml -q          # 書き出したパスだけ
+   ./target/release/ignisyeet sim examples/sample.toml -q          # エラー、警告、書き出したパスだけ
    ./target/release/ignisyeet dispersion examples/sample.toml --no-progress
    NO_COLOR=1 ./target/release/ignisyeet aero examples/sample.toml
    ./target/release/ignisyeet sim examples/sample.toml | cat        # プレーンモード
@@ -733,7 +741,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
    * - ``aero.alpha_max_deg``
      - 180 以下
    * - 係数表の格子点の数（Mach 数の数 × 迎角の数）
-     - 約 10\ :sup:`6` 以下。超えるときは ``aero.mach_step`` と ``aero.alpha_step_deg`` を大きくするか、``mach_max`` と ``alpha_max_deg`` を小さくする。
+     - 約 10\ :sup:`6` 以下。迎角の数は、0 から ``alpha_max_deg`` までの片側の格子の点の数である（メッセージは ``the aero table grid would have about … points (… Mach x … alpha; at most 1e6)`` の形）。超えるときは ``aero.mach_step`` と ``aero.alpha_step_deg`` を大きくするか、``mach_max`` と ``alpha_max_deg`` を小さくする。
        部品積み上げ法の一般表（``method = "barrowman"`` かつ ``table_kind = "general"``）では、Mach 数の刻みに ``aero.general_mach_step`` を使い、メッセージも ``aero.general_mach_step`` を挙げる。
        ``table_kind = "general"`` では、外部の表（``method = "table"``）以外のすべての手法（部品積み上げ法、パネル法、CFD）が軸対称の表を一般表へ展開するので、
        軸対称の表（Mach 数 × 迎角）と一般表（Mach 数 × 迎角 × 横滑り角）のうち、点の多いほうで判定する（メッセージは ``the aero table grid would have about … points``）
@@ -768,7 +776,13 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
    * - 風の格子のケース数（``wind_speeds`` の数 × ``directions``）
      - 100000 以下（降下モードを数えない）
    * - ``dispersion.monte_carlo.samples``
-     - 1 以上 10\ :sup:`6` 以下
+     - 1 以上 10\ :sup:`6` 以下（0 は ``dispersion.monte_carlo.samples must be at least 1``）
+   * - ``dispersion.monte_carlo.truncate_sigma``
+     - 指定するときは有限で正
+   * - ``rocket.fin_override.thickness``
+     - ``aero.method = "panel"`` と、``aero.method = "cfd"`` で ``aero.cfd.surface = "panel_mesh"``\ （フィンを両凸の断面としてメッシュにする）のときは正（``rocket.fin_override.thickness must be > 0 for aero.method = "panel", found 0``。厚さのないフィンはメッシュから抜け落ちる）。部品積み上げ法では、厚さはフィンの抗力にだけ使うので 0 でもよい
+   * - ``[aero.panel]`` の各項目
+     - 手法にかかわらず検査する（:ref:`[aero.panel] の設定項目 <sec-config-aero>`）
    * - ``atmosphere.density`` ``sound_speed`` ``viscosity``\ （``model = "constant"``）
      - 有限で正
    * - ``atmosphere.temperature_offset``\ （``model = "us1976"``）
@@ -786,8 +800,8 @@ STL の表面が閉じていない（開いた辺が辺の 1 % を超えるか�
 
 * ``rocket.stl_scale`` を掛けた機体の全長が 0.1 m から 20 m の範囲の外にある。メッセージは ``body length … m is outside the plausible 0.1-20 m range: check the STL units and rocket.stl_scale`` の形で、``stl_scale`` の現在の値と、mm 単位の STL なら ``0.001`` であることを添える。
 * 乾燥重心 ``rocket.cg_dry`` が機体の全長より後方にある。
+* モータ（``.eng`` の長さ）が機体の全長より長い。メッセージは ``the motor (… m) is longer than the body (… m): check motor.eng (the motor length in its header, in millimetres) and rocket.stl_scale`` で、``.eng`` の見出しの長さ（mm）と ``stl_scale`` の確認を促す（1 mm の許容がある）。
 * モータが機体の外にある。モータ後端の位置 ``motor.aft_x`` がモータの長さ（``.eng`` の長さ）より前、または機体の全長より後方にある（1 mm の許容がある）。
-  ``motor.aft_x`` を省略したときの既定値は機体の全長なので、モータが機体より長い場合にこの検査に掛かる。
   メッセージは ``motor.aft_x = 0.2 m puts the motor outside the body: the motor is … m long and the body … m, so motor.aft_x (the motor's aft end, measured aft of the nose tip) must be between … and … m`` の形である。
   省略したときは先頭が ``motor.aft_x (default: the body length … m) puts the motor outside the body`` になる。
 
@@ -818,18 +832,29 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 * 機体の直径が 0.005 から 3 m の範囲を外れている（``rocket.stl_scale`` の誤りが疑われる。mm 単位の STL なら ``0.001``）。``geom`` でも表示する。全長の範囲外は、STL から作る機体ではエラーである（上記）。``method = "table"`` の外部の表では、表の ``length`` と ``ref_diameter`` について、全長 0.1 から 20 m、直径 0.005 から 3 m の範囲外を警告にする。
 * 静安定余裕（自由飛行中の最小値とランチャ離脱時の値の小さいほう。自由飛行中の最小値は、ランチャ離脱の時刻から頂点までのうち対気速度が 10 m/s を超える間に、積分のステップの始端ごとに測った値で、離脱時の対気速度が 10 m/s を超えればランチャ離脱の時刻の値を含む。ランチャ離脱時の値は対気速度によらず求める。迎角 0 の極限の小迎角の余裕で、:ref:`sec-static-margin-general`）が、0 cal 未満（``UNSTABLE``。圧力中心が重心より前にある）、0 以上 1.0 cal 未満（``low static margin``。不安定とは呼ばない）、1.0 cal 以上 1.5 cal 未満（``marginal``。推奨の 1.5 cal を下回る）である。
   文は ``static margin -0.23 cal at t = 1.00 s, Mach 0.30 is negative: the centre of pressure is forward of the CG, the rocket is UNSTABLE``、``minimum static margin 0.9996 cal at t = … s, Mach … is below 1.0 cal: low static margin``、``minimum static margin 1.498 cal at t = … s, Mach … is below the recommended 1.5 cal (marginal)`` の形で（数は例）、最小の余裕をとった時刻と Mach 数を添える。
-  静安定余裕を求められなかった（一般表で法線力の傾きが 0 か物理的でない向きの面がある。:ref:`sec-static-margin-general`）ときは、``static stability could not be evaluated (…): the results are not usable until it is`` の形で理由を示す（終了ステータス 3。:ref:`sec-exit-status`）。
+  静安定余裕を求められなかった（一般表で法線力の傾きが 0 か物理的でない向きの面がある、または軸対称表の :math:`C_{N\alpha}` が 0 か負。:ref:`sec-static-margin-general`）ときは、``static stability could not be evaluated (…): the results are not usable until it is`` の形で理由を示す（終了ステータス 3。:ref:`sec-exit-status`）。
 * 風のモデルが ``profile`` で、頂点が表の最上端の高度より高い（``apogee … m is above the top of the wind profile (… m): the wind above … m is held at the top value``）。表より上の風は最上端の値で一定になる。
   ``dispersion`` では、風の格子のケースまたはモンテカルロ解析のサンプルのうち、頂点が表の最上端より高いものの数と最も高い頂点をまとめて示す
   （``108 of 108 wind-grid cases reach above the top of the wind profile (3000 m), up to 4500 m: the wind above is held at the top value`` の形。例の表を 3000 m で切った表で、風速 3 つ、36 方位の格子を計算した表示。モンテカルロ解析では ``Monte Carlo samples``）。
   風の格子では、同じ風（風速と風向）の弾道落下とパラシュート降下を 1 つの飛翔として数える。
 * 風のモデルが ``power`` または ``log`` で、頂点が地上 1000 m を超え、風速が 0 でない（``dispersion`` の風の格子では、最大の風速が 0 でないとき）。判定に使う風速は、実際にその飛翔で使う基準風速である（``profile`` では ``wind.speed`` ではなく表から求めた値）。これらのプロファイルは基準高さ ``wind.ref_height`` の風速 ``wind.speed`` を上空に外挿するので、上空の風と着地点はモデル依存になる（実際の予測には ``model = "profile"`` を使う）。
 * 風のモデルが ``profile`` で、表の最下行が地上 0 m より上にある（``the wind profile starts at … m: the wind below is held at the lowest row``）。
-* 風のモデルが ``profile`` なのに、設定ファイル（または ``--set``）に ``wind.speed`` や ``wind.direction_deg`` が書いてある。``profile`` ではこれらを使わないので、``wind.speed is ignored for wind.model = "profile"; use wind.profile_mean_speed to scale the profile`` と ``wind.direction_deg is ignored for wind.model = "profile"; use wind.profile_mean_direction_deg to rotate the profile`` を出す（:ref:`sec-wind-scaling`）。書いていない（既定値のままの）ときは出さない。設定の読み込み時に表示する警告で、``summary.json`` などの ``warnings`` の先頭にも入る。
+* 風のモデルが ``profile`` なのに、設定ファイル（または ``--set``）に ``wind.speed`` や ``wind.direction_deg`` が書いてある。``profile`` ではこれらを使わない（:ref:`sec-wind-scaling`）。
+
+  * 文は ``wind.speed is ignored for wind.model = "profile"; use wind.profile_mean_speed to scale the profile`` と ``wind.direction_deg is ignored for wind.model = "profile"; use wind.profile_mean_direction_deg to rotate the profile`` である。
+  * 書いていない（既定値のままの）ときは出さない。
+  * 設定の読み込み時に表示する警告で、``summary.json`` などの ``warnings`` の先頭にも入る。
+
 * 同じキーの ``--set`` を 2 回以上指定した（``--set wind.speed given more than once; the last value (8) is used`` の形。:ref:`sec-cli-overrides`）。設定の読み込み時に表示し、``warnings`` の先頭にも入る。
 * 風のモデルが ``profile`` の風の格子またはモンテカルロ解析で、表の拡大率 :math:`k`\ （:ref:`sec-wind-scaling`）が 3 を超えるか 1/3 を下回るケースがある。最も極端なケースの拡大率と、表の風速の最大値を拡大した値を示す（``wind profile scaled by a factor of … (wind grid … m/s vs profile mean … m/s): winds aloft up to … m/s``。倍率は、3 を超えるときは小数 1 桁、1/3 を下回るときは小数 2 桁を基本とし、下の規則でしきい値の外と読める桁数にする。モンテカルロ解析では ``wind grid`` が ``Monte Carlo sample`` になる）。
 * パラシュート降下が着地した飛翔（``sim`` と、``dispersion`` の公称の飛翔）で、開傘しないまま着地した（``parachute descent landed at … m/s: the parachute did not deploy before landing (recovery.delay = … s)``）か、着地速度が 15 m/s を超える（``… which is above 15 m/s: check recovery.cd_s``）。
-* パラシュート降下の飛翔（``sim`` と、``dispersion`` の公称の飛翔。着地しなかった飛翔も含む）で、パラシュートが開いたときの対気速度が 50 m/s を超えるか、動圧が 2 kPa を超える（``the parachute opens at 129 m/s (q = 7.2 kPa): a canopy is unlikely to survive; the landing point assumes it does - check recovery.delay`` の形。数は例）。一般の模型ロケットのパラシュートは頂点付近での開傘（動圧は数百 Pa）を前提に作られているので、この速さでは壊れるおそれがあるが、着地点はパラシュートが壊れないものとして計算している。二段開傘では ``the parachute`` の代わりに ``the drogue`` と ``the main`` について判定し、メインの文の末尾は ``check recovery.main_altitude`` である。開傘時の対気速度と動圧は ``summary.json`` に残る（:ref:`sec-file-summary`）。
+* パラシュート降下の飛翔（``sim`` と、``dispersion`` の公称の飛翔。着地しなかった飛翔も含む）で、パラシュートが開いたときの対気速度が 50 m/s を超えるか、動圧が 2 kPa を超える。
+
+  * 文は ``the parachute opens at 129 m/s (q = 7.2 kPa): a canopy is unlikely to survive; the landing point assumes it does - check recovery.delay`` の形である（数は例）。
+  * 一般の模型ロケットのパラシュートは頂点付近での開傘（動圧は数百 Pa）を前提に作られているので、この速さでは壊れるおそれがある。着地点はパラシュートが壊れないものとして計算している。
+  * 二段開傘では ``the parachute`` の代わりに ``the drogue`` と ``the main`` について判定し、メインの文の末尾は ``check recovery.main_altitude`` である。
+  * 開傘時の対気速度と動圧は ``summary.json`` に残る（:ref:`sec-file-summary`）。
+
 * ``sim.max_time`` までに着地しない。
 * 弾道落下が横向きに落ちた（頂点のあと全迎角 60° から 120° の間で 10 s を超えて飛んだ。``the ballistic descent fell broadside (angle of attack 60 to 120 deg for 146 s): the landing depends on the large-angle aerodynamics, which are not validated``。数は例）。
   ``dispersion`` では、横向きに落ちた弾道落下のケースやサンプルの数を ``1 of 56 ballistic wind-grid cases fell broadside (angle of attack 60 to 120 deg for more than 10 s): the landing depends on the large-angle aerodynamics, which are not validated`` の形（モンテカルロ解析では ``Monte Carlo samples``）で示す。
@@ -838,10 +863,15 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 * 二段開傘で、メインの開傘高度 ``recovery.main_altitude`` が頂点の高度以上である（``recovery.main_altitude = … m is above the apogee (… m): the main opens together with the drogue``）。
 * ランチャ離脱速度が 15 m/s 未満である（``rail exit speed … m/s is below 15 m/s: the fins have little authority at rail exit and the rocket is easily blown off the rail line; use a longer rail or a higher thrust-to-weight ratio``）。
 * ランチャ離脱の高さ（レール長 × sin 射角）の風速と離脱速度から求めた風による迎角 :math:`\arctan(W/v)` が 15° を超える（``the wind angle of attack at rail exit is … deg (wind … m/s at … m, rail exit speed … m/s), above 15 deg: the rocket will weathercock strongly off the rail``）。
-  風速 :math:`W` は、``sim`` では設定の風、``dispersion`` の風の格子では格子の最大の風速、モンテカルロ解析では公称の風速に風速の標準偏差の 2 倍を足した値である。
+  風速 :math:`W` は、``sim`` では設定の風、``dispersion`` の風の格子では格子の最大の風速、モンテカルロ解析では公称の風速に風速の標準偏差の 2 倍を足した値の風で、離脱の高さで求める。
+  ``profile`` では、格子のケースと同じく、表をその平均風速に拡大した風を使う（モンテカルロ解析の公称の風速は、``wind.speed`` ではなく、飛ばす表の平均風速である）。
   離脱速度は公称の飛翔の値である。
 * モータの推力曲線の疑わしい点。最後の点が 0 N でない（``thrust curve ends at … N instead of 0 N: the motor is cut off abruptly``）、点が 1 つだけ（``the thrust curve has a single point: the thrust ramps linearly from 0 N at t = 0``）、燃焼時間が 0.05 s より短い（``burn time … s is shorter than 0.05 s: the motor is an impulse; check the time column``）。
-* 係数表の格子が粗い。Mach 数の刻みが 0.1 を超える（``aero.mach_step = … is coarse (> 0.1): the coefficients are interpolated linearly between the Mach rows, which smooths over the transonic drag rise and shifts the apogee (0.02 is typical)``。部品積み上げ法の一般表では ``aero.general_mach_step``）か、迎角の刻みが 5° を超える（``aero.alpha_step_deg = … is coarse (> 5 deg): the normal force and centre of pressure are interpolated linearly between the rows (1 deg is typical)``）。
+* 係数表の格子が粗い。
+
+  * Mach 数の刻みが 0.1 を超える（``aero.mach_step = … is coarse (> 0.1): the coefficients are interpolated linearly between the Mach rows, which smooths over the transonic drag rise and shifts the apogee (0.02 is typical)``。部品積み上げ法の一般表では ``aero.general_mach_step``）。
+  * 迎角の刻みが 5° を超える（``aero.alpha_step_deg = … is coarse (> 5 deg): the normal force and centre of pressure are interpolated linearly between the rows (1 deg is typical)``）。
+
   ``aero``、``sim``、``dispersion`` で表示する。外部の係数表（``method = "table"``）は、表そのものの格子なので対象外である。
 * 外部の係数表（``method = "table"``）で、迎角 0 の軸力係数 ``ca_on`` または ``ca_off`` が負である（``aero table: ca_off at Mach …, alpha 0 is … (negative axial force / thrust-like drag)``）。列ごとに、最初の Mach 数を示す。
 * ``dispersion`` で、静的に不安定なケースまたはサンプル、静的な安定を判定できないケースまたはサンプルがある。降下モードごとに数と最小の静安定余裕（判定できないものは数と最初の理由）を示す（:ref:`sec-dispersion-unstable`）。
@@ -893,7 +923,7 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 不安定な飛翔の結果は、保安の判断に使わない。
 
 静的な安定は、安定・不安定・判定できない、の 3 通りである。
-一般表で、ある面の法線力の傾きが 0 か、横流れと同じ向きの力（物理的でない符号）と復元するモーメントの組合せで余裕を cal で表せないとき、その面の余裕は求まらない（:ref:`sec-static-margin-general`）。
+ある面の法線力の傾きが 0 か、横流れと同じ向きの力（物理的でない符号）と復元するモーメントの組合せで余裕を cal で表せないとき、その面の余裕は求まらない（一般表の各面と、軸対称表の :math:`C_{N\alpha}`。:ref:`sec-static-margin-general`）。
 求まった余裕に負のものがあれば不安定とし、そうでなく求まらない余裕があれば「判定できない」とする。どの時刻でも余裕を求めなかった飛翔（ランチャを離れなかった飛翔。ランチャを離れれば、離脱時の値は対気速度によらず求める）も判定できない。
 ``sim`` は、判定できないとき ``RESULTS NOT USABLE: static stability could not be evaluated (at t = 0.50 s: the yaw normal-force slope dCy/dbeta is zero at Mach 0.10)`` の形の行（括弧内は理由の例）を書いて終了ステータス 3 で終わる。
 ``summary.json`` の ``stable`` は ``null`` になり、``stability_unknown`` に理由を書く。
@@ -901,9 +931,9 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 不安定なケースと判定できないケースが両方あるときは、両方の節を ``;`` でつなぐ。
 判定できないケースとサンプルの数は、降下モードごとに ``stability_unknown_runs`` に残す（:ref:`sec-file-dispersion`）。
 
-係数表の迎角の範囲を超えた引き出しは、表の端の区間からの外挿になり、大きな迎角で見かけの釣り合い（トリム）を作って、弾道落下の経路をまったく変えることがある。
-そのため ``sim`` と ``dispersion`` は、そのような引き出しが 1 回でもあれば、``RESULTS NOT USABLE: 332462 of 384618 lookups beyond the aero table's angle range (max |alpha| 90.0 deg > alpha_max 30.0 deg): the descent uses extrapolated coefficients; build the table up to 90 deg`` の形の行を書いて終了ステータス 3 で終わる。
-これは、サンプルを ``aero.alpha_max_deg = 30`` にして東風 4 m/s で弾道落下させたときの表示で、着地距離は 5122.9 m になる（既定の 90° の表では 832.1 m）。
+係数表の迎角の範囲を超えた引き出しは、表の端の区間からの外挿になる。外挿した係数は表にない大きな迎角の値で、見かけの釣り合い（トリム）を作るなど、弾道落下の経路を変えうる。外挿の結果が表の範囲内の結果に近いかどうかは、機体と条件によって決まり、事前には分からない。
+そのため ``sim`` と ``dispersion`` は、そのような引き出しが 1 回でもあれば、着地点にかかわらず、``RESULTS NOT USABLE: 9334 of 127454 lookups beyond the aero table's angle range (max |alpha| 90.0 deg > alpha_max 30.0 deg): the descent uses extrapolated coefficients; build the table up to 90 deg`` の形の行を書いて終了ステータス 3 で終わる。
+これは、サンプルを ``aero.alpha_max_deg = 30`` にして東風 4 m/s で弾道落下させたときの表示である。このときの着地距離は 822.4 m で、既定の 90° の表の 832.4 m と近いが、それは外挿がこの条件でたまたま近い値を与えたというだけで、結果を使える根拠にはならない。
 表の上限がすでに 90° 以上なら、末尾は ``build the table up to 180 deg (aero.alpha_max_deg)`` である。
 ``summary.json`` などの ``aero_table_range`` の ``angles_in_range`` は、このとき ``false`` になる（:ref:`sec-file-summary`）。
 飛翔計算は全迎角を :math:`\min(\alpha_t,\,180^\circ-\alpha_t)` に折り返して表を引くので（:ref:`sec-aero-table`）、軸対称表では既定の ``alpha_max_deg = 90`` で範囲を超えることはない。
@@ -951,7 +981,7 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
      - 全処理で使う CPU スレッド数の上限。``0`` は使用可能な全スレッド。使用可能数を超える値は警告して使用可能数に切り詰める。分散計算、モンテカルロ、パネル法の行列計算、CFD の MPI ランク数に効く
    * - ``memory_gb``
      - ``0``
-     - 重い処理のメモリ予算 [GB]。``0`` は制限なし。パネル法は密行列に必要な量（パネル数 n に対しておよそ 16 n² バイト）が予算を超えると、計算を始める前にエラーで止まる。予算が ``0`` のときも、必要な量がその計算機の物理メモリを超えるなら、同じく計算の前にエラーで止まる（``the panel method needs about … GB for … panels (dense matrix), more than the … GB of memory of this machine``。パネルの設定を粗くする。物理メモリは Linux の ``/proc/meminfo`` から読むので、読めない環境では確かめない）。CFD は予算に収まるよう同時実行ケース数を減らす。負の値はエラー
+     - 重い処理のメモリ予算 [GB]。``0`` は制限なし。パネル法は密行列に必要な量（パネル数 n に対しておよそ 8 n² バイト。行列は 1 つで、その場で LU 分解する）が予算を超えると、計算を始める前にエラーで止まる。予算にかかわらず、必要な量がこのプロセスの使えるメモリ（Linux の ``MemAvailable``、cgroup の上限、``ulimit -v`` の上限の最小。macOS では物理メモリ）を超えるときも、同じく計算の前にエラーで止まる（``the panel method needs about … GB for … panels (dense matrix), more than the … GB of memory available to this process (…)``。括弧内は値の出所。パネルの設定を粗くする。どれも読めない環境では確かめない。:doc:`panel`）。CFD は予算に収まるよう同時実行ケース数を減らす。負の値はエラー
    * - ``nice``
      - ``0``
      - プロセスの優先度を下げる値（0 から 19）。長時間の計算で他の作業を妨げたくないときに使う。SU2 や ``mpirun`` の子プロセスにも引き継がれる。Unix 以外のプラットフォームでは警告して無視する。範囲外の値はエラー
@@ -1179,6 +1209,9 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 
 ``[aero.panel]``\ （``method = "panel"`` のときだけ使う）
 
+値は、手法にかかわらず設定の読み込み時に検査し、範囲外なら ``aero.panel.subsonic_machs must be a non-empty list of finite Mach numbers in [0, 1), found [NaN, 0.3]`` の形で項目名を示してエラーにする。
+``transonic[1]`` が係数表の ``aero.mach_max`` より大きいときは、既定の 1.2 以下でない限り ``aero.panel.transonic[1] = … is above the table's aero.mach_max (…): the transonic blend would run beyond the table; use at most …`` のエラーになる。
+
 .. list-table::
    :header-rows: 1
    :widths: 27 22 51
@@ -1188,22 +1221,22 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
      - 意味
    * - ``body_axial`` / ``body_circ``
      - ``80`` / ``48``
-     - 胴体のパネルの軸方向・周方向の分割数（軸方向にはフィン根元の翼弦の分割を含む）
+     - 胴体のパネルの軸方向・周方向の分割数（軸方向にはフィン根元の翼弦の分割を含む。6 以上 / 8 以上）
    * - ``fin_chord`` / ``fin_span``
      - ``16`` / ``10``
-     - フィン片面のパネルの翼弦方向・スパン方向の分割数
+     - フィン片面のパネルの翼弦方向・スパン方向の分割数（``fin_chord`` は 2 以上 ``body_axial`` − 4 以下、``fin_span`` は 2 以上）
    * - ``wake_length``
      - ``20.0``
-     - フィン後流の長さ（全長に対する倍率。全長の 0.5 倍以上）
+     - フィン後流の長さ（全長に対する倍率。有限で正）
    * - ``tail_radii``
      - ``6.0``
      - 底面を塞ぐ尾部フェアリング（円筒 + 半球）の円筒部の長さ（底面半径の倍数）。0 なら開口（非推奨）
    * - ``subsonic_machs``
      - ``[0, 0.3, 0.5, 0.6, 0.7, 0.8]``
-     - 亜音速のパネル解を計算する Mach 数（1 未満。この間は pchip で内挿）
+     - 亜音速のパネル解を計算する Mach 数（1 個以上、0 以上 1 未満。この間は pchip で内挿）
    * - ``transonic``
      - ``[0.8, 1.2]``
-     - 遷音速の補間区間の Mach 数の範囲（下端は最後の亜音速解の Mach 数に合わせる）
+     - 遷音速の補間区間の Mach 数の範囲 ``[lo, hi]``\ （:math:`0<` ``lo`` :math:`<` ``hi``、``hi`` :math:`>1`）。``lo`` は純粋に亜音速の列の最後の Mach 数（``subsonic_machs`` の最大がそれより低ければその値）、``hi`` は最初の完全に超音速の Mach 数で、``max(mach_max, 1.2)`` 以下
    * - ``fin_section``
      - ``"biconvex"``
      - フィンの断面形状（現在は両凸のみ）
@@ -1540,8 +1573,11 @@ CFD の準備は ``ignisyeet cfd-check 設定ファイル [--mesh]`` で確か�
    * - ``clp_scale``
      - ``0``
      - 相対。ロール減衰微係数 :math:`C_{lp}`
+   * - ``truncate_sigma``
+     - なし
+     - 指定すると、引いたすべての標準正規乱数 :math:`z` を :math:`[-k,k]`\ （:math:`k` はこの値）に切ってから標準偏差を掛ける。有限で正（``dispersion.monte_carlo.truncate_sigma must be a finite number > 0 (the bound of the clipped draws in sigma, e.g. 3.0), found …``）。省略すると切らない正規分布（:ref:`sec-mc`）
 
-最後の 6 項目（``thrust_misalignment_deg`` から ``clp_scale``）は既定で無効である。
+``truncate_sigma`` の前の 6 項目（``thrust_misalignment_deg`` から ``clp_scale``）は既定で無効である。
 乱数はこれらを表の最後に引くので、最初の 11 項目の値はこの 6 項目の設定に依存しない。
 各項目の扱いの詳細は :ref:`sec-mc` で述べる。
 
@@ -1639,10 +1675,14 @@ STL からの形状抽出と空力モデルの計算は行わず、``sim`` と `
 * 静的な安定を判定できない飛翔（``stable`` が ``true`` でも ``false`` でもない着地点）：橙の白抜きの三角（``stability unknown``）。
 * 横向きに落ちた弾道落下（``broadside_time`` が 10 s を超える）：紫の白抜きのひし形（``fell broadside``）。
 
+風の格子の図で、風速ごとに風向の順に着地点を結ぶ線は、横向きに落ちたケースのところで切る。そのような着地点は隣の風向の着地点から遠く離れ、通して結ぶと線が図を横切るからである。切ったケースにも、その風速の色の丸印は残す。
+モンテカルロの図には、最大着地距離と、着地距離の P50 / P90 / P99 / P99.9 を書き添える（``dispersion_summary.json`` に ``landing_distance_p999`` がなければ P99 まで）。
+
 飛翔経路の図の高度は、``summary.json`` の頂点高度と同じ定義の、射点からの高さである。
 平面の地球（``earth.model = "flat"``）では積分した高さ ``up``\ （とその時間変化 ``vel_u``）を使う。``trajectory.csv`` の ``alt`` は接平面の位置から換算した値で、地球の丸みの分（射点からの水平距離 :math:`s` に対して約 :math:`s^2/2R`。14 km で 16 m）だけ高くなるからである。
 ``earth.model = "ecef"`` では、測地高度 ``alt`` から射点の高度（最初の行の ``alt``）を引いた値とその時間変化を使う（接平面の座標 ``up`` は、射点から離れるほど本当の高さより低くなる）。
 どちらの地球モデルかは ``summary.json`` の ``earth_model`` で決める。``earth_model`` のない ``summary.json`` では着地の行から判定し（平面の地球では着地の行の ``up`` がちょうど 0）、判定できなければ ``"flat"`` とする。上昇中の判定にも、この高さの時間変化を使う。
+飛翔経路の図の静安定余裕の欄の見出しは ``CP–CG separation at the flown α [cal] (ascent)`` で、``trajectory.csv`` の ``stability_cal``\ （その時刻の迎角での圧力中心と重心の距離の表示。判定に使う小迎角の余裕ではない。:ref:`sec-static-margin-general`）を、ランチャを離れたあとの上昇中（対気速度 10 m/s 超）について描く。ランチャ上の迎角は風によるもので、飛んでいる迎角ではないので描かない。
 ``method = "cfd"`` の出力には ``aero_drag.csv`` がない（:ref:`sec-file-drag`）ので、空力の図は、``aero_table.csv`` の迎角 0 の行から求めた全体の抗力係数で描く（抗力の内訳は含まない）。
 一般表（``aero_table.csv`` が :math:`C_X` などの 6 成分の列を持つ）でも ``aero_drag.csv`` がない。このときは横滑り角 0 の面で、:math:`C_D=-C_X`、:math:`C_{N\alpha}=|C_Z|/\alpha`\ （最小の正の迎角）、:math:`x_{cp}=C_m\,d/C_Z`\ （:math:`d` は ``aero_table.json`` の基準直径）を Mach 数ごとに求めて描く。
 パネル法の圧力係数の図（``panel``）では、``panel_cp.csv`` のフィンのパネルから、機軸から最も遠い点の方位にあるフィンを選んで描く。フィンのパネルがなければ胴体だけを描く。

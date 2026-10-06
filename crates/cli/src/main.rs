@@ -2,7 +2,6 @@
 // Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 mod config;
 mod kml;
-mod stability;
 mod ui;
 mod view;
 
@@ -12,6 +11,7 @@ use clap::{Parser, Subcommand};
 use config::Config;
 use geom::{ExtractOptions, Geometry};
 use serde::Serialize;
+use sim::flight::Stability;
 use sim::{Descent, Motor, Simulation, Summary};
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -34,7 +34,7 @@ const LONG_VERSION: &str = concat!(
     long_version = LONG_VERSION,
     about = "IgnisYeet by 西濱大将 (NISHIHAMA Daisuke): STL-based rocket aerodynamics, 6-DoF trajectory and landing dispersion",
     after_help = "Exit status: 0 success; 1 error (invalid configuration, missing input, failed step); 2 usage error; \
-3 the run finished and wrote its outputs but the results are incomplete or not usable (a flight did not land within sim.max_time, dispersion cases/samples failed or did not land, or the rocket is statically UNSTABLE: smallest static margin below 0 cal, see `stable` and `static_margin_min_cal` in summary.json).\n\n\
+3 the run finished and wrote its outputs but the results are incomplete or not usable (a flight did not land within sim.max_time, dispersion cases/samples failed or did not land, or the rocket is statically UNSTABLE: smallest static margin below 0 cal, or its static stability could not be evaluated; see `stable` (null when unknown), `static_margin_min_cal` and `stability_unknown` in summary.json).\n\n\
 Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke). License GPL-3.0-or-later: <https://www.gnu.org/licenses/>. This is free software; there is NO WARRANTY."
 )]
 struct Cli {
@@ -59,14 +59,14 @@ enum Cmd {
         #[arg(long)]
         force: bool,
     },
-    /// Run one 6-DoF flight with the configured wind (writes trajectory.csv, summary.json). Exits with status 3 when the rocket did not land within sim.max_time or is statically unstable (negative static margin).
+    /// Run one 6-DoF flight with the configured wind (writes trajectory.csv, summary.json). Exits with status 3 when the rocket did not land within sim.max_time, is statically unstable (negative static margin) or its static stability could not be evaluated.
     Sim {
         config: PathBuf,
         /// Override the descent mode.
         #[arg(long, value_parser = parse_descent)]
         descent: Option<Descent>,
     },
-    /// Landing dispersion: wind speed x direction grid (dispersion.csv) or Monte Carlo (dispersion_mc.csv, dispersion_summary.json). Exits with status 3 when any case or sample failed or did not land, or the nominal flight is statically unstable.
+    /// Landing dispersion: wind speed x direction grid (dispersion.csv) or Monte Carlo (dispersion_mc.csv, dispersion_summary.json). Exits with status 3 when any case or sample failed or did not land, or the nominal flight is statically unstable or its static stability could not be evaluated.
     Dispersion { config: PathBuf },
     /// Check that the CFD tools (SU2, MPI, gmsh) are installed and report their versions.
     CfdCheck {
@@ -136,9 +136,14 @@ const EXIT_INCOMPLETE: i32 = 3;
 /// lookups beyond the table's angle range).
 const NOT_USABLE: &str = "RESULTS NOT USABLE";
 
-/// The exit-status-3 message when the smallest static margin `margin` [cal] is negative.
-fn unstable_reason(margin: f64) -> Option<String> {
-    (margin.is_finite() && margin < 0.0).then(|| format!("{NOT_USABLE}: the rocket is statically UNSTABLE (min static margin {margin:.2} cal)"))
+/// The exit-status-3 message of a statically unstable flight, or of one whose static stability could not be
+/// evaluated (None when it is stable).
+fn stability_reason(st: &Stability) -> Option<String> {
+    match st {
+        Stability::Stable => None,
+        Stability::Unstable(m) => Some(format!("{NOT_USABLE}: the rocket is statically UNSTABLE (min static margin {m:.2} cal)")),
+        Stability::Unknown(why) => Some(format!("{NOT_USABLE}: static stability could not be evaluated ({why})")),
+    }
 }
 
 fn main() -> Result<()> {
@@ -357,7 +362,7 @@ const WIND_VALID_HEIGHT: f64 = 1000.0;
 /// Warnings about the flight itself: static margin, centre of pressure, wind-model validity, no landing.
 /// Smallest static margin of the flight including the rail-exit value [cal] (NaN when none is finite).
 pub(crate) fn static_margin_min(s: &Summary) -> f64 {
-    [s.min_stability_cal, s.stability_at_rail_exit].into_iter().filter(|m| m.is_finite()).min_by(f64::total_cmp).unwrap_or(f64::NAN)
+    s.static_margin_min()
 }
 
 fn flight_warnings(cfg: &Config, s: &Summary) -> Vec<String> {
@@ -373,6 +378,9 @@ fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: f64) -> Vec<String>
             "THE FLIGHT DID NOT LAND within sim.max_time = {} s: there is no landing point; raise sim.max_time or check the descent (parachute, drag area, launch angle)",
             cfg.sim.max_time
         ));
+    }
+    if let Stability::Unknown(why) = s.stability() {
+        w.push(format!("static stability could not be evaluated ({why}): the results are not usable until it is"));
     }
     let margins = [s.min_stability_cal, s.stability_at_rail_exit].into_iter().filter(|m| m.is_finite());
     if let Some(m) = margins.min_by(f64::total_cmp) {
@@ -1321,12 +1329,8 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
         );
     }
     let t0 = std::time::Instant::now();
-    let mut r = fly(cfg, &simulation(cfg, &p)?, descent)?;
-    // General aero table: the verdict uses the separate pitch and yaw margins.
-    let axis = stability::axis_margins(&p.table, &r.summary, &r.samples);
-    if let Some(m) = &axis {
-        stability::apply(&mut r.summary, m);
-    }
+    let r = fly(cfg, &simulation(cfg, &p)?, descent)?;
+    let general = p.table.kind() == aero::table::TableKind::General;
     u.done_line("Flight simulated", &format!("{descent:?}, {} samples, {} RHS evals", r.samples.len(), r.evals), t0.elapsed());
     let path = out_path(cfg, "trajectory.csv")?;
     write_trajectory(&path, &r.samples)?;
@@ -1341,10 +1345,6 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
     let angle = angle_range_reason(&range, table_alpha_max(&p.table));
     let mut json = summary_json(cfg, s, &warnings)?;
     json["aero_table_range"] = aero_range_json(&range);
-    if let Some(m) = &axis {
-        json["static_margin_pitch_min_cal"] = finite_json(min_finite(m.pitch_min, m.rail_pitch));
-        json["static_margin_yaw_min_cal"] = finite_json(min_finite(m.yaw_min, m.rail_yaw));
-    }
     let summary_path = out_path(cfg, "summary.json")?;
     std::fs::write(&summary_path, serde_json::to_string_pretty(&json)?)?;
     if u.plain() {
@@ -1352,11 +1352,10 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
         println!("  rail exit       {:.2} s, {:.1} m/s, stability {:.2} cal", s.rail_exit_time, s.rail_exit_speed, s.stability_at_rail_exit);
         println!("  max speed       {:.1} m/s (Mach {:.2}), max q {:.1} kPa", s.max_speed, s.max_mach, s.max_dyn_pressure / 1000.0);
         println!("  min static margin {:.2} cal (free flight {})", static_margin_min(s), free_flight_margin_text(s));
-        if let Some(m) = &axis {
+        if general {
             println!(
                 "  pitch / yaw     {:.2} cal / {:.2} cal (general aero table: smallest margin in each plane)",
-                min_finite(m.pitch_min, m.rail_pitch),
-                min_finite(m.yaw_min, m.rail_yaw)
+                s.static_margin_pitch_min_cal, s.static_margin_yaw_min_cal
             );
         }
         println!("  apogee          {:.1} m at {:.2} s", s.apogee, s.apogee_time);
@@ -1385,7 +1384,7 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
         u.print_panel(&view::flight_panel(s, descent, true));
     }
     print_warnings(&warnings);
-    let unstable = unstable_reason(static_margin_min(s)).or(angle);
+    let unstable = stability_reason(&s.stability()).or(angle);
     if landed {
         write_kml(cfg, kml::Parts { flight: Some(kml::Flight { samples: r.samples, summary: r.summary }), ..Default::default() }, false)?;
         Ok(unstable)
@@ -1411,28 +1410,15 @@ fn free_flight_margin_text(s: &Summary) -> String {
     }
 }
 
-/// The smaller finite value (NaN when neither is finite).
-fn min_finite(a: f64, b: f64) -> f64 {
-    [a, b].into_iter().filter(|v| v.is_finite()).min_by(f64::total_cmp).unwrap_or(f64::NAN)
-}
-
-/// A finite number as JSON, null otherwise.
-fn finite_json(v: f64) -> serde_json::Value {
-    if v.is_finite() {
-        v.into()
-    } else {
-        serde_json::Value::Null
-    }
-}
-
 /// summary.json: the flight summary plus `landed`, the run's `config_hash` and the sanity `warnings`.
 fn summary_json(cfg: &Config, s: &Summary, warnings: &[String]) -> Result<serde_json::Value> {
     let mut json = serde_json::to_value(s)?;
     json["landed"] = s.landed().into();
-    // Smallest static margin of the flight, including the rail exit; `stable` is false when it is negative.
-    let margin = [s.min_stability_cal, s.stability_at_rail_exit].into_iter().filter(|m| m.is_finite()).min_by(f64::total_cmp);
-    json["static_margin_min_cal"] = margin.map_or(serde_json::Value::Null, Into::into);
-    json["stable"] = margin.is_none_or(|m| m >= 0.0).into();
+    // Smallest static margin of the flight, including the rail exit; `stable` is false when it is negative and
+    // null when the static stability could not be evaluated (`stability_unknown` says why).
+    let margin = s.static_margin_min();
+    json["static_margin_min_cal"] = margin.is_finite().then_some(margin).map_or(serde_json::Value::Null, Into::into);
+    json["stable"] = s.stability().as_bool().into();
     json["max_time"] = cfg.sim.max_time.into();
     // The plots take the altitude from `up` (flat Earth: the integrated height) or from `alt` (ECEF).
     json["earth_model"] = serde_json::to_value(cfg.earth.model)?;
@@ -1540,7 +1526,8 @@ impl FarthestLanding {
 }
 
 /// Warnings of the nominal configuration: body size, and stability, wind-model validity and landing of the nominal flight.
-fn nominal_warnings(cfg: &Config, p: &Prepared, base: &Simulation) -> (Vec<String>, f64) {
+/// Also returns the summary of the nominal ballistic flight (None when it failed).
+fn nominal_warnings(cfg: &Config, p: &Prepared, base: &Simulation) -> (Vec<String>, Option<Summary>) {
     let mut w = p.geometry_warnings.clone();
     w.extend(size_warnings(cfg, p.table.meta.length, p.table.meta.ref_diameter));
     w.extend(grid_warnings(cfg));
@@ -1548,16 +1535,11 @@ fn nominal_warnings(cfg: &Config, p: &Prepared, base: &Simulation) -> (Vec<Strin
         sim::DispersionMode::WindGrid => cfg.dispersion.wind_speeds.iter().copied().fold(0.0, f64::max),
         sim::DispersionMode::MonteCarlo => cfg.wind.speed + 2.0 * cfg.dispersion.monte_carlo.wind_speed,
     };
-    let mut margin = f64::NAN;
-    // A general table needs the samples for the pitch and yaw margins.
-    let general = p.table.kind() == aero::table::TableKind::General;
-    match base.run(Descent::Ballistic, general) {
-        Ok(mut r) => {
-            if let Some(m) = stability::axis_margins(&p.table, &r.summary, &r.samples) {
-                stability::apply(&mut r.summary, &m);
-            }
-            margin = static_margin_min(&r.summary);
-            w.extend(flight_warnings_at(cfg, &r.summary, ref_speed))
+    let mut nominal = None;
+    match base.run(Descent::Ballistic, false) {
+        Ok(r) => {
+            w.extend(flight_warnings_at(cfg, &r.summary, ref_speed));
+            nominal = Some(r.summary);
         }
         Err(e) => w.push(format!("the nominal flight could not be simulated ({e:#}): stability and wind-model checks were skipped")),
     }
@@ -1567,13 +1549,24 @@ fn nominal_warnings(cfg: &Config, p: &Prepared, base: &Simulation) -> (Vec<Strin
             w.extend(parachute_warnings(cfg, &r.summary));
         }
     }
-    (w, margin)
+    (w, nominal)
 }
 
-/// `stable` and `static_margin_min_cal` of the nominal flight for the dispersion JSON files (null when the nominal flight failed).
-fn stability_json(margin: f64) -> serde_json::Value {
-    let m = margin.is_finite().then_some(margin);
-    serde_json::json!({ "stable": m.map(|m| m >= 0.0), "static_margin_min_cal": m })
+/// `stable`, `static_margin_min_cal` and `stability_unknown` of the nominal flight for the dispersion JSON files
+/// (`stable` null when the nominal flight failed or its static stability could not be evaluated).
+fn stability_json(nominal: Option<&Summary>) -> serde_json::Value {
+    let m = nominal.map(Summary::static_margin_min).filter(|m| m.is_finite());
+    let st = nominal.map(Summary::stability);
+    let unknown = match &st {
+        Some(Stability::Unknown(why)) => Some(why.clone()),
+        _ => None,
+    };
+    serde_json::json!({ "stable": st.and_then(|s| s.as_bool()), "static_margin_min_cal": m, "stability_unknown": unknown })
+}
+
+/// The exit-status-3 message of the nominal flight's static stability (None when it is stable or failed).
+fn nominal_stability_reason(nominal: Option<&Summary>) -> Option<String> {
+    nominal.and_then(|s| stability_reason(&s.stability()))
 }
 
 /// Static stability of the runs of one descent mode of a dispersion study.
@@ -1583,44 +1576,72 @@ struct Instability {
     total: usize,
     /// Runs whose smallest static margin is negative.
     unstable: usize,
+    /// Runs whose static stability could not be evaluated (and that are not unstable).
+    unknown: usize,
+    /// The reason of the first run with unknown stability.
+    first_unknown: Option<String>,
     /// Smallest static margin over the runs [cal] (NaN when none has one).
     worst: f64,
 }
 
 /// Counts, per descent mode (in order of appearance), the runs with a negative static margin (the smaller of the
-/// free-flight minimum and the margin at rail exit). A run without a summary (failed) counts in `total` only.
+/// free-flight minimum and the margin at rail exit) and those whose static stability could not be evaluated. A run
+/// without a summary (failed) counts in `total` only.
 fn instability<'a>(runs: impl IntoIterator<Item = (Descent, Option<&'a Summary>)>) -> Vec<Instability> {
     let mut v: Vec<Instability> = Vec::new();
     for (mode, s) in runs {
         let i = v.iter().position(|x| x.mode == mode).unwrap_or_else(|| {
-            v.push(Instability { mode, total: 0, unstable: 0, worst: f64::NAN });
+            v.push(Instability { mode, total: 0, unstable: 0, unknown: 0, first_unknown: None, worst: f64::NAN });
             v.len() - 1
         });
         let x = &mut v[i];
         x.total += 1;
-        if let Some(m) = s.map(static_margin_min).filter(|m| m.is_finite()) {
-            x.unstable += (m < 0.0) as usize;
+        let Some(s) = s else { continue };
+        let m = s.static_margin_min();
+        if m.is_finite() {
             x.worst = if x.worst.is_finite() { x.worst.min(m) } else { m };
+        }
+        match s.stability() {
+            Stability::Stable => {}
+            Stability::Unstable(_) => x.unstable += 1,
+            Stability::Unknown(why) => {
+                x.unknown += 1;
+                x.first_unknown.get_or_insert(why);
+            }
         }
     }
     v
 }
 
-/// Whether a run is statically stable (smallest static margin >= 0); None when it has no margin.
+/// Whether a run is statically stable (smallest static margin >= 0); None when its static stability could not
+/// be evaluated.
 fn stable_flag(s: &Summary) -> Option<bool> {
-    let m = static_margin_min(s);
-    m.is_finite().then_some(m >= 0.0)
+    s.stability().as_bool()
 }
 
-/// `unstable` (count) and `unstable_min_static_margin_cal` (smallest margin) of each descent mode for the dispersion JSON files.
+/// `unstable` and `stability_unknown_runs` (counts) and `unstable_min_static_margin_cal` (smallest margin) of each
+/// descent mode for the dispersion JSON files.
 fn instability_json(v: &[Instability]) -> serde_json::Value {
     let mut unstable = serde_json::Map::new();
+    let mut unknown = serde_json::Map::new();
     let mut worst = serde_json::Map::new();
     for x in v {
         unstable.insert(descent_name(x.mode).into(), x.unstable.into());
+        unknown.insert(descent_name(x.mode).into(), x.unknown.into());
         worst.insert(descent_name(x.mode).into(), x.worst.is_finite().then_some(x.worst).map_or(serde_json::Value::Null, Into::into));
     }
-    serde_json::json!({ "unstable": unstable, "unstable_min_static_margin_cal": worst })
+    serde_json::json!({ "unstable": unstable, "stability_unknown_runs": unknown, "unstable_min_static_margin_cal": worst })
+}
+
+/// One clause per descent mode with runs whose static stability could not be evaluated.
+fn unknown_clauses(v: &[Instability], what: &str) -> Vec<String> {
+    v.iter()
+        .filter(|x| x.unknown > 0)
+        .map(|x| {
+            let why = x.first_unknown.as_deref().unwrap_or("");
+            format!("{} of {} {what} ({}): static stability could not be evaluated (first: {why})", x.unknown, x.total, descent_name(x.mode))
+        })
+        .collect()
 }
 
 /// One clause per descent mode with unstable runs: "N of M <what> (mode) are statically UNSTABLE (min static margin down to X cal)".
@@ -1633,18 +1654,27 @@ fn instability_clauses(v: &[Instability], what: &str) -> Vec<String> {
         .collect()
 }
 
-/// Warnings for the unstable runs of a dispersion study: they stay in the statistics.
+/// Warnings for the unstable runs of a dispersion study (they stay in the statistics) and for the runs whose static
+/// stability could not be evaluated.
 fn instability_warnings(v: &[Instability], what: &str) -> Vec<String> {
     instability_clauses(v, what)
         .into_iter()
         .map(|c| format!("{c}: they are kept in the statistics (conservative), so the landing distances include tumbling flights"))
+        .chain(unknown_clauses(v, what))
         .collect()
 }
 
-/// The exit-status-3 message for unstable runs (None when there are none).
+/// The exit-status-3 message for unstable runs and runs whose static stability could not be evaluated (None when
+/// there are none).
 fn instability_reason(v: &[Instability], what: &str, hint: &str) -> Option<String> {
     let c = instability_clauses(v, what);
-    (!c.is_empty()).then(|| format!("{NOT_USABLE}: {}: {hint}", c.join("; ")))
+    let u = unknown_clauses(v, what);
+    if !c.is_empty() {
+        let more = if u.is_empty() { String::new() } else { format!("; {}", u.join("; ")) };
+        Some(format!("{NOT_USABLE}: {}: {hint}{more}", c.join("; ")))
+    } else {
+        (!u.is_empty()).then(|| format!("{NOT_USABLE}: {}", u.join("; ")))
+    }
 }
 
 /// Max landing distance line of one descent mode of the wind grid; `distances` are those of the cases that landed.
@@ -1664,9 +1694,9 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
     let u = ui();
     let p = prepare(cfg)?;
     let base = simulation(cfg, &p)?;
-    let (mut warnings, margin) = nominal_warnings(cfg, &p, &base);
+    let (mut warnings, nominal) = nominal_warnings(cfg, &p, &base);
     if cfg.dispersion.mode == sim::DispersionMode::MonteCarlo {
-        return run_monte_carlo(cfg, &p, &base, warnings, margin);
+        return run_monte_carlo(cfg, &p, &base, warnings, nominal.as_ref());
     }
     let start = std::time::Instant::now();
     let total = sim::dispersion::wind_grid_runs(&cfg.dispersion, cfg.recovery.enabled);
@@ -1682,11 +1712,7 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
     } else {
         sim::dispersion::run_wind_grid_detailed(&cfg.dispersion, &base, cfg.recovery.enabled, &|_, _| {})?
     };
-    let (mut results, errors) = split_wind_grid(&cases, detailed);
-    // General aero table: lower bound of the smaller of the pitch and yaw margins.
-    for s in &mut results {
-        stability::apply_bound(&p.table, s);
-    }
+    let (results, errors) = split_wind_grid(&cases, detailed);
     let mut modes: Vec<Descent> = Vec::new();
     for c in &cases {
         if !modes.contains(&c.descent) {
@@ -1718,12 +1744,12 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
     }
     warnings.extend(aero_range_warning(&p.table.out_of_range_stats()));
     let angle = angle_range_reason(&p.table.out_of_range_stats(), table_alpha_max(&p.table));
-    let instab = instability(cases.iter().zip(&results).map(|(c, s)| (c.descent, Some(s))));
+    let instab = instability(cases.iter().zip(&results).zip(&errors).map(|((c, s), e)| (c.descent, e.is_none().then_some(s))));
     warnings.extend(instability_warnings(&instab, "wind-grid cases"));
     let path = out_path(cfg, "dispersion.csv")?;
     write_wind_grid_csv(&path, &results, &errors)?;
     let mut meta = serde_json::json!({ "config_hash": run_hash(cfg, RunKind::WindGrid), "flight_config_hash": run_hash(cfg, RunKind::Flight), "cases": results.len(), "failed": failed, "errored": errored, "warnings": warnings, "aero_table_range": aero_range_json(&p.table.out_of_range_stats()) });
-    meta.as_object_mut().unwrap().extend(stability_json(margin).as_object().unwrap().clone());
+    meta.as_object_mut().unwrap().extend(stability_json(nominal.as_ref()).as_object().unwrap().clone());
     meta.as_object_mut().unwrap().extend(instability_json(&instab).as_object().unwrap().clone());
     let meta_path = out_path(cfg, kml::WIND_GRID_META)?;
     std::fs::write(&meta_path, serde_json::to_string_pretty(&meta)?)?;
@@ -1740,7 +1766,7 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
         u.print_panel(&view::wind_grid_panel(&cases, &results, start.elapsed()));
     }
     print_warnings(&warnings);
-    let incomplete = unstable_reason(margin)
+    let incomplete = nominal_stability_reason(nominal.as_ref())
         .or(angle)
         .or_else(|| instability_reason(&instab, "wind-grid cases", "increase the static margin"))
         .or_else(|| (failed > 0).then(|| format!("{failed} of {} wind-grid cases did not land", results.len())));
@@ -1842,11 +1868,11 @@ fn descent_name(d: Descent) -> &'static str {
     }
 }
 
-fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: Vec<String>, margin: f64) -> Result<Option<String>> {
+fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: Vec<String>, nominal: Option<&Summary>) -> Result<Option<String>> {
     let u = ui();
     let start = std::time::Instant::now();
     let mc = &cfg.dispersion.monte_carlo;
-    let mut r = if u.progress_on() {
+    let r = if u.progress_on() {
         let total = mc.samples * if cfg.recovery.enabled { 2 } else { 1 };
         let pb = u.bar_with(total as u64, "Monte Carlo", DISP_T, rate_key);
         let far = FarthestLanding::new();
@@ -1860,10 +1886,6 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
     } else {
         sim::dispersion::run_monte_carlo(mc, base, cfg.recovery.enabled)?
     };
-    // General aero table: lower bound of the smaller of the pitch and yaw margins.
-    for s in r.rows.iter_mut().filter_map(|x| x.result.as_mut().ok()) {
-        stability::apply_bound(&p.table, s);
-    }
     let failed: usize = r.summary.descents.iter().map(|d| d.failed).sum();
     for d in r.summary.descents.iter().filter(|d| d.failed > 0) {
         warnings.push(format!(
@@ -1901,7 +1923,7 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
     json["flight_config_hash"] = run_hash(cfg, RunKind::Flight).into();
     json["warnings"] = serde_json::json!(warnings);
     json["aero_table_range"] = aero_range_json(&range);
-    json.as_object_mut().unwrap().extend(stability_json(margin).as_object().unwrap().clone());
+    json.as_object_mut().unwrap().extend(stability_json(nominal).as_object().unwrap().clone());
     json.as_object_mut().unwrap().extend(instability_json(&instab).as_object().unwrap().clone());
     std::fs::write(&spath, serde_json::to_string_pretty(&json)?)?;
     u.done_line("Monte Carlo", &format!("{} samples x {} descent modes", r.summary.samples, r.summary.descents.len()), start.elapsed());
@@ -1973,7 +1995,7 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
             ui::Mode::Quiet => eprintln!("{msg}"),
         }
     }
-    Ok(unstable_reason(margin)
+    Ok(nominal_stability_reason(nominal)
         .or(angle)
         .or_else(|| instability_reason(&instab, "Monte Carlo samples", "increase the static margin or reduce the CG/aero sigmas"))
         .or_else(|| (failed > 0).then(|| format!("{failed} Monte Carlo runs did not land or failed; the statistics are incomplete"))))
@@ -2153,6 +2175,9 @@ mod tests {
             apogee_north: 1.0,
             min_stability_cal: 2.0,
             stability_at_rail_exit: 2.0,
+            static_margin_pitch_min_cal: 2.0,
+            static_margin_yaw_min_cal: 2.0,
+            stability_unknown: None,
             landing_time: 30.0,
             landing_east: 10.0,
             landing_north: 20.0,
@@ -2437,21 +2462,22 @@ mod tests {
 
     #[test]
     fn unstable_flight_is_not_usable() {
-        assert!(unstable_reason(1.5).is_none() && unstable_reason(0.0).is_none() && unstable_reason(f64::NAN).is_none());
-        let m = unstable_reason(-0.234).unwrap();
+        let reason = |m: f64| stability_reason(&summary_with_margin(m).stability());
+        assert!(reason(1.5).is_none() && reason(0.0).is_none());
+        let m = reason(-0.234).unwrap();
         assert_eq!(m, "RESULTS NOT USABLE: the rocket is statically UNSTABLE (min static margin -0.23 cal)");
-        let j = stability_json(-0.5);
+        let j = stability_json(Some(&summary_with_margin(-0.5)));
         assert_eq!((j["stable"].as_bool(), j["static_margin_min_cal"].as_f64()), (Some(false), Some(-0.5)));
-        assert_eq!(stability_json(2.0)["stable"].as_bool(), Some(true));
-        assert!(stability_json(f64::NAN)["stable"].is_null());
+        assert_eq!(stability_json(Some(&summary_with_margin(2.0)))["stable"].as_bool(), Some(true));
+        assert!(stability_json(None)["stable"].is_null());
         // end to end: the sample stays usable, a CG far aft does not
         let mut cfg = sample_config("unstable");
         assert!(run_sim(&cfg, Some(Descent::Parachute)).unwrap().is_none());
         cfg.rocket.cg_dry = prepare(&cfg).unwrap().table.meta.length * 0.97;
         let why = run_sim(&cfg, Some(Descent::Parachute)).unwrap().expect("unstable flight must be incomplete");
         assert!(why.starts_with("RESULTS NOT USABLE") && why.contains("UNSTABLE"), "{why}");
-        let (_, margin) = nominal_warnings(&cfg, &prepare(&cfg).unwrap(), &simulation(&cfg, &prepare(&cfg).unwrap()).unwrap());
-        assert!(margin < 0.0);
+        let (_, nominal) = nominal_warnings(&cfg, &prepare(&cfg).unwrap(), &simulation(&cfg, &prepare(&cfg).unwrap()).unwrap());
+        assert!(nominal.unwrap().static_margin_min() < 0.0);
         let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 
@@ -2572,8 +2598,76 @@ mod tests {
         assert_eq!(j["stable"].as_bool(), Some(false));
         // The dispersion verdict of the nominal flight as well.
         let p = prepare(&cfg).unwrap();
-        let (_, margin) = nominal_warnings(&cfg, &p, &simulation(&cfg, &p).unwrap());
-        assert!(margin < 0.0, "{margin}");
+        let (_, nominal) = nominal_warnings(&cfg, &p, &simulation(&cfg, &p).unwrap());
+        let nominal = nominal.unwrap();
+        assert!(nominal.static_margin_yaw_min_cal < 0.0 && matches!(nominal.stability(), Stability::Unstable(_)), "{nominal:?}");
+        let _ = std::fs::remove_dir_all(&cfg.output.dir);
+    }
+
+    #[test]
+    fn unknown_static_stability_is_not_usable() {
+        let why = "at t = 0.50 s: the yaw normal-force slope dCy/dbeta is zero at Mach 0.10";
+        let s = sim::Summary { stability_unknown: Some(why.into()), static_margin_yaw_min_cal: f64::NAN, ..sample_summary() };
+        assert_eq!(s.stability(), Stability::Unknown(why.into()));
+        assert_eq!(stability_reason(&s.stability()).unwrap(), format!("RESULTS NOT USABLE: static stability could not be evaluated ({why})"));
+        assert_eq!(stable_flag(&s), None);
+        let cfg = load_sample(include_str!("../../../examples/sample.toml"));
+        let j = summary_json(&cfg, &s, &[]).unwrap();
+        assert!(j["stable"].is_null() && j["static_margin_yaw_min_cal"].is_null() && j["stability_unknown"] == why, "{j}");
+        assert!(flight_warnings(&cfg, &s).iter().any(|w| w.starts_with(&format!("static stability could not be evaluated ({why})"))));
+        let n = stability_json(Some(&s));
+        assert!(n["stable"].is_null() && n["stability_unknown"] == why && n["static_margin_min_cal"] == 2.0, "{n}");
+        // A known negative margin is unstable even when another margin is unknown.
+        let both = sim::Summary { stability_at_rail_exit: -0.5, ..s.clone() };
+        assert_eq!(both.stability(), Stability::Unstable(-0.5));
+        // Counts: unknown runs are counted separately and make the run unusable; failed runs are not counted.
+        let ok = summary_with_margin(1.5);
+        let v = instability(vec![(Descent::Ballistic, Some(&ok)), (Descent::Ballistic, Some(&s)), (Descent::Ballistic, None), (Descent::Parachute, Some(&ok))]);
+        assert_eq!((v[0].total, v[0].unstable, v[0].unknown), (3, 0, 1));
+        let j = instability_json(&v);
+        assert_eq!((j["stability_unknown_runs"]["ballistic"].as_u64(), j["stability_unknown_runs"]["parachute"].as_u64()), (Some(1), Some(0)));
+        assert_eq!(
+            instability_reason(&v, "wind-grid cases", "increase the static margin").unwrap(),
+            format!("RESULTS NOT USABLE: 1 of 3 wind-grid cases (ballistic): static stability could not be evaluated (first: {why})")
+        );
+        assert!(instability_warnings(&v, "wind-grid cases").iter().any(|w| w.contains("static stability could not be evaluated")));
+        // Unstable and unknown runs together: both clauses.
+        let bad = summary_with_margin(-0.3);
+        let v = instability(vec![(Descent::Ballistic, Some(&bad)), (Descent::Ballistic, Some(&s))]);
+        let msg = instability_reason(&v, "Monte Carlo samples", "hint").unwrap();
+        assert!(
+            msg.contains("1 of 2 Monte Carlo samples (ballistic) are statically UNSTABLE")
+                && msg.contains("hint; 1 of 2")
+                && msg.contains("could not be evaluated"),
+            "{msg}"
+        );
+    }
+
+    #[test]
+    fn general_table_without_side_force_has_unknown_stability() {
+        // The sample's table as a general table without any side force: the yaw margin cannot be evaluated.
+        let mut cfg = sample_config("yaw_unknown");
+        let t = prepare(&cfg).unwrap().table;
+        let (alphas, betas) = general_axes();
+        let g = t.to_general(alphas, betas);
+        let flat = AeroTable::general_from_fn(g.meta.clone(), |m, a, b| {
+            let mut c = g.lookup6(m, a.to_radians(), b.to_radians());
+            (c.cy, c.cn) = (0.0, 0.0);
+            c
+        });
+        std::fs::create_dir_all(&cfg.output.dir).unwrap();
+        let path = cfg.output.dir.join("flat_table.csv");
+        flat.save(&path).unwrap();
+        cfg.aero.method = config::AeroMethod::Table;
+        cfg.aero.table = Some(path);
+        let why = run_sim(&cfg, Some(Descent::Ballistic)).unwrap().expect("unknown stability must make the run unusable");
+        assert!(
+            why.starts_with("RESULTS NOT USABLE: static stability could not be evaluated (at t = ") && why.contains("yaw normal-force slope dCy/dbeta is zero"),
+            "{why}"
+        );
+        let j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(cfg.out_dir().join("summary.json")).unwrap()).unwrap();
+        assert!(j["stable"].is_null() && j["static_margin_yaw_min_cal"].is_null() && j["static_margin_pitch_min_cal"].as_f64().unwrap() > 1.0, "{j}");
+        assert!(j["stability_unknown"].as_str().unwrap().contains("dCy/dbeta"));
         let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 

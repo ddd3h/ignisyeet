@@ -12,7 +12,7 @@ use crate::frame::{Frame, Local};
 use crate::integrator::{self, State};
 use crate::motor::Motor;
 use crate::stepper::Stepper;
-use aero::table::{aero_angles, Coeffs6, TableKind};
+use aero::table::{aero_angles, Coeffs6, StaticMargins, TableKind};
 use aero::{AeroCoeffs, AeroTable};
 use anyhow::{bail, Result};
 use geom::{Mat3, Quat, Vec3};
@@ -352,8 +352,24 @@ pub struct Summary {
     /// step only while the rocket is in free flight (after rail exit) before apogee and its airspeed
     /// exceeds 10 m/s. The slow part near apogee and the descent (tumbling, parachute) are not
     /// included; NaN when no step qualified. The value at rail exit is `stability_at_rail_exit`.
+    ///
+    /// Axisymmetric table: from the tabulated centre of pressure. General table: the smaller of the
+    /// pitch and yaw margins of [`AeroTable::static_margins`] at the step's Mach number and CG.
     pub min_stability_cal: f64,
+    /// Static margin at the rail-exit state [cal] (general table: the smaller of pitch and yaw).
     pub stability_at_rail_exit: f64,
+    /// Smallest pitch-plane static margin [cal] over the steps of `min_stability_cal` and the rail
+    /// exit. Axisymmetric table: the smaller of `min_stability_cal` and `stability_at_rail_exit`.
+    /// NaN (`null` in JSON) when it could not be evaluated, see `stability_unknown`.
+    #[serde(default = "nan")]
+    pub static_margin_pitch_min_cal: f64,
+    /// Smallest yaw-plane static margin [cal], as `static_margin_pitch_min_cal`.
+    #[serde(default = "nan")]
+    pub static_margin_yaw_min_cal: f64,
+    /// Why the static stability could not be evaluated (the first step where a margin was
+    /// missing); None when every margin was evaluated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stability_unknown: Option<String>,
     pub landing_time: f64,
     pub landing_east: f64,
     pub landing_north: f64,
@@ -410,6 +426,9 @@ impl Summary {
             apogee_north: n,
             min_stability_cal: n,
             stability_at_rail_exit: n,
+            static_margin_pitch_min_cal: n,
+            static_margin_yaw_min_cal: n,
+            stability_unknown: None,
             landing_time: n,
             landing_east: n,
             landing_north: n,
@@ -432,6 +451,51 @@ impl Summary {
     pub fn landed(&self) -> bool {
         self.landing_time.is_finite() && self.landing_east.is_finite() && self.landing_north.is_finite()
     }
+
+    /// Smallest static margin of the flight including the rail exit [cal] (NaN when none is finite).
+    pub fn static_margin_min(&self) -> f64 {
+        [self.min_stability_cal, self.stability_at_rail_exit].into_iter().filter(|m| m.is_finite()).min_by(f64::total_cmp).unwrap_or(f64::NAN)
+    }
+
+    /// Static-stability verdict: unstable when an evaluated margin is negative, unknown when a margin
+    /// could not be evaluated (or none was), stable otherwise.
+    pub fn stability(&self) -> Stability {
+        let m = self.static_margin_min();
+        if m < 0.0 {
+            Stability::Unstable(m)
+        } else if let Some(why) = &self.stability_unknown {
+            Stability::Unknown(why.clone())
+        } else if m.is_nan() {
+            Stability::Unknown("no static margin was evaluated (no rail exit and no free flight above 10 m/s before apogee)".into())
+        } else {
+            Stability::Stable
+        }
+    }
+}
+
+/// Static-stability verdict of a flight, see [`Summary::stability`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum Stability {
+    Stable,
+    /// The smallest static margin [cal], negative.
+    Unstable(f64),
+    /// Why the static stability could not be evaluated.
+    Unknown(String),
+}
+
+impl Stability {
+    /// `Some(true)` stable, `Some(false)` unstable, None unknown.
+    pub fn as_bool(&self) -> Option<bool> {
+        match self {
+            Stability::Stable => Some(true),
+            Stability::Unstable(_) => Some(false),
+            Stability::Unknown(_) => None,
+        }
+    }
+}
+
+fn nan() -> f64 {
+    f64::NAN
 }
 
 pub struct SimResult {
@@ -523,6 +587,18 @@ impl<'a> Simulation<'a> {
             (t2 > 1e-12).then(|| d * (c.cm * c.cz - c.cn * c.cy) / t2)
         };
         of(c).or_else(|| of(&self.lookup6(mach, 0.5f64.to_radians(), 0.0)))
+    }
+
+    /// Pitch and yaw static margins [cal] at a free-flight state (`aux` from [`deriv`](Self::deriv)).
+    /// General table: [`AeroTable::static_margins`] at the state's Mach number and CG; axisymmetric
+    /// table: the tabulated centre of pressure of the state in both planes.
+    fn margins(&self, aux: &Aux) -> StaticMargins {
+        if self.table.kind() == TableKind::General {
+            self.table.static_margins(aux.mach, aux.x_cg)
+        } else {
+            let m = (aux.x_cp - aux.x_cg) / self.table.meta.ref_diameter;
+            StaticMargins { pitch: m, yaw: m, unknown: None }
+        }
     }
 
     /// Mass, CG and inertia at time t.
@@ -828,7 +904,6 @@ impl<'a> Simulation<'a> {
         let mut t = 0.0;
         let mut samples = Vec::new();
         let mut next_out = 0.0;
-        let ref_d = self.table.meta.ref_diameter;
         let burn = self.motor.burn_time();
         let mut sum = Summary {
             descent,
@@ -846,6 +921,9 @@ impl<'a> Simulation<'a> {
             apogee_north: 0.0,
             min_stability_cal: f64::INFINITY,
             stability_at_rail_exit: f64::NAN,
+            static_margin_pitch_min_cal: f64::NAN,
+            static_margin_yaw_min_cal: f64::NAN,
+            stability_unknown: None,
             landing_time: f64::NAN,
             landing_east: f64::NAN,
             landing_north: f64::NAN,
@@ -864,6 +942,7 @@ impl<'a> Simulation<'a> {
         };
         let mut deploy_at = f64::INFINITY;
         let mut past_apogee = false;
+        let mut margins = MarginTrack::new();
         let evals = std::cell::Cell::new(0u64);
         let mut h_ctrl = dt;
         let mut max_qerr = 0.0f64;
@@ -899,7 +978,8 @@ impl<'a> Simulation<'a> {
             sum.max_mach = sum.max_mach.max(aux.mach);
             sum.max_dyn_pressure = sum.max_dyn_pressure.max(aux.qdyn);
             if phase == Phase::Free && !past_apogee && aux.airspeed > 10.0 {
-                sum.min_stability_cal = sum.min_stability_cal.min((aux.x_cp - aux.x_cg) / ref_d);
+                let m = margins.add(&self.margins(&aux), t);
+                sum.min_stability_cal = sum.min_stability_cal.min(m);
             }
             if t >= max_time - 1e-9 {
                 break;
@@ -990,7 +1070,7 @@ impl<'a> Simulation<'a> {
                     sum.rail_exit_time = t;
                     sum.rail_exit_speed = s.vel.norm();
                     let (_, aux) = self.deriv(&cx, t, &s, phase);
-                    sum.stability_at_rail_exit = (aux.x_cp - aux.x_cg) / ref_d;
+                    sum.stability_at_rail_exit = margins.add(&self.margins(&aux), t);
                 } else {
                     fsal = next_fsal;
                 }
@@ -1107,7 +1187,44 @@ impl<'a> Simulation<'a> {
         if !sum.min_stability_cal.is_finite() {
             sum.min_stability_cal = f64::NAN;
         }
+        margins.finish(&mut sum);
         Ok(SimResult { samples, summary: sum, evals: evals.get(), max_quat_norm_error: max_qerr })
+    }
+}
+
+/// Smallest pitch and yaw static margins of a flight; a plane with a missing margin at any evaluated
+/// state ends as NaN, and the first reason is kept.
+struct MarginTrack {
+    pitch: f64,
+    yaw: f64,
+    pitch_missing: bool,
+    yaw_missing: bool,
+    unknown: Option<String>,
+}
+
+impl MarginTrack {
+    fn new() -> Self {
+        Self { pitch: f64::INFINITY, yaw: f64::INFINITY, pitch_missing: false, yaw_missing: false, unknown: None }
+    }
+
+    /// Adds the margins `m` at time `t`; returns the smaller evaluated margin (NaN when neither is).
+    fn add(&mut self, m: &StaticMargins, t: f64) -> f64 {
+        self.pitch = self.pitch.min(m.pitch);
+        self.yaw = self.yaw.min(m.yaw);
+        self.pitch_missing |= m.pitch.is_nan();
+        self.yaw_missing |= m.yaw.is_nan();
+        if let (None, Some(why)) = (&self.unknown, &m.unknown) {
+            self.unknown = Some(format!("at t = {t:.2} s: {why}"));
+        }
+        m.pitch.min(m.yaw)
+    }
+
+    /// Writes the pitch and yaw minima and the reason into `sum`.
+    fn finish(self, sum: &mut Summary) {
+        let done = |v: f64, missing: bool| if missing || !v.is_finite() { f64::NAN } else { v };
+        sum.static_margin_pitch_min_cal = done(self.pitch, self.pitch_missing);
+        sum.static_margin_yaw_min_cal = done(self.yaw, self.yaw_missing);
+        sum.stability_unknown = self.unknown;
     }
 }
 
@@ -2019,9 +2136,89 @@ mod tests {
                 a.summary.apogee, b.summary.apogee, a.summary.landing_east, a.summary.landing_north, b.summary.landing_east, b.summary.landing_north
             );
             assert!((a.summary.apogee - b.summary.apogee).abs() < 0.5, "wind {wind} apogee");
-            assert!((a.summary.min_stability_cal - b.summary.min_stability_cal).abs() < 0.1, "stability");
+            // The general table's margin is the small-angle slope over its first 2 deg cell, the
+            // axisymmetric one the tabulated centre of pressure at the flight's angle of attack: compare
+            // the general margin with its definition along the axisymmetric flight.
+            let reference = a
+                .samples
+                .iter()
+                .filter(|x| x.phase == Phase::Free && x.t <= a.summary.apogee_time && x.airspeed > 10.0)
+                .map(|x| general.static_margins(x.mach, x.x_cg).min())
+                .fold(f64::INFINITY, f64::min);
+            println!("wind {wind}: margin {} (axisymmetric {}), reference {reference}", b.summary.min_stability_cal, a.summary.min_stability_cal);
+            assert!((reference - b.summary.min_stability_cal).abs() < 0.02, "stability");
             assert!(b.samples.iter().all(|s| s.alpha_deg.is_finite() && s.beta_deg.is_finite()));
         }
+    }
+
+    /// General table of the sample rocket with the yaw centre of pressure moved by `yaw_shift` [m] (aft
+    /// positive) and the side force scaled by `cy_scale`.
+    fn split_general(table: &AeroTable, yaw_shift: f64, cy_scale: f64) -> AeroTable {
+        let g = table.to_general(aero::table::angle_axis(180.0, 30.0, 2.0, 10.0), aero::table::angle_axis(90.0, 30.0, 2.0, 10.0));
+        let d = table.meta.ref_diameter;
+        AeroTable::general_from_fn(g.meta.clone(), |m, a, b| {
+            let mut c = g.lookup6(m, a.to_radians(), b.to_radians());
+            c.cn -= yaw_shift * c.cy / d;
+            c.cy *= cy_scale;
+            c.cn *= cy_scale;
+            c
+        })
+    }
+
+    #[test]
+    fn general_table_margins_are_evaluated_at_every_step_independent_of_recording() {
+        let (table, motor) = sample_parts();
+        // Yaw centre of pressure 0.05 m (1 cal) ahead of the pitch one.
+        let general = split_general(&table, -table.meta.ref_diameter, 1.0);
+        let mut sim = sample_sim(&general, &motor, 5.0);
+        let quiet = sim.run(Descent::Ballistic, false).unwrap().summary;
+        sim.settings.output_interval = 1.0;
+        let coarse = sim.run(Descent::Ballistic, true).unwrap();
+        sim.settings.output_interval = 0.002;
+        let fine = sim.run(Descent::Ballistic, true).unwrap();
+        for s in [&coarse.summary, &fine.summary] {
+            assert_eq!(s.static_margin_pitch_min_cal, quiet.static_margin_pitch_min_cal);
+            assert_eq!(s.static_margin_yaw_min_cal, quiet.static_margin_yaw_min_cal);
+            assert_eq!(s.min_stability_cal, quiet.min_stability_cal);
+            assert_eq!(s.stability_at_rail_exit, quiet.stability_at_rail_exit);
+        }
+        // The margins of the summary cover every step: no recorded sample is below them.
+        let free = fine.samples.iter().filter(|x| x.phase == Phase::Free && x.t <= quiet.apogee_time && x.airspeed > 10.0);
+        let (mut p_min, mut y_min) = (f64::INFINITY, f64::INFINITY);
+        for x in free {
+            let m = general.static_margins(x.mach, x.x_cg);
+            (p_min, y_min) = (p_min.min(m.pitch), y_min.min(m.yaw));
+        }
+        assert!(quiet.static_margin_pitch_min_cal <= p_min + 1e-12 && quiet.static_margin_pitch_min_cal > p_min - 0.05, "{quiet:?} {p_min}");
+        assert!(quiet.static_margin_yaw_min_cal <= y_min + 1e-12 && quiet.static_margin_yaw_min_cal > y_min - 0.05, "{quiet:?} {y_min}");
+        // Yaw 1 cal below pitch; the overall margins are the smaller (yaw) one.
+        assert!((quiet.static_margin_pitch_min_cal - quiet.static_margin_yaw_min_cal - 1.0).abs() < 0.05, "{quiet:?}");
+        assert!(quiet.min_stability_cal.min(quiet.stability_at_rail_exit) == quiet.static_margin_yaw_min_cal);
+        assert_eq!(quiet.stability(), Stability::Stable);
+        // An axisymmetric table: pitch = yaw = the existing margin.
+        let a = sample_sim(&table, &motor, 5.0).run(Descent::Ballistic, false).unwrap().summary;
+        let m = a.min_stability_cal.min(a.stability_at_rail_exit);
+        assert_eq!((a.static_margin_pitch_min_cal, a.static_margin_yaw_min_cal), (m, m));
+    }
+
+    #[test]
+    fn general_table_yaw_instability_and_unknown_stability_are_reported() {
+        let (table, motor) = sample_parts();
+        // Yaw centre of pressure 6 cal ahead: pitch stable, yaw unstable.
+        let general = split_general(&table, -6.0 * table.meta.ref_diameter, 1.0);
+        let s = sample_sim(&general, &motor, 0.0).run(Descent::Ballistic, false).unwrap().summary;
+        assert!(s.static_margin_pitch_min_cal > 1.0 && s.static_margin_yaw_min_cal < 0.0, "{s:?}");
+        assert!(matches!(s.stability(), Stability::Unstable(m) if m == s.static_margin_yaw_min_cal), "{:?}", s.stability());
+        // No side force at all: the yaw margin cannot be evaluated.
+        let general = split_general(&table, 0.0, 0.0);
+        let s = sample_sim(&general, &motor, 0.0).run(Descent::Ballistic, false).unwrap().summary;
+        assert!(s.static_margin_yaw_min_cal.is_nan() && s.static_margin_pitch_min_cal > 1.0, "{s:?}");
+        let why = s.stability_unknown.clone().unwrap();
+        assert!(why.contains("yaw normal-force slope dCy/dbeta is zero"), "{why}");
+        assert!(matches!(s.stability(), Stability::Unknown(ref r) if *r == why));
+        // The summary JSON has `null` for the unknown margin.
+        let j = serde_json::to_value(&s).unwrap();
+        assert!(j["static_margin_yaw_min_cal"].is_null() && j["stability_unknown"].is_string());
     }
 
     #[test]

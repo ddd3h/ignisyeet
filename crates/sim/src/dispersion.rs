@@ -1370,7 +1370,7 @@ azimuth_deg = 0.0"#;
         let base = MonteCarloConfig::default();
         let f = draw_fingerprint(&base);
         println!("fingerprint {:?}", f.map(|v| format!("{v:.15e}")));
-        let expect = [1.089999041445204e0, 3.003044813475776e2, -1.295713752251350e2];
+        let expect = [1.089_999_041_445_204, 300.304_481_347_577_6, -129.571_375_225_135];
         for k in 0..3 {
             assert!((f[k] - expect[k]).abs() < 1e-9 * expect[k].abs().max(1.0), "{k}: {} vs {}", f[k], expect[k]);
         }

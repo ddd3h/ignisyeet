@@ -585,10 +585,12 @@ def plot_dispersion_grid(out):
         else:
             far = s.landing_distance.max()
             ax.set_title(f"Landing dispersion — {mode} (max {'≥ ' if failed else ''}{far:.0f} m" + (f", {failed} did not land)" if failed else ")"))
-        # Fastest (outermost) wind first.
+        # Highest wind speed first. That curve is not necessarily the outermost one (a ballistic
+        # landing can lie farthest out at an intermediate speed), so the legend orders by speed.
         handles, labels = ax.get_legend_handles_labels()
-        order = list(range(len(labels) - 1))[::-1] + [len(labels) - 1]  # launch site stays last
-        ax.legend([handles[i] for i in order], [labels[i] for i in order], title=("profile mean speed" if profile_wind(out) else "wind speed") + " (outermost first)", loc="upper left", bbox_to_anchor=(1.01, 1.0))
+        order = list(range(len(labels) - 1))[::-1] + [len(labels) - 1]  # speeds were drawn in ascending order; launch site stays last
+        title = ("profile mean speed" if profile_wind(out) else "wind speed") + ", highest first"
+        ax.legend([handles[i] for i in order], [labels[i] for i in order], title=title, loc="upper left", bbox_to_anchor=(1.01, 1.0))
     fig.tight_layout()
     save(fig, out, "dispersion.png")
 

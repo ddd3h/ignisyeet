@@ -286,11 +286,12 @@ class ProfileWind(unittest.TestCase):
                     rows.append({"descent": "parachute", "wind_speed": v, "wind_direction_deg": d, "landing_east": v * np.sin(np.radians(d)), "landing_north": v * np.cos(np.radians(d)), "landing_distance": v, "apogee": 100.0, "landed": True})
             pd.DataFrame(rows).to_csv(out / "dispersion.csv", index=False)
             self.write(out, "dispersion_meta.json", {"wind_model": "profile", "wind_scale": 1.0})
-            titles = []
+            titles, labels = [], []
             orig = plot.plt.Axes.legend
 
             def spy(ax, *a, **k):
                 titles.append(k.get("title"))
+                labels.append(list(a[1]) if len(a) > 1 else None)
                 return orig(ax, *a, **k)
 
             plot.plt.Axes.legend = spy
@@ -298,7 +299,8 @@ class ProfileWind(unittest.TestCase):
                 plot.plot_dispersion_grid(out)
             finally:
                 plot.plt.Axes.legend = orig
-            self.assertTrue(any(t and t.startswith("profile mean speed") for t in titles), titles)
+            self.assertEqual(titles, ["profile mean speed, highest first"])
+            self.assertEqual(labels, [["10 m/s", "5 m/s", "launch site"]])
 
 
 class StaleOutputs(unittest.TestCase):

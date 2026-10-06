@@ -144,7 +144,7 @@ pub struct Settings {
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { dt: 0.002, max_time: 1200.0, output_interval: 0.05, integrator: IntegratorKind::Rk4, attitude: AttitudeKind::Normalize, rtol: 1e-7, atol: 1e-6 }
+        Self { dt: 0.002, max_time: 3600.0, output_interval: 0.05, integrator: IntegratorKind::Rk4, attitude: AttitudeKind::Normalize, rtol: 1e-7, atol: 1e-6 }
     }
 }
 
@@ -280,6 +280,13 @@ pub struct Summary {
     pub landing_lon: f64,
     pub landing_distance: f64,
     pub landing_speed: f64,
+}
+
+impl Summary {
+    /// Whether the flight reached the ground before `max_time`; when false every `landing_*` field is NaN.
+    pub fn landed(&self) -> bool {
+        self.landing_time.is_finite() && self.landing_east.is_finite() && self.landing_north.is_finite()
+    }
 }
 
 pub struct SimResult {

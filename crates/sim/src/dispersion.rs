@@ -313,8 +313,19 @@ pub fn landing_statistics(points: &[(f64, f64)]) -> PointStats {
 #[derive(Debug, Clone, Serialize)]
 pub struct DescentStats {
     pub descent: Descent,
-    /// Samples that failed (excluded from every statistic).
+    /// Samples that failed (excluded from every statistic); includes those that did not land.
     pub failed: usize,
+    /// Samples that did not reach the ground within `sim.max_time` (a subset of `failed`).
+    pub not_landed: usize,
+    /// False when any sample failed: the statistics then describe only the landed samples and
+    /// the true spread is larger or unknown.
+    pub complete: bool,
+    /// The maximum landing distance is only a lower bound (some samples did not land).
+    pub max_landing_distance_is_lower_bound: bool,
+    /// Empirical percentiles of the landing distance of the landed samples [m] (linear interpolation).
+    pub landing_distance_p50: f64,
+    pub landing_distance_p90: f64,
+    pub landing_distance_p99: f64,
     #[serde(flatten)]
     pub landing: PointStats,
     pub max_landing_distance: f64,
@@ -338,6 +349,22 @@ pub struct McResult {
     pub summary: McSummary,
 }
 
+/// Message of a sample that did not reach the ground within `sim.max_time`.
+pub const NOT_LANDED: &str = "did not land within sim.max_time";
+
+/// Empirical percentile `q` in [0, 100] of `sorted` (ascending) by linear interpolation; NaN when empty.
+pub fn percentile(sorted: &[f64], q: f64) -> f64 {
+    match sorted.len() {
+        0 => f64::NAN,
+        1 => sorted[0],
+        n => {
+            let x = (q / 100.0).clamp(0.0, 1.0) * (n - 1) as f64;
+            let (i, f) = (x.floor() as usize, x.fract());
+            sorted[i] + (sorted[(i + 1).min(n - 1)] - sorted[i]) * f
+        }
+    }
+}
+
 /// Statistics over the successful rows of each descent mode present in `rows`.
 pub fn summarize(rows: &[McRow], samples: usize, seed: u64) -> McSummary {
     let mut modes: Vec<Descent> = Vec::new();
@@ -359,12 +386,22 @@ pub fn summarize(rows: &[McRow], samples: usize, seed: u64) -> McSummary {
                     imax = Some(i);
                 }
             }
+            let mut dist: Vec<f64> = ok.iter().map(|(_, s)| s.landing_distance).collect();
+            dist.sort_by(f64::total_cmp);
+            let not_landed = mine.iter().filter(|r| r.result.as_ref().err().is_some_and(|e| e == NOT_LANDED)).count();
+            let failed = mine.len() - ok.len();
             let nf = ok.len() as f64;
             let am = ok.iter().map(|(_, s)| s.apogee).sum::<f64>() / nf;
             let var = ok.iter().map(|(_, s)| (s.apogee - am).powi(2)).sum::<f64>() / if ok.len() > 1 { nf - 1.0 } else { 1.0 };
             DescentStats {
                 descent: m,
-                failed: mine.len() - ok.len(),
+                failed,
+                not_landed,
+                complete: failed == 0,
+                max_landing_distance_is_lower_bound: failed > 0,
+                landing_distance_p50: percentile(&dist, 50.0),
+                landing_distance_p90: percentile(&dist, 90.0),
+                landing_distance_p99: percentile(&dist, 99.0),
                 landing: landing_statistics(&pts),
                 max_landing_distance: dmax,
                 max_landing_distance_sample: imax,
@@ -391,6 +428,12 @@ pub fn run_monte_carlo_with_progress(cfg: &MonteCarloConfig, base: &Simulation, 
         bail!("dispersion.monte_carlo.samples must be at least 1");
     }
     let sigmas = [
+        ("thrust_misalignment_deg", cfg.thrust_misalignment_deg),
+        ("thrust_offset", cfg.thrust_offset),
+        ("fin_cant_deg", cfg.fin_cant_deg),
+        ("cg_lateral", cfg.cg_lateral),
+        ("cl_scale", cfg.cl_scale),
+        ("clp_scale", cfg.clp_scale),
         ("thrust_scale", cfg.thrust_scale),
         ("burn_time_scale", cfg.burn_time_scale),
         ("dry_mass", cfg.dry_mass),
@@ -423,7 +466,7 @@ pub fn run_monte_carlo_with_progress(cfg: &MonteCarloConfig, base: &Simulation, 
                 .map(|&descent| {
                     let result = match sim.run(descent, false) {
                         Ok(r) if r.summary.landing_east.is_finite() && r.summary.landing_north.is_finite() => Ok(r.summary),
-                        Ok(_) => Err("did not land within sim.max_time".to_string()),
+                        Ok(_) => Err(NOT_LANDED.to_string()),
                         Err(e) => Err(format!("{e:#}")),
                     };
                     let row = McRow { sample: i, descent, perturbation: p, result };
@@ -729,5 +772,92 @@ mod tests {
         let z = Perturbation::default().simulation(&b, &m);
         assert_eq!((z.thrust_line, z.fin_cant_deg, z.aero_scale), (b.thrust_line, b.fin_cant_deg, AeroScale::default()));
         assert!(z.mass.is_axisymmetric());
+    }
+
+    fn landed_summary(d: f64) -> Summary {
+        Summary {
+            descent: Descent::Ballistic,
+            wind_speed: 0.0,
+            wind_direction_deg: 0.0,
+            rail_exit_time: 0.1,
+            rail_exit_speed: 20.0,
+            burnout_time: 1.0,
+            max_speed: 100.0,
+            max_mach: 0.3,
+            max_dyn_pressure: 1000.0,
+            apogee_time: 10.0,
+            apogee: 500.0,
+            apogee_east: 0.0,
+            apogee_north: 0.0,
+            min_stability_cal: 2.0,
+            stability_at_rail_exit: 2.0,
+            landing_time: 30.0,
+            landing_east: d,
+            landing_north: 0.0,
+            landing_lat: 35.0,
+            landing_lon: 139.0,
+            landing_distance: d,
+            landing_speed: 10.0,
+        }
+    }
+
+    #[test]
+    fn percentiles_interpolate() {
+        let v = [1.0, 2.0, 3.0, 4.0, 5.0];
+        assert_eq!(percentile(&v, 50.0), 3.0);
+        assert_eq!(percentile(&v, 0.0), 1.0);
+        assert_eq!(percentile(&v, 100.0), 5.0);
+        assert!((percentile(&v, 90.0) - 4.6).abs() < 1e-12);
+        assert!(percentile(&[], 50.0).is_nan());
+    }
+
+    #[test]
+    fn non_landing_samples_make_statistics_incomplete() {
+        let p = Perturbation::default();
+        let mk = |sample, result| McRow { sample, descent: Descent::Ballistic, perturbation: p, result };
+        let rows = vec![
+            mk(0, Ok(landed_summary(100.0))),
+            mk(1, Ok(landed_summary(200.0))),
+            mk(2, Ok(landed_summary(300.0))),
+            mk(3, Err(NOT_LANDED.to_string())),
+            mk(4, Err("never left the rail".to_string())),
+        ];
+        let st = &summarize(&rows, 5, 1).descents[0];
+        assert_eq!((st.failed, st.not_landed, st.landing.n), (2, 1, 3));
+        assert!(!st.complete && st.max_landing_distance_is_lower_bound);
+        assert_eq!(st.max_landing_distance, 300.0);
+        assert_eq!((st.landing_distance_p50, st.landing_distance_p90), (200.0, 280.0));
+        let all = summarize(&rows[..3], 3, 1);
+        assert!(all.descents[0].complete && !all.descents[0].max_landing_distance_is_lower_bound);
+    }
+
+    #[test]
+    fn short_max_time_gives_unlanded_summaries() {
+        let (t, m) = (table(), motor());
+        let mut b = base(&t, &m);
+        b.settings.max_time = 5.0;
+        let r = b.run(Descent::Ballistic, false).unwrap();
+        assert!(!r.summary.landed() && r.summary.landing_distance.is_nan());
+        b.settings.max_time = 2000.0;
+        assert!(b.run(Descent::Ballistic, false).unwrap().summary.landed());
+    }
+
+    #[test]
+    fn new_monte_carlo_sigmas_are_validated() {
+        let (t, m) = (table(), motor());
+        let b = base(&t, &m);
+        for (name, mutate) in [
+            ("thrust_misalignment_deg", (|c: &mut MonteCarloConfig| c.thrust_misalignment_deg = -1.0) as fn(&mut MonteCarloConfig)),
+            ("thrust_offset", |c| c.thrust_offset = f64::NAN),
+            ("fin_cant_deg", |c| c.fin_cant_deg = -0.1),
+            ("cg_lateral", |c| c.cg_lateral = f64::INFINITY),
+            ("cl_scale", |c| c.cl_scale = -0.1),
+            ("clp_scale", |c| c.clp_scale = -0.1),
+        ] {
+            let mut c = zero();
+            mutate(&mut c);
+            let e = run_monte_carlo(&c, &b, false).err().unwrap().to_string();
+            assert!(e.contains(name), "{name}: {e}");
+        }
     }
 }

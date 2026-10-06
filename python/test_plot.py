@@ -75,5 +75,110 @@ class FailedRun(unittest.TestCase):
             self.assertIsNone(plot.last_sim_failure(out))
 
 
+def synthetic_panel_csv(out, fin_azimuths_deg, r_body=0.05, span=0.05):
+    """Body panels on a cylinder plus fin panels (both sides) at the given azimuths [deg]."""
+    rows = []
+    for x in np.linspace(0.1, 1.0, 12):
+        for th in np.radians(np.arange(-175, 180, 10)):
+            rows.append(["body", x, r_body * np.cos(th), r_body * np.sin(th), np.cos(th), np.sin(th), -0.1 * np.cos(th)])
+    for az in fin_azimuths_deg:
+        a = np.radians(az)
+        for x in np.linspace(0.8, 1.0, 5):
+            for rr in np.linspace(r_body, r_body + span, 5):
+                for sgn in (1, -1):
+                    off = sgn * 0.002
+                    y = rr * np.cos(a) - off * np.sin(a)
+                    z = rr * np.sin(a) + off * np.cos(a)
+                    rows.append(["fin", x, y, z, -sgn * np.sin(a), sgn * np.cos(a), 0.3 * sgn])
+    pd.DataFrame(rows, columns=["part", "x", "y", "z", "ny", "nz", "cp"]).to_csv(out / "panel_cp.csv", index=False)
+
+
+class PanelPlot(unittest.TestCase):
+    def draw(self, azimuths):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            synthetic_panel_csv(out, azimuths)
+            d = pd.read_csv(out / "panel_cp.csv")
+            phi0 = plot.fin_azimuth(d[d.part == "fin"])
+            plot.plot_panel(out)
+            self.assertTrue((out / "plots" / "panel.png").stat().st_size > 0)
+            return phi0
+
+    def test_finless_rocket_draws_the_body_only(self):
+        self.assertIsNone(self.draw([]))
+
+    def test_eight_fins_at_22_5_and_67_5_degrees(self):
+        az = [22.5 + 45 * i for i in range(8)]
+        phi0 = self.draw(az)
+        deg = np.degrees(phi0)
+        self.assertLess(min(abs((deg - a + 180) % 360 - 180) for a in az), 1.0)
+
+    def test_four_fins_at_45_degrees(self):
+        self.assertAlmostEqual(np.degrees(self.draw([45, 135, -135, -45])) % 90, 45.0, places=3)
+
+
+class TrajectoryAltitude(unittest.TestCase):
+    def frame(self):
+        t = np.linspace(0, 10, 11)
+        up = np.array([0, 10, 30, 60, 100, 120, 110, 80, 40, 10, -3.0])
+        # ECEF: geodetic altitude differs from the tangent-plane coordinate by the downrange curvature drop
+        alt = 20.0 + up + np.linspace(0, 31, 11)
+        return pd.DataFrame({"t": t, "up": up, "alt": alt, "vel_u": np.gradient(up, t)})
+
+    def test_height_is_alt_minus_launch_altitude(self):
+        tr = self.frame()
+        h = plot.altitude_above_launch(tr)
+        self.assertEqual(h.iloc[0], 0.0)
+        np.testing.assert_allclose(h, tr.alt - 20.0)
+        self.assertGreater(abs(h.iloc[-1] - tr.up.iloc[-1]), 30.0)
+
+    def test_vertical_velocity_follows_altitude(self):
+        tr = self.frame()
+        np.testing.assert_allclose(plot.vertical_velocity(tr), np.gradient(tr.alt, tr.t))
+        tr.loc[3, "t"] = tr.t[2]  # time not strictly increasing: fall back to vel_u
+        np.testing.assert_allclose(plot.vertical_velocity(tr), tr.vel_u)
+
+
+class StaleOutputs(unittest.TestCase):
+    def write(self, out, name, obj):
+        (out / name).write_text(obj if isinstance(obj, str) else json.dumps(obj))
+
+    def test_matching_hashes_are_silent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self.write(out, "summary.json", {"config_hash": "a"})
+            self.write(out, "dispersion_meta.json", {"flight_config_hash": "a"})
+            self.write(out, "dispersion_summary.json", {"flight_config_hash": "a"})
+            self.assertEqual(plot.stale_warnings(out), [])
+
+    def test_sidecars_are_compared_without_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self.write(out, "dispersion_meta.json", {"flight_config_hash": "new"})
+            self.write(out, "dispersion_summary.json", {"flight_config_hash": "old"})
+            w = plot.stale_warnings(out)
+            self.assertEqual(len(w), 1)
+            self.assertIn("dispersion_meta.json", w[0])
+            self.assertIn("dispersion_summary.json", w[0])
+
+    def test_summary_mismatch_names_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self.write(out, "summary.json", {"config_hash": "a"})
+            self.write(out, "dispersion_meta.json", {"flight_config_hash": "b"})
+            w = plot.stale_warnings(out)
+            self.assertEqual(len(w), 1)
+            self.assertIn("summary.json", w[0])
+
+    def test_truncated_json_warns_instead_of_failing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            self.write(out, "summary.json", '{"config_hash": "a"')
+            self.write(out, "dispersion_meta.json", {"flight_config_hash": "a"})
+            w = plot.stale_warnings(out)
+            self.assertEqual(len(w), 1)
+            self.assertIn("summary.json", w[0])
+
+
 if __name__ == "__main__":
     unittest.main()

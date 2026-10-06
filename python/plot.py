@@ -222,6 +222,18 @@ def _tri(ax, x, y, c, norm, cmap, max_dy):
     return ax.tripcolor(tri, np.asarray(c), cmap=cmap, norm=norm, shading="gouraud")
 
 
+def fin_azimuth(fin):
+    """Azimuth [rad, atan2(z, y)] of the centre plane of the fin that reaches farthest from the axis, or None without fin panels."""
+    if len(fin) < 3:
+        return None
+    phi = np.arctan2(fin.z.to_numpy(), fin.y.to_numpy())
+    rho = np.hypot(fin.y.to_numpy(), fin.z.to_numpy())
+    tip = phi[np.argmax(rho)]
+    # the fin is thin: the circular mean of its points near that azimuth lies in its centre plane
+    near = np.abs(np.angle(np.exp(1j * (phi - tip)))) < np.radians(10)
+    return float(np.angle(np.exp(1j * phi[near]).mean()))
+
+
 def plot_panel(out):
     """Surface Cp of the panel solution: unrolled body map and one fin (both sides)."""
     from matplotlib.colors import TwoSlopeNorm
@@ -231,8 +243,9 @@ def plot_panel(out):
     norm = TwoSlopeNorm(vmin=-lim, vcenter=0.0, vmax=lim)
     cmap = "RdBu_r"  # diverging, centred at Cp = 0: blue suction, red compression
     body, fin = d[d.part == "body"], d[d.part == "fin"]
-    fig = plt.figure(figsize=(11, 6.8), layout="constrained")
-    gs = fig.add_gridspec(2, 2, height_ratios=[1, 1.15])
+    phi0 = fin_azimuth(fin)
+    fig = plt.figure(figsize=(11, 6.8 if phi0 is not None else 3.6), layout="constrained")
+    gs = fig.add_gridspec(2 if phi0 is not None else 1, 2, height_ratios=[1, 1.15] if phi0 is not None else [1])
 
     ax = fig.add_subplot(gs[0, :])
     th = np.degrees(np.arctan2(body.z, body.y))
@@ -243,20 +256,26 @@ def plot_panel(out):
     ax.set_title("Body panels, unrolled")
     ax.grid(False)
 
-    # One fin: the one nearest the 45 deg azimuth, split by side of the fin plane.
-    phi = np.arctan2(fin.z, fin.y)
-    k = fin[np.abs(np.angle(np.exp(1j * (phi - np.radians(45))))) < np.radians(20)]
-    ph = np.radians(45)
-    side = k.ny * (-np.sin(ph)) + k.nz * np.cos(ph)
-    rho = np.hypot(k.y, k.z)
-    for col, (sel, name) in enumerate(((side > 0, "Fin, +side"), (side <= 0, "Fin, −side"))):
-        a = fig.add_subplot(gs[1, col])
-        _tri(a, k.x[sel].values, rho[sel].values, k.cp[sel].values, norm, cmap, 1e9)
-        a.set_xlabel("x aft of nose tip [m]")
-        a.set_ylabel("radial distance [m]")
-        a.set_title(name)
-        a.set_aspect("equal", adjustable="datalim")
-        a.grid(False)
+    if phi0 is None:
+        print("panel: no fin panels in panel_cp.csv; drawing the body only")
+    else:
+        # One fin (the one whose centre plane is at phi0), split by side of the fin plane.
+        phi = np.arctan2(fin.z, fin.y)
+        k = fin[np.abs(np.angle(np.exp(1j * (phi - phi0)))) < np.radians(12)]
+        side = k.ny * (-np.sin(phi0)) + k.nz * np.cos(phi0)
+        rho = np.hypot(k.y, k.z)
+        for col, (sel, name) in enumerate(((side > 0, "Fin, +side"), (side <= 0, "Fin, −side"))):
+            a = fig.add_subplot(gs[1, col])
+            if sel.sum() >= 3:
+                try:
+                    _tri(a, k.x[sel].values, rho[sel].values, k.cp[sel].values, norm, cmap, 1e9)
+                except (ValueError, RuntimeError):
+                    pass  # degenerate (collinear) point set: leave the panel empty
+            a.set_xlabel("x aft of nose tip [m]")
+            a.set_ylabel("radial distance [m]")
+            a.set_title(name)
+            a.set_aspect("equal", adjustable="datalim")
+            a.grid(False)
     cb = fig.colorbar(sc, ax=fig.axes, shrink=0.85, pad=0.02)
     cb.set_label("Cp")
     save(fig, out, "panel.png")
@@ -281,11 +300,15 @@ def plot_trajectory(out):
     save(fig, out, "trajectory_3d.png")
 
     # Rigid-body panels cover powered flight and coast; the parachute descent only adds a flat tail.
+    # Altitude above the launch site is geodetic alt minus the launch altitude (as in summary.json), not the
+    # launch tangent-plane coordinate `up`, which differs from it on an ECEF Earth; the ascent test uses the
+    # rate of that altitude (the local vertical velocity).
+    tr = tr.assign(height=altitude_above_launch(tr), vert_vel=vertical_velocity(tr))
     body = tr[tr.phase != "parachute"]
     free = body[body.phase == "free"]
-    asc = body[(body.vel_u >= 0) & (body.airspeed > 10)]
+    asc = body[(body.vert_vel >= 0) & (body.airspeed > 10)]
     panels = [
-        ("up", "Altitude above launch site [m]", tr),
+        ("height", "Altitude above launch site [m]", tr),
         ("airspeed", "Airspeed [m/s]", body),
         ("mach", "Mach", body),
         ("alpha_deg", "Angle of attack [deg]", free),
@@ -320,6 +343,19 @@ def plot_trajectory(out):
         a.text(0.97, 0.06, f"did not land within {summ.get('max_time', tr.t.max()):g} s", transform=a.transAxes, ha="right", color=SERIES[7])
     fig.tight_layout()
     save(fig, out, "trajectory.png")
+
+
+def altitude_above_launch(tr):
+    """Geodetic altitude minus the launch altitude (the first row's alt), as summary.json reports apogee."""
+    return tr.alt - tr.alt.iloc[0]
+
+
+def vertical_velocity(tr):
+    """Local vertical velocity [m/s]: d(alt)/dt (the tangent-plane vel_u when time does not increase strictly)."""
+    t, alt = tr.t.to_numpy(), tr.alt.to_numpy()
+    if len(t) > 1 and np.all(np.diff(t) > 0):
+        return pd.Series(np.gradient(alt, t), index=tr.index)
+    return tr.vel_u
 
 
 def _finite(v):
@@ -475,23 +511,38 @@ def last_sim_failure(out):
     return str(j.get("error", "unknown error")) if j.get("failed") is True else None
 
 
-def warn_stale(out):
-    """Warn (stderr) when a dispersion output belongs to another flight configuration than summary.json.
+def stale_warnings(out):
+    """Warnings (strings) for outputs that belong to different flight configurations.
 
-    The dispersion outputs carry the hash of the flight configuration they were run with
-    (``flight_config_hash``); summary.json carries it as ``config_hash``.
+    summary.json carries the flight configuration hash as ``config_hash``, dispersion_meta.json and
+    dispersion_summary.json as ``flight_config_hash``. Every file that exists is compared with the others;
+    a file that cannot be parsed or has no hash is reported.
     """
-    ref = out / "summary.json"
-    if not ref.exists():
-        return
-    flight = json.loads(ref.read_text()).get("config_hash")
-    for name in ("dispersion_meta.json", "dispersion_summary.json"):
+    hashes, msgs = {}, []
+    for name, key in (("summary.json", "config_hash"), ("dispersion_meta.json", "flight_config_hash"), ("dispersion_summary.json", "flight_config_hash")):
         f = out / name
         if not f.exists():
             continue
-        h = json.loads(f.read_text()).get("flight_config_hash")
-        if h is None or h != flight:
-            print(f"warning: {f} was written for another flight configuration than {ref}; rerun `ignisyeet dispersion` before reading the dispersion plot next to the trajectory", file=sys.stderr)
+        try:
+            j = json.loads(f.read_text())
+        except (OSError, ValueError) as e:
+            msgs.append(f"warning: {f} cannot be read ({e}); rerun the command that writes it")
+            continue
+        h = j.get(key) if isinstance(j, dict) else None
+        if h is None:
+            if name != "summary.json":
+                msgs.append(f"warning: {f} has no {key}; rerun `ignisyeet dispersion`")
+        else:
+            hashes[name] = h
+    if len(set(hashes.values())) > 1:
+        names = ", ".join(str(out / n) for n in hashes)
+        msgs.append(f"warning: {names} were written for different flight configurations ({', '.join(f'{n}: {h}' for n, h in hashes.items())}); rerun `ignisyeet sim` and `ignisyeet dispersion` before reading the plots together")
+    return msgs
+
+
+def warn_stale(out):
+    for m in stale_warnings(out):
+        print(m, file=sys.stderr)
 
 
 PLOTS = {"geometry": plot_geometry, "aero": plot_aero, "panel": plot_panel, "trajectory": plot_trajectory, "dispersion": plot_dispersion}

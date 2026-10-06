@@ -320,7 +320,7 @@ ECEF 座標での扱いの違いは :ref:`sec-ecef-gravity` で述べる。
 表の最下端より低いところでは最下端の値、最上端より高いところでは最上端の値を **一定** に保つ（外挿しない）。
 :numref:`fig-wind-models` 右は、上の例の成分を補間したものである。
 
-``profile`` では ``speed`` と ``direction_deg`` は使わない。代わりに、表全体の代表風を基準風として扱う（``summary.json`` などにはこの値が出る）。
+``profile`` では ``speed`` と ``direction_deg`` は使わない（設定ファイルに書いてあると、使わないことを警告する）。代わりに、表全体の代表風を基準風として扱う（``summary.json`` などにはこの値が出る）。
 代表風速 :math:`W` は、表の最下行から最上行までの高度範囲での平均風速
 
 .. math::
@@ -364,6 +364,14 @@ ECEF 座標での扱いの違いは :ref:`sec-ecef-gravity` で述べる。
 結果の表の代表風速は :math:`W'`、代表風向は :math:`\Psi'` になる。
 風速格子（``wind_speeds``、``directions``）の値は、``profile`` では表の平均風速 :math:`W` と平均風の風向 :math:`\Psi` に対する値である。
 地上 2 m の風ではないので、地上風の測定値を風速格子にそのまま使ってはならない（選び方は :ref:`sec-dispersion-safety`）。
+
+表の平均風を別の値にして飛ばすには、``wind.profile_mean_speed`` に平均風速 :math:`W'` [m/s] を、``wind.profile_mean_direction_deg`` に平均風の風向 :math:`\Psi'` [deg] を与える。
+表は :eq:`eq-wind-scale` で拡大・回転され、風速 :math:`W'`、風向 :math:`\Psi'` の風の格子のケースと同じ風になる。片方だけを指定すると、もう片方は表のまま（:math:`W'=W` または :math:`\Psi'=\Psi`）である。
+``sim`` もこの風で飛び、``summary.json`` の ``wind_speed`` と ``wind_direction_deg`` は :math:`W'` と :math:`\Psi'`、``wind_scale`` は :math:`k=W'/W` になる。
+風の格子とモンテカルロ法は、この拡大・回転した表を公称の風として、そこからさらに :eq:`eq-wind-scale` で風速と風向を変える（拡大率はいつも CSV の表に対する値である）。
+落下分散の格子で最も遠くなった風（平均風速と風向）に、機体のばらつきを与えて計算するときに使う（:ref:`sec-dispersion-safety`）。
+ほぼ無風の表（平均風速が 0.1 m/s 未満）は拡大・回転できず、``wind profile is calm (mean speed … m/s): it cannot be scaled to wind.profile_mean_speed / rotated to wind.profile_mean_direction_deg`` のエラーになる。
+値の範囲の検査は :ref:`sec-config-checks` にある。
 
 モンテカルロ法の風速の揺らぎ :math:`\delta`\ （``wind_speed``、単位 m/s）は、``profile`` では平均風速 :math:`W` に対する揺らぎであり、
 :math:`k=\max(W+\delta,\,0)/W` で表を拡大する。:math:`k\ge0` なので、揺らぎで風向が反転することはない。

@@ -46,6 +46,61 @@ class GeneralTable(unittest.TestCase):
             np.testing.assert_allclose(d.cna, 3.0)
             np.testing.assert_allclose(d.xcp, 0.7)
 
+    def write(self, out, cz, cm, diameter=0.1, alphas=(-10.0, -2.0, 0.0, 2.0, 10.0)):
+        """General table with cz(alpha [rad]) and cm(alpha [rad]) at beta = 0 (and beta = 10 deg)."""
+        rows = []
+        for mach in (0.3, 0.8):
+            for beta in (0.0, 10.0):
+                for alpha in alphas:
+                    a = np.radians(alpha)
+                    rows.append([mach, alpha, beta, -0.3, -0.4, 0.0, cz(a), 0.0, cm(a), 0.0, 0, 0, 0, 0, 0, 0, 0, 0])
+        pd.DataFrame(rows, columns=GEN_COLUMNS.split(",")).to_csv(out / "aero_table.csv", index=False)
+        if diameter is not None:
+            (out / "aero_table.json").write_text(json.dumps({"ref_diameter": diameter}))
+        return pd.read_csv(out / "aero_table.csv")
+
+    def test_slopes_are_signed_central_differences_around_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            # An offset at zero and an even term: the ratio CM / CZ at the first angle is not the centre of
+            # pressure and |CZ| / alpha not the slope; the central differences over +-2 deg are exact.
+            t = self.write(out, lambda a: 0.01 - 3.0 * a + 5.0 * a * a, lambda a: 0.02 + (-3.0 * a + 5.0 * a * a) * 0.7 / 0.1)
+            d = plot.general_totals(t, out)
+            np.testing.assert_allclose(d.cna, 3.0)
+            np.testing.assert_allclose(d.xcp, 0.7)
+            # The normal force along the crossflow (unphysical sign): a negative slope, not its magnitude.
+            t = self.write(out, lambda a: 3.0 * a, lambda a: 3.0 * a * 0.7 / 0.1)
+            d = plot.general_totals(t, out)
+            np.testing.assert_allclose(d.cna, -3.0)
+            np.testing.assert_allclose(d.xcp, 0.7)
+
+    def test_one_sided_difference_without_negative_angles(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            t = self.write(out, lambda a: 0.01 - 3.0 * a, lambda a: 0.02 + (0.01 - 3.0 * a) * 0.7 / 0.1, alphas=(0.0, 2.0, 10.0))
+            d = plot.general_totals(t, out)
+            np.testing.assert_allclose(d.cna, 3.0)
+            np.testing.assert_allclose(d.xcp, 0.7)
+
+    def test_undefined_values_are_nan(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            # No normal force: slope 0, centre of pressure undefined (NaN, not inf or a division artefact).
+            t = self.write(out, lambda a: 0.0, lambda a: 0.0)
+            d = plot.general_totals(t, out)
+            np.testing.assert_allclose(d.cna, 0.0)
+            self.assertTrue(d.xcp.isna().all())
+            # No reference diameter: no centre of pressure.
+            (out / "aero_table.json").unlink()
+            t = self.write(out, lambda a: -3.0 * a, lambda a: -3.0 * a * 7.0, diameter=None)
+            d = plot.general_totals(t, out)
+            np.testing.assert_allclose(d.cna, 3.0)
+            self.assertTrue(d.xcp.isna().all())
+            # Only the zero angle: neither.
+            t = self.write(out, lambda a: 0.0, lambda a: 0.0, alphas=(0.0,))
+            d = plot.general_totals(t, out)
+            self.assertTrue(d.cna.isna().all() and d.xcp.isna().all())
+
     def test_aero_plot_without_drag_file_handles_a_general_table(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)

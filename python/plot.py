@@ -151,24 +151,36 @@ def axisymmetric_view(t):
 
 
 def general_totals(t, out):
-    """Per-Mach cd_off, cd_on, cna and xcp of a general table (beta = 0 view with cz, cm, cx_on, cx_off).
+    """Per-Mach cd_off, cd_on, cna and xcp of a general table at beta = 0 (columns cz, cm, cx_on, cx_off).
 
-    CD0 is -CX at alpha = 0; CNα and Xcp come from the smallest positive angle of attack
-    (CNα = |CZ| / alpha, Xcp = CM * D / CZ with D the reference diameter of the sidecar), as in `ignisyeet aero`.
+    CD0 is -CX at alpha = 0. CNα and Xcp come from the signed slopes of the table around alpha = 0:
+    central differences between the nearest angles on either side of zero (one-sided from alpha = 0
+    when the table has no negative angles), CNα = -dCZ/dα [1/rad] and Xcp = D (dCM/dα) / (dCZ/dα)
+    with D the reference diameter of the sidecar, the pitch centre of pressure of `ignisyeet`'s
+    static margin. Undefined values are NaN: CNα without a nonzero angle, Xcp also when dCZ/dα is
+    zero or the diameter is unknown.
     """
-    z = t[t.alpha_deg == 0].sort_values("mach").set_index("mach")
-    d = pd.DataFrame({"mach": z.index, "cd_off": -z.cx_off.to_numpy(), "cd_on": -z.cx_on.to_numpy()}).set_index("mach")
-    pos = t[t.alpha_deg > 0]
-    if len(pos):
-        a = pos.alpha_deg.min()
-        r = pos[pos.alpha_deg == a].sort_values("mach").set_index("mach")
-        diameter = json.loads((out / "aero_table.json").read_text()).get("ref_diameter") if (out / "aero_table.json").exists() else None
-        d["cna"] = r.cz.abs() / np.radians(a)
-        d["xcp"] = (r.cm * diameter / r.cz) if diameter else np.nan
-    else:
-        d["cna"] = np.nan
-        d["xcp"] = np.nan
-    return d.reset_index()
+    if "beta_deg" in t.columns:
+        t = t[t.beta_deg == 0]
+    diameter = json.loads((out / "aero_table.json").read_text()).get("ref_diameter") if (out / "aero_table.json").exists() else None
+    rows = []
+    for mach, g in t.groupby("mach", sort=True):
+        g = g.sort_values("alpha_deg")
+        zero = g[g.alpha_deg == 0]
+        pos, neg = g[g.alpha_deg > 0], g[g.alpha_deg < 0]
+        row = {"mach": mach, "cd_off": np.nan, "cd_on": np.nan, "cna": np.nan, "xcp": np.nan}
+        if len(zero):
+            row["cd_off"], row["cd_on"] = -zero.cx_off.iloc[0], -zero.cx_on.iloc[0]
+        hi = pos.iloc[0] if len(pos) else None
+        lo = neg.iloc[-1] if len(neg) else (zero.iloc[0] if len(zero) else None)
+        if hi is not None and lo is not None:
+            da = np.radians(hi.alpha_deg - lo.alpha_deg)
+            dcz, dcm = (hi.cz - lo.cz) / da, (hi.cm - lo.cm) / da
+            row["cna"] = -dcz
+            if diameter and dcz != 0:
+                row["xcp"] = diameter * dcm / dcz
+        rows.append(row)
+    return pd.DataFrame(rows, columns=["mach", "cd_off", "cd_on", "cna", "xcp"])
 
 
 def plot_aero(out):
@@ -177,7 +189,7 @@ def plot_aero(out):
         d = pd.read_csv(out / "aero_drag.csv")
     elif "cx_off" in t.columns:
         # General table (sideslip, STL or external): coefficients are CX/CY/CZ; there is no drag breakdown file.
-        d = general_totals(t, out)
+        d = general_totals(pd.read_csv(out / "aero_table.csv"), out)
     else:
         # CFD tables have no per-Mach drag file (no component breakdown): the alpha = 0 rows give the totals.
         d = t[t.alpha_deg == 0].sort_values("mach").rename(columns={"ca_off": "cd_off", "ca_on": "cd_on"})

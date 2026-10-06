@@ -206,7 +206,8 @@ CFD（``method = "cfd"``、:doc:`cfd`、:doc:`cfd_internals`）
 軸対称表は、既定では Mach 数 0 から 3、全迎角 0 から 30° の格子を持つ。
 全迎角が機体の軸からのずれの大きさだけを表すので、機体が軸対称なら十分である。
 飛翔計算では、全迎角に対して :math:`\alpha_t'=\min(\alpha_t,\pi-\alpha_t)`、つまり 0 から 90° の範囲で表を引く。
-表が持つのは 0 から 30° までで、それを超える迎角は、設定に応じて線形に外挿するかその端の値で一定とする（:ref:`sec-aero-interp`）。
+表が持つのは既定では 0 から 30° までで、それを超える迎角は、設定に応じて線形に外挿するかその端の値で一定とする（:ref:`sec-aero-interp`）。
+付属のサンプルは ``alpha_max_deg = 90`` として、頂点のあとの弾道落下で現れる大きな迎角も表の範囲に収めている。
 後ろ向きに飛ぶ（:math:`\alpha_t>90^\circ`）ときは、前向きの係数を引いて軸力の向きを反転する（:ref:`sec-aero-forces`）。
 
 一般表は、迎角 :math:`-180^\circ` から :math:`180^\circ`、横滑り角 :math:`-90^\circ` から :math:`90^\circ` の全範囲を格子で覆う。
@@ -298,7 +299,7 @@ Mach 数は、設定にかかわらず、表の端の値で一定とする。
 範囲外の引き出しがあると、``sim``、``dispersion`` は警告として、引き出しの回数と最大の Mach 数、最大の :math:`|\alpha|` を表示する
 （``aero table: N of M lookups beyond the Mach range`` または ``… beyond the angle range`` の形で、Mach 数は表の端で一定、角度は外挿であることも添える）。
 迎角の範囲外の引き出しは、頂点のあとの弾道落下（機体が反転して尾部を先に落ちる）で起きることが多く、その場合は想定内である。
-上昇中や燃焼中に起きるときは結果に影響するので、``trajectory.csv`` の迎角で時刻を確かめ、``alpha_max_deg`` を大きくして（たとえば 90）表を作り直す。
+上昇中や燃焼中に起きるときは結果に影響するので、``trajectory.csv`` の迎角で時刻を確かめ、``alpha_max_deg`` を大きくして（たとえば 90。サンプルの設定である）表を作り直す。
 表の外ではフィンの項は失速せず線形のままなので、約 30° を超える範囲の係数は粗い（:ref:`sec-lim-aero`）。
 範囲外の引き出しがなくても、``summary.json``、``dispersion_meta.json``、``dispersion_summary.json`` の ``aero_table_range`` に、全引き出しの回数などを記録する（:ref:`sec-file-summary`）。
 

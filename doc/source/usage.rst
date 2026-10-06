@@ -388,60 +388,6 @@ CFD ツールで SU2 が異常終了する（AVX-512 のない CPU）
    AVX-512 のない CPU では、SU2 8.5.0 が異常終了する。
    インストーラが作る環境は SU2 8.3.0 に固定しているが、別の版がすでに入った環境を使っているときは、画面に出る再作成のコマンドで作り直す。
 
-リリースとバージョン
-~~~~~~~~~~~~~~~~~~~~
-
-IgnisYeet のバージョンは ``Cargo.toml`` の ``[workspace.package] version``\ （``ignisyeet --version`` で表示される値）で決まり、
-GitHub では同じ番号のタグ ``vX.Y.Z`` と GitHub Release で管理する。インストーラの user は、
-``--version`` を指定しなければ最新のリリースを入れる。
-
-push とプルリクエストでは、ワークフロー ``ci.yml`` が ``cargo build --release --locked`` と ``cargo test --release --locked`` を実行し、
-例題で ``geom``、``aero``、``sim``、風の格子の ``dispersion``、モンテカルロの ``dispersion``、``python/plot.py`` を通しで動かし、
-``sim.max_time`` を短くした飛翔が終了ステータス 3 で終わることも確かめる（clippy、rustfmt、ShellCheck は助言のみで、失敗してもジョブは落ちない）。
-別のジョブが、必要な最低の Rust の版 1.87 で ``cargo build --locked`` を実行する。
-ワークフローが使う Action は、コミットの SHA で固定している。
-Rust のツールチェーンは ``rust-toolchain.toml``\ （stable、rustfmt と clippy を含む）で指定し、``Cargo.toml`` の ``rust-version``\ （1.87）が必要な最低の版を定める。
-
-タグ ``v*`` を push すると、GitHub Actions のワークフロー ``release.yml`` が次の処理を行う。
-
-#. タグと ``Cargo.toml`` のバージョンが一致することを確かめる（一致しなければ失敗する）。
-#. 4 つのターゲット向けにバイナリを作る。Linux は musl で静的にリンクするので、ディストリビューションによらず動く。
-
-   .. list-table::
-      :header-rows: 1
-      :widths: 40 30 30
-
-      * - ターゲット
-        - ビルド環境
-        - テスト
-      * - ``x86_64-unknown-linux-musl``
-        - Ubuntu（cargo-zigbuild）
-        - 実行する
-      * - ``aarch64-unknown-linux-musl``
-        - Ubuntu（cargo-zigbuild）
-        - 実行しない（クロスビルド）
-      * - ``x86_64-apple-darwin``
-        - macOS（Intel）
-        - 実行する
-      * - ``aarch64-apple-darwin``
-        - macOS（Apple Silicon）
-        - 実行する
-
-#. ``scripts/package-release.sh`` で ``ignisyeet-<バージョン>-<ターゲット>.tar.gz`` と SHA-256 を作る。
-   中身はバイナリ（``bin/ignisyeet``）、例題、作図スクリプト（``python/plot.py`` と、依存関係の一覧および固定した版 ``uv.lock`` ``plot-constraints.txt``）、
-   ``LICENSE``、``NOTICE``、``CITATION.cff``、``README.md`` である。
-   アーカイブは GNU tar で、ファイルの順序、時刻（``SOURCE_DATE_EPOCH``、既定は 0）、所有者を固定して作る。macOS のビルドでは ``gnu-tar`` を入れる。
-#. GitHub Release を作り、すべての配布物、チェックサム、``install.sh`` を添付する。
-   リリースノートは前のタグからのコミットを Conventional Commits の種類（feat、fix、docs など）ごとにまとめて作る。
-
-新しいバージョンを出すときは、``Cargo.toml``\ （と ``CITATION.cff`` などの表記）のバージョンを上げてコミットし、
-同じ番号のタグを付けて push する。
-
-.. code-block:: sh
-
-   git tag v0.4.0
-   git push origin v0.4.0
-
 ソースからのビルド
 ~~~~~~~~~~~~~~~~~~
 
@@ -471,11 +417,15 @@ Rust のツールチェーンは ``rust-toolchain.toml``\ （stable、rustfmt �
    ./target/release/ignisyeet dispersion examples/sample.toml   # 落下分散を計算する
    uv run --project python python/plot.py all examples/out      # 図を描く
 
+``aero``、``sim``、``dispersion`` は空力係数表のキャッシュを共有するので、Makefile は ``make -j`` でも直列に実行する。
+実行ファイルは ``$CARGO_TARGET_DIR/release/ignisyeet``\ （未設定なら ``target/release/ignisyeet``）で、``BIN=...`` で上書きもできる。設定ファイルと出力先のパスに空白があっても動く。
+
 ``make`` が図を読む出力ディレクトリ（``OUT``）は、設定ファイルの ``[output] dir``\ （設定ファイルのあるディレクトリからの相対パス。絶対パスならそのまま、未指定なら ``out``）から決まる。
 ``OUT=...`` で上書きもできる。``[output] dir`` は、基本文字列（``"..."``）でもリテラル文字列（``'...'``）でも読める。
 
 ``sim`` や ``dispersion`` が終了ステータス 3（結果は書いたが不完全。:ref:`sec-exit-status`）で終わっても、``make all`` は作図まで進める。
-作図のあと、``results are INCOMPLETE (exit status 3)`` で始まるメッセージを出して、``make`` 自体を終了ステータス 3 で失敗させる。
+作図のあと、``results are INCOMPLETE (exit status 3)`` で始まるメッセージ（この 3 は ``ignisyeet`` の終了ステータス）を出して失敗する。
+``make`` 自体の終了ステータスは、GNU make の規則で 2 になる。
 ステータス 3 以外の失敗では、その場で止まる。
 
 ``python/plot.py`` は、出力ディレクトリがないとき、また描くものが一つもないときは、エラーを表示して終了ステータス 1 で終わる。
@@ -559,7 +509,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
    ``sim`` の完了画面。結果パネル、書き出したファイルの一覧、所要時間が並ぶ。
 
 二段開傘（``recovery.main_cd_s``）のときは、結果パネルにメインの開傘の高さと時刻の行（``main deploy``）を加え、設定パネルにはメインの抗力面積と開傘高度、ドローグとメインの終端降下速度（海面、乾燥質量）を示す。
-結果パネルの静安定余裕の行（``min margin``）には、飛翔中の最小値とランチャ離脱時の値の小さいほうを示す。プレーンモードでは ``min static margin X cal (free flight Y cal)`` の 1 行で、ランチャ離脱を除いた飛翔中の最小値 ``Y`` も添える。
+結果パネルの静安定余裕の行（``min margin``）には、自由飛行中の最小値とランチャ離脱時の値の小さいほうを示す。自由飛行中の最小値は、ランチャ離脱後から頂点までのうち対気速度が 10 m/s を超える間の値である。プレーンモードでは ``min static margin X cal (free flight Y cal)`` の 1 行で、ランチャ離脱を除いた自由飛行中の最小値 ``Y`` も添える。
 
 結果パネルの静安定余裕には判定の印が付く。
 
@@ -634,7 +584,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
    * - ``sim <config> [--descent ballistic|parachute]``
      - 設定した風で 1 回飛翔させ、``trajectory.csv`` と ``summary.json`` を書き出す。``sim.max_time`` までに着地しなかったときは、結果を書いたうえで終了ステータス 3 で終わる（:ref:`sec-exit-status`）。
    * - ``dispersion <config>``
-     - ``dispersion.mode`` に従って落下分散を並列に計算する。``"wind_grid"`` では風速 × 風向の全ケースを計算して ``dispersion.csv`` と ``dispersion_meta.json`` を、
+     - ``dispersion.mode`` に従って落下分散を並列に計算する（保安距離の検討の手順は :ref:`sec-dispersion-safety`）。``"wind_grid"`` では風速 × 風向の全ケースを計算して ``dispersion.csv`` と ``dispersion_meta.json`` を、
        ``"monte_carlo"`` では各サンプルの結果 ``dispersion_mc.csv`` と統計 ``dispersion_summary.json`` を書き出す。
        着地しなかったケースや失敗したケースがあるときは、結果を書いたうえで終了ステータス 3 で終わる。
    * - ``cfd-check <config> [--mesh]``
@@ -672,8 +622,10 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
      - 正
    * - ``rocket.cg_dry``
      - 0 以上（ノーズ先端から後方に測る）
-   * - ``rocket.roughness``、``rocket.extra_cd``、``recovery.cd_s``、``recovery.delay``、``wind.speed``
+   * - ``rocket.roughness``、``rocket.extra_cd``、``recovery.delay``、``wind.speed``
      - 0 以上
+   * - ``recovery.cd_s``
+     - 0 以上。``recovery.enabled = true`` のときは正（0 ではパラシュートが減速しない）
    * - ``recovery.main_cd_s`` と ``recovery.main_altitude``
      - 両方を指定するか、両方とも省略する。指定するときは、どちらも有限で正
    * - ``aero.mach_min`` と ``aero.mach_max``
@@ -687,7 +639,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
    * - 係数表の格子点の数（Mach 数の数 × 迎角の数）
      - 約 10\ :sup:`6` 以下。超えるときは ``aero.mach_step`` と ``aero.alpha_step_deg`` を大きくするか、``mach_max`` と ``alpha_max_deg`` を小さくする
    * - ``aero.n_slices``
-     - 20 以上（形状抽出に必要な断面の数）
+     - 20 以上 10000 以下（形状抽出に必要な断面の数）
    * - ``wind.ref_height``、``wind.exponent``、``wind.roughness_length``、``wind.ground_blend_height``
      - 正
    * - ``wind.roughness_length``\ （``model = "log"``）
@@ -703,13 +655,19 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
    * - ``dispersion.wind_speeds`` の各要素、``[dispersion.monte_carlo]`` の各標準偏差
      - 0 以上
    * - ``dispersion.wind_speeds``
-     - 1 個以上の要素（空のリストはエラー）
+     - 1 個以上 100 個以下の要素（空のリストはエラー）
+   * - ``dispersion.directions``
+     - 1 以上 360 以下
+   * - 風の格子のケース数（``wind_speeds`` の数 × ``directions``）
+     - 100000 以下（降下モードを数えない）
+   * - ``dispersion.monte_carlo.samples``
+     - 1 以上 10\ :sup:`6` 以下
    * - ``atmosphere.density`` ``sound_speed`` ``viscosity``\ （``model = "constant"``）
      - 有限で正
    * - ``atmosphere.temperature_offset``\ （``model = "us1976"``）
      - 有限で、−186.946 K より大きい（モデルの範囲で最も低い標準温度 186.946 K に足して、絶対温度が正になる値）
 
-``[launch]`` と ``[recovery]`` に未知のキーがあると、キーの名前を示してエラーにする（``rol_deg`` のような綴りの誤りが黙って無視されないようにするためである）。
+どのセクションも、未知のキーがあるとキーの名前を示してエラーにする（``rol_deg`` のような綴りの誤りが黙って無視されないようにするためである）。
 
 入力ファイルが読めないときは、エラーにファイルのパスを示す（STL、モータの ``.eng``、風のプロファイル、外部の係数表とその付随ファイル）。
 STL は、頂点の座標に有限でない値（``NaN`` や ``inf``）があると、三角形の番号を示してエラーにする。
@@ -720,7 +678,7 @@ STL は、頂点の座標に有限でない値（``NaN`` や ``inf``）がある
 * ``rocket.stl_scale`` を掛けた機体の全長が 0.1 m から 20 m の範囲の外にある。メッセージは ``body length … m is outside the plausible 0.1-20 m range: check the STL units and rocket.stl_scale`` の形で、``stl_scale`` の現在の値と、mm 単位の STL なら ``0.001`` であることを添える。
 * 乾燥重心 ``rocket.cg_dry`` が機体の全長より後方にある。
 
-積分が発散して状態に有限でない値が現れたときも、エラーにする（``integration diverged at t = … s; reduce sim.dt or tighten rtol/atol``。:ref:`sec-integrators`）。
+積分が発散して状態に有限でない値が現れたときも、エラーにする（``integration diverged at t = … s; reduce sim.dt or tighten rtol/atol, or check the aero table and mass properties``。:ref:`sec-integrators`）。外部の係数表や質量特性の誤りでも発散するので、メッセージはそれらの確認も促す。
 値が有限でも、速さが 8 km/s を超えるか高さが 1000 km を超えたときは、発散とみなして同じ形のエラーにする。
 モンテカルロ解析では、そのサンプルを失敗として数える。風の格子では、そのケースだけを失敗として記録し、ほかのケースの計算は続ける（:ref:`sec-wind-grid-failed`）。
 
@@ -732,14 +690,17 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 警告の内容は次のとおりである。
 
 * 機体の直径が 0.005 から 3 m の範囲を外れている（``rocket.stl_scale`` の誤りが疑われる。mm 単位の STL なら ``0.001``）。``geom`` でも表示する。全長の範囲外は、STL から作る機体ではエラーである（上記）。``method = "table"`` の外部の表では、表の ``length`` と ``ref_diameter`` について、全長 0.1 から 20 m、直径 0.005 から 3 m の範囲外を警告にする。
-* 静安定余裕（飛翔中の最小値とランチャ離脱時の値の小さいほう）が、0 cal 未満（``UNSTABLE``。圧力中心が重心より前にある）、0 以上 1.0 cal 未満（``low static margin``。不安定とは呼ばない）、1.0 cal 以上 1.5 cal 未満（``marginal``。推奨の 1.5 cal を下回る）である。
+* 静安定余裕（自由飛行中の最小値とランチャ離脱時の値の小さいほう。自由飛行中の最小値は、ランチャ離脱後から頂点までのうち対気速度が 10 m/s を超える間に、積分のステップごとに測った値である）が、0 cal 未満（``UNSTABLE``。圧力中心が重心より前にある）、0 以上 1.0 cal 未満（``low static margin``。不安定とは呼ばない）、1.0 cal 以上 1.5 cal 未満（``marginal``。推奨の 1.5 cal を下回る）である。
 * 風のモデルが ``profile`` で、頂点が表の最上端の高度より高い（``apogee … m is above the top of the wind profile (… m): the wind above … m is held at the top value``）。表より上の風は最上端の値で一定になる。
 * 風のモデルが ``power`` または ``log`` で、頂点が地上 1000 m を超え、風速が 0 でない（``dispersion`` の風の格子では、最大の風速が 0 でないとき）。判定に使う風速は、実際にその飛翔で使う基準風速である（``profile`` では ``wind.speed`` ではなく表から求めた値）。これらのプロファイルは基準高さ ``wind.ref_height`` の風速 ``wind.speed`` を上空に外挿するので、上空の風と着地点はモデル依存になる（実際の予測には ``model = "profile"`` を使う）。
+* 風のモデルが ``profile`` で、表の最下行が地上 0 m より上にある（``the wind profile starts at … m: the wind below is held at the lowest row``）。
+* 風のモデルが ``profile`` の風の格子またはモンテカルロ解析で、表の拡大率 :math:`k`\ （:ref:`sec-wind-scaling`）が 3 を超えるか 1/3 を下回るケースがある。最も極端なケースの拡大率と、表の風速の最大値を拡大した値を示す（``wind profile scaled by up to … (wind grid … m/s vs profile mean … m/s): winds aloft up to … m/s``。モンテカルロ解析では ``wind grid`` が ``Monte Carlo sample`` になる）。
+* パラシュート降下が着地した飛翔（``sim`` と、``dispersion`` の公称の飛翔）で、開傘しないまま着地した（``parachute descent landed at … m/s: the parachute did not deploy before landing (recovery.delay = … s)``）か、着地速度が 15 m/s を超える（``… which is above 15 m/s: check recovery.cd_s``）。
 * ``sim.max_time`` までに着地しない。
 * モータの推力曲線の疑わしい点。最後の点が 0 N でない（``thrust curve ends at … N instead of 0 N: the motor is cut off abruptly``）、点が 1 つだけ（``the thrust curve has a single point: the thrust ramps linearly from 0 N at t = 0``）、燃焼時間が 0.05 s より短い（``burn time … s is shorter than 0.05 s: the motor is an impulse; check the time column``）。
 * 外部の係数表（``method = "table"``）で、迎角 0 の軸力係数 ``ca_on`` または ``ca_off`` が負である（``aero table: ca_off at Mach …, alpha 0 is … (negative axial force / thrust-like drag)``）。列ごとに、最初の Mach 数を示す。
 * ``dispersion`` の風の格子で、積分がエラーで止まったケースがある。最初の 3 ケースをエラーの文とともに表示し、残りは数だけを表示する（:ref:`sec-wind-grid-failed`）。
-* 係数表の範囲外の引き出しがある。回数、最大の Mach 数、最大の :math:`|\alpha|` を ``aero table: 370888 of 10106213 lookups beyond the angle range (max Mach 1.51, max |alpha| 90.0 deg); Mach is held at the table edge, angles are extrapolated`` の形で表示する（パネル法のサンプルの ``dispersion`` での表示。Mach 数の範囲外があるときは ``… lookups beyond the Mach range`` も並ぶ）。
+* 係数表の範囲外の引き出しがある。回数、最大の Mach 数、最大の :math:`|\alpha|` を ``aero table: 370876 of 10159306 lookups beyond the angle range (max Mach 1.51, max |alpha| 90.0 deg); Mach is held at the table edge, angles are extrapolated`` の形で表示する（``alpha_max_deg = 30`` にしたパネル法のサンプルの ``dispersion`` での表示。Mach 数の範囲外があるときは ``… lookups beyond the Mach range`` も並ぶ）。サンプルの設定 ``alpha_max_deg = 90`` では、表の範囲外の引き出しはなく、この警告は出ない。
   迎角の範囲外の引き出しは、頂点のあとの弾道落下（機体が反転し、尾部を先にして落ちる）で起きることが多く、その場合は想定内である。
   上昇中や燃焼中に起きるときは、結果に影響する。``trajectory.csv`` の迎角で時刻を確かめ、``aero.alpha_max_deg`` を大きくして（たとえば 90）係数表を作り直す。
   表の外では、フィンの項は失速せず線形のままなので、30° を超える範囲の係数は粗い（:ref:`sec-lim-aero`）。
@@ -943,7 +904,7 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
      - 射点の標高 [m]
    * - ``rail_length``
      - 必須
-     - ランチャレールの長さ [m]
+     - 機体が発射位置からレールに沿って進み、レールを離れるまでの距離 [m]（有効な案内長）。後端のラグがレールの端にないときは、レールの物理的な長さではなく、ラグが発射位置からレールの端まで動ける距離を入れる（:ref:`sec-rail`）
    * - ``elevation_deg``
      - 必須
      - 射角（水平面からの仰角）[deg]
@@ -1016,7 +977,7 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
      - 係数表の Mach 数の範囲と刻み。``mach_max`` は 10 以下
    * - ``alpha_max_deg`` / ``alpha_step_deg``
      - ``30`` / ``1``
-     - 係数表の迎角の範囲（0 から）と刻み [deg]。``alpha_max_deg`` は 180 以下。格子点の数（Mach 数の数 × 迎角の数）は 10\ :sup:`6` 以下
+     - 係数表の迎角の範囲（0 から。付属のサンプルは 90）と刻み [deg]。``alpha_max_deg`` は 180 以下。格子点の数（Mach 数の数 × 迎角の数）は 10\ :sup:`6` 以下
    * - ``n_slices``
      - ``600``
      - 形状抽出で STL を切る断面の数（20 以上）
@@ -1245,10 +1206,10 @@ CFD の準備は ``ignisyeet cfd-check 設定ファイル [--mesh]`` で確か�
        ``"profile"``\ （高度別の表。:ref:`sec-wind`）
    * - ``speed``
      - ``4.0``
-     - 基準高度での風速 [m/s]（0 以上）。``profile`` では使わず、表から求めた基準高度の値で置き換える
+     - 基準高度での風速 [m/s]（0 以上）。``profile`` では使わず、表の平均風速（:ref:`sec-wind-profile`）で置き換える
    * - ``direction_deg``
      - ``0.0``
-     - 風が **吹いてくる** 方位（北から時計回り）[deg]。``profile`` では使わない
+     - 風が **吹いてくる** 方位（北から時計回り）[deg]。``profile`` では使わず、表の平均風の風向で置き換える
    * - ``ref_height``
      - ``2.0``
      - 風速の基準高度 [m]（正）
@@ -1313,10 +1274,10 @@ CFD の準備は ``ignisyeet cfd-check 設定ファイル [--mesh]`` で確か�
      - ``"wind_grid"``\ （風速 × 風向の格子）または ``"monte_carlo"``\ （:doc:`dispersion`）
    * - ``wind_speeds``
      - ``[1, 2, …, 7]``
-     - ``wind_grid`` で計算する基準風速の一覧 [m/s]
+     - ``wind_grid`` で計算する風速の一覧 [m/s]（0 以上、100 個以下）。``constant`` ``power`` ``log`` では基準高度 ``wind.ref_height`` の風速、``profile`` では表の平均風速（:ref:`sec-wind-scaling`）。選び方は :ref:`sec-dispersion-safety`
    * - ``directions``
      - ``8``
-     - ``wind_grid`` の風向の分割数（北から等間隔。1 以上）
+     - ``wind_grid`` の風向の分割数（北から等間隔。1 以上 360 以下）
 
 ``[dispersion.monte_carlo]``\ （``mode = "monte_carlo"`` のときに使う）
 
@@ -1335,7 +1296,7 @@ CFD の準備は ``ignisyeet cfd-check 設定ファイル [--mesh]`` で確か�
      - 意味
    * - ``samples``
      - ``1000``
-     - サンプル数（1 以上）
+     - サンプル数（1 以上 10\ :sup:`6` 以下）
    * - ``seed``
      - ``1``
      - 乱数の種。サンプル :math:`i` は ``seed + i`` を種とする
@@ -1365,10 +1326,10 @@ CFD の準備は ``ignisyeet cfd-check 設定ファイル [--mesh]`` で確か�
      - 絶対 [deg]。ランチャの射方位
    * - ``wind_speed``
      - ``1.0``
-     - 絶対 [m/s]。基準風速（``[wind]`` の ``speed`` の周りに分布し、0 未満は 0 にする）
+     - 絶対 [m/s]。基準風速（``[wind]`` の ``speed`` の周りに分布し、0 未満は 0 にする）。``profile`` では表の平均風速 :math:`W` の周りの揺らぎで、表を :math:`\max(W+\delta,0)/W` 倍する（:ref:`sec-wind-scaling`）。表がほぼ無風（平均 0.1 m/s 未満）で、この値が 0 でないときはエラー
    * - ``wind_direction_deg``
      - ``15.0``
-     - 絶対 [deg]。風向（``[wind]`` の ``direction_deg`` の周りに分布する）
+     - 絶対 [deg]。風向（``[wind]`` の ``direction_deg`` の周りに分布する。``profile`` では表の平均風の風向の周り）
    * - ``parachute_cd_s_scale``
      - ``0.1``
      - 相対。パラシュートの抗力面積 :math:`C_DS`
@@ -1412,8 +1373,6 @@ STL からの形状抽出と空力モデルの計算は行わず、``sim`` と `
 表は、``out/aero_table.csv`` と同じ形式の CSV と、拡張子を ``.json`` に替えた同名の付随ファイル（メタデータ）の 2 つで用意する。
 列、付随ファイルの項目、一般表の格子、ロール項の補い方は :ref:`sec-aero-table-format` にある。
 表の考え方は :ref:`sec-aero-external` を参照されたい。
-
-設定ファイルの未知の項目は、綴りの誤りを見逃さないようにすべてエラーとして扱う。
 
 出力ファイル
 ------------
@@ -1572,3 +1531,65 @@ Python の環境は uv でも pip でも用意できる。Makefile は既定で�
 
 PDF の組版中に LaTeX がエラーで止まったときは、``doc/build/latex/ignisyeet.log`` を開き、``!`` で始まる行とその直後の行番号を確認する。
 多くはパッケージ不足かフォント不足である。原因を直したあと、もう一度 ``make pdf`` を実行すればよい。
+
+.. _sec-development:
+
+開発者向け：CI とリリース
+--------------------------
+
+この節は、IgnisYeet 自体を開発・配布する人向けである。利用だけなら読まなくてよい。
+
+リリースとバージョン
+~~~~~~~~~~~~~~~~~~~~
+
+
+IgnisYeet のバージョンは ``Cargo.toml`` の ``[workspace.package] version``\ （``ignisyeet --version`` で表示される値）で決まり、
+GitHub では同じ番号のタグ ``vX.Y.Z`` と GitHub Release で管理する。インストーラの user は、
+``--version`` を指定しなければ最新のリリースを入れる。
+
+push とプルリクエストでは、ワークフロー ``ci.yml`` が ``cargo build --release --locked`` と ``cargo test --release --locked`` を実行し、
+例題で ``geom``、``aero``、``sim``、風の格子の ``dispersion``、モンテカルロの ``dispersion``、``python/plot.py`` を通しで動かし、
+``sim.max_time`` を短くした飛翔が終了ステータス 3 で終わることも確かめる（clippy と rustfmt は ``-D warnings`` と ``--check`` で実行し、違反があるとジョブが失敗する。ShellCheck は助言のみで、失敗してもジョブは落ちない）。
+別のジョブが、必要な最低の Rust の版 1.87 で ``cargo build --locked`` を実行する。
+ワークフローが使う Action は、コミットの SHA で固定している。
+書式は ``rustfmt.toml``\ （``max_width = 160``）で定める。Rust のツールチェーンは ``rust-toolchain.toml``\ （stable、rustfmt と clippy を含む）で指定し、``Cargo.toml`` の ``rust-version``\ （1.87）が必要な最低の版を定める。
+
+タグ ``v*`` を push すると、GitHub Actions のワークフロー ``release.yml`` が次の処理を行う。
+
+#. タグと ``Cargo.toml`` のバージョンが一致することを確かめる（一致しなければ失敗する）。
+#. 4 つのターゲット向けにバイナリを作る。Linux は musl で静的にリンクするので、ディストリビューションによらず動く。
+
+   .. list-table::
+      :header-rows: 1
+      :widths: 40 30 30
+
+      * - ターゲット
+        - ビルド環境
+        - テスト
+      * - ``x86_64-unknown-linux-musl``
+        - Ubuntu（cargo-zigbuild）
+        - 実行する
+      * - ``aarch64-unknown-linux-musl``
+        - Ubuntu（cargo-zigbuild）
+        - 実行しない（クロスビルド）
+      * - ``x86_64-apple-darwin``
+        - macOS（Intel）
+        - 実行する
+      * - ``aarch64-apple-darwin``
+        - macOS（Apple Silicon）
+        - 実行する
+
+#. ``scripts/package-release.sh`` で ``ignisyeet-<バージョン>-<ターゲット>.tar.gz`` と SHA-256 を作る。
+   中身はバイナリ（``bin/ignisyeet``）、例題（Git で管理しているファイルだけ。``examples/out*`` や CFD の作業ディレクトリなど、Git の管理外の出力は入らない）、作図スクリプト（``python/plot.py`` と、依存関係の一覧および固定した版 ``uv.lock`` ``plot-constraints.txt``）、
+   ``LICENSE``、``NOTICE``、``CITATION.cff``、``README.md`` である。
+   アーカイブは GNU tar で、ファイルの順序、時刻（``SOURCE_DATE_EPOCH``、既定は 0）、所有者を固定して作る。macOS のビルドでは ``gnu-tar`` を入れる。
+#. GitHub Release を作り、すべての配布物、チェックサム、``install.sh`` を添付する。
+   リリースノートは前のタグからのコミットを Conventional Commits の種類（feat、fix、docs など）ごとにまとめて作る。
+
+新しいバージョンを出すときは、``Cargo.toml``\ （と ``CITATION.cff`` などの表記）のバージョンを上げてコミットし、
+同じ番号のタグを付けて push する。
+
+.. code-block:: sh
+
+   git tag v0.4.0
+   git push origin v0.4.0

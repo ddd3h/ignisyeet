@@ -387,6 +387,8 @@ ECEF に対する角速度 :math:`\bm{\omega}` に、自転ベクトルを機体
 * **局所の東・北・天頂** :math:`\bm{e}_E,\bm{e}_N,\bm{e}_U`\ （:eq:`eq-enu-basis` を現在の :math:`(\phi,\lambda)` で評価する）。
 * **風**：高度 :math:`z` での風速（:ref:`sec-wind`）の水平成分を :math:`\bm{w}=w_E\bm{e}_E+w_N\bm{e}_N` として ECEF 座標に直し、
   対気速度を :math:`\bm{v}_a=\bm{v}-\bm{w}` とする。鉛直成分は 0 である。
+  東・北の基底は射点のものではなく、**機体の現在位置** の局所 ENU である。そのため、「西風」は軌道に沿って西風のままである。
+  両者の基底は、射点からの水平距離 :math:`d` に対して、およそ :math:`d/R_{\oplus}` の角度だけ回転しており（55 km で 0.5°）、風の不確かさに比べて無視できる。
 * **重力**：:ref:`sec-ecef-gravity` に述べる。
 
 .. _sec-ecef-gravity:

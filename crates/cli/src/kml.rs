@@ -585,6 +585,10 @@ fn summary_from_json(v: &serde_json::Value) -> Result<Summary, String> {
         main_deploy_time: v.get("main_deploy_time").and_then(|x| x.as_f64()),
         main_deploy_altitude: v.get("main_deploy_altitude").and_then(|x| x.as_f64()),
         drogue_deploy_time: v.get("drogue_deploy_time").and_then(|x| x.as_f64()),
+        drogue_deploy_speed: v.get("drogue_deploy_speed").and_then(|x| x.as_f64()),
+        drogue_deploy_q: v.get("drogue_deploy_q").and_then(|x| x.as_f64()),
+        main_deploy_speed: v.get("main_deploy_speed").and_then(|x| x.as_f64()),
+        main_deploy_q: v.get("main_deploy_q").and_then(|x| x.as_f64()),
         wind_scale: v.get("wind_scale").and_then(|x| x.as_f64()),
     };
     if !(s.landing_lat.is_finite() && s.landing_lon.is_finite()) {
@@ -623,6 +627,10 @@ fn summary_from_row(t: &Csv, r: &[String]) -> Result<Summary, String> {
         main_deploy_time: None,
         main_deploy_altitude: None,
         drogue_deploy_time: None,
+        drogue_deploy_speed: None,
+        drogue_deploy_q: None,
+        main_deploy_speed: None,
+        main_deploy_q: None,
         wind_scale: None,
     })
 }
@@ -839,6 +847,10 @@ mod tests {
             main_deploy_time: None,
             main_deploy_altitude: None,
             drogue_deploy_time: None,
+            drogue_deploy_speed: None,
+            drogue_deploy_q: None,
+            main_deploy_speed: None,
+            main_deploy_q: None,
             wind_scale: None,
         }
     }

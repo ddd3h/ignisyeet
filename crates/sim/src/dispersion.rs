@@ -1131,6 +1131,10 @@ mod tests {
             main_deploy_time: None,
             main_deploy_altitude: None,
             drogue_deploy_time: None,
+            drogue_deploy_speed: None,
+            drogue_deploy_q: None,
+            main_deploy_speed: None,
+            main_deploy_q: None,
             wind_scale: None,
         }
     }

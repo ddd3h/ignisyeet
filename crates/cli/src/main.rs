@@ -264,7 +264,8 @@ fn stored_geometry_warnings(cfg: &Config) -> Vec<String> {
 /// Lookups beyond the angle range are not a warning but [`angle_range_reason`].
 fn aero_range_warning(s: &aero::table::OutOfRangeStats) -> Option<String> {
     let mach = s.mach_below + s.mach_above;
-    (mach > 0).then(|| format!("aero table: {mach} of {} lookups beyond the Mach range (max Mach {:.2}); Mach is held at the table edge", s.lookups, s.max_mach))
+    (mach > 0)
+        .then(|| format!("aero table: {mach} of {} lookups beyond the Mach range (max Mach {:.2}); Mach is held at the table edge", s.lookups, s.max_mach))
 }
 
 /// The exit-status-3 message when aero lookups went beyond the table's angle range (`alpha_max` [deg], the
@@ -466,7 +467,16 @@ const MAX_PARACHUTE_LANDING_SPEED: f64 = 15.0;
 /// landing, or the descent speed at landing is high.
 fn parachute_warnings(cfg: &Config, s: &Summary) -> Vec<String> {
     let mut w = Vec::new();
-    if !(cfg.recovery.enabled && s.descent == Descent::Parachute && s.landed()) {
+    if !(cfg.recovery.enabled && s.descent == Descent::Parachute) {
+        return w;
+    }
+    let dual = cfg.recovery.main_cd_s.is_some() && cfg.recovery.main_altitude.is_some();
+    let first = if dual { "drogue" } else { "parachute" };
+    w.extend(deploy_warning(first, s.drogue_deploy_speed, s.drogue_deploy_q, "recovery.delay"));
+    if dual {
+        w.extend(deploy_warning("main", s.main_deploy_speed, s.main_deploy_q, "recovery.main_altitude"));
+    }
+    if !s.landed() {
         return w;
     }
     if s.drogue_deploy_time.is_none() {
@@ -478,6 +488,20 @@ fn parachute_warnings(cfg: &Config, s: &Summary) -> Vec<String> {
         w.push(format!("parachute descent landed at {:.1} m/s, which is above {MAX_PARACHUTE_LANDING_SPEED:.0} m/s: check recovery.cd_s", s.landing_speed));
     }
     w
+}
+
+/// Airspeed [m/s] and dynamic pressure [Pa] at a parachute deployment above which the canopy is unlikely to
+/// survive the opening (a typical hobby canopy is built for deployment near apogee, at a few hundred Pa).
+const MAX_DEPLOY_SPEED: f64 = 50.0;
+const MAX_DEPLOY_Q: f64 = 2000.0;
+
+/// Warning when the `what` canopy ("parachute", "drogue" or "main") opens faster than [`MAX_DEPLOY_SPEED`]
+/// or at a dynamic pressure above [`MAX_DEPLOY_Q`]; `key` is the setting that decides when it opens.
+fn deploy_warning(what: &str, speed: Option<f64>, q: Option<f64>, key: &str) -> Option<String> {
+    let (v, q) = (speed?, q?);
+    (v > MAX_DEPLOY_SPEED || q > MAX_DEPLOY_Q).then(|| {
+        format!("the {what} opens at {v:.0} m/s (q = {:.1} kPa): a canopy is unlikely to survive; the landing point assumes it does - check {key}", q / 1000.0)
+    })
 }
 
 /// Warning when a wind-profile run (`what` names the study: "wind grid" or "Monte Carlo sample")
@@ -1316,8 +1340,15 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
             );
         }
         println!("  apogee          {:.1} m at {:.2} s", s.apogee, s.apogee_time);
+        if let (Some(t), Some(v), Some(q)) = (s.drogue_deploy_time, s.drogue_deploy_speed, s.drogue_deploy_q) {
+            println!("  deploy          {t:.2} s, {v:.1} m/s, q {:.2} kPa", q / 1000.0);
+        }
         if let (Some(t), Some(h)) = (s.main_deploy_time, s.main_deploy_altitude) {
-            println!("  main deploy     {h:.1} m at {t:.2} s");
+            let at = match (s.main_deploy_speed, s.main_deploy_q) {
+                (Some(v), Some(q)) => format!(", {v:.1} m/s, q {:.2} kPa", q / 1000.0),
+                _ => String::new(),
+            };
+            println!("  main deploy     {h:.1} m at {t:.2} s{at}");
         }
         if landed {
             println!(
@@ -2110,6 +2141,10 @@ mod tests {
             main_deploy_time: None,
             main_deploy_altitude: None,
             drogue_deploy_time: None,
+            drogue_deploy_speed: None,
+            drogue_deploy_q: None,
+            main_deploy_speed: None,
+            main_deploy_q: None,
             wind_scale: None,
         }
     }
@@ -2462,7 +2497,8 @@ mod tests {
         cfg.wind.speed = 4.0;
         cfg.wind.direction_deg = 90.0;
         cfg.output.kml = false;
-        let summary = |cfg: &Config| -> serde_json::Value { serde_json::from_str(&std::fs::read_to_string(cfg.out_dir().join("summary.json")).unwrap()).unwrap() };
+        let summary =
+            |cfg: &Config| -> serde_json::Value { serde_json::from_str(&std::fs::read_to_string(cfg.out_dir().join("summary.json")).unwrap()).unwrap() };
         // Table up to 90 deg (the default): every lookup inside the table.
         assert_eq!(run_sim(&cfg, Some(Descent::Ballistic)).unwrap(), None);
         let j = summary(&cfg);
@@ -2471,7 +2507,10 @@ mod tests {
         // Table up to 30 deg: the extrapolated coefficients trim at a large angle; the run is not usable.
         cfg.aero.alpha_max_deg = 30.0;
         let why = run_sim(&cfg, Some(Descent::Ballistic)).unwrap().expect("lookups beyond the angle range must be reported");
-        assert!(why.starts_with("RESULTS NOT USABLE: ") && why.contains("lookups beyond the aero table's angle range") && why.contains("> alpha_max 30.0 deg"), "{why}");
+        assert!(
+            why.starts_with("RESULTS NOT USABLE: ") && why.contains("lookups beyond the aero table's angle range") && why.contains("> alpha_max 30.0 deg"),
+            "{why}"
+        );
         assert!(why.ends_with("the descent uses extrapolated coefficients; build the table up to 90 deg"), "{why}");
         let j = summary(&cfg);
         assert_eq!(j["aero_table_range"]["angles_in_range"].as_bool(), Some(false));
@@ -2680,12 +2719,35 @@ mod tests {
         assert_eq!(w, vec!["parachute descent landed at 178 m/s: the parachute did not deploy before landing (recovery.delay = 5000 s)".to_string()]);
         let fast = sim::Summary { drogue_deploy_time: Some(10.0), landing_speed: 22.04, ..base.clone() };
         assert_eq!(parachute_warnings(&cfg, &fast), vec!["parachute descent landed at 22.0 m/s, which is above 15 m/s: check recovery.cd_s".to_string()]);
-        let ok = sim::Summary { drogue_deploy_time: Some(10.0), landing_speed: 6.0, ..base.clone() };
+        let ok =
+            sim::Summary { drogue_deploy_time: Some(10.0), drogue_deploy_speed: Some(20.0), drogue_deploy_q: Some(200.0), landing_speed: 6.0, ..base.clone() };
         assert!(parachute_warnings(&cfg, &ok).is_empty());
-        // ballistic runs, disabled recovery and unlanded runs are not judged
+        // A deployment at high speed or dynamic pressure (also when the run did not land).
+        let hard = sim::Summary { drogue_deploy_speed: Some(129.0), drogue_deploy_q: Some(7200.0), ..ok.clone() };
+        let want = "the parachute opens at 129 m/s (q = 7.2 kPa): a canopy is unlikely to survive; the landing point assumes it does - check recovery.delay";
+        assert_eq!(parachute_warnings(&cfg, &hard), vec![want.to_string()]);
+        assert_eq!(parachute_warnings(&cfg, &unlanded(hard.clone())), vec![want.to_string()]);
+        let thin_air = sim::Summary { drogue_deploy_speed: Some(45.0), drogue_deploy_q: Some(2100.0), ..ok.clone() };
+        assert_eq!(parachute_warnings(&cfg, &thin_air).len(), 1);
+        // Dual deploy: drogue and main are named, each with the setting that decides its opening.
+        cfg.recovery.main_cd_s = Some(3.0);
+        cfg.recovery.main_altitude = Some(300.0);
+        let main = sim::Summary { main_deploy_speed: Some(60.0), main_deploy_q: Some(2300.0), ..hard.clone() };
+        assert_eq!(
+            parachute_warnings(&cfg, &main),
+            vec![
+                want.replace("the parachute", "the drogue"),
+                "the main opens at 60 m/s (q = 2.3 kPa): a canopy is unlikely to survive; the landing point assumes it does - check recovery.main_altitude"
+                    .to_string()
+            ]
+        );
+        cfg.recovery.main_cd_s = None;
+        cfg.recovery.main_altitude = None;
+        // ballistic runs and disabled recovery are not judged, unlanded runs only for the deployment
         assert!(parachute_warnings(&cfg, &sim::Summary { descent: Descent::Ballistic, ..never.clone() }).is_empty());
         assert!(parachute_warnings(&cfg, &unlanded(never.clone())).is_empty());
         cfg.recovery.enabled = false;
+        assert!(parachute_warnings(&cfg, &hard).is_empty());
         assert!(parachute_warnings(&cfg, &never).is_empty());
     }
 

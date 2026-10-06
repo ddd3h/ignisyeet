@@ -8,7 +8,7 @@
 //! CG offset and a misaligned thrust line.
 
 use crate::env::{is_pos, AtmosphereModel, AttitudeKind, Earth, IntegratorKind, Wind};
-use crate::frame::Frame;
+use crate::frame::{Frame, Local};
 use crate::integrator::{self, State};
 use crate::motor::Motor;
 use crate::stepper::Stepper;
@@ -371,6 +371,18 @@ pub struct Summary {
     /// landed (or ended) before apogee + `recovery.delay`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drogue_deploy_time: Option<f64>,
+    /// Airspeed [m/s] at the (first) parachute deployment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drogue_deploy_speed: Option<f64>,
+    /// Dynamic pressure [Pa] at the (first) parachute deployment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub drogue_deploy_q: Option<f64>,
+    /// Dual deploy: airspeed [m/s] at the main deployment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub main_deploy_speed: Option<f64>,
+    /// Dual deploy: dynamic pressure [Pa] at the main deployment.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub main_deploy_q: Option<f64>,
     /// Wind profile model: factor the tabulated profile was scaled by in this run (1 = as in the
     /// CSV; dispersion cases and Monte Carlo samples scale it to their mean speed). None for the
     /// other wind models.
@@ -408,6 +420,10 @@ impl Summary {
             main_deploy_time: None,
             main_deploy_altitude: None,
             drogue_deploy_time: None,
+            drogue_deploy_speed: None,
+            drogue_deploy_q: None,
+            main_deploy_speed: None,
+            main_deploy_q: None,
             wind_scale: None,
         }
     }
@@ -560,6 +576,12 @@ impl<'a> Simulation<'a> {
             }
         }
         Ok(())
+    }
+
+    /// Airspeed [m/s] (relative to the wind) and dynamic pressure [Pa] at state `s` (`loc` its local position).
+    fn airspeed_q(&self, s: &State, loc: &Local) -> (f64, f64) {
+        let v = (s.vel - loc.to_frame(self.wind.at(loc.height))).norm();
+        (v, 0.5 * self.atmosphere.at(self.launch.altitude + loc.height).density * v * v)
     }
 
     /// State derivative. The frame supplies gravity, the apparent (Coriolis/centrifugal)
@@ -834,6 +856,10 @@ impl<'a> Simulation<'a> {
             main_deploy_time: None,
             main_deploy_altitude: None,
             drogue_deploy_time: None,
+            drogue_deploy_speed: None,
+            drogue_deploy_q: None,
+            main_deploy_speed: None,
+            main_deploy_q: None,
             wind_scale: (self.wind.model == crate::env::WindModel::Profile).then_some(self.wind.profile_scale),
         };
         let mut deploy_at = f64::INFINITY;
@@ -1046,9 +1072,13 @@ impl<'a> Simulation<'a> {
                     t = if f_deploy.is_some() { deploy_at } else { t0 + fe * h };
                     loc = frame.local(s.pos);
                 }
+                // Airspeed and dynamic pressure the opening canopy meets.
+                let (v_air, q_air) = self.airspeed_q(&s, &loc);
                 if f_deploy.is_some() {
                     phase = Phase::Parachute;
                     sum.drogue_deploy_time = Some(t);
+                    sum.drogue_deploy_speed = Some(v_air);
+                    sum.drogue_deploy_q = Some(q_air);
                     cx.cd_s.set(self.recovery.cd_s);
                     if let Some((main_cd_s, main_alt)) = main {
                         if loc.height <= main_alt {
@@ -1056,6 +1086,8 @@ impl<'a> Simulation<'a> {
                             cx.cd_s.set(main_cd_s);
                             sum.main_deploy_time = Some(t);
                             sum.main_deploy_altitude = Some(loc.height);
+                            sum.main_deploy_speed = Some(v_air);
+                            sum.main_deploy_q = Some(q_air);
                         } else {
                             main_pending = true;
                         }
@@ -1065,6 +1097,8 @@ impl<'a> Simulation<'a> {
                     main_pending = false;
                     sum.main_deploy_time = Some(t);
                     sum.main_deploy_altitude = Some(loc.height);
+                    sum.main_deploy_speed = Some(v_air);
+                    sum.main_deploy_q = Some(q_air);
                 }
                 continue;
             }
@@ -2154,5 +2188,17 @@ mod tests {
         let alt = r.summary.main_deploy_altitude.unwrap();
         assert!((at.up - main_alt).abs() < 1e-6, "state height {} vs main altitude {main_alt}", at.up);
         assert!((alt - at.up).abs() < 1e-9, "reported {alt} vs state {}", at.up);
+        // Airspeed and dynamic pressure at the main opening: those of the state at the deployment.
+        let (v, q) = (r.summary.main_deploy_speed.unwrap(), r.summary.main_deploy_q.unwrap());
+        assert!((v - at.airspeed).abs() < 1e-9, "{v} vs {}", at.airspeed);
+        let rho = sim.atmosphere.at(sim.launch.altitude + at.up).density;
+        assert!((q - 0.5 * rho * v * v).abs() < 1e-9 * q.max(1.0));
+        // The drogue opens 8 s after apogee, falling fast: its opening speed is recorded as well.
+        let at_d = r.samples.iter().find(|s| (s.t - r.summary.drogue_deploy_time.unwrap()).abs() < 1e-12).expect("sample at the drogue deployment");
+        assert!((r.summary.drogue_deploy_speed.unwrap() - at_d.airspeed).abs() < 1e-9);
+        assert!(r.summary.drogue_deploy_speed.unwrap() > 50.0 && r.summary.drogue_deploy_q.unwrap() > 0.0, "{:?}", r.summary);
+        // Ballistic runs open nothing.
+        let b = sim.run(Descent::Ballistic, false).unwrap().summary;
+        assert_eq!((b.drogue_deploy_speed, b.drogue_deploy_q, b.main_deploy_speed, b.main_deploy_q), (None, None, None, None));
     }
 }

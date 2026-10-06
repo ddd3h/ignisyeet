@@ -165,6 +165,7 @@ fn main() -> Result<()> {
             let cfg = load_config(&config)?;
             begin(&cfg, &config, Sub::Aero);
             aero_table_for(&cfg, force, Sub::Aero)?;
+            print_warnings(&grid_warnings(&cfg));
         }
         Cmd::Sim { config, descent } => {
             let cfg = load_config(&config)?;
@@ -296,6 +297,34 @@ const LENGTH_RANGE: (f64, f64) = (0.1, 20.0);
 const DIAMETER_RANGE: (f64, f64) = (0.005, 3.0);
 
 /// Warnings about the size of the body (`length`, `diameter` in metres).
+/// Mach step [-] and angle-of-attack step [deg] of the aero table above which the grid is reported as coarse.
+const COARSE_MACH_STEP: f64 = 0.1;
+const COARSE_ALPHA_STEP_DEG: f64 = 5.0;
+
+/// Warnings for a coarse aero table grid (the coefficients are interpolated linearly between the rows); none
+/// for an external table, whose grid is its own.
+fn grid_warnings(cfg: &Config) -> Vec<String> {
+    let a = &cfg.aero;
+    let mut w = Vec::new();
+    if a.method == config::AeroMethod::Table {
+        return w;
+    }
+    let general_barrowman = a.table_kind == aero::table::TableKind::General && a.method == config::AeroMethod::Barrowman;
+    let (key, step) = if general_barrowman { ("aero.general_mach_step", a.general_mach_step) } else { ("aero.mach_step", a.mach_step) };
+    if step > COARSE_MACH_STEP {
+        w.push(format!(
+            "{key} = {step} is coarse (> {COARSE_MACH_STEP}): the coefficients are interpolated linearly between the Mach rows, which smooths over the transonic drag rise and shifts the apogee (0.02 is typical)"
+        ));
+    }
+    if a.alpha_step_deg > COARSE_ALPHA_STEP_DEG {
+        w.push(format!(
+            "aero.alpha_step_deg = {} is coarse (> {COARSE_ALPHA_STEP_DEG} deg): the normal force and centre of pressure are interpolated linearly between the rows (1 deg is typical)",
+            a.alpha_step_deg
+        ));
+    }
+    w
+}
+
 fn size_warnings(cfg: &Config, length: f64, diameter: f64) -> Vec<String> {
     let mut w = Vec::new();
     if !(LENGTH_RANGE.0..=LENGTH_RANGE.1).contains(&length) {
@@ -1254,6 +1283,7 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
     let range = p.table.out_of_range_stats();
     let mut warnings = p.geometry_warnings.clone();
     warnings.extend(size_warnings(cfg, p.table.meta.length, p.table.meta.ref_diameter));
+    warnings.extend(grid_warnings(cfg));
     warnings.extend(flight_warnings(cfg, s));
     warnings.extend(aero_range_warning(&range));
     let mut json = summary_json(cfg, s, &warnings)?;
@@ -1442,6 +1472,7 @@ impl FarthestLanding {
 fn nominal_warnings(cfg: &Config, p: &Prepared, base: &Simulation) -> (Vec<String>, f64) {
     let mut w = p.geometry_warnings.clone();
     w.extend(size_warnings(cfg, p.table.meta.length, p.table.meta.ref_diameter));
+    w.extend(grid_warnings(cfg));
     let ref_speed = match cfg.dispersion.mode {
         sim::DispersionMode::WindGrid => cfg.dispersion.wind_speeds.iter().copied().fold(0.0, f64::max),
         sim::DispersionMode::MonteCarlo => cfg.wind.speed + 2.0 * cfg.dispersion.monte_carlo.wind_speed,
@@ -2348,6 +2379,28 @@ mod tests {
         cfg.recovery.enabled = false;
         assert_eq!(check_descent_override(&cfg, Some(Descent::Parachute)).unwrap_err().to_string(), "--descent parachute needs recovery.enabled = true");
         assert!(check_descent_override(&cfg, Some(Descent::Ballistic)).is_ok() && check_descent_override(&cfg, None).is_ok());
+    }
+
+    #[test]
+    fn coarse_aero_grids_warn() {
+        let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
+        assert!(grid_warnings(&cfg).is_empty());
+        cfg.aero.mach_step = 3.0;
+        cfg.aero.alpha_step_deg = 89.0;
+        let w = grid_warnings(&cfg);
+        assert_eq!(w.len(), 2, "{w:?}");
+        assert!(w[0].starts_with("aero.mach_step = 3 is coarse (> 0.1)") && w[1].starts_with("aero.alpha_step_deg = 89 is coarse (> 5 deg)"), "{w:?}");
+        // A general Barrowman table is built with general_mach_step.
+        cfg.aero.table_kind = aero::table::TableKind::General;
+        cfg.aero.general_mach_step = 0.2;
+        assert!(grid_warnings(&cfg)[0].starts_with("aero.general_mach_step = 0.2 is coarse"));
+        cfg.aero.general_mach_step = 0.05;
+        cfg.aero.alpha_step_deg = 1.0;
+        assert!(grid_warnings(&cfg).is_empty());
+        // An external table has its own grid.
+        cfg.aero.method = config::AeroMethod::Table;
+        cfg.aero.alpha_step_deg = 89.0;
+        assert!(grid_warnings(&cfg).is_empty());
     }
 
     #[test]

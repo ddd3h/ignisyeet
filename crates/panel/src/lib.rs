@@ -64,7 +64,8 @@ pub struct PanelOptions {
     pub tail_radii: f64,
     /// Mach numbers (< 1) of the subsonic panel solutions.
     pub subsonic_machs: Vec<f64>,
-    /// Mach range `[lo, hi]` of the transonic blend; `hi` is the first fully supersonic Mach.
+    /// Mach range `[lo, hi]` of the transonic blend: `lo` is the last purely subsonic Mach number (the
+    /// highest of `subsonic_machs` when that is lower), `hi > 1` the first fully supersonic one.
     pub transonic: [f64; 2],
     pub fin_section: FinSection,
 }
@@ -82,6 +83,44 @@ impl Default for PanelOptions {
             transonic: [0.8, 1.2],
             fin_section: FinSection::Biconvex,
         }
+    }
+}
+
+impl PanelOptions {
+    /// Checks every option; errors name the configuration key (`aero.panel.*`).
+    pub fn validate(&self) -> Result<()> {
+        if self.body_axial < 6 {
+            bail!("aero.panel.body_axial must be at least 6, found {}", self.body_axial);
+        }
+        if self.body_circ < 8 {
+            bail!("aero.panel.body_circ must be at least 8, found {}", self.body_circ);
+        }
+        if self.fin_chord < 2 || self.fin_chord > self.body_axial - 4 {
+            bail!(
+                "aero.panel.fin_chord must be between 2 and aero.panel.body_axial - 4 = {} (the chord panels are part of the body stations), found {}",
+                self.body_axial - 4,
+                self.fin_chord
+            );
+        }
+        if self.fin_span < 2 {
+            bail!("aero.panel.fin_span must be at least 2, found {}", self.fin_span);
+        }
+        if !(self.wake_length.is_finite() && self.wake_length > 0.0) {
+            bail!("aero.panel.wake_length must be a finite number > 0 (body lengths), found {}", self.wake_length);
+        }
+        if !(self.tail_radii.is_finite() && self.tail_radii >= 0.0) {
+            bail!("aero.panel.tail_radii must be a finite number >= 0 (base radii; 0 = open base), found {}", self.tail_radii);
+        }
+        if self.subsonic_machs.is_empty() || self.subsonic_machs.iter().any(|m| !(m.is_finite() && (0.0..1.0).contains(m))) {
+            bail!("aero.panel.subsonic_machs must be a non-empty list of finite Mach numbers in [0, 1), found {:?}", self.subsonic_machs);
+        }
+        let [lo, hi] = self.transonic;
+        if !(lo.is_finite() && hi.is_finite() && lo > 0.0 && lo < hi && hi > 1.0) {
+            bail!(
+                "aero.panel.transonic = [{lo}, {hi}] must be finite and increasing, [lo, hi] with 0 < lo and hi > 1 (hi is the first fully supersonic Mach number)"
+            );
+        }
+        Ok(())
     }
 }
 
@@ -454,15 +493,10 @@ pub fn build_table_with_progress(
     extrapolation: Extrapolation,
     progress: &(dyn Fn(PanelStage) + Sync),
 ) -> Result<(AeroTable, PanelReport)> {
+    panel.validate()?;
     let mut machs_sub: Vec<f64> = panel.subsonic_machs.clone();
-    machs_sub.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    machs_sub.sort_by(f64::total_cmp);
     machs_sub.dedup_by(|a, b| (*a - *b).abs() < 1e-9);
-    if machs_sub.is_empty() || machs_sub.iter().any(|&m| !(0.0..1.0).contains(&m)) {
-        bail!("subsonic_machs must be a non-empty list of Mach numbers in [0, 1)");
-    }
-    if panel.transonic[0] >= panel.transonic[1] {
-        bail!("transonic range must be increasing");
-    }
     progress(PanelStage::Mesh { subsonic_solves: machs_sub.len() });
     let mesh = Mesh::from_geometry(geom, panel)?;
     progress(PanelStage::MeshReady { panels: mesh.panels.len(), wake_panels: mesh.wake_panels.len() });
@@ -524,8 +558,10 @@ pub fn build_table_with_progress(
     progress(PanelStage::SupersonicDone);
     progress(PanelStage::Transonic);
     // Transonic blend: values and Mach slopes of both regimes at the band edges.
-    let m_lo = *machs_sub.last().unwrap();
-    let m_hi = panel.transonic[1].max(m_lo + 1e-6);
+    // The band starts at `transonic[0]`, or at the highest solved subsonic Mach number when that is
+    // lower, so the subsonic columns are interpolated between solutions, never extrapolated.
+    let m_lo = panel.transonic[0].min(*machs_sub.last().unwrap());
+    let m_hi = panel.transonic[1];
     let needs_band = machs.iter().any(|&m| m > m_lo && m < m_hi);
     let band = needs_band.then(|| {
         let h = 0.02;

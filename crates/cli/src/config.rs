@@ -579,6 +579,16 @@ impl Config {
             bail!("aero.n_slices = {} is too large (at most {MAX_SLICES})", a.n_slices);
         }
         non_negative("aero.fin_threshold", a.fin_threshold)?;
+        // [aero.panel] is checked whatever the method, so a bad value fails before the panel run that reads it.
+        a.panel.validate()?;
+        let hi_max = a.mach_max.max(PANEL_TRANSONIC_HI_MIN_CAP);
+        if a.panel.transonic[1] > hi_max {
+            bail!(
+                "aero.panel.transonic[1] = {} is above the table's aero.mach_max ({}): the transonic blend would run beyond the table; use at most {hi_max}",
+                a.panel.transonic[1],
+                a.mach_max
+            );
+        }
 
         let w = &self.wind;
         non_negative("wind.speed", w.speed)?;
@@ -831,6 +841,9 @@ const MAX_DT: f64 = 0.05;
 const MAX_TOL: f64 = 1e-3;
 /// Largest accepted `aero.mach_max`.
 const MACH_LIMIT: f64 = 10.0;
+/// Upper edge of the panel transonic blend that is always accepted (the default), also for tables
+/// that end below it; otherwise the edge must lie within the table (`aero.mach_max`).
+const PANEL_TRANSONIC_HI_MIN_CAP: f64 = 1.2;
 /// Largest accepted number of aero table grid points.
 const MAX_AERO_GRID_POINTS: f64 = 1e6;
 /// Smallest sim.output_interval [s] and largest number of output rows (max_time / output_interval).
@@ -865,6 +878,31 @@ mod tests {
         assert_eq!(c.aero.panel.body_axial, 80);
         assert_eq!(c.dispersion.directions, 8);
         assert_eq!(c.sim.integrator, sim::IntegratorKind::Rk4);
+    }
+
+    #[test]
+    fn panel_options_are_validated() {
+        let sample = include_str!("../../../examples/sample.toml");
+        let cases = [
+            ("subsonic_machs = [0.0, 0.3, 0.5, 0.6, 0.7, 0.8]", "subsonic_machs = [nan, 0.3]", "aero.panel.subsonic_machs"),
+            ("tail_radii = 6.0", "tail_radii = -1", "aero.panel.tail_radii"),
+            ("tail_radii = 6.0", "tail_radii = nan", "aero.panel.tail_radii"),
+            ("wake_length = 20.0", "wake_length = 0", "aero.panel.wake_length"),
+            ("wake_length = 20.0", "wake_length = -5", "aero.panel.wake_length"),
+            ("wake_length = 20.0", "wake_length = nan", "aero.panel.wake_length"),
+            ("transonic = [0.8, 1.2]", "transonic = [nan, 1.2]", "aero.panel.transonic"),
+            ("transonic = [0.8, 1.2]", "transonic = [0.3, 5]", "aero.panel.transonic[1]"),
+            ("body_circ = 48", "body_circ = 4", "aero.panel.body_circ"),
+            ("fin_chord = 16", "fin_chord = 0", "aero.panel.fin_chord"),
+        ];
+        for (from, to, key) in cases {
+            assert!(sample.contains(from), "{from}");
+            let e = parse(&sample.replace(from, to)).unwrap_err().to_string();
+            assert!(e.contains(key), "{to}: {e}");
+        }
+        // the default blend edge stays valid for a table that ends below it
+        assert!(parse(&sample.replace("mach_max = 3.0", "mach_max = 1.0")).is_ok());
+        assert!(parse(&sample.replace("transonic = [0.8, 1.2]", "transonic = [0.6, 2.5]")).is_ok());
     }
 
     #[test]

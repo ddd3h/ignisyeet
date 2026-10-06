@@ -404,3 +404,66 @@ fn supersonic_nose_moment_is_the_full_cross_product() {
     assert!((d[1] / d[0] - 1.0).abs() < 0.03, "xcp(0) {}", d[1] / d[0]);
     assert!((d[3] / d[2] - 1.0).abs() < 0.03, "M_rot {} N_rot {}", d[3], d[2]);
 }
+
+/// Invalid panel options are errors (not panics, not silently wrong tables).
+#[test]
+fn panel_options_are_validated() {
+    let ok = PanelOptions::default();
+    assert!(ok.validate().is_ok());
+    let nan = f64::NAN;
+    let bad: Vec<(PanelOptions, &str)> = vec![
+        (PanelOptions { subsonic_machs: vec![nan, 0.3], ..ok.clone() }, "subsonic_machs"),
+        (PanelOptions { subsonic_machs: vec![], ..ok.clone() }, "subsonic_machs"),
+        (PanelOptions { subsonic_machs: vec![0.3, 1.0], ..ok.clone() }, "subsonic_machs"),
+        (PanelOptions { subsonic_machs: vec![-0.1, 0.3], ..ok.clone() }, "subsonic_machs"),
+        (PanelOptions { tail_radii: -1.0, ..ok.clone() }, "tail_radii"),
+        (PanelOptions { tail_radii: nan, ..ok.clone() }, "tail_radii"),
+        (PanelOptions { wake_length: 0.0, ..ok.clone() }, "wake_length"),
+        (PanelOptions { wake_length: -5.0, ..ok.clone() }, "wake_length"),
+        (PanelOptions { wake_length: nan, ..ok.clone() }, "wake_length"),
+        (PanelOptions { transonic: [nan, 1.2], ..ok.clone() }, "transonic"),
+        (PanelOptions { transonic: [0.8, nan], ..ok.clone() }, "transonic"),
+        (PanelOptions { transonic: [0.8, 0.95], ..ok.clone() }, "transonic"),
+        (PanelOptions { transonic: [1.2, 0.8], ..ok.clone() }, "transonic"),
+        (PanelOptions { transonic: [0.0, 1.2], ..ok.clone() }, "transonic"),
+        (PanelOptions { body_axial: 5, ..ok.clone() }, "body_axial"),
+        (PanelOptions { body_circ: 7, ..ok.clone() }, "body_circ"),
+        (PanelOptions { fin_chord: 1, ..ok.clone() }, "fin_chord"),
+        (PanelOptions { fin_span: 1, ..ok.clone() }, "fin_span"),
+    ];
+    for (o, key) in bad {
+        let e = o.validate().unwrap_err().to_string();
+        assert!(e.contains(&format!("aero.panel.{key}")), "{key}: {e}");
+    }
+    assert!(PanelOptions { transonic: [0.7, 1.2], ..ok.clone() }.validate().is_ok());
+    // build_table reports the error instead of panicking in the sort
+    let g = geometry(&SampleRocket::default());
+    let o = PanelOptions { subsonic_machs: vec![nan, 0.3], ..coarse() };
+    assert!(build_table(&g, &o, &small_aero(), "t".into(), Extrapolation::Linear).is_err());
+}
+
+/// The transonic band runs over the configured `[lo, hi]`: up to `lo` the columns are the subsonic
+/// panel solution, from `hi` on the supersonic one.
+#[test]
+fn transonic_band_starts_at_its_lower_edge() {
+    let g = geometry(&SampleRocket::default());
+    let aero = AeroOptions { mach_min: 0.6, mach_max: 1.3, mach_step: 0.05, alpha_max_deg: 4.0, alpha_step_deg: 2.0, ..Default::default() };
+    let wide = PanelOptions { subsonic_machs: vec![0.0, 0.3, 0.6, 0.8], transonic: [0.7, 1.2], ..coarse() };
+    let narrow = PanelOptions { transonic: [0.8, 1.2], ..wide.clone() };
+    let (tw, _) = build_table(&g, &wide, &aero, "t".into(), Extrapolation::Linear).unwrap();
+    let (tn, _) = build_table(&g, &narrow, &aero, "t".into(), Extrapolation::Linear).unwrap();
+    let a = 2f64.to_radians();
+    for m in [0.6, 0.65, 0.7] {
+        assert_eq!(tw.lookup(m, a).cn, tn.lookup(m, a).cn, "M={m}");
+    }
+    assert!((tw.lookup(0.75, a).cn - tn.lookup(0.75, a).cn).abs() > 1e-9);
+    for m in [1.2, 1.25, 1.3] {
+        assert_eq!(tw.lookup(m, a).cn, tn.lookup(m, a).cn, "M={m}");
+    }
+    // above the highest subsonic solution the band starts there (no extrapolation of the subsonic columns)
+    let above = PanelOptions { transonic: [0.9, 1.2], ..wide.clone() };
+    let (ta, _) = build_table(&g, &above, &aero, "t".into(), Extrapolation::Linear).unwrap();
+    for &m in &ta.meta.machs {
+        assert_eq!(ta.lookup(m, a).cn, tn.lookup(m, a).cn, "M={m}");
+    }
+}

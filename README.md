@@ -14,7 +14,7 @@
 [![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![uv](https://img.shields.io/badge/uv-supported-DE5FE9?logo=uv&logoColor=white)](https://docs.astral.sh/uv/)
 [![Sphinx](https://img.shields.io/badge/docs-Sphinx-0A507A?logo=sphinx&logoColor=white)](https://www.sphinx-doc.org/)
-[![Platform](https://img.shields.io/badge/platform-Linux-FCC624?logo=linux&logoColor=black)](#requirements)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS-FCC624?logo=linux&logoColor=black)](#installation)
 [![Google Earth KML](https://img.shields.io/badge/output-KML-4285F4?logo=googleearth&logoColor=white)](#output-files)
 [![Citation](https://img.shields.io/badge/cite-CITATION.cff-orange)](CITATION.cff)
 </div>
@@ -22,26 +22,27 @@
 Given a rocket **STL file**, mass properties, a motor thrust curve, and launch-site conditions, IgnisYeet runs the following pipeline:
 
 1. Extracts the body radius distribution and the fin dimensions from the STL
-2. Computes the aerodynamic coefficients once on a grid of Mach number and angle of attack, and stores them as a coefficient table
+2. Computes the aerodynamic coefficients once on a grid of Mach number and angle of attack (and sideslip for a six-component table), and stores them as a coefficient table
 3. Flies the rocket in **6 degrees of freedom**, interpolating and extrapolating the coefficient table
 4. Computes the **spread of landing points** with a grid of wind speeds and directions, or with Monte Carlo sampling
 5. Plots the results and writes a KML file that can be viewed in Google Earth
 
 The computationally heavy parts (mesh slicing, the aerodynamic coefficient table, the 6-DoF integration, and the parallel landing dispersion) are written in Rust. Plotting is written in Python (matplotlib).
 
-日本語のドキュメント（式・図・検証）は [`doc/`](doc/) にあります。使い方は [`doc/source/usage.rst`](doc/source/usage.rst)、HTML/PDF のビルド方法は [Documentation](#documentation) を参照してください。
-Detailed documentation with equations, figures, and verification is available in Japanese in [`doc/`](doc/). See [`doc/source/usage.rst`](doc/source/usage.rst) for usage and [`doc/source/overview.rst`](doc/source/overview.rst) for the computation flow. How to build the HTML and PDF versions is described in [Documentation](#documentation).
+日本語のドキュメント（式・図・検証）は [`doc/`](doc/) にあり、https://www.ddd3h.com/ignisyeet/ で公開されています。使い方は [Usage](https://www.ddd3h.com/ignisyeet/usage.html)、HTML/PDF のビルド方法は [Documentation](#documentation) を参照してください。
+Detailed documentation with equations, figures, and verification is available in Japanese at <https://www.ddd3h.com/ignisyeet/> (sources in [`doc/`](doc/)). See [Usage](https://www.ddd3h.com/ignisyeet/usage.html) for usage and [Computation flow](https://www.ddd3h.com/ignisyeet/overview.html) for the computation flow. How to build the HTML and PDF versions is described in [Documentation](#documentation).
 
 ## Features
 
 - **Geometry extraction from STL**: principal-axis detection, per-section radius distribution, and automatic estimation of the number and dimensions of fins (manual override is possible)
 - **Three aerodynamic models**: Barrowman method (including Niskanen's supersonic and drag extensions), panel method (Morino method for subsonic, local-inclination method for supersonic), and external coefficient tables (e.g. from CFD)
-- **CFD mode** (`aero.method = "cfd"`): an optional fourth route that rebuilds the extracted body and fins as an OpenCASCADE solid, meshes it with gmsh and solves a steady (Mach, angle of attack) matrix with SU2 (Euler by default, Roe/MUSCL scheme, parallel MPI cases with warm starts and resume). The solved points are interpolated onto the same coefficient table, so the flight simulation is unchanged. It needs SU2 8.3.0, gmsh and Open MPI (for example from conda-forge; check with `ignisyeet cfd-check`) and takes tens of minutes for a small matrix; see [`doc/source/cfd.rst`](doc/source/cfd.rst). The RANS option is not validated.
+- **Six-component quasi-steady aerodynamics**: the coefficient table is either axisymmetric (CN, CA, center of pressure, damping sums, roll terms as a function of Mach number and total angle of attack) or general (CX, CY, CZ, Cl, Cm, Cn as a function of Mach number, angle of attack alpha and sideslip beta; made by `aero.table_kind = "general"`, by CFD with `surface = "stl"` or sideslip cases, or supplied as an external table). Roll comes from the fin cant forcing (`fin_cant_deg`, `fin_override.cant_deg`) and the roll damping Clp. The rigid-body motion is full 6-DoF, but the aerodynamics are quasi-steady with diagonal rate damping (Clp, Cmq, Cnr); cross derivatives (for example Clq or Cmp) are not modelled
+- **CFD mode** (`aero.method = "cfd"`): an optional fourth route that meshes the geometry with gmsh and solves a steady (Mach, angle of attack, optionally sideslip) matrix with SU2 (Euler by default, Roe/MUSCL scheme, parallel MPI cases with warm starts, resume and an early stop on converged forces). The solved points are interpolated onto the same coefficient table, so the flight simulation is unchanged. The wall is either rebuilt from the extracted body and fins as an OpenCASCADE solid (`surface = "cad"`, alias `"panel_mesh"`) or taken **directly from the STL** (`surface = "stl"`): the shells are repaired, united with Manifold into one solid and remeshed, and a fidelity report states how far the CFD wall is from the input. The CFD wall is close to, but not identical to, the input STL (shell union, remeshing, and for Euler the base treatment `base_treatment = "fairing"` or `"flat"`). Mirror symmetry of the STL is verified before a half or quarter domain is used; otherwise the full domain is solved. Sideslip cases (`betas_deg`) and roll-damping cases (`roll_damping`) give a six-component table. It needs SU2 8.3.0, gmsh, Open MPI and, for `surface = "stl"`, manifold3d (for example from conda-forge and pip; check with `ignisyeet cfd-check <config>`), and takes tens of minutes for a small matrix; see [CFD chapter](https://www.ddd3h.com/ignisyeet/cfd.html). The RANS option is unverified and should not be relied on. The results are cross-checks against the other methods, not validation against measurements (see [CFD](#cfd))
 - **Cached coefficient table**: not recomputed if the inputs are unchanged; interpolated inside the range and linearly extrapolated or clamped outside it
-- **6-DoF flight**: flat Earth (local ENU) and rotating Earth (ECEF, with Coriolis and centrifugal forces); constant, inverse-square, and J2 gravity
+- **6-DoF flight**: flat Earth (local ENU) and rotating Earth (ECEF, with Coriolis and centrifugal forces); constant, inverse-square, and J2 gravity; full inertia tensor (products of inertia), lateral CG offset, thrust misalignment and nozzle offset, and launch roll about the rail axis
 - **Atmosphere and wind models**: US Standard Atmosphere 1976 (with optional temperature offset) and a constant atmosphere; constant, power-law, logarithmic, and altitude-table winds
-- **Integrators**: fixed-step RK4 and adaptive-step RK45 (Dormand-Prince)
-- **Landing dispersion**: a wind grid (speed x direction) and Monte Carlo sampling (1-sigma and 3-sigma error ellipses), computed in parallel and evaluated for both ballistic descent and parachute descent
+- **Integrators**: fixed-step RK4 and adaptive-step RK45 (Dormand-Prince) and DOP853; attitude propagation by quaternion renormalization or a Lie-group (RKMK) update
+- **Landing dispersion**: a wind grid (speed x direction) and Monte Carlo sampling (1-sigma and 3-sigma error ellipses), computed in parallel and evaluated for both ballistic descent and parachute descent. Monte Carlo perturbs thrust, burn time, dry mass, CG, CN, CA, rail angles, wind and parachute, and optionally thrust misalignment, nozzle offset, fin cant, lateral CG, roll moment (Cl) and roll damping (Clp)
 - **KML output**: launch site, flight path, and landing-point distributions overlaid in Google Earth
 - **Readable terminal output**: configuration summary, progress bars with ETA, and result panels in color (plain output is selected automatically when piped)
 - **Sphinx documentation**: Japanese documentation (HTML and PDF)
@@ -76,7 +77,7 @@ All of the following are results for the bundled sample rocket (100 mm diameter,
 
 ![Aerodynamic coefficients](doc/images/readme/aero.png)
 
-**Flight time history** (altitude, speed, Mach number, angle of attack, static margin, dynamic pressure, thrust, mass, pitch angle)
+**Flight time history** (altitude, speed, Mach number, angle of attack, static margin, dynamic pressure, thrust, mass, pitch angle, sideslip angle, roll rate)
 
 ![Flight time history](doc/images/readme/trajectory.png)
 
@@ -88,7 +89,7 @@ All of the following are results for the bundled sample rocket (100 mm diameter,
 
 ![Landing dispersion on a wind grid](doc/images/readme/dispersion_grid.png)
 
-**Landing dispersion by Monte Carlo** (1000 samples, 1-sigma and 3-sigma error ellipses, RK45; 1000 points of ballistic descent on the left, 999 points of parachute descent on the right)
+**Landing dispersion by Monte Carlo** (1000 samples, 1-sigma and 3-sigma error ellipses, RK45; 1000 landing points of ballistic descent on the left, 999 of parachute descent on the right; one parachute sample did not land within `sim.max_time` and is reported as failed)
 
 ![Landing dispersion by Monte Carlo](doc/images/readme/dispersion_mc.png)
 
@@ -96,12 +97,52 @@ All of the following are results for the bundled sample rocket (100 mm diameter,
 
 ![Surface pressure coefficient from the panel method](doc/images/readme/panel_cp.png)
 
+## CFD
+
+With `aero.method = "cfd"`, IgnisYeet solves the flow around the rocket with SU2 (Euler equations by default) for a matrix of Mach number, angle of attack and, optionally, sideslip, and builds the coefficient table from the wall pressure. The flight simulation is unchanged. The wall geometry is either rebuilt from the extracted body and fins (`surface = "cad"`) or taken directly from the STL (`surface = "stl"`; the shells are repaired, united by a Manifold boolean union and remeshed, and a fidelity report states how far the CFD wall is from the input). Set up the tools (see [Requirements](#requirements)), check them, and run the CFD example:
+
+```sh
+./target/release/ignisyeet cfd-check examples/sample_cfd.toml --mesh   # tools, versions, case count, mesh quality
+./target/release/ignisyeet aero      examples/sample_cfd.toml          # runs the SU2 cases (cached and resumable)
+```
+
+[`examples/sample_cfd.toml`](examples/sample_cfd.toml) is a reduced matrix (4 Mach x 3 angles of attack, Euler, 2 mm surface mesh). On a 20-thread desktop it takes about 15 to 20 minutes (a measured 16-case matrix with 0.94 M cells per case took about 22 minutes). The commented options in that file cover sideslip (`betas_deg`), roll damping (`roll_damping`), mirror-symmetry handling (`shape_symmetry`), the Euler base treatment of an STL (`base_treatment`) and the early stop (`min_iterations`, `stable_window`).
+
+The figures below are for the bundled sample rocket (Euler, 2 mm surface mesh). **The labels inside these figures are in Japanese.**
+
+**Mach number on the symmetry plane** (angle of attack 4 degrees; M = 0.8 on top, M = 2.0 below)
+
+![Mach number field on the symmetry plane](doc/images/readme/cfd_mach_field.png)
+
+**Wall pressure coefficient Cp**
+
+![Wall pressure coefficient](doc/images/readme/cfd_cp_surface.png)
+
+**Surface mesh** (near the nose tip and at the fin root)
+
+![Surface mesh near the nose tip and fin root](doc/images/readme/cfd_mesh_surface.png)
+
+**Direct-STL CFD compared with the rebuilt geometry and the Barrowman method** (CN, center of pressure, roll damping Clp)
+
+![Direct-STL CFD versus rebuilt geometry versus Barrowman](doc/images/readme/cfd_stl_check.png)
+
+What the CFD results are, and are not:
+
+- **Cross-checks only.** The CFD in direct-STL mode and the CFD on the rebuilt geometry differ by 5 to 9 % in CN. For the roll damping at M = 0.8, Clp is -19.4 (STL CFD) and -21.0 (rebuilt CFD) against -29.9 from the Barrowman method. These are comparisons between methods, not validation against measurements; no comparison with a real rocket has been made.
+- **Euler (inviscid).** Skin friction, base drag and fin-edge drag are not obtained from CFD and are added from the Barrowman model. The CFD wall is close to, but not identical to, the input STL; read the fidelity report before using a result. With the Euler solver the flat base of an STL is replaced by a tail fairing (`base_treatment = "fairing"`, which changes the input shape); `"flat"` may not converge, and did not for the sample STL.
+- **RANS is unverified** and gmsh 4.15 cannot build the boundary-layer prism layers on the OpenCASCADE surfaces; use the default Euler model.
+- **Quasi-steady.** Pitch and yaw damping are not obtained from the steady solutions and are taken from the Barrowman model; cross derivatives are not modelled. Outside the solved (alpha, beta) range of a general table the values come from the model, not from CFD.
+- Tested on Linux with conda-forge SU2 8.3.0, gmsh 4.15.2, Open MPI 5.0.11 and manifold3d 3.5.4; other environments have not been tested.
+
+Details: [CFD usage](https://www.ddd3h.com/ignisyeet/cfd.html), [CFD internals](https://www.ddd3h.com/ignisyeet/cfd_internals.html) and [verification of the aerodynamic models](https://www.ddd3h.com/ignisyeet/verification_aero.html) (all in Japanese).
+
 ## Requirements
 
 | Software | Purpose |
 |---|---|
 | Rust (stable) and `cargo` | Building the main program |
 | [uv](https://docs.astral.sh/uv/) and Python 3.10 or later (`venv` and `pip` also work instead of uv) | Plotting (numpy, pandas, matplotlib) |
+| SU2 8.3.0, gmsh (Python API), Open MPI, manifold3d | Only for `aero.method = "cfd"` (manifold3d only for `surface = "stl"`); see [CFD](#cfd) |
 | LuaLaTeX (luatexja), dvisvgm | Only for building the TikZ figures of the documentation |
 | upLaTeX, dvipdfmx, latexmk, inkscape | Only for building the PDF version of the documentation |
 
@@ -120,7 +161,7 @@ The installer asks whether you are a **user** or a **developer**, shows which to
 | user | The release binary for your platform (sha256 verified) in `~/.local/bin`, the examples and `python/plot.py` in `~/.local/share/ignisyeet/<version>` (with a `current` link), a plotting environment (uv, or `venv` + pip), and an `ignisyeet-plot` command. No documentation tools. |
 | developer | A git clone (default `~/ignisyeet`, or the clone you run it from), Rust via rustup if `cargo` is missing, uv, `cargo build --release`, `cargo test --release`, the `python/` and `doc/` environments. Missing documentation tools (TeX Live, dvisvgm, mutool, inkscape, IPAex fonts) are listed with the exact `apt` / `brew` command; the installer never runs `sudo`. |
 
-Both roles can additionally install the CFD tools (SU2, gmsh, Open MPI from conda-forge, about 3 GB) into a conda environment named `ignisyeet-cfd`. An existing micromamba/mamba/conda and an existing environment are reused. On x86_64 Linux CPUs without AVX-512, SU2 is pinned to 8.3.0 because the 8.5.0 package crashes there. The installer prints the `[aero.cfd] prefix` value to put in your configuration (or `IGNISYEET_CFD_PREFIX`).
+Both roles can additionally install the CFD tools (SU2, gmsh, Open MPI from conda-forge, about 3 GB, plus manifold3d from pip for `surface = "stl"`) into a conda environment named `ignisyeet-cfd`. An existing micromamba/mamba/conda and an existing environment are reused. On x86_64 Linux CPUs without AVX-512, SU2 is pinned to 8.3.0 because the 8.5.0 package crashes there. The installer prints the `[aero.cfd] prefix` value to put in your configuration (or `IGNISYEET_CFD_PREFIX`).
 
 Options are given after `bash -s --`:
 
@@ -200,6 +241,7 @@ ignisyeet [-q|--quiet] [--no-progress] <command> ...
 | `aero <config> [--force]` | Builds the aerodynamic coefficient table. If the inputs are the same as last time, the stored table is used; `--force` always rebuilds it |
 | `sim <config> [--descent ballistic\|parachute]` | Flies once with the configured wind and writes `trajectory.csv` and `summary.json` |
 | `dispersion <config>` | Computes the landing dispersion in parallel according to `dispersion.mode` |
+| `cfd-check <config> [--mesh]` | Checks that SU2, MPI and gmsh (and manifold3d for `surface = "stl"`) are installed, reports their versions and the number of CFD cases; `--mesh` also exports the wall surface, builds the volume mesh and reports node/cell counts and quality (and the STL fidelity for `surface = "stl"`) |
 | `sample-stl <path>` | Writes the STL of the bundled sample rocket (tangent ogive, four trapezoidal fins, in mm, nose pointing +z) |
 
 | Global option | Description |
@@ -219,24 +261,25 @@ NO_COLOR=1 ./target/release/ignisyeet aero examples/sample.toml
 
 ## Configuration file (TOML)
 
-Configuration is written in TOML. Relative paths are resolved against **the directory of the configuration file**. Lengths are in meters, and positions on the rocket are measured from the nose tip toward the tail. The quickest way to start is to copy [`examples/sample.toml`](examples/sample.toml), which lists every item with comments, and edit it. The default value and meaning of each item are summarized in [`doc/source/usage.rst`](doc/source/usage.rst) (in Japanese).
+Configuration is written in TOML. Relative paths are resolved against **the directory of the configuration file**. Lengths are in meters, and positions on the rocket are measured from the nose tip toward the tail. The quickest way to start is to copy [`examples/sample.toml`](examples/sample.toml), which lists every item with comments, and edit it. The default value and meaning of each item are summarized in [Usage](https://www.ddd3h.com/ignisyeet/usage.html) (in Japanese).
 
 | Section | Main contents |
 |---|---|
 | `[output]` | Output directory `dir`, `kml` switch for the Google Earth file |
 | `[resources]` | Compute resources: `threads` (CPU thread cap, 0 = all available), `memory_gb` (budget for the panel matrix and CFD cases, 0 = no limit), `nice` (0 to 19, lowers the process priority) |
-| `[rocket]` | STL path and unit `stl_scale`, `nose_direction`, dry mass, center of gravity, moments of inertia, roughness, fin leading- and trailing-edge shapes, `extra_cd`, `[rocket.fin_override]` (manual fin specification) |
-| `[motor]` | RASP `.eng` file, motor aft position `aft_x`, nozzle exit diameter, override of the propellant mass |
-| `[launch]` | Latitude, longitude, elevation, rail length, elevation angle, azimuth |
+| `[rocket]` | STL path and unit `stl_scale`, `nose_direction`, dry mass, center of gravity, moments of inertia (`ixx_dry`, `iyy_dry`; optional `izz_dry`, products `ixy_dry`/`ixz_dry`/`iyz_dry`, lateral CG offset `cg_lateral_dry`), `fin_cant_deg`, roughness, fin leading- and trailing-edge shapes, `extra_cd`, `[rocket.fin_override]` (manual fin specification, including `cant_deg`) |
+| `[motor]` | RASP `.eng` file, motor aft position `aft_x`, nozzle exit diameter, override of the propellant mass, thrust misalignment (`misalignment_deg`, `misalignment_azimuth_deg`, `misalignment_offset`) |
+| `[launch]` | Latitude, longitude, altitude, rail length, elevation angle, azimuth, `roll_deg` (body roll about the rail axis) |
 | `[recovery]` | Whether a parachute is used (`enabled`), `cd_s`, deployment delay `delay` |
-| `[aero]` | `method` (`barrowman`, `panel`, `table`, `cfd`), external table `table`, Mach and angle-of-attack grids, number of sections `n_slices`, `fin_threshold`, `extrapolation` (`linear`, `clamp`) |
+| `[aero]` | `method` (`barrowman`, `panel`, `table`, `cfd`), external table `table`, Mach and angle-of-attack grids, number of sections `n_slices`, `fin_threshold`, `extrapolation` (`linear`, `clamp`), `table_kind` (`axisymmetric`, `general`) and `general_mach_step` |
 | `[aero.panel]` | Panel-method mesh divisions (`body_axial`, `body_circ`, `fin_chord`, `fin_span`), `wake_length`, `tail_radii`, `subsonic_machs`, `transonic`, `fin_section` |
+| `[aero.cfd]` | SU2 CFD (see [CFD](#cfd)): `prefix` of the tool environment, `model` (`euler`, `rans`), `machs`, `alphas_deg`, `betas_deg`, `roll_damping`, `roll_rate_hat`, `surface` (`cad`/`panel_mesh`, `stl`), `symmetry`, `shape_symmetry`, `base_treatment`, `stl_remesh`, `max_geometry_error`, `wall_size`, `farfield`, `iterations`, `min_iterations`, `stable_window`, `cfl`, `convergence`, `scheme`, `ranks_per_case`, `parallel_cases`, `workdir`, and more; the commented block in [`examples/sample_cfd.toml`](examples/sample_cfd.toml) lists every item |
 | `[earth]` | `model` (`flat`, `ecef`), `gravity` (`constant`, `inverse_square`, `j2`; `j2` requires `ecef`) |
 | `[atmosphere]` | `model` (`us1976`, `constant`), `temperature_offset`, constant-atmosphere `density`, `sound_speed`, `viscosity` |
 | `[wind]` | `model` (`constant`, `power`, `log`, `profile`), wind speed, wind direction (the direction the wind comes from), reference height, power-law exponent, roughness length, ground blend height `ground_blend_height` (cubic blend to zero near the ground for the `power` and `log` models), altitude table `profile` |
 | `[sim]` | `integrator` (`rk4`, `rk45`, `dop853`), `attitude` (`normalize`, `lie_group`), `dt`, `rtol`, `atol`, `max_time`, `output_interval`, `descent` |
 | `[dispersion]` | `mode` (`wind_grid`, `monte_carlo`), `wind_speeds`, `directions` |
-| `[dispersion.monte_carlo]` | `samples`, `seed`, and 1-sigma values for thrust, burn time, dry mass, center of gravity, CN, CA, elevation, azimuth, wind, and parachute |
+| `[dispersion.monte_carlo]` | `samples`, `seed`, and 1-sigma values for thrust, burn time, dry mass, center of gravity, CN, CA, elevation, azimuth, wind, and parachute; optionally `thrust_misalignment_deg`, `thrust_offset`, `fin_cant_deg`, `cg_lateral`, `cl_scale`, `clp_scale` |
 
 ## Output files
 
@@ -245,8 +288,9 @@ The output directory is `output.dir` (`examples/out/` in the sample).
 | File | Contents |
 |---|---|
 | `geometry.json`, `profile.csv` | Extracted geometry |
-| `aero_table.csv`, `aero_table.json` | CN, CA (powered and coasting), Xcp, CNalpha, and damping sum for each (Mach, angle of attack); metadata and a hash of the inputs |
-| `aero_drag.csv` | Breakdown of zero-lift drag (total only for the panel method), and the Mach dependence of CNalpha and Xcp |
+| `aero_table.csv`, `aero_table.json` | Axisymmetric table: CN, CA (powered and coasting), Xcp, CNalpha, pitch damping sums, fin cant forcing `cl_delta` and roll damping `clp` for each (Mach, angle of attack). General table (`kind = "general"`): CX (powered and coasting), CY, CZ, Cl, Cm, Cn, `cl_delta`, `clp` and the pitch and yaw damping sums for each (Mach, alpha, beta). The `.json` holds metadata and a hash of the inputs |
+| `aero_drag.csv` | Breakdown of zero-lift drag (total only for the panel method), and the Mach dependence of CNalpha and Xcp (not written for `method = "cfd"`) |
+| `cfd_cases.csv`, `cfd_report.json` | `method = "cfd"` only: one row per solved case (status, iterations, residuals, coefficients including the six components) and the run summary (failed and unconverged cases, mesh size, timing, domain and symmetry used, roll-damping source, STL fidelity). Case data and the mesh are cached in `<output.dir>/<workdir>/` (default `cfd/`); for `surface = "stl"` the mesh directory also holds `repair_report.json`, `union_report.json` and `stl_fidelity.json` |
 | `panel_cp.csv` | Surface panels and Cp (angle of attack 4 degrees) when `method = "panel"` |
 | `trajectory.csv`, `summary.json` | Time history and main results of a single flight |
 | `dispersion.csv` | Landing points of all wind-grid cases (ballistic and parachute descent) |
@@ -273,7 +317,7 @@ uv run --project python python/plot.py aero <out_dir> --compare <another output 
 
 ## Documentation
 
-Japanese documentation with equations, figures, and verification can be built from `doc/` (Sphinx).
+The documentation (in Japanese) is published at <https://www.ddd3h.com/ignisyeet/>; the chapters are listed in [Overview of the methods](#overview-of-the-methods). It contains equations, figures, and verification, and can also be built from `doc/` (Sphinx).
 
 ```sh
 cd doc && make html     # doc/build/html/index.html
@@ -292,22 +336,24 @@ cd doc && make html PY=     # likewise make pdf PY= for the PDF
 
 Detailed equations and derivations are in the chapters of the documentation (in Japanese).
 
-| Stage | Summary | Chapter |
+| Stage | Summary | Chapter (Japanese) |
 |---|---|---|
-| Overall | Processing flow, and why the coefficient table is built first | [`doc/source/overview.rst`](doc/source/overview.rst) |
-| Geometry extraction | Principal axis by PCA; radius distribution and fins estimated from sections perpendicular to the axis | [`doc/source/geometry.rst`](doc/source/geometry.rst) |
-| Aerodynamics (overview) | The coefficient table that connects the aerodynamic methods to the flight simulation; axisymmetric and general tables; choosing a method; table interpolation and external tables | [`doc/source/aerodynamics.rst`](doc/source/aerodynamics.rst) |
-| Aerodynamic coefficients | Six body-axis force and moment coefficients, CN, CA and the center of pressure, alpha, beta and the total angle of attack, damping and roll derivatives | [`doc/source/aero_coefficients.rst`](doc/source/aero_coefficients.rst) |
-| Aerodynamics (Barrowman method) | Component build-up of normal force, center of pressure, drag, and pitch damping. Supersonic by Busemann's second-order theory, transonic joined by a cubic | [`doc/source/barrowman.rst`](doc/source/barrowman.rst) |
-| Aerodynamics (panel method) | Morino method (Goethert transformation) for subsonic, local-inclination method for supersonic, cubic Hermite interpolation between them for transonic | [`doc/source/panel.rst`](doc/source/panel.rst) |
-| Aerodynamics (CFD) | Using SU2 through the CFD mode: wall geometry from the rebuilt body or the STL, the run, how to read the outputs, how far to trust them | [`doc/source/cfd.rst`](doc/source/cfd.rst) |
-| Aerodynamics (CFD internals) | Governing equations, SU2 settings, geometry preparation, meshing, case execution, post-processing | [`doc/source/cfd_internals.rst`](doc/source/cfd_internals.rst) |
-| Flight | 6-DoF rigid body, launch-rail constraint, changes in propellant mass, center of gravity, and inertia | [`doc/source/dynamics.rst`](doc/source/dynamics.rst), [`doc/source/propulsion.rst`](doc/source/propulsion.rst) |
-| Coordinates and environment | Flat ENU and ECEF, atmosphere, wind, gravity | [`doc/source/coordinates.rst`](doc/source/coordinates.rst), [`doc/source/environment.rst`](doc/source/environment.rst) |
-| Landing dispersion | Wind grid and Monte Carlo method, error ellipses | [`doc/source/dispersion.rst`](doc/source/dispersion.rst) |
-| Verification of the aerodynamic models | Checks, cross-comparisons between the methods, and computation times | [`doc/source/verification_aero.rst`](doc/source/verification_aero.rst) |
-| File formats | Columns and keys of the coefficient tables, the CFD reports, and the other output files | [`doc/source/file_formats.rst`](doc/source/file_formats.rst) |
-| Applicability | Limits of the methods | [`doc/source/limitations.rst`](doc/source/limitations.rst) |
+| Usage | Installation, configuration items and defaults, commands, outputs | [Usage](https://www.ddd3h.com/ignisyeet/usage.html) |
+| Overall | Processing flow, and why the coefficient table is built first | [Computation flow](https://www.ddd3h.com/ignisyeet/overview.html) |
+| Geometry extraction | Principal axis by PCA; radius distribution and fins estimated from sections perpendicular to the axis | [Geometry extraction from STL](https://www.ddd3h.com/ignisyeet/geometry.html) |
+| Aerodynamics (overview) | The coefficient table that connects the aerodynamic methods to the flight simulation; axisymmetric and general tables; choosing a method; table interpolation and external tables | [Overview of the aerodynamic models](https://www.ddd3h.com/ignisyeet/aerodynamics.html) |
+| Aerodynamic coefficients | Six body-axis force and moment coefficients, CN, CA and the center of pressure, alpha, beta and the total angle of attack, damping and roll derivatives | [Aerodynamic coefficients and coordinate systems](https://www.ddd3h.com/ignisyeet/aero_coefficients.html) |
+| Aerodynamics (Barrowman method) | Component build-up of normal force, center of pressure, drag, and pitch damping. Supersonic by Busemann's second-order theory, transonic joined by a cubic | [Aerodynamics by the Barrowman method](https://www.ddd3h.com/ignisyeet/barrowman.html) |
+| Aerodynamics (panel method) | Morino method (Goethert transformation) for subsonic, local-inclination method for supersonic, cubic Hermite interpolation between them for transonic | [Aerodynamics by the panel method](https://www.ddd3h.com/ignisyeet/panel.html) |
+| Aerodynamics (CFD) | Using SU2 through the CFD mode: wall geometry from the rebuilt body or the STL, the run, how to read the outputs, how far to trust them | [Using CFD](https://www.ddd3h.com/ignisyeet/cfd.html) |
+| Aerodynamics (CFD internals) | Governing equations, SU2 settings, geometry preparation, meshing, case execution, post-processing | [CFD internals and numerical methods](https://www.ddd3h.com/ignisyeet/cfd_internals.html) |
+| Flight | 6-DoF rigid body with full inertia tensor, thrust misalignment, launch roll, launch-rail constraint, changes in propellant mass, center of gravity, and inertia; six-component quasi-steady aerodynamics with diagonal rate damping | [6-DoF equations of motion](https://www.ddd3h.com/ignisyeet/dynamics.html), [Thrust and mass properties](https://www.ddd3h.com/ignisyeet/propulsion.html) |
+| Coordinates and environment | Flat ENU and ECEF, atmosphere, wind, gravity | [Coordinate systems and attitude](https://www.ddd3h.com/ignisyeet/coordinates.html), [Environment models](https://www.ddd3h.com/ignisyeet/environment.html) |
+| Landing dispersion | Wind grid and Monte Carlo method, error ellipses | [Landing dispersion](https://www.ddd3h.com/ignisyeet/dispersion.html) |
+| Verification of the aerodynamic models | Checks, cross-comparisons between the methods, and computation times | [Verification of the aerodynamic models](https://www.ddd3h.com/ignisyeet/verification_aero.html) |
+| File formats | Columns and keys of the coefficient tables, the CFD reports, and the other output files | [File format reference](https://www.ddd3h.com/ignisyeet/file_formats.html) |
+| Applicability | Limits of the methods | [Limitations and future work](https://www.ddd3h.com/ignisyeet/limitations.html) |
+| References | Bibliography | [References](https://www.ddd3h.com/ignisyeet/references.html) |
 
 Landing points are output as WGS84 latitude and longitude. For descent, you can choose between a parachute (point mass, with `cd_s` and a deployment delay) and ballistic descent (kept in 6 DoF until landing). In a ballistic descent whose apogee is nearly vertical the rocket tumbles, so the landing point is sensitive to small changes. This is real behavior, not numerical noise.
 
@@ -317,12 +363,14 @@ Landing points are output as WGS84 latitude and longitude. For descent, you can 
 cargo test --release
 ```
 
-The main things checked by the tests are as follows (details in [`doc/source/verification.rst`](doc/source/verification.rst) and [`doc/source/verification_aero.rst`](doc/source/verification_aero.rst), in Japanese).
+The main things checked by the tests are as follows (details in [Verification](https://www.ddd3h.com/ignisyeet/verification.html) and [Verification of the aerodynamic models](https://www.ddd3h.com/ignisyeet/verification_aero.html), in Japanese).
 
 - **Geometry extraction**: fin dimensions of a rotated and scaled sample rocket are recovered within 1 mm
 - **Barrowman method**: against a hand calculation for the sample rocket (CNalpha = 11.617, center of pressure 1.1619 m), the values computed from the STL agree with CNalpha = 11.617 and 1.1620 m. For the body alone, CNalpha is within 0.02 of 2. Transonic continuity is also checked
 - **Panel method**: comparison with analytical potential flows (sphere, spheroid, CNalpha of a slender body, Helmbold wing) and with the relations for supersonic shock waves, expansion waves, and cones. Refining the mesh changes CNalpha by 0.61 %, and the change of CN between adjacent transonic Mach numbers is at most 4.0 %. Compared with the Barrowman method, the subsonic CNalpha of the panel method is about 27 % larger and the supersonic one (M = 2) is 11 % smaller
 - **Flight**: analytical solution for vertical flight in vacuum, response to crosswind, agreement between ECEF and flat Earth, westward drift due to the Coriolis force, agreement between RK45 and RK4 (landing points within 1 m)
+- **Aerodynamics cross-checks**: the roll-damping and sideslip signs of the CFD agree with the expanded axisymmetric table, subsonic CFD and panel-method coefficients agree closely, and the direct-STL CFD is compared with the rebuilt-geometry CFD (see [CFD](#cfd)). These are comparisons between methods, not validation against measurements
+- **Rigid-body details**: moment about the CG from a nozzle offset, thrust misalignment, products of inertia, and launch roll are covered by unit tests
 - **Environment and coordinates**: literature values of the standard atmosphere, hydrostatic equilibrium, J2 gravity, round-trip conversion between geodetic coordinates and ECEF
 - **Monte Carlo**: reproducibility of random numbers, agreement with the nominal flight at zero standard deviation, covariance and error ellipses
 
@@ -333,6 +381,7 @@ Cargo.toml              Rust workspace
 crates/geom/            STL I/O, axis detection, sectioning, fin extraction, sample geometry
 crates/aero/            Atmosphere, Barrowman/Niskanen model, coefficient table
 crates/panel/           Panel-method aerodynamics (Morino method for subsonic, local inclination for supersonic)
+crates/cfd/             SU2 CFD driver: STL repair and union, gmsh meshing, case runner, six-component table
 crates/sim/             Motor, 6-DoF flight, geodetic computations
 crates/cli/             ignisyeet command and TOML configuration
 python/plot.py          Plotting (python/ is a uv project)

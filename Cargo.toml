@@ -30,4 +30,5 @@ rand_chacha = "0.9"
 rand_distr = "0.5"
 
 [profile.release]
+overflow-checks = true
 opt-level = 3

@@ -55,11 +55,7 @@ impl MassProperties {
 
     /// True when the rocket is a plain body of revolution (no products, Iyy = Izz, CG on the axis).
     pub fn is_axisymmetric(&self) -> bool {
-        self.ixy_dry == 0.0
-            && self.ixz_dry == 0.0
-            && self.iyz_dry == 0.0
-            && self.izz_dry.is_none_or(|z| z == self.iyy_dry)
-            && self.cg_lateral_dry == [0.0, 0.0]
+        self.ixy_dry == 0.0 && self.ixz_dry == 0.0 && self.iyz_dry == 0.0 && self.izz_dry.is_none_or(|z| z == self.iyy_dry) && self.cg_lateral_dry == [0.0, 0.0]
     }
 }
 

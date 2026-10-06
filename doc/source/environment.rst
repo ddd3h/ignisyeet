@@ -219,6 +219,8 @@ ECEF 座標での扱いの違いは :ref:`sec-ecef-gravity` で述べる。
 
    とする。式の上では :math:`h\le z_0` で 0 になる（実際の地面付近の扱いは :ref:`sec-wind-blend`）。:math:`z_0` は開けた草地で 0.01〜0.05 m、樹木や建物のある地表で 0.3〜1 m 程度とされる :cite:`stull`。
    :math:`0<z_0<h_{\mathrm{ref}}/2` でなければならない（:numref:`fig-wind-models` 左）。
+   満たさない設定は、``wind.roughness_length (…) must be smaller than half of wind.ref_height (…) for the log profile`` というエラーになる
+   （設定ファイルの検査と、風モデルを直接作るライブラリの呼び出しのどちらでも同じ）。
 
 ``profile``\ （高度別の表）
    次項の表から、高度ごとの風を与える。
@@ -257,6 +259,18 @@ ECEF 座標での扱いの違いは :ref:`sec-ecef-gravity` で述べる。
    p(0)=0,\qquad p'(0)=\frac{w(h_b)}{h_b},\qquad p(h_b)=w(h_b),\qquad p'(h_b)=w'(h_b)
 
 高さ :math:`h_b` では風速も傾きもモデルの値と連続につながり、地面では風速が 0 で傾きが有限（:math:`w(h_b)/h_b`）になる。
+
+端の傾きを :math:`w(h_b)/h_b` を単位として表し、地面で :math:`\alpha=1`、:math:`h_b` で :math:`\beta=h_b\,w'(h_b)/w(h_b)` とする。
+3 次の Hermite 曲線は、:math:`\alpha^2+\beta^2\le9` のとき非負で単調に増える :cite:`fritsch`。
+``power`` では :math:`\beta=1/n`、``log`` では :math:`\beta=1/\ln(h_b/z_0)` で、この条件は ``power`` で :math:`n\ge0.36`、``log`` で :math:`h_b\ge1.43\,z_0` なら必ず成り立ち、風速は :eq:`eq-wind-blend` のままである。
+成り立たないとき（``log`` で :math:`h_b` が :math:`z_0` の近くにあるとき）は、:math:`\tau=3/\sqrt{1+\beta^2}` として両端の傾きを :math:`\tau\alpha`、:math:`\tau\beta` に縮める（Fritsch–Carlson の補正）。
+
+.. math::
+   :label: eq-wind-blend-scaled
+
+   p(h)=w(h_b)\Bigl[\tau\left(t^3-2t^2+t\right)+\left(-2t^3+3t^2\right)+\tau\beta\left(t^3-t^2\right)\Bigr]
+
+こうすると、風速は 0 以上で、地面から :math:`h_b` まで単調に増える。:math:`h_b` で風速はモデルの値と連続だが、傾きはモデルの傾きより小さくなり、折れ目を生じる。
 :math:`h\ge h_b` の風速は、:eq:`eq-wind` や :eq:`eq-wind-log` のままである。
 ``ground_blend_height`` は正で ``ref_height`` より小さい値でなければならない。``log`` では :math:`z_0` より大きい必要があり、
 設定値が :math:`z_0` 以下なら :math:`\max(h_b,\,2z_0)` に読み替える。``constant`` と ``profile`` には適用しない。
@@ -279,14 +293,16 @@ ECEF 座標での扱いの違いは :ref:`sec-ecef-gravity` で述べる。
    600,12.0,300
    1000,13.0,310
 
-各列は、地上高度 [m]（射点標高からの高さ。**厳密に増加** していなければならない）、風速 [m/s]（0 以上）、
+各列は、地上高度 [m]（射点標高からの高さ。0 以上で、**厳密に増加** していなければならない）、風速 [m/s]（0 以上）、
 風が吹いてくる方位 [deg]（北から時計回り。0 以上 360 以下）である。値は有限の数でなければならず、1 行以上のデータが必要である。
 方位が 0 から 360 の範囲を外れた行は、``wind profile direction must be between 0 and 360 degrees (row "0,1,400")`` の形で、その行を示してエラーにする。
 設定の ``wind.direction_deg`` も同じ範囲である。
+高度が負の行（射点より低い行）は、``wind profile altitude must be ≥ 0 m above the launch site (row "-30,3,270"): drop levels below the launch site and add a 0 m row`` の形で、その行を示してエラーにする。
 
 予報やゾンデのデータを表にするときは、次のように換算する。
 
-* 高度が海抜の値なら、``launch.altitude`` を引いて射点からの高さにする。
+* 高度が海抜の値なら、``launch.altitude`` を引いて射点からの高さにする。引いた高度が負になる行（射点より低い気圧面など）は捨て、射点の高さ（0 m）の行を加える。
+  その行には、捨てた行のうち射点に最も近い風か、射点の地上風を入れる。
 * 気圧面ごとのデータは、同じ製品のジオポテンシャル高度を高度の列に使う（海抜なら上と同様に ``launch.altitude`` を引く）。
 * 風速が knot なら 0.5144 を掛けて m/s にする（1 kn = 0.5144 m/s）。
 * 風が東西成分 :math:`u`\ （東向き正）と南北成分 :math:`v`\ （北向き正）で与えられるなら、風速は :math:`\sqrt{u^2+v^2}`、風が吹いてくる方位は :math:`\mathrm{atan2}(-u,\,-v)`\ [deg] を 0° 以上 360° 未満にした値である（:math:`u=-w\sin\psi,\ v=-w\cos\psi` の逆。例えば西風 :math:`u>0,\ v=0` は 270° になる）。

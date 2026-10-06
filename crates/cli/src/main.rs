@@ -1558,8 +1558,15 @@ fn summary_json(cfg: &Config, s: &Summary, warnings: &[String]) -> Result<serde_
     json["earth_model"] = serde_json::to_value(cfg.earth.model)?;
     json["wind_model"] = serde_json::to_value(cfg.wind.model)?;
     json["config_hash"] = run_hash(cfg, RunKind::Flight).into();
-    json["warnings"] = serde_json::json!(warnings);
+    json["warnings"] = stored_warnings(cfg, warnings);
     Ok(json)
+}
+
+/// The `warnings` array of summary.json, dispersion_meta.json and dispersion_summary.json: the
+/// findings of the configuration loader (keys without effect, repeated `--set` keys; printed when the
+/// configuration is read) followed by the run's own `warnings`.
+fn stored_warnings(cfg: &Config, warnings: &[String]) -> serde_json::Value {
+    serde_json::json!(cfg.load_warnings.iter().chain(warnings).collect::<Vec<_>>())
 }
 
 /// Writes `ignisyeet.kml`: the parts given are used as they are, the others are read back from the
@@ -1883,7 +1890,7 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
     warnings.extend(instability_warnings(&instab, "wind-grid cases"));
     let path = out_path(cfg, "dispersion.csv")?;
     write_wind_grid_csv(&path, &results, &errors)?;
-    let mut meta = serde_json::json!({ "config_hash": run_hash(cfg, RunKind::WindGrid), "flight_config_hash": run_hash(cfg, RunKind::Flight), "cases": results.len(), "failed": failed, "errored": errored, "warnings": warnings, "aero_table_range": aero_range_json(&p.table.out_of_range_stats()) });
+    let mut meta = serde_json::json!({ "config_hash": run_hash(cfg, RunKind::WindGrid), "flight_config_hash": run_hash(cfg, RunKind::Flight), "cases": results.len(), "failed": failed, "errored": errored, "warnings": stored_warnings(cfg, &warnings), "aero_table_range": aero_range_json(&p.table.out_of_range_stats()) });
     meta.as_object_mut().unwrap().extend(stability_json(nominal.as_ref()).as_object().unwrap().clone());
     meta.as_object_mut().unwrap().extend(instability_json(&instab).as_object().unwrap().clone());
     meta.as_object_mut().unwrap().extend(wind_json(&base.wind));
@@ -2057,7 +2064,7 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
     json["config_hash"] = run_hash(cfg, RunKind::MonteCarlo).into();
     // Lets the plots check that this run belongs to the same flight configuration as summary.json.
     json["flight_config_hash"] = run_hash(cfg, RunKind::Flight).into();
-    json["warnings"] = serde_json::json!(warnings);
+    json["warnings"] = stored_warnings(cfg, &warnings);
     json["aero_table_range"] = aero_range_json(&range);
     json.as_object_mut().unwrap().extend(stability_json(nominal).as_object().unwrap().clone());
     json.as_object_mut().unwrap().extend(instability_json(&instab).as_object().unwrap().clone());
@@ -2844,6 +2851,11 @@ mod tests {
         let j = summary_json(&cfg, &sample_summary(), &["w1".to_string()]).unwrap();
         assert_eq!(j["landed"], true);
         assert_eq!(j["warnings"][0], "w1");
+        // the loader's warnings come first
+        let mut profile = cfg.clone();
+        profile.load_warnings = vec!["wind.speed is ignored for wind.model = \"profile\"".into()];
+        let j = summary_json(&profile, &sample_summary(), &["w1".to_string()]).unwrap();
+        assert_eq!(j["warnings"], serde_json::json!(["wind.speed is ignored for wind.model = \"profile\"", "w1"]));
         assert_eq!(j["config_hash"], run_hash(&cfg, RunKind::Flight));
         assert_eq!(j["earth_model"], "flat");
         let mut ecef = cfg.clone();

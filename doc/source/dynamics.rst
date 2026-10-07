@@ -156,7 +156,7 @@ Coriolis 力と遠心力の項が加わる以外は同じ式を使う（:ref:`se
 
    C_{m,cg}=C_m-\frac{x_{cg}}{d}\,C_Z,\qquad C_{n,cg}=C_n+\frac{x_{cg}}{d}\,C_Y
 
-である。静的な安定は、角度を戻す向きのモーメントの傾き（復元の微係数）:math:`R` の符号で決まる。
+である。静的な安定は、角度を戻す向きのモーメントの傾き（復元の微係数）\ :math:`R` の符号で決まる。
 ピッチ面（:math:`\beta=0`）とヨー面（:math:`\alpha=0`）で、:math:`R` と法線力の傾き :math:`S` を
 
 .. math::
@@ -315,7 +315,7 @@ CAD ソフトの多くは慣性乗積を :math:`+\int xy\,\mathrm{d}m` の符号
 見かけの質量の遅れと対流の回転
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-細長い物体の理論（slender-body theory）:cite:`munk,nielsenbook` では、機体の断面は、断面積 :math:`A(x)` に比例する空気の質量 :math:`\rho A(x)`\ （単位長さあたり）を横向きの運動に連れて動かす（見かけの質量）。
+細長い物体の理論（slender-body theory）\ :cite:`munk,nielsenbook` では、機体の断面は、断面積 :math:`A(x)` に比例する空気の質量 :math:`\rho A(x)`\ （単位長さあたり）を横向きの運動に連れて動かす（見かけの質量）。
 ノーズ先端から後方へ :math:`x`、重心からの距離を :math:`l=x-x_{cg}` とし、ピッチ面で書くと、断面の横向きの対気速度は :math:`w_c=u_z+\omega_y\,l` で（:math:`\omega_y>0` で機尾は :math:`+z_b` へ動く）、断面に働く力は
 
 .. math::

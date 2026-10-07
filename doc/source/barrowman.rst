@@ -351,7 +351,7 @@ OpenRocket のフィンのモデルも、フィンの迎角を失速角 20° で
    \kappa_s(\mathit{AR}\,\beta) & (M\ge2)
    \end{cases}
 
-とし、:math:`0.5<M<2` は\ :eq:`eq-hermite` と同じ形の Hermite 補間でつなぐ（:math:`M=0.5` での傾きは 0、:math:`M=2` での傾きは数値微分）:cite:`barrowman,niskanen`。
+とし、:math:`0.5<M<2` は\ :eq:`eq-hermite` と同じ形の Hermite 補間でつなぐ（:math:`M=0.5` での傾きは 0、:math:`M=2` での傾きは数値微分）\ :cite:`barrowman,niskanen`。
 :math:`\mathit{AR}=2s^2/A_f` は向かい合う 1 組のフィンの縦横比である。超音速の位置 :math:`\kappa_s` は :math:`x=\mathit{AR}\,\beta` の関数として
 
 .. math::

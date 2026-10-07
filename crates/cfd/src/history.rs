@@ -90,6 +90,18 @@ pub const RANS_XCP_DRIFT: f64 = 0.002;
 /// Limit cycle: largest inter-quartile range of the forces, as a fraction of the force scale.
 pub const LIMIT_CYCLE_SPREAD: f64 = 0.01;
 
+/// Least-squares slope of `v` per row (0 for fewer than two values).
+fn slope(v: &[f64]) -> f64 {
+    let n = v.len() as f64;
+    if v.len() < 2 {
+        return 0.0;
+    }
+    let xm = (n - 1.0) / 2.0;
+    let ym = v.iter().sum::<f64>() / n;
+    let (sxy, sxx) = v.iter().enumerate().fold((0.0, 0.0), |(a, b), (i, y)| (a + (i as f64 - xm) * (y - ym), b + (i as f64 - xm).powi(2)));
+    sxy / sxx
+}
+
 /// (mean, drift between the two half-window means, inter-quartile range) of `v`; infinite spread for non-finite values.
 fn window_stats(v: &[f64]) -> (f64, f64, f64) {
     if v.is_empty() || v.iter().any(|x| !x.is_finite()) {
@@ -192,6 +204,48 @@ impl History {
             stable = stable && ok(mx, t);
         }
         stable
+    }
+
+    /// RANS: the coefficients have settled: the change still to come, extrapolated from their trend over the last
+    /// `window` rows, is within the tolerances of [`History::rans_coefficients_stable`]. A coefficient that converges
+    /// with the residuals approaches its limit like `exp(-i / tau)`, so its remaining change is `|slope| tau`;
+    /// `tau = 1 / (r ln 10)` with `r` the slower of the density and SA residual decay rates over the window
+    /// (orders per iteration), at most `budget` iterations (a stalled residual leaves the trend over the whole budget).
+    ///
+    /// The flatness check alone stopped a flat-plate case whose drag still crept by 1.9 % (TMR 273 x 193 grid,
+    /// M 0.2): over a window of 200 iterations the drift of a slowly converging coefficient stays below 0.5 %.
+    pub fn rans_trend_settled(&self, window: usize, kind: StabilityKind, length_ratio: f64, budget: usize) -> bool {
+        if self.rows.len() < window.max(4) {
+            return false;
+        }
+        let rate = [&RHO[..], &NU[..]].iter().filter_map(|c| self.tail(c, window)).map(|v| -slope(&v)).fold(f64::INFINITY, f64::min);
+        let tau = if rate.is_finite() && rate > 0.0 { (1.0 / (rate * std::f64::consts::LN_10)).min(budget as f64) } else { budget as f64 };
+        let side = kind == StabilityKind::Sideslip;
+        let fx = self.tail(&["CFx", "CD"], window);
+        let fz = self.tail(&["CFz", "CL"], window);
+        let fy = if side { self.tail(&["CFy"], window) } else { None };
+        if fx.is_none() && fz.is_none() {
+            return false;
+        }
+        let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
+        let scale = [&fx, &fz, &fy].iter().filter_map(|v| v.as_ref()).map(|v| mean(v).abs()).fold(0.0, f64::max);
+        let tol = RANS_FORCE_DRIFT * scale + 1e-5;
+        let change = |v: &[f64]| (slope(v) * tau).abs();
+        let mut ok = [&fx, &fz, &fy].iter().filter_map(|v| v.as_ref()).all(|v| change(v) <= tol);
+        let mut moment = |force: &[&str], mom: &[&str], sign: f64| {
+            let (Some(f), Some(m)) = (self.tail(force, window), self.tail(mom, window)) else { return };
+            if mean(&f).abs() > 20.0 * tol {
+                let x: Vec<f64> = f.iter().zip(&m).map(|(f, m)| sign * m / f).collect();
+                ok = ok && change(&x) <= RANS_XCP_DRIFT * length_ratio;
+            } else {
+                ok = ok && change(&m) <= tol * length_ratio;
+            }
+        };
+        moment(&["CFz", "CL"], &["CMy"], -1.0);
+        if side {
+            moment(&["CFy"], &["CMz"], 1.0);
+        }
+        ok
     }
 
     /// log10 RMS density residual of the last row.

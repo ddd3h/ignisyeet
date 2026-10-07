@@ -57,7 +57,7 @@
 
    * - ``cfd``\ （SU2 を使わないテスト）
      - 早期終了の判定が、横滑りのケースでは CFy と CMz を、ロール減衰のケースでは CMx を見ること（``roll_and_sideslip_cases_check_their_own_coefficients``）、
-       対称な形状で :math:`C_Y,C_l,C_n`（:math:`\beta=0`）と :math:`C_Z,C_l,C_m`（:math:`\alpha=0`、軸対称）が厳密に 0 になること（``symmetry_plane_noise_is_removed_for_symmetric_shapes``）、
+       対称な形状で :math:`C_Y,C_l,C_n`\ （:math:`\beta=0`）と :math:`C_Z,C_l,C_m`\ （:math:`\alpha=0`、軸対称）が厳密に 0 になること（``symmetry_plane_noise_is_removed_for_symmetric_shapes``）、
        STL の壁面ではフィン縁の抗力を足さないこと（``hybrid_terms``）、
        CFD の表が Mach 数の方向に端の値を保ち、解いた最大の迎角を超えると部品積み上げ法へ移り、その 2 倍の迎角（90° まで）から部品積み上げ法の法線力と圧力中心になること（``blends_into_barrowman_beyond_the_solved_angles_and_holds_mach``）、解いた範囲の端で圧力中心が速く前へ動く列でも、それより大きい迎角の圧力中心が機体の前方へ動き続けないこと（``a_forward_moving_end_slope_does_not_move_the_cp_ahead_of_the_body``）、迎角 0 の圧力中心と減衰の重心が、Mach 数について内挿したモーメントの傾きと :math:`C_{N\alpha}` の比になること（``zero_angle_centre_of_pressure_follows_the_interpolated_moment_across_mach``、``damping_centroid_follows_the_interpolated_moment_slope_across_mach``）、SU2 の版の読み取りと 8.3 系以外の判定（``su2_version_warning``）、必要なツールの有無の判定（``all_required_present_follows_the_options``）
 

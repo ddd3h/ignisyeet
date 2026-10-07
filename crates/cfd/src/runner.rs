@@ -40,9 +40,13 @@
 //! ([`ResidualPeak`], stored in `done.json` and passed along the warm chain), raised to the run's own peak when
 //! that is higher; a residual drop measured from a warm run's own (low) peak would accept it too early.
 //!
-//! * `converged`: density residual 3 and SA residual 2 orders below the reference, and the coefficients flat
+//! * `converged`: density residual 3 and SA residual 2 orders below the reference, the coefficients flat
 //!   over `stable_window` iterations ([`History::rans_coefficients_stable`]: forces 0.5 % of the force scale,
-//!   centre of pressure 0.002 body lengths). Checked once a second after `min_iterations`; SU2 is then stopped.
+//!   centre of pressure 0.002 body lengths), and their change still to come, extrapolated from the trend over the
+//!   window with the residual decay rate ([`History::rans_trend_settled`]), within the same tolerances. Checked
+//!   once a second after `min_iterations`; SU2 is then stopped. On the TMR flat plate (69 x 49 to 273 x 193, M 0.2
+//!   and M 2) the drag at the stop is then within 0.3 % of the value 8 orders down (flatness alone: up to 1.9 %),
+//!   at the cost of up to 950 more iterations on the finest grid.
 //! * Limit cycle: density residual 2 orders below the reference and the forces oscillating within 1 % of the
 //!   force scale ([`History::limit_cycle`]): accepted with the window average, `converged = false`, listed as
 //!   unconverged (`status = unconverged` in `cfd_cases.csv`).
@@ -401,8 +405,9 @@ pub fn effective_reference(reference: ResidualPeak, h: &History) -> ResidualPeak
 /// Outcome of the RANS acceptance rule.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RansVerdict {
-    /// Density residual [`RANS_RHO_DROP`] and SA residual [`RANS_NU_DROP`] orders below the reference peak, and
-    /// the coefficients flat ([`History::rans_coefficients_stable`]).
+    /// Density residual [`RANS_RHO_DROP`] and SA residual [`RANS_NU_DROP`] orders below the reference peak, the
+    /// coefficients flat ([`History::rans_coefficients_stable`]) and their extrapolated remaining change within the
+    /// same tolerances ([`History::rans_trend_settled`]).
     Converged,
     /// Density residual [`RANS_CYCLE_RHO_DROP`] orders below the reference and the coefficients oscillating
     /// within [`History::limit_cycle`]: accepted, listed as unconverged, coefficients averaged over the window.
@@ -411,12 +416,14 @@ pub enum RansVerdict {
     Rejected(String),
 }
 
-/// Judges the final-stage history `h` of a RANS case against `reference` over the last `window` rows.
-pub fn rans_verdict(h: &History, reference: ResidualPeak, window: usize, kind: StabilityKind, length_ratio: f64) -> RansVerdict {
+/// Judges the final-stage history `h` of a RANS case against `reference` over the last `window` rows; `budget` is
+/// the iteration limit of the stage (the longest trend extrapolation, see [`History::rans_trend_settled`]).
+pub fn rans_verdict(h: &History, reference: ResidualPeak, window: usize, kind: StabilityKind, length_ratio: f64, budget: usize) -> RansVerdict {
     let r = effective_reference(reference, h);
     let rho = h.last_residual().map(|x| r.rho - x);
     let nu = h.last_nu().map(|x| r.nu - x);
-    let stable = h.rans_coefficients_stable(window, kind, length_ratio);
+    let flat = h.rans_coefficients_stable(window, kind, length_ratio);
+    let stable = flat && h.rans_trend_settled(window, kind, length_ratio, budget);
     if rho.is_some_and(|d| d >= RANS_RHO_DROP) && nu.is_some_and(|d| d >= RANS_NU_DROP) && stable {
         return RansVerdict::Converged;
     }
@@ -429,6 +436,8 @@ pub fn rans_verdict(h: &History, reference: ResidualPeak, window: usize, kind: S
         nu.unwrap_or(f64::NAN),
         if stable {
             "stable"
+        } else if flat {
+            "flat but still trending"
         } else if h.limit_cycle(window, kind, length_ratio) {
             "in a limit cycle"
         } else {
@@ -634,7 +643,9 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
         };
         let files = CaseFiles { mesh: mesh.clone(), restart_from: Some(restart_from), stage: Stage::Final };
         let cfg = su2_config_case(opt, &spec, &setup.dims, &setup.atm, &files);
-        let stop = |h: &History| h.rows.len() >= opt.min_iterations && rans_verdict(h, reference, opt.stable_window, kind, ratio) == RansVerdict::Converged;
+        let stop = |h: &History| {
+            h.rows.len() >= opt.min_iterations && rans_verdict(h, reference, opt.stable_window, kind, ratio, opt.iterations) == RansVerdict::Converged
+        };
         let run = match solve(setup, i, &dir, ("case.cfg", "su2.log", "history.csv"), &cfg, deadline, &stop, tx)? {
             Ok(r) => r,
             Err(e) => return Ok(fail(e)),
@@ -657,7 +668,7 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
             _ => return Ok(fail(format!("SU2 produced no history.csv; end of su2.log:\n{}", tail(&log, 8)))),
         };
         let window = opt.stable_window.min(h.rows.len()).max(2);
-        let verdict = rans_verdict(&h, reference, window, kind, ratio);
+        let verdict = rans_verdict(&h, reference, window, kind, ratio, opt.iterations);
         let limit_cycle = match verdict {
             RansVerdict::Converged => false,
             RansVerdict::LimitCycle => true,
@@ -1371,25 +1382,25 @@ exit 0
         let reference = ResidualPeak { rho: -1.0, nu: -4.0 };
         // Warm chain: judged against the cold reference, not the run's own (low) peak. Own drop 1.1 orders,
         // 3.1 below the reference: converged; 2.9 below the reference (own drop 2.9): only a limit cycle.
-        assert_eq!(rans_verdict(&ramp(50, (-3.0, -4.1), (-6.0, -7.0), 0.0), reference, 20, k, 18.0), RansVerdict::Converged);
-        assert_eq!(rans_verdict(&ramp(50, (-1.0, -3.9), (-6.0, -7.0), 0.0), reference, 20, k, 18.0), RansVerdict::LimitCycle);
+        assert_eq!(rans_verdict(&ramp(50, (-3.0, -4.1), (-6.0, -7.0), 0.0), reference, 20, k, 18.0, 4000), RansVerdict::Converged);
+        assert_eq!(rans_verdict(&ramp(50, (-1.0, -3.9), (-6.0, -7.0), 0.0), reference, 20, k, 18.0, 4000), RansVerdict::LimitCycle);
         // Less than 2 orders below the reference: rejected even with flat coefficients.
-        assert!(matches!(rans_verdict(&ramp(50, (-1.5, -2.9), (-6.0, -7.0), 0.0), reference, 20, k, 18.0), RansVerdict::Rejected(_)));
+        assert!(matches!(rans_verdict(&ramp(50, (-1.5, -2.9), (-6.0, -7.0), 0.0), reference, 20, k, 18.0, 4000), RansVerdict::Rejected(_)));
         // A run whose own peak is above the reference is judged like a cold start, from its own peak (3.7 orders;
         // 2.2 below the cold reference).
-        assert_eq!(rans_verdict(&ramp(50, (0.5, -3.2), (-6.0, -7.0), 0.0), reference, 20, k, 18.0), RansVerdict::Converged);
+        assert_eq!(rans_verdict(&ramp(50, (0.5, -3.2), (-6.0, -7.0), 0.0), reference, 20, k, 18.0, 4000), RansVerdict::Converged);
         assert_eq!(effective_reference(reference, &ramp(10, (0.5, -3.2), (-6.0, -7.0), 0.0)), ResidualPeak { rho: 0.5, nu: -4.0 });
         // The SA residual must drop 2 orders too: with 1.5 orders the case is at most a limit cycle.
-        assert_eq!(rans_verdict(&ramp(50, (-3.0, -6.0), (-4.0, -5.5), 0.0), reference, 20, k, 18.0), RansVerdict::LimitCycle);
-        let v = rans_verdict(&ramp(50, (-1.0, -2.5), (-4.0, -5.5), 0.0), reference, 20, k, 18.0);
+        assert_eq!(rans_verdict(&ramp(50, (-3.0, -6.0), (-4.0, -5.5), 0.0), reference, 20, k, 18.0, 4000), RansVerdict::LimitCycle);
+        let v = rans_verdict(&ramp(50, (-1.0, -2.5), (-4.0, -5.5), 0.0), reference, 20, k, 18.0, 4000);
         assert!(matches!(&v, RansVerdict::Rejected(m) if m.contains("SA residual 1.5") && m.contains("density residual 1.5")), "{v:?}");
-        assert_eq!(rans_verdict(&ramp(50, (-3.0, -6.0), (-4.0, -6.1), 0.0), reference, 20, k, 18.0), RansVerdict::Converged);
+        assert_eq!(rans_verdict(&ramp(50, (-3.0, -6.0), (-4.0, -6.1), 0.0), reference, 20, k, 18.0, 4000), RansVerdict::Converged);
         // Limit cycle: 2 orders and a spread within 1 % of the force scale; a larger spread is rejected.
-        assert_eq!(rans_verdict(&ramp(50, (-2.0, -3.5), (-5.0, -5.5), 0.002), reference, 20, k, 18.0), RansVerdict::LimitCycle);
-        assert!(matches!(rans_verdict(&ramp(50, (-2.0, -3.5), (-5.0, -5.5), 0.02), reference, 20, k, 18.0), RansVerdict::Rejected(_)));
-        assert!(matches!(rans_verdict(&ramp(50, (-2.0, -2.5), (-5.0, -5.5), 0.002), reference, 20, k, 18.0), RansVerdict::Rejected(_)));
+        assert_eq!(rans_verdict(&ramp(50, (-2.0, -3.5), (-5.0, -5.5), 0.002), reference, 20, k, 18.0, 4000), RansVerdict::LimitCycle);
+        assert!(matches!(rans_verdict(&ramp(50, (-2.0, -3.5), (-5.0, -5.5), 0.02), reference, 20, k, 18.0, 4000), RansVerdict::Rejected(_)));
+        assert!(matches!(rans_verdict(&ramp(50, (-2.0, -2.5), (-5.0, -5.5), 0.002), reference, 20, k, 18.0, 4000), RansVerdict::Rejected(_)));
         // A converged residual with an oscillating force is a limit cycle, not converged.
-        assert_eq!(rans_verdict(&ramp(50, (-3.0, -6.0), (-4.0, -7.0), 0.002), reference, 20, k, 18.0), RansVerdict::LimitCycle);
+        assert_eq!(rans_verdict(&ramp(50, (-3.0, -6.0), (-4.0, -7.0), 0.002), reference, 20, k, 18.0, 4000), RansVerdict::LimitCycle);
     }
 
     #[test]
@@ -1405,5 +1416,38 @@ exit 0
         assert!(restart_has_turbulence(&dir.join("rans.dat")) && !restart_has_turbulence(&dir.join("euler.dat")));
         assert!(!restart_has_turbulence(&dir.join("missing.dat")));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Flat-plate model (TMR 273 x 193, M 0.2): the drag converges like `exp(-i / 310)`, the density residual by one
+    /// order per 1320 iterations. The flatness check alone accepts at about 1500 iterations with the drag still
+    /// about 1.9 % high; with the trend extrapolation the accepted drag is within 0.5 %.
+    #[test]
+    fn rans_slow_drift_is_not_accepted_until_the_trend_has_settled() {
+        let reference = ResidualPeak { rho: -2.7, nu: -5.36 };
+        let cd = |i: f64| 0.003 * (1.0 + 2.0 * (-i / 310.0).exp());
+        let mut t = String::from("\"Inner_Iter\",\"rms[Rho]\",\"rms[nu]\",\"CFx\",\"CFz\",\"CMy\"\n");
+        for i in 0..6000 {
+            let x = i as f64;
+            t += &format!("{i},{},{},{},0.0,0.0\n", -4.0 - x / 1320.0, -7.0 - x / 1100.0, cd(x));
+        }
+        let full = History::parse(&t).unwrap();
+        let at = |n: usize| History { columns: full.columns.clone(), rows: full.rows[..n].to_vec() };
+        let k = StabilityKind::Pitch;
+        let first = |f: &dyn Fn(&History) -> bool| (400..6000).step_by(10).find(|&n| f(&at(n))).unwrap();
+        let flat = first(&|h| h.rans_coefficients_stable(200, k, 18.0));
+        let err = |n: usize| cd(n as f64 - 1.0) / 0.003 - 1.0;
+        assert!(err(flat) > 0.01, "flatness alone stops at {flat} with {:.3} %", 100.0 * err(flat));
+        assert!(!matches!(rans_verdict(&at(flat), reference, 200, k, 18.0, 4000), RansVerdict::Converged));
+        let conv = first(&|h| rans_verdict(h, reference, 200, k, 18.0, 4000) == RansVerdict::Converged);
+        assert!(err(conv) < 0.005 && conv > flat, "converged at {conv} with {:.3} % (flat at {flat})", 100.0 * err(conv));
+        // Without residual decay the trend is extrapolated over the whole budget: a slope that is small over the
+        // window but not over the budget keeps the case open.
+        let mut t = String::from("\"Inner_Iter\",\"rms[Rho]\",\"rms[nu]\",\"CFx\",\"CFz\",\"CMy\"\n");
+        for i in 0..600 {
+            t += &format!("{i},-6.0,-8.0,{},0.0,0.0\n", 0.3 * (1.0 + 2e-6 * i as f64));
+        }
+        let stalled = History::parse(&t).unwrap();
+        assert!(stalled.rans_coefficients_stable(200, k, 18.0));
+        assert!(!stalled.rans_trend_settled(200, k, 18.0, 4000) && stalled.rans_trend_settled(200, k, 18.0, 1000));
     }
 }

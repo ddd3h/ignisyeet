@@ -297,9 +297,10 @@ impl Perturbation {
             ca: factor(self.ca_scale),
             cl: factor(self.cl_scale),
             clp: factor(self.clp_scale),
-            lag: factor(self.lag_scale),
-            magnus: factor(self.magnus_scale),
-            damp: factor(self.cmq_scale),
+            // On top of the base scales, so a quasi-steady base (lag, Magnus off) stays so.
+            lag: base.aero_scale.lag * factor(self.lag_scale),
+            magnus: base.aero_scale.magnus * factor(self.magnus_scale),
+            damp: base.aero_scale.damp * factor(self.cmq_scale),
             ..base.aero_scale
         };
         s.fin_cant_deg += self.fin_cant_deg;

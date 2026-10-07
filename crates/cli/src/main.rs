@@ -511,7 +511,7 @@ fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: Option<f64>) -> Vec
     }
     if let Some(r) = &s.roll_resonance {
         w.push(format!(
-            "roll resonance: the roll rate crosses the pitch natural frequency ({:.1} rad/s) at t = {:.2} s, Mach {:.2}{}; fin cant, a lateral CG offset or thrust misalignment can amplify the angle of attack there",
+            "roll resonance: the roll rate crosses the resonance rate of the pitch oscillation ({:.1} rad/s) at t = {:.2} s, Mach {:.2}{}; the lateral CG offset, thrust misalignment or asymmetric aero moment can amplify the angle of attack there",
             r.frequency,
             r.t,
             r.mach,
@@ -902,7 +902,7 @@ fn aero_options(cfg: &Config) -> Result<AeroOptions> {
 
 /// Version of the aerodynamic model and of the table layout. Bump it whenever a change of the code
 /// alters the coefficients computed from the same inputs, so that older cached tables are rebuilt.
-const MODEL_VERSION: u32 = 10;
+const MODEL_VERSION: u32 = 11;
 
 /// The part of the aero settings that determines the table: unused method blocks and the
 /// resource/path-only CFD fields do not change the coefficients and are left out.
@@ -1008,25 +1008,62 @@ fn run_hash(cfg: &Config, kind: RunKind) -> String {
 }
 
 /// Warning for an external table without the lag and Magnus columns.
-const NO_LAG_COLUMNS: &str = "table has no lag/Magnus columns: quasi-steady terms only";
+const NO_LAG_COLUMNS_FILLED: &str =
+    "the external aero table has no lag/Magnus columns: the apparent-mass (lag) sums were filled from the geometry (component build-up); Magnus force and induced roll are 0. If its damping sums hold a measured or CFD Cmq + Cmalphadot (which already contains these terms), write lag_l0 and lag_l1 columns of 0 so they are not counted twice";
+const NO_FIN_COUNT: &str = "the aero table has an induced roll cl4 but no fin_count in its sidecar: the sin(4 phi) form of four fins is assumed";
+const NO_LAG_COLUMNS_NO_GEOMETRY: &str =
+    "the external aero table has no lag/Magnus columns and the geometry is unavailable: the flight has no apparent-mass (lag) terms, Magnus force or induced roll";
 
-/// Warnings about the columns of an external table (`aero.method = "table"`): an older column set
-/// without the lag (apparent-mass), induced-roll and Magnus columns flies with the quasi-steady
-/// terms only.
-fn external_table_warnings(cfg: &Config, t: &AeroTable) -> Vec<String> {
-    if cfg.aero.method == config::AeroMethod::Table && !t.has_lag_columns() {
-        vec![NO_LAG_COLUMNS.to_string()]
-    } else {
-        Vec::new()
+/// External table (`aero.method = "table"`) in an older column set without the lag (apparent-mass),
+/// induced-roll and Magnus columns: fills the lag sums from the component build-up model of the
+/// STL geometry, as the roll terms. Returns the warning (none for a table with the columns or
+/// another method).
+fn fill_external_lag_terms(cfg: &Config, t: &mut AeroTable) -> Vec<String> {
+    if cfg.aero.method != config::AeroMethod::Table {
+        return Vec::new();
     }
+    let mut w = Vec::new();
+    if t.has_induced_roll() && t.meta.fin_count.is_none() {
+        w.push(NO_FIN_COUNT.to_string());
+    }
+    if t.has_lag_columns() {
+        return w;
+    }
+    w.push(match geometry(cfg).and_then(|g| fill_lag_terms(cfg, &g, t)) {
+        Ok(()) => NO_LAG_COLUMNS_FILLED.to_string(),
+        Err(_) => NO_LAG_COLUMNS_NO_GEOMETRY.to_string(),
+    });
+    w
 }
 
-/// Fills the lag (apparent-mass) sums of a panel or CFD table from the component build-up model of
-/// the geometry `g`, as their roll terms (neither method gives them).
+/// Fills the lag (apparent-mass) sums of a table from the component build-up model of the geometry
+/// `g` (body volume and fin wing-body sections), as the roll terms, and records the fin count (the
+/// induced roll `cl4` applies to four fins). Panel and CFD tables and external tables without the
+/// lag columns get them this way.
 fn fill_lag_terms(cfg: &Config, g: &Geometry, table: &mut AeroTable) -> Result<()> {
     let model = AeroModel::new(g.clone(), aero_options(cfg)?);
     table.set_lag_terms(|m| model.lag_sums(m));
+    if table.meta.fin_count.is_none() {
+        table.meta.fin_count = Some(g.fins.as_ref().map_or(0, |f| f.count));
+    }
     Ok(())
+}
+
+/// Monte Carlo sigmas that act on table columns the table does not have: `magnus_scale` without
+/// any Magnus slope (no built-in method estimates `cnpa`, `cmpa`).
+fn aero_sigma_warnings(cfg: &Config, t: &AeroTable) -> Vec<String> {
+    let mc = &cfg.dispersion.monte_carlo;
+    let mut w = Vec::new();
+    if mc.magnus_scale > 0.0 && !t.has_magnus_terms() {
+        w.push(format!(
+            "dispersion.monte_carlo.magnus_scale = {} has no effect: the aero table has no Magnus slopes (cnpa = cmpa = 0; no built-in method estimates them, supply them in an external table)",
+            mc.magnus_scale
+        ));
+    }
+    if mc.lag_scale > 0.0 && !t.has_lag_terms() {
+        w.push(format!("dispersion.monte_carlo.lag_scale = {} has no effect: the aero table has no lag sums (lag_l0 = lag_l1 = 0)", mc.lag_scale));
+    }
+    w
 }
 
 /// Load the cached table when its inputs are unchanged, otherwise rebuild and save it.
@@ -1056,7 +1093,7 @@ fn aero_table_for(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
             Err(e) => eprintln!("note: the external aero table has no roll terms and the geometry is unavailable ({e:#}); the rocket will not roll"),
         }
     }
-    print_warnings(&external_table_warnings(cfg, &t));
+    print_warnings(&fill_external_lag_terms(cfg, &mut t));
     if cfg.aero.table_kind == aero::table::TableKind::General && t.kind() == aero::table::TableKind::Axisymmetric {
         let start = std::time::Instant::now();
         let u = ui();
@@ -1473,7 +1510,7 @@ fn simulation<'a>(cfg: &Config, p: &'a Prepared) -> Result<Simulation<'a>> {
             rtol: cfg.sim.rtol,
             atol: cfg.sim.atol,
         },
-        aero_scale: sim::AeroScale::default(),
+        aero_scale: if cfg.sim.quasi_steady { sim::AeroScale::quasi_steady() } else { sim::AeroScale::default() },
         thrust_line: cfg.motor.thrust_line(),
         fin_cant_deg: r.cant_deg(),
     })
@@ -2290,6 +2327,7 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
         ));
     }
     warnings.extend(wind_scale_warning(cfg, "Monte Carlo sample", r.rows.iter().filter_map(|row| row.result.as_ref().ok())));
+    warnings.extend(aero_sigma_warnings(cfg, &p.table));
     warnings.extend(profile_top_warning(
         cfg,
         "Monte Carlo samples",
@@ -2543,7 +2581,7 @@ mod tests {
     }
 
     #[test]
-    fn external_table_without_lag_columns_warns_and_flies_quasi_steady() {
+    fn external_table_without_lag_columns_gets_the_geometric_lag_sums() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
         let tmp = std::env::temp_dir().join(format!("ignisyeet_cli_nolag_{}", std::process::id()));
         std::fs::create_dir_all(&tmp).unwrap();
@@ -2573,20 +2611,46 @@ mod tests {
             include_str!("../../../examples/sample.toml").replace("method = \"barrowman\"", &format!("method = \"table\"\ntable = \"{}\"", csv.display()));
         let cfg = Config::from_value(toml::from_str(&text).unwrap(), Some(&dir)).unwrap();
         // With the lag and Magnus columns: no warning, the tabulated lag sums are used.
-        let t = aero_table(&cfg, false).unwrap();
-        assert!(external_table_warnings(&cfg, &t).is_empty());
+        let mut t = aero_table(&cfg, false).unwrap();
+        assert!(fill_external_lag_terms(&cfg, &mut t).is_empty());
         assert_eq!(t.lookup(0.5, 0.0).lag_l0, 1.0);
-        // Version 2 (without the four columns): one warning, zero lag sums (not filled from Barrowman).
+        // Version 2 (without the lag, induced-roll and Magnus columns): the lag sums come from the
+        // geometry with one warning; Magnus and induced roll stay 0.
         let text = std::fs::read_to_string(&csv).unwrap();
         let cut: String = text.lines().map(|l| l.split(',').take(12).collect::<Vec<_>>().join(",") + "\n").collect();
         std::fs::write(&csv, cut).unwrap();
         let t = aero_table(&cfg, false).unwrap();
-        assert_eq!(external_table_warnings(&cfg, &t), vec!["table has no lag/Magnus columns: quasi-steady terms only".to_string()]);
-        let c = t.lookup(0.5, 0.0);
-        assert_eq!((c.lag_l0, c.lag_l1, c.cl4, c.cnpa), (0.0, 0.0, 0.0, 0.0));
-        // The Barrowman table is not external: no warning.
+        // On a Mach node of the table (the fin part follows the fin normal-force slope).
+        let (l0, l1) = AeroModel::new(geometry(&cfg).unwrap(), aero_options(&cfg).unwrap()).lag_sums(1.0);
+        let c = t.lookup(1.0, 0.0);
+        assert!(l0 > 0.0 && (c.lag_l0 - l0).abs() < 1e-12 && (c.lag_l1 - l1).abs() < 1e-12, "{c:?}");
+        assert_eq!((c.cl4, c.cnpa, c.cmpa), (0.0, 0.0, 0.0));
+        let mut fresh = AeroTable::load(&csv).unwrap();
+        assert_eq!(fill_external_lag_terms(&cfg, &mut fresh), vec![NO_LAG_COLUMNS_FILLED.to_string()]);
+        assert!(NO_LAG_COLUMNS_FILLED.contains("filled from the geometry"));
+        // Without a readable STL the lag sums stay 0, with the other warning.
+        let mut nogeo = cfg.clone();
+        nogeo.rocket.stl = tmp.join("missing.stl");
+        let mut fresh = AeroTable::load(&csv).unwrap();
+        assert_eq!(fill_external_lag_terms(&nogeo, &mut fresh), vec![NO_LAG_COLUMNS_NO_GEOMETRY.to_string()]);
+        assert_eq!(fresh.lookup(0.5, 0.0).lag_l0, 0.0);
+        // The Barrowman table is not external: nothing to fill.
         let barrowman = Config::from_value(toml::from_str(include_str!("../../../examples/sample.toml")).unwrap(), Some(&dir)).unwrap();
-        assert!(external_table_warnings(&barrowman, &t).is_empty());
+        let mut b = AeroTable::load(&csv).unwrap();
+        assert!(fill_external_lag_terms(&barrowman, &mut b).is_empty());
+        assert!(NO_LAG_COLUMNS_FILLED.contains("write lag_l0 and lag_l1 columns of 0"));
+        // A current table with explicit zero lag columns (a measured damping) keeps them at zero.
+        let meta = AeroTable::load(&csv).unwrap().meta;
+        AeroTable::from_fn(meta, |_, a| aero::AeroCoeffs { cn: a, ca_off: 0.5, xcp: 0.6, cl_delta: 1.0, clp: -5.0, ..Default::default() }).save(&csv).unwrap();
+        let mut z = aero_table(&cfg, false).unwrap();
+        assert!(fill_external_lag_terms(&cfg, &mut z).is_empty());
+        assert_eq!((z.lookup(1.0, 0.0).lag_l0, z.lookup(1.0, 0.0).lag_l1), (0.0, 0.0));
+        // An induced roll without a recorded fin count: four fins are assumed, with a warning.
+        let meta = AeroTable::load(&csv).unwrap().meta;
+        assert_eq!(meta.fin_count, None);
+        AeroTable::from_fn(meta, |_, a| aero::AeroCoeffs { cn: a, ca_off: 0.5, xcp: 0.6, cl4: 0.2, ..Default::default() }).save(&csv).unwrap();
+        let mut c4 = AeroTable::load(&csv).unwrap();
+        assert_eq!(fill_external_lag_terms(&cfg, &mut c4), vec![NO_FIN_COUNT.to_string()]);
         let _ = std::fs::remove_dir_all(&tmp);
     }
 
@@ -2599,8 +2663,8 @@ mod tests {
         let mut t = AeroTable::from_fn(meta, |_, a| aero::AeroCoeffs { cn: a, xcp: 0.6, ..Default::default() });
         assert!(!t.has_lag_terms());
         fill_lag_terms(&cfg, &g, &mut t).unwrap();
-        let (l0, l1) = AeroModel::new(g, aero_options(&cfg).unwrap()).lag_sums(1.0);
-        let c = t.lookup(1.0, 0.05);
+        let (l0, l1) = AeroModel::new(g, aero_options(&cfg).unwrap()).lag_sums(2.0);
+        let c = t.lookup(2.0, 0.05);
         assert!(l0 > 0.0 && (c.lag_l0 - l0).abs() < 1e-12 && (c.lag_l1 - l1).abs() < 1e-12);
         let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
@@ -2969,7 +3033,7 @@ mod tests {
         let resonant = sim::Summary { roll_resonance: Some(sim::RollResonance { t: 0.65, mach: 0.155, frequency: 18.0, crossings: 2 }), ..ok.clone() };
         assert_eq!(
             flight_warnings(&cfg, &resonant),
-            ["roll resonance: the roll rate crosses the pitch natural frequency (18.0 rad/s) at t = 0.65 s, Mach 0.15 (2 crossings); fin cant, a lateral CG offset or thrust misalignment can amplify the angle of attack there"]
+            ["roll resonance: the roll rate crosses the resonance rate of the pitch oscillation (18.0 rad/s) at t = 0.65 s, Mach 0.15 (2 crossings); the lateral CG offset, thrust misalignment or asymmetric aero moment can amplify the angle of attack there"]
         );
         let marginal = sim::Summary { min_stability_cal: 1.2, ..ok.clone() };
         assert!(flight_warnings(&cfg, &marginal).iter().any(|w| w.contains("1.20 cal") && w.contains("marginal")));
@@ -3719,8 +3783,21 @@ mod tests {
         let p = prepare(&cfg).unwrap();
         let (r, _) = fly_sample(&cfg, &p, Descent::Parachute);
         let s = &r.summary;
-        assert!((s.apogee - 4439.95).abs() < 0.05 && (s.apogee_time - 26.10).abs() < 0.005, "{} at {}", s.apogee, s.apogee_time);
-        assert!((s.landing_east + 655.3).abs() < 0.05 && (s.landing_north + 7702.05).abs() < 0.05, "{} {}", s.landing_east, s.landing_north);
+        assert!((s.apogee - 4440.48).abs() < 0.05 && (s.apogee_time - 26.10).abs() < 0.005, "{} at {}", s.apogee, s.apogee_time);
+        assert!((s.landing_east + 655.57).abs() < 0.05 && (s.landing_north + 7707.70).abs() < 0.05, "{} {}", s.landing_east, s.landing_north);
+        let _ = std::fs::remove_dir_all(&cfg.output.dir);
+    }
+
+    #[test]
+    fn quasi_steady_switch_flies_without_the_rate_and_acceleration_terms() {
+        let mut cfg = sample_config("quasi");
+        cfg.sim.quasi_steady = true;
+        let p = prepare(&cfg).unwrap();
+        let sim = simulation(&cfg, &p).unwrap();
+        assert_eq!(sim.aero_scale, sim::AeroScale::quasi_steady());
+        let s = sim.run(Descent::Parachute, false).unwrap().summary;
+        // The flight of the quasi-steady model (static coefficients, damping moment, roll terms).
+        assert!((s.apogee - 4440.71).abs() < 0.05 && (s.landing_east + 654.73).abs() < 0.05 && (s.landing_north + 7708.12).abs() < 0.05, "{s:?}");
         let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 
@@ -3731,7 +3808,7 @@ mod tests {
         let p = prepare(&cfg).unwrap();
         assert_eq!(p.table.kind(), aero::table::TableKind::General);
         let (r, _) = fly_sample(&cfg, &p, Descent::Parachute);
-        assert!((r.summary.apogee - 4439.95).abs() < 0.5, "apogee {}", r.summary.apogee);
+        assert!((r.summary.apogee - 4440.48).abs() < 0.5, "apogee {}", r.summary.apogee);
         let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 

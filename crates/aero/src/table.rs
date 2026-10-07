@@ -2,20 +2,21 @@
 // Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Pre-computed aerodynamic coefficient tables with CSV/JSON persistence.
 //!
-//! Two kinds share one file format (version 3, recorded in the JSON sidecar):
+//! Two kinds share one file format (version 4, recorded in the JSON sidecar):
 //!
 //! * **Axisymmetric**: (Mach, total angle of attack) grid with the normal force, axial force,
 //!   centre of pressure and CG-independent damping sums of a body of revolution, the roll
 //!   forcing per radian of fin cant and the roll-damping derivative, the lag (apparent-mass)
-//!   sums `lag_l0`, `lag_l1`, the induced-roll coefficient `cl4` and the Magnus slope `cnpa`.
-//!   Bilinear interpolation.
+//!   sums `lag_l0`, `lag_l1`, the induced-roll coefficient `cl4`, the Magnus force slope `cnpa`
+//!   and the Magnus moment slope `cmpa`. Bilinear interpolation.
 //! * **General**: (Mach, alpha, beta) grid with the six body-axis coefficients
 //!   CX, CY, CZ, Cl, Cm, Cn (moments about the nose tip, normalised by q S d), the roll terms,
-//!   separate pitch and yaw damping sums, the lag sums and the Magnus slope. Trilinear interpolation.
+//!   separate pitch and yaw damping sums, the lag sums and the Magnus slopes. Trilinear interpolation.
 //!
 //! Older column sets load with the missing columns zero: axisymmetric files with 8 value columns
-//! (version 1, no version in the sidecar) or 10 (version 2, with the roll terms), general files
-//! with 15 value columns (without the lag and Magnus columns).
+//! (version 1, no version in the sidecar), 10 (version 2, with the roll terms) or 14 (version 3,
+//! with the lag columns, `cl4` and `cnpa`), general files with 15 value columns (without the lag
+//! and Magnus columns) or 18 (without `cmpa`).
 
 use crate::model::{axial_alpha_factor, AeroModel};
 use anyhow::{bail, Context, Result};
@@ -74,7 +75,7 @@ pub enum Extrapolation {
 }
 
 /// Current table file format.
-pub const FORMAT_VERSION: u32 = 3;
+pub const FORMAT_VERSION: u32 = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -124,6 +125,11 @@ pub struct TableMeta {
     /// angle of the crossflow from this fin).
     #[serde(default)]
     pub fin_roll_deg: f64,
+    /// Number of fins of the rocket the table describes (None: not recorded). The induced roll
+    /// `cl4 alpha^2 sin(4 phi_w)` is the form of a cruciform (4-fin) set and is applied only when
+    /// this is 4 or not recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fin_count: Option<usize>,
 }
 
 fn validate_axis(name: &str, axis: &[f64]) -> Result<()> {
@@ -196,6 +202,7 @@ impl Default for TableMeta {
             moment_ref: nose_tip(),
             extrapolation: Extrapolation::Linear,
             fin_roll_deg: 0.0,
+            fin_count: None,
         }
     }
 }
@@ -229,8 +236,14 @@ pub struct AeroCoeffs {
     /// `u_b x e_x` (McCoy's `V x x`, `u_b` the velocity of the body relative to the air in body
     /// axes): for `p > 0` and a crossflow along +z_b the force points along +y_b, 90 deg from the
     /// static normal force. The flight model applies it at the centre of pressure of the static
-    /// normal force (an assumption: the table has no separate Magnus moment `C_mpa`).
+    /// normal force; `cmpa` adds a Magnus moment about that point.
     pub cnpa: f64,
+    /// Magnus moment slope [1/rad] about the centre of pressure of the static normal force:
+    /// `dM = q S d cmpa p_hat sin(alpha) e_perp`, `e_perp` the unit lateral airspeed (0, u_y, u_z)/|.|
+    /// of the body (McCoy's C_Mpa direction `v - (v.x) x`, `cmpa = 2 C_Mpa` for his `p d / V`). With
+    /// the force at the static centre of pressure, McCoy's moment about the CG is
+    /// `C_Mpa* = cnpa (x_cg - x_cp) / d + cmpa`. 0: the Magnus force alone.
+    pub cmpa: f64,
 }
 
 /// Six body-axis coefficients and the rate-damping terms at one flight condition.
@@ -259,12 +272,17 @@ pub struct Coeffs6 {
     pub lag_l1: f64,
     /// Magnus force slope, as [`AeroCoeffs::cnpa`].
     pub cnpa: f64,
+    /// Magnus moment slope about the effective centre of pressure, as [`AeroCoeffs::cmpa`].
+    pub cmpa: f64,
 }
 
 impl Coeffs6 {
     fn to_arr(self) -> [f64; N_GEN] {
         let c = self;
-        [c.cx_on, c.cx_off, c.cy, c.cz, c.cl, c.cm, c.cn, c.cl_delta, c.clp, c.sq[0], c.sq[1], c.sq[2], c.sr[0], c.sr[1], c.sr[2], c.lag_l0, c.lag_l1, c.cnpa]
+        [
+            c.cx_on, c.cx_off, c.cy, c.cz, c.cl, c.cm, c.cn, c.cl_delta, c.clp, c.sq[0], c.sq[1], c.sq[2], c.sr[0], c.sr[1], c.sr[2], c.lag_l0, c.lag_l1,
+            c.cnpa, c.cmpa,
+        ]
     }
     fn from_arr(a: [f64; N_GEN]) -> Self {
         Self {
@@ -282,20 +300,23 @@ impl Coeffs6 {
             lag_l0: a[15],
             lag_l1: a[16],
             cnpa: a[17],
+            cmpa: a[18],
         }
     }
 }
 
-const N_FIELDS: usize = 14;
-/// Value columns of the older axisymmetric column sets (version 2 without the lag and Magnus
-/// columns, version 1 also without the roll columns).
+const N_FIELDS: usize = 15;
+/// Value columns of the older axisymmetric column sets (version 3 without `cmpa`, version 2 also
+/// without the lag and Magnus columns, version 1 also without the roll columns).
+const N_FIELDS_V3: usize = 14;
 const N_FIELDS_V2: usize = 10;
 const N_FIELDS_V1: usize = 8;
-const N_GEN: usize = 18;
-/// Value columns of a general table without the lag and Magnus columns.
+const N_GEN: usize = 19;
+/// Value columns of the older general column sets (without `cmpa`; also without the lag and Magnus columns).
+const N_GEN_V2: usize = 18;
 const N_GEN_V1: usize = 15;
-const HEADER: &str = "mach,alpha_deg,cn,ca_on,ca_off,xcp,cna,damp_s0,damp_s1,damp_s2,cl_delta,clp,lag_l0,lag_l1,cl4,cnpa";
-const HEADER_GEN: &str = "mach,alpha_deg,beta_deg,cx_on,cx_off,cy,cz,cl,cm,cn,cl_delta,clp,sq0,sq1,sq2,sr0,sr1,sr2,lag_l0,lag_l1,cnpa";
+const HEADER: &str = "mach,alpha_deg,cn,ca_on,ca_off,xcp,cna,damp_s0,damp_s1,damp_s2,cl_delta,clp,lag_l0,lag_l1,cl4,cnpa,cmpa";
+const HEADER_GEN: &str = "mach,alpha_deg,beta_deg,cx_on,cx_off,cy,cz,cl,cm,cn,cl_delta,clp,sq0,sq1,sq2,sr0,sr1,sr2,lag_l0,lag_l1,cnpa,cmpa";
 
 #[derive(Debug, Clone)]
 enum TableData {
@@ -361,6 +382,7 @@ pub fn expand_axisymmetric(c: &AeroCoeffs, alpha: f64, beta: f64, ref_diameter: 
         lag_l0: c.lag_l0,
         lag_l1: c.lag_l1,
         cnpa: c.cnpa,
+        cmpa: c.cmpa,
     }
 }
 
@@ -418,7 +440,7 @@ impl AeroTable {
                 let (cn, xcp) = if a == 0.0 { (0.0, model.xcp0(m)) } else { model.normal(m, ar) };
                 let k = axial_alpha_factor(ar);
                 // The component build-up gives no induced roll or Magnus force (zero columns).
-                data.push([cn, cd_on * k, cd_off * k, xcp, cna, s[0], s[1], s[2], roll.0, roll.1, lag.0, lag.1, 0.0, 0.0]);
+                data.push([cn, cd_on * k, cd_off * k, xcp, cna, s[0], s[1], s[2], roll.0, roll.1, lag.0, lag.1, 0.0, 0.0, 0.0]);
             }
             progress(row + 1, machs.len());
         }
@@ -432,6 +454,7 @@ impl AeroTable {
             alphas_deg,
             fin_cant_ref_deg: g.fins.as_ref().map_or(0.0, |f| f.cant_deg),
             extrapolation,
+            fin_count: Some(g.fins.as_ref().map_or(0, |f| f.count)),
             ..Default::default()
         };
         Self { meta, data: TableData::Axisymmetric(data), counters: Default::default(), lag_columns: true }
@@ -443,7 +466,9 @@ impl AeroTable {
         for &m in &meta.machs {
             for &a in &meta.alphas_deg {
                 let c = f(m, a);
-                data.push([c.cn, c.ca_on, c.ca_off, c.xcp, c.cna, c.damp[0], c.damp[1], c.damp[2], c.cl_delta, c.clp, c.lag_l0, c.lag_l1, c.cl4, c.cnpa]);
+                data.push([
+                    c.cn, c.ca_on, c.ca_off, c.xcp, c.cna, c.damp[0], c.damp[1], c.damp[2], c.cl_delta, c.clp, c.lag_l0, c.lag_l1, c.cl4, c.cnpa, c.cmpa,
+                ]);
             }
         }
         let meta = TableMeta { kind: TableKind::Axisymmetric, format_version: FORMAT_VERSION, ..meta };
@@ -481,7 +506,7 @@ impl AeroTable {
             let [u, v, w] = airspeed_direction(ar, br);
             let total = v.hypot(w).atan2(u);
             let eff = total.min(std::f64::consts::PI - total);
-            expand_axisymmetric(&self.lookup(m, eff), ar, br, d, cant, roll)
+            expand_axisymmetric(&self.cl4_for_fins(self.lookup(m, eff)), ar, br, d, cant, roll)
         });
         g.lag_columns = self.lag_columns;
         g
@@ -563,11 +588,16 @@ impl AeroTable {
         let header: Vec<&str> = text.lines().next().unwrap_or("").split(',').map(str::trim).collect();
         let nc = if meta.kind == TableKind::General { 3 } else { 2 };
         // Values are read by position, so the header must name the columns in the expected order
-        // (older column sets end early: an axisymmetric table without the lag and Magnus columns
-        // and possibly the roll columns, a general table without the lag and Magnus columns).
+        // (older column sets end early: an axisymmetric table without `cmpa`, possibly also without
+        // the lag and Magnus columns and the roll columns, a general table without `cmpa` and
+        // possibly the lag and Magnus columns).
         let expected_header = if meta.kind == TableKind::General { HEADER_GEN } else { HEADER };
         let expected: Vec<&str> = expected_header.split(',').collect();
-        let widths: &[usize] = if meta.kind == TableKind::General { &[N_GEN + 3, N_GEN_V1 + 3] } else { &[N_FIELDS + 2, N_FIELDS_V2 + 2, N_FIELDS_V1 + 2] };
+        let widths: &[usize] = if meta.kind == TableKind::General {
+            &[N_GEN + 3, N_GEN_V2 + 3, N_GEN_V1 + 3]
+        } else {
+            &[N_FIELDS + 2, N_FIELDS_V3 + 2, N_FIELDS_V2 + 2, N_FIELDS_V1 + 2]
+        };
         let ok = widths.contains(&header.len());
         if !ok || !header.iter().zip(&expected).all(|(h, e)| h.eq_ignore_ascii_case(e)) {
             bail!("aero table {}: unexpected CSV header `{}`; expected `{expected_header}`", csv_path.display(), header.join(","));
@@ -650,13 +680,13 @@ impl AeroTable {
             bail!("aero table {} has {found} rows but its metadata declares {n_expected} grid points", csv_path.display());
         }
         meta.format_version = FORMAT_VERSION;
-        let lag_columns = header.len() == widths[0];
+        // The lag columns are there from version 3 (axisymmetric) / the 18-column general set on.
+        let lag_columns = header.len() >= widths[1];
         Ok(Self { meta, data, counters: Default::default(), lag_columns })
     }
 
     /// False for a table loaded from a file without the lag and Magnus columns (an older column
-    /// set); such a table flies with the quasi-steady terms only unless [`set_lag_terms`](Self::set_lag_terms)
-    /// fills the lag sums.
+    /// set); its lag sums are zero unless [`set_lag_terms`](Self::set_lag_terms) fills them.
     pub fn has_lag_columns(&self) -> bool {
         self.lag_columns
     }
@@ -678,6 +708,31 @@ impl AeroTable {
         match &mut self.data {
             TableData::Axisymmetric(data) => data.iter_mut().enumerate().for_each(|(i, r)| fill(i, r)),
             TableData::General(data) => data.iter_mut().enumerate().for_each(|(i, r)| fill(i, r)),
+        }
+    }
+
+    /// `c` with the induced roll `cl4` dropped unless the table is for a cruciform (4-fin) set or its
+    /// fin count is not recorded: `sin(4 phi_w)` is the form of four fins.
+    fn cl4_for_fins(&self, mut c: AeroCoeffs) -> AeroCoeffs {
+        if self.meta.fin_count.unwrap_or(4) != 4 {
+            c.cl4 = 0.0;
+        }
+        c
+    }
+
+    /// True when any induced-roll coefficient `cl4` of an axisymmetric table is nonzero.
+    pub fn has_induced_roll(&self) -> bool {
+        match &self.data {
+            TableData::Axisymmetric(d) => d.iter().any(|r| r[12] != 0.0),
+            TableData::General(_) => false,
+        }
+    }
+
+    /// True when any Magnus slope (`cnpa` or `cmpa`) of the table is nonzero.
+    pub fn has_magnus_terms(&self) -> bool {
+        match &self.data {
+            TableData::Axisymmetric(d) => d.iter().any(|r| r[13] != 0.0 || r[14] != 0.0),
+            TableData::General(d) => d.iter().any(|r| r[17] != 0.0 || r[18] != 0.0),
         }
     }
 
@@ -826,8 +881,8 @@ impl AeroTable {
         if extrapolated {
             let edge = interp(ta.clamp(0.0, 1.0));
             // cn, the nose moment, ca_on, ca_off, cna, the damping sums, cl_delta, the lag sums,
-            // cl4, cnpa and the moment slope keep the sign of the edge value.
-            for k in [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, N_FIELDS] {
+            // cl4, cnpa, cmpa and the moment slope keep the sign of the edge value.
+            for k in [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, N_FIELDS] {
                 out[k] = keep_sign(out[k], edge[k]);
             }
             for k in [4, 5, 6, 7] {
@@ -859,6 +914,7 @@ impl AeroTable {
             lag_l1: out[11],
             cl4: out[12],
             cnpa: out[13],
+            cmpa: out[14],
         }
     }
 
@@ -882,7 +938,7 @@ impl AeroTable {
                 let total = v.hypot(w).atan2(u);
                 let eff = total.min(std::f64::consts::PI - total);
                 return expand_axisymmetric(
-                    &self.lookup_rec(m, eff, rec),
+                    &self.cl4_for_fins(self.lookup_rec(m, eff, rec)),
                     alpha,
                     beta,
                     self.meta.ref_diameter,
@@ -925,10 +981,10 @@ impl AeroTable {
         let mut out = interp(ta, tb);
         if extrapolated {
             // Axial, side and normal force, the moments, the roll forcing (the tabulated `cl` at the
-            // reference cant and `cl_delta`), the damping sums, the lag sums and the Magnus slope
+            // reference cant and `cl_delta`), the damping sums, the lag sums and the Magnus slopes
             // keep the sign of the edge value.
             let edge = interp(ta.clamp(0.0, 1.0), tb.clamp(0.0, 1.0));
-            for f in [0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17] {
+            for f in [0, 1, 2, 3, 4, 5, 6, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18] {
                 out[f] = keep_sign(out[f], edge[f]);
             }
             for f in [9, 10, 11, 12, 13, 14] {
@@ -1323,15 +1379,21 @@ mod tests {
         let (l0, l1) = model.lag_sums(0.5);
         let c = t.lookup(0.5, 0.03);
         assert!(l0 > 0.0 && (c.lag_l0 - l0).abs() < 1e-12 && (c.lag_l1 - l1).abs() < 1e-12);
-        assert_eq!((c.cl4, c.cnpa), (0.0, 0.0));
-        assert!(t.has_lag_terms() && t.has_lag_columns());
-        // Version 3 round trip with induced roll and Magnus columns.
+        assert_eq!((c.cl4, c.cnpa, c.cmpa), (0.0, 0.0, 0.0));
+        assert!(t.has_lag_terms() && t.has_lag_columns() && !t.has_magnus_terms());
+        assert_eq!(t.meta.fin_count, Some(4));
+        // Version 4 round trip with induced roll and Magnus columns.
         let meta = t.meta.clone();
-        let full = AeroTable::from_fn(meta, |m, a| AeroCoeffs { cl4: 0.01 * (1.0 + a), cnpa: -0.5 - m, ..t.lookup(m, a.to_radians()) });
-        let u = load_truncated(&full, "v3", N_FIELDS);
+        let full = AeroTable::from_fn(meta, |m, a| AeroCoeffs { cl4: 0.01 * (1.0 + a), cnpa: -0.5 - m, cmpa: 0.2 + m, ..t.lookup(m, a.to_radians()) });
+        assert!(full.has_magnus_terms());
+        let u = load_truncated(&full, "v4", N_FIELDS);
         let (a, b) = (full.lookup(0.73, 0.05), u.lookup(0.73, 0.05));
-        assert!((a.cl4 - b.cl4).abs() < 1e-12 && (a.cnpa - b.cnpa).abs() < 1e-12 && (a.lag_l1 - b.lag_l1).abs() < 1e-12);
-        assert!(u.has_lag_columns());
+        assert!((a.cl4 - b.cl4).abs() < 1e-12 && (a.cnpa - b.cnpa).abs() < 1e-12 && (a.cmpa - b.cmpa).abs() < 1e-12 && (a.lag_l1 - b.lag_l1).abs() < 1e-12);
+        assert!(u.has_lag_columns() && u.meta.fin_count == Some(4));
+        // Version 3 (14 value columns): no Magnus moment column.
+        let u = load_truncated(&full, "v3", N_FIELDS_V3);
+        let c = u.lookup(0.73, 0.05);
+        assert!(u.has_lag_columns() && c.cmpa == 0.0 && (c.cnpa - a.cnpa).abs() < 1e-12);
         // Version 2 (10 value columns) and version 1 (8): the missing columns are zero.
         for (n, roll) in [(N_FIELDS_V2, true), (N_FIELDS_V1, false)] {
             let u = load_truncated(&full, &format!("v{n}"), n);
@@ -1351,12 +1413,30 @@ mod tests {
         v.set_lag_terms(|m| (1.0 + m, 2.0 * m));
         let c = v.lookup6(0.5, 0.04, -0.02);
         assert!((c.lag_l0 - 1.5).abs() < 1e-12 && (c.lag_l1 - 1.0).abs() < 1e-12);
-        let w = load_truncated(&g, "gen18", N_GEN);
-        assert!(w.has_lag_columns() && (w.lookup6(0.5, 0.04, -0.02).cnpa - c6.cnpa).abs() < 1e-12);
+        let w = load_truncated(&g, "gen18", N_GEN_V2);
+        assert!(w.has_lag_columns() && (w.lookup6(0.5, 0.04, -0.02).cnpa - c6.cnpa).abs() < 1e-12 && w.lookup6(0.5, 0.04, -0.02).cmpa == 0.0);
+        let w = load_truncated(&g, "gen19", N_GEN);
+        assert!(w.has_lag_columns() && (w.lookup6(0.5, 0.04, -0.02).cmpa - c6.cmpa).abs() < 1e-12 && c6.cmpa > 0.0);
         // set_lag_terms on an axisymmetric table.
         t.set_lag_terms(|_| (0.25, 0.5));
         let c = t.lookup(1.1, 0.2);
         assert_eq!((c.lag_l0, c.lag_l1), (0.25, 0.5));
+    }
+
+    #[test]
+    fn induced_roll_applies_to_four_fins_only() {
+        let meta = TableMeta { ref_area: 0.01, ref_diameter: 0.1, length: 1.0, machs: vec![0.0, 1.0], alphas_deg: vec![0.0, 30.0], ..Default::default() };
+        let mk = |n: Option<usize>| {
+            let mut t = AeroTable::from_fn(meta.clone(), |_, a| AeroCoeffs { cn: a.to_radians(), cna: 1.0, xcp: 0.5, cl4: 0.3, ..Default::default() });
+            t.meta.fin_count = n;
+            t
+        };
+        let (al, be) = (0.1, 0.05);
+        assert!(mk(Some(4)).lookup6(0.5, al, be).cl != 0.0);
+        assert!(mk(None).lookup6(0.5, al, be).cl != 0.0);
+        assert_eq!(mk(Some(3)).lookup6(0.5, al, be).cl, 0.0);
+        let g = mk(Some(3)).to_general(vec![-10.0, 0.0, 10.0], vec![-10.0, 0.0, 10.0]);
+        assert_eq!(g.lookup6(0.5, al, be).cl, 0.0);
     }
 
     #[test]

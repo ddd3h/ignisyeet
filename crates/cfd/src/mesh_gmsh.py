@@ -150,26 +150,18 @@ occ.synchronize()
 
 
 # ---- prismatic boundary layer (RANS) ----------------------------------------------------------------
-def bl_normals(src, passes):
-    """Node normals of the meshed wall surfaces `src`, pointing into the fluid, as a list view of triangles (each
-    triangle carries the normals of its three nodes; gmsh reads the extrusion direction from it). The triangle
-    orientation is made consistent across shared edges and outward (signed volume closed by y = 0); the normals are
-    angle-weighted node averages, tangent to y = 0 on the nodes of that plane, smoothed `passes` times."""
+def wall_normals(tri, xyz, passes, corner=0.0, corner_passes=0):
+    """Orients the wall triangles `tri` (indices into `xyz`) consistently and outward (into the fluid; the signed
+    volume is closed by y = 0) and returns (tri, node normals, concave edges). The normals point to the most visible
+    direction of the incident triangles (mirrored copies on y = 0, where they lie in the plane) and are smoothed
+    `passes` times where that keeps them visible, and `corner_passes` more times within `corner` of a concave edge
+    (they fan out of the corner like a fillet). Concave edges: interior edges whose two triangles meet at a concave
+    dihedral angle of more than 30 degrees (the fin-body junction)."""
     import collections
 
     import numpy as np
 
-    tags, coord, _ = gmsh.model.mesh.getNodes()
-    idx = np.zeros(int(tags.max()) + 1, np.int64)
-    idx[tags] = np.arange(len(tags))
-    xyz = coord.reshape(-1, 3)
-    tris = []
-    for t in src:
-        for e, n in zip(*gmsh.model.mesh.getElements(2, t)[::2]):
-            if e != 2:
-                raise SystemExit("mesh error: the wall surface mesh has non-triangular elements")
-            tris.append(idx[np.asarray(n, np.int64)].reshape(-1, 3))
-    tri = np.vstack(tris)
+    tri = tri.copy()
     nt, nn = len(tri), len(xyz)
     a = np.concatenate([tri[:, 0], tri[:, 1], tri[:, 2]])
     b = np.concatenate([tri[:, 1], tri[:, 2], tri[:, 0]])
@@ -184,8 +176,9 @@ def bl_normals(src, passes):
     pairs = starts[counts == 2]
     fwd = a < b
     same = fwd[order[pairs]] == fwd[order[pairs + 1]]
+    t1, t2 = owner[order[pairs]], owner[order[pairs + 1]]
     adj = [[] for _ in range(nt)]
-    for u, v, s in zip(owner[order[pairs]].tolist(), owner[order[pairs + 1]].tolist(), same.tolist()):
+    for u, v, s in zip(t1.tolist(), t2.tolist(), same.tolist()):
         adj[u].append((v, s))
         adj[v].append((u, s))
     flip = np.full(nt, -1, np.int64)
@@ -212,7 +205,9 @@ def bl_normals(src, passes):
     p0, p1, p2 = xyz[tri[:, 0]], xyz[tri[:, 1]], xyz[tri[:, 2]]
     cr = np.cross(p1 - p0, p2 - p0)
     vol = np.bincount(comp, weights=cr[:, 1] * (p0[:, 1] + p1[:, 1] + p2[:, 1]), minlength=ncomp)
-    cr *= np.where(vol[comp] < 0.0, -1.0, 1.0)[:, None]
+    inward = vol[comp] < 0.0
+    tri[inward] = tri[inward][:, [0, 2, 1]]
+    cr[inward] *= -1.0
     fn = cr / np.linalg.norm(cr, axis=1)[:, None]
     nrm = np.zeros_like(xyz)
     for k in range(3):
@@ -222,7 +217,7 @@ def bl_normals(src, passes):
         np.add.at(nrm, tri[:, k], fn * np.arccos(np.clip(c, -1.0, 1.0))[:, None])
     used = np.zeros(nn, bool)
     used[tri.ravel()] = True
-    plane = used & (np.abs(xyz[:, 1]) < 1e-9 * L) & half
+    plane = used & (np.abs(xyz[:, 1]) < 1e-9 * L)
     ue = np.unique(key)
     ea, eb = ue // nn, ue % nn
 
@@ -231,8 +226,6 @@ def bl_normals(src, passes):
         m[used] /= np.linalg.norm(m[used], axis=1)[:, None]
         return m
 
-    # Incident triangle normals per node (padded with the first one; mirrored copies on y = 0, where the normal must
-    # see the mirror image of the wall too).
     inc_n, inc_f = tri.ravel(), np.repeat(np.arange(nt), 3)
     o = np.argsort(inc_n, kind="stable")
     inc_n, inc_f = inc_n[o], inc_f[o]
@@ -252,8 +245,6 @@ def bl_normals(src, passes):
         """Smallest cosine between the node normal and its incident triangle normals."""
         return np.einsum("ijk,ik->ij", fan, m[nodes]).min(axis=1)
 
-    # Most visible direction (axis of the smallest cap of the incident normals, Badoiu-Clarkson iteration) starting
-    # from the angle-weighted mean: the layers do not collapse on any incident triangle.
     nrm = fix(nrm)
     c = nrm[nodes].copy()
     rows = np.arange(len(nodes))
@@ -270,24 +261,58 @@ def bl_normals(src, passes):
         cand = fix(acc)
         ok = vis(cand) >= np.minimum(vis(nrm), 0.5)
         nrm[nodes[ok]] = cand[nodes[ok]]
+    # Concave edges: the other triangle lies in front of this one.
+    cen = (p0 + p1 + p2) / 3.0
+    front = np.einsum("ij,ij->i", cen[t2] - cen[t1], fn[t1]) > 0.0
+    sharp = np.einsum("ij,ij->i", fn[t1], fn[t2]) < math.cos(math.radians(30.0))
+    ce = pairs[front & sharp]
+    concave = np.stack([a[order[ce]], b[order[ce]]], axis=1) if len(ce) else np.zeros((0, 2), np.int64)
+    if len(concave) and corner_passes:
+        dist = distance_to_edges(xyz[nodes], xyz, concave)
+        near = nodes[dist < corner]
+        for _ in range(corner_passes):
+            acc = nrm.copy()
+            np.add.at(acc, ea, nrm[eb])
+            np.add.at(acc, eb, nrm[ea])
+            cand = fix(acc)
+            ok = np.zeros(nn, bool)
+            ok[nodes] = vis(cand) >= np.minimum(vis(nrm), 0.5)
+            sel = near[ok[near]]
+            nrm[sel] = cand[sel]
     v1 = vis(nrm)
-    print("boundary layer normals: smallest cosine to an incident triangle %.3f (before smoothing %.3f), %d nodes below 0.3" % (v1.min(), v0.min(), int((v1 < 0.3).sum())))
-    # gmsh looks the normal up by position. A list of triangles is ambiguous where two walls face each other within the
-    # bounding box of a triangle (the two sides of a rolled fin): the point is projected onto the plane of the other
-    # side. A thin shell of tetrahedra on the outside of each triangle (3 per triangle, height 0.02 wall_size, well
-    # below the distance of the nearest other wall node) contains each wall node only within its own fan. (Much
-    # thinner shells make the point location fail on some nodes: zero normal, degenerate prisms.)
-    eps = 0.02 * h0
-    v6 = np.concatenate([xyz[tri], xyz[tri] + eps * nrm[tri]], axis=1)  # (nt, 6, 3): a b c a' b' c'
-    n6 = np.concatenate([nrm[tri], nrm[tri]], axis=1)
-    tets = [[0, 1, 2, 3], [1, 2, 3, 4], [2, 3, 4, 5]]
-    xs = np.concatenate([v6[:, t] for t in tets])  # (3 nt, 4, 3)
-    ns = np.concatenate([n6[:, t] for t in tets])
-    view = gmsh.view.add("bl_normals")
-    data = np.concatenate([xs.transpose(0, 2, 1).reshape(-1, 12), ns.reshape(-1, 12)], axis=1)
-    gmsh.view.addListData(view, "VS", len(xs), data.ravel().tolist())
-    print("boundary layer normals: %d triangles, %d surface components, %d nodes on y = 0 (max |y| %.3g)" % (nt, ncomp, int(plane.sum()), float(np.abs(xyz[plane, 1]).max(initial=0.0))))
-    return view
+    print("boundary layer normals: %d triangles, %d nodes on y = 0, smallest cosine to an incident triangle %.3f (before smoothing %.3f), %d concave edges"
+          % (nt, int(plane.sum()), v1.min(), v0.min(), len(concave)))
+    return tri, nrm, concave
+
+
+def distance_to_edges(q, xyz, edges):
+    """Distance of the points `q` to the edges (node pairs into `xyz`), sampled at 5 points per edge."""
+    import numpy as np
+
+    pa, pb = xyz[edges[:, 0]], xyz[edges[:, 1]]
+    pts = np.concatenate([pa + (pb - pa) * s for s in np.linspace(0.0, 1.0, 5)])
+    dist = np.full(len(q), np.inf)
+    for i0 in range(0, len(q), 2000):
+        dist[i0:i0 + 2000] = np.linalg.norm(q[i0:i0 + 2000, None, :] - pts[None, :, :], axis=2).min(axis=1)
+    return dist
+
+
+def column_heights(h1, n, thick):
+    """Cumulative layer heights (n + 1, m) of columns with first height h1, n layers and total thicknesses `thick`
+    (geometric growth, ratio solved per column; at least n h1)."""
+    import numpy as np
+
+    t = np.maximum(thick, n * h1 * (1.0 + 1e-9))
+    lo, hi = np.ones_like(t), np.full_like(t, 2.0)
+    for _ in range(80):
+        r = 0.5 * (lo + hi)
+        s = h1 * (r ** n - 1.0) / (r - 1.0)
+        big = s > t
+        hi = np.where(big, r, hi)
+        lo = np.where(big, lo, r)
+    r = 0.5 * (lo + hi)
+    k = np.arange(n + 1)[:, None]
+    return h1 * (r[None, :] ** k - 1.0) / (r[None, :] - 1.0)
 
 
 def rerun(q, why):
@@ -303,36 +328,25 @@ def rerun(q, why):
 
 
 def boundary_layer_mesh(parts):
-    """Half model y >= 0 with prism layers on wall and base, tetrahedra in the half box farfield; writes the SU2 mesh
-    (mirrored to the full domain for y_mirror) and the statistics, then exits."""
+    """Half model y >= 0: prism layers built here on the wall and base mesh, tetrahedra in the half box farfield
+    (gmsh); writes the SU2 mesh (mirrored to the full domain for y_mirror) and the statistics, then exits."""
     import numpy as np
 
     import su2_writer as sw
 
-    if zmirror:
-        raise SystemExit("mesh error: the prismatic boundary layer cannot be meshed as a quarter model (z_mirror)")
+    if not half or zmirror:
+        raise SystemExit("mesh error: the prismatic boundary layer needs the half model (a fin layout symmetric about y = 0) without z_mirror")
     tol = 1e-4 * L
-    # The half solid y >= 0 (the cut faces at y = 0 are dropped; the symmetry plane is rebuilt around the layers). The
-    # full domain uses both halves, made conformal: the apex of the periodic body of revolution meshes as a
-    # non-manifold fan otherwise.
-    upper = occ.addBox(-L, 0.0, -2.0 * L, 3.0 * L, 2.0 * L, 4.0 * L)
-    if half:
-        occ.intersect(parts, [(3, upper)])
-    else:
-        lower = occ.addBox(-L, -2.0 * L, -2.0 * L, 3.0 * L, 2.0 * L, 4.0 * L)
-        a, _ = occ.intersect(occ.copy(parts), [(3, upper)])
-        b, _ = occ.intersect(parts, [(3, lower)])
-        occ.fragment(a, b)
+    box = occ.addBox(-L, 0.0, -2.0 * L, 3.0 * L, 2.0 * L, 4.0 * L)
+    occ.intersect(parts, [(3, box)])
     occ.synchronize()
     vols = gmsh.model.getEntities(3)
-    if len(vols) != (1 if half else 2):
-        raise SystemExit("mesh error: boolean operations produced %d volumes (expected %d); the geometry may be invalid" % (len(vols), 1 if half else 2))
-    wall, cap = [], []
-    outer = [t for _, t in gmsh.model.getBoundary(vols, combined=True, oriented=False)]
-    cut = [t for _, t in gmsh.model.getEntities(2) if t not in outer]
-    for t in outer:
+    if len(vols) != 1:
+        raise SystemExit("mesh error: boolean operations produced %d volumes (expected 1); the geometry may be invalid" % len(vols))
+    wall, cap, cut = [], [], []
+    for _, t in gmsh.model.getBoundary(vols, oriented=False):
         b = gmsh.model.getBoundingBox(2, t)
-        if half and b[4] - b[1] < tol and abs(b[1]) < tol:
+        if b[4] - b[1] < tol and abs(b[1]) < tol:
             cut.append(t)
         elif b[0] > L - tol:
             cap.append(t)
@@ -365,40 +379,135 @@ def boundary_layer_mesh(parts):
     t1 = time.time()
     gmsh.model.mesh.generate(2)
 
-    view = bl_normals(wall + cap, int(bl["smoothing"]))
-    heights, h, s = [], bl["first_height"], 0.0
-    for _ in range(int(bl["layers"])):
-        s += h
-        heights.append(s)
-        h *= bl["ratio"]
+    # ---- wall mesh and normals -----------------------------------------------------------------------
+    tags, coord, _ = gmsh.model.mesh.getNodes()
+    idx = np.zeros(int(tags.max()) + 1, np.int64)
+    idx[tags] = np.arange(len(tags))
+    xyz = coord.reshape(-1, 3).copy()
+    xyz[np.abs(xyz[:, 1]) < 1e-12, 1] = 0.0
+    tris, kinds = [], []
+    for kind, ents in ((0, wall), (1, cap)):
+        for t in ents:
+            for e, n in zip(*gmsh.model.mesh.getElements(2, t)[::2]):
+                if e != 2:
+                    raise SystemExit("mesh error: the wall surface mesh has non-triangular elements")
+                tris.append(idx[np.asarray(n, np.int64)].reshape(-1, 3))
+                kinds.append(np.full(len(tris[-1]), kind))
+    tri, kinds = np.vstack(tris), np.concatenate(kinds)
+    tri, nrm, concave = wall_normals(tri, xyz, int(bl["smoothing"]), bl["thickness"], int(bl["corner_smoothing"]))
+    used = np.unique(tri)
+    m = len(used)
+    loc = np.full(len(xyz), -1, np.int64)
+    loc[used] = np.arange(m)
+    x0w, nw, tl = xyz[used], nrm[used], loc[tri]
+    ce = loc[concave]
+
+    # ---- column thickness ------------------------------------------------------------------------------
+    # The layers grow at bl["ratio"] from bl["first_height"] up to a last layer of about the size of the tetrahedra
+    # outside (bl["thickness"] in all). Near a concave edge (fin-body junction) the columns of the two walls would
+    # cross: there the thickness is at most bl["junction"] times the distance to the edge (the layer count stays,
+    # the growth ratio of the column is smaller).
+    n_lay, h1 = int(bl["layers"]), bl["first_height"]
+    thick = np.full(m, bl["thickness"])
+    if len(ce):
+        thick = np.minimum(thick, bl["junction"] * bl["thickness"] + distance_to_edges(x0w, x0w, ce))
+    # Where neighbouring columns diverge by an angle a (fanning round a fin edge or tip), the layer top widens by
+    # about thickness * a: at most bl["fan"] wall sizes, so the tetrahedra on the top stay well shaped.
+    e0 = np.unique(np.sort(np.concatenate([tl[:, [0, 1]], tl[:, [1, 2]], tl[:, [2, 0]]]), axis=1), axis=0)
+    ang = np.arccos(np.clip(np.einsum("ij,ij->i", nw[e0[:, 0]], nw[e0[:, 1]]), -1.0, 1.0))
+    spread = np.zeros(m)
+    np.maximum.at(spread, e0[:, 0], ang)
+    np.maximum.at(spread, e0[:, 1], ang)
+    thick = np.minimum(thick, bl["fan"] * h0 / np.maximum(spread, 1e-6))
+    # Columns of prisms whose corners invert are made thinner (with their neighbours, Lipschitz 0.5) until none does.
+    e = np.unique(np.sort(np.concatenate([tl[:, [0, 1]], tl[:, [1, 2]], tl[:, [2, 0]]]), axis=1), axis=0)
+    elen = np.linalg.norm(x0w[e[:, 0]] - x0w[e[:, 1]], axis=1)
+
+    def limit(t):
+        for _ in range(50):
+            t2 = t.copy()
+            np.minimum.at(t2, e[:, 0], t[e[:, 1]] + 0.5 * elen)
+            np.minimum.at(t2, e[:, 1], t[e[:, 0]] + 0.5 * elen)
+            if np.array_equal(t2, t):
+                break
+            t = t2
+        return t
+
+    thick = limit(thick)
+    nt = len(tl)
+    for it in range(30):
+        s = column_heights(h1, n_lay, thick)
+        lay = x0w[None, :, :] + s[:, :, None] * nw[None, :, :]  # (n + 1, m, 3)
+        pts_all = lay.reshape(-1, 3)
+        prisms = np.concatenate([np.concatenate([tl + k * m, tl + (k + 1) * m], axis=1) for k in range(n_lay)])
+        jac = sw.prism_corner_jacobians(pts_all, prisms).min(axis=1)
+        bad = jac <= 0.0
+        if not bad.any():
+            break
+        badnodes = np.unique(prisms[bad] % m)
+        print("boundary layer: %d inverted prisms at %d columns; thinning them" % (int(bad.sum()), len(badnodes)))
+        thick[badnodes] *= 0.6
+        thick = limit(thick)
+    top = n_lay * m
+    print("boundary layer: %d layers, first %.3g m, thickness %.3g m (smallest column %.3g m, %d columns thinner than half)"
+          % (n_lay, h1, thick.max(), thick.min(), int((thick < 0.5 * bl["thickness"]).sum())))
+
+    # Layer sides on y = 0 (quadrilaterals) and the boundary loops of the layer top there.
+    a_ = np.concatenate([tl[:, 0], tl[:, 1], tl[:, 2]])
+    b_ = np.concatenate([tl[:, 1], tl[:, 2], tl[:, 0]])
+    k_ = np.minimum(a_, b_) * m + np.maximum(a_, b_)
+    uk, cnt = np.unique(k_, return_counts=True)
+    single = np.isin(k_, uk[cnt == 1])
+    ba, bb = a_[single], b_[single]
+    if not (np.abs(x0w[ba, 1]) < 1e-12).all() or not (np.abs(x0w[bb, 1]) < 1e-12).all():
+        raise SystemExit("mesh error: the wall has an open edge away from the symmetry plane")
+    quads = np.concatenate([np.stack([ba + k * m, bb + k * m, bb + (k + 1) * m, ba + (k + 1) * m], axis=1) for k in range(n_lay)])
+    nxt = dict(zip(ba.tolist(), bb.tolist()))
+    loops, seen = [], set()
+    for s0 in ba.tolist():
+        if s0 in seen:
+            continue
+        lp, v = [], s0
+        while v not in seen:
+            seen.add(v)
+            lp.append(v)
+            v = nxt[v]
+        loops.append(lp)
+
+    # ---- outer surfaces: y = 0 plane around the layers and the box farfield (gmsh, own model) -------------
+    t_layers = time.time()
+    gmsh.model.add("outer")
     geo = gmsh.model.geo
-    ext = geo.extrudeBoundaryLayer([(2, t) for t in wall + cap], [1] * len(heights), heights, True, False, gmsh.view.getIndex(view))
-    top = [ext[i - 1] for i in range(1, len(ext)) if ext[i][0] == 3]
-    lateral = [e[1] for e in ext if e[0] == 2 and e not in top]
-    geo.synchronize()
-    # Box farfield |x - x0|, |y|, |z| <= R (half: y >= 0).
-    xs, ys, zs = (x0 - R, x0 + R), (0.0 if half else -R, R), (-R, R)
+    toplay = lay[n_lay]
+    seg = {}
+    hole_loops, ptag = [], {}
+    for lp in loops:
+        for i, v in enumerate(lp):
+            w = lp[(i + 1) % len(lp)]
+            seg[v] = np.linalg.norm(toplay[w] - toplay[v])
+        for v in lp:
+            ptag[v] = geo.addPoint(*toplay[v].tolist(), max(seg[v], 1e-6))
+        lines = []
+        for i, v in enumerate(lp):
+            w = lp[(i + 1) % len(lp)]
+            lines.append(geo.addLine(ptag[v], ptag[w]))
+        hole_loops.append((geo.addCurveLoop(lines), lines))
+    xs, ys, zs = (x0 - R, x0 + R), (0.0, R), (-R, R)
     c = {(i, j, k): geo.addPoint(xs[i], ys[j], zs[k], hmax) for i in (0, 1) for j in (0, 1) for k in (0, 1)}
-    lines = {}
+    blines = {}
 
     def line(u, v):
-        if (v, u) in lines:
-            return -lines[(v, u)]
-        if (u, v) not in lines:
-            lines[(u, v)] = geo.addLine(u, v)
-        return lines[(u, v)]
+        if (v, u) in blines:
+            return -blines[(v, u)]
+        if (u, v) not in blines:
+            blines[(u, v)] = geo.addLine(u, v)
+        return blines[(u, v)]
 
     def loop(q):
         return geo.addCurveLoop([line(c[q[i]], c[q[(i + 1) % 4]]) for i in range(4)])
 
-    y0 = [(0, 0, 0), (1, 0, 0), (1, 0, 1), (0, 0, 1)]
-    if half:
-        # The symmetry plane with the section of the layers as holes.
-        holes = geo.addCurveLoops([c[1] for c in gmsh.model.getBoundary(top, combined=True)])
-        sym = [geo.addPlaneSurface([loop(y0)] + list(holes))]
-    else:
-        sym = []
-    far = ([] if half else [geo.addPlaneSurface([loop(y0)])]) + [
+    sym = geo.addPlaneSurface([loop([(0, 0, 0), (1, 0, 0), (1, 0, 1), (0, 0, 1)])] + [h for h, _ in hole_loops])
+    far = [
         geo.addPlaneSurface([loop(q)])
         for q in (
             [(0, 1, 0), (1, 1, 0), (1, 1, 1), (0, 1, 1)],
@@ -408,13 +517,78 @@ def boundary_layer_mesh(parts):
             [(1, 0, 0), (1, 1, 0), (1, 1, 1), (1, 0, 1)],
         )
     ]
-    if half:
-        geo.addVolume([geo.addSurfaceLoop([t for _, t in top] + sym + far)])
-    else:
-        geo.addVolume([geo.addSurfaceLoop(far), geo.addSurfaceLoop([t for _, t in top])])
     geo.synchronize()
+    for _, lines in hole_loops:
+        for ln in lines:
+            gmsh.model.mesh.setTransfiniteCurve(abs(ln), 2)
+    hl = [abs(ln) for _, lines in hole_loops for ln in lines]
+    f.add("Distance", 1)
+    f.setNumbers(1, "CurvesList", hl)
+    f.setNumber(1, "Sampling", 4)
+    f.add("Threshold", 2)
+    f.setNumber(2, "InField", 1)
+    f.setNumber(2, "SizeMin", h0)
+    f.setNumber(2, "SizeMax", hmax)
+    f.setNumber(2, "DistMin", 0.0)
+    f.setNumber(2, "DistMax", (hmax - h0) / (grow - 1.0))
+    f.setAsBackgroundMesh(2)
+    gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 1)
+    gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
+    gmsh.model.mesh.generate(2)
+    otag, ocoord, _ = gmsh.model.mesh.getNodes()
+    ocoord = ocoord.reshape(-1, 3)
+    # Global node numbers: the layer nodes (level k of wall node i: k m + i), then the outer nodes off the hole.
+    gid = {}
+    for v, pt in ptag.items():
+        for t_ in gmsh.model.mesh.getNodes(0, pt)[0].tolist():
+            gid[t_] = top + v
+    extra_tags = [t_ for t_ in otag.tolist() if t_ not in gid]
+    n_base = (n_lay + 1) * m
+    for i, t_ in enumerate(extra_tags):
+        gid[t_] = n_base + i
+    opos = dict(zip(otag.tolist(), range(len(otag))))
+    extra_xyz = ocoord[[opos[t_] for t_ in extra_tags]]
+    extra_xyz[np.abs(extra_xyz[:, 1]) < 1e-12, 1] = 0.0
 
+    def surf_tris(s_):
+        out = []
+        for e_, n_ in zip(*gmsh.model.mesh.getElements(2, s_)[::2]):
+            if e_ != 2:
+                raise SystemExit("mesh error: unexpected element type %d on the outer surfaces" % e_)
+            out.append(np.array([gid[t_] for t_ in n_.tolist()], np.int64).reshape(-1, 3))
+        return np.vstack(out)
+
+    sym_tri = surf_tris(sym)
+    far_tri = np.vstack([surf_tris(s_) for s_ in far])
+    gmsh.model.remove()
+
+    # ---- tetrahedra between the layer top and the outer surfaces (gmsh, discrete model) ------------------
+    allxyz = np.vstack([pts_all, extra_xyz])
+    top_tri = tl + top
+    bnd = np.vstack([top_tri, sym_tri, far_tri])
+    bn = np.unique(bnd)
+    gmsh.model.add("fluid")
+    gmsh.model.addDiscreteEntity(2, 1)
+    gmsh.model.mesh.addNodes(2, 1, (bn + 1).tolist(), allxyz[bn].ravel().tolist())
+    gmsh.model.mesh.addElementsByType(1, 2, [], (top_tri + 1).ravel().tolist())
+    gmsh.model.addDiscreteEntity(2, 2)
+    gmsh.model.mesh.addElementsByType(2, 2, [], (sym_tri + 1).ravel().tolist())
+    gmsh.model.addDiscreteEntity(2, 3)
+    gmsh.model.mesh.addElementsByType(3, 2, [], (far_tri + 1).ravel().tolist())
+    gmsh.model.geo.addVolume([gmsh.model.geo.addSurfaceLoop([1, 2, 3])])
+    gmsh.model.geo.synchronize()
+    f.add("Distance", 1)
+    f.setNumbers(1, "SurfacesList", [1])
+    f.add("Threshold", 2)
+    f.setNumber(2, "InField", 1)
+    f.setNumber(2, "SizeMin", h0)
+    f.setNumber(2, "SizeMax", hmax)
+    f.setNumber(2, "DistMin", 0.0)
+    f.setNumber(2, "DistMax", (hmax - h0) / (grow - 1.0))
+    f.setAsBackgroundMesh(2)
+    gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 1)
     gmsh.option.setNumber("Mesh.Algorithm3D", int(p["algorithm3d"]))
+    gmsh.option.setNumber("Mesh.Renumber", 0)  # the node tags of the boundary are the global node numbers + 1
     t_surf = time.time()
     try:
         gmsh.model.mesh.generate(3)
@@ -423,76 +597,96 @@ def boundary_layer_mesh(parts):
             raise SystemExit("mesh error: the tetrahedral mesh outside the boundary layer failed (%s)" % e)
         rerun(dict(p, algorithm3d=1), "HXT failed (%s); retrying with Delaunay" % e)
     t2 = time.time()
+    ntag, ncoord, _ = gmsh.model.mesh.getNodes()
+    known = np.zeros(int(ntag.max()) + 1, bool)
+    known[bn + 1] = True
+    inner = ntag[~known[ntag]]
+    ncoord = ncoord.reshape(-1, 3)
+    npos = np.zeros(int(ntag.max()) + 1, np.int64)
+    npos[ntag] = np.arange(len(ntag))
+    gmap = np.full(int(ntag.max()) + 1, -1, np.int64)
+    gmap[bn + 1] = bn
+    gmap[inner] = len(allxyz) + np.arange(len(inner))
+    allxyz = np.vstack([allxyz, ncoord[npos[inner]]])
+    tets = []
+    for et, en in zip(*gmsh.model.mesh.getElements(3)[::2]):
+        if et != 4:
+            raise SystemExit("mesh error: unexpected volume element type %d outside the boundary layer" % et)
+        tets.append(gmap[np.asarray(en, np.int64)].reshape(-1, 4))
+    tets = np.vstack(tets)
+    if (tets < 0).any():
+        raise SystemExit("mesh error: a tetrahedron uses an unknown node")
 
     # ---- cells, markers, checks --------------------------------------------------------------------
-    tags, coord, _ = gmsh.model.mesh.getNodes()
-    idx = np.zeros(int(tags.max()) + 1, np.int64)
-    idx[tags] = np.arange(len(tags))
-    xyz = coord.reshape(-1, 3).copy()
-    xyz[np.abs(xyz[:, 1]) < 1e-12, 1] = 0.0  # the symmetry plane exactly (OCC leaves a few 1e-16 m)
-    cells, names, etags_all = {}, {}, []
-    for et, et_tags, en in zip(*gmsh.model.mesh.getElements(3)):
-        kind = sw.GMSH.get(int(et))
-        if kind not in (sw.TET, sw.PRISM, sw.PYRAMID):
-            raise SystemExit("mesh error: unexpected volume element type %d" % et)
-        cells[kind] = idx[np.asarray(en, np.int64)].reshape(-1, sw.NODES[kind])
-        names[kind] = gmsh.model.mesh.getElementProperties(int(et))[0]
-        if kind != sw.PRISM:
-            etags_all.append(et_tags)  # the layer prisms are thin by design; they are checked by their corner Jacobians
-
-    def faces(ents, keep=None):
-        out = []
-        for t in ents:
-            for e, n in zip(*gmsh.model.mesh.getElements(2, t)[::2]):
-                kind = sw.GMSH[int(e)]
-                fc = idx[np.asarray(n, np.int64)].reshape(-1, sw.NODES[kind])
-                out.append((kind, fc if keep is None else fc[keep(fc)]))
-        return out
-
-    on_plane = lambda fc: (np.abs(xyz[fc][:, :, 1]) < 1e-12).all(axis=1)  # noqa: E731
-    markers = [("wall", faces(wall)), ("base", faces(cap)), ("farfield", faces(far))]
-    if half:
-        markers.append(("symmetry", faces(sym) + faces(lateral, on_plane)))
-    cells, markers, xyz, orphans = sw.compact(cells, markers, xyz)
-    flipped = sw.orient(cells, xyz)
-    bad, nonpos = sw.check(cells, xyz)
+    cells = {sw.PRISM: prisms, sw.TET: tets}
+    names = {sw.PRISM: "Prism 6", sw.TET: "Tetrahedron 4"}
+    markers = [
+        ("wall", [(sw.TRI, tl[kinds == 0])]),
+        ("base", [(sw.TRI, tl[kinds == 1])]),
+        ("farfield", [(sw.TRI, far_tri)]),
+        ("symmetry", [(sw.TRI, sym_tri), (sw.QUAD, quads)]),
+    ]
+    cells, markers, allxyz, orphans = sw.compact(cells, markers, allxyz)
+    flipped = sw.orient(cells, allxyz)
+    bad, nonpos = sw.check(cells, allxyz)
     missing, extra = sw.unmarked_faces(cells, markers)
     extra += orphans
-    nsym = {k: sum(len(fc) for kk, fc in dict(markers).get("symmetry", []) if kk == k) for k in (sw.TRI, sw.QUAD)}
-    print("boundary layer: %d layers, first %.3g m, ratio %.4f, thickness %.3g m; %s; %d cells reoriented, %d inverted prisms, %d cells of non-positive volume; symmetry %d triangles + %d quads; %d boundary faces without marker, %d marker faces inside"
-          % (len(heights), heights[0], bl["ratio"], heights[-1], ", ".join("%s %d" % (names[k], len(cells[k])) for k in cells), flipped, bad, nonpos,
-             nsym[sw.TRI], nsym[sw.QUAD], missing, extra))
+    # Size jump at the layer top: height of the tetrahedron on each top triangle over the last layer height there.
+    tt = np.sort(cells[sw.TET][:, [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]]].reshape(-1, 3), axis=1)
+    topk = np.sort(top_tri, axis=1)
+    tkey = lambda q: (q[:, 0] * len(allxyz) + q[:, 1]) * len(allxyz) + q[:, 2]  # noqa: E731
+    tk, kk = tkey(tt), tkey(topk)
+    o_ = np.argsort(tk)
+    pos_ = np.searchsorted(tk[o_], kk)
+    pos_ = np.minimum(pos_, len(tk) - 1)
+    hit = tk[o_][pos_] == kk
+    tet_of = o_[pos_] // 4
+    vol = np.abs(sw.signed_volume(sw.TET, allxyz, cells[sw.TET][tet_of[hit]]))
+    tp = allxyz[top_tri[hit]]
+    area = 0.5 * np.linalg.norm(np.cross(tp[:, 1] - tp[:, 0], tp[:, 2] - tp[:, 0]), axis=1)
+    h_tet = 3.0 * vol / area
+    h_last = (s[n_lay] - s[n_lay - 1])[tl[hit]].mean(axis=1)
+    jump = np.maximum(h_tet / h_last, h_last / h_tet)
+    jmax, j99 = float(jump.max()), float(np.percentile(jump, 99))
+    print("boundary layer: %s; %d cells reoriented, %d inverted prisms, %d cells of non-positive volume; symmetry %d triangles + %d quads; %d boundary faces without marker, %d marker faces inside; size ratio at the layer top: median %.2f, 99 %% %.2f, max %.2f"
+          % (", ".join("%s %d" % (names[k], len(cells[k])) for k in cells), flipped, bad, nonpos, len(sym_tri), len(quads), missing, extra, float(np.median(jump)), j99, jmax))
     if bad or nonpos or missing or extra:
         what = "%d inverted prisms, %d cells of non-positive volume, %d boundary faces without marker, %d marker faces inside" % (bad, nonpos, missing, extra)
         if bl["retry"]:
             r = bl["retry"]
-            rerun(dict(p, bl=r), "boundary layer invalid (%s); retrying with %d smoothing passes and thickness %.3g m" % (what, r["smoothing"], r["thickness"]))
+            rerun(dict(p, bl=r, bl_attempt=p.get("bl_attempt", 1) + 1),
+                  "boundary layer invalid (%s); retrying with %d smoothing passes and junction factor %.2f" % (what, r["smoothing"], r["junction"]))
         raise SystemExit("mesh error: the prismatic boundary layer is invalid: %s (try a different wall_size or yplus)" % what)
 
-    q = gmsh.model.mesh.getElementQualities(np.concatenate(etags_all).tolist(), "minSICN")
-    q_min, q_mean, q_bad = float(np.min(q)), float(np.mean(q)), int((np.asarray(q) < 0.05).sum())
     mult = 1
     if p["y_mirror"]:
-        cells, markers, xyz = sw.mirror(cells, markers, xyz, 1, "symmetry", 1e-12)
+        cells, markers, allxyz = sw.mirror(cells, markers, allxyz, 1, "symmetry", 1e-12)
         mult = 2
-    ncells = sw.write(p["out_su2"], cells, markers, xyz)
+    ncells = sw.write(p["out_su2"], cells, markers, allxyz)
     stats = {
-        "nodes": int(len(xyz)),
+        "nodes": int(len(allxyz)),
         "cells": int(ncells),
-        "by_type": {names[k]: int(len(c)) for k, c in cells.items()},
-        "quality_sicn_min": q_min,
-        "quality_sicn_mean": q_mean,
-        "cells_sicn_below_0.05": q_bad * mult,
+        "by_type": {names[k]: int(len(c_)) for k, c_ in cells.items()},
+        "quality_sicn_min": 0.0,
+        "quality_sicn_mean": 0.0,
+        "cells_sicn_below_0.05": 0,
         "wall_triangles": int(sum(len(fc) for _, fc in dict(markers)["wall"])),
         "seconds_setup": t1 - t0,
         "seconds_mesh": t2 - t1,
-        "bl_layers": len(heights),
-        "bl_first_height": heights[0],
-        "bl_thickness": heights[-1],
+        "bl_layers": n_lay,
+        "bl_first_height": h1,
+        "bl_thickness": float(thick.max()),
         "bl_invalid": bad,
+        "bl_attempt": p.get("bl_attempt", 1),
+        "bl_top_ratio_max": jmax,
+        "bl_top_ratio_p99": j99,
     }
+    q = gmsh.model.mesh.getElementQualities(gmsh.model.mesh.getElementsByType(4)[0].tolist(), "minSICN")
+    stats["quality_sicn_min"], stats["quality_sicn_mean"] = float(np.min(q)), float(np.mean(q))
+    stats["cells_sicn_below_0.05"] = int((np.asarray(q) < 0.05).sum()) * mult
     json.dump(stats, open(p["stats_json"], "w"), indent=1)
-    print("MESH_OK nodes=%d cells=%d minSICN=%.4f surface %.1fs volume %.1fs" % (stats["nodes"], stats["cells"], q_min, t_surf - t1, t2 - t_surf))
+    print("MESH_OK nodes=%d cells=%d minSICN=%.4f layers %.1fs surfaces %.1fs volume %.1fs"
+          % (stats["nodes"], stats["cells"], stats["quality_sicn_min"], t_layers - t1, t_surf - t_layers, t2 - t_surf))
     gmsh.finalize()
     sys.exit(0)
 

@@ -244,16 +244,19 @@
      - 意味
    * - ``lag_l0``
      - m
-     - 遅れの和 :math:`L_0=2\,\mathrm{Vol}/S`。見かけの質量の遅れ（:math:`\dot\alpha`）と対流の回転の力 :math:`-\tfrac12\rho SL_0(\cdot)` の大きさ
+     - 遅れの和 :math:`L_0=(2/S)\int A\,\mathrm{d}x`\ （胴体とフィンの見かけの質量）。見かけの質量の遅れ（:math:`\dot\alpha`）と対流の回転の力 :math:`-\tfrac12\rho SL_0(\cdot)` の大きさ
    * - ``lag_l1``
      - m\ :sup:`2`
-     - 遅れの和 :math:`L_1=L_0x_{\mathrm{vol}}`。その力のノーズ先端まわりの能率（作用点は :math:`L_1/L_0`）
+     - 遅れの和 :math:`L_1=(2/S)\int A\,x\,\mathrm{d}x`。その力のノーズ先端まわりの能率（中心は :math:`L_1/L_0`）
    * - ``cl4``
      - 無次元
      - 誘導ロール :math:`\Delta C_l=C_{l4}\,\alpha_t^2\sin4(\phi_c-\phi_f)`\ （軸対称表だけ。一般表では :math:`C_l` の列に含める）
    * - ``cnpa``
      - 1/rad
      - Magnus 力 :math:`C_{N,\mathrm{Magnus}}=C_{Np\alpha}^{*}\,\hat p\sin\alpha_t` の傾き。McCoy の :math:`pd/V` で無次元化した :math:`C_{Np\alpha}` とは :math:`C_{Np\alpha}^{*}=2C_{Np\alpha}` の関係にある
+   * - ``cmpa``
+     - 1/rad
+     - 静的な圧力中心まわりの Magnus のモーメントの傾き :math:`C_{mp\alpha}^{*}`\ （:eq:`eq-magnus-moment`）。既定は 0
 
 回転による法線力 :math:`C_{Nq}` は、減衰の和 :math:`S_0,S_1` から作るので、列を持たない（:eq:`eq-cnq-force`）。
 線形の交差微係数（:math:`C_{mp},C_{np},C_{mr},C_{nq},C_{lq},C_{lr}`）は、軸対称な胴体と十字形のフィンの機体では対称性から 0 で、どちらの表も列を持たない。
@@ -270,9 +273,9 @@
   ``roll_damping`` が偽のときは部品積み上げ法の値である。:math:`C_{l\delta}` は常に部品積み上げ法の値である（:doc:`cfd`）。
 * **外部の表**\ ：表に書かれた値をそのまま使う。ロール項がすべて 0 のときは部品積み上げ法の値を補う（:ref:`sec-aero-external`）。
 
-遅れの和 ``lag_l0``、``lag_l1`` は、部品積み上げ法では形状から求め（:ref:`sec-damping`）、パネル法と CFD の表にも同じ形状の値を入れる。
-誘導ロール ``cl4`` と Magnus 力 ``cnpa`` は、部品積み上げ法、パネル法、CFD のどれも推算せず 0 である。必要なら外部の表で与える。
-外部の表が遅れと Magnus の列を持たない古い形式のときは、遅れの和を補わず、警告を出して準定常の項だけで飛ばす（:ref:`sec-file-v1`）。
+遅れの和 ``lag_l0``、``lag_l1`` は、部品積み上げ法では形状から求め（:ref:`sec-damping`）、パネル法と CFD の表と、遅れの列を持たない古い形式の外部の表にも同じ形状の値を入れる（:ref:`sec-file-v1`）。
+誘導ロール ``cl4`` と Magnus の ``cnpa``、``cmpa`` は、部品積み上げ法、パネル法、CFD のどれも推算せず 0 である。必要なら外部の表で与える（求め方は :ref:`sec-aero-unsteady`）。
+実測や強制振動の CFD のピッチ減衰 :math:`C_{mq}+C_{m\dot\alpha}` を使う表では、遅れの和を 0 にして減衰の和に入れる（:ref:`sec-file-v1`）。
 
 確認済み
 --------
@@ -286,7 +289,7 @@
 注意
 ----
 
-* 空力係数は準定常で、角速度と加速度の影響は、減衰の微係数、回転による法線力、見かけの質量の遅れのモーメント、Magnus 力で表す。流れの履歴（遅れの状態量）は持たない（:ref:`sec-quasi-steady`）。
+* 空力係数は準定常で、角速度と加速度の影響は、減衰の微係数、回転による法線力、見かけの質量の遅れと対流の回転の項、Magnus 力とモーメントで表す。流れの履歴（遅れの状態量）は持たない（:ref:`sec-quasi-steady`）。
 * :math:`C_{mq}` と :math:`C_{nr}` は CFD から直接は得られない。
 * 一般表の静的な安定は、迎角 0 と横滑り角 0 での傾きから求めたピッチとヨーの余裕の小さいほうで判定し、ピッチとヨーの連成は考えない（:ref:`sec-static-margin-general`）。
 

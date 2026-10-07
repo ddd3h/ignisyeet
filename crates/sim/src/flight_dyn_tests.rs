@@ -168,9 +168,16 @@ fn ctx(sim: &Simulation, gravity_off: bool) -> Ctx {
 /// sampled every `every` steps (spacing `every h`) for `n` samples.
 fn fly(b: &Body, scale: AeroScale, alpha0: f64, p0: f64, h: f64, every: usize, n: usize) -> Vec<C> {
     let table = table_of(b);
+    fly_with(&table, MassProperties::axisymmetric(b.mass, b.x_cg, b.ixx, b.iyy), scale, alpha0, p0, h, every, n)
+}
+
+/// [`fly`] with any table and mass properties.
+#[allow(clippy::too_many_arguments)]
+fn fly_with(table: &AeroTable, mass: MassProperties, scale: AeroScale, alpha0: f64, p0: f64, h: f64, every: usize, n: usize) -> Vec<C> {
     let motor = no_thrust();
     let atm = AtmosphereModel::constant(RHO, 340.0, 1.8e-5).unwrap();
-    let mut sim = base_sim(&table, &motor, b, calm(), atm);
+    let mut sim = base_sim(table, &motor, &osc_body(), calm(), atm);
+    sim.mass = mass;
     sim.aero_scale = scale;
     let cx = ctx(&sim, true);
     let mut s = State { pos: cx.frame.origin(), vel: Vec3::new(V * alpha0.cos(), 0.0, V * alpha0.sin()), q: Quat::IDENTITY, w: Vec3::new(p0, 0.0, 0.0) };
@@ -199,7 +206,8 @@ fn fly(b: &Body, scale: AeroScale, alpha0: f64, p0: f64, h: f64, every: usize, n
 /// Linear theory of the crossflow `xi = (v + i w) / V` in non-rolling axes for the harness:
 /// `xi'' + B xi' + K xi = 0` (Murphy's `H - i P` and `-(M + i P T)`), from
 ///
-/// * `xi' = -(a + i f_m) xi + i (1 - c_q) mu` (normal force, Magnus force, rotation-induced force),
+/// * `xi' = -(a + i f_m) xi + i (1 - c_q - c_c) mu` (normal force, Magnus force, rotation-induced
+///   strip force, convective apparent-mass force `-(rho S / 2) L0 i V mu`, `c_c = rho S L0 / (2 m)`),
 /// * `mu' = (i M0 - m_m) xi - h mu + i P mu - i g (xi' + i mu)` (static, Magnus, damping moments,
 ///   gyroscopic coupling, and the apparent-mass moment of the lag term `xi'` and the convective
 ///   rotation term `i mu`: the lateral vector `-w_t x u_b = i V mu`), `mu = q + i r`,
@@ -209,8 +217,8 @@ fn fly(b: &Body, scale: AeroScale, alpha0: f64, p0: f64, h: f64, every: usize, n
 /// `g = (rho S V / 2)(x_cg L0 - L1) / I`, `f_m = q S cnpa p_hat / (m V)`,
 /// `m_m = (x_cp - x_cg) q S cnpa p_hat / I`, `P = Ixx p / I`. With `h' = h - g` (the convective term
 /// is a pitch-damping contribution) and eliminating mu:
-/// `B = a + h' - (1 - c_q) g - i (P - f_m)` and
-/// `K = (1 - c_q) M0 + h' a + P f_m + i ((1 - c_q) m_m - P a + h' f_m)`.
+/// `B = a + h' - kappa g - i (P - f_m)` and
+/// `K = kappa M0 + h' a + P f_m + i (kappa m_m - P a + h' f_m)`, `kappa = 1 - c_q - c_c`.
 /// Without spin, `B = -[rho V S d^2 (Cmq + Cmalphadot) / (4 I) - rho V S CNa / (2 m)]` (with
 /// `c_q = 0`, `rho V S d^2 Cmq / (4 I) = -h'` and `rho V S d^2 Cmalphadot / (4 I) = g`) and
 /// `K = omega^2`, the classical short-period equation.
@@ -229,7 +237,8 @@ fn theory(b: &Body, scale: AeroScale, p: f64) -> (C, C) {
     let fm = qs * cnpa * p_hat / (b.mass * V);
     let mm = (b.xcp - x) * qs * cnpa * p_hat / b.iyy;
     let pp = b.ixx * p / b.iyy;
-    let kap = 1.0 - cq;
+    let cc = scale.lag * 0.5 * RHO * S * b.lag.0 / b.mass;
+    let kap = 1.0 - cq - cc;
     let h = h - g;
     let bb = C(a + h - kap * g, -(pp - fm));
     let kk = C(kap * m0 + h * a + pp * fm, kap * mm - pp * a + h * fm);
@@ -459,7 +468,9 @@ fn roll_resonance_is_reported_for_a_canted_rocket_with_a_lateral_cg_offset() {
     sim.settings.output_interval = 0.002;
     let plain = sim.run(Descent::Ballistic, false).unwrap().summary;
     assert_eq!(plain.roll_resonance, None);
+    // A symmetric fin cant alone only rolls the rocket: no trim forcing, no report.
     sim.fin_cant_deg = 2.0;
+    assert_eq!(sim.run(Descent::Ballistic, false).unwrap().summary.roll_resonance, None);
     sim.mass.cg_lateral_dry = [0.002, 0.0];
     let r = sim.run(Descent::Ballistic, true).unwrap();
     let res = r.summary.roll_resonance.expect("roll resonance");
@@ -523,4 +534,117 @@ fn a_general_table_with_a_zero_angle_moment_is_a_trim_forcing() {
     assert_eq!(run(&with_roll(&general)), None);
     let res = run(&with_roll(&asym)).expect("roll resonance with an aerodynamic trim moment");
     assert!(res.t > 0.0 && res.mach > 0.0, "{res:?}");
+}
+
+/// Pitch-damping sum Cmq + Cmalphadot [1/rad, per q d / (2 V)] of the flight model for `table` and
+/// the CG `x_cg` (mass `m`, pitch inertia `iyy`), measured from a free oscillation at 100 m/s
+/// (no CN_q strip force, so that the oscillation is the classical `B = a - rho V S d^2 (Cmq +
+/// Cmalphadot) / (4 I)` up to the small convective-force factor): `-(B - a) 4 I / (rho V S d^2)`.
+fn measured_damping_sum(table: &AeroTable, x_cg: f64, m: f64, iyy: f64) -> f64 {
+    // Without axial force, so that the speed stays constant.
+    let table = &AeroTable::from_fn(table.meta.clone(), |mach, a| AeroCoeffs { ca_on: 0.0, ca_off: 0.0, ..table.lookup(mach, a.to_radians()) });
+    let scale = AeroScale { cnq: 0.0, ..AeroScale::default() };
+    let (dt, every, n) = (2e-4, 25, 200);
+    let xi = fly_with(table, MassProperties::axisymmetric(m, x_cg, 0.02, iyy), scale, 0.3f64.to_radians(), 0.0, dt, every, n);
+    let lam = prony2(&xi, dt * every as f64);
+    let b = -(lam[0].0 + lam[1].0);
+    let mach = V / 340.0;
+    let qs = 0.5 * RHO * V * V * S_OF(table);
+    let a = table.lookup(mach, 0.0).cna * qs / (m * V);
+    let d = table.meta.ref_diameter;
+    -(b - a) * 4.0 * iyy / (RHO * V * S_OF(table) * d * d)
+}
+
+#[allow(non_snake_case)]
+fn S_OF(t: &AeroTable) -> f64 {
+    t.meta.ref_area
+}
+
+#[test]
+fn pitch_damping_of_the_sample_matches_slender_body_theory() {
+    // Independent reference: in slender-body theory (Munk; Nielsen ch. 3 and 5) the section force is
+    // f = -rho D/Dt[A w_c]; integrated over the body, the q and alpha-dot terms of a pitching motion
+    // (dw/dt = V q) leave only the aft end: M = -rho V q A_e l_e^2, i.e.
+    // Cmq + Cmalphadot = -4 A_e l_e^2 / (S d^2) = -2 CNa (l_e / d)^2, with CNa = 2 A_e / S the
+    // normal-force slope and l_e the distance of the aft end from the CG. The model builds the
+    // damping from the Barrowman strip sums plus the apparent-mass terms; this checks the total.
+    let (table, _) = sample_parts();
+    let mach = V / 340.0;
+    let cna = table.lookup(mach, 0.0).cna;
+    let (len, d) = (table.meta.length, table.meta.ref_diameter);
+    for x_cg in [0.85, 0.95] {
+        let measured = measured_damping_sum(&table, x_cg, 8.0, 1.5);
+        let sbt = -2.0 * cna * ((len - x_cg) / d).powi(2);
+        println!("sample, CG {x_cg}: Cmq + Cmalphadot {measured:.1}, slender-body {sbt:.1} (ratio {:.3})", measured / sbt);
+        assert!((measured / sbt - 1.0).abs() < 0.10, "CG {x_cg}: {measured} vs {sbt}");
+        // Without the fin apparent mass (body volume only, as an apparent-mass model of the body
+        // alone) the damping is far from the reference: the check catches a missing fin section.
+        let g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
+        let mut finless = g.clone();
+        finless.fins = None;
+        let body_only = AeroModel::new(finless, AeroOptions::default());
+        let mut t2 = table.clone();
+        t2.set_lag_terms(|m| body_only.lag_sums(m));
+        let body_lag = measured_damping_sum(&t2, x_cg, 8.0, 1.5);
+        println!("  body-only apparent mass: {body_lag:.1} (ratio {:.3})", body_lag / sbt);
+        assert!((body_lag / sbt - 1.0).abs() > 0.2, "{body_lag} vs {sbt}");
+    }
+    // A finless body: Barrowman's body slopes are the slender-body ones, so the model and the
+    // closed form agree closely (CNa = 2 A_base / S). Its centre of pressure is on the nose, so the
+    // CG is put at 0.02 m for a stable oscillation.
+    let mut g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
+    g.fins = None;
+    let model = AeroModel::new(g, AeroOptions::default());
+    let body = AeroTable::build(&model, String::new(), Extrapolation::Linear);
+    let x_cg = 0.02;
+    let measured = measured_damping_sum(&body, x_cg, 8.0, 1.5);
+    let cna = body.lookup(mach, 0.0).cna;
+    let sbt = -2.0 * cna * ((len - x_cg) / d).powi(2);
+    println!("finless body: {measured:.2} vs slender-body {sbt:.2}");
+    assert!((measured / sbt - 1.0).abs() < 0.03, "{measured} vs {sbt}");
+}
+
+#[test]
+fn convective_apparent_mass_force_and_magnus_moment_directions() {
+    // Pitching at q = 2 rad/s in axial flow: the convective apparent-mass force is
+    // -(rho S / 2) L0 (0, -r u_x, q u_x), along -z_b for q > 0 (as the strip force of the fins).
+    let b = Body { damp: [0.0; 3], ..osc_body() };
+    let s = State { pos: Vec3::new(0.0, 0.0, 100.0), vel: Vec3::new(V, 0.0, 0.0), q: Quat::IDENTITY, w: Vec3::new(0.0, 2.0, 0.0) };
+    let (on, _) = deriv_at(&b, AeroScale::default(), calm(), &s);
+    let (off, _) = deriv_at(&b, AeroScale { lag: 0.0, ..AeroScale::default() }, calm(), &s);
+    let expect = -0.5 * RHO * S * b.lag.0 * 2.0 * V / b.mass;
+    assert!(((on.vel - off.vel) - Vec3::new(0.0, 0.0, expect)).norm() < 1e-9 * expect.abs(), "{:?}", on.vel - off.vel);
+    // Magnus moment cmpa: p > 0, crossflow along +z_b, cmpa > 0: moment along +z_b (McCoy's
+    // v - (v.x) x direction), size q S d cmpa p_hat sin(alpha).
+    let b = Body { lag: (0.0, 0.0), damp: [0.0; 3], ..osc_body() };
+    let table = AeroTable::from_fn(table_of(&b).meta.clone(), |_, a| AeroCoeffs {
+        cn: b.cna * a.to_radians(),
+        cna: b.cna,
+        xcp: b.xcp,
+        cmpa: 0.5,
+        ..Default::default()
+    });
+    let motor = no_thrust();
+    let mut sim = base_sim(&table, &motor, &b, calm(), AtmosphereModel::constant(RHO, 340.0, 1.8e-5).unwrap());
+    let cx = ctx(&sim, false);
+    let (u, w, p) = (V, V * 2f64.to_radians().tan(), 200.0);
+    let s = State { pos: Vec3::new(0.0, 0.0, 100.0), vel: Vec3::new(u, 0.0, w), q: Quat::IDENTITY, w: Vec3::new(p, 0.0, 0.0) };
+    let on = sim.deriv(&cx, 100.0, &s, Phase::Free).0;
+    sim.aero_scale.magnus = 0.0;
+    let off = sim.deriv(&cx, 100.0, &s, Phase::Free).0;
+    let vt = (u * u + w * w).sqrt();
+    let m = 0.5 * RHO * vt * vt * S * D * 0.5 * (p * D / (2.0 * vt)) * (w / vt);
+    assert!(((on.w - off.w) * b.iyy - Vec3::new(0.0, 0.0, m)).norm() < 1e-9 * m, "{:?}", (on.w - off.w) * b.iyy);
+    assert_eq!(on.vel, off.vel);
+}
+
+#[test]
+fn damping_sums_clamped_to_zero_give_no_strip_force() {
+    // Sums with a negative damping sum about the CG (S2 - 2 x S1 + x^2 S0 < 0): no damping moment
+    // and no CN_q force either.
+    let b = Body { damp: [10.0, 10.0, 1.0], lag: (0.0, 0.0), ..osc_body() };
+    let s = State { pos: Vec3::new(0.0, 0.0, 100.0), vel: Vec3::new(V, 0.0, 0.0), q: Quat::IDENTITY, w: Vec3::new(0.0, 2.0, -1.0) };
+    let (on, _) = deriv_at(&b, AeroScale::default(), calm(), &s);
+    let (off, _) = deriv_at(&b, AeroScale { cnq: 0.0, ..AeroScale::default() }, calm(), &s);
+    assert_eq!(on.vel, off.vel);
 }

@@ -33,7 +33,7 @@ CSV は、1 行目が見出し、2 行目以降が格子点 1 つにつき 1 行
 
 .. code-block:: text
 
-   mach,alpha_deg,cn,ca_on,ca_off,xcp,cna,damp_s0,damp_s1,damp_s2,cl_delta,clp,lag_l0,lag_l1,cl4,cnpa
+   mach,alpha_deg,cn,ca_on,ca_off,xcp,cna,damp_s0,damp_s1,damp_s2,cl_delta,clp,lag_l0,lag_l1,cl4,cnpa,cmpa
 
 行は Mach 数が外側、迎角が内側の順（Mach 数ごとに迎角を小さい方から並べる）に、全格子点を 1 行ずつ並べる。
 ``alpha_deg`` は全迎角 :math:`\alpha_t` [deg] である（一般表では :math:`\alpha`。:ref:`sec-aero-alpha-beta`）。
@@ -74,24 +74,27 @@ CSV は、1 行目が見出し、2 行目以降が格子点 1 つにつき 1 行
      - ロール減衰微係数 :math:`C_{lp}=\partial C_l/\partial\hat p`\ （:math:`\hat p=pd/(2V)`。負）
    * - ``lag_l0``
      - m
-     - 遅れの和 :math:`L_0=2\,\mathrm{Vol}/S`\ （見かけの質量。:eq:`eq-lag-sums`）
+     - 遅れの和 :math:`L_0=(2/S)\int A\,\mathrm{d}x`\ （胴体とフィンの見かけの質量。:eq:`eq-lag-sums`）
    * - ``lag_l1``
      - m\ :sup:`2`
-     - 遅れの和 :math:`L_1=L_0\,x_{\mathrm{vol}}`\ （ノーズ先端まわり。:math:`L_1/L_0` が作用点）
+     - 遅れの和 :math:`L_1=(2/S)\int A\,x\,\mathrm{d}x`\ （ノーズ先端まわり。:math:`L_1/L_0` が見かけの質量の中心）
    * - ``cl4``
      - 無次元
      - 誘導ロールの係数 :math:`C_{l4}`\ （:math:`\Delta C_l=C_{l4}\alpha_t^2\sin4(\phi_c-\phi_f)`、:math:`\alpha_t` は rad。:eq:`eq-induced-roll`）
    * - ``cnpa``
      - 1/rad
      - Magnus 力の傾き :math:`C_{Np\alpha}^{*}`\ （:math:`C_{N,\mathrm{Magnus}}=C_{Np\alpha}^{*}\hat p\sin\alpha_t`。McCoy の :math:`pd/V` で無次元化した値の 2 倍。:eq:`eq-magnus`）
+   * - ``cmpa``
+     - 1/rad
+     - 静的な圧力中心まわりの Magnus のモーメントの傾き :math:`C_{mp\alpha}^{*}`\ （:eq:`eq-magnus-moment`。0 なら Magnus 力が圧力中心に働くだけ）
 
 既定の格子は、Mach 数が :math:`M=0,0.02,\dots,3.0`\ （151 点）、全迎角が :math:`\alpha_t=0^\circ,1^\circ,\dots,90^\circ`\ （91 点）である
 （設定 ``aero.mach_min`` ``mach_max`` ``mach_step`` と ``alpha_max_deg`` ``alpha_step_deg``。:ref:`[aero] の設定項目 <sec-config-aero>`）。
 飛翔計算は 0 から 90° の :math:`\alpha_t'` で表を引くので、既定の表では範囲を超えない。``alpha_max_deg`` を小さくした表で範囲を超えた迎角は外挿し、その結果は使えないもの（終了ステータス 3）とする（:ref:`sec-aero-table`、:ref:`sec-aero-interp`）。
 
 ``lag_l0`` と ``lag_l1`` は、部品積み上げ法では機体の形状から求め（:ref:`sec-damping`）、パネル法と CFD の表にも同じ形状の値を入れる。
-``cl4`` と ``cnpa`` は、部品積み上げ法、パネル法、CFD のどれも推算せず 0 を書く。値を使うには外部の表（``aero.method = "table"``）に書く。
-4 列の値の飛翔計算での使い方は :ref:`sec-aero-unsteady` にある。
+``cl4``、``cnpa``、``cmpa`` は、部品積み上げ法、パネル法、CFD のどれも推算せず 0 を書く。値を使うには外部の表（``aero.method = "table"``）に書く。
+5 列の値の飛翔計算での使い方は :ref:`sec-aero-unsteady` にある。
 
 .. _sec-file-general:
 
@@ -102,11 +105,11 @@ CSV は、1 行目が見出し、2 行目以降が格子点 1 つにつき 1 行
 
 .. code-block:: text
 
-   mach,alpha_deg,beta_deg,cx_on,cx_off,cy,cz,cl,cm,cn,cl_delta,clp,sq0,sq1,sq2,sr0,sr1,sr2,lag_l0,lag_l1,cnpa
+   mach,alpha_deg,beta_deg,cx_on,cx_off,cy,cz,cl,cm,cn,cl_delta,clp,sq0,sq1,sq2,sr0,sr1,sr2,lag_l0,lag_l1,cnpa,cmpa
 
 行は Mach 数が最も外側、迎角が次、横滑り角が最も内側の順に、全格子点を 1 行ずつ並べる。
 ``alpha_deg`` は迎角 :math:`\alpha`、``beta_deg`` は横滑り角 :math:`\beta` である（定義は :ref:`sec-aero-angles`）。
-行は 3 つの格子値に続く 18 個の値を持つ（15 個の古い形式は :ref:`sec-file-v1`）。
+行は 3 つの格子値に続く 19 個の値を持つ（18 個と 15 個の古い形式は :ref:`sec-file-v1`）。
 
 .. list-table::
    :header-rows: 1
@@ -139,9 +142,9 @@ CSV は、1 行目が見出し、2 行目以降が格子点 1 つにつき 1 行
    * - ``sr0`` / ``sr1`` / ``sr2``
      - ``damp_s0`` から ``damp_s2`` と同じ
      - ヨーの減衰の和 :math:`S_0^r,S_1^r,S_2^r`
-   * - ``lag_l0`` / ``lag_l1`` / ``cnpa``
+   * - ``lag_l0`` / ``lag_l1`` / ``cnpa`` / ``cmpa``
      - 軸対称表と同じ
-     - 遅れの和と Magnus 力の傾き（軸対称表の同名の列と同じ意味）
+     - 遅れの和と Magnus 力とモーメントの傾き（軸対称表の同名の列と同じ意味。``cmpa`` は等価な圧力中心まわり）
 
 一般表では、単一の圧力中心 :math:`x_{cp}` や :math:`C_{N\alpha}` を飛翔計算に使わない。
 6 成分の定義、符号、基準点は :doc:`aero_coefficients` と :ref:`sec-aero-forces`、減衰の和の使い方は :eq:`eq-moment-damp` にある。
@@ -178,7 +181,7 @@ Mach 数の刻みは、作り方で異なる。
      - 内容
    * - ``format_version``
      - 任意
-     - 形式のバージョン。書き出すときは常に 3。読み込み時はこの値を使わず、CSV の列数で形式を判定する（:ref:`sec-file-v1`）
+     - 形式のバージョン。書き出すときは常に 4。読み込み時はこの値を使わず、CSV の列数で形式を判定する（:ref:`sec-file-v1`）
    * - ``kind``
      - 任意
      - ``"axisymmetric"``\ （既定）または ``"general"``
@@ -212,6 +215,9 @@ Mach 数の刻みは、作り方で異なる。
    * - ``fin_roll_deg``
      - 任意
      - 軸対称表の誘導ロール ``cl4`` の基準になる 1 枚のフィンのロール角 :math:`\phi_f` [deg]（:math:`+y_b` から :math:`+z_b` へ測る。:eq:`eq-induced-roll`）。既定は 0。有限でなければエラー
+   * - ``fin_count``
+     - 任意
+     - フィンの枚数。``cl4`` は 4 枚（十字形）のときと、この項目がないときだけ使う。部品積み上げ法、パネル法、CFD の表と、形状から遅れの和を補った外部の表には、形状のフィンの枚数を書く
    * - ``extrapolation``
      - 必須
      - 迎角と横滑り角が表の範囲外のときの扱い。``"linear"``\ （線形外挿。符号と範囲を制限する）または ``"clamp"``\ （端の値で一定）。Mach 数は、この値にかかわらず端の値で一定（:ref:`sec-aero-interp`）
@@ -236,14 +242,14 @@ Mach 数の刻みは、作り方で異なる。
 * 格子の座標の列（``mach`` ``alpha_deg`` ``beta_deg``）を含むすべてのセルが有限であること。``NaN`` と ``inf`` は、座標の照合より先に調べ、``row 4 of …: column 1 (mach) is not finite: inf`` の形（行と列は例）で列の位置と見出しを示してエラーにする。
 * 値が数として読めない行、列数が合わない行。
 
-各行の値の数は見出しの列数に一致しなければならない。軸対称表は 16 列（格子の 2 列に値 14 個）、一般表は 21 列（格子の 3 列に値 18 個）の形式か、次節の古い形式である。
+各行の値の数は見出しの列数に一致しなければならない。軸対称表は 17 列（格子の 2 列に値 15 個）、一般表は 22 列（格子の 3 列に値 19 個）の形式か、次節の古い形式である。
 
 .. _sec-file-v1:
 
 古い列の組の表
 ~~~~~~~~~~~~~~
 
-次の列の組の表も読み込む。足りない列は 0 とする。どの表も、保存するときは現在の形式（バージョン 3）で書く。
+次の列の組の表も読み込む。足りない列は 0 とする。どの表も、保存するときは現在の形式（バージョン 4）で書く。
 
 .. list-table::
    :header-rows: 1
@@ -254,13 +260,19 @@ Mach 数の刻みは、作り方で異なる。
      - 足りない列
    * - 軸対称表（バージョン 1）
      - 10（値 8 個）
-     - ``cl_delta`` ``clp`` ``lag_l0`` ``lag_l1`` ``cl4`` ``cnpa``。付随ファイルに ``format_version`` がなくてもよい
+     - ``cl_delta`` ``clp`` ``lag_l0`` ``lag_l1`` ``cl4`` ``cnpa`` ``cmpa``。付随ファイルに ``format_version`` がなくてもよい
    * - 軸対称表（バージョン 2）
      - 12（値 10 個）
-     - ``lag_l0`` ``lag_l1`` ``cl4`` ``cnpa``
+     - ``lag_l0`` ``lag_l1`` ``cl4`` ``cnpa`` ``cmpa``
+   * - 軸対称表（バージョン 3）
+     - 16（値 14 個）
+     - ``cmpa``
    * - 一般表（15 個の値）
      - 18
-     - ``lag_l0`` ``lag_l1`` ``cnpa``
+     - ``lag_l0`` ``lag_l1`` ``cnpa`` ``cmpa``
+   * - 一般表（18 個の値）
+     - 21
+     - ``cmpa``
 
 見出しは、現在の見出しの先頭から、その列数までと一致しなければならない。
 
@@ -268,9 +280,19 @@ Mach 数の刻みは、作り方で異なる。
 補ったときは、端末に注意書きを表示する。形状を抽出できないときは、注意書きを表示してロール項を 0 のままにし、機体はロールしない。フィンがなければ補う値も 0 で、注意書きは出ない。
 ロール項を含む表は、そのまま使う。補った値は、読み込んだ表のメモリ上だけに入り、元のファイルは書き換えない。
 
-遅れと Magnus の列を持たない外部の表（上の表のバージョン 1、2 と 15 個の値の一般表）は、遅れの和を補わず、0 のまま飛ばす。
-このとき ``table has no lag/Magnus columns: quasi-steady terms only`` の警告を出す。遅れのモーメント、Magnus 力、誘導ロールは働かず、回転による法線力（減衰の和から求める。:eq:`eq-cnq-force`）だけが働く。
-遅れの項を入れるには、表に ``lag_l0`` と ``lag_l1`` の列を加える（部品積み上げ法の ``aero_table.csv`` の値を写してもよい）。
+遅れと Magnus の列を持たない外部の表（上の表のバージョン 1、2 と 15 個の値の一般表）には、ロール項と同じく、現在の STL の形状から部品積み上げ法の遅れの和（胴体とフィンの見かけの質量。:ref:`sec-damping`）を求めて補い、
+``the external aero table has no lag/Magnus columns: the apparent-mass (lag) sums were filled from the geometry (component build-up); Magnus force and induced roll are 0`` の警告を出す。
+形状を抽出できないときは遅れの和を 0 のまま飛ばし、``the external aero table has no lag/Magnus columns and the geometry is unavailable: the flight has no apparent-mass (lag) terms, Magnus force or induced roll`` の警告を出す。
+どちらの場合も Magnus 力とモーメント、誘導ロールは 0 で、回転による法線力（減衰の和から求める。:eq:`eq-cnq-force`）は働く。
+
+**実測や CFD のピッチ減衰を使う表**：強制振動の風洞試験や CFD、実射の同定で得たピッチ減衰 :math:`C_{mq}+C_{m\dot\alpha}` は、局所的な迎角の項だけでなく、見かけの質量の遅れと対流の回転の項（:eq:`eq-lag-section`）をすでに含む。
+この値を使う表では ``lag_l0`` と ``lag_l1`` を 0 にし、減衰を減衰の和に入れる。
+0 は列を持つ形式（バージョン 3 以降）に明示して書く。明示した 0 の列は補わないが、列のない古い形式では形状から遅れの和が補われ、見かけの質量の項を二重に数える（そのときの警告はこの点を示す）。
+基準の重心 :math:`x_{\mathrm{ref}}` で測った :math:`C_{mq}+C_{m\dot\alpha}`\ （:math:`qd/(2V)` あたり）から、重心まわりの和 :math:`K=-(C_{mq}+C_{m\dot\alpha})\,d^2/4` を作り、
+法線力の傾きと圧力中心を表す :math:`S_0,S_1` はそのままに :math:`S_2=K+2x_{\mathrm{ref}}S_1-x_{\mathrm{ref}}^2S_0` とする（:eq:`eq-damping`）。こうすると、重心が動いたときの減衰の変化は局所的な迎角の和の形で近似される。
+:math:`C_{mq}` と :math:`C_{m\dot\alpha}` が別々に分かっているときは、:math:`C_{m\dot\alpha}` を遅れの和で表してもよい。
+:math:`\dot u_z=V\dot\alpha` で遅れのモーメントは :math:`C_{m\dot\alpha}=2(x_{\mathrm{ref}}L_0-L_1)/d^2` にあたるので、:math:`L_0=0`、:math:`L_1=-C_{m\dot\alpha}d^2/2` とする（重心によらない純粋なモーメントになり、対流の回転の力も 0 になる）。
+遅れの和は対流の回転の項にも同じ値で効き、:math:`C_{mq}` に :math:`C_{m\dot\alpha}` と同じ値を足すので、減衰の和の側は :math:`K=-(C_{mq}-C_{m\dot\alpha})\,d^2/4` から :math:`S_2` を作る。
 
 .. _sec-aero-table-format-external:
 
@@ -286,8 +308,10 @@ Mach 数の刻みは、作り方で異なる。
 * 軸対称表の ``alphas_deg`` は 0 から始め、一般表の ``alphas_deg`` と ``betas_deg`` は 0 を含める。格子の座標を含むすべてのセルは有限にする（上の「読み込み時の検査」）。
 * 格子の外の引き出しは、迎角・横滑り角の最初の格子点より小さい側も、最後の格子点より大きい側も、範囲外として数える（``aero_table_range`` の ``angle_beyond``。:ref:`sec-file-summary`）。格子点が 1 つだけの軸では、その値以外はすべて範囲外である。
 * 軸対称な外部の表は、``aero.table_kind = "general"`` で一般表に展開できる（展開した表は書き出さない）。外部の表が最初から一般表なら、そのまま使う。
-* ロール項がすべて 0 の表には、前節のとおり部品積み上げ法のロール項が補われる。遅れの和は補われない。
-* 軸対称表の誘導ロール ``cl4`` は、付随ファイルの ``fin_roll_deg`` のフィンの面を基準にした値である。Magnus 力の ``cnpa`` は :math:`\hat p=pd/(2V)` についての傾き（McCoy の :math:`C_{Np\alpha}` の 2 倍）で、正の向きは :math:`\bm{u}\times\bm{e}_x` である（:eq:`eq-magnus`）。
+* ロール項がすべて 0 の表には、前節のとおり部品積み上げ法のロール項が補われる。遅れと Magnus の列のない形式の表には、形状の遅れの和が補われる。
+* 軸対称表の誘導ロール ``cl4`` は、付随ファイルの ``fin_roll_deg`` のフィンの面を基準にした値で、フィンが 4 枚の機体（``fin_count``）にだけ使う。
+  ``cl4`` を書くときは ``fin_count`` も書く。ないときは 4 枚とみなして警告を出す（``the aero table has an induced roll cl4 but no fin_count in its sidecar: the sin(4 phi) form of four fins is assumed``）。
+  Magnus 力の ``cnpa`` は :math:`\hat p=pd/(2V)` についての傾き（McCoy の :math:`C_{Np\alpha}` の 2 倍）で、正の向きは :math:`\bm{u}\times\bm{e}_x` である（:eq:`eq-magnus`）。``cmpa`` は静的な圧力中心まわりの Magnus のモーメント（McCoy の :math:`C_{Mp\alpha}` の向き。:eq:`eq-magnus-moment`）である。
 * CSV の見出しは、列の名前と順序が前節の見出しと一致していなければならない（大文字小文字と前後の空白は無視する）。名前や順序が違うと、読み込みで ``unexpected CSV header`` を含むエラーにする。
 
 .. _sec-file-drag:

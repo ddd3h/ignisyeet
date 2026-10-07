@@ -328,6 +328,9 @@ pub struct SimCfg {
     pub output_interval: f64,
     /// Descent mode for `sim`: "parachute" or "ballistic". Defaults to parachute when recovery is enabled.
     pub descent: Option<sim::Descent>,
+    /// Fly with the quasi-steady aerodynamics only: no apparent-mass (lag and convective) terms, no
+    /// Magnus force or moment, no rotation-induced (CN_q) force (sensitivity checks; default false).
+    pub quasi_steady: bool,
 }
 
 impl Default for SimCfg {
@@ -341,6 +344,7 @@ impl Default for SimCfg {
             max_time: 3600.0,
             output_interval: 0.05,
             descent: None,
+            quasi_steady: false,
         }
     }
 }

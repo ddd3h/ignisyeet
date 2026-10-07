@@ -250,7 +250,7 @@ pub struct AeroScale {
     pub clp: f64,
     /// Scales the lag (apparent-mass) sums `lag_l0`, `lag_l1`; 0 switches the lag moment off.
     pub lag: f64,
-    /// Scales the Magnus slope `cnpa`.
+    /// Scales the Magnus slopes `cnpa` and `cmpa`.
     pub magnus: f64,
     /// Scales the damping sums on top of `cn` (pitch-damping moment and the rotation-induced force).
     pub damp: f64,
@@ -463,20 +463,22 @@ pub struct Summary {
     pub roll_resonance: Option<RollResonance>,
 }
 
-/// Crossing of the roll rate `|p|` and the pitch natural frequency
-/// `omega_n = sqrt(max(0, -Cm_alpha) q S d / I)` (`-Cm_alpha` the restoring derivative about the
-/// CG, I the mean transverse inertia) in free flight before apogee above 10 m/s. With a trim
-/// forcing fixed in the body, the forcing rolls with the body at `p`; at `p = omega_n` it drives
-/// the pitch/yaw oscillation at its natural frequency (roll resonance; lock-in and catastrophic yaw
-/// when the roll rate stays there). Sampled once per integration step; the crossing time and
-/// Mach number are interpolated linearly between the two steps.
+/// Crossing of the roll rate `|p|` and the resonance roll rate `p_r = omega_n / sqrt(1 - Ixx / I)`,
+/// `omega_n = sqrt(max(0, -Cm_alpha) q S d / I)` the pitch natural frequency (`-Cm_alpha` the
+/// restoring derivative about the CG, I the mean transverse inertia), in free flight before apogee
+/// above 10 m/s. A trim forcing fixed in the body (lateral CG offset, thrust misalignment, an
+/// asymmetric table moment) rolls with the body at `p`; at `p = p_r` it drives the fast (nutation)
+/// mode of the spinning body, `omega_f = (P + sqrt(P^2 + 4 omega_n^2)) / 2` with `P = (Ixx / I) p`
+/// (Murphy), at its natural frequency (roll resonance; lock-in and catastrophic yaw when the roll
+/// rate stays there). Sampled once per integration step; the crossing time and Mach number are
+/// interpolated linearly between the two steps.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct RollResonance {
     /// Time of the first crossing [s].
     pub t: f64,
     /// Mach number at the first crossing.
     pub mach: f64,
-    /// Roll rate |p| = pitch natural frequency at the first crossing [rad/s].
+    /// Roll rate |p| = resonance roll rate p_r at the first crossing [rad/s].
     pub frequency: f64,
     /// Number of crossings during the ascent.
     pub crossings: u32,
@@ -666,6 +668,7 @@ impl<'a> Simulation<'a> {
         c.lag_l0 *= lag;
         c.lag_l1 *= lag;
         c.cnpa *= magnus;
+        c.cmpa *= magnus;
         c
     }
 
@@ -688,6 +691,7 @@ impl<'a> Simulation<'a> {
         c.lag_l0 *= lag;
         c.lag_l1 *= lag;
         c.cnpa *= magnus;
+        c.cmpa *= magnus;
         c
     }
 
@@ -711,15 +715,23 @@ impl<'a> Simulation<'a> {
         self.table.static_margins(aux.mach, aux.x_cg)
     }
 
-    /// Pitch natural frequency [rad/s] at a free-flight state (`aux` from [`deriv`](Self::deriv) at
-    /// time `t`): `sqrt(max(0, R) q S d / I)` with `R = -dCm_cg/dalpha` the restoring derivative of the
-    /// table at the state's Mach number and CG (the smaller of pitch and yaw, scaled as the normal
-    /// force) and I the mean of the transverse moments of inertia. NaN when R is unknown.
+    /// Resonance roll rate [rad/s] at a free-flight state (`aux` from [`deriv`](Self::deriv) at time
+    /// `t`): `p_r = omega_n / sqrt(1 - Ixx / I)`, `omega_n = sqrt(max(0, R) q S d / I)` with
+    /// `R = -dCm_cg/dalpha` the restoring derivative of the table at the state's Mach number and CG
+    /// (the smaller of pitch and yaw, scaled as the normal force) and I the mean of the transverse
+    /// moments of inertia. `p_r` solves `p = omega_f(p)`, the fast mode of the spinning body (see
+    /// [`RollResonance`]). NaN when R is unknown or `Ixx >= I`.
     fn pitch_frequency(&self, t: f64, aux: &Aux) -> f64 {
         let ms = self.mass_at(t);
         let it = 0.5 * (ms.inertia.0[1][1] + ms.inertia.0[2][2]);
         let r = self.table.restoring_derivative(aux.mach, aux.x_cg) * self.aero_scale.cn;
-        (r.max(0.0) * aux.qdyn * self.table.meta.ref_area * self.table.meta.ref_diameter / it).sqrt()
+        let wn = (r.max(0.0) * aux.qdyn * self.table.meta.ref_area * self.table.meta.ref_diameter / it).sqrt();
+        let gyro = 1.0 - ms.inertia.0[0][0] / it;
+        if gyro > 0.0 {
+            wn / gyro.sqrt()
+        } else {
+            f64::NAN
+        }
     }
 
     /// Mass, CG and inertia at time t.
@@ -887,8 +899,10 @@ impl<'a> Simulation<'a> {
                             // Rotation-induced normal force (CN_q) of the same strips as the damping
                             // moment, pitch sums for the pitch rate (z force), yaw sums for the yaw rate
                             // (y force); see the axisymmetric branch for the derivation. Its moment about
-                            // the CG is the damping moment above, so it is not transferred again.
-                            let f_q = Vec3::new(0.0, (c.sr[1] - x_cg * c.sr[0]) * ex_w.y, (c.sq[1] - x_cg * c.sq[0]) * ex_w.z) * (-cnq * qs / v);
+                            // the CG is the damping moment above, so it is not transferred again. A plane
+                            // whose damping sum is clamped to zero (unphysical sums) gets no force either.
+                            let (fy, fz) = (if kr > 0.0 { c.sr[1] - x_cg * c.sr[0] } else { 0.0 }, if kq > 0.0 { c.sq[1] - x_cg * c.sq[0] } else { 0.0 });
+                            let f_q = Vec3::new(0.0, fy * ex_w.y, fz * ex_w.z) * (-cnq * qs / v);
                             f_body += f_q;
                         }
                         // Effective centre of pressure of the transverse force at the current angles (the
@@ -902,6 +916,10 @@ impl<'a> Simulation<'a> {
                             if x_cp.is_finite() {
                                 m_body += Vec3::new(x_cg - x_cp, 0.0, 0.0).cross(f_m);
                             }
+                        }
+                        if c.cmpa != 0.0 && lat > 1e-12 {
+                            // Magnus moment about the centre of pressure, along the lateral airspeed.
+                            m_body += Vec3::new(0.0, ub.y, ub.z) * (qs * d_ref * c.cmpa * p_hat / v);
                         }
                         if c.lag_l0 != 0.0 || c.lag_l1 != 0.0 {
                             lag = Some((c.lag_l0, c.lag_l1, lag_fade(alpha_eff)));
@@ -924,7 +942,8 @@ impl<'a> Simulation<'a> {
                         let [s0, s1, s2] = c.damp;
                         let k = (s2 - 2.0 * x_cg * s1 + x_cg * x_cg * s0).max(0.0);
                         m_body += Vec3::new(0.0, s.w.y, s.w.z) * (-qd * s_ref * k / v);
-                        if cnq != 0.0 {
+                        // Sums whose damping sum is clamped to zero are unphysical: no strip force either.
+                        if cnq != 0.0 && k > 0.0 {
                             // Rotation-induced normal force (CN_q, Etkin's Z_q). A strip with slope
                             // CNa_i at x_i aft of the nose lies at r_i = -l_i e_x from the CG,
                             // l_i = x_i - x_cg; the rotation moves it with w x r_i = l_i (e_x x w), which adds
@@ -947,10 +966,15 @@ impl<'a> Simulation<'a> {
                             f_aero += f_m;
                             m_body += Vec3::new(x_cg - c.xcp, 0.0, 0.0).cross(f_m);
                         }
+                        if c.cmpa != 0.0 && lat > 1e-12 {
+                            // Magnus moment about the centre of pressure, along the lateral airspeed
+                            // (McCoy's C_Mpa direction v - (v.x) x): dM = q S d cmpa p_hat sin(alpha) e_perp.
+                            m_body += Vec3::new(0.0, ub.y, ub.z) * (qd * s_ref * d_ref * c.cmpa * p_hat / v);
+                        }
                         // Roll: the tabulated forcing at the reference cant (zero for a rocket without
                         // cant), the change of cant and the roll damping.
                         let mut cl = c.cl_delta * (self.table.meta.fin_cant_ref_deg.to_radians() + d_cant) * sgn + c.clp * p_hat;
-                        if c.cl4 != 0.0 {
+                        if c.cl4 != 0.0 && self.table.meta.fin_count.unwrap_or(4) == 4 {
                             // Induced roll of the fins (reversed in tail-first flow as the cant forcing).
                             cl += induced_roll(c.cl4, alpha_eff, ub.y, ub.z, self.table.meta.fin_roll_deg.to_radians()) * sgn;
                         }
@@ -964,6 +988,15 @@ impl<'a> Simulation<'a> {
                         }
                         aux = Aux { airspeed: v, mach, alpha, qdyn: qd, cn: c.cn, ca, x_cp: c.xcp, beta, cl, cy: 0.0, ..aux };
                     }
+                }
+                if let Some((l0, _, fade)) = lag.filter(|l| l.2 > 0.0) {
+                    // Convective rotation force of the apparent mass (the V A q term below): it depends
+                    // on the rotation only, not on the acceleration, so it can be applied without an
+                    // algebraic loop. -(rho S / 2) L0 times the lateral part of -w_t x u_b,
+                    // (0, -r u_x, q u_x). With the strip force (CN_q) the total force of the q terms is
+                    // the slender-body -rho V q A_e l_e (see `AeroModel::lag_sums`).
+                    let c_rot = Vec3::new(0.0, -s.w.z * ub.x, s.w.y * ub.x);
+                    f_body += c_rot * (-0.5 * atm.density * s_ref * l0 * fade);
                 }
                 let acc = rot.mul_vec(f_body) / mass + g;
                 if let Some((l0, l1, fade)) = lag.filter(|l| l.2 > 0.0) {
@@ -979,8 +1012,9 @@ impl<'a> Simulation<'a> {
                     // lateral vector is -w_t x u_b (lateral part (0, -r V, q V)). Both act as a force
                     // -(rho S / 2) L0 (...) at L1 / L0 aft of the nose, so the moment is
                     // dM = -(rho S / 2)(x_cg L0 - L1)(e_x x a_perp), a = du_b/dt - w_t x u_b
-                    // = R^T (dv/dt - dW/dt) - 2 w_t x u_b. Their forces (-rho Vol (dw/dt + V q)) are not
-                    // applied. The reaction of the air the body carries does not depend on whether the
+                    // = R^T (dv/dt - dW/dt) - 2 w_t x u_b. The force of the rotation term is applied
+                    // above; that of the lag term, -(rho S / 2) L0 du_perp/dt, is not (the acceleration
+                    // would depend on it: an algebraic loop). The reaction of the air the body carries does not depend on whether the
                     // nose or the tail leads (as the static normal force and the damping), so it is not
                     // reversed in tail-first flow.
                     //
@@ -1156,11 +1190,9 @@ impl<'a> Simulation<'a> {
             roll_resonance: None,
         };
         // Roll-resonance check: trim forcing fixed in the body, and (t, Mach, |p| - omega_n, |p|) of the previous ascent step.
-        // A general table with a pitch or yaw moment at zero angles is a built-in (aerodynamic) trim forcing.
-        let trim = self.fin_cant_deg != 0.0
-            || self.mass.cg_lateral_dry != [0.0, 0.0]
-            || !self.thrust_line.is_aligned()
-            || self.table.max_zero_angle_moment() > ZERO_ANGLE_MOMENT_TRIM;
+        // Trim forcing fixed in the body: a lateral CG offset, a misaligned thrust line or a general table
+        // with a pitch or yaw moment at zero angles. A symmetric fin cant only rolls the rocket.
+        let trim = self.mass.cg_lateral_dry != [0.0, 0.0] || !self.thrust_line.is_aligned() || self.table.max_zero_angle_moment() > ZERO_ANGLE_MOMENT_TRIM;
         let mut res_prev: Option<(f64, f64, f64, f64)> = None;
         let mut deploy_at = f64::INFINITY;
         let mut past_apogee = false;

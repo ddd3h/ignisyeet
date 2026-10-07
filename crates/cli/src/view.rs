@@ -292,6 +292,9 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
         let dt = if c.integrator.is_adaptive() { String::new() } else { format!("{s}dt {}", val(c.dt, "s")) };
         p.row("integrator", format!("{}{s}attitude {}{dt}{tol}", style(name(&c.integrator)).bold(), style(name(&c.attitude)).bold()));
         p.row("limits", format!("max time {}{s}output every {}", val(c.max_time, "s"), val(c.output_interval, "s")));
+        if c.quasi_steady {
+            p.row("aerodynamics", style("quasi-steady only (no apparent-mass, Magnus or CN_q terms)").yellow().to_string());
+        }
     }
 
     if sub == Sub::Dispersion {
@@ -725,6 +728,12 @@ mod tests {
         let lines = ui().render_panel(&p).join("\n");
         let plain = console::strip_ansi_codes(&lines).to_string();
         assert!(plain.contains("dop853") && plain.contains("attitude lie_group") && plain.contains("rtol"), "{plain}");
+        assert!(!plain.contains("quasi-steady only"));
+        let text = text.replace("integrator = \"dop853\"", "integrator = \"dop853\"\nquasi_steady = true");
+        let cfg = Config::from_value(toml::from_str(&text).unwrap(), Some(&dir)).unwrap();
+        assert!(cfg.sim.quasi_steady);
+        let plain = console::strip_ansi_codes(&ui().render_panel(&config_panel(&cfg, &dir.join("sample.toml"), Sub::Sim, None)).join("\n")).to_string();
+        assert!(plain.contains("quasi-steady only"), "{plain}");
     }
 
     #[test]

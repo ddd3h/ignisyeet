@@ -454,27 +454,32 @@ impl AeroModel {
         [self.body_s[0] + cnf, self.body_s[1] + cnf * xf, self.body_s[2] + cnf * xf * xf]
     }
 
-    /// Lag (alpha-dot) sums `(L0 [m], L1 [m^2])` at Mach `m`: the lateral force
-    /// `-(rho S / 2) L0 du_perp/dt` acting at `L1 / L0` aft of the nose tip, `du_perp/dt` the
-    /// lateral acceleration of the body relative to the air.
+    /// Lag (apparent-mass) sums `(L0 [m], L1 [m^2])` at Mach `m`: the air mass `(rho S / 2) L0`
+    /// carried along by the lateral motion, centred `L1 / L0` aft of the nose tip.
     ///
-    /// Body: slender-body apparent mass. Each section carries the air mass `rho A(x)` per unit
-    /// length with its lateral motion (Munk; Nielsen, Missile Aerodynamics, ch. 3), so the body
-    /// carries `rho Vol` at the volume centroid `x_vol`: `L0 = K_B = 2 Vol / S`, `L1 = K_B x_vol`.
+    /// Slender-body theory (Munk; Nielsen, Missile Aerodynamics, ch. 3 and 5): a cross-section
+    /// carries the air mass `rho A(x)` per unit length, `A = pi r^2` on the body and
+    /// `A = pi (s^2 - r^2 + r^4 / s^2)` on a wing-body section of semi-span `s` (the same for a
+    /// planar and a cruciform set). The section force is `f = -rho D/Dt [A w_c]`,
+    /// `D/Dt = d/dt + V d/dx` (x aft), with the local crossflow `w_c = w + q l`, `l = x - x_cg`:
     ///
-    /// The section force is `f = -rho D/Dt [A w_c]`, `D/Dt = d/dt + V d/dx` (x aft), with the local
-    /// crossflow `w_c = w + q l`, `l = x - x_cg`:
-    /// `D/Dt [A w_c] = A (dw/dt + l dq/dt) + V A' (w + q l) + V A q`. `V A' w` is the static Munk
-    /// normal force (in the table), `V A' q l` the local-incidence strip sum of
-    /// [`damping_sums`](Self::damping_sums), `A dw/dt` the lag (alpha-dot) term and `V A q` the
-    /// convective rotation term, whose moment `-rho V q Vol (x_vol - x_cg)` has the same form as the
-    /// lag moment with `dw/dt` replaced by `V q`; the flight model applies both from these sums.
-    /// The added inertia `A l dq/dt` is neglected. Independent of Mach in slender-body theory.
+    /// `D/Dt [A w_c] = A (dw/dt + l dq/dt) + V A' (w + q l) + V A q`.
     ///
-    /// Fins: the downwash lag of an aft surface in the wake of a forward lifting surface (canard or
-    /// first fin set; Nielsen ch. 9, Etkin, Dynamics of Flight, ch. 5 for the tail of an aircraft)
-    /// needs a lifting surface ahead of the fins. With a single fin set there is none, so the fin
-    /// term is zero ([`fin_lag_sums`](Self::fin_lag_sums)).
+    /// * `V A' w`: the static normal force, in the table (body: Barrowman = slender-body `2 dA/S`;
+    ///   fins: Barrowman `CNa_f` with body interference instead of the slender-body slope).
+    /// * `V A' q l`: the local-incidence strip sum of [`damping_sums`](Self::damping_sums) (fins:
+    ///   `CNa_f l_f^2` at the Barrowman fin centre of pressure).
+    /// * `A dw/dt` (lag) and `V A q` (convective rotation): neither is in the table or the strip
+    ///   sums; both are `A` times a lateral acceleration and are applied by the flight model from
+    ///   `L0 = (2/S) int A dx`, `L1 = (2/S) int A x dx`.
+    /// * `A l dq/dt` (added inertia): neglected.
+    ///
+    /// Integrated by parts, the sum of the q terms is `-rho V q [A_e l_e^2 - int A l dx]` and that of
+    /// the alpha-dot term `-rho dw/dt int A l dx` (`e` the aft end), so in a pitching motion with
+    /// `dw/dt = V q` the total is `-rho V q A_e l_e^2`: `Cmq + Cmalphadot = -2 CNa (l_e / d)^2`.
+    ///
+    /// Body: `A = pi r^2`, so `L0 = K_B = 2 Vol / S`, `L1 = K_B x_vol` (x_vol the volume centroid).
+    /// Fins: [`fin_lag_sums`](Self::fin_lag_sums), the wing-body increment over the fin chord.
     pub fn lag_sums(&self, m: f64) -> (f64, f64) {
         let (vol, moment) = self.body_volume_moment();
         let s = self.geom.ref_area;
@@ -485,10 +490,55 @@ impl AeroModel {
         (2.0 * vol / s + fl0, 2.0 * moment / s + fl1)
     }
 
-    /// Downwash-lag sums of the fins: zero for the single fin set this model knows (no lifting
-    /// surface ahead of it whose wake the fins could see with a delay).
-    pub fn fin_lag_sums(&self, _m: f64) -> (f64, f64) {
-        (0.0, 0.0)
+    /// Apparent-mass sums of the fins at Mach `m`: the wing-body increment
+    /// `A_f(x) = pi (s - r^2 / s)^2` (the wing-body section `pi (s^2 - r^2 + r^4 / s^2)` minus the
+    /// body `pi r^2`, `r` the body radius at the fins, `s` the local semi-span) over the planform,
+    /// from the most forward leading edge to the most aft trailing edge (root or tip). The
+    /// semi-span grows along the leading edge from `r` at the root leading edge to `r + span` at the
+    /// tip leading edge and is held there to the end (in slender-body theory a section aft of the
+    /// largest span carries the same apparent mass).
+    ///
+    /// The increment is scaled so that its value at the largest span equals the apparent mass of
+    /// the fin normal force the table uses: `(S / 2) CNa_f` with `CNa_f` the Barrowman slope of the
+    /// fin set with body interference (slender-body theory: `CNa_f = 2 A_f,max / S`). The lag and
+    /// convective terms of the fins are then consistent with their static normal force and strip
+    /// damping at every Mach number and fin count (the slender-body slope overestimates the lift of
+    /// fins of finite aspect ratio). `L0_f = CNa_f int phi dx`, `L1_f = CNa_f int phi x dx`,
+    /// `phi = A_f / A_f,max`.
+    ///
+    /// Not included: the downwash lag of an aft surface in the wake of a forward lifting surface
+    /// (Etkin, Dynamics of Flight, ch. 5): a single fin set has no surface ahead of it.
+    pub fn fin_lag_sums(&self, m: f64) -> (f64, f64) {
+        let Some(f) = &self.geom.fins else { return (0.0, 0.0) };
+        if f.span <= 0.0 || f.root_chord <= 0.0 || f.count == 0 {
+            return (0.0, 0.0);
+        }
+        let h = 1e-4;
+        let cna_f = self.fin_cn(m, h) / h;
+        let r = f.body_radius.max(0.0);
+        let a_of = |s: f64| if s > 0.0 { (s - r * r / s).powi(2) } else { 0.0 };
+        let a_max = a_of(r + f.span);
+        if a_max <= 0.0 {
+            return (0.0, 0.0);
+        }
+        // From the most forward leading edge to the most aft trailing edge of the planform (root or
+        // tip: a fin swept by more than its root chord reaches its full span only behind the root).
+        let x0 = f.x_le_root.min(f.x_le_root + f.sweep);
+        let x1 = (f.x_le_root + f.root_chord).max(f.x_le_root + f.sweep + f.tip_chord);
+        let n = 400;
+        let dx = (x1 - x0) / n as f64;
+        let (mut i0, mut i1) = (0.0, 0.0);
+        for i in 0..n {
+            let x = x0 + (i as f64 + 0.5) * dx;
+            // Largest semi-span reached at or ahead of x (slender-body theory holds it aft of there):
+            // along a backward-swept leading edge it grows to the tip; a forward-swept (or
+            // unswept) tip leading edge is reached first.
+            let grow = if f.sweep > 0.0 { ((x - f.x_le_root) / f.sweep).clamp(0.0, 1.0) } else { 1.0 };
+            let phi = a_of(r + f.span * grow) / a_max;
+            i0 += phi * dx;
+            i1 += phi * x * dx;
+        }
+        (cna_f * i0, cna_f * i1)
     }
 
     /// Volume of the body of revolution [m^3] and its first moment about the nose tip [m^4] from
@@ -923,9 +973,10 @@ mod tests {
         let vol = v_nose + v_cyl;
         let (vm, _) = m.body_volume_moment();
         assert!((vm / vol - 1.0).abs() < 0.01, "volume {vm} vs {vol}");
-        let (l0, l1) = m.lag_sums(0.5);
+        let (l0b, l1b) = (m.lag_sums(0.5).0 - m.fin_lag_sums(0.5).0, m.lag_sums(0.5).1 - m.fin_lag_sums(0.5).1);
         let s = m.geom.ref_area;
-        assert!((l0 - 2.0 * vm / s).abs() < 1e-12);
+        assert!((l0b - 2.0 * vm / s).abs() < 1e-12);
+        let (l0, l1) = (l0b, l1b);
         // Centroid: the nose part of the ogive and the cylinder about the nose tip (nose centroid by quadrature).
         let n = 20000;
         let nose_mom: f64 = (0..n)
@@ -936,7 +987,12 @@ mod tests {
             .sum();
         let x_vol = (nose_mom + v_cyl * 0.5 * (ln + l)) / vol;
         assert!((l1 / l0 - x_vol).abs() < 0.005 * l, "x_vol {} vs {x_vol}", l1 / l0);
-        assert_eq!(m.fin_lag_sums(0.5), (0.0, 0.0));
+        // Without fins the sums are those of the body volume alone.
+        let mut finless = m.geom.clone();
+        finless.fins = None;
+        let finless = AeroModel::new(finless, AeroOptions::default());
+        assert_eq!(finless.fin_lag_sums(0.5), (0.0, 0.0));
+        assert!((finless.lag_sums(0.5).0 - 2.0 * vm / s).abs() < 1e-12);
         // A cone: centroid 3 L / 4 from the tip, volume pi R^2 L / 3 (exact for the frustum sum).
         let mut g = m.geom.clone();
         let (cl, cr) = (0.8, 0.06);
@@ -948,6 +1004,63 @@ mod tests {
         let (l0, l1) = cone.lag_sums(1.2);
         assert!((l1 / l0 - 0.75 * cl).abs() < 1e-12, "cone centroid {}", l1 / l0);
         assert!((l0 * cone.geom.ref_area / 2.0 - PI * cr * cr * cl / 3.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn fin_apparent_mass_follows_the_wing_body_section_and_the_fin_normal_force() {
+        // Sample fins: root chord 0.20 m from 1.30 m, tip leading edge 0.08 m aft, span 0.10 m on r = 0.05 m.
+        let (m, _) = model();
+        let f = m.geom.fins.clone().unwrap();
+        let cna_f = m.fin_cn(0.5, 1e-4) / 1e-4;
+        let (l0, l1) = m.fin_lag_sums(0.5);
+        // Independent quadrature of the wing-body increment pi (s - r^2/s)^2 normalised to (S/2) CNa_f.
+        let r = f.body_radius;
+        let am = |s: f64| (s - r * r / s).powi(2);
+        let n = 100_000;
+        let (mut i0, mut i1) = (0.0, 0.0);
+        for i in 0..n {
+            let x = f.x_le_root + (i as f64 + 0.5) * f.root_chord / n as f64;
+            let s = r + f.span * ((x - f.x_le_root) / f.sweep).min(1.0);
+            let w = am(s) / am(r + f.span) * f.root_chord / n as f64;
+            i0 += w;
+            i1 += w * x;
+        }
+        assert!((l0 / (cna_f * i0) - 1.0).abs() < 1e-4 && (l1 / (cna_f * i1) - 1.0).abs() < 1e-4, "{l0} {l1}");
+        // The centroid lies inside the fin chord, aft of the half chord (the span grows along the leading edge).
+        let xc = l1 / l0;
+        assert!(xc > f.x_le_root + 0.5 * f.root_chord && xc < f.x_le_root + f.root_chord, "{xc}");
+        // Proportional to the fin normal-force slope (Mach, fin count).
+        let (l0s, _) = m.fin_lag_sums(2.0);
+        assert!((l0s / l0 - (m.fin_cn(2.0, 1e-4) / m.fin_cn(0.5, 1e-4))).abs() < 1e-9);
+    }
+
+    #[test]
+    fn fin_apparent_mass_of_a_fin_swept_beyond_its_root_chord_reaches_the_full_span() {
+        // Root chord 0.20 m, tip leading edge 0.30 m aft of the root leading edge, tip chord 0.10 m:
+        // the full span is reached behind the root trailing edge, the planform ends at the tip
+        // trailing edge 0.40 m aft of the root leading edge.
+        let (m0, _) = model();
+        let mut g = m0.geom.clone();
+        let f = g.fins.as_mut().unwrap();
+        (f.root_chord, f.tip_chord, f.sweep, f.x_le_root) = (0.20, 0.10, 0.30, 1.10);
+        let m = AeroModel::new(g, AeroOptions::default());
+        let f = m.geom.fins.clone().unwrap();
+        let r = f.body_radius;
+        let am = |s: f64| (s - r * r / s).powi(2);
+        let n = 200_000;
+        let (x0, x1) = (1.10, 1.50);
+        let (mut i0, mut i1) = (0.0, 0.0);
+        for i in 0..n {
+            let x = x0 + (i as f64 + 0.5) * (x1 - x0) / n as f64;
+            let w = am(r + f.span * ((x - x0) / 0.30).min(1.0)) / am(r + f.span) * (x1 - x0) / n as f64;
+            i0 += w;
+            i1 += w * x;
+        }
+        let cna_f = m.fin_cn(0.5, 1e-4) / 1e-4;
+        let (l0, l1) = m.fin_lag_sums(0.5);
+        assert!((l0 / (cna_f * i0) - 1.0).abs() < 1e-4 && (l1 / (cna_f * i1) - 1.0).abs() < 1e-4, "{l0} {l1} vs {} {}", cna_f * i0, cna_f * i1);
+        // The full-span stretch (1.40 to 1.50 m) is included: more than the root chord alone gives.
+        assert!(i0 > 0.1 && l1 / l0 > 1.35, "{i0} {}", l1 / l0);
     }
 
     /// Sample body with rectangular fins of span `span` and chord `chord` on a body of radius 0.05 m.

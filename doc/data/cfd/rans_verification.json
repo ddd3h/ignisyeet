@@ -3,90 +3,96 @@
  "date": "2026-10-07",
  "tools": "SU2 8.3.0, Open MPI 5.0.11, gmsh 4.15.2",
  "machine": "i7-12700 (20 threads, 30 GB), shared with other jobs",
- "commits": "flat plate 8f745ae; CLI cases 3acdb89 (release/v0.4.0 73d22f8 merged)",
+ "commits": "each data file header names its commit",
  "gates": {
   "V1_flat_plate_M0.2": {
    "quantity": "cf at x = 0.97, finest grid (273x193) vs NASA TMR SA (CFL3D/FUN3D 545x385, 2.7055e-3)",
-   "value_percent": 0.774001,
+   "value_percent": 0.791115,
    "threshold_percent": 2.0,
-   "vs_karman_schoenherr_percent": -0.647167,
+   "vs_karman_schoenherr_percent": -0.630293,
    "grid_convergence": "monotone",
    "cf_by_grid": {
-    "69x49": 0.00271816,
-    "137x97": 0.00272452,
-    "273x193": 0.00272645
+    "69x49": 0.00272236,
+    "137x97": 0.00272564,
+    "273x193": 0.00272692
    },
    "pass": true,
    "note": "cf rises for x > 1.5 because of the farfield outflow at the plate end; plate CD not compared",
-   "provenance": "rans_flatplate.csv, rans_flatplate_cf.csv (doc/scripts/rans_flatplate.py)"
+   "provenance": "rans_flatplate.csv, rans_flatplate_cf.csv (doc/scripts/rans_flatplate.py; SU2 settings of the CFD mode, header names the commit)"
   },
   "V2_flat_plate_M2_adiabatic": {
    "quantity": "cf at x = 0.97, finest grid (273x193) vs van Driest II (Hopkins-Inouye, r = 0.89)",
-   "value_percent": -1.19501,
+   "value_percent": -1.18257,
    "threshold_percent": 5.0,
    "grid_convergence": "monotone",
    "cf_by_grid": {
-    "69x49": 0.00210589,
-    "137x97": 0.00211093,
-    "273x193": 0.00211287
+    "69x49": 0.00210812,
+    "137x97": 0.00211156,
+    "273x193": 0.00211314
    },
    "pass": true,
+   "note": "137x97 stopped at the 20000-iteration cap 5.8 orders below the startup peak (the others 8 orders)",
    "provenance": "rans_flatplate.csv"
   },
   "acceptance_rule_replay_flat_plate": {
-   "quantity": "plate CD at the iteration the CFD-mode acceptance would stop vs the run to 8 orders",
+   "quantity": "plate CD at the iteration an acceptance rule would stop vs the run to 8 orders",
    "old_rule_percent": {
-    "M0.2 69x49": 0.125719,
-    "M0.2 137x97": 0.622553,
-    "M0.2 273x193": 1.8921,
-    "M2 69x49": 0.000209136,
-    "M2 137x97": 0.0817945,
-    "M2 273x193": 0.664287
+    "M0.2 69x49": 0.116789,
+    "M0.2 137x97": 0.622387,
+    "M0.2 273x193": 1.8943,
+    "M2 69x49": 0.000205526,
+    "M2 137x97": 0.0815541,
+    "M2 273x193": 0.661958
    },
    "trend_rule_percent": {
-    "M0.2 69x49": 0.0604985,
-    "M0.2 137x97": 0.161289,
-    "M0.2 273x193": 0.0842464,
-    "M2 69x49": 0.000209136,
-    "M2 137x97": 0.0817945,
-    "M2 273x193": 0.288081
+    "M0.2 69x49": 0.0581886,
+    "M0.2 137x97": 0.162054,
+    "M0.2 273x193": 0.0720704,
+    "M2 69x49": 0.000205526,
+    "M2 137x97": 0.0815541,
+    "M2 273x193": 0.28724
    },
-   "note": "old rule = 3/2 orders + flat window; trend rule = release/v0.4.0 73d22f8 (rans_replay.py)",
+   "note": "old rule = 3/2 orders + flat window; trend rule = 73d22f8 (rans_replay.py); the shipped rule adds the worst-of-20-rows drop",
    "provenance": "rans_flatplate.csv"
   },
   "V4_cone_M2_Cp": {
-   "quantity": "cone surface Cp over x/L_cone 0.2-0.9 vs Taylor-Maccoll (0.10447), 10 deg cone, wall_size 2 mm",
-   "mean_percent": 1.7,
-   "worst_bin_percent": 2.2,
+   "quantity": "cone surface Cp over x/L_cone 0.2-0.9 vs Taylor-Maccoll (0.10447), 10 deg cone, wall_size 2 mm, converged",
+   "mean_percent": 1.48,
+   "worst_bin_percent": 2.02,
+   "worst_bin": "0.2-0.3",
    "threshold_percent": 2.0,
+   "bins_0.3_to_0.9_max_percent": 1.65,
    "pass": false,
-   "verdict": "marginal fail: mean +1.7 % within 2 %, worst bin +2.2 % (x/L 0.5-0.6)",
-   "explanation": "the turbulent displacement-thickness growth adds about 0.13 deg of effective cone angle near x = 0.1 m, which raises Cp by roughly 2 %: a viscous Cp above the inviscid Taylor-Maccoll value is expected",
-   "convergence": "second-order stage stalled (rms[Rho] -2.2..-5.4, never 3 orders below the reference); wall axial force steady (CFx(wall) 0.1299 +- 0.0006); snapshot of iteration 1000",
+   "verdict": "mean within 2 %; only the bin nearest the tip exceeds it",
+   "explanation": "viscous Cp above the inviscid Taylor-Maccoll value is expected: the turbulent displacement thickness adds about 0.1 deg of effective cone angle (roughly +2 % in Cp), largest relative to the radius near the tip",
    "provenance": "rans_cone_cp.csv (doc/scripts/rans_cone.py, rans_geometry.py)"
   },
   "V3_friction_vs_flat_plate": {
-   "quantity": "friction part of the wall axial force vs flat-plate van Driest II over the wetted area, alpha 0",
+   "quantity": "friction part of the wall axial force (surface integration) vs van Driest II over the wetted area, alpha 0, converged cases",
    "values_percent": {
-    "cone_10deg M2 w2mm": -24.8,
-    "sample_body_finless M0.8 w5mm": -42.2,
-    "sample_body_finless M2 w5mm": -24.1
+    "cone_10deg M2 w2mm": 2.5,
+    "sample_body_finless M0.8 w5mm": 7.4,
+    "sample_body_finless M2 w5mm": 5.7
    },
    "threshold_percent": 10.0,
-   "pass": false,
+   "pass": true,
    "yplus_p95": {
     "cone_10deg M2": 0.548,
-    "sample_body_finless M0.8": 0.587,
-    "sample_body_finless M2": 0.612
+    "sample_body_finless M0.8": 0.401,
+    "sample_body_finless M2": 0.665
    },
    "yplus_p95_threshold": 3.0,
-   "state": "before the boundary-layer mesh redesign: none of the cases converged (stall; the finless body diverges at M 0.8 after LIMITER_ITER 400 and at M 2 from about iteration 1000); values from surface snapshots while CFx(wall) was steady",
-   "cause": "under-resolved boundary layer: prism layer only 0.4 wall_size thick, then a 12x jump to cells of wall_size + 0.2 d; reproduced in 2-D (V3b)",
-   "provenance": "rans_body_friction.csv (doc/scripts/rans_friction.py, rans_surface.py)"
+   "note": "cone estimate with the Taylor-Maccoll edge state and the turbulent Mangler rule (plain freestream law: +11.3 %)",
+   "provenance": "rans_body_friction.csv, rans_body_cases.csv (doc/scripts/rans_friction.py, rans_surface.py)"
   },
-  "V3b_plate_with_cfd_mode_spacing": {
-   "quantity": "cf on a 2-D plate with the wall-normal spacing of the CFD-mode meshes vs a resolved grid (sea-level Re, M 0.8 / 2)",
-   "rows": [
+  "before_mesh_fix": {
+   "state": "prism layer 0.4 wall_size, Venkatakrishnan-Wang limiter frozen at iteration 400 (8f745ae / 3acdb89)",
+   "friction_percent": {
+    "cone_10deg M2": -24.8,
+    "sample_body_finless M0.8": -42.2,
+    "sample_body_finless M2": -24.1
+   },
+   "plate_with_cfd_mode_spacing": [
     {
      "mach": "0.8",
      "grid": "pipeline_w3mm",
@@ -124,37 +130,391 @@
      "err_x0.97_percent": "0.766872"
     }
    ],
-   "provenance": "rans_plate_bl.csv (doc/scripts/rans_plate_bl.py)"
+   "provenance": "rans_before_*.csv"
   },
   "V5_herrin_dutton_base_flow": {
    "pass": null,
    "status": "not run",
-   "reason": "validation needs the measured approach boundary layer of the M 2.46 cylinder (wind-tunnel afterbody, no nose) and a converged base wake; the CFD mode meshes a body with a nose from an STL (no axisymmetric or wedge domain), the flat-base wake is where the second-order stage stalls, and the boundary layer is under-resolved (V3)"
+   "reason": "validation needs the measured approach boundary layer of the M 2.46 cylinder (wind-tunnel afterbody, no nose); the CFD mode meshes a body with a nose from an STL and has no axisymmetric or wedge domain"
   },
   "V6_sample_mesh_convergence": {
-   "pass": null,
-   "status": "not run",
-   "reason": "held: 5 mm M0.8 alpha 0 diverged after LIMITER_ITER 400; 3 mm cases need about 10 GB each and were stopped (OOM kill with concurrent jobs, then held) until the boundary-layer mesh and the stage-B numerics are revised; wall_size 3.5 mm does not mesh (1 inverted prism, 18 unmarked faces)"
+   "quantity": "GCI_fine (Celik 2008, Fs 1.25) of CN, CA, xcp at alpha 4; |CN(0)| on the medium level",
+   "levels": [
+    {
+     "wall_size_m": 0.008,
+     "nodes": 347876,
+     "cells": 867701,
+     "wall_s": 2696.452966799,
+     "unconverged": [
+      [
+       0.8,
+       0.0
+      ],
+      [
+       0.8,
+       -4.0
+      ],
+      [
+       2.0,
+       0.0
+      ]
+     ],
+     "failed": []
+    },
+    {
+     "wall_size_m": 0.0048,
+     "nodes": 787490,
+     "cells": 1788825,
+     "wall_s": 9053.991912457,
+     "unconverged": [
+      [
+       0.8,
+       0.0
+      ],
+      [
+       2.0,
+       0.0
+      ]
+     ],
+     "failed": []
+    },
+    {
+     "wall_size_m": 0.003,
+     "nodes": 1844927,
+     "cells": 4141848,
+     "wall_s": 9987.167055451,
+     "unconverged": [],
+     "failed": [
+      [
+       2.0,
+       -4.0
+      ]
+     ]
+    }
+   ],
+   "thresholds": {
+    "gci_cn_percent": 3.0,
+    "gci_ca_percent": 5.0,
+    "gci_xcp_m": 0.01,
+    "cn0_abs": 0.005
+   },
+   "mach": {
+    "0.8": {
+     "cn": {
+      "fine": 1.26214665,
+      "medium": 1.27293506,
+      "coarse": 1.30730862,
+      "order": 4.333088778117623,
+      "extrapolated": 1.2576886899323139,
+      "gci_fine_abs": 0.0055724500846075905,
+      "gci_fine": 0.004415057540744248,
+      "monotone": true,
+      "e21": 0.01078840999999997,
+      "e32": 0.034373559999999914
+     },
+     "ca": {
+      "fine": 0.196557395,
+      "medium": 0.199246558,
+      "coarse": 0.204125641,
+      "order": 2.2955179629503615,
+      "extrapolated": 0.1936288949771811,
+      "gci_fine_abs": 0.00366062502852361,
+      "gci_fine": 0.01862369527497864,
+      "monotone": true,
+      "e21": 0.0026891629999999944,
+      "e32": 0.004879083000000006
+     },
+     "xcp": {
+      "fine": 1.22390729,
+      "medium": 1.22298109,
+      "coarse": 1.22132973,
+      "order": 2.232445599069276,
+      "extrapolated": 1.2249547385641155,
+      "gci_fine_abs": 0.0013093107051444029,
+      "gci_fine": 0.0010697793173079333,
+      "monotone": true,
+      "e21": -0.0009262000000000992,
+      "e32": -0.0016513600000001016
+     },
+     "cn0_medium": 0.0343908502,
+     "pass": {
+      "cn": true,
+      "ca": true,
+      "xcp": true,
+      "cn0": false
+     }
+    },
+    "2": {
+     "cn": {
+      "fine": 0.9655345013500001,
+      "medium": 0.97073368,
+      "coarse": 0.982641898,
+      "order": 3.1377568341414706,
+      "extrapolated": 0.9619143934808123,
+      "gci_fine_abs": 0.004525134836484869,
+      "gci_fine": 0.0046866630142764175,
+      "monotone": true,
+      "e21": 0.005199178649999969,
+      "e32": 0.01190821799999997
+     },
+     "ca": {
+      "fine": 0.25590602554999997,
+      "medium": 0.25547424,
+      "coarse": 0.254312139,
+      "order": 3.7216585246432135,
+      "extrapolated": 0.25613628118749143,
+      "gci_fine_abs": 0.00028781954686432854,
+      "gci_fine": 0.0011247079713959027,
+      "monotone": true,
+      "e21": -0.00043178554999995233,
+      "e32": -0.0011621010000000265
+     },
+     "xcp": {
+      "fine": 1.1571607342232024,
+      "medium": 1.15674344,
+      "coarse": 1.15442766,
+      "order": 6.3477829536521435,
+      "extrapolated": 1.157243235723708,
+      "gci_fine_abs": 0.00010312687563186704,
+      "gci_fine": 8.912061443313293e-05,
+      "monotone": true,
+      "e21": -0.000417294223202358,
+      "e32": -0.0023157799999999895
+     },
+     "cn0_medium": 0.000682230612,
+     "pass": {
+      "cn": true,
+      "ca": true,
+      "xcp": true,
+      "cn0": true
+     }
+    }
+   },
+   "pass": false,
+   "notes": [
+    "M2 fine alpha -4 rerun separately (L3m4, 600 final-stage iterations, cold start) and recombined"
+   ],
+   "provenance": "rans_mesh_study.csv"
   },
   "V7_rans_vs_euler": {
-   "pass": null,
-   "status": "not run",
-   "reason": "held with V6"
+   "mach": {
+    "0.8": {
+     "rans_cn_a4": 1.26214665,
+     "euler_cn_a4": 1.2183,
+     "barrowman_cn_a4": 0.9493,
+     "cna_diff_percent": 3.5990027086924448,
+     "rans_xcp_m": 1.22390729,
+     "euler_xcp_m": 1.2203,
+     "barrowman_xcp_m": 1.1374,
+     "xcp_diff_m": 0.0036072900000001518,
+     "rans_friction_ca_a0": 0.18773622881963833,
+     "rans_cfx_wall_a0": 0.2102335672,
+     "euler_pressure_ca_a4_2mm": -0.0382895,
+     "rans_cfx_wall_minus_euler_pressure": 0.2485230672,
+     "barrowman_friction_smooth": 0.1711856,
+     "friction_diff_percent": 9.668236592118928,
+     "pass": {
+      "cna": true,
+      "xcp": true,
+      "friction": true
+     }
+    },
+    "2": {
+     "rans_cn_a4": 0.9655345013500001,
+     "euler_cn_a4": 0.9188,
+     "barrowman_cn_a4": 0.8793,
+     "cna_diff_percent": 5.086471631475842,
+     "rans_xcp_m": 1.1571607342232024,
+     "euler_xcp_m": 1.1537,
+     "barrowman_xcp_m": 1.1392,
+     "xcp_diff_m": 0.0034607342232024774,
+     "rans_friction_ca_a0": 0.12873150785431756,
+     "rans_cfx_wall_a0": 0.2538302407,
+     "euler_pressure_ca_a4_2mm": 0.105384,
+     "rans_cfx_wall_minus_euler_pressure": 0.14844624069999998,
+     "barrowman_friction_smooth": 0.1220101,
+     "friction_diff_percent": 5.5088946360322355,
+     "pass": {
+      "cna": true,
+      "xcp": true,
+      "friction": true
+     }
+    }
+   },
+   "pass": true,
+   "thresholds": {
+    "cna_percent": 8.0,
+    "xcp_m": 0.03,
+    "friction_percent": 25.0
+   },
+   "rans_run": {
+    "mesh_nodes": 1844927,
+    "unconverged": []
+   },
+   "geometry": "RANS: fins with edges blunted at 2 % chord, flat base (rans_base model adds the Barrowman base term); Euler: sharp biconvex fins, conical tail fairing (6 base radii), base drag from Barrowman",
+   "note": "RANS: wall_size 3 mm (1844927 nodes), release daa8b2f, alpha 4 mirror-combined (M2: -4 failed, offset fallback), alpha 0 case for the friction. Euler: doc/data/cfd/sample_euler_vs_models.csv (2 mm, 941k cells). Barrowman: smooth wall (roughness 0), examples/sample.toml geometry. 2026-10-07. M2 alpha 4: CN and xcp recombined with the separately solved alpha -4 case (rans_mesh_study.json).",
+   "provenance": "rans_vs_euler.csv"
   },
   "V8_rans_table": {
-   "pass": null,
-   "status": "not run",
-   "reason": "held with V6"
+   "cases": 20,
+   "converged": 15,
+   "unconverged": 5,
+   "accepted": 0,
+   "failed": 0,
+   "converged_fraction": 0.75,
+   "threshold": 0.9,
+   "pass": false,
+   "run_wall_h": 4.44040334575706,
+   "mesh_nodes": 735366,
+   "comparison": [
+    {
+     "mach": 0.3,
+     "alpha_deg": 0.0,
+     "rans_ca_off": 0.409561947583,
+     "euler_ca_off": 0.4174,
+     "ca_off_diff_percent": -1.8778276034978392
+    },
+    {
+     "mach": 0.3,
+     "alpha_deg": 4.0,
+     "rans_cn": 1.20385631,
+     "euler_cn": 1.1646,
+     "rans_xcp_m": 1.20682698,
+     "euler_xcp_m": 1.1942,
+     "rans_ca_off": 0.40656517102627765,
+     "euler_ca_off": 0.4312,
+     "cn_diff_percent": 3.370797698780681,
+     "xcp_diff_m": 0.012626980000000065,
+     "ca_off_diff_percent": -5.713086496688858
+    },
+    {
+     "mach": 0.3,
+     "alpha_deg": 8.0,
+     "rans_cn": 2.49717675,
+     "euler_cn": 2.4872,
+     "rans_xcp_m": 1.20629735,
+     "euler_xcp_m": 1.2049,
+     "rans_ca_off": 0.40400206777493297,
+     "euler_ca_off": 0.4627,
+     "cn_diff_percent": 0.40112375361851527,
+     "xcp_diff_m": 0.001397349999999964,
+     "ca_off_diff_percent": -12.685958985318136
+    },
+    {
+     "mach": 0.8,
+     "alpha_deg": 0.0,
+     "rans_ca_off": 0.435401421161,
+     "euler_ca_off": 0.5714,
+     "ca_off_diff_percent": -23.8009413438922
+    },
+    {
+     "mach": 0.8,
+     "alpha_deg": 4.0,
+     "rans_cn": 1.27763536,
+     "euler_cn": 1.2183,
+     "rans_xcp_m": 1.223407,
+     "euler_xcp_m": 1.2203,
+     "rans_ca_off": 0.43192771589648893,
+     "euler_ca_off": 0.5901,
+     "cn_diff_percent": 4.870340638594772,
+     "xcp_diff_m": 0.003106999999999971,
+     "ca_off_diff_percent": -26.804318607610757
+    },
+    {
+     "mach": 0.8,
+     "alpha_deg": 8.0,
+     "rans_cn": 2.73605185,
+     "euler_cn": 2.6058,
+     "rans_xcp_m": 1.2272962,
+     "euler_xcp_m": 1.2343,
+     "rans_ca_off": 0.4361703076397313,
+     "euler_ca_off": 0.6322,
+     "cn_diff_percent": 4.998535958246997,
+     "xcp_diff_m": -0.0070037999999998934,
+     "ca_off_diff_percent": -31.007543872234844
+    },
+    {
+     "mach": 1.2,
+     "alpha_deg": 0.0,
+     "rans_ca_off": 0.5451209322333334,
+     "euler_ca_off": 0.7158,
+     "ca_off_diff_percent": -23.844519106826855
+    },
+    {
+     "mach": 1.2,
+     "alpha_deg": 4.0,
+     "rans_cn": 1.4067241,
+     "euler_cn": 1.3147,
+     "rans_xcp_m": 1.24384477,
+     "euler_xcp_m": 1.2388,
+     "rans_ca_off": 0.5515049375015605,
+     "euler_ca_off": 0.7415,
+     "cn_diff_percent": 6.99962729139727,
+     "xcp_diff_m": 0.005044770000000032,
+     "ca_off_diff_percent": -25.623069790753817
+    },
+    {
+     "mach": 1.2,
+     "alpha_deg": 8.0,
+     "rans_cn": 2.88193702,
+     "euler_cn": 2.7243,
+     "rans_xcp_m": 1.2389565,
+     "euler_xcp_m": 1.245,
+     "rans_ca_off": 0.5715359601601194,
+     "euler_ca_off": 0.7982,
+     "cn_diff_percent": 5.7863311676394025,
+     "xcp_diff_m": -0.0060435000000000905,
+     "ca_off_diff_percent": -28.39689800048617
+    },
+    {
+     "mach": 2.0,
+     "alpha_deg": 0.0,
+     "rans_ca_off": 0.39836234285874994,
+     "euler_ca_off": 0.573,
+     "ca_off_diff_percent": -30.4777761154014
+    },
+    {
+     "mach": 2.0,
+     "alpha_deg": 4.0,
+     "rans_cn": 0.971866901,
+     "euler_cn": 0.9188,
+     "rans_xcp_m": 1.15661178,
+     "euler_xcp_m": 1.1537,
+     "rans_ca_off": 0.4064726164309179,
+     "euler_ca_off": 0.5934,
+     "cn_diff_percent": 5.775674902046157,
+     "xcp_diff_m": 0.0029117800000000305,
+     "ca_off_diff_percent": -31.501075761557484
+    },
+    {
+     "mach": 2.0,
+     "alpha_deg": 8.0,
+     "rans_cn": 2.02687268,
+     "euler_cn": 1.8786,
+     "rans_xcp_m": 1.13318388,
+     "euler_xcp_m": 1.1384,
+     "rans_ca_off": 0.424391800518105,
+     "euler_ca_off": 0.6399,
+     "cn_diff_percent": 7.8927222399659325,
+     "xcp_diff_m": -0.005216120000000046,
+     "ca_off_diff_percent": -33.678418421924526
+    }
+   ],
+   "note": "examples/sample_cfd.toml with model rans, wall_size 5 mm, machs [0.3, 0.8, 1.2, 2.0], alphas [0, 4, 8] (+ -4, -8 solved), RANS defaults, 4 ranks x 2 cases, release daa8b2f (worktree 6568e81), SU2 8.3.0, 2026-10-07. Euler: 2 mm, sample_euler_vs_models.csv.",
+   "provenance": "rans_table.csv",
+   "ca_note": "ca_off of RANS is 24-34 % below the Euler table at M >= 0.8: the Euler table adds the Barrowman friction of the configured 60 um roughness (0.2925 at M 0.8, 0.1817 at M 2), the RANS wall is hydraulically smooth (its friction agrees with the smooth-wall Barrowman term within 10 %, rans_vs_euler.csv) and the configured roughness is not applied in RANS mode.",
+   "unconverged_cases": "M0.3 alpha 0, -4, -8 (limit cycle), M0.8 alpha 0 (limit cycle), M2 alpha 0 (stalled); all accepted, coefficients averaged over the last 200 iterations"
   },
   "memory": {
    "bytes_per_node": [
-    10280,
-    10320,
-    10260
+    10498,
+    10188,
+    10095,
+    10222
    ],
-   "mean_bytes_per_node": 10287,
-   "model": "40 MB per rank + bytes_per_node x nodes (summed over ranks, 3 and 4 ranks)",
-   "provenance": "rans_memory.csv"
+   "mean_bytes_per_node": 10251,
+   "model": "40 MB per rank + bytes_per_node x nodes (summed over ranks)",
+   "provenance": "rans_memory.csv, rans_before_memory.csv, rans_mesh_sweep.csv (mesher)"
   }
  }
 }

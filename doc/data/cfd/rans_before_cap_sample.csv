@@ -1,0 +1,6 @@
+# Sample rocket RANS cases on the layer law of 5ce5795 (before the thickness cap of e88d48e: 55 layers / 64.7 mm at 7 mm, 53 / 44.9 mm at 5 mm): the cases that finished before the runs were stopped for the new mesh. ignisyeet aero method cfd, model rans, half model, 4 ranks, raw (unmirrored) coefficients: cn, ca = CFx(wall), ca_base = CFx(base), xcp_raw_m = nose moment / cn [m]. 2026-10-07. The 8 mm level of the same code failed (M 2 first-order startup diverged in all three cases).
+wall_size_m,mesh_nodes,mach,alpha_deg,status,iterations,cn_raw,ca_wall,ca_base,xcp_raw_m,yplus_p95,case_wall_s,warnings
+0.007,446537,0.8,-4.0,converged,453,-1.29298,0.20063,0.20649,1.2209,0.415,626,""
+0.007,446537,0.8,0.0,unconverged,552,0.02867,0.21379,0.20253,1.4186,0.417,1962,"unconverged: residual stalled 2.9 orders below the reference (median of the last 200 iterations), coefficients stationary over 400 iterations: CFx 0.41632 (inter-quartile range 1.52e-3), CFz 0.02867 ("
+0.007,446537,0.8,4.0,converged,452,1.32830,0.20120,0.20834,1.2262,0.415,903,""
+0.005,776748,0.8,0.0,unconverged,552,-0.01206,0.21169,0.19026,1.4377,0.414,3288,"unconverged: residual stalled 2.9 orders below the reference (median of the last 200 iterations), coefficients stationary over 400 iterations: CFx 0.40195 (inter-quartile range 5.70e-4), CFz -0.01206 "

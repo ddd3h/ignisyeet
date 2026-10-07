@@ -92,6 +92,14 @@ pub fn case_list(opt: &CfdOptions) -> Vec<CaseSpec> {
 /// * `alpha = 0`, `beta != 0`: the next smaller sideslip of the same sign at `alpha = 0` (or `beta = 0`);
 /// * `alpha = beta = 0`: the same case at the previous Mach.
 pub fn warm_start_source(cases: &[CaseSpec], i: usize) -> Option<usize> {
+    warm_start_source_for(cases, i, true)
+}
+
+/// [`warm_start_source`]; with `cross_mach = false` (RANS) the `alpha = beta = 0` case of every Mach number starts
+/// cold, so that each Mach number has its own cold reference residual peak (the residual level scales with the
+/// Mach number, roughly as `M^1.8` for the density residual of the flat plate, and not at all regularly for the SA
+/// residual).
+pub fn warm_start_source_for(cases: &[CaseSpec], i: usize, cross_mach: bool) -> Option<usize> {
     let c = cases[i];
     let plain = |x: &CaseSpec| !x.is_roll() && x.mach == c.mach;
     let smaller = |v: f64, w: f64| (v == 0.0 || v.signum() == w.signum()) && v.abs() < w.abs();
@@ -106,6 +114,9 @@ pub fn warm_start_source(cases: &[CaseSpec], i: usize) -> Option<usize> {
     }
     if c.beta_deg != 0.0 {
         return best(&|x| plain(x) && x.alpha_deg == 0.0 && smaller(x.beta_deg, c.beta_deg), &|x| x.beta_deg);
+    }
+    if !cross_mach {
+        return None;
     }
     let prev_mach = cases.iter().map(|x| x.mach).filter(|&m| m < c.mach).fold(f64::NEG_INFINITY, f64::max);
     if prev_mach.is_finite() {
@@ -155,6 +166,19 @@ pub fn case_hash(cfg_text: &str, mesh_hash: &str) -> String {
     hash_parts(&[cfg_text.as_bytes(), mesh_hash.as_bytes()])
 }
 
+/// log10 RMS residual peaks of the cold start of a RANS case: the reference of its acceptance (see `runner`).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct ResidualPeak {
+    /// Density residual.
+    pub rho: f64,
+    /// Residual of the SA variable.
+    pub nu: f64,
+}
+
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+
 /// Result of a finished case, stored as `done.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CaseResult {
@@ -170,11 +194,25 @@ pub struct CaseResult {
     #[serde(default)]
     pub roll_hat: f64,
     pub iterations: usize,
-    /// The residual reached the target (`false`: accepted as practically converged, see `runner`).
+    /// Euler: the residual reached the target (`false`: accepted as practically converged). RANS: the residuals
+    /// dropped far enough below the cold reference peak and the coefficients are flat (`false`: limit cycle). See `runner`.
     pub converged: bool,
     pub residual_first: Option<f64>,
     pub residual_last: Option<f64>,
     pub wall_seconds: f64,
+    /// RANS: residual peaks of the cold start this result descends from (its own startup stage, or that of the
+    /// first case of its warm-start chain).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reference_peak: Option<ResidualPeak>,
+    /// RANS: accepted as a limit cycle (coefficients averaged over the window), listed as unconverged.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub limit_cycle: bool,
+    /// RANS: 95th percentile of the wall y+ of the final solution (base cap excluded).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub yplus_p95: Option<f64>,
+    /// Remarks on an accepted result (e.g. a first cell above the target y+).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 const DONE: &str = "done.json";
@@ -206,6 +244,10 @@ mod tests {
         assert_eq!(warm_start_source(&c, 2), Some(1));
         assert_eq!(warm_start_source(&c, 3), Some(0));
         assert_eq!(case_list(&CfdOptions { alpha_mode: AlphaMode::Offset, ..o.clone() }), c);
+        // RANS: no warm start across Mach numbers; the alpha chain is kept.
+        assert_eq!(warm_start_source_for(&c, 3, false), None);
+        assert_eq!(warm_start_source_for(&c, 2, false), Some(1));
+        assert_eq!(warm_start_source_for(&c, 4, false), Some(3));
     }
 
     #[test]
@@ -296,11 +338,29 @@ mod tests {
             residual_first: Some(-2.0),
             residual_last: Some(-6.1),
             wall_seconds: 12.5,
+            reference_peak: None,
+            limit_cycle: false,
+            yplus_p95: None,
+            warnings: vec![],
         };
+        // Euler results keep their file layout (no RANS fields).
+        let euler = serde_json::to_string(&r).unwrap();
+        assert!(!euler.contains("reference_peak") && !euler.contains("limit_cycle") && !euler.contains("yplus") && !euler.contains("warnings"));
         write_done(&dir, &r).unwrap();
         let back = read_done(&dir, &h).unwrap();
         assert_eq!(back.coeffs, r.coeffs);
         assert!(read_done(&dir, "other").is_none());
+        // RANS fields round-trip.
+        let rans = CaseResult {
+            reference_peak: Some(ResidualPeak { rho: -2.1, nu: -5.0 }),
+            limit_cycle: true,
+            yplus_p95: Some(1.2),
+            warnings: vec!["w".into()],
+            ..r.clone()
+        };
+        write_done(&dir, &rans).unwrap();
+        let back = read_done(&dir, &h).unwrap();
+        assert_eq!((back.reference_peak, back.limit_cycle, back.yplus_p95, back.warnings), (rans.reference_peak, true, Some(1.2), vec!["w".to_string()]));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

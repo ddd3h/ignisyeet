@@ -13,30 +13,50 @@
 //! # One case
 //!
 //! Directory `<workdir>/mXXX_aYY/` with `case.cfg`, `su2.log`, `history.csv`, `surface_flow.csv`
+//! (RANS cold starts also `case_startup.cfg`, `su2_startup.log`, `history_startup.csv` of the first-order stage)
 //! and, when finished, `done.json` (input hash, coefficients, convergence). A valid `done.json`
 //! makes the case a no-op on the next run (resume). The SU2 command is
 //! `mpirun -n <ranks> --bind-to none SU2_CFD case.cfg`, or plain `SU2_CFD case.cfg` for one rank.
 //! `history.csv` is polled once a second for the live progress.
 //!
-//! # Acceptance
+//! # Acceptance (Euler)
 //!
 //! * Residual target reached: `converged`, coefficients of the last row.
 //! * Early stop: after `min_iterations`, a drop of 3 orders and coefficients flat (see `History::coefficients_stable`) over the last
 //!   `stable_window` iterations stop the case gracefully and accept it (`converged = false`).
 //! * Iteration limit / timeout without reaching the target: accepted (`converged = false`) when the
-//!   density residual dropped at least 3 orders (RANS: 1 order) from its peak and `CFx`, `CFz`, `CMy` varied by less
+//!   density residual dropped at least 3 orders from its peak and `CFx`, `CFz`, `CMy` varied by less
 //!   than 1 % over the last window; the coefficients are averaged over that window.
 //! * Otherwise (SU2 error, divergence, no history, not converged and not stable) the case is
 //!   *failed*: no `done.json`, the table builder bridges it by interpolation.
 //!
+//! # RANS
+//!
+//! A cold case runs the first-order startup and then the second-order stage in its directory (see `su2cfg`); a
+//! warm start (alpha and beta chains of one Mach number; every Mach number starts cold, see
+//! [`crate::case::warm_start_source_for`]) runs the second-order stage only, from the neighbour's restart file,
+//! which must carry the SA variable (an Euler solution never seeds a RANS case). A warm start that fails is
+//! solved again cold. The reference of the acceptance is the residual peak of the cold startup stage
+//! ([`ResidualPeak`], stored in `done.json` and passed along the warm chain), raised to the run's own peak when
+//! that is higher; a residual drop measured from a warm run's own (low) peak would accept it too early.
+//!
+//! * `converged`: density residual 3 and SA residual 2 orders below the reference, and the coefficients flat
+//!   over `stable_window` iterations ([`History::rans_coefficients_stable`]: forces 0.5 % of the force scale,
+//!   centre of pressure 0.002 body lengths). Checked once a second after `min_iterations`; SU2 is then stopped.
+//! * Limit cycle: density residual 2 orders below the reference and the forces oscillating within 1 % of the
+//!   force scale ([`History::limit_cycle`]): accepted with the window average, `converged = false`, listed as
+//!   unconverged (`status = unconverged` in `cfd_cases.csv`).
+//! * Otherwise failed. After acceptance the wall y+ of `surface_flow.vtk` is checked: a 95th percentile above 3
+//!   (resolved wall) is recorded as a warning in `done.json`.
+//!
 //! Children run in their own process group and are killed on Ctrl-C / SIGTERM; finished cases
 //! keep their `done.json`.
 
-use crate::case::{case_hash, case_list, read_done, warm_start_source, write_done, CaseResult, CaseSpec};
-use crate::config::{AlphaMode, CfdOptions};
+use crate::case::{case_hash, case_list, read_done, warm_start_source_for, write_done, CaseResult, CaseSpec, ResidualPeak};
+use crate::config::{AlphaMode, CfdOptions, FlowModel};
 use crate::forces::{BodyCoeffs, BodyCoeffs6, Su2Coeffs, Su2Coeffs6};
-use crate::history::{summarize, History, StabilityKind};
-use crate::su2cfg::{su2_config_case, CaseFiles, RefDims};
+use crate::history::{summarize, History, HistorySummary, StabilityKind};
+use crate::su2cfg::{su2_config_case, CaseFiles, RefDims, Stage};
 use crate::table::SolvedPoint;
 use crate::tools::{self, ToolReport};
 use crate::CfdStage;
@@ -178,7 +198,7 @@ impl Drop for Group {
 
 /// SU2 configuration text of a case without the restart line: the input of its hash.
 fn base_config(setup: &RunSetup, spec: &CaseSpec) -> String {
-    su2_config_case(setup.opt, spec, &setup.dims, &setup.atm, &CaseFiles { mesh: setup.mesh_file.display().to_string(), restart_from: None })
+    su2_config_case(setup.opt, spec, &setup.dims, &setup.atm, &CaseFiles { mesh: setup.mesh_file.display().to_string(), restart_from: None, stage: Stage::Final })
 }
 
 /// Number of grid levels SU2 reports in its "MG Level | CVs | Aggl. Rate" table (fine grid included; 0 when no table).
@@ -223,20 +243,20 @@ enum Event {
     Finished { i: usize, outcome: Box<CaseOutcome> },
 }
 
-fn command(setup: &RunSetup, dir: &Path) -> Result<std::process::Command> {
+fn command(setup: &RunSetup, dir: &Path, cfg: &str, log: &str) -> Result<std::process::Command> {
     let t = setup.tools;
     let su2 = t.su2.path.clone().context("SU2_CFD not found")?;
     let mut c = if setup.ranks > 1 {
         let mpi = t.mpi.path.clone().context("mpirun not found")?;
         let mut c = tools::command(&mpi, t.prefix.as_deref());
-        c.arg("-n").arg(setup.ranks.to_string()).args(["--oversubscribe", "--bind-to", "none"]).arg(&su2).arg("case.cfg");
+        c.arg("-n").arg(setup.ranks.to_string()).args(["--oversubscribe", "--bind-to", "none"]).arg(&su2).arg(cfg);
         c
     } else {
         let mut c = tools::command(&su2, t.prefix.as_deref());
-        c.arg("case.cfg");
+        c.arg(cfg);
         c
     };
-    let log = std::fs::File::create(dir.join("su2.log"))?;
+    let log = std::fs::File::create(dir.join(log))?;
     // Single-node runs: shared-memory transport only (the TCP/UCX components probe network interfaces
     // and fail or spam errors on machines with virtual / unreachable interfaces).
     c.env("OMPI_MCA_btl", "self,sm").env("OMPI_MCA_osc", "^ucx").env("OMPI_MCA_pml", "ob1");
@@ -245,36 +265,35 @@ fn command(setup: &RunSetup, dir: &Path) -> Result<std::process::Command> {
     Ok(c)
 }
 
-/// Runs one case to completion (or failure). Returns `Err` only when cancelled.
-fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, restart: Option<PathBuf>, tx: &mpsc::Sender<Event>) -> Result<CaseOutcome> {
-    let dir = spec.dir(&setup.work);
-    let warm = restart.is_some();
-    let kind = StabilityKind::of(&spec);
-    let fail = |msg: String| CaseOutcome { spec, result: None, error: Some(msg), cached: false, warm };
-    std::fs::create_dir_all(&dir)?;
-    for f in ["history.csv", "done.json", "surface_flow.csv", "restart.dat"] {
-        let _ = std::fs::remove_file(dir.join(f));
-    }
-    // SU2 aborts ("buffer overflow detected") when the restart file path is long, so name the
-    // sibling case directory relative to this one.
-    let restart_from = restart.map(|p| match p.parent().and_then(|d| d.file_name()) {
-        Some(case) if p.parent().and_then(|d| d.parent()) == dir.parent() => format!("../{}/restart.dat", case.to_string_lossy()),
-        _ => p.display().to_string(),
-    });
-    let files = CaseFiles { mesh: setup.mesh_file.display().to_string(), restart_from };
-    std::fs::write(dir.join("case.cfg"), su2_config_case(setup.opt, &spec, &setup.dims, &setup.atm, &files))?;
-    let t0 = Instant::now();
-    let mut cmd = command(setup, &dir)?;
+/// One SU2 process of a case.
+struct Solve {
+    /// `None`: stopped by the runner (early stop or timeout).
+    status: Option<std::process::ExitStatus>,
+    timed_out: bool,
+}
+
+/// Writes `cfg_text` to `dir/cfg`, runs SU2 on it (log `dir/log`) and polls `dir/history` once a second for the
+/// progress and for `stop`, which ends the run gracefully (SU2 writes its restart and surface files on SIGTERM).
+/// Returns `Err` only when cancelled.
+#[allow(clippy::too_many_arguments)]
+fn solve(
+    setup: &RunSetup,
+    i: usize,
+    dir: &Path,
+    (cfg, log, history): (&str, &str, &str),
+    cfg_text: &str,
+    deadline: Option<Instant>,
+    stop: &dyn Fn(&History) -> bool,
+    tx: &mpsc::Sender<Event>,
+) -> Result<std::result::Result<Solve, String>> {
+    std::fs::write(dir.join(cfg), cfg_text)?;
+    let mut cmd = command(setup, dir, cfg, log)?;
     let mut child = match cmd.spawn() {
         Ok(c) => Group(c),
-        Err(e) => return Ok(fail(format!("cannot start SU2: {e}"))),
+        Err(e) => return Ok(Err(format!("cannot start SU2: {e}"))),
     };
-    let limit = (setup.opt.timeout_minutes > 0.0).then(|| Duration::from_secs_f64(setup.opt.timeout_minutes * 60.0));
     let mut last_poll = Instant::now() - Duration::from_secs(10);
-    // RANS starts from a low residual and stalls near 1e-4..1e-5: it only has to drop one order.
-    let min_drop = if setup.opt.model == crate::config::FlowModel::Rans { 1.0 } else { 3.0 };
-    let mut timed_out = false;
-    let status = loop {
+    loop {
         if CANCEL.load(Ordering::SeqCst) {
             child.kill(sys::SIGTERM);
             std::thread::sleep(Duration::from_millis(300));
@@ -283,43 +302,205 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, restart: Opt
             bail!("interrupted");
         }
         if let Some(st) = child.0.try_wait()? {
-            break Some(st);
+            return Ok(Ok(Solve { status: Some(st), timed_out: false }));
         }
-        if limit.is_some_and(|l| t0.elapsed() > l) {
+        if deadline.is_some_and(|d| Instant::now() > d) {
             child.kill(sys::SIGTERM);
             std::thread::sleep(Duration::from_millis(500));
             child.kill(sys::SIGKILL);
             let _ = child.0.wait();
-            timed_out = true;
-            break None;
+            return Ok(Ok(Solve { status: None, timed_out: true }));
         }
         if last_poll.elapsed() >= Duration::from_secs(1) {
             last_poll = Instant::now();
-            if let Ok(h) = History::read(&dir.join("history.csv")) {
+            if let Ok(h) = History::read(&dir.join(history)) {
                 if let Some(r) = h.last_residual() {
                     let _ = tx.send(Event::Progress { i, iter: h.last_iteration(), residual: r });
                 }
-                // Practically converged (typical for RANS / Euler wake limit cycles): residual down 3
-                // orders and the coefficients flat over `stable_window` iterations. Stop SU2 gracefully
-                // (it writes its restart file) before the residual drifts and diverges.
-                if h.rows.len() >= setup.opt.min_iterations
-                    && h.residual_drop_from_peak().is_some_and(|d| d >= min_drop)
-                    && h.coefficients_stable(setup.opt.stable_window, kind)
-                {
+                if stop(&h) {
                     child.kill(sys::SIGTERM);
                     let t = Instant::now();
                     while t.elapsed() < Duration::from_secs(30) && child.0.try_wait()?.is_none() {
                         std::thread::sleep(Duration::from_millis(100));
                     }
-                    break None;
+                    return Ok(Ok(Solve { status: None, timed_out: false }));
                 }
             }
         }
         std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// Body coefficients of a case from the last `window` rows of its history (the single place where the history
+/// becomes [`BodyCoeffs`] / [`BodyCoeffs6`]).
+fn coefficients_from_history(setup: &RunSetup, spec: &CaseSpec, h: &History, window: usize) -> std::result::Result<(HistorySummary, BodyCoeffs, Option<BodyCoeffs6>), String> {
+    let s = summarize(h, window).ok_or("empty history")?;
+    let coeffs = Su2Coeffs::from_summary(&s, spec.alpha_deg).map(|c| BodyCoeffs::from_su2(&c, setup.dims.length)).map_err(|e| e.to_string())?;
+    let coeffs6 = Su2Coeffs6::from_summary(&s).ok().map(|c| BodyCoeffs6::from_su2(&c));
+    if coeffs6.is_none() && (spec.is_roll() || setup.opt.general_table()) {
+        return Err("the history has no CFx, CFy, CFz, CMx, CMy, CMz columns (needed for sideslip, roll and general tables)".into());
+    }
+    Ok((s, coeffs, coeffs6))
+}
+
+/// Warm start of a case: the neighbour's restart file and, for RANS, the reference peak of its chain.
+#[derive(Debug, Clone)]
+struct WarmStart {
+    restart: PathBuf,
+    reference: Option<ResidualPeak>,
+}
+
+/// RANS acceptance: residual drops below the cold reference peak (orders).
+pub const RANS_RHO_DROP: f64 = 3.0;
+pub const RANS_NU_DROP: f64 = 2.0;
+/// RANS limit cycle: density residual drop below the cold reference peak (orders).
+pub const RANS_CYCLE_RHO_DROP: f64 = 2.0;
+/// RANS y+ post-check: largest accepted 95th percentile of the wall y+ (resolved wall).
+pub const RANS_YPLUS_P95_MAX: f64 = 3.0;
+/// Body length / reference length when the mesh parameters do not give the body length.
+const FALLBACK_LENGTH_RATIO: f64 = 15.0;
+
+/// The reference peak a RANS final stage is judged against: the cold reference, raised to the run's own peaks
+/// when those are higher (a warm start that jumps above its reference is judged against its own peak).
+pub fn effective_reference(reference: ResidualPeak, h: &History) -> ResidualPeak {
+    ResidualPeak { rho: reference.rho.max(h.residual_peak().unwrap_or(f64::NEG_INFINITY)), nu: reference.nu.max(h.nu_peak().unwrap_or(f64::NEG_INFINITY)) }
+}
+
+/// Outcome of the RANS acceptance rule.
+#[derive(Debug, Clone, PartialEq)]
+pub enum RansVerdict {
+    /// Density residual [`RANS_RHO_DROP`] and SA residual [`RANS_NU_DROP`] orders below the reference peak, and
+    /// the coefficients flat ([`History::rans_coefficients_stable`]).
+    Converged,
+    /// Density residual [`RANS_CYCLE_RHO_DROP`] orders below the reference and the coefficients oscillating
+    /// within [`History::limit_cycle`]: accepted, listed as unconverged, coefficients averaged over the window.
+    LimitCycle,
+    /// Not acceptable (the reason).
+    Rejected(String),
+}
+
+/// Judges the final-stage history `h` of a RANS case against `reference` over the last `window` rows.
+pub fn rans_verdict(h: &History, reference: ResidualPeak, window: usize, kind: StabilityKind, length_ratio: f64) -> RansVerdict {
+    let r = effective_reference(reference, h);
+    let rho = h.last_residual().map(|x| r.rho - x);
+    let nu = h.last_nu().map(|x| r.nu - x);
+    let stable = h.rans_coefficients_stable(window, kind, length_ratio);
+    if rho.is_some_and(|d| d >= RANS_RHO_DROP) && nu.is_some_and(|d| d >= RANS_NU_DROP) && stable {
+        return RansVerdict::Converged;
+    }
+    if rho.is_some_and(|d| d >= RANS_CYCLE_RHO_DROP) && h.limit_cycle(window, kind, length_ratio) {
+        return RansVerdict::LimitCycle;
+    }
+    RansVerdict::Rejected(format!(
+        "density residual {:.1} and SA residual {:.1} orders below the cold reference peak (need {RANS_RHO_DROP} and {RANS_NU_DROP}), coefficients {}",
+        rho.unwrap_or(f64::NAN),
+        nu.unwrap_or(f64::NAN),
+        if stable {
+            "stable"
+        } else if h.limit_cycle(window, kind, length_ratio) {
+            "in a limit cycle"
+        } else {
+            "still changing"
+        }
+    ))
+}
+
+/// Body length / reference length: the body length from the mesh parameters (`params.json` next to the mesh).
+fn length_ratio(setup: &RunSetup) -> f64 {
+    let p = setup.mesh_file.with_file_name("params.json");
+    std::fs::read_to_string(p)
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .and_then(|v| v.get("length").and_then(|l| l.as_f64()))
+        .filter(|l| *l > 0.0 && setup.dims.length > 0.0)
+        .map_or(FALLBACK_LENGTH_RATIO, |l| l / setup.dims.length)
+}
+
+/// Whether an SU2 restart file carries the SA variable (an Euler restart cannot seed a RANS case).
+fn restart_has_turbulence(path: &Path) -> bool {
+    use std::io::Read;
+    let mut head = vec![0u8; 1 << 16];
+    let n = std::fs::File::open(path).and_then(|mut f| f.read(&mut head)).unwrap_or(0);
+    head[..n].windows(8).any(|w| w == b"Nu_Tilde")
+}
+
+/// 95th percentile of `Y_Plus` over the surface points of SU2's legacy-VTK surface file, without the base cap
+/// (the points at the largest x: the flat base at `x = L`).
+pub fn wall_yplus_p95(vtk: &str) -> Option<f64> {
+    let mut lines = vtk.lines();
+    let n: usize = lines.by_ref().find(|l| l.starts_with("POINTS"))?.split_whitespace().nth(1)?.parse().ok()?;
+    let mut xyz = Vec::with_capacity(3 * n);
+    for l in lines.by_ref() {
+        xyz.extend(l.split_whitespace().filter_map(|t| t.parse::<f64>().ok()));
+        if xyz.len() >= 3 * n {
+            break;
+        }
+    }
+    lines.by_ref().find(|l| l.split_whitespace().take(2).eq(["SCALARS", "Y_Plus"]))?;
+    let mut y = Vec::with_capacity(n);
+    for l in lines {
+        if l.starts_with("LOOKUP_TABLE") {
+            continue;
+        }
+        y.extend(l.split_whitespace().filter_map(|t| t.parse::<f64>().ok()));
+        if y.len() >= n {
+            break;
+        }
+    }
+    if xyz.len() < 3 * n || y.len() < n || n == 0 {
+        return None;
+    }
+    let x: Vec<f64> = (0..n).map(|k| xyz[3 * k]).collect();
+    let (lo, hi) = x.iter().fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &v| (a.min(v), b.max(v)));
+    let cut = hi - 1e-6 * (hi - lo).max(1e-12);
+    let mut v: Vec<f64> = (0..n).filter(|&k| x[k] < cut && y[k].is_finite()).map(|k| y[k]).collect();
+    if v.is_empty() {
+        return None;
+    }
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    Some(v[((0.95 * v.len() as f64).ceil() as usize).clamp(1, v.len()) - 1])
+}
+
+/// Relative path of a sibling case's restart file (SU2 aborts with "buffer overflow detected" on long paths).
+fn restart_path(dir: &Path, p: &Path) -> String {
+    match p.parent().and_then(|d| d.file_name()) {
+        Some(case) if p.parent().and_then(|d| d.parent()) == dir.parent() => format!("../{}/restart.dat", case.to_string_lossy()),
+        _ => p.display().to_string(),
+    }
+}
+
+const CASE_FILES: [&str; 6] = ["history.csv", "history_startup.csv", "done.json", "surface_flow.csv", "surface_flow.vtk", "restart.dat"];
+
+/// Runs one case to completion (or failure). Returns `Err` only when cancelled.
+fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: Option<WarmStart>, tx: &mpsc::Sender<Event>) -> Result<CaseOutcome> {
+    let dir = spec.dir(&setup.work);
+    std::fs::create_dir_all(&dir)?;
+    for f in CASE_FILES {
+        let _ = std::fs::remove_file(dir.join(f));
+    }
+    if setup.opt.model == crate::config::FlowModel::Rans {
+        return run_rans_case(setup, i, spec, hash, warm, tx);
+    }
+    let warm_flag = warm.is_some();
+    let kind = StabilityKind::of(&spec);
+    let fail = |msg: String| CaseOutcome { spec, result: None, error: Some(msg), cached: false, warm: warm_flag };
+    let files = CaseFiles { mesh: setup.mesh_file.display().to_string(), restart_from: warm.map(|w| restart_path(&dir, &w.restart)), stage: Stage::Final };
+    let t0 = Instant::now();
+    let deadline = (setup.opt.timeout_minutes > 0.0).then(|| t0 + Duration::from_secs_f64(setup.opt.timeout_minutes * 60.0));
+    let min_drop = 3.0;
+    // Practically converged (typical for Euler wake limit cycles): residual down 3 orders and the coefficients
+    // flat over `stable_window` iterations. Stop SU2 gracefully before the residual drifts and diverges.
+    let stop = |h: &History| {
+        h.rows.len() >= setup.opt.min_iterations && h.residual_drop_from_peak().is_some_and(|d| d >= min_drop) && h.coefficients_stable(setup.opt.stable_window, kind)
+    };
+    let cfg = su2_config_case(setup.opt, &spec, &setup.dims, &setup.atm, &files);
+    let run = match solve(setup, i, &dir, ("case.cfg", "su2.log", "history.csv"), &cfg, deadline, &stop, tx)? {
+        Ok(r) => r,
+        Err(e) => return Ok(fail(e)),
     };
     let wall = t0.elapsed().as_secs_f64();
     let log = dir.join("su2.log");
-    if let Some(st) = status {
+    if let Some(st) = run.status {
         if !st.success() {
             return Ok(fail(format!("SU2 exited with {st}; end of su2.log:\n{}", tail(&log, 8))));
         }
@@ -335,7 +516,7 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, restart: Opt
     let window = (n / 4).clamp(2, 100);
     let accepted = !reached && h.residual_drop_from_peak().is_some_and(|d| d >= min_drop) && h.coefficients_stable(window, kind);
     if !reached && !accepted {
-        let why = if timed_out { "timeout" } else { "iteration limit" };
+        let why = if run.timed_out { "timeout" } else { "iteration limit" };
         return Ok(fail(format!(
             "not converged ({why}): residual {:.2} (target {minval}), drop {:.1} orders, coefficients {}",
             h.last_residual().unwrap_or(f64::NAN),
@@ -343,19 +524,11 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, restart: Opt
             if h.coefficients_stable(window, kind) { "stable" } else { "still changing" }
         )));
     }
-    let s = summarize(&h, if reached { 1 } else { window }).expect("non-empty history");
-    let coeffs = match Su2Coeffs::from_summary(&s, spec.alpha_deg) {
-        Ok(c) => BodyCoeffs::from_su2(&c, setup.dims.length),
-        Err(e) => return Ok(fail(e.to_string())),
+    let (s, coeffs, coeffs6) = match coefficients_from_history(setup, &spec, &h, if reached { 1 } else { window }) {
+        Ok(c) => c,
+        Err(e) => return Ok(fail(e)),
     };
-    let coeffs6 = Su2Coeffs6::from_summary(&s).ok().map(|c| BodyCoeffs6::from_su2(&c));
-    if coeffs6.is_none() && (spec.is_roll() || setup.opt.general_table()) {
-        return Ok(fail("the history has no CFx, CFy, CFz, CMx, CMy, CMz columns (needed for sideslip, roll and general tables)".into()));
-    }
-    let first = summarize(&h, 1).and_then(|_| {
-        let c = h.col(&["rms[Rho]", "Res_Flow[0]", "rms[P]"])?;
-        Some(h.rows[0][c])
-    });
+    let first = h.col(&["rms[Rho]", "Res_Flow[0]", "rms[P]"]).map(|c| h.rows[0][c]);
     let result = CaseResult {
         input_hash: hash.to_string(),
         mach: spec.mach,
@@ -369,9 +542,140 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, restart: Opt
         residual_first: first,
         residual_last: h.last_residual(),
         wall_seconds: wall,
+        reference_peak: None,
+        limit_cycle: false,
+        yplus_p95: None,
+        warnings: Vec::new(),
     };
     write_done(&dir, &result)?;
-    Ok(CaseOutcome { spec, result: Some(result), error: None, cached: false, warm })
+    Ok(CaseOutcome { spec, result: Some(result), error: None, cached: false, warm: warm_flag })
+}
+
+/// RANS case: cold start in two stages (first-order startup, then second order restarted from it) or, with a warm
+/// start, the second-order stage only; a failed warm start is repeated cold. Judged by [`rans_verdict`].
+fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: Option<WarmStart>, tx: &mpsc::Sender<Event>) -> Result<CaseOutcome> {
+    let dir = spec.dir(&setup.work);
+    let opt = setup.opt;
+    let kind = StabilityKind::of(&spec);
+    let ratio = length_ratio(setup);
+    let mesh = setup.mesh_file.display().to_string();
+    let t0 = Instant::now();
+    let deadline = (opt.timeout_minutes > 0.0).then(|| t0 + Duration::from_secs_f64(opt.timeout_minutes * 60.0));
+    // Only a RANS restart with a known reference can seed the case (never an Euler solution).
+    let mut warm = warm.and_then(|w| Some((w.reference?, w.restart))).filter(|(_, p)| restart_has_turbulence(p));
+    let mut notes: Vec<String> = Vec::new();
+    loop {
+        let is_warm = warm.is_some();
+        let fail = |msg: String| CaseOutcome { spec, result: None, error: Some(msg), cached: false, warm: is_warm };
+        let (reference, restart_from) = match warm.take() {
+            Some((r, p)) => (r, restart_path(&dir, &p)),
+            None => {
+                for f in CASE_FILES {
+                    let _ = std::fs::remove_file(dir.join(f));
+                }
+                let files = CaseFiles { mesh: mesh.clone(), restart_from: None, stage: Stage::Startup };
+                let cfg = su2_config_case(opt, &spec, &setup.dims, &setup.atm, &files);
+                let names = ("case_startup.cfg", "su2_startup.log", "history_startup.csv");
+                let run = match solve(setup, i, &dir, names, &cfg, deadline, &|_| false, tx)? {
+                    Ok(r) => r,
+                    Err(e) => return Ok(fail(e)),
+                };
+                let log = dir.join("su2_startup.log");
+                if let Some(st) = run.status.filter(|s| !s.success()) {
+                    return Ok(fail(format!("SU2 (first-order startup) exited with {st}; end of su2_startup.log:\n{}", tail(&log, 8))));
+                }
+                if run.timed_out {
+                    return Ok(fail("not converged (timeout during the first-order startup)".into()));
+                }
+                let h = History::read(&dir.join("history_startup.csv")).ok().filter(|h| !h.rows.is_empty());
+                let Some(r) = h.as_ref().and_then(|h| Some(ResidualPeak { rho: h.residual_peak()?, nu: h.nu_peak()? })) else {
+                    return Ok(fail(format!("the first-order startup produced no density and SA residuals; end of su2_startup.log:\n{}", tail(&log, 8))));
+                };
+                if !dir.join("restart.dat").exists() {
+                    return Ok(fail("the first-order startup wrote no restart.dat".into()));
+                }
+                (r, "restart.dat".to_string())
+            }
+        };
+        let files = CaseFiles { mesh: mesh.clone(), restart_from: Some(restart_from), stage: Stage::Final };
+        let cfg = su2_config_case(opt, &spec, &setup.dims, &setup.atm, &files);
+        let stop = |h: &History| h.rows.len() >= opt.min_iterations && rans_verdict(h, reference, opt.stable_window, kind, ratio) == RansVerdict::Converged;
+        let run = match solve(setup, i, &dir, ("case.cfg", "su2.log", "history.csv"), &cfg, deadline, &stop, tx)? {
+            Ok(r) => r,
+            Err(e) => return Ok(fail(e)),
+        };
+        let log = dir.join("su2.log");
+        let retry = |why: String, notes: &mut Vec<String>| {
+            notes.push(format!("the warm start failed ({why}); solved again from the freestream"));
+        };
+        if let Some(st) = run.status.filter(|s| !s.success()) {
+            let msg = format!("SU2 exited with {st}; end of su2.log:\n{}", tail(&log, 8));
+            if is_warm && !run.timed_out {
+                retry(format!("SU2 exited with {st}"), &mut notes);
+                continue;
+            }
+            return Ok(fail(msg));
+        }
+        note_multigrid(opt, &log);
+        let h = match History::read(&dir.join("history.csv")) {
+            Ok(h) if !h.rows.is_empty() => h,
+            _ => return Ok(fail(format!("SU2 produced no history.csv; end of su2.log:\n{}", tail(&log, 8)))),
+        };
+        let window = opt.stable_window.min(h.rows.len()).max(2);
+        let verdict = rans_verdict(&h, reference, window, kind, ratio);
+        let limit_cycle = match verdict {
+            RansVerdict::Converged => false,
+            RansVerdict::LimitCycle => true,
+            RansVerdict::Rejected(why) => {
+                if is_warm && !run.timed_out {
+                    retry(why, &mut notes);
+                    continue;
+                }
+                let when = if run.timed_out { "timeout" } else { "iteration limit" };
+                return Ok(fail(format!("not converged ({when}): {why}")));
+            }
+        };
+        let (s, coeffs, coeffs6) = match coefficients_from_history(setup, &spec, &h, if limit_cycle { window } else { 1 }) {
+            Ok(c) => c,
+            Err(e) => return Ok(fail(e)),
+        };
+        let mut warnings = notes.clone();
+        if limit_cycle {
+            warnings.push(format!("limit cycle: coefficients averaged over the last {window} iterations"));
+        }
+        let yplus = std::fs::read_to_string(dir.join("surface_flow.vtk")).ok().as_deref().and_then(wall_yplus_p95);
+        match yplus {
+            Some(y) if !opt.wall_function() && y > RANS_YPLUS_P95_MAX => warnings.push(format!(
+                "wall y+ P95 = {y:.2} exceeds {RANS_YPLUS_P95_MAX} (target yplus = {}): the first cell is too thick for the resolved wall",
+                opt.yplus
+            )),
+            Some(_) => {}
+            None => warnings.push("wall y+ not checked: no Y_Plus in surface_flow.vtk".into()),
+        }
+        for w in &warnings {
+            eprintln!("warning: aero.cfd: case {}: {w}", spec.dir_name());
+        }
+        let result = CaseResult {
+            input_hash: hash.to_string(),
+            mach: spec.mach,
+            alpha_deg: spec.alpha_deg,
+            beta_deg: spec.beta_deg,
+            roll_hat: spec.roll_hat,
+            coeffs,
+            coeffs6,
+            iterations: s.iterations,
+            converged: !limit_cycle,
+            residual_first: Some(effective_reference(reference, &h).rho),
+            residual_last: h.last_residual(),
+            wall_seconds: t0.elapsed().as_secs_f64(),
+            reference_peak: Some(reference),
+            limit_cycle,
+            yplus_p95: yplus,
+            warnings,
+        };
+        write_done(&dir, &result)?;
+        return Ok(CaseOutcome { spec, result: Some(result), error: None, cached: false, warm: is_warm });
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -392,7 +696,7 @@ pub fn run_all(setup: &RunSetup, progress: &(dyn Fn(CfdStage) + Sync)) -> Result
     let _sig = SignalGuard::new();
     std::fs::create_dir_all(&setup.work)?;
     let hashes: Vec<String> = cases.iter().map(|c| case_hash(&base_config(setup, c), &setup.mesh_hash)).collect();
-    let sources: Vec<Option<usize>> = (0..n).map(|i| warm_start_source(&cases, i)).collect();
+    let sources: Vec<Option<usize>> = (0..n).map(|i| warm_start_source_for(&cases, i, setup.opt.model != FlowModel::Rans)).collect();
     let mut outcomes: Vec<Option<CaseOutcome>> = vec![None; n];
     let mut state = vec![St::Pending; n];
     for i in 0..n {
@@ -423,9 +727,9 @@ pub fn run_all(setup: &RunSetup, progress: &(dyn Fn(CfdStage) + Sync)) -> Result
                     state[i] = St::Running;
                     running += 1;
                     let restart = sources[i]
-                        .filter(|&s| outcomes[s].as_ref().is_some_and(|o| o.result.is_some()))
-                        .map(|s| cases[s].dir(&setup.work).join("restart.dat"))
-                        .filter(|p| p.exists());
+                        .and_then(|s| outcomes[s].as_ref().and_then(|o| o.result.as_ref()).map(|r| (s, r.reference_peak)))
+                        .map(|(s, reference)| WarmStart { restart: cases[s].dir(&setup.work).join("restart.dat"), reference })
+                        .filter(|w| w.restart.exists());
                     progress(CfdStage::Case { index: i, total: n, mach: cases[i].mach, alpha: cases[i].alpha_deg, iter: 0, residual: 0.0 });
                     let tx = tx.clone();
                     let (spec, hash) = (cases[i], hashes[i].clone());
@@ -487,6 +791,7 @@ pub fn write_cases_csv(path: &Path, outcomes: &[CaseOutcome], corrected: &[Solve
     for o in outcomes {
         let status = match &o.result {
             Some(r) if r.converged => "converged",
+            Some(r) if r.limit_cycle => "unconverged",
             Some(_) => "accepted",
             None => "failed",
         };
@@ -767,5 +1072,181 @@ exit 0
         let out = run_all(&e.setup(), &|_| {}).unwrap();
         assert!(out.iter().all(|o| o.error.as_ref().is_some_and(|m| m.contains("no history"))));
         let _ = std::fs::remove_dir_all(&e.dir);
+    }
+    /// Mock SU2 for RANS: startup stage (`CONV_FILENAME= history_startup`) with peaks rho -1, nu -4; final stage
+    /// cold from -2 / -5 (or a limit cycle), warm from -4.5 / -6.5. Modes: ok | cycle | warmfail | thick (y+ 4).
+    const MOCK_RANS: &str = r#"#!/bin/sh
+cfg=$1
+mach=$(grep '^MACH_NUMBER' $cfg | cut -d' ' -f2)
+aoa=$(grep '^AOA' $cfg | cut -d' ' -f2)
+sol=$(grep '^SOLUTION_FILENAME' $cfg | cut -d' ' -f2)
+conv=$(grep '^CONV_FILENAME' $cfg | cut -d' ' -f2)
+mode=$(cat "$(dirname "$0")/mode")
+echo "$mach $aoa $conv ${sol:-none}" >> "$(dirname "$0")/calls"
+case "$sol" in ../*) warm=1;; *) warm=0;; esac
+if [ "$conv" = history ] && [ $warm = 1 ]; then
+  [ "$mode" = warmfail ] && { echo "Error: warm boom" >&2; exit 1; }
+  grep -q Nu_Tilde "$sol" || { echo "Error: no SA variable in the restart" >&2; exit 1; }
+fi
+echo '"Inner_Iter","rms[Rho]","rms[nu]","CFx","CFz","CMy"' > $conv.csv
+i=0
+while [ $i -lt 40 ]; do
+  if [ "$conv" = history_startup ]; then r=$(echo "-1.0 - 0.05*$i" | bc -l); nu=$(echo "-4.0 - 0.05*$i" | bc -l)
+  elif [ $warm = 1 ]; then r=$(echo "-4.5 - 0.1*$i" | bc -l); nu=$(echo "-6.5 - 0.1*$i" | bc -l)
+  elif [ "$mode" = cycle ]; then r=$(echo "-2.0 - 0.03*$i" | bc -l); nu=$(echo "-5.0 - 0.02*$i" | bc -l)
+  else r=$(echo "-2.0 - 0.2*$i" | bc -l); nu=$(echo "-5.0 - 0.2*$i" | bc -l)
+  fi
+  fx=0.3; fz=$(echo "$aoa * 0.05" | bc -l); my=$(echo "0 - $aoa * 0.08" | bc -l)
+  if [ "$mode" = cycle ] && [ "$conv" = history ] && [ $warm = 0 ]; then par=$((i % 2)); fx=$(echo "0.3 + $par * 0.002" | bc -l); fi
+  echo "$i,$r,$nu,$fx,$fz,$my" >> $conv.csv
+  i=$((i+1))
+done
+printf 'Density Nu_Tilde restart' > restart.dat
+yp=1.0; [ "$mode" = thick ] && yp=4.0
+printf '# vtk DataFile Version 3.0\nvtk output\nASCII\nDATASET UNSTRUCTURED_GRID\nPOINTS 3 double\n0 0 0 0.5 0 0\n1 0 0\nPOINT_DATA 3\nSCALARS Y_Plus double 1\nLOOKUP_TABLE default\n%s %s 0.1\n' $yp $yp > surface_flow.vtk
+exit 0
+"#;
+
+    fn env_rans(name: &str, mode: &str) -> Env {
+        let mut e = env(name, mode);
+        let script = e.dir.join("su2_mock_rans.sh");
+        std::fs::write(&script, MOCK_RANS).unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        e.tools = tools_with(&script);
+        e.opt = CfdOptions { min_iterations: 20, stable_window: 10, iterations: 100, ..CfdOptions { model: FlowModel::Rans, ..e.opt.clone() } };
+        e
+    }
+
+    fn done(e: &Env, o: &CaseOutcome) -> serde_json::Value {
+        serde_json::from_str(&std::fs::read_to_string(o.spec.dir(&e.dir.join("work")).join("done.json")).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn rans_cold_two_stage_warm_chain_and_reference_peak() {
+        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let e = env_rans("rans_ok", "ok");
+        let out = run_all(&e.setup(), &|_| {}).unwrap();
+        assert!(out.iter().all(|o| o.result.as_ref().is_some_and(|r| r.converged && !r.limit_cycle)), "{out:?}");
+        // Every Mach number starts cold (startup + final stage), the alpha chain is warm.
+        let calls = e.calls();
+        assert_eq!(calls.iter().filter(|c| c.contains(" history_startup none")).count(), 2, "{calls:?}");
+        assert_eq!(calls.iter().filter(|c| c.ends_with(" history restart.dat")).count(), 2, "{calls:?}");
+        assert!(calls.contains(&"0.500000 8.000000 history ../m0.500_a04.00/restart.dat".to_string()), "{calls:?}");
+        assert_eq!(calls.len(), 2 * 2 + 4);
+        assert!(!out[0].warm && out[1].warm && out[2].warm && !out[3].warm);
+        // The cold reference peak travels along the warm chain into done.json.
+        let peak = ResidualPeak { rho: -1.0, nu: -4.0 };
+        for o in &out {
+            assert_eq!(o.result.as_ref().unwrap().reference_peak, Some(peak));
+            assert!((o.result.as_ref().unwrap().yplus_p95.unwrap() - 1.0).abs() < 1e-12);
+        }
+        assert_eq!(done(&e, &out[2])["reference_peak"]["rho"], -1.0);
+        assert!(done(&e, &out[2]).get("warnings").is_none());
+        // Resume: the restart files of finished chains are gone, so a re-run case starts cold.
+        let victim = out[2].spec.dir(&e.dir.join("work")).join("done.json");
+        std::fs::remove_file(&victim).unwrap();
+        let n0 = e.calls().len();
+        let again = run_all(&e.setup(), &|_| {}).unwrap();
+        assert_eq!(e.calls().len(), n0 + 2);
+        assert!(!again[2].warm && again[2].result.as_ref().unwrap().reference_peak == Some(peak));
+        let _ = std::fs::remove_dir_all(&e.dir);
+    }
+
+    #[test]
+    fn rans_failed_warm_start_is_solved_cold() {
+        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let e = env_rans("rans_warmfail", "warmfail");
+        let out = run_all(&e.setup(), &|_| {}).unwrap();
+        assert!(out.iter().all(|o| o.result.as_ref().is_some_and(|r| r.converged)), "{out:?}");
+        // 2 cold cases (2 calls each) + 4 cases with a failed warm attempt and a cold rerun (3 calls each).
+        assert_eq!(e.calls().len(), 2 * 2 + 4 * 3, "{:?}", e.calls());
+        let r = out[1].result.as_ref().unwrap();
+        assert!(!out[1].warm && r.warnings.iter().any(|w| w.contains("warm start failed") && w.contains("freestream")), "{r:?}");
+        let _ = std::fs::remove_dir_all(&e.dir);
+    }
+
+    #[test]
+    fn rans_limit_cycle_is_accepted_unconverged_and_thick_wall_warns() {
+        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let e = env_rans("rans_cycle", "cycle");
+        let out = run_all(&e.setup(), &|_| {}).unwrap();
+        // The cold alpha = 0 cases cycle; the warm ones converge.
+        let r0 = out[0].result.as_ref().expect("limit cycle accepted");
+        assert!(!r0.converged && r0.limit_cycle && r0.warnings.iter().any(|w| w.contains("limit cycle")), "{r0:?}");
+        assert!((r0.coeffs.ca - 0.301).abs() < 1e-3, "window average {}", r0.coeffs.ca);
+        assert!(out[1].result.as_ref().unwrap().converged);
+        write_cases_csv(&e.dir.join("cases.csv"), &out, &[], AlphaMode::Single).unwrap();
+        let csv = std::fs::read_to_string(e.dir.join("cases.csv")).unwrap();
+        assert_eq!(csv.lines().filter(|l| l.contains(",unconverged,")).count(), 2, "{csv}");
+        let _ = std::fs::remove_dir_all(&e.dir);
+        let e = env_rans("rans_thick", "thick");
+        let out = run_all(&e.setup(), &|_| {}).unwrap();
+        let r = out[0].result.as_ref().unwrap();
+        assert!(r.converged && (r.yplus_p95.unwrap() - 4.0).abs() < 1e-12);
+        assert!(r.warnings.iter().any(|w| w.contains("y+ P95 = 4.00 exceeds 3")), "{r:?}");
+        assert!(done(&e, &out[0])["warnings"][0].as_str().unwrap().contains("y+"));
+        let _ = std::fs::remove_dir_all(&e.dir);
+    }
+
+    fn hist(rows: &[(f64, f64, f64, f64, f64)]) -> History {
+        let mut t = String::from("\"Inner_Iter\",\"rms[Rho]\",\"rms[nu]\",\"CFx\",\"CFz\",\"CMy\"\n");
+        for (i, (r, nu, fx, fz, my)) in rows.iter().enumerate() {
+            t += &format!("{i},{r},{nu},{fx},{fz},{my}\n");
+        }
+        History::parse(&t).unwrap()
+    }
+
+    /// `n` rows, residuals linear from (rho0, nu0) to (rho1, nu1), constant coefficients unless `cycle`.
+    fn ramp(n: usize, rho: (f64, f64), nu: (f64, f64), cycle: f64) -> History {
+        let rows: Vec<_> = (0..n)
+            .map(|i| {
+                let f = i as f64 / (n - 1) as f64;
+                let c = if i % 2 == 1 { cycle } else { 0.0 };
+                (rho.0 + (rho.1 - rho.0) * f, nu.0 + (nu.1 - nu.0) * f, 0.3 + c, 0.2, -1.6)
+            })
+            .collect();
+        hist(&rows)
+    }
+
+    #[test]
+    fn rans_acceptance_rule() {
+        let k = StabilityKind::Pitch;
+        let reference = ResidualPeak { rho: -1.0, nu: -4.0 };
+        // Warm chain: judged against the cold reference, not the run's own (low) peak. Own drop 1.1 orders,
+        // 3.1 below the reference: converged; 2.9 below the reference (own drop 2.9): only a limit cycle.
+        assert_eq!(rans_verdict(&ramp(50, (-3.0, -4.1), (-6.0, -7.0), 0.0), reference, 20, k, 18.0), RansVerdict::Converged);
+        assert_eq!(rans_verdict(&ramp(50, (-1.0, -3.9), (-6.0, -7.0), 0.0), reference, 20, k, 18.0), RansVerdict::LimitCycle);
+        // Less than 2 orders below the reference: rejected even with flat coefficients.
+        assert!(matches!(rans_verdict(&ramp(50, (-1.5, -2.9), (-6.0, -7.0), 0.0), reference, 20, k, 18.0), RansVerdict::Rejected(_)));
+        // A run whose own peak is above the reference is judged like a cold start, from its own peak (3.7 orders;
+        // 2.2 below the cold reference).
+        assert_eq!(rans_verdict(&ramp(50, (0.5, -3.2), (-6.0, -7.0), 0.0), reference, 20, k, 18.0), RansVerdict::Converged);
+        assert_eq!(effective_reference(reference, &ramp(10, (0.5, -3.2), (-6.0, -7.0), 0.0)), ResidualPeak { rho: 0.5, nu: -4.0 });
+        // The SA residual must drop 2 orders too: with 1.5 orders the case is at most a limit cycle.
+        assert_eq!(rans_verdict(&ramp(50, (-3.0, -6.0), (-4.0, -5.5), 0.0), reference, 20, k, 18.0), RansVerdict::LimitCycle);
+        let v = rans_verdict(&ramp(50, (-1.0, -2.5), (-4.0, -5.5), 0.0), reference, 20, k, 18.0);
+        assert!(matches!(&v, RansVerdict::Rejected(m) if m.contains("SA residual 1.5") && m.contains("density residual 1.5")), "{v:?}");
+        assert_eq!(rans_verdict(&ramp(50, (-3.0, -6.0), (-4.0, -6.1), 0.0), reference, 20, k, 18.0), RansVerdict::Converged);
+        // Limit cycle: 2 orders and a spread within 1 % of the force scale; a larger spread is rejected.
+        assert_eq!(rans_verdict(&ramp(50, (-2.0, -3.5), (-5.0, -5.5), 0.002), reference, 20, k, 18.0), RansVerdict::LimitCycle);
+        assert!(matches!(rans_verdict(&ramp(50, (-2.0, -3.5), (-5.0, -5.5), 0.02), reference, 20, k, 18.0), RansVerdict::Rejected(_)));
+        assert!(matches!(rans_verdict(&ramp(50, (-2.0, -2.5), (-5.0, -5.5), 0.002), reference, 20, k, 18.0), RansVerdict::Rejected(_)));
+        // A converged residual with an oscillating force is a limit cycle, not converged.
+        assert_eq!(rans_verdict(&ramp(50, (-3.0, -6.0), (-4.0, -7.0), 0.002), reference, 20, k, 18.0), RansVerdict::LimitCycle);
+    }
+
+    #[test]
+    fn yplus_percentile_and_restart_kind() {
+        let vtk = "# vtk DataFile Version 3.0\nvtk output\nASCII\nDATASET UNSTRUCTURED_GRID\nPOINTS 5 double\n0 0 0 0.25 0 0 0.5 0 0\n0.75 0 0 1 0 0\nCELLS 1 2\n1 0\nPOINT_DATA 5\nSCALARS Density double 1\nLOOKUP_TABLE default\n1 1 1 1 1\nSCALARS Y_Plus double 1\nLOOKUP_TABLE default\n0.5 1.0 2.0 4.0\n90\n";
+        // The base point (largest x, y+ 90) is left out; the 95th percentile of [0.5, 1, 2, 4] is 4.
+        assert_eq!(wall_yplus_p95(vtk), Some(4.0));
+        assert_eq!(wall_yplus_p95("# vtk\nPOINTS 1 double\n0 0 0\n"), None);
+        let dir = std::env::temp_dir().join(format!("ignisyeet_restart_kind_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("rans.dat"), b"\x00\x01Density\x00Nu_Tilde\x00").unwrap();
+        std::fs::write(dir.join("euler.dat"), b"\x00\x01Density\x00Energy\x00").unwrap();
+        assert!(restart_has_turbulence(&dir.join("rans.dat")) && !restart_has_turbulence(&dir.join("euler.dat")));
+        assert!(!restart_has_turbulence(&dir.join("missing.dat")));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

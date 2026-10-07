@@ -337,6 +337,14 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
     p
 }
 
+/// Warning text of [`sim::RollResonance`]: the roll rate crossed the pitch natural frequency
+/// during the ascent with a trim forcing present.
+pub fn roll_resonance(r: &sim::RollResonance) -> String {
+    let g = ui().g();
+    let more = if r.crossings > 1 { format!(", {}x", r.crossings) } else { String::new() };
+    format!("{} {}", style(g.warn).yellow().bold(), style(format!("p = omega_n {:.1} rad/s at {:.2} s, Mach {:.2}{more}", r.frequency, r.t, r.mach)).yellow().bold())
+}
+
 fn stability(cal: f64) -> String {
     let g = ui().g();
     let txt = format!("{cal:.2} cal");
@@ -519,6 +527,9 @@ pub fn flight_panel(sm: &Summary, descent: Descent, g_lat_lon: bool) -> Panel {
         String::new()
     };
     p.row("min margin", format!("{}{at}", stability(crate::static_margin_min(sm))));
+    if let Some(r) = &sm.roll_resonance {
+        p.row("roll resonance", roll_resonance(r));
+    }
     p.row("apogee", format!("{} {}{s}at {}", style(format!("{:.1} m", sm.apogee)).bold().green(), dim("AGL"), val(format!("{:.2}", sm.apogee_time), "s")));
     if let (Some(t), Some(h)) = (sm.main_deploy_time, sm.main_deploy_altitude) {
         p.row("main deploy", format!("{} {}{s}at {}", style(format!("{h:.1} m")).bold().green(), dim("AGL"), val(format!("{t:.2}"), "s")));
@@ -748,6 +759,12 @@ mod tests {
         let row = flight.lines().find(|l| l.contains("min margin")).unwrap();
         assert!(row.contains("1.80 cal") && row.contains("at 3.25 s") && row.contains("Mach 0.87"), "{row}");
         assert!(!render(&flight_panel(&s, Descent::Parachute, false)).lines().find(|l| l.contains("min margin")).unwrap().contains("Mach"));
+        // Roll resonance: one row with the time and Mach number, none without.
+        assert!(!render(&flight_panel(&s, Descent::Parachute, false)).contains("roll resonance"));
+        let r = Summary { roll_resonance: Some(sim::RollResonance { t: 0.65, mach: 0.155, frequency: 5.16, crossings: 2 }), ..s.clone() };
+        let flight = render(&flight_panel(&r, Descent::Parachute, false));
+        let row = flight.lines().find(|l| l.contains("roll resonance")).unwrap();
+        assert!(row.contains("5.2 rad/s") && row.contains("at 0.65 s") && row.contains("Mach 0.15, 2x"), "{row}");
     }
 
     #[test]

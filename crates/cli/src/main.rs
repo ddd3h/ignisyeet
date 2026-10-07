@@ -998,6 +998,28 @@ fn run_hash(cfg: &Config, kind: RunKind) -> String {
     format!("{h:016x}")
 }
 
+/// Warning for an external table without the lag and Magnus columns.
+const NO_LAG_COLUMNS: &str = "table has no lag/Magnus columns: quasi-steady terms only";
+
+/// Warnings about the columns of an external table (`aero.method = "table"`): an older column set
+/// without the lag (apparent-mass), induced-roll and Magnus columns flies with the quasi-steady
+/// terms only.
+fn external_table_warnings(cfg: &Config, t: &AeroTable) -> Vec<String> {
+    if cfg.aero.method == config::AeroMethod::Table && !t.has_lag_columns() {
+        vec![NO_LAG_COLUMNS.to_string()]
+    } else {
+        Vec::new()
+    }
+}
+
+/// Fills the lag (apparent-mass) sums of a panel or CFD table from the component build-up model of
+/// the geometry `g`, as their roll terms (neither method gives them).
+fn fill_lag_terms(cfg: &Config, g: &Geometry, table: &mut AeroTable) -> Result<()> {
+    let model = AeroModel::new(g.clone(), aero_options(cfg)?);
+    table.set_lag_terms(|m| model.lag_sums(m));
+    Ok(())
+}
+
 /// Load the cached table when its inputs are unchanged, otherwise rebuild and save it.
 fn aero_table(cfg: &Config, force: bool) -> Result<AeroTable> {
     aero_table_for(cfg, force, Sub::Sim)
@@ -1025,6 +1047,7 @@ fn aero_table_for(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
             Err(e) => eprintln!("note: the external aero table has no roll terms and the geometry is unavailable ({e:#}); the rocket will not roll"),
         }
     }
+    print_warnings(&external_table_warnings(cfg, &t));
     if cfg.aero.table_kind == aero::table::TableKind::General && t.kind() == aero::table::TableKind::Axisymmetric {
         let start = std::time::Instant::now();
         let u = ui();
@@ -1243,7 +1266,8 @@ fn cfd_table(cfg: &Config, g: Geometry, hash: String, path: &Path, start: std::t
         &progress,
     );
     pb.finish_and_clear();
-    let (table, report) = built?;
+    let (mut table, report) = built?;
+    fill_lag_terms(cfg, &g, &mut table)?;
     table.save(path)?;
     outfile::write(&out_path(cfg, "cfd_report.json")?, serde_json::to_string_pretty(&report)?)?;
     ui().record(&out_dir.join("cfd_cases.csv"));
@@ -1356,7 +1380,8 @@ fn panel_table(cfg: &Config, g: Geometry, hash: String, path: &Path, start: std:
     };
     let built = panel::build_table_with_progress(&g, &cfg.aero.panel, &aero_options(cfg)?, hash, cfg.aero.extrapolation, &progress);
     pb.finish_and_clear();
-    let (table, report) = built?;
+    let (mut table, report) = built?;
+    fill_lag_terms(cfg, &g, &mut table)?;
     table.save(path)?;
     outfile::write_via_path(&out_path(cfg, "panel_cp.csv")?, |tmp| panel::write_surface_cp(tmp, &report))?;
     outfile::write_with(&out_path(cfg, "aero_drag.csv")?, |f| {
@@ -2494,6 +2519,58 @@ mod tests {
         // A panel table needs the STL, which this directory does not have.
         cfg.aero.method = config::AeroMethod::Panel;
         assert!(aero_table(&cfg, false).is_err());
+    }
+
+    #[test]
+    fn external_table_without_lag_columns_warns_and_flies_quasi_steady() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+        let tmp = std::env::temp_dir().join(format!("ignisyeet_cli_nolag_{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let meta = aero::table::TableMeta {
+            source_hash: "ext".into(),
+            ref_area: 0.01,
+            ref_diameter: 0.1,
+            length: 1.0,
+            machs: vec![0.0, 1.0],
+            alphas_deg: vec![0.0, 10.0],
+            ..Default::default()
+        };
+        let csv = tmp.join("t.csv");
+        AeroTable::from_fn(meta, |_, a| aero::AeroCoeffs { cn: a, ca_off: 0.5, xcp: 0.6, lag_l0: 1.0, lag_l1: 0.5, cl_delta: 1.0, clp: -5.0, ..Default::default() })
+            .save(&csv)
+            .unwrap();
+        let text = include_str!("../../../examples/sample.toml").replace("method = \"barrowman\"", &format!("method = \"table\"\ntable = \"{}\"", csv.display()));
+        let cfg = Config::from_value(toml::from_str(&text).unwrap(), Some(&dir)).unwrap();
+        // With the lag and Magnus columns: no warning, the tabulated lag sums are used.
+        let t = aero_table(&cfg, false).unwrap();
+        assert!(external_table_warnings(&cfg, &t).is_empty());
+        assert_eq!(t.lookup(0.5, 0.0).lag_l0, 1.0);
+        // Version 2 (without the four columns): one warning, zero lag sums (not filled from Barrowman).
+        let text = std::fs::read_to_string(&csv).unwrap();
+        let cut: String = text.lines().map(|l| l.split(',').take(12).collect::<Vec<_>>().join(",") + "\n").collect();
+        std::fs::write(&csv, cut).unwrap();
+        let t = aero_table(&cfg, false).unwrap();
+        assert_eq!(external_table_warnings(&cfg, &t), vec!["table has no lag/Magnus columns: quasi-steady terms only".to_string()]);
+        let c = t.lookup(0.5, 0.0);
+        assert_eq!((c.lag_l0, c.lag_l1, c.cl4, c.cnpa), (0.0, 0.0, 0.0, 0.0));
+        // The Barrowman table is not external: no warning.
+        let barrowman = Config::from_value(toml::from_str(include_str!("../../../examples/sample.toml")).unwrap(), Some(&dir)).unwrap();
+        assert!(external_table_warnings(&barrowman, &t).is_empty());
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn panel_and_cfd_tables_get_the_lag_sums_of_the_geometry() {
+        let cfg = sample_config("lagfill");
+        let g = geometry(&cfg).unwrap();
+        let meta = aero::table::TableMeta { ref_area: 0.01, ref_diameter: 0.1, length: 1.5, machs: vec![0.0, 2.0], alphas_deg: vec![0.0, 10.0], ..Default::default() };
+        let mut t = AeroTable::from_fn(meta, |_, a| aero::AeroCoeffs { cn: a, xcp: 0.6, ..Default::default() });
+        assert!(!t.has_lag_terms());
+        fill_lag_terms(&cfg, &g, &mut t).unwrap();
+        let (l0, l1) = AeroModel::new(g, aero_options(&cfg).unwrap()).lag_sums(1.0);
+        let c = t.lookup(1.0, 0.05);
+        assert!(l0 > 0.0 && (c.lag_l0 - l0).abs() < 1e-12 && (c.lag_l1 - l1).abs() < 1e-12);
+        let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 
     #[test]

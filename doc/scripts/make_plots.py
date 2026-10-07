@@ -1046,10 +1046,10 @@ def rans_study(f, data):
             axs[0].plot(ve.mach, ve.rans_cn_a4, "^", color=SERIES[2], markersize=7, label="RANS（3 mm）")
             axs[1].plot(ve.mach, ve.rans_xcp_m, "^", color=SERIES[2], markersize=7)
         axs[2].plot(a0.mach, a0.euler_ca_off, **sty_e)
-        axs[2].plot(a0.mach, a0.rans_ca_off, color=SERIES[1], marker="s", markersize=6, linewidth=1.0, linestyle="--", markerfacecolor="white", label="RANS（5 mm、粗さの増分なし）")
+        axs[2].plot(a0.mach, a0.rans_ca_off, color=SERIES[1], marker="s", markersize=6, linewidth=1.0, linestyle="--", markerfacecolor="white", label="RANS（5 mm、粗さとフィンの縁の増分なし）")
         if rc is not None:
             r0 = rc[rc.alpha_deg == 0].sort_values("mach")
-            axs[2].plot(r0.mach, r0.rans_ca_off_corrected, label="RANS（5 mm、粗さの増分を加えた再計算）", **sty_r)
+            axs[2].plot(r0.mach, r0.rans_ca_off_corrected, label="RANS（5 mm、増分を加えた再計算）", **sty_r)
         axs[0].set_ylabel("$C_N$（$\\alpha=4^\\circ$）")
         axs[1].set_ylabel("$x_{cp}$（$\\alpha=4^\\circ$）[m]")
         axs[2].set_ylabel("軸力係数 $C_A$（$\\alpha=0$、燃焼後）")

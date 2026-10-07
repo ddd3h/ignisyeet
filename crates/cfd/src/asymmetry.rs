@@ -19,11 +19,13 @@
 //! # What the table does with it
 //!
 //! * A mirrored mesh (quarter or half mirrored, shapes that pass the symmetry check) has none.
-//! * Symmetry completion and the alpha modes remove the components that must vanish by symmetry
-//!   ([`crate::table::apply_alpha_mode`], [`crate::general`]); the `offset` mode of a general table removes every
-//!   lateral component of the `(0, 0)` point, also for a shape without mirror symmetry.
-//! * Otherwise (a shape without mirror symmetry, a pitch-plane shape for `CZ`, `alpha_mode = "single"`) it stays
-//!   in the table: a steady trim force that the shape does not have.
+//! * `alpha_mode = "mirror"` and `"offset"` remove it: the axisymmetric table uses the odd part of `+-alpha` or
+//!   subtracts `CN(0)` ([`crate::table::apply_alpha_mode`]); the general table subtracts the lateral components of
+//!   the `(0, 0)` point from every point ([`crate::general`]). For a shape without mirror symmetry this also removes
+//!   the zero-angle force of its asymmetric detail (a launch lug, rail buttons), which is small next to the
+//!   spurious fin lift.
+//! * `alpha_mode = "single"` keeps what the shape symmetry does not zero (all of it without mirror symmetry, `CZ`
+//!   of a pitch-plane shape, `CN` of the axisymmetric table): a steady trim force that the shape does not have.
 //!
 //! [`check`] reports it per Mach number relative to the normal force at [`REF_ALPHA_DEG`] and warns above
 //! [`WARN_RATIO`].
@@ -54,17 +56,15 @@ pub struct ZeroAngle {
     pub ratio_kept: f64,
 }
 
-/// Which zero-angle components stay in the table: `(cy, cz)`.
+/// Which zero-angle components stay in the table: `(cy, cz)`. The `mirror` and `offset` modes remove them (by the
+/// odd part of `+-alpha` or by subtracting the `alpha = beta = 0` value); `single` keeps what symmetry does not zero.
 pub fn kept_components(general: bool, shape: ShapeSymmetry, mode: AlphaMode) -> (bool, bool) {
-    if !general {
-        return (false, mode == AlphaMode::Single);
-    }
-    if mode == AlphaMode::Offset {
+    if mode != AlphaMode::Single {
         return (false, false);
     }
-    match shape {
-        ShapeSymmetry::Axisymmetric => (false, false),
-        ShapeSymmetry::PitchPlane => (false, true),
+    match (general, shape) {
+        (false, _) | (true, ShapeSymmetry::PitchPlane) => (false, true),
+        (true, ShapeSymmetry::Axisymmetric) => (false, false),
         _ => (true, true),
     }
 }
@@ -120,7 +120,7 @@ pub fn warnings(entries: &[ZeroAngle], fin: Option<(f64, f64)>) -> Vec<String> {
             };
             let fate = if e.ratio_kept > WARN_RATIO {
                 format!(
-                    "{:.0} % of it stays in the table as a steady force (alpha_mode = \"offset\" removes it, with the zero-angle force of any asymmetric detail)",
+                    "{:.0} % of it stays in the table as a steady force (alpha_mode = \"single\"; \"mirror\" or \"offset\" remove it)",
                     100.0 * e.ratio_kept / e.ratio
                 )
             } else {
@@ -156,10 +156,11 @@ mod tests {
         assert_eq!(kept_components(false, Axisymmetric, Mirror), (false, false));
         assert_eq!(kept_components(false, Axisymmetric, Offset), (false, false));
         assert_eq!(kept_components(false, Axisymmetric, Single), (false, true));
-        assert_eq!(kept_components(true, Axisymmetric, Mirror), (false, false));
-        assert_eq!(kept_components(true, PitchPlane, Mirror), (false, true));
-        assert_eq!(kept_components(true, None, Mirror), (true, true));
+        assert_eq!(kept_components(true, Axisymmetric, Single), (false, false));
+        assert_eq!(kept_components(true, PitchPlane, Single), (false, true));
+        assert_eq!(kept_components(true, PitchPlane, Mirror), (false, false));
         assert_eq!(kept_components(true, None, Single), (true, true));
+        assert_eq!(kept_components(true, None, Mirror), (false, false));
         assert_eq!(kept_components(true, None, Offset), (false, false));
     }
 
@@ -174,7 +175,7 @@ mod tests {
         ];
         // CNa = 17 /rad -> CN(4 deg) = 1.187.
         let s = [slopes(0.8, 17.0), slopes(2.0, 12.0)];
-        let e = from_general(&pts, &s, ShapeSymmetry::None, AlphaMode::Mirror);
+        let e = from_general(&pts, &s, ShapeSymmetry::None, AlphaMode::Single);
         assert_eq!(e.len(), 2);
         let r = 0.116f64.hypot(0.02) / (17.0 * 4f64.to_radians());
         assert!((e[0].ratio - r).abs() < 1e-12 && (e[0].ratio_kept - r).abs() < 1e-12, "{e:?}");
@@ -182,12 +183,14 @@ mod tests {
         assert_eq!(w.len(), 1, "{w:?}");
         assert!(w[0].starts_with("zero-angle asymmetry at M=0.8: CY = +0.1160, CZ = +0.0200 at alpha = beta = 0 (9.9 % of CN at 4 deg = 1.187)"), "{}", w[0]);
         assert!(w[0].contains("wall_size 5.0 mm, fin thickness 4.0 mm") && w[0].contains("100 % of it stays in the table"), "{}", w[0]);
-        // The offset mode removes it: still reported, no longer kept.
-        let o = from_general(&pts, &s, ShapeSymmetry::None, AlphaMode::Offset);
-        assert_eq!(o[0].ratio_kept, 0.0);
-        assert!(warnings(&o, None)[0].contains("the table removes it"));
-        // Pitch-plane shape: CY is removed (zeroed at beta = 0), CZ stays.
-        let p = from_general(&pts, &s, ShapeSymmetry::PitchPlane, AlphaMode::Mirror);
+        // The mirror and offset modes remove it: still reported, no longer kept.
+        for mode in [AlphaMode::Mirror, AlphaMode::Offset] {
+            let o = from_general(&pts, &s, ShapeSymmetry::None, mode);
+            assert_eq!(o[0].ratio_kept, 0.0);
+            assert!(warnings(&o, None)[0].contains("the table removes it"));
+        }
+        // Pitch-plane shape, single mode: CY is zeroed at beta = 0, CZ stays.
+        let p = from_general(&pts, &s, ShapeSymmetry::PitchPlane, AlphaMode::Single);
         assert!((p[0].ratio_kept - 0.02 / (17.0 * 4f64.to_radians())).abs() < 1e-12);
     }
 

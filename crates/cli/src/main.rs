@@ -1009,7 +1009,8 @@ fn run_hash(cfg: &Config, kind: RunKind) -> String {
 
 /// Warning for an external table without the lag and Magnus columns.
 const NO_LAG_COLUMNS_FILLED: &str =
-    "the external aero table has no lag/Magnus columns: the apparent-mass (lag) sums were filled from the geometry (component build-up); Magnus force and induced roll are 0";
+    "the external aero table has no lag/Magnus columns: the apparent-mass (lag) sums were filled from the geometry (component build-up); Magnus force and induced roll are 0. If its damping sums hold a measured or CFD Cmq + Cmalphadot (which already contains these terms), write lag_l0 and lag_l1 columns of 0 so they are not counted twice";
+const NO_FIN_COUNT: &str = "the aero table has an induced roll cl4 but no fin_count in its sidecar: the sin(4 phi) form of four fins is assumed";
 const NO_LAG_COLUMNS_NO_GEOMETRY: &str =
     "the external aero table has no lag/Magnus columns and the geometry is unavailable: the flight has no apparent-mass (lag) terms, Magnus force or induced roll";
 
@@ -1018,13 +1019,21 @@ const NO_LAG_COLUMNS_NO_GEOMETRY: &str =
 /// STL geometry, as the roll terms. Returns the warning (none for a table with the columns or
 /// another method).
 fn fill_external_lag_terms(cfg: &Config, t: &mut AeroTable) -> Vec<String> {
-    if cfg.aero.method != config::AeroMethod::Table || t.has_lag_columns() {
+    if cfg.aero.method != config::AeroMethod::Table {
         return Vec::new();
     }
-    match geometry(cfg).and_then(|g| fill_lag_terms(cfg, &g, t)) {
-        Ok(()) => vec![NO_LAG_COLUMNS_FILLED.to_string()],
-        Err(_) => vec![NO_LAG_COLUMNS_NO_GEOMETRY.to_string()],
+    let mut w = Vec::new();
+    if t.has_induced_roll() && t.meta.fin_count.is_none() {
+        w.push(NO_FIN_COUNT.to_string());
     }
+    if t.has_lag_columns() {
+        return w;
+    }
+    w.push(match geometry(cfg).and_then(|g| fill_lag_terms(cfg, &g, t)) {
+        Ok(()) => NO_LAG_COLUMNS_FILLED.to_string(),
+        Err(_) => NO_LAG_COLUMNS_NO_GEOMETRY.to_string(),
+    });
+    w
 }
 
 /// Fills the lag (apparent-mass) sums of a table from the component build-up model of the geometry
@@ -2629,6 +2638,19 @@ mod tests {
         let barrowman = Config::from_value(toml::from_str(include_str!("../../../examples/sample.toml")).unwrap(), Some(&dir)).unwrap();
         let mut b = AeroTable::load(&csv).unwrap();
         assert!(fill_external_lag_terms(&barrowman, &mut b).is_empty());
+        assert!(NO_LAG_COLUMNS_FILLED.contains("write lag_l0 and lag_l1 columns of 0"));
+        // A current table with explicit zero lag columns (a measured damping) keeps them at zero.
+        let meta = AeroTable::load(&csv).unwrap().meta;
+        AeroTable::from_fn(meta, |_, a| aero::AeroCoeffs { cn: a, ca_off: 0.5, xcp: 0.6, cl_delta: 1.0, clp: -5.0, ..Default::default() }).save(&csv).unwrap();
+        let mut z = aero_table(&cfg, false).unwrap();
+        assert!(fill_external_lag_terms(&cfg, &mut z).is_empty());
+        assert_eq!((z.lookup(1.0, 0.0).lag_l0, z.lookup(1.0, 0.0).lag_l1), (0.0, 0.0));
+        // An induced roll without a recorded fin count: four fins are assumed, with a warning.
+        let meta = AeroTable::load(&csv).unwrap().meta;
+        assert_eq!(meta.fin_count, None);
+        AeroTable::from_fn(meta, |_, a| aero::AeroCoeffs { cn: a, ca_off: 0.5, xcp: 0.6, cl4: 0.2, ..Default::default() }).save(&csv).unwrap();
+        let mut c4 = AeroTable::load(&csv).unwrap();
+        assert_eq!(fill_external_lag_terms(&cfg, &mut c4), vec![NO_FIN_COUNT.to_string()]);
         let _ = std::fs::remove_dir_all(&tmp);
     }
 

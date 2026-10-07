@@ -492,10 +492,11 @@ impl AeroModel {
 
     /// Apparent-mass sums of the fins at Mach `m`: the wing-body increment
     /// `A_f(x) = pi (s - r^2 / s)^2` (the wing-body section `pi (s^2 - r^2 + r^4 / s^2)` minus the
-    /// body `pi r^2`, `r` the body radius at the fins, `s` the local semi-span) over the root chord.
-    /// The semi-span grows along the leading edge from `r` at the root leading edge to `r + span`
-    /// at the tip leading edge and is held there to the root trailing edge (in slender-body theory
-    /// a section aft of the largest span carries the same apparent mass).
+    /// body `pi r^2`, `r` the body radius at the fins, `s` the local semi-span) over the planform,
+    /// from the most forward leading edge to the most aft trailing edge (root or tip). The
+    /// semi-span grows along the leading edge from `r` at the root leading edge to `r + span` at the
+    /// tip leading edge and is held there to the end (in slender-body theory a section aft of the
+    /// largest span carries the same apparent mass).
     ///
     /// The increment is scaled so that its value at the largest span equals the apparent mass of
     /// the fin normal force the table uses: `(S / 2) CNa_f` with `CNa_f` the Barrowman slope of the
@@ -520,11 +521,18 @@ impl AeroModel {
         if a_max <= 0.0 {
             return (0.0, 0.0);
         }
+        // From the most forward leading edge to the most aft trailing edge of the planform (root or
+        // tip: a fin swept by more than its root chord reaches its full span only behind the root).
+        let x0 = f.x_le_root.min(f.x_le_root + f.sweep);
+        let x1 = (f.x_le_root + f.root_chord).max(f.x_le_root + f.sweep + f.tip_chord);
         let n = 400;
-        let dx = f.root_chord / n as f64;
+        let dx = (x1 - x0) / n as f64;
         let (mut i0, mut i1) = (0.0, 0.0);
         for i in 0..n {
-            let x = f.x_le_root + (i as f64 + 0.5) * dx;
+            let x = x0 + (i as f64 + 0.5) * dx;
+            // Largest semi-span reached at or ahead of x (slender-body theory holds it aft of there):
+            // along a backward-swept leading edge it grows to the tip; a forward-swept (or
+            // unswept) tip leading edge is reached first.
             let grow = if f.sweep > 0.0 { ((x - f.x_le_root) / f.sweep).clamp(0.0, 1.0) } else { 1.0 };
             let phi = a_of(r + f.span * grow) / a_max;
             i0 += phi * dx;
@@ -1024,6 +1032,35 @@ mod tests {
         // Proportional to the fin normal-force slope (Mach, fin count).
         let (l0s, _) = m.fin_lag_sums(2.0);
         assert!((l0s / l0 - (m.fin_cn(2.0, 1e-4) / m.fin_cn(0.5, 1e-4))).abs() < 1e-9);
+    }
+
+    #[test]
+    fn fin_apparent_mass_of_a_fin_swept_beyond_its_root_chord_reaches_the_full_span() {
+        // Root chord 0.20 m, tip leading edge 0.30 m aft of the root leading edge, tip chord 0.10 m:
+        // the full span is reached behind the root trailing edge, the planform ends at the tip
+        // trailing edge 0.40 m aft of the root leading edge.
+        let (m0, _) = model();
+        let mut g = m0.geom.clone();
+        let f = g.fins.as_mut().unwrap();
+        (f.root_chord, f.tip_chord, f.sweep, f.x_le_root) = (0.20, 0.10, 0.30, 1.10);
+        let m = AeroModel::new(g, AeroOptions::default());
+        let f = m.geom.fins.clone().unwrap();
+        let r = f.body_radius;
+        let am = |s: f64| (s - r * r / s).powi(2);
+        let n = 200_000;
+        let (x0, x1) = (1.10, 1.50);
+        let (mut i0, mut i1) = (0.0, 0.0);
+        for i in 0..n {
+            let x = x0 + (i as f64 + 0.5) * (x1 - x0) / n as f64;
+            let w = am(r + f.span * ((x - x0) / 0.30).min(1.0)) / am(r + f.span) * (x1 - x0) / n as f64;
+            i0 += w;
+            i1 += w * x;
+        }
+        let cna_f = m.fin_cn(0.5, 1e-4) / 1e-4;
+        let (l0, l1) = m.fin_lag_sums(0.5);
+        assert!((l0 / (cna_f * i0) - 1.0).abs() < 1e-4 && (l1 / (cna_f * i1) - 1.0).abs() < 1e-4, "{l0} {l1} vs {} {}", cna_f * i0, cna_f * i1);
+        // The full-span stretch (1.40 to 1.50 m) is included: more than the root chord alone gives.
+        assert!(i0 > 0.1 && l1 / l0 > 1.35, "{i0} {}", l1 / l0);
     }
 
     /// Sample body with rectangular fins of span `span` and chord `chord` on a body of radius 0.05 m.

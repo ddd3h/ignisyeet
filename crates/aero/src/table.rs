@@ -720,6 +720,14 @@ impl AeroTable {
         c
     }
 
+    /// True when any induced-roll coefficient `cl4` of an axisymmetric table is nonzero.
+    pub fn has_induced_roll(&self) -> bool {
+        match &self.data {
+            TableData::Axisymmetric(d) => d.iter().any(|r| r[12] != 0.0),
+            TableData::General(_) => false,
+        }
+    }
+
     /// True when any Magnus slope (`cnpa` or `cmpa`) of the table is nonzero.
     pub fn has_magnus_terms(&self) -> bool {
         match &self.data {

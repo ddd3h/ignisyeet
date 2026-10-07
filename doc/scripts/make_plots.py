@@ -932,8 +932,8 @@ def cfd_fields(f, fields):
 
 def cfd_stl_check(f, data):
     """Direct-STL CFD versus the rebuilt (CAD) geometry and the Barrowman model (doc/data/cfd/stl_cross_check*)."""
-    t = pd.read_csv(data / "stl_cross_check.csv")
-    clp = pd.read_csv(data / "stl_cross_check_clp.csv")
+    t = pd.read_csv(data / "stl_cross_check.csv", comment="#")
+    clp = pd.read_csv(data / "stl_cross_check_clp.csv", comment="#")
     d = 0.1
     t["cn_n"] = -t.cz
     t["xcp"] = np.where(t.cz.abs() > 1e-6, t.cm * d / t.cz.where(t.cz.abs() > 1e-6, 1.0), np.nan)

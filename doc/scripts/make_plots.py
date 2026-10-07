@@ -716,7 +716,7 @@ def cfd_study(f, out, pn, data):
     ax.set_xlim(0, 10.5)
     ax.set_xlabel("壁面の要素の大きさ wall_size [mm]（フィンの面は 1 mm）")
     ax.set_ylabel("$C_N$（$\\alpha=4^\\circ$）")
-    ax.legend(loc="lower left")
+    ax.legend(loc="center right")
     fig.tight_layout()
     f.save(fig, "cfd_mesh_convergence")
 

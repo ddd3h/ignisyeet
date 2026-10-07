@@ -16,6 +16,11 @@
 //! thickness. Elements of 0.75 mm on the fins alone (the body still 6 mm) bring it down to `-0.007`
 //! (0.6 %) and change the odd part `CN(4 deg)` by 3.5 %.
 //!
+//! RANS (half model with the prism layer, flat base) has a smaller one of another origin: at M 0.8 `CN(0) =
+//! 0.011` (8 mm) and `0.034` (4.8 mm), 1 to 3 % of `CN(4 deg)`, and `0.006` to `0.013` without fins. The force is steady (the
+//! residual stalls, the coefficient does not oscillate) and sits on the last base diameter of the body ahead of the
+//! flat base and on the fins next to it: an asymmetric steady base wake. At M 2 it is below `0.001`.
+//!
 //! # What the table does with it
 //!
 //! * A mirrored mesh (quarter or half mirrored, shapes that pass the symmetry check) has none.
@@ -99,9 +104,12 @@ pub fn from_axisymmetric(asym: &[Asymmetry], slopes: &[Slopes], mode: AlphaMode)
 }
 
 /// Warnings for the entries above [`WARN_RATIO`] (one line per Mach number). `fin` is `(wall_size, fin
-/// thickness)` [m] when the rocket has fins.
-pub fn warnings(entries: &[ZeroAngle], fin: Option<(f64, f64)>) -> Vec<String> {
+/// thickness)` [m] when the rocket has fins; `rans` names the RANS source (the base wake) instead.
+pub fn warnings(entries: &[ZeroAngle], fin: Option<(f64, f64)>, rans: bool) -> Vec<String> {
     let hint = match fin {
+        _ if rans => "; a symmetric body has none: it is the asymmetric steady base wake of the mesh (force on the body \
+                      ahead of the base and on the fins next to it), which grows with mesh refinement"
+            .to_string(),
         Some((w, t)) if t > 0.0 => format!(
             "; a symmetric body has none: it is a spurious fin lift of under-resolved fins (wall_size {:.1} mm, fin thickness {:.1} mm; \
              surface elements of about a quarter of the fin thickness remove it)",
@@ -179,7 +187,7 @@ mod tests {
         assert_eq!(e.len(), 2);
         let r = 0.116f64.hypot(0.02) / (17.0 * 4f64.to_radians());
         assert!((e[0].ratio - r).abs() < 1e-12 && (e[0].ratio_kept - r).abs() < 1e-12, "{e:?}");
-        let w = warnings(&e, Some((0.005, 0.004)));
+        let w = warnings(&e, Some((0.005, 0.004)), false);
         assert_eq!(w.len(), 1, "{w:?}");
         assert!(w[0].starts_with("zero-angle asymmetry at M=0.8: CY = +0.1160, CZ = +0.0200 at alpha = beta = 0 (9.9 % of CN at 4 deg = 1.187)"), "{}", w[0]);
         assert!(w[0].contains("wall_size 5.0 mm, fin thickness 4.0 mm") && w[0].contains("100 % of it stays in the table"), "{}", w[0]);
@@ -187,7 +195,7 @@ mod tests {
         for mode in [AlphaMode::Mirror, AlphaMode::Offset] {
             let o = from_general(&pts, &s, ShapeSymmetry::None, mode);
             assert_eq!(o[0].ratio_kept, 0.0);
-            assert!(warnings(&o, None)[0].contains("the table removes it"));
+            assert!(warnings(&o, None, false)[0].contains("the table removes it"));
         }
         // Pitch-plane shape, single mode: CY is zeroed at beta = 0, CZ stays.
         let p = from_general(&pts, &s, ShapeSymmetry::PitchPlane, AlphaMode::Single);
@@ -201,11 +209,12 @@ mod tests {
         let e = from_axisymmetric(&a, &[slopes(0.8, 17.0)], AlphaMode::Mirror);
         assert_eq!(e.len(), 1);
         assert_eq!((e[0].cy, e[0].cz, e[0].ratio_kept), (None, 0.139, 0.0));
-        let w = warnings(&e, None);
+        let w = warnings(&e, None, false);
         assert!(w[0].contains("CN = -0.1390") && w[0].contains("11.7 %"), "{}", w[0]);
+        assert!(warnings(&e, Some((0.008, 0.004)), true)[0].contains("asymmetric steady base wake"));
         assert_eq!(from_axisymmetric(&a, &[slopes(0.8, 17.0)], AlphaMode::Single)[0].ratio_kept, e[0].ratio);
         // Below the threshold: no warning.
         let small = [Asymmetry { mach: 0.8, cn0: 0.01, mom0: 0.0 }];
-        assert!(warnings(&from_axisymmetric(&small, &[slopes(0.8, 17.0)], AlphaMode::Mirror), None).is_empty());
+        assert!(warnings(&from_axisymmetric(&small, &[slopes(0.8, 17.0)], AlphaMode::Mirror), None, false).is_empty());
     }
 }

@@ -571,7 +571,7 @@ pub fn build_table_with_progress(
         report.fin_cant_ref_deg = tab.meta.fin_cant_ref_deg;
         tab
     };
-    report.warnings.extend(asymmetry::warnings(&report.zero_angle, geom.fins.as_ref().map(|f| (cfd.wall_size, f.thickness))));
+    report.warnings.extend(asymmetry::warnings(&report.zero_angle, geom.fins.as_ref().map(|f| (cfd.wall_size, f.thickness)), cfd.model == FlowModel::Rans));
     let solved_m = results.iter().filter(|r| r.result.is_some()).map(|r| r.spec.mach);
     let (lo, hi) = solved_m.fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), m| (a.min(m), b.max(m)));
     if lo <= hi {

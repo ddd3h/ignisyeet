@@ -32,6 +32,8 @@ import subprocess
 import sys
 import time
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 GAMMA = 1.4
 R_AIR = 287.058
 RE_PER_M = 5.0e6
@@ -318,6 +320,10 @@ def collect(args):
         hs, _ = read_history(os.path.join(d, "history_startup.csv"))
         nu_peak = max(r[hs.index("rms[nu]")] for r in sdata[1:])
         stop_it, stop_dcd = pipeline_stop(head, data, meta["rho_peak"], nu_peak)
+        import rans_replay
+        hh = ["CMy" if x == "CMz" else x for x in head]  # 2-D: the pitching moment is CMz
+        _, new_it = rans_replay.stops(hh, data, meta["rho_peak"], nu_peak, 1.0)
+        new_dcd = 100.0 * (data[new_it - 1][head.index("CD")] / data[-1][head.index("CD")] - 1.0) if new_it else None
         pts = surface_cf(d)
         cfx = interp(pts, X_PROBE)
         yp = [p[2] for p in pts if p[0] > 0.01]
@@ -338,6 +344,7 @@ def collect(args):
             "iterations_final": len(data), "iterations_startup": meta["startup_iters"],
             "rho_drop_orders": meta["rho_peak"] - rho, "nu_drop_orders": nu_peak - nu,
             "pipeline_stop_iter": stop_it, "cd_at_stop_vs_final_percent": stop_dcd,
+            "trend_rule_stop_iter": new_it, "cd_at_trend_stop_vs_final_percent": new_dcd,
             "wall_s": meta["wall_s"], "ranks": meta["ranks"],
             "peak_rss_per_rank_mb": max(maxrss_mb(os.path.join(d, "time_startup.txt")), maxrss_mb(os.path.join(d, "time_final.txt"))),
         })
@@ -353,7 +360,7 @@ def collect(args):
            f"{white_local(RE_PER_M * X_PROBE):.6e}. rho/nu drop: orders below the startup-stage peak. wall_s: startup + "
            f"final stage. cd_plate: SU2 CD of the wall (0 <= x <= 2, REF_AREA 2); the characteristic farfield on the outflow "
            f"boundary at the plate end raises cf for x > 1.5 (273x193 at M 0.2: +1.4 % at x = 1.5, +6 % at 1.9 vs CFL3D), so "
-           f"cd_plate is not compared with the TMR drag. pipeline_stop_iter: final-stage iteration at which the ignisyeet RANS acceptance (rho 3, nu 2 orders, CD flat over 200 rows, at least 400 rows) would have stopped, cd_at_stop_vs_final_percent: plate CD there vs the last iteration. peak_rss_per_rank_mb: largest MPI rank (/usr/bin/time of mpirun = largest child). "
+           f"cd_plate is not compared with the TMR drag. pipeline_stop_iter: final-stage iteration at which the ignisyeet RANS acceptance (rho 3, nu 2 orders, CD flat over 200 rows, at least 400 rows) would have stopped, cd_at_stop_vs_final_percent: plate CD there vs the last iteration; trend_rule_*: the same for the acceptance with the trend-extrapolation check (rans_replay.py, release/v0.4.0 73d22f8). peak_rss_per_rank_mb: largest MPI rank (/usr/bin/time of mpirun = largest child). "
            f"{args.provenance}\n")
     with open(args.out, "w") as f:
         f.write(hdr)

@@ -540,7 +540,7 @@ mod tests {
                 assert!((c.cn - cn(mach, a)).abs() < 4e-3, "cn at M={mach} a={a}: {} vs {}", c.cn, cn(mach, a));
                 assert!((c.xcp - xcp(mach)).abs() < 3e-3, "xcp {}", c.xcp);
                 let k = aero::model::axial_alpha_factor(a.to_radians());
-                let extra = m.cd0(mach, false).extra * k;
+                let extra = (m.cd0(mach, false).extra + crate::forces::roughness_increment(&m, mach)) * k;
                 assert!((c.ca_off - (ca(mach, a) + extra)).abs() < 3e-3, "ca {} vs {}", c.ca_off, ca(mach, a));
             }
         }
@@ -705,8 +705,9 @@ mod tests {
         let (eu, rm, rc) = (build(FlowModel::Euler, false), build(FlowModel::Rans, false), build(FlowModel::Rans, true));
         let b = m.cd0(0.5, false);
         let at = |t: &AeroTable| t.lookup(0.5, 0.0).ca_off;
-        assert!((at(&rm) - (0.3 + b.base + b.extra)).abs() < 1e-9);
-        assert!((at(&rc) - (0.3 + b.extra)).abs() < 1e-9);
-        assert!(at(&eu) > at(&rm) + b.friction * 0.99);
+        let r = crate::forces::roughness_increment(&m, 0.5);
+        assert!((at(&rm) - (0.3 + b.base + b.extra + r)).abs() < 1e-9);
+        assert!((at(&rc) - (0.3 + b.extra + r)).abs() < 1e-9);
+        assert!(at(&eu) > at(&rm) + (b.friction - r) * 0.99);
     }
 }

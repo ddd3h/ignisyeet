@@ -841,8 +841,9 @@ mod tests {
             build_general(&inp).unwrap().0
         };
         let b = m.cd0(0.5, false);
+        let r = crate::forces::roughness_increment(&m, 0.5);
         let (model_base, cfd_base) = (build(false).lookup6(0.5, 0.0, 0.0), build(true).lookup6(0.5, 0.0, 0.0));
-        assert!((-cfd_base.cx_off - (0.3 + b.extra)).abs() < 1e-6, "{}", cfd_base.cx_off);
-        assert!((-model_base.cx_off - (0.3 + b.base + b.extra)).abs() < 1e-6, "{}", model_base.cx_off);
+        assert!((-cfd_base.cx_off - (0.3 + b.extra + r)).abs() < 1e-6, "{}", cfd_base.cx_off);
+        assert!((-model_base.cx_off - (0.3 + b.base + b.extra + r)).abs() < 1e-6, "{}", model_base.cx_off);
     }
 }

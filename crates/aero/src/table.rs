@@ -1194,6 +1194,7 @@ fn locate(g: &[f64], x: f64, clamp: bool) -> (usize, f64) {
 mod tests {
     use super::*;
     use crate::model::AeroOptions;
+    use crate::test_tmp::TempDir;
     use geom::sample::SampleRocket;
     use geom::{extract, ExtractOptions};
 
@@ -1281,7 +1282,8 @@ mod tests {
     #[test]
     fn save_load_roundtrip() {
         let (t, _) = table(Extrapolation::Linear);
-        let p = std::env::temp_dir().join("ignisyeet_aero_test.csv");
+        let td = TempDir::new("aero_test");
+        let p = td.join("aero_test.csv");
         t.save(&p).unwrap();
         let u = AeroTable::load(&p).unwrap();
         let (a, b) = (t.lookup(1.23, 0.07), u.lookup(1.23, 0.07));
@@ -1292,7 +1294,7 @@ mod tests {
     #[test]
     fn save_leaves_no_temporary_files_and_replaces_atomically() {
         let (t, _) = table(Extrapolation::Linear);
-        let dir = std::env::temp_dir().join(format!("ignisyeet_aero_atomic_{}", std::process::id()));
+        let dir = TempDir::new("aero_atomic");
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("t.csv");
         std::fs::write(&p, "stale").unwrap();
@@ -1305,13 +1307,12 @@ mod tests {
         // A failing save (missing directory) reports an error and creates nothing.
         assert!(t.save(&dir.join("no_such_dir").join("t.csv")).is_err());
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 2);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn load_rejects_a_reordered_or_renamed_header() {
         let (t, _) = table(Extrapolation::Linear);
-        let dir = std::env::temp_dir().join(format!("ignisyeet_aero_hdr_{}", std::process::id()));
+        let dir = TempDir::new("aero_hdr");
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("t.csv");
         t.save(&p).unwrap();
@@ -1326,13 +1327,12 @@ mod tests {
         // Case and surrounding blanks are tolerated.
         std::fs::write(&p, format!("{}\n{rest}", first.to_uppercase().replace(',', " , "))).unwrap();
         AeroTable::load(&p).unwrap();
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn loads_version_1_files_without_roll_terms() {
         let (t, _) = table(Extrapolation::Linear);
-        let dir = std::env::temp_dir().join(format!("ignisyeet_aero_v1_{}", std::process::id()));
+        let dir = TempDir::new("aero_v1");
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("t.csv");
         // Write a version-1 file: 8 value columns and a sidecar without version or kind.
@@ -1353,13 +1353,12 @@ mod tests {
         assert_eq!(u.kind(), TableKind::Axisymmetric);
         assert!(!u.has_roll_terms());
         assert!((u.lookup(0.7, 0.05).cn - t.lookup(0.7, 0.05).cn).abs() < 1e-9);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Writes `t` (axisymmetric) with only the first `n_values` value columns of its CSV and checks
     /// the loaded table: the kept columns equal, the dropped ones zero.
     fn load_truncated(t: &AeroTable, tag: &str, n_values: usize) -> AeroTable {
-        let dir = std::env::temp_dir().join(format!("ignisyeet_aero_cols_{tag}_{}", std::process::id()));
+        let dir = TempDir::new(&format!("aero_cols_{tag}"));
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("t.csv");
         t.save(&p).unwrap();
@@ -1368,7 +1367,6 @@ mod tests {
         let cut: String = text.lines().map(|l| l.split(',').take(nc + n_values).collect::<Vec<_>>().join(",") + "\n").collect();
         std::fs::write(&p, cut).unwrap();
         let u = AeroTable::load(&p).unwrap();
-        let _ = std::fs::remove_dir_all(&dir);
         u
     }
 
@@ -1486,7 +1484,8 @@ mod tests {
         let back = g.lookup6(0.5, std::f64::consts::PI, 0.0);
         assert!((back.cx_off - c.ca_off.max(0.0) * 0.0 - t.lookup(0.5, 0.0).ca_off).abs() < 1e-9);
         // Save / load round trip of a general table.
-        let p = std::env::temp_dir().join(format!("ignisyeet_aero_gen_{}.csv", std::process::id()));
+        let p_td = TempDir::new("aero_gen");
+        let p = p_td.join("aero_gen.csv");
         g.save(&p).unwrap();
         let u = AeroTable::load(&p).unwrap();
         let (x, y) = (u.lookup6(0.73, 0.1, -0.05), g.lookup6(0.73, 0.1, -0.05));
@@ -1698,9 +1697,9 @@ mod tests {
         assert!(ax.contains(&0.0) && ax.contains(&30.0) && ax.contains(&40.0));
     }
 
-    fn loadable_files(tag: &str) -> (std::path::PathBuf, std::path::PathBuf, AeroTable) {
+    fn loadable_files(tag: &str) -> (TempDir, std::path::PathBuf, AeroTable) {
         let (t, _) = table(Extrapolation::Linear);
-        let dir = std::env::temp_dir().join(format!("ignisyeet_aero_{tag}_{}", std::process::id()));
+        let dir = TempDir::new(&format!("aero_{tag}"));
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("t.csv");
         t.save(&p).unwrap();
@@ -1713,7 +1712,7 @@ mod tests {
 
     #[test]
     fn load_rejects_reordered_or_mismatched_rows() {
-        let (dir, p, _) = loadable_files("order");
+        let (_dir, p, _) = loadable_files("order");
         let text = std::fs::read_to_string(&p).unwrap();
         let mut lines: Vec<&str> = text.lines().collect();
         let header = lines.remove(0);
@@ -1732,12 +1731,11 @@ mod tests {
         let short: String = text.lines().take(3).map(|l| format!("{l}\n")).collect();
         std::fs::write(&p, short).unwrap();
         assert!(load_err(&p).contains("rows but its metadata declares"));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn load_rejects_non_finite_cells() {
-        let (dir, p, _) = loadable_files("nan");
+        let (_dir, p, _) = loadable_files("nan");
         let text = std::fs::read_to_string(&p).unwrap();
         let mut lines: Vec<String> = text.lines().map(String::from).collect();
         let mut cells: Vec<String> = lines[3].split(',').map(String::from).collect();
@@ -1746,12 +1744,11 @@ mod tests {
         std::fs::write(&p, lines.join("\n") + "\n").unwrap();
         let e = load_err(&p);
         assert!(e.contains("row 4") && e.contains("column 5") && e.contains("not finite"), "{e}");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn load_validates_metadata_and_names_missing_files() {
-        let (dir, p, _) = loadable_files("meta");
+        let (_dir, p, _) = loadable_files("meta");
         let jp = p.with_extension("json");
         let good: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&jp).unwrap()).unwrap();
         let cases: [(&str, serde_json::Value, &str); 6] = [
@@ -1775,7 +1772,6 @@ mod tests {
         std::fs::remove_file(&p).unwrap();
         std::fs::write(&jp, good.to_string()).unwrap();
         assert!(load_err(&p).contains("t.csv"));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -1795,7 +1791,7 @@ mod tests {
 
     #[test]
     fn load_rejects_infinite_coordinates() {
-        let (dir, p, _) = loadable_files("infcoord");
+        let (_dir, p, _) = loadable_files("infcoord");
         let text = std::fs::read_to_string(&p).unwrap();
         for col in [0, 1] {
             let mut lines: Vec<String> = text.lines().map(String::from).collect();
@@ -1806,12 +1802,11 @@ mod tests {
             let e = load_err(&p);
             assert!(e.contains("row 4") && e.contains(&format!("column {}", col + 1)) && e.contains("not finite"), "{e}");
         }
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn load_requires_angle_grids_through_zero() {
-        let (dir, p, t) = loadable_files("zero");
+        let (_dir, p, t) = loadable_files("zero");
         let jp = p.with_extension("json");
         let mut j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&jp).unwrap()).unwrap();
         let mut shifted = t.meta.alphas_deg.clone();
@@ -1820,7 +1815,6 @@ mod tests {
         std::fs::write(&jp, j.to_string()).unwrap();
         let e = load_err(&p);
         assert!(e.contains("alphas_deg of an axisymmetric table must start at 0 deg") && e.contains("t.json"), "{e}");
-        let _ = std::fs::remove_dir_all(&dir);
         // General tables: both axes must hold 0 between their ends.
         let g = t.to_general(vec![-10.0, 0.0, 10.0], vec![-10.0, 0.0, 10.0]);
         for (key, axis) in [("alphas_deg", vec![2.0, 10.0, 20.0]), ("betas_deg", vec![-20.0, -10.0, -2.0])] {
@@ -1871,7 +1865,7 @@ mod tests {
 
     #[test]
     fn save_load_is_bit_identical() {
-        let (dir, p, t) = loadable_files("bits");
+        let (_dir, p, t) = loadable_files("bits");
         let u = AeroTable::load(&p).unwrap();
         let (TableData::Axisymmetric(a), TableData::Axisymmetric(b)) = (&t.data, &u.data) else { panic!() };
         assert_eq!(a.len(), b.len());
@@ -1883,12 +1877,11 @@ mod tests {
         let w = AeroTable::load(&p).unwrap();
         let (TableData::General(a), TableData::General(b)) = (&g.data, &w.data) else { panic!() };
         assert!(a.iter().flatten().zip(b.iter().flatten()).all(|(x, y)| x.to_bits() == y.to_bits()));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn load_strips_a_utf8_bom_and_warns_about_negative_axial_force() {
-        let (dir, p, t) = loadable_files("bom");
+        let (_dir, p, t) = loadable_files("bom");
         assert!(t.sanity_warnings().is_empty());
         let text = std::fs::read_to_string(&p).unwrap();
         let lines: Vec<String> = text
@@ -1908,7 +1901,6 @@ mod tests {
         let back = AeroTable::load(&p).unwrap();
         let w = back.sanity_warnings();
         assert_eq!(w, vec!["aero table: ca_off at Mach 0.3, alpha 0 is -1.00 (negative axial force / thrust-like drag)".to_string()]);
-        let _ = std::fs::remove_dir_all(dir);
     }
 
     fn two_cell_table() -> AeroTable {

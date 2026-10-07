@@ -623,6 +623,7 @@ pub enum AttitudeKind {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_tmp::TempDir;
 
     #[test]
     fn parses_toml_names() {
@@ -645,7 +646,8 @@ mod tests {
     fn profile_wind(csv: &str, mut c: WindConfig) -> Wind {
         static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
         let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        let path = std::env::temp_dir().join(format!("ignisyeet_wind_{}_{n}.csv", std::process::id()));
+        let td = TempDir::new(&format!("wind_{n}"));
+        let path = td.join("profile.csv");
         std::fs::write(&path, csv).unwrap();
         c.model = WindModel::Profile;
         c.profile = Some(path);
@@ -865,7 +867,8 @@ mod tests {
 
     #[test]
     fn profile_mean_targets_are_checked() {
-        let path = std::env::temp_dir().join(format!("ignisyeet_wind_target_{}.csv", std::process::id()));
+        let path_td = TempDir::new("wind_target");
+        let path = path_td.join("wind_target.csv");
         std::fs::write(&path, "altitude_m,speed,direction_deg\n0,0,270\n100,0,270\n").unwrap();
         let c = |speed, dir| WindConfig {
             model: WindModel::Profile,

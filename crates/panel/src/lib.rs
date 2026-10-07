@@ -24,6 +24,9 @@ pub mod memory;
 pub mod mesh;
 pub mod solver;
 pub mod supersonic;
+#[cfg(test)]
+#[path = "../../../testutil/tmp.rs"]
+mod test_tmp;
 pub mod viscous;
 
 use aero::model::{axial_alpha_factor, FIN_ALPHA_LINEAR};

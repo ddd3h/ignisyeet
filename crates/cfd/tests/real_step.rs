@@ -4,10 +4,13 @@
 //! with a launch lug and two rail buttons). Needs `IGNISYEET_CFD_PREFIX` (or the tools in `PATH`); run with
 //! `cargo test --release -p cfd --test real_step -- --ignored --test-threads 1`.
 
+#[path = "../../../testutil/tmp.rs"]
+mod test_tmp;
 use cfd::{BaseTreatment, CfdOptions, FlowModel, ResourceBudget, StepUnit, SurfaceKind};
 use geom::stl::Triangle;
 use geom::{extract, ExtractOptions, Vec3};
 use std::path::{Path, PathBuf};
+use test_tmp::TempDir;
 
 fn examples() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples")
@@ -37,10 +40,8 @@ fn budget() -> ResourceBudget {
     ResourceBudget { threads: 4, memory_bytes: Some(8_000_000_000) }
 }
 
-fn tmp(name: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("ignisyeet_step_{name}_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&d);
-    d
+fn tmp(name: &str) -> TempDir {
+    TempDir::new(&format!("step_{name}"))
 }
 
 /// Cells (SU2 type, nodes), node coordinates and marker tags of an SU2 mesh file.

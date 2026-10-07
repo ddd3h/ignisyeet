@@ -1130,6 +1130,7 @@ pub fn write_cases_csv(path: &Path, outcomes: &[CaseOutcome], corrected: &[Solve
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_tmp::TempDir;
     use crate::tools::ToolInfo;
     use aero::atmosphere::AtmosphereModel;
     use std::os::unix::fs::PermissionsExt;
@@ -1200,14 +1201,13 @@ exit 0
     }
 
     struct Env {
-        dir: PathBuf,
+        dir: TempDir,
         tools: ToolReport,
         opt: CfdOptions,
     }
 
     fn env(name: &str, mode: &str) -> Env {
-        let dir = std::env::temp_dir().join(format!("ignisyeet_runner_{name}_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let dir = TempDir::new(&format!("runner_{name}"));
         std::fs::create_dir_all(&dir).unwrap();
         let script = dir.join("su2_mock.sh");
         std::fs::write(&script, MOCK).unwrap();
@@ -1277,7 +1277,6 @@ exit 0
         let csv = std::fs::read_to_string(e.dir.join("cases.csv")).unwrap();
         assert_eq!(csv.lines().count(), 7);
         assert!(csv.contains("converged"));
-        let _ = std::fs::remove_dir_all(&e.dir);
     }
 
     #[test]
@@ -1303,7 +1302,6 @@ exit 0
         let csv = std::fs::read_to_string(e.dir.join("cases.csv")).unwrap();
         assert_eq!(csv.lines().count(), 1 + 6 + 2);
         assert_eq!(csv.lines().filter(|l| l.contains(",combined,")).count(), 2);
-        let _ = std::fs::remove_dir_all(&e.dir);
     }
 
     #[test]
@@ -1332,7 +1330,6 @@ exit 0
         e.opt.cfl = 3.0;
         run_all(&e.setup(), &|_| {}).unwrap();
         assert_eq!(e.calls().len(), n0 + 12);
-        let _ = std::fs::remove_dir_all(&e.dir);
     }
 
     #[test]
@@ -1347,7 +1344,6 @@ exit 0
         assert!(!out[0].spec.dir(&e.dir.join("work")).join("done.json").exists());
         // After a failure the dependants start cold.
         assert_eq!(e.calls().iter().filter(|c| c.ends_with(" NO")).count(), 6);
-        let _ = std::fs::remove_dir_all(&e.dir);
     }
 
     #[test]
@@ -1358,21 +1354,18 @@ exit 0
         let out = run_all(&e.setup(), &|_| {}).unwrap();
         assert!(out.iter().all(|o| o.result.is_none()));
         assert!(out[0].error.as_ref().unwrap().contains("not converged"));
-        let _ = std::fs::remove_dir_all(&e.dir);
         // `slowdrop`: reaches -1 - 0.25 * 29 = -8.25 > ... use a looser target so the loop ends above it.
         let mut e = env("accept", "ok");
         e.opt.convergence = 1e-12; // target -12, never reached: residual ends at -7.25
         let out = run_all(&e.setup(), &|_| {}).unwrap();
         let r = out[1].result.as_ref().expect("accepted");
         assert!(!r.converged && (r.coeffs.cn - 0.2).abs() < 1e-9);
-        let _ = std::fs::remove_dir_all(&e.dir);
         // Unstable coefficients with a big residual drop are rejected.
         let mut e = env("unstable", "unstable");
         e.opt.convergence = 1e-12;
         let out = run_all(&e.setup(), &|_| {}).unwrap();
         let a4 = out.iter().find(|o| o.spec.alpha_deg == 4.0).unwrap();
         assert!(a4.result.is_none() && a4.error.as_ref().unwrap().contains("still changing"), "{:?}", a4.error);
-        let _ = std::fs::remove_dir_all(&e.dir);
     }
 
     #[test]
@@ -1386,7 +1379,6 @@ exit 0
         e.tools.su2.path = Some(quiet);
         let out = run_all(&e.setup(), &|_| {}).unwrap();
         assert!(out.iter().all(|o| o.error.as_ref().is_some_and(|m| m.contains("no history"))));
-        let _ = std::fs::remove_dir_all(&e.dir);
     }
     /// Mock SU2 for RANS: startup stage (`CONV_FILENAME= history_startup`) with peaks rho -1, nu -4; final stage
     /// cold from -2 / -5 (or a limit cycle), warm from -4.5 / -6.5. Modes: ok | cycle | warmfail | thick (y+ 4) |
@@ -1507,7 +1499,6 @@ exit 0
         let again = run_all(&e.setup(), &|_| {}).unwrap();
         assert_eq!(e.calls().len(), n0 + 2);
         assert!(!again[2].warm && again[2].result.as_ref().unwrap().reference_peak == Some(peak));
-        let _ = std::fs::remove_dir_all(&e.dir);
     }
 
     #[test]
@@ -1520,7 +1511,6 @@ exit 0
         assert_eq!(e.calls().len(), 2 * 2 + 4 * 3, "{:?}", e.calls());
         let r = out[1].result.as_ref().unwrap();
         assert!(!out[1].warm && r.warnings.iter().any(|w| w.contains("warm start failed") && w.contains("freestream")), "{r:?}");
-        let _ = std::fs::remove_dir_all(&e.dir);
     }
 
     #[test]
@@ -1536,14 +1526,12 @@ exit 0
         write_cases_csv(&e.dir.join("cases.csv"), &out, &[], AlphaMode::Single).unwrap();
         let csv = std::fs::read_to_string(e.dir.join("cases.csv")).unwrap();
         assert_eq!(csv.lines().filter(|l| l.contains(",unconverged,")).count(), 2, "{csv}");
-        let _ = std::fs::remove_dir_all(&e.dir);
         let e = env_rans("rans_thick", "thick");
         let out = run_all(&e.setup(), &|_| {}).unwrap();
         let r = out[0].result.as_ref().unwrap();
         assert!(r.converged && (r.yplus_p95.unwrap() - 4.0).abs() < 1e-12);
         assert!(r.warnings.iter().any(|w| w.contains("y+ P95 = 4.00 exceeds 3")), "{r:?}");
         assert!(done(&e, &out[0])["warnings"][0].as_str().unwrap().contains("y+"));
-        let _ = std::fs::remove_dir_all(&e.dir);
     }
 
     fn sample_model() -> aero::AeroModel {
@@ -1606,7 +1594,6 @@ exit 0
         assert!(base);
         let wall = wall_at(&out);
         assert!((t.lookup(0.5, 0.0).ca_off - (wall + 0.1 + b.extra)).abs() < 1e-6);
-        let _ = std::fs::remove_dir_all(&e.dir);
     }
 
     /// No marker columns: the monitored total holds the base cap, so the table must not add the Barrowman base.
@@ -1628,7 +1615,6 @@ exit 0
         assert!(base, "no double count of the base");
         let b = model.cd0(0.5, false);
         assert!((t.lookup(0.5, 0.0).ca_off - (0.3 + b.extra)).abs() < 1e-6);
-        let _ = std::fs::remove_dir_all(&e.dir);
     }
 
     /// Limit cycle: the markers are averaged over the window the totals are averaged over.
@@ -1642,7 +1628,6 @@ exit 0
         let a = r0.axial.unwrap();
         assert!((a.wall_cfx.unwrap() - 0.201).abs() < 1e-9 && (r0.coeffs.ca - 0.201).abs() < 1e-9, "{a:?} {}", r0.coeffs.ca);
         assert!((a.base_cfx.unwrap() - 0.1).abs() < 1e-12);
-        let _ = std::fs::remove_dir_all(&e.dir);
     }
 
     #[test]
@@ -1651,7 +1636,6 @@ exit 0
         let e = env("euler_noaxial", "ok");
         let out = run_all(&e.setup(), &|_| {}).unwrap();
         assert!(out.iter().all(|o| o.result.as_ref().unwrap().axial.is_none() && done(&e, o).get("axial").is_none()));
-        let _ = std::fs::remove_dir_all(&e.dir);
     }
 
     fn hist(rows: &[(f64, f64, f64, f64, f64)]) -> History {
@@ -1708,13 +1692,12 @@ exit 0
         // The base point (largest x, y+ 90) is left out; the 95th percentile of [0.5, 1, 2, 4] is 4.
         assert_eq!(wall_yplus_p95(vtk), Some(4.0));
         assert_eq!(wall_yplus_p95("# vtk\nPOINTS 1 double\n0 0 0\n"), None);
-        let dir = std::env::temp_dir().join(format!("ignisyeet_restart_kind_{}", std::process::id()));
+        let dir = TempDir::new("restart_kind");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("rans.dat"), b"\x00\x01Density\x00Nu_Tilde\x00").unwrap();
         std::fs::write(dir.join("euler.dat"), b"\x00\x01Density\x00Energy\x00").unwrap();
         assert!(restart_has_turbulence(&dir.join("rans.dat")) && !restart_has_turbulence(&dir.join("euler.dat")));
         assert!(!restart_has_turbulence(&dir.join("missing.dat")));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Flat-plate model (TMR 273 x 193, M 0.2): the drag converges like `exp(-i / 310)`, the density residual by one
@@ -1769,7 +1752,6 @@ exit 0
         // The warm alpha = 4 case does not diverge and seeds from the retried solution.
         assert!(out[1].warm && out[1].result.as_ref().unwrap().converged);
         assert!(!out[0].spec.dir(&e.dir.join("work")).join(crate::su2cfg::STARTUP_RESTART).exists());
-        let _ = std::fs::remove_dir_all(&e.dir);
         // Diverges with both: failed with the reason, after one retry, not after the iteration limit.
         let mut e = env_rans("rans_diverge2", "diverge2");
         e.opt.machs = vec![0.5];
@@ -1779,7 +1761,6 @@ exit 0
         assert!(out[0].result.is_none() && msg.contains("diverged twice") && msg.contains("SA residual rose"), "{msg}");
         assert_eq!(stages(&e).lines().filter(|l| l.starts_with("0.500000 0.000000 history ")).count(), 2);
         assert!(failure_summary(&out)[0].starts_with("error: aero.cfd: case m0.500_a00.00 failed: diverged twice"), "{:?}", failure_summary(&out));
-        let _ = std::fs::remove_dir_all(&e.dir);
     }
 
     #[test]
@@ -1795,7 +1776,6 @@ exit 0
         assert!(msg.contains("lower parallel_cases or ranks_per_case"), "{msg}");
         let sum = failure_summary(&out);
         assert!(sum.iter().any(|l| l.contains("m0.500_a00.00 failed: SU2 was killed by signal 9")), "{sum:?}");
-        let _ = std::fs::remove_dir_all(&e.dir);
         // mpirun reports a killed rank in its log and exits with an ordinary code.
         use std::os::unix::process::ExitStatusExt;
         let st = std::process::ExitStatus::from_raw(1 << 8);
@@ -1867,7 +1847,6 @@ exit 0
         let written: usize = vtk.trim().rsplit(' ').next().unwrap().parse().unwrap();
         assert_eq!((written + 1) % crate::su2cfg::OUTPUT_FREQ, 0);
         assert!(written >= e.opt.min_iterations && rows > written + 1, "written {written}, rows {rows}");
-        let _ = std::fs::remove_dir_all(&e.dir);
     }
 
     #[test]
@@ -1894,7 +1873,6 @@ exit 0
         // The early-stopped case keeps its surface file of the same iteration.
         let vtk = std::fs::read_to_string(out[1].spec.dir(&e.dir.join("work")).join("surface_flow.vtk")).unwrap();
         assert!(vtk.starts_with("surface "), "{vtk}");
-        let _ = std::fs::remove_dir_all(&e.dir);
     }
 
     #[test]
@@ -1918,7 +1896,6 @@ exit 0
                 "{mode}"
             );
             assert!(out[1].warm && out[1].result.as_ref().unwrap().converged);
-            let _ = std::fs::remove_dir_all(&e.dir);
         }
         let mut e = env_rans("rans_sdiverge2", "sdiverge2");
         e.opt.machs = vec![2.0];
@@ -1927,6 +1904,5 @@ exit 0
         let msg = out[0].error.as_ref().unwrap();
         assert!(msg.contains("first-order startup diverged twice") && msg.contains("SA residual rose"), "{msg}");
         assert_eq!(stages(&e).lines().count(), 2);
-        let _ = std::fs::remove_dir_all(&e.dir);
     }
 }

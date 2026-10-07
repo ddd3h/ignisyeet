@@ -3,6 +3,9 @@
 mod config;
 mod kml;
 mod outfile;
+#[cfg(test)]
+#[path = "../../../testutil/tmp.rs"]
+mod test_tmp;
 mod ui;
 mod view;
 
@@ -2526,6 +2529,7 @@ thrust_misalignment_y_deg,thrust_misalignment_z_deg,thrust_offset_y,thrust_offse
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_tmp::TempDir;
 
     #[test]
     fn makefile_reads_indented_and_quoted_output_dirs() {
@@ -2534,7 +2538,7 @@ mod tests {
             return;
         }
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let dir = std::env::temp_dir().join(format!("ignisyeet_makefile_{}", std::process::id()));
+        let dir = TempDir::new("makefile");
         std::fs::create_dir_all(&dir).unwrap();
         let cases = [
             ("[rocket]\nx = 1\n  [ output ]  # c\n  \"dir\" = \"res dir\"\n", "res dir"),
@@ -2557,13 +2561,11 @@ mod tests {
             let want = if want.starts_with('/') { want.to_string() } else { format!("{}/{want}", dir.display()) };
             assert_eq!(got, want, "{text}");
         }
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn table_method_loads_external_table() {
-        let dir = std::env::temp_dir().join("ignisyeet_cli_table_test");
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = TempDir::new("cli_table_test");
         let meta = aero::table::TableMeta {
             source_hash: "ext".into(),
             ref_area: 0.01,
@@ -2588,7 +2590,7 @@ mod tests {
     #[test]
     fn external_table_without_lag_columns_gets_the_geometric_lag_sums() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
-        let tmp = std::env::temp_dir().join(format!("ignisyeet_cli_nolag_{}", std::process::id()));
+        let tmp = TempDir::new("cli_nolag");
         std::fs::create_dir_all(&tmp).unwrap();
         let meta = aero::table::TableMeta {
             source_hash: "ext".into(),
@@ -2656,12 +2658,11 @@ mod tests {
         AeroTable::from_fn(meta, |_, a| aero::AeroCoeffs { cn: a, ca_off: 0.5, xcp: 0.6, cl4: 0.2, ..Default::default() }).save(&csv).unwrap();
         let mut c4 = AeroTable::load(&csv).unwrap();
         assert_eq!(fill_external_lag_terms(&cfg, &mut c4), vec![NO_FIN_COUNT.to_string()]);
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn panel_and_cfd_tables_get_the_lag_sums_of_the_geometry() {
-        let cfg = sample_config("lagfill");
+        let (cfg, _g_cfg) = sample_config("lagfill");
         let g = geometry(&cfg).unwrap();
         let meta =
             aero::table::TableMeta { ref_area: 0.01, ref_diameter: 0.1, length: 1.5, machs: vec![0.0, 2.0], alphas_deg: vec![0.0, 10.0], ..Default::default() };
@@ -2671,13 +2672,12 @@ mod tests {
         let (l0, l1) = AeroModel::new(g, aero_options(&cfg).unwrap()).lag_sums(2.0);
         let c = t.lookup(2.0, 0.05);
         assert!(l0 > 0.0 && (c.lag_l0 - l0).abs() < 1e-12 && (c.lag_l1 - l1).abs() < 1e-12);
-        let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 
     #[test]
     fn external_table_without_roll_terms_gets_barrowman_roll_terms() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
-        let tmp = std::env::temp_dir().join(format!("ignisyeet_cli_legacy_{}", std::process::id()));
+        let tmp = TempDir::new("cli_legacy");
         std::fs::create_dir_all(&tmp).unwrap();
         let meta = aero::table::TableMeta {
             source_hash: "ext".into(),
@@ -2696,7 +2696,6 @@ mod tests {
         let t = aero_table(&cfg, false).unwrap();
         let c = t.lookup(0.5, 0.0);
         assert!(c.cl_delta > 0.0 && c.clp < 0.0, "{c:?}");
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
@@ -2716,7 +2715,8 @@ mod tests {
                 result,
             });
         }
-        let path = std::env::temp_dir().join(format!("ignisyeet_mc_csv_{}.csv", std::process::id()));
+        let path_td = TempDir::new("mc_csv");
+        let path = path_td.join("mc_csv.csv");
         write_monte_carlo_csv(&path, &rows).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         let _ = std::fs::remove_file(&path);
@@ -2822,7 +2822,8 @@ mod tests {
         let broad = |s: sim::Summary| sim::Summary { broadside_time: 12.5, ..s };
         let results = [broad(summary_with_margin(0.5)), broad(summary_with_margin(-0.3)), sim::Summary::failed(Descent::Ballistic, 1.0, 0.0)];
         let errors = [None, None, Some("boom".to_string())];
-        let path = std::env::temp_dir().join(format!("ignisyeet_grid_stable_{}.csv", std::process::id()));
+        let path_td = TempDir::new("grid_stable");
+        let path = path_td.join("grid_stable.csv");
         write_wind_grid_csv(&path, &results, &errors).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         // `stable`, then `broadside_time` (appended last; empty for a failed run).
@@ -2851,7 +2852,7 @@ mod tests {
 
     #[test]
     fn run_hash_covers_the_aero_table_sidecar() {
-        let dir = std::env::temp_dir().join(format!("ignisyeet_cli_sidecar_{}", std::process::id()));
+        let dir = TempDir::new("cli_sidecar");
         std::fs::create_dir_all(&dir).unwrap();
         let meta = aero::table::TableMeta {
             source_hash: "ext".into(),
@@ -2871,7 +2872,6 @@ mod tests {
         assert!(json.contains("\"ref_area\": 0.01"), "{json}");
         std::fs::write(csv.with_extension("json"), json.replace("\"ref_area\": 0.01", "\"ref_area\": 0.02")).unwrap();
         assert_ne!(before, run_hash(&cfg, RunKind::Flight));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -2907,18 +2907,17 @@ mod tests {
 
     #[test]
     fn a_failed_sim_leaves_a_failure_marker_not_the_old_results() {
-        let dir = std::env::temp_dir().join(format!("ignisyeet_cli_stale_{}", std::process::id()));
+        let dir = TempDir::new("cli_stale");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("trajectory.csv"), "old").unwrap();
         std::fs::write(dir.join("summary.json"), "{}").unwrap();
         let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
-        cfg.output.dir = dir.clone();
+        cfg.output.dir = dir.to_path_buf();
         remove_stale_flight_outputs(&cfg);
         assert!(!dir.join("trajectory.csv").exists() && !dir.join("summary.json").exists());
         write_failure_marker(&cfg, &anyhow::anyhow!("state diverged"));
         let j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("summary.json")).unwrap()).unwrap();
         assert_eq!(j, serde_json::json!({ "failed": true, "error": "state diverged" }));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -2936,7 +2935,7 @@ mod tests {
     fn step_file_bytes_are_part_of_the_cache_keys() {
         // Two copies of the sample STEP that differ in one byte of the header give different keys.
         let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
-        let dir = std::env::temp_dir().join(format!("ignisyeet_step_hash_{}", std::process::id()));
+        let dir = TempDir::new("step_hash");
         std::fs::create_dir_all(&dir).unwrap();
         let step = std::fs::read_to_string(examples.join("sample_rocket.step")).unwrap();
         std::fs::write(dir.join("a.step"), &step).unwrap();
@@ -2949,7 +2948,6 @@ mod tests {
         let (a, b) = (load("a.step"), load("b.step"));
         assert_ne!(source_hash(&a).unwrap(), source_hash(&b).unwrap());
         assert_ne!(run_hash(&a, RunKind::Flight), run_hash(&b, RunKind::Flight));
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn load_sample(text: &str) -> Config {
@@ -3100,7 +3098,7 @@ mod tests {
 
     #[test]
     fn motor_must_lie_inside_the_body() {
-        let mut cfg = sample_config("aftx");
+        let (mut cfg, _g_cfg) = sample_config("aftx");
         let len = prepare(&cfg).unwrap().table.meta.length;
         assert!(prepare(&cfg).is_ok());
         cfg.motor.aft_x = Some(len);
@@ -3110,7 +3108,6 @@ mod tests {
         assert!(e.contains("motor.aft_x = 0.2 m") && e.contains("outside the body") && e.contains(&format!("{len:.4}")), "{e}");
         cfg.motor.aft_x = Some(10.0);
         assert!(prepare(&cfg).err().unwrap().to_string().contains("motor.aft_x = 10 m"));
-        let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 
     #[test]
@@ -3129,19 +3126,18 @@ mod tests {
         assert_eq!(stability_json(Some(&summary_with_margin(2.0)))["stable"].as_bool(), Some(true));
         assert!(stability_json(None)["stable"].is_null());
         // end to end: the sample stays usable, a CG far aft does not
-        let mut cfg = sample_config("unstable");
+        let (mut cfg, _g_cfg) = sample_config("unstable");
         assert!(run_sim(&cfg, Some(Descent::Parachute)).unwrap().is_none());
         cfg.rocket.cg_dry = prepare(&cfg).unwrap().table.meta.length * 0.97;
         let why = run_sim(&cfg, Some(Descent::Parachute)).unwrap().expect("unstable flight must be incomplete");
         assert!(why.starts_with("RESULTS NOT USABLE") && why.contains("UNSTABLE"), "{why}");
         let (_, nominal) = nominal_warnings(&cfg, &prepare(&cfg).unwrap(), &simulation(&cfg, &prepare(&cfg).unwrap()).unwrap());
         assert!(nominal.unwrap().static_margin_min() < 0.0);
-        let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 
     #[test]
     fn parachute_override_needs_enabled_recovery() {
-        let mut cfg = sample_config("chute_override");
+        let (mut cfg, _g_cfg) = sample_config("chute_override");
         assert!(check_descent_override(&cfg, Some(Descent::Parachute)).is_ok());
         cfg.recovery.enabled = false;
         assert_eq!(check_descent_override(&cfg, Some(Descent::Parachute)).unwrap_err().to_string(), "--descent parachute needs recovery.enabled = true");
@@ -3188,18 +3184,17 @@ mod tests {
 
     #[test]
     fn geometry_outputs_are_listed() {
-        let cfg = sample_config("geom_files");
+        let (cfg, _g_cfg) = sample_config("geom_files");
         let files = write_geometry(&cfg, &geometry(&cfg).unwrap()).unwrap();
         let names: Vec<_> = files.iter().map(|f| f.file_name().unwrap().to_string_lossy().into_owned()).collect();
         assert_eq!(names, ["geometry.json", "profile.csv"]);
         assert!(files.iter().all(|f| f.is_file()));
-        let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 
     #[test]
     fn ballistic_descent_beyond_the_table_angles_is_not_usable() {
         // Sample, ballistic, 4 m/s from the east: the descent turns broadside (alpha ~ 90 deg).
-        let mut cfg = sample_config("angle_range");
+        let (mut cfg, _g_cfg) = sample_config("angle_range");
         cfg.wind.speed = 4.0;
         cfg.wind.direction_deg = 90.0;
         cfg.output.kml = false;
@@ -3221,14 +3216,13 @@ mod tests {
         let j = summary(&cfg);
         assert_eq!(j["aero_table_range"]["angles_in_range"].as_bool(), Some(false));
         assert!(j["aero_table_range"]["angle_beyond"].as_u64().unwrap() > 0, "{j}");
-        let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 
     #[test]
     fn general_table_unstable_in_yaw_is_not_usable() {
         // The sample's table as a general table, once as it is and once with the yaw centre of
         // pressure moved to 20 % of the length (forward of the CG); pitch is unchanged.
-        let mut cfg = sample_config("yaw_unstable");
+        let (mut cfg, _g_cfg) = sample_config("yaw_unstable");
         let t = prepare(&cfg).unwrap().table;
         let (alphas, betas) = general_axes();
         let g = t.to_general(alphas, betas);
@@ -3259,7 +3253,6 @@ mod tests {
         let (_, nominal) = nominal_warnings(&cfg, &p, &simulation(&cfg, &p).unwrap());
         let nominal = nominal.unwrap();
         assert!(nominal.static_margin_yaw_min_cal < 0.0 && matches!(nominal.stability(), Stability::Unstable(_)), "{nominal:?}");
-        let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 
     #[test]
@@ -3336,7 +3329,7 @@ mod tests {
     #[test]
     fn general_table_without_side_force_has_unknown_stability() {
         // The sample's table as a general table without any side force: the yaw margin cannot be evaluated.
-        let mut cfg = sample_config("yaw_unknown");
+        let (mut cfg, _g_cfg) = sample_config("yaw_unknown");
         let t = prepare(&cfg).unwrap().table;
         let (alphas, betas) = general_axes();
         let g = t.to_general(alphas, betas);
@@ -3358,7 +3351,6 @@ mod tests {
         let j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(cfg.out_dir().join("summary.json")).unwrap()).unwrap();
         assert!(j["stable"].is_null() && j["static_margin_yaw_min_cal"].is_null() && j["static_margin_pitch_min_cal"].as_f64().unwrap() > 1.0, "{j}");
         assert!(j["stability_unknown"].as_str().unwrap().contains("dCy/dbeta"));
-        let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 
     #[test]
@@ -3482,7 +3474,7 @@ mod tests {
         let e = with_geometry_warnings(anyhow::anyhow!("rocket.cg_dry = 1 m is outside the body"), &["w1".into(), "w2".into()]);
         assert_eq!(e.to_string(), "rocket.cg_dry = 1 m is outside the body\n  geometry warning: w1\n  geometry warning: w2");
         // through geometry(): a mesh with a few open edges and a CG behind the body
-        let dir = std::env::temp_dir().join(format!("ignisyeet_geom_warn_{}", std::process::id()));
+        let dir = TempDir::new("geom_warn");
         std::fs::create_dir_all(&dir).unwrap();
         let mesh = geom::sample::SampleRocket::default().mesh();
         geom::stl::write_stl_binary(&dir.join("r.stl"), &mesh[1..]).unwrap();
@@ -3492,18 +3484,16 @@ mod tests {
         cfg.rocket.cg_dry = 5.0;
         let e = geometry(&cfg).unwrap_err().to_string();
         assert!(e.starts_with("rocket.cg_dry = 5 m is outside the body") && e.contains("\n  geometry warning: the STL surface has 3 open edges of"), "{e}");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn geometry_warnings_are_read_back_from_geometry_json() {
-        let tmp = std::env::temp_dir().join(format!("ignisyeet_cli_gw_{}", std::process::id()));
+        let tmp = TempDir::new("cli_gw");
         std::fs::create_dir_all(&tmp).unwrap();
         let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
         cfg.output.dir = tmp.to_string_lossy().into_owned().into();
         std::fs::write(tmp.join("geometry.json"), r#"{"warnings":["fins look reversed"]}"#).unwrap();
         assert_eq!(stored_geometry_warnings(&cfg), vec!["fins look reversed".to_string()]);
-        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     #[test]
@@ -3561,7 +3551,7 @@ mod tests {
     #[test]
     fn profile_warning_when_the_table_starts_above_the_ground() {
         let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
-        let dir = std::env::temp_dir().join(format!("ignisyeet_wprof_{}", std::process::id()));
+        let dir = TempDir::new("wprof");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("w.csv"), "altitude_m,speed,direction_deg\n150,3,270\n6000,10,270\n").unwrap();
         cfg.wind.model = sim::WindModel::Profile;
@@ -3569,13 +3559,12 @@ mod tests {
         let s = sim::Summary { min_stability_cal: 2.0, stability_at_rail_exit: 2.0, apogee: 500.0, ..sample_summary() };
         let w = flight_warnings(&cfg, &s);
         assert_eq!(w, vec!["the wind profile starts at 150 m: the wind below is held at the lowest row".to_string()]);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn wind_scale_warning_texts() {
         let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
-        let dir = std::env::temp_dir().join(format!("ignisyeet_wscale_{}", std::process::id()));
+        let dir = TempDir::new("wscale");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("w.csv"), "altitude_m,speed,direction_deg\n0,1,270\n6000,5,270\n").unwrap();
         cfg.wind.model = sim::WindModel::Profile;
@@ -3600,7 +3589,6 @@ mod tests {
         assert!(w.starts_with("wind profile scaled by a factor of 3.0004 ("), "{w}");
         let w = wind_scale_warning(&cfg, "Monte Carlo sample", [&run(0.1, 0.3)]).unwrap();
         assert!(w.starts_with("wind profile scaled by a factor of 0.10 (Monte Carlo sample 0.3 m/s vs profile mean 3.0 m/s)"), "{w}");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -3683,18 +3671,17 @@ mod tests {
         let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
         cfg.motor.eng = "no_such_motor.eng".into();
         assert!(format!("{:#}", load_motor(&cfg).unwrap_err()).contains("no_such_motor.eng"));
-        let mut cfg = sample_config("wprof");
+        let (mut cfg, _g_cfg) = sample_config("wprof");
         let p = prepare(&cfg).unwrap();
         cfg.wind.model = sim::WindModel::Profile;
         cfg.wind.profile = Some("no_such_wind.csv".into());
         let e = simulation(&cfg, &p).err().expect("missing wind profile accepted");
         assert!(format!("{e:#}").contains("no_such_wind.csv"), "{e:#}");
-        let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 
     #[test]
     fn implausible_body_length_stops_with_a_unit_hint() {
-        let mut cfg = sample_config("size");
+        let (mut cfg, _g_cfg) = sample_config("size");
         cfg.rocket.stl_scale = 1000.0;
         let e = format!("{:#}", geometry(&cfg).unwrap_err());
         assert!(e.contains("body length") && e.contains("rocket.stl_scale") && e.contains("0.1-20 m"), "{e}");
@@ -3709,7 +3696,7 @@ mod tests {
         let body = &body[..body.find("let inputs = Inputs").unwrap()];
         assert!(body.contains("geometry(cfg)"), "source_hash must hash the extracted geometry");
         // Same STL bytes, different extraction input: different key.
-        let cfg = sample_config("key");
+        let (cfg, _g_cfg) = sample_config("key");
         let mut other = cfg.clone();
         other.aero.n_slices += 10;
         assert_ne!(source_hash(&cfg).unwrap(), source_hash(&other).unwrap());
@@ -3717,7 +3704,7 @@ mod tests {
 
     #[test]
     fn unlanded_flight_replaces_a_stale_kml_without_the_flight() {
-        let mut cfg = sample_config("kml");
+        let (mut cfg, _g_cfg) = sample_config("kml");
         cfg.output.kml = true;
         let dir = cfg.out_dir();
         std::fs::create_dir_all(&dir).unwrap();
@@ -3726,12 +3713,11 @@ mod tests {
         write_kml(&cfg, kml::Parts::default(), true).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(!text.contains("STALE_FLIGHT_MARKER") && text.contains("Launch site") && !text.contains("<name>Flight</name>"), "{text}");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn failed_sim_removes_the_previous_flight_from_the_kml() {
-        let mut cfg = sample_config("failed_kml");
+        let (mut cfg, _g_cfg) = sample_config("failed_kml");
         cfg.output.kml = true;
         // A flight that lands: the KML holds its Flight folder.
         assert_eq!(run_sim(&cfg, Some(Descent::Ballistic)).unwrap(), None);
@@ -3745,12 +3731,11 @@ mod tests {
         assert!(text.contains("Launch site") && !text.contains("<Folder><name>Flight</name>"), "{text}");
         let j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(cfg.out_dir().join("summary.json")).unwrap()).unwrap();
         assert_eq!(j["failed"].as_bool(), Some(true));
-        let _ = std::fs::remove_dir_all(cfg.out_dir());
     }
 
     #[test]
     fn a_dispersion_run_removes_the_earlier_results_of_its_mode() {
-        let mut cfg = sample_config("stale_disp");
+        let (mut cfg, _g_cfg) = sample_config("stale_disp");
         let dir = cfg.out_dir();
         std::fs::create_dir_all(&dir).unwrap();
         let all = ["dispersion.csv", "dispersion_meta.json", "dispersion_mc.csv", "dispersion_summary.json", "summary.json"];
@@ -3764,7 +3749,6 @@ mod tests {
         cfg.dispersion.mode = sim::DispersionMode::MonteCarlo;
         remove_stale_dispersion_outputs(&cfg);
         assert_eq!(left(), ["dispersion.csv", "dispersion_meta.json", "summary.json"]);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -3778,22 +3762,22 @@ mod tests {
 
     #[test]
     fn sample_flight_lands_and_warns_about_the_extrapolated_wind() {
-        let cfg = sample_config("warn");
+        let (cfg, _g_cfg) = sample_config("warn");
         let p = prepare(&cfg).unwrap();
         let (r, _) = fly_sample(&cfg, &p, Descent::Parachute);
         assert!(r.summary.landed());
         let w = flight_warnings(&cfg, &r.summary);
         assert_eq!(w.len(), 1, "{w:?}");
         assert!(w[0].contains("extrapolated"));
-        let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 
     /// examples/sample.toml (barrowman aero), output in a private temp directory.
-    fn sample_config(tag: &str) -> Config {
+    fn sample_config(tag: &str) -> (Config, TempDir) {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
         let mut cfg = Config::from_value(toml::from_str(include_str!("../../../examples/sample.toml")).unwrap(), Some(&dir)).unwrap();
-        cfg.output.dir = std::env::temp_dir().join(format!("ignisyeet_cli_{tag}_{}", std::process::id()));
-        cfg
+        let td = TempDir::new(&format!("cli_{tag}"));
+        cfg.output.dir = td.to_path_buf();
+        (cfg, td)
     }
 
     fn fly_sample(cfg: &Config, p: &Prepared, descent: Descent) -> (sim::SimResult, std::time::Duration) {
@@ -3804,18 +3788,17 @@ mod tests {
 
     #[test]
     fn sample_default_results_are_unchanged() {
-        let cfg = sample_config("default");
+        let (cfg, _g_cfg) = sample_config("default");
         let p = prepare(&cfg).unwrap();
         let (r, _) = fly_sample(&cfg, &p, Descent::Parachute);
         let s = &r.summary;
         assert!((s.apogee - 4440.48).abs() < 0.05 && (s.apogee_time - 26.10).abs() < 0.005, "{} at {}", s.apogee, s.apogee_time);
         assert!((s.landing_east + 655.57).abs() < 0.05 && (s.landing_north + 7707.70).abs() < 0.05, "{} {}", s.landing_east, s.landing_north);
-        let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 
     #[test]
     fn quasi_steady_switch_flies_without_the_rate_and_acceleration_terms() {
-        let mut cfg = sample_config("quasi");
+        let (mut cfg, _g_cfg) = sample_config("quasi");
         cfg.sim.quasi_steady = true;
         let p = prepare(&cfg).unwrap();
         let sim = simulation(&cfg, &p).unwrap();
@@ -3823,23 +3806,21 @@ mod tests {
         let s = sim.run(Descent::Parachute, false).unwrap().summary;
         // The flight of the quasi-steady model (static coefficients, damping moment, roll terms).
         assert!((s.apogee - 4440.71).abs() < 0.05 && (s.landing_east + 654.73).abs() < 0.05 && (s.landing_north + 7708.12).abs() < 0.05, "{s:?}");
-        let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 
     #[test]
     fn general_table_sample_matches_axisymmetric_apogee() {
-        let mut cfg = sample_config("general");
+        let (mut cfg, _g_cfg) = sample_config("general");
         cfg.aero.table_kind = aero::table::TableKind::General;
         let p = prepare(&cfg).unwrap();
         assert_eq!(p.table.kind(), aero::table::TableKind::General);
         let (r, _) = fly_sample(&cfg, &p, Descent::Parachute);
         assert!((r.summary.apogee - 4440.48).abs() < 0.5, "apogee {}", r.summary.apogee);
-        let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 
     #[test]
     fn fin_cant_rolls_the_sample_and_reaches_the_geometry() {
-        let mut cfg = sample_config("cant");
+        let (mut cfg, _g_cfg) = sample_config("cant");
         cfg.rocket.fin_cant_deg = 1.0;
         assert_eq!(geometry(&cfg).unwrap().fins.unwrap().cant_deg, 1.0);
         let p = prepare(&cfg).unwrap();
@@ -3849,7 +3830,6 @@ mod tests {
         let r = sim.run(Descent::Ballistic, true).unwrap();
         let p_max = r.samples.iter().map(|s| s.roll_rate).fold(0.0f64, f64::max);
         assert!(p_max > 1.0, "max roll rate {p_max}");
-        let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 
     /// Prints the integrator comparison table (run with `--ignored --nocapture`).
@@ -3857,7 +3837,7 @@ mod tests {
     #[ignore]
     fn integrator_matrix_report() {
         use sim::{AttitudeKind as A, IntegratorKind as I};
-        let mut cfg = sample_config("matrix");
+        let (mut cfg, _g_cfg) = sample_config("matrix");
         let p = prepare(&cfg).unwrap();
         for wind in [4.0, 0.0] {
             println!("wind {wind} m/s");
@@ -3902,7 +3882,6 @@ mod tests {
                 }
             }
         }
-        let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 
     #[test]
@@ -3920,7 +3899,7 @@ mod tests {
 
     #[test]
     fn motor_warnings_reach_the_prepared_warnings() {
-        let mut cfg = sample_config("motorwarn");
+        let (mut cfg, _g_cfg) = sample_config("motorwarn");
         let p = prepare(&cfg).unwrap();
         assert!(p.geometry_warnings.iter().all(|w| !w.contains("thrust curve")), "{:?}", p.geometry_warnings);
         std::fs::create_dir_all(&cfg.output.dir).unwrap();
@@ -3929,7 +3908,6 @@ mod tests {
         cfg.motor.eng = eng;
         let p = prepare(&cfg).unwrap();
         assert!(p.geometry_warnings.iter().any(|w| w.contains("thrust curve ends at 2000 N")), "{:?}", p.geometry_warnings);
-        let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 
     #[test]
@@ -3953,7 +3931,8 @@ mod tests {
         assert_eq!(w.len(), 4);
         assert!(w[0].starts_with("wind-grid case 7 m/s from 90\u{b0} (parachute): integration diverged"), "{w:?}");
         assert!(w[3].starts_with("1 more wind-grid cases failed") && w[3].contains("error column"), "{w:?}");
-        let path = std::env::temp_dir().join(format!("ignisyeet_cli_gridcsv_{}.csv", std::process::id()));
+        let path_td = TempDir::new("cli_gridcsv");
+        let path = path_td.join("cli_gridcsv.csv");
         write_wind_grid_csv(&path, &results, &errors).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         let _ = std::fs::remove_file(&path);
@@ -3978,18 +3957,16 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn output_directory_of_a_live_run_is_refused() {
-        let dir = std::env::temp_dir().join(format!("ignisyeet_cli_lock_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let dir = TempDir::new("cli_lock");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join(outfile::LOCK_FILE), "1\n").unwrap();
         let mut cfg = Config::from_value(toml::from_str(include_str!("../../../examples/sample.toml")).unwrap(), Some(&dir)).unwrap();
-        cfg.output.dir = dir.clone();
+        cfg.output.dir = dir.to_path_buf();
         let e = out_path(&cfg, "trajectory.csv").unwrap_err().to_string();
         assert_eq!(
             e,
             format!("another ignisyeet run is using {0} (lock file {0}/.ignisyeet.lock, pid 1); wait for it or use a different --out (if no other run is active, delete {0}/.ignisyeet.lock)", dir.display())
         );
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -4023,7 +4000,7 @@ mod tests {
 
     #[test]
     fn overrides_enter_the_run_hash_but_out_does_not() {
-        let dir = std::env::temp_dir().join(format!("ignisyeet_cli_ovhash_{}", std::process::id()));
+        let dir = TempDir::new("cli_ovhash");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("c.toml");
         let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
@@ -4041,13 +4018,12 @@ mod tests {
         assert_eq!(run_hash(&load(&["wind.speed=4.0"], None), RunKind::Flight), run_hash(&plain, RunKind::Flight));
         assert_eq!(run_hash(&load(&[], Some("elsewhere")), RunKind::Flight), run_hash(&plain, RunKind::Flight));
         assert_ne!(source_hash(&load(&["aero.mach_step=0.04"], None)).unwrap(), source_hash(&plain).unwrap());
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn aero_table_is_reused_from_another_directory_when_the_key_matches() {
-        let a = sample_config("reuse_a");
-        let mut b = sample_config("reuse_b");
+        let (a, _g_a) = sample_config("reuse_a");
+        let (mut b, _g_b) = sample_config("reuse_b");
         let _ = std::fs::remove_dir_all(&b.output.dir);
         let built = aero_table(&a, false).unwrap();
         b.aero_table_source = Some(a.output.dir.clone());
@@ -4060,7 +4036,7 @@ mod tests {
         b.aero_table_source = None;
         assert_eq!(aero_table(&b, false).unwrap().meta.source_hash, built.meta.source_hash);
         // a table of other aero settings is refused
-        let mut c = sample_config("reuse_c");
+        let (mut c, _g_c) = sample_config("reuse_c");
         c.aero.mach_step = 0.04;
         c.aero_table_source = Some(a.output.dir.join("aero_table.csv"));
         let e = aero_table(&c, false).unwrap_err().to_string();
@@ -4068,7 +4044,7 @@ mod tests {
         assert!(!c.output.dir.join("aero_table.csv").exists());
         c.aero.mach_step = 0.02;
         assert!(aero_table_for(&c, true, Sub::Aero).unwrap_err().to_string().contains("--aero-table and --force"));
-        let mut missing = sample_config("reuse_d");
+        let (mut missing, _g_missing) = sample_config("reuse_d");
         missing.aero_table_source = Some(missing.output.dir.join("nope.csv"));
         assert!(aero_table(&missing, false).unwrap_err().to_string().contains("--aero-table: cannot load aero table"));
         for d in [&a.output.dir, &b.output.dir, &c.output.dir, &missing.output.dir] {
@@ -4078,7 +4054,7 @@ mod tests {
 
     #[test]
     fn profile_targets_fly_like_the_wind_grid_case() {
-        let mut cfg = sample_config("ptarget");
+        let (mut cfg, _g_cfg) = sample_config("ptarget");
         cfg.wind.model = sim::WindModel::Profile;
         cfg.wind.profile = Some("wind_profile_example.csv".into());
         cfg.recovery.enabled = false;
@@ -4110,8 +4086,7 @@ mod tests {
         assert!((r["speed"].as_f64().unwrap() - at.x.hypot(at.y)).abs() < 1e-12 && r["speed"].as_f64().unwrap() > 0.0);
         assert!(r["direction_deg"].as_f64().is_some_and(|d| (0.0..360.0).contains(&d)));
         assert_eq!(summary_json(&target, &s, &[]).unwrap()["wind_model"], "profile");
-        let power = serde_json::Value::Object(wind_json(&simulation(&sample_config("ptarget"), &p).unwrap().wind));
+        let power = serde_json::Value::Object(wind_json(&simulation(&sample_config("ptarget").0, &p).unwrap().wind));
         assert!(power["wind_model"] == "power" && power.get("wind_scale").is_none() && power.get("wind_at_ref_height").is_none());
-        let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 }

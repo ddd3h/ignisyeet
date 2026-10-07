@@ -541,6 +541,7 @@ pub fn ensure_mesh(opt: &CfdOptions, geom: &Geometry, atm: &Atmosphere, workdir:
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_tmp::TempDir;
     use aero::atmosphere::AtmosphereModel;
 
     #[test]
@@ -612,7 +613,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn run_python_names_a_killed_process() {
-        let dir = std::env::temp_dir().join(format!("ignisyeet_run_python_kill_{}", std::process::id()));
+        let dir = TempDir::new("run_python_kill");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("die.sh"), "echo started\nkill -9 $$\n").unwrap();
         std::fs::write(dir.join("p.json"), "{}").unwrap();
@@ -621,7 +622,6 @@ mod tests {
         std::fs::write(dir.join("fail.sh"), "echo nope\nexit 1\n").unwrap();
         let e = run_python(Path::new("/bin/sh"), None, &dir, "fail.sh", "p.json", "log.txt", "OK", "the test mesher").unwrap_err().to_string();
         assert!(e.starts_with("the test mesher failed (log:"), "{e}");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[cfg(unix)]
@@ -681,11 +681,10 @@ mod tests {
     fn rans_rejects_a_fin_layout_asymmetric_about_y() {
         let g = sample_geom();
         let atm = AtmosphereModel::default().at(0.0);
-        let dir = std::env::temp_dir().join(format!("ignisyeet_rans_box_{}", std::process::id()));
+        let dir = TempDir::new("rans_box");
         let opt = CfdOptions { model: FlowModel::Rans, symmetry: false, fin_roll_deg: 10.0, ..Default::default() };
         // Checked before gmsh runs, so the test needs no tools.
         let e = ensure_mesh(&opt, &g, &atm, &dir, 1).unwrap_err().to_string();
-        let _ = std::fs::remove_dir_all(&dir);
         assert!(e.contains("symmetric about the y = 0 plane") && e.contains("fin_roll_deg = 10"), "{e}");
     }
 

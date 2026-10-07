@@ -915,6 +915,7 @@ const MIN_SLICES: usize = 20;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_tmp::TempDir;
 
     fn parse(text: &str) -> Result<Config> {
         Config::from_value(toml::from_str(text)?, None)
@@ -1427,7 +1428,7 @@ mod tests {
         assert_eq!(c.cfd_options().step_file, examples.join("sample_rocket.step"));
         assert!(c.cfd_options().step_file.is_file());
         // A missing file is an error at load time that names the key and the resolved path.
-        let dir = std::env::temp_dir().join(format!("ignisyeet_cfg_step_{}", std::process::id()));
+        let dir = TempDir::new("cfg_step");
         std::fs::create_dir_all(&dir).unwrap();
         let text = std::fs::read_to_string(examples.join("sample_step.toml")).unwrap();
         std::fs::write(dir.join("c.toml"), &text).unwrap();
@@ -1440,12 +1441,11 @@ mod tests {
         std::fs::write(dir.join("c.toml"), text.replace("step_file = \"sample_rocket.step\"", "step_file = \"rocket.stl\"")).unwrap();
         let e = format!("{:#}", Config::load_with(&dir.join("c.toml"), &Overrides::default()).unwrap_err());
         assert!(e.contains("not a CAD file OpenCASCADE reads"), "{e}");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn load_with_applies_set_and_out() {
-        let dir = std::env::temp_dir().join(format!("ignisyeet_cfg_ov_{}", std::process::id()));
+        let dir = TempDir::new("cfg_ov");
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("c.toml");
         std::fs::write(&path, include_str!("../../../examples/sample.toml")).unwrap();
@@ -1472,7 +1472,6 @@ mod tests {
         let c = Config::load_with(&path, &twice).unwrap();
         assert_eq!(c.wind.speed, 8.0);
         assert_eq!(c.load_warnings, vec!["--set wind.speed given more than once; the last value (8) is used".to_string()]);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -258,6 +258,7 @@ pub fn read_done(dir: &Path, input_hash: &str) -> Option<CaseResult> {
 mod tests {
     use super::*;
     use crate::config::ShapeSymmetry;
+    use crate::test_tmp::TempDir;
 
     #[test]
     fn ordering_names_and_warm_starts() {
@@ -348,7 +349,7 @@ mod tests {
 
     #[test]
     fn done_file_respects_hash() {
-        let dir = std::env::temp_dir().join(format!("ignisyeet_cfd_case_{}", std::process::id()));
+        let dir = TempDir::new("cfd_case");
         let h = case_hash("a", "m");
         assert_ne!(h, case_hash("b", "m"));
         let r = CaseResult {
@@ -396,6 +397,5 @@ mod tests {
         let back = read_done(&dir, &h).unwrap();
         assert_eq!((back.reference_peak, back.limit_cycle, back.yplus_p95, back.warnings), (rans.reference_peak, true, Some(1.2), vec!["w".to_string()]));
         assert_eq!(back.axial, rans.axial);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

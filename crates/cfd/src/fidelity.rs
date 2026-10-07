@@ -478,6 +478,7 @@ pub fn compute(inp: &FidelityInput) -> Fidelity {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_tmp::TempDir;
 
     /// Closed icosphere-like triangulation of a sphere (radius `r`, centre `c`) by recursive subdivision of an octahedron.
     fn sphere(r: f64, c: Vec3, level: usize) -> Vec<Triangle> {
@@ -575,7 +576,8 @@ mod tests {
     #[test]
     fn reads_markers_of_an_su2_mesh() {
         let text = "NDIME= 3\nNELEM= 1\n10 0 1 2 3 0\nNPOIN= 4\n0 0 0 0\n1 0 0 1\n0 1 0 2\n0 0 1 3\nNMARK= 2\nMARKER_TAG= wall\nMARKER_ELEMS= 1\n5 0 1 2\nMARKER_TAG= farfield\nMARKER_ELEMS= 1\n5 1 2 3\n";
-        let p = std::env::temp_dir().join(format!("ignisyeet_fid_{}.su2", std::process::id()));
+        let p_td = TempDir::new("fid");
+        let p = p_td.join("fid.su2");
         std::fs::write(&p, text).unwrap();
         let m = read_su2_markers(&p, &["wall"]).unwrap();
         let _ = std::fs::remove_file(&p);
@@ -588,7 +590,8 @@ mod tests {
         // One prism (SU2 type 13) with a triangle and a quadrilateral (type 9) in the marker.
         let text = "NDIME= 3\nNELEM= 1\n13 0 2 1 3 5 4 0\nNPOIN= 6\n0 0 0 0\n1 0 0 1\n0 1 0 2\n0 0 1 3\n1 0 1 4\n0 1 1 5\nNMARK= 1\n\
                     MARKER_TAG= symmetry\nMARKER_ELEMS= 2\n5 0 1 2\n9 0 1 4 3\n";
-        let p = std::env::temp_dir().join(format!("ignisyeet_fid_quad_{}.su2", std::process::id()));
+        let p_td = TempDir::new("fid_quad");
+        let p = p_td.join("fid_quad.su2");
         std::fs::write(&p, text).unwrap();
         let m = read_su2_markers(&p, &["symmetry"]).unwrap();
         let _ = std::fs::remove_file(&p);

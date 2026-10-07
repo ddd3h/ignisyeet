@@ -155,6 +155,13 @@ def direct(a):
             text = re.sub(r"^MACH_NUMBER= .*$", f"MACH_NUMBER= {a.mach:.6f}", text, flags=re.M)
         if stage == "final":
             text = re.sub(r"^ITER= .*$", f"ITER= {a.iterations}", text, flags=re.M)
+            for kv in a.sub or []:  # KEY=VALUE: replace (or append) a line of the final-stage config
+                k, v = kv.split("=", 1)
+                if re.search(rf"^{k}= ", text, flags=re.M):
+                    text = re.sub(rf"^{k}= .*$", f"{k}= {v}", text, flags=re.M)
+                else:
+                    text += f"{k}= {v}\n"
+        text = text.replace("MESH_FILENAME= ", "MESH_FILENAME= ", 1)
         open(os.path.join(d, cfgname), "w").write(text)
         cmd = [os.path.join(PREFIX, "bin", "mpirun"), "-np", str(a.ranks), "--bind-to", "none",
                os.path.join(PREFIX, "bin", "SU2_CFD"), cfgname]
@@ -274,6 +281,7 @@ def main():
     dr.add_argument("--mach", type=float)
     dr.add_argument("--iterations", type=int, default=1500)
     dr.add_argument("--ranks", type=int, default=4)
+    dr.add_argument("--sub", action="append", help="KEY=VALUE for the final-stage config, e.g. SLOPE_LIMITER_FLOW=VENKATAKRISHNAN_WANG")
     c = sub.add_parser("collect")
     c.add_argument("dirs", nargs="+")
     c.add_argument("--length-ratio", type=float, default=15.0, help="body length / reference length")

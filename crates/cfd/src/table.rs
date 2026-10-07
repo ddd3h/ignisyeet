@@ -643,7 +643,7 @@ mod tests {
     fn sample_euler_points() -> Vec<SolvedPoint> {
         let text = include_str!("../../../doc/data/cfd/sample_euler_cases.csv");
         let mut v = Vec::new();
-        for line in text.lines().skip(1) {
+        for line in text.lines().filter(|l| !l.starts_with('#')).skip(1) {
             let f: Vec<&str> = line.split(',').collect();
             if f[2] != "converged" && f[2] != "accepted" {
                 continue;

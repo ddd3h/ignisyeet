@@ -1,0 +1,7 @@
+{
+ "source": "sample rocket, Euler, half model, wall_size 2 mm, fin_size auto (1 mm), 1415504 cells, z-symmetric mesh (the mesh of sample_euler_cases.csv)",
+ "cases": "M 0.8 and 2.0, alpha 0 and 4 deg, each solved from the freestream (no warm start) with the case.cfg of the table run, RESTART_SOL = NO, ITER = 300; all four reached the residual target 1e-6 (99, 102, 81, 101 iterations)",
+ "commit": "8d60708",
+ "date": "2026-10-07",
+ "tools": "SU2 8.3.0, 4 MPI ranks; extracted with doc/scripts/extract_cfd_fields.py"
+}

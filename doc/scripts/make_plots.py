@@ -708,37 +708,20 @@ def cfd_study(f, out, pn, data):
     f.save(fig, "cfd_compare")
 
     mc = pd.read_csv(data / "mesh_convergence.csv", comment="#")
-    summ = json.load(open(data / "run_summary.json"))["mesh_convergence"]
     fig, ax = plt.subplots(figsize=(5.2, 3.5))
     for m, c, mk in ((2.0, SERIES[0], "o"), (0.8, SERIES[1], "s")):
-        s = mc[mc.mach == m].sort_values("cells")
-        h = s.cells.values ** (-1.0 / 3.0) * 1e2
-        ax.plot(h, s.cn, mk, color=c, markersize=6, label=f"$M={m:g}$")
-        if m == 2.0:
-            y, x = s.cn.values, s.cells.values ** (-1.0 / 3.0)
-            best = None
-            for p in np.arange(0.5, 6.0, 0.01):
-                A = np.c_[np.ones_like(x), x ** p]
-                cf = np.linalg.lstsq(A, y, rcond=None)[0]
-                r = float(((A @ cf - y) ** 2).sum())
-                if best is None or r < best[0]:
-                    best = (r, p, cf)
-            _, p, cf = best
-            xs = np.linspace(0, x.max(), 100)
-            ax.plot(xs * 1e2, cf[0] + cf[1] * xs ** p, color=c, linewidth=1.2, label=f"外挿 $C_N=C_N^\\infty+Ch^{{p}}$（$p={p:.2f}$）")
-            ax.plot([0], [cf[0]], "D", color=c, markersize=6, markerfacecolor="white")
-            ax.axhline(cf[0], color=c, linewidth=0.7, linestyle=":")
-        else:
-            ax.axhline(summ["M0.8"]["cn_extrapolated"], color=c, linewidth=0.7, linestyle=":", label=f"$M=0.8$ の推定値 $C_N={summ['M0.8']['cn_extrapolated']:.3f}$（非単調、外挿式なし）")
-    ax.set_xlim(left=-0.03)
-    ax.set_xlabel("代表格子幅 $h=N_{cell}^{-1/3}$ [$10^{-2}$]")
+        s = mc[mc.mach == m].sort_values("wall_size_m")
+        ax.plot(s.wall_size_m * 1e3, s.cn, "-" + mk, color=c, markersize=6, linewidth=1.0, label=f"$M={m:g}$")
+        ax.axhline(s.cn.iloc[0], color=c, linewidth=0.7, linestyle=":")
+    ax.set_xlim(0, 10.5)
+    ax.set_xlabel("壁面の要素の大きさ wall_size [mm]（フィンの面は 1 mm）")
     ax.set_ylabel("$C_N$（$\\alpha=4^\\circ$）")
-    ax.legend(loc="lower left")
+    ax.legend(loc="center right")
     fig.tight_layout()
     f.save(fig, "cfd_mesh_convergence")
 
     asy = pd.read_csv(data / "asymmetry_study.csv", comment="#")
-    order = [("base", "半モデル\n（既定の\nメッシュ）"), ("roll45", "フィン\n45° 回転"), ("jst", "JST"), ("tight", "残差\n$10^{-9}$"), ("zm", "z 対称\nメッシュ")]
+    order = [("base", "半モデル"), ("roll45", "フィン\n45° 回転"), ("jst", "JST"), ("tight", "残差\n$10^{-9}$"), ("zm", "z 対称\nメッシュ")]
     fig, ax = plt.subplots(figsize=(6.2, 3.3))
     w = 0.26
     for i, (m, c) in enumerate(((0.3, SERIES[0]), (0.8, SERIES[1]), (2.0, SERIES[2]))):
@@ -949,8 +932,8 @@ def cfd_fields(f, fields):
 
 def cfd_stl_check(f, data):
     """Direct-STL CFD versus the rebuilt (CAD) geometry and the Barrowman model (doc/data/cfd/stl_cross_check*)."""
-    t = pd.read_csv(data / "stl_cross_check.csv")
-    clp = pd.read_csv(data / "stl_cross_check_clp.csv")
+    t = pd.read_csv(data / "stl_cross_check.csv", comment="#")
+    clp = pd.read_csv(data / "stl_cross_check_clp.csv", comment="#")
     d = 0.1
     t["cn_n"] = -t.cz
     t["xcp"] = np.where(t.cz.abs() > 1e-6, t.cm * d / t.cz.where(t.cz.abs() > 1e-6, 1.0), np.nan)

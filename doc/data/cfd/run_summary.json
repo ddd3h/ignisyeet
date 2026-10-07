@@ -1,14 +1,94 @@
 {
-  "machine": "i7-12700 (20 threads), 30 GB, SU2 8.3.0, Open MPI 5.0.11, gmsh 4.15.2",
-  "settings": {"model": "euler", "wall_size_m": 0.002, "farfield_L": 20, "tail_fairing": 6.0, "scheme": "roe", "alpha_mode": "mirror", "z_mirror_mesh": true,
-               "note": "z_mirror_mesh makes -alpha the exact mirror image of +alpha, so mirror mode needs no -alpha solves; on an asymmetric half-model mesh mirror mode solves every alpha > 0 also at -alpha"},
-  "euler_matrix": {"machs": [0.3, 0.8, 1.2, 2.0], "alphas_deg": [0, 2, 4, 8], "cases": 16, "cells": 941082, "nodes": 200978, "ranks_per_case": 4, "parallel_cases": 4,
-                   "total_wall_s": 1325, "sum_of_case_wall_s": 2339, "per_case_wall_s": "49-330 (median about 160)", "unconverged_accepted": ["M1.2 a0", "M1.2 a8", "M2.0 a8"],
-                   "peak_rss_per_rank_MB": 819, "mesh_s": 14},
-  "mesh_convergence": {"file": "mesh_convergence.csv", "M0.8": {"fit_order": "non-monotone, scatter about +-1 % for wall_size <= 5 mm", "cn_extrapolated": 1.214, "gci": "not defined (non-monotone)"},
-                       "M2.0": {"fit_order": 2.65, "cn_extrapolated": 0.9394, "gci_fine_pair_percent": 5.6, "cn_error_at_2mm_percent": -2.2}},
-  "farfield_sensitivity": "farfield_sensitivity.csv: M0.8 alpha 4, CN within 0.25 % for 10, 20, 40 body lengths",
-  "asymmetry": "asymmetry_study.csv",
-  "memory": {"su2_peak_rss_per_rank_MB": {"93k cells": 266, "222k cells": 332, "379k cells": 444, "649k cells": 629, "941k cells": 819, "1124k cells": 923}, "model": "40 MB per rank + 3.3 kB per cell (Euler, summed over ranks)"},
-  "cone_validation": "cone_cp.csv (older run, wall_size 10..2.5 mm)"
+ "machine": "i7-12700 (20 threads), 30 GB, SU2 8.3.0, Open MPI 5.0.11, gmsh 4.15.2; the Euler runs of 2026-10-07 (ignisyeet commit 8d60708) shared the machine with another 8-rank SU2 job (load average about 12)",
+ "settings": {
+  "model": "euler",
+  "wall_size_m": 0.002,
+  "fin_size": "auto (1 mm = fin thickness / 4)",
+  "farfield_L": 20,
+  "tail_fairing": 6.0,
+  "scheme": "roe",
+  "alpha_mode": "mirror",
+  "z_mirror_mesh": true,
+  "min_iterations": 100,
+  "stable_window": 60,
+  "note": "z_mirror_mesh makes -alpha the exact mirror image of +alpha, so mirror mode needs no -alpha solves; on an asymmetric half-model mesh mirror mode solves every alpha > 0 also at -alpha"
+ },
+ "euler_matrix": {
+  "commit": "8d60708",
+  "date": "2026-10-07",
+  "machs": [
+   0.3,
+   0.8,
+   1.2,
+   2.0
+  ],
+  "alphas_deg": [
+   0,
+   2,
+   4,
+   8
+  ],
+  "cases": 16,
+  "cells": 1415504,
+  "nodes": 302867,
+  "wall_triangles": 233838,
+  "ranks_per_case": 4,
+  "parallel_cases": 1,
+  "total_wall_s": 3818,
+  "sum_of_case_wall_s": 3775,
+  "sum_of_case_wall_s_alpha_0_4_8": 2945,
+  "per_case_wall_s": "105-541 (median about 250)",
+  "unconverged_accepted": [
+   "M1.2 a0",
+   "M1.2 a4",
+   "M1.2 a8",
+   "M2.0 a0",
+   "M2.0 a2",
+   "M2.0 a4",
+   "M2.0 a8"
+  ],
+  "mesh_s": 34,
+  "largest_rank_peak_kB": 1149796,
+  "sum_of_4_ranks_max_MiB_sampled": 3323
+ },
+ "mesh_convergence": {
+  "file": "mesh_convergence.csv",
+  "fins": "1 mm at every wall_size",
+  "M0.8": {
+   "cn_2mm_vs_1.8mm_percent": 0.01,
+   "monotone": false
+  },
+  "M2.0": {
+   "cn_2mm_vs_1.8mm_percent": -0.08,
+   "monotone": true,
+   "extrapolation": "none (increments 0.0004 and 0.0007 on the finest meshes)"
+  },
+  "memory": "see memory"
+ },
+ "farfield_sensitivity": "farfield_sensitivity.csv (fins at 2 mm, commit e00ed02): M0.8 alpha 4, CN within 0.25 % for 10, 20, 40 body lengths",
+ "asymmetry": "asymmetry_study.csv (fins at wall_size 10 mm, commit e00ed02); asymmetry_cause.csv; fin_resolution.csv",
+ "memory": {
+  "model": "eq-cfd-mem: 40 MB per rank + 3.3 kB per cell, from 4 x the largest-rank peak (4.8 GB at 1416k cells against 4 x 1149600 kB = 4.6 GB)",
+  "largest_rank_peak_kB_time_v": {
+   "769k cells": 738284,
+   "860k cells": 802636,
+   "981k cells": 860276,
+   "1188k cells": 999924,
+   "1416k cells": 1149600,
+   "1561k cells": 1246692,
+   "2791k cells (stl full)": 2058544,
+   "2831k cells (cad full)": 2022312
+  },
+  "sum_of_4_ranks_max_MiB_sampled_5s": {
+   "769k cells": 1878,
+   "860k cells": 2082,
+   "981k cells": 2350,
+   "1188k cells": 2817,
+   "1416k cells": 3323,
+   "1561k cells": 3622,
+   "2791k cells (stl full)": 6190,
+   "2831k cells (cad full)": 6289
+  }
+ },
+ "cone_validation": "cone_cp.csv (older run, wall_size 10..2.5 mm)"
 }

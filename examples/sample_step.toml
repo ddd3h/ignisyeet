@@ -62,9 +62,9 @@ extrapolation = "linear"   # "linear" | "clamp"
 # The STEP is registered against rocket.stl before meshing (same rocket, same coordinate system, its own details
 # allowed). Its launch lug and rail buttons make the shape mirror-asymmetric, so every (Mach, alpha) case is a steady
 # SU2 run on the full domain (about twice the cells of the half model of sample_cfd.toml) and -alpha is solved too
-# (alpha_mode = "mirror"); the table is a six-component (general) table. This takes clearly longer than the 30-40
-# minutes of sample_cfd.toml. Cases are cached in out_step/cfd/ and re-used when nothing changed, including the CAD
-# file contents (delete the directory to start over).
+# (alpha_mode = "mirror"); the table is a six-component (general) table. This takes clearly longer than the about 50
+# minutes of sample_cfd.toml (one case at a time on 4 ranks). Cases are cached in out_step/cfd/ and re-used when nothing
+# changed, including the CAD file contents (delete the directory to start over).
 [aero.cfd]
 prefix = "~/.local/share/micromamba/envs/ignisyeet-cfd"  # <prefix>/bin/SU2_CFD, mpirun, python (with gmsh)
 model = "euler"            # "euler" | "rans" (Spalart-Allmaras; on a CAD model the prism layer must pass its validity check)

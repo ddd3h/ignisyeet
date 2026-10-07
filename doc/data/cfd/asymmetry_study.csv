@@ -1,4 +1,4 @@
-# Sample rocket, Euler, wall_size 10 mm, alpha=0 and +-4 deg. cn0, moment0: raw values at alpha=0 (true value 0 for a symmetric body). cn_even=(CN(+4)+CN(-4))/2 is the same offset at 4 deg; cn_odd=(CN(+4)-CN(-4))/2 the mirror-combined normal force.
+# Sample rocket, Euler, wall_size 10 mm, fins also at 10 mm (fin_size = 0.01; data of commit e00ed02, 2026-10-04), alpha=0 and +-4 deg. cn0, moment0: raw values at alpha=0 (true value 0 for a symmetric body). cn_even=(CN(+4)+CN(-4))/2 is the same offset at 4 deg; cn_odd=(CN(+4)-CN(-4))/2 the mirror-combined normal force.
 config,description,mach,cn0,nose_moment0_m,cn_even_4deg,cn_odd_4deg
 base,"half model, fins at +-y,+-z (2 fins in the symmetry plane), Roe, 87958 cells",0.3,-0.04684,-0.06486,-0.05537,1.17880
 base,"half model, fins at +-y,+-z (2 fins in the symmetry plane), Roe, 87958 cells",0.8,-0.06276,-0.09077,-0.06877,1.16374

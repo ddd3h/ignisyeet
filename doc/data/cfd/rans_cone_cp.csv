@@ -1,10 +1,10 @@
-# RANS cone verification: 10 deg half-angle cone + cylinder (doc/scripts/rans_geometry.py cone, L 0.5836 m, R 0.05 m, flat base), M 2, alpha 0, ignisyeet aero method cfd, model rans, wall_size 2 mm (571269 nodes, half model, prism layer for y+ 1 at 5 % L), sea-level US1976 freestream (Re about 4.6e7 per m), SU2 8.3.0, 4 ranks, peak RSS 5.78 GB (4 ranks), commit 3acdb89, 2026-10-07. Surface snapshot of SU2 iteration 1000 of the second-order stage (OUTPUT_WRT_FREQ 500): the stage stalls with rms[Rho] between -2.2 and -5.4 (reference peak -3.68, never the 3 orders the acceptance needs) while CFx(wall) stays at 0.1299 +- 0.0006 over the last 400 iterations; the run was stopped at 1028 iterations. Cp of the iteration 500 snapshot agrees within 0.6 % with this one. The first-order startup stage alone gives Cp about 21 % above Taylor-Maccoll. Expected viscous effect: the turbulent displacement thickness growth (about 0.13 deg of extra cone angle at x = 0.1 m) raises Cp by roughly 2 %. Taylor-Maccoll (integrated in rans_cone.py): Cp = 0.10447, shock angle 31.206 deg, cone surface Mach 1.8340. Cp from SU2 Pressure_Coefficient of the wall nodes on the cone (radius within 1 % of x tan 10 deg), binned along x / L_cone.
+# RANS cone verification: 10 deg half-angle cone + cylinder (doc/scripts/rans_geometry.py cone, L 0.5836 m, R 0.05 m, flat base), M 2, alpha 0, ignisyeet aero method cfd, model rans, wall_size 2 mm (1103282 nodes, half model), sea-level US1976 freestream (Re 4.65e7 per m), SU2 8.3.0, 4 ranks, commit 5ce5795, 2026-10-07. The case converged by the CFD-mode acceptance at 402 iterations (y+ P95 0.55); final surface_flow.vtk. A viscous Cp above Taylor-Maccoll is expected: the turbulent displacement thickness adds about 0.1 deg of effective cone angle (roughly +2 % in Cp), most near the tip. Taylor-Maccoll (integrated in rans_cone.py): Cp = 0.10447, shock angle 31.206 deg, cone surface Mach 1.8340. Cp from SU2 Pressure_Coefficient of the wall nodes on the cone (radius within 1 % of x tan 10 deg), binned along x / L_cone.
 x_over_lc_from,x_over_lc_to,nodes,cp_mean,error_vs_taylor_maccoll_percent
-0.2,0.3,336,0.10638,1.82
-0.3,0.4,452,0.10652,1.96
-0.4,0.5,590,0.10664,2.07
-0.5,0.6,717,0.10676,2.20
-0.6,0.7,830,0.10616,1.61
-0.7,0.8,937,0.10614,1.59
-0.8,0.9,1062,0.10569,1.16
-0.2,0.9,4924,0.10625,1.70
+0.2,0.3,336,0.10708,2.50
+0.3,0.4,452,0.10611,1.56
+0.4,0.5,590,0.10603,1.50
+0.5,0.6,717,0.10589,1.36
+0.6,0.7,830,0.10584,1.31
+0.7,0.8,937,0.10587,1.33
+0.8,0.9,1062,0.10591,1.37
+0.2,0.9,4924,0.10600,1.46

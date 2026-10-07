@@ -10,7 +10,14 @@ axial coefficient was ca_off = CFx(wall) + k(alpha) (base + extra), with the Bar
 configuration and the axial angle factor k(alpha) (aero::model::axial_alpha_factor). The CFD mode now adds the
 Barrowman rough-minus-smooth friction increment (cfd::forces::roughness_increment), also multiplied by k(alpha):
 
-  ca_off,corrected = ca_off,stored + k(alpha) dCf,rough,   dCf,rough = friction(roughness) - friction(0)
+  ca_off,corrected = ca_off,stored + k(alpha) (dCf,rough + dCA,fins)
+  dCf,rough = friction(roughness) - friction(0)
+
+On the rebuilt (CAD) surface the CFD fins are biconvex lenses cut at 2 % of the chord from each edge, not the configured
+edges (rounded leading edge, square trailing edge). The CFD mode therefore also adds the Barrowman fin-edge term minus
+the share the blunted lens already carries (cfd::forces::fin_edge_increment):
+
+  dCA,fins = fins,Barrowman (1 - 4 e (1 - e)),   e = 0.02 (mesh::BL_EDGE_BLUNT), 4 e (1 - e) = 0.0784
 
 The increment is linear in the skin-friction coefficient (friction = cf S_wet / S_ref with one Reynolds number), so
 it is the difference of the Barrowman friction terms of two `ignisyeet aero` runs of the same configuration with
@@ -101,7 +108,8 @@ def main():
         shutil.rmtree(work, ignore_errors=True)
     commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True,
                             cwd=os.path.dirname(os.path.abspath(__file__))).stdout.strip()
-    keys = ["mach", "alpha_deg", "k_alpha", "cfx_wall", "base", "extra", "barrowman_fins", "roughness_increment", "rans_ca_off_stored",
+    lens = 4 * 0.02 * (1 - 0.02)
+    keys = ["mach", "alpha_deg", "k_alpha", "cfx_wall", "base", "extra", "barrowman_fins", "roughness_increment", "fin_edge_increment", "rans_ca_off_stored",
             "rans_ca_off_corrected", "euler_ca_off", "diff_stored_percent", "diff_corrected_percent"]
     out = []
     for t in rows(a.table):
@@ -117,9 +125,10 @@ def main():
         k = axial_alpha_factor(math.radians(al))
         stored, eu = float(t["rans_ca_off"]), float(t["euler_ca_off"])
         model = float(r["base"]) + float(r["extra"])
-        corr = stored + k * inc
+        fin_inc = float(r["fins"]) * (1 - lens)
+        corr = stored + k * (inc + fin_inc)
         out.append({"mach": m, "alpha_deg": al, "k_alpha": k, "cfx_wall": stored - k * model, "base": float(r["base"]),
-                    "extra": float(r["extra"]), "barrowman_fins": float(r["fins"]), "roughness_increment": inc, "rans_ca_off_stored": stored,
+                    "extra": float(r["extra"]), "barrowman_fins": float(r["fins"]), "roughness_increment": inc, "fin_edge_increment": fin_inc, "rans_ca_off_stored": stored,
                     "rans_ca_off_corrected": corr, "euler_ca_off": eu, "diff_stored_percent": 100 * (stored / eu - 1),
                     "diff_corrected_percent": 100 * (corr / eu - 1)})
     with open(a.out_csv, "w") as f:
@@ -127,8 +136,8 @@ def main():
                 f"not a rerun. rans_ca_off_stored and euler_ca_off are the values of rans_table.csv (RANS 5 mm table solved without "
                 f"the roughness term; Euler 2 mm). roughness_increment = Barrowman friction with roughness {rough_m:g} m minus "
                 f"roughness 0 (ignisyeet aero, method barrowman, {os.path.basename(a.config)}; = cfd::forces::roughness_increment). "
-                f"rans_ca_off_corrected = stored + k_alpha * roughness_increment (k_alpha = axial_alpha_factor). "
-                f"cfx_wall = stored - k_alpha (base + extra), the Barrowman base and extra_cd terms of the same configuration. barrowman_fins: the Barrowman fin-edge term (in the Euler ca_off, not in RANS).\n")
+                f"rans_ca_off_corrected = stored + k_alpha * (roughness_increment + fin_edge_increment) (k_alpha = axial_alpha_factor). fin_edge_increment = barrowman_fins * (1 - 4 e (1 - e)), e = 0.02: the configured fin edges minus the share of the blunted rebuilt lens (= cfd::forces::fin_edge_increment). "
+                f"cfx_wall = stored - k_alpha (base + extra), the Barrowman base and extra_cd terms of the same configuration. barrowman_fins: the Barrowman fin-edge term (in the Euler ca_off).\n")
         f.write(",".join(keys) + "\n")
         for r in out:
             f.write(",".join(f"{r[k]:.6g}" for k in keys) + "\n")

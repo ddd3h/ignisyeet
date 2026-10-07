@@ -2594,6 +2594,7 @@ mod tests {
             main_deploy_speed: None,
             main_deploy_q: None,
             wind_scale: None,
+            roll_resonance: None,
         }
     }
 
@@ -3603,8 +3604,8 @@ mod tests {
         let p = prepare(&cfg).unwrap();
         let (r, _) = fly_sample(&cfg, &p, Descent::Parachute);
         let s = &r.summary;
-        assert!((s.apogee - 4440.7).abs() < 0.05 && (s.apogee_time - 26.11).abs() < 0.005, "{} at {}", s.apogee, s.apogee_time);
-        assert!((s.landing_east + 654.7).abs() < 0.05 && (s.landing_north + 7708.1).abs() < 0.05, "{} {}", s.landing_east, s.landing_north);
+        assert!((s.apogee - 4440.2).abs() < 0.05 && (s.apogee_time - 26.10).abs() < 0.005, "{} at {}", s.apogee, s.apogee_time);
+        assert!((s.landing_east + 655.2).abs() < 0.05 && (s.landing_north + 7704.5).abs() < 0.05, "{} {}", s.landing_east, s.landing_north);
         let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 

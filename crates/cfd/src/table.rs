@@ -299,6 +299,7 @@ pub fn beyond_solved(model: &AeroModel, mach: f64, a_deg: f64, a_e: f64, cn_e: f
 /// Above the highest solved angle of each Mach column the coefficients come from [`beyond_solved`]
 /// (blend into the Barrowman model), independent of `extrapolation`; `extrapolation` is stored in the
 /// table and applies to lookups beyond the table grid.
+/// The CFD axial coefficient of the points is taken to include the base (`base_from_cfd = true`).
 pub fn build_from_points(
     points: &[SolvedPoint],
     model: &AeroModel,
@@ -306,7 +307,7 @@ pub fn build_from_points(
     source_hash: String,
     extrapolation: Extrapolation,
 ) -> Result<(AeroTable, TableFill)> {
-    build_from_points_roll(points, model, flow, source_hash, extrapolation, &[])
+    build_from_points_roll(points, model, flow, source_hash, extrapolation, &[], true)
 }
 
 /// [`build_from_points`] with the roll-damping entries of the CFD roll pairs (empty: Barrowman `Clp`).
@@ -318,6 +319,7 @@ pub fn build_from_points_roll(
     source_hash: String,
     extrapolation: Extrapolation,
     roll: &[crate::general::ClpEntry],
+    base_from_cfd: bool,
 ) -> Result<(AeroTable, TableFill)> {
     let o = &model.opt;
     let machs = grid(o.mach_min.max(0.0), o.mach_max, o.mach_step);
@@ -375,7 +377,7 @@ pub fn build_from_points_roll(
             .map(|(j, &a)| {
                 let (cn, mom) = if a == 0.0 { (0.0, 0.0) } else { (cn_p[j].eval(m, false), mom_p[j].eval(m, false)) };
                 let xcp = if cn.abs() > 1e-9 { mom / cn } else { xcp0 };
-                let (ca_on, ca_off) = hybrid_axial(flow, false, model, m, a.to_radians(), ca_p[j].eval(m, false));
+                let (ca_on, ca_off) = hybrid_axial(flow, false, base_from_cfd, model, m, a.to_radians(), ca_p[j].eval(m, false));
                 AeroCoeffs { cn, ca_on, ca_off, xcp, cna, damp, cl_delta, clp }
             })
             .collect();
@@ -685,5 +687,22 @@ mod tests {
         let e = build_from_points(&p, &m, FlowModel::Euler, "h".into(), Extrapolation::Linear).unwrap_err().to_string();
         assert!(e.contains("highest") && e.contains('3'), "{e}");
         assert!(build_from_points(&[], &m, FlowModel::Euler, "h".into(), Extrapolation::Linear).is_err());
+    }
+
+    /// RANS tables never carry the Euler build-up: the same CFD points give a lower axial force than the Euler path,
+    /// and the base source only changes the base term.
+    #[test]
+    fn rans_table_axial_has_no_euler_terms() {
+        let m = model();
+        let pts = |ca: f64| -> Vec<SolvedPoint> {
+            [0.5, 2.0].iter().flat_map(|&mach| [0.0, 2.0, 4.0].iter().map(move |&a| (mach, a))).map(|(mach, a)| SolvedPoint { mach, alpha_deg: a, coeffs: Some(BodyCoeffs { cn: 0.3 * a, ca, mom: 0.5 * 0.3 * a }) }).collect()
+        };
+        let build = |flow: FlowModel, base: bool| build_from_points_roll(&pts(0.3), &m, flow, "h".into(), Extrapolation::Linear, &[], base).unwrap().0;
+        let (eu, rm, rc) = (build(FlowModel::Euler, false), build(FlowModel::Rans, false), build(FlowModel::Rans, true));
+        let b = m.cd0(0.5, false);
+        let at = |t: &AeroTable| t.lookup(0.5, 0.0).ca_off;
+        assert!((at(&rm) - (0.3 + b.base + b.extra)).abs() < 1e-9);
+        assert!((at(&rc) - (0.3 + b.extra)).abs() < 1e-9);
+        assert!(at(&eu) > at(&rm) + b.friction * 0.99);
     }
 }

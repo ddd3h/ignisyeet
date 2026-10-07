@@ -18,7 +18,7 @@
 //! * Half models are normalised with `REF_AREA / 2`, so no further factor is needed.
 
 use crate::config::FlowModel;
-use crate::history::HistorySummary;
+use crate::history::{History, HistorySummary};
 use aero::model::axial_alpha_factor;
 use aero::AeroModel;
 use anyhow::{bail, Result};
@@ -50,6 +50,94 @@ impl Su2Coeffs {
             bail!("non-finite coefficients in the history (diverged case)");
         }
         Ok(Self { cfx, cfz, cmy })
+    }
+}
+
+/// Default of the "base pressure from CFD" switch until the configuration supplies it: the base term
+/// of RANS tables is the Barrowman base drag model.
+pub const BASE_FROM_CFD_DEFAULT: bool = false;
+
+/// Name of the CFD surface marker of the body wall (nose, body tube, boattail, fins).
+pub const WALL_MARKER: &str = "wall";
+/// Name of the CFD surface marker of the base cap.
+pub const BASE_MARKER: &str = "base";
+
+/// Per-marker coefficients of one history (`AERO_COEFF_SURF`): SU2 8.3 writes them as `CFx(wall)`,
+/// `CFz(wall)`, `CMy(wall)`, `CFx(base)`, ... next to the totals. `None` where the column is absent.
+#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct MarkerCoeffs {
+    pub wall_cfx: Option<f64>,
+    pub wall_cfz: Option<f64>,
+    pub wall_cmy: Option<f64>,
+    pub base_cfx: Option<f64>,
+    pub base_cfz: Option<f64>,
+    pub base_cmy: Option<f64>,
+}
+
+impl MarkerCoeffs {
+    /// Coefficients averaged over the last `window` rows (1 = last row). Accepts `CFx(wall)` and `CFx@wall`.
+    pub fn from_history(h: &History, window: usize) -> Self {
+        let n = h.rows.len();
+        if n == 0 {
+            return Self::default();
+        }
+        let w = window.clamp(1, n);
+        let avg = |coef: &str, marker: &str| -> Option<f64> {
+            let c = h.col(&[&format!("{coef}({marker})"), &format!("{coef}@{marker}")])?;
+            let v: Vec<f64> = h.rows[n - w..].iter().map(|r| r[c]).filter(|x| x.is_finite()).collect();
+            (!v.is_empty()).then(|| v.iter().sum::<f64>() / v.len() as f64)
+        };
+        Self {
+            wall_cfx: avg("CFx", WALL_MARKER),
+            wall_cfz: avg("CFz", WALL_MARKER),
+            wall_cmy: avg("CMy", WALL_MARKER),
+            base_cfx: avg("CFx", BASE_MARKER),
+            base_cfz: avg("CFz", BASE_MARKER),
+            base_cmy: avg("CMy", BASE_MARKER),
+        }
+    }
+
+    /// Axial coefficient the table takes from this case, see [`AxialSplit`].
+    ///
+    /// * `base_from_cfd`: wall + base (the base column absent: the monitored total, which holds both).
+    /// * otherwise: the wall alone, the base term then comes from the Barrowman model. Without the wall
+    ///   column the monitored total is used and holds the base as well (`base_in_cfx`).
+    pub fn axial(&self, total_cfx: f64, base_from_cfd: bool) -> AxialSplit {
+        let (wall, base) = (self.wall_cfx, self.base_cfx);
+        match (wall, base, base_from_cfd) {
+            (Some(w), _, false) => AxialSplit { cfx: w, wall, base, base_in_cfx: false },
+            (Some(w), Some(b), true) => AxialSplit { cfx: w + b, wall, base, base_in_cfx: true },
+            _ => AxialSplit { cfx: total_cfx, wall, base, base_in_cfx: true },
+        }
+    }
+}
+
+/// The axial coefficient used for a case and what it contains.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AxialSplit {
+    /// `CFx` to use (CFD frame, positive aft).
+    pub cfx: f64,
+    pub wall: Option<f64>,
+    pub base: Option<f64>,
+    /// `cfx` holds the base-cap force. When this is true although the table asks for the Barrowman base
+    /// (per-marker columns absent), the table must be built with `base_from_cfd = true`.
+    pub base_in_cfx: bool,
+}
+
+impl Su2Coeffs {
+    /// RANS: the axial coefficient replaced by [`MarkerCoeffs::axial`]; normal force and moment are the totals.
+    pub fn with_markers(self, m: &MarkerCoeffs, base_from_cfd: bool) -> (Self, AxialSplit) {
+        let a = m.axial(self.cfx, base_from_cfd);
+        (Self { cfx: a.cfx, ..self }, a)
+    }
+}
+
+impl Su2Coeffs6 {
+    /// See [`Su2Coeffs::with_markers`].
+    pub fn with_markers(self, m: &MarkerCoeffs, base_from_cfd: bool) -> (Self, AxialSplit) {
+        let a = m.axial(self.cfx, base_from_cfd);
+        (Self { cfx: a.cfx, ..self }, a)
     }
 }
 
@@ -149,16 +237,19 @@ impl BodyCoeffs6 {
 ///   extra drag of the Barrowman build-up. The nose pressure term is **excluded** (CFD gives the
 ///   pressure / wave drag). The CFD base cap is not monitored (see `su2cfg`), so the base term is
 ///   fully taken from the model; power-on uses the base area reduced by the nozzle exit area.
-/// * RANS: friction, base pressure, fin and boattail drag come from CFD; only `extra_cd` is added,
-///   and for power-on the base-pressure contribution over the nozzle exit area is removed,
-///   `base_cd(M) (A_base - A_base,on) / S`.
+/// * RANS: friction, pressure, fin and boattail drag come from CFD (`ca_cfd` is the wall marker). The base term
+///   is the CFD base marker when `base_from_cfd` (it is then part of `ca_cfd`; for power-on the
+///   base-pressure contribution over the nozzle exit area is removed, `base_cd(M) (A_base - A_base,on) / S`),
+///   otherwise the Barrowman base drag with its nozzle-area power-on correction. `extra_cd` is added.
+///   No Euler (inviscid) term is ever added to a RANS value.
 ///
 /// `fin_edges_in_cfd`: the integrated CFD wall already holds the fin leading / trailing faces (STL surface), so
 /// their pressure drag is in `ca_cfd` and the Barrowman fin-edge term is not added again. For the rebuilt
 /// (CAD) geometry the term is kept.
 ///
 /// The additions are multiplied by the model's `axial_alpha_factor`, like the Barrowman path.
-pub fn hybrid_axial(flow: FlowModel, fin_edges_in_cfd: bool, model: &AeroModel, mach: f64, alpha_rad: f64, ca_cfd: f64) -> (f64, f64) {
+#[allow(clippy::too_many_arguments)]
+pub fn hybrid_axial(flow: FlowModel, fin_edges_in_cfd: bool, base_from_cfd: bool, model: &AeroModel, mach: f64, alpha_rad: f64, ca_cfd: f64) -> (f64, f64) {
     let k = axial_alpha_factor(alpha_rad);
     let (on, off) = (model.cd0(mach, true), model.cd0(mach, false));
     let (add_on, add_off) = match flow {
@@ -167,13 +258,45 @@ pub fn hybrid_axial(flow: FlowModel, fin_edges_in_cfd: bool, model: &AeroModel, 
             let t = |b: &aero::model::DragBreakdown| b.friction + b.base + fins(b) + b.boattail + b.extra;
             (t(&on), t(&off))
         }
-        FlowModel::Rans => {
+        FlowModel::Rans if base_from_cfd => {
             let removed = (off.base - on.base).max(0.0);
             // Base drag over the nozzle exit area, `base_cd(M) A_nozzle / S`, is the model's off-on base difference.
             (off.extra - removed, off.extra)
         }
+        FlowModel::Rans => (on.base + on.extra, off.base + off.extra),
     };
     ((ca_cfd + add_on * k).max(0.0), (ca_cfd + add_off * k).max(0.0))
+}
+
+/// Axial breakdown of one RANS case for `cfd_report.json` (all coefficients positive aft).
+#[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct AxialReportEntry {
+    pub mach: f64,
+    pub alpha_deg: f64,
+    /// `CFx` of the wall marker (pressure + friction + fin edges) and of the base marker; `None` without the columns.
+    pub cfd_wall_ca: Option<f64>,
+    pub cfd_base_ca: Option<f64>,
+    /// Barrowman skin friction and base drag at this Mach number (the friction is not added to a RANS table; shown for comparison).
+    pub barrowman_friction: f64,
+    pub barrowman_base: f64,
+    /// The base term of the table comes from CFD (`base_from_cfd`, or the per-marker columns were absent).
+    pub base_from_cfd: bool,
+}
+
+impl AxialReportEntry {
+    pub fn new(model: &AeroModel, mach: f64, alpha_deg: f64, markers: &MarkerCoeffs, base_from_cfd: bool) -> Self {
+        let b = model.cd0(mach, false);
+        Self {
+            mach,
+            alpha_deg,
+            cfd_wall_ca: markers.wall_cfx,
+            cfd_base_ca: markers.base_cfx,
+            barrowman_friction: b.friction,
+            barrowman_base: b.base,
+            base_from_cfd: markers.axial(0.0, base_from_cfd).base_in_cfx,
+        }
+    }
 }
 
 /// Pitch-damping sums `[S0, S1, S2]` (sum CNa_i, sum CNa_i x_i, sum CNa_i x_i^2) rescaled to CFD.
@@ -248,21 +371,90 @@ mod tests {
     #[test]
     fn hybrid_terms() {
         let m = model(0.0);
-        let (on, off) = hybrid_axial(FlowModel::Euler, false, &m, 0.5, 0.0, 0.1);
+        let (on, off) = hybrid_axial(FlowModel::Euler, false, false, &m, 0.5, 0.0, 0.1);
         let b = m.cd0(0.5, false);
         assert!((off - (0.1 + b.friction + b.base + b.fins + b.boattail + b.extra)).abs() < 1e-12);
         assert!((on - off).abs() < 1e-12, "no nozzle: power-on equals power-off");
         let m = model(0.5 * std::f64::consts::PI * 0.05 * 0.05);
-        let (on, off) = hybrid_axial(FlowModel::Euler, false, &m, 0.5, 0.0, 0.1);
+        let (on, off) = hybrid_axial(FlowModel::Euler, false, false, &m, 0.5, 0.0, 0.1);
         assert!(on < off);
         // STL surface: the fin-edge drag is in the CFD wall and is not added again.
-        let (_, off_stl) = hybrid_axial(FlowModel::Euler, true, &m, 0.5, 0.0, 0.1);
+        let (_, off_stl) = hybrid_axial(FlowModel::Euler, true, false, &m, 0.5, 0.0, 0.1);
         let b = m.cd0(0.5, false);
         assert!(b.fins > 0.0 && (off - off_stl - b.fins).abs() < 1e-12);
-        // RANS: only extra_cd (and the nozzle correction) are added.
-        let (ron, roff) = hybrid_axial(FlowModel::Rans, false, &m, 0.5, 0.0, 0.4);
+        // RANS with the CFD base: only extra_cd (and the nozzle correction) are added.
+        let (ron, roff) = hybrid_axial(FlowModel::Rans, false, true, &m, 0.5, 0.0, 0.4);
         assert!((roff - 0.42).abs() < 1e-12);
         assert!(ron < roff && ron > 0.0);
+    }
+
+    #[test]
+    fn rans_base_model_versus_cfd() {
+        let nozzle = 0.5 * std::f64::consts::PI * 0.05 * 0.05;
+        let m = model(nozzle);
+        let (on, off) = (m.cd0(0.5, true), m.cd0(0.5, false));
+        assert!(off.base > on.base && off.base > 0.0);
+        // Barrowman base: wall + base model + extra, the nozzle area reduces the power-on base.
+        let (ron, roff) = hybrid_axial(FlowModel::Rans, false, false, &m, 0.5, 0.0, 0.4);
+        assert!((roff - (0.4 + off.base + off.extra)).abs() < 1e-12);
+        assert!((ron - (0.4 + on.base + on.extra)).abs() < 1e-12 && ron < roff);
+        // CFD base: the base is in the CFD value, only extra (and the nozzle correction) is added.
+        let (con, coff) = hybrid_axial(FlowModel::Rans, false, true, &m, 0.5, 0.0, 0.4 + off.base);
+        assert!((coff - (0.4 + off.base + off.extra)).abs() < 1e-12, "same total when the CFD base equals the model base");
+        assert!((con - (coff - (off.base - on.base))).abs() < 1e-12);
+        // No friction, fin-edge or boattail term of the Euler build-up reaches a RANS value, for either base source.
+        let euler = hybrid_axial(FlowModel::Euler, false, false, &m, 0.5, 0.0, 0.4).1;
+        for flag in [false, true] {
+            let r = hybrid_axial(FlowModel::Rans, false, flag, &m, 0.5, 0.0, 0.4).1;
+            assert!(euler - r >= off.friction + off.fins + off.boattail - 1e-12 - if flag { off.base } else { 0.0 });
+        }
+        // The off-axis factor scales the additions only.
+        let a = 8f64.to_radians();
+        let k = axial_alpha_factor(a);
+        let r = hybrid_axial(FlowModel::Rans, false, false, &m, 0.5, a, 0.4).1;
+        assert!((r - (0.4 + (off.base + off.extra) * k)).abs() < 1e-12);
+    }
+
+    fn hist(cols: &[&str], row: &[f64]) -> History {
+        History { columns: cols.iter().map(|s| s.to_string()).collect(), rows: vec![row.to_vec(), row.to_vec()] }
+    }
+
+    #[test]
+    fn marker_columns_parsed_and_absent_ones_fall_back() {
+        let h = History::parse(
+            "\"Inner_Iter\",\"CFx\",\"CFz\",\"CMy\",\"CFx(wall)\",\"CFz(wall)\",\"CMy(wall)\",\"CFx(base)\",\"CFz(base)\",\"CMy(base)\"\n0,0.5,1.0,-2.0,0.4,1.0,-2.0,0.1,0.0,0.0\n1,0.5,1.0,-2.0,0.4,1.0,-2.0,0.1,0.0,0.0\n",
+        )
+        .unwrap();
+        let m = MarkerCoeffs::from_history(&h, 1);
+        assert_eq!((m.wall_cfx, m.base_cfx, m.wall_cmy, m.base_cfz), (Some(0.4), Some(0.1), Some(-2.0), Some(0.0)));
+        // '@' spelling of newer / older SU2 versions.
+        let m2 = MarkerCoeffs::from_history(&hist(&["CFx@wall", "CFx@base"], &[0.3, 0.2]), 2);
+        assert_eq!((m2.wall_cfx, m2.base_cfx, m2.wall_cfz), (Some(0.3), Some(0.2), None));
+        // Absent columns: totals are used and flagged as containing the base.
+        let none = MarkerCoeffs::from_history(&hist(&["CFx", "CFz"], &[0.5, 1.0]), 1);
+        assert_eq!(none, MarkerCoeffs::default());
+        let a = none.axial(0.5, false);
+        assert!((a.cfx - 0.5).abs() < 1e-15 && a.base_in_cfx && a.wall.is_none());
+        // Wall present: Barrowman base -> wall alone; CFD base -> wall + base; base column missing -> total.
+        let a = m.axial(0.5, false);
+        assert!((a.cfx - 0.4).abs() < 1e-15 && !a.base_in_cfx);
+        let a = m.axial(0.5, true);
+        assert!((a.cfx - 0.5).abs() < 1e-15 && a.base_in_cfx);
+        let wall_only = MarkerCoeffs { wall_cfx: Some(0.4), ..Default::default() };
+        assert!((wall_only.axial(0.5, true).cfx - 0.5).abs() < 1e-15 && wall_only.axial(0.5, true).base_in_cfx);
+        // The normal force and moment stay the totals.
+        let (c, _) = Su2Coeffs { cfx: 0.5, cfz: 1.0, cmy: -2.0 }.with_markers(&m, false);
+        assert_eq!((c.cfx, c.cfz, c.cmy), (0.4, 1.0, -2.0));
+        let (c6, split) = Su2Coeffs6 { cfx: 0.5, cfy: 0.0, cfz: 1.0, cmx: 0.0, cmy: -2.0, cmz: 0.0 }.with_markers(&m, false);
+        assert_eq!((c6.cfx, split.base), (0.4, Some(0.1)));
+        // Report entry: base source flag follows the columns.
+        let mdl = model(0.0);
+        assert!(!AxialReportEntry::new(&mdl, 0.5, 0.0, &m, false).base_from_cfd);
+        assert!(AxialReportEntry::new(&mdl, 0.5, 0.0, &none, false).base_from_cfd);
+        let e = AxialReportEntry::new(&mdl, 0.5, 0.0, &m, true);
+        assert!(e.base_from_cfd && e.barrowman_friction > 0.0 && e.cfd_base_ca == Some(0.1));
+        let back: AxialReportEntry = serde_json::from_str("{\"mach\":1.0}").unwrap();
+        assert_eq!(back.mach, 1.0);
     }
 
     #[test]

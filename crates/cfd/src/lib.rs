@@ -117,6 +117,10 @@ pub struct CfdReport {
     pub mach_clamped_above: Option<f64>,
     /// Same below the lowest solved Mach number.
     pub mach_clamped_below: Option<f64>,
+    /// RANS: per solved case the CFD wall / base axial coefficients (per-marker history columns) next to the
+    /// Barrowman friction and base values. Empty for Euler.
+    #[serde(default)]
+    pub axial_breakdown: Vec<forces::AxialReportEntry>,
 }
 
 /// Message of the missing-tools error.
@@ -199,22 +203,38 @@ pub struct RunPlan {
     pub notes: Vec<String>,
 }
 
-/// Estimated SU2 memory of one case with `cells` volume cells on `ranks` ranks.
+/// Estimated SU2 memory of one case with `cells` volume cells on `ranks` ranks (Euler: per cell; RANS: per node
+/// from `nodes`, or from [`estimate_nodes`] when `nodes` is 0).
 ///
 /// Measured (SU2 8.3, Euler, Roe + MUSCL, implicit FGMRES/ILU, tetrahedra, 4 ranks, peak RSS per
 /// rank from `/usr/bin/time -v`): 87 MB at 80 k cells, 165 MB at 197 k cells and 819 MB at 941 k cells
-/// (largest rank), i.e. about 40 MB per rank plus 3.3 kB per cell (summed over ranks). RANS carries the turbulence variable, its
-/// gradients and a larger linear system: [`RANS_MEMORY_FACTOR`] times the per-cell part.
-pub fn case_memory_bytes(model: FlowModel, cells: usize, ranks: usize) -> u64 {
-    let per_cell = match model {
-        FlowModel::Euler => EULER_BYTES_PER_CELL,
-        FlowModel::Rans => EULER_BYTES_PER_CELL * RANS_MEMORY_FACTOR,
+/// (largest rank), i.e. about 40 MB per rank plus 3.3 kB per cell (summed over ranks). SU2 stores the
+/// solution, gradients and linear system per node, so RANS (turbulence variable, wall-distance field, a larger linear
+/// system) is estimated per mesh node, [`RANS_BYTES_PER_NODE`]; prism boundary-layer meshes have many more cells per
+/// node than the 5.5 of a tetrahedral mesh, so a per-cell figure would overestimate them.
+pub fn case_memory_bytes_mesh(model: FlowModel, cells: usize, nodes: usize, ranks: usize) -> u64 {
+    let per_mesh = match model {
+        FlowModel::Euler => EULER_BYTES_PER_CELL * cells as f64,
+        FlowModel::Rans => RANS_BYTES_PER_NODE * if nodes > 0 { nodes } else { estimate_nodes(cells) } as f64,
     };
-    (ranks as f64 * 40e6 + per_cell * cells as f64) as u64
+    (ranks as f64 * 40e6 + per_mesh) as u64
+}
+
+/// [`case_memory_bytes_mesh`] without a node count.
+pub fn case_memory_bytes(model: FlowModel, cells: usize, ranks: usize) -> u64 {
+    case_memory_bytes_mesh(model, cells, 0, ranks)
+}
+
+/// Node count of a tetrahedral mesh with `cells` cells (about 5.5 cells per node). A prism stack has about one
+/// node per cell; pass the real count from the mesh statistics for such meshes.
+pub fn estimate_nodes(cells: usize) -> usize {
+    (cells as f64 / 5.5).round() as usize
 }
 
 pub const EULER_BYTES_PER_CELL: f64 = 3.3e3;
-pub const RANS_MEMORY_FACTOR: f64 = 1.5;
+/// RANS bytes per mesh node (summed over ranks): the Euler per-cell figure scaled by 1.5 for the RANS
+/// state and 5.5 cells per node of a tetrahedral mesh. It is refit from measured peak RSS of RANS runs.
+pub const RANS_BYTES_PER_NODE: f64 = EULER_BYTES_PER_CELL * 1.5 * 5.5;
 
 /// Resolves `ranks_per_case` / `parallel_cases` (0 = auto) against the budget.
 ///
@@ -224,6 +244,11 @@ pub const RANS_MEMORY_FACTOR: f64 = 1.5;
 ///   fits (at least one case always runs; a note says when even one exceeds the budget).
 /// * `parallel` never exceeds the number of cases.
 pub fn plan_resources(opt: &CfdOptions, budget: &ResourceBudget, cells: usize, n_cases: usize) -> RunPlan {
+    plan_resources_mesh(opt, budget, cells, 0, n_cases)
+}
+
+/// [`plan_resources`] with the node count of the mesh (0 = estimate from `cells`).
+pub fn plan_resources_mesh(opt: &CfdOptions, budget: &ResourceBudget, cells: usize, nodes: usize, n_cases: usize) -> RunPlan {
     let threads = budget.threads.max(1);
     let mut notes = Vec::new();
     let mut ranks = if opt.ranks_per_case == 0 { threads.min(4) } else { opt.ranks_per_case };
@@ -238,7 +263,7 @@ pub fn plan_resources(opt: &CfdOptions, budget: &ResourceBudget, cells: usize, n
         parallel = p;
     }
     parallel = parallel.min(n_cases.max(1));
-    let per = case_memory_bytes(opt.model, cells, ranks);
+    let per = case_memory_bytes_mesh(opt.model, cells, nodes, ranks);
     if let Some(mem) = budget.memory_bytes {
         let fit = ((mem / per.max(1)) as usize).max(1);
         if fit < parallel {
@@ -250,6 +275,20 @@ pub fn plan_resources(opt: &CfdOptions, budget: &ResourceBudget, cells: usize, n
         }
     }
     RunPlan { ranks, parallel, bytes_per_case: per, notes }
+}
+
+/// Per-case axial breakdown of the RANS report, read back from the case histories.
+fn axial_breakdown(results: &[runner::CaseOutcome], model: &aero::AeroModel, work: &Path, base_from_cfd: bool) -> Vec<forces::AxialReportEntry> {
+    results
+        .iter()
+        .filter(|r| r.result.is_some() && !r.spec.is_roll())
+        .filter_map(|r| {
+            let h = history::History::read(&r.spec.dir(work).join("history.csv")).ok()?;
+            let window = (h.rows.len() / 4).clamp(2, 100);
+            let m = forces::MarkerCoeffs::from_history(&h, window);
+            Some(forces::AxialReportEntry::new(model, r.spec.mach, r.spec.alpha_deg, &m, base_from_cfd))
+        })
+        .collect()
 }
 
 /// Working directory of the CFD cases (`<out_dir>/<workdir>`).
@@ -325,7 +364,7 @@ pub fn build_table_with_progress(
     let (mesh, resolved) = ensure_mesh_any(cfd, geom, raw, &work, budget.threads)?;
     let cfd = &resolved;
     let dims = ref_dims(geom);
-    let plan = plan_resources(cfd, budget, mesh.stats.cells, case::case_list(cfd).len());
+    let plan = plan_resources_mesh(cfd, budget, mesh.stats.cells, mesh.stats.nodes, case::case_list(cfd).len());
     for n in &plan.notes {
         eprintln!("note: aero.cfd: {n}");
     }
@@ -347,6 +386,8 @@ pub fn build_table_with_progress(
         Some((s, m)) => anyhow::anyhow!("{e}\nfirst failed case M={} alpha={} beta={} deg ({}): {m}", s.mach, s.alpha_deg, s.beta_deg, s.dir(&work).display()),
         None => e,
     };
+    // One-line switch: `cfd.base_from_cfd()` once the option exists.
+    let base_from_cfd = forces::BASE_FROM_CFD_DEFAULT;
     let base_cfd = |r: &runner::CaseOutcome| !r.spec.is_roll();
     // Roll pairs (alpha = beta = 0, +-roll_rate_hat) per Mach number.
     let roll_pairs: Vec<general::RollPair> = if cfd.roll_damping {
@@ -417,6 +458,12 @@ pub fn build_table_with_progress(
         }))
         .ok();
     }
+    if cfd.model == FlowModel::Rans {
+        report.axial_breakdown = axial_breakdown(&results, &model, &work, base_from_cfd);
+        if report.axial_breakdown.iter().any(|e| e.cfd_wall_ca.is_none()) {
+            report.warnings.push("RANS: the history has no per-marker CFx(wall) column; the axial force is the monitored total, which includes the base cap".into());
+        }
+    }
     let tab = if cfd.general_table() {
         let points: Vec<general::SolvedPoint6> = results
             .iter()
@@ -443,6 +490,7 @@ pub fn build_table_with_progress(
             mach_step: cfd.general_mach_step,
             fin_cant_ref_deg: cant_ref,
             fin_edges_in_cfd: cfd.surface == SurfaceKind::Stl,
+            base_from_cfd,
         };
         let (tab, fill) = general::build_general(&inp).map_err(first_error)?;
         runner::write_cases_csv(&out_dir.join("cfd_cases.csv"), &results, &[], AlphaMode::Single)?;
@@ -461,7 +509,7 @@ pub fn build_table_with_progress(
             .map(|r| table::SolvedPoint { mach: r.spec.mach, alpha_deg: r.spec.alpha_deg, coeffs: r.result.as_ref().map(|x| x.coeffs) })
             .collect();
         let (points, asymmetry) = table::apply_alpha_mode(&points, cfd.alpha_mode);
-        let (tab, fill) = table::build_from_points_roll(&points, &model, cfd.model, hash, extrapolation, &clp).map_err(first_error)?;
+        let (tab, fill) = table::build_from_points_roll(&points, &model, cfd.model, hash, extrapolation, &clp, base_from_cfd).map_err(first_error)?;
         runner::write_cases_csv(&out_dir.join("cfd_cases.csv"), &results, &points, cfd.alpha_mode)?;
         report.table_kind = "axisymmetric".into();
         report.filled = fill.filled;
@@ -580,5 +628,28 @@ mod tests {
         .to_string();
         assert!(e.starts_with("SU2 is not installed (install with `install.sh --cfd`"), "{e}");
         assert!(e.contains("no_such_su2_cfd"));
+    }
+
+    #[test]
+    fn memory_estimate_per_node_for_rans() {
+        // Euler: 40 MB per rank + 3.3 kB per cell, unchanged.
+        assert_eq!(case_memory_bytes(FlowModel::Euler, 100_000, 4), (4.0 * 40e6 + 3.3e3 * 100_000.0) as u64);
+        // RANS of a tetrahedral mesh: 5.5 cells per node reproduces 1.5 x the Euler per-cell figure.
+        let tet = case_memory_bytes(FlowModel::Rans, 550_000, 4) as f64;
+        assert!((tet - (4.0 * 40e6 + 1.5 * 3.3e3 * 550_000.0)).abs() < 1e5);
+        // A prism boundary-layer mesh (one node per cell, here 100 k cells and 100 k nodes) is sized by its nodes.
+        let prism = case_memory_bytes_mesh(FlowModel::Rans, 100_000, 100_000, 4);
+        assert!(prism > case_memory_bytes_mesh(FlowModel::Rans, 100_000, 0, 4));
+        assert_eq!(prism, (4.0 * 40e6 + RANS_BYTES_PER_NODE * 100_000.0) as u64);
+        // The node count does not change the Euler estimate.
+        assert_eq!(case_memory_bytes_mesh(FlowModel::Euler, 100_000, 7, 4), case_memory_bytes(FlowModel::Euler, 100_000, 4));
+        assert_eq!(estimate_nodes(550_000), 100_000);
+    }
+
+    #[test]
+    fn rans_report_axial_breakdown_serde_default() {
+        let r: forces::AxialReportEntry = serde_json::from_str("{}").unwrap();
+        assert_eq!(r, forces::AxialReportEntry::default());
+        assert!(serde_json::to_value(CfdReport::default()).unwrap()["axial_breakdown"].as_array().unwrap().is_empty());
     }
 }

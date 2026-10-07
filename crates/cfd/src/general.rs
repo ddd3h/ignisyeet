@@ -175,6 +175,8 @@ pub struct GeneralInput<'a> {
     /// The CFD wall contains the fin leading / trailing faces (STL surface): the Euler hybrid axial
     /// force then omits the Barrowman fin-edge drag.
     pub fin_edges_in_cfd: bool,
+    /// RANS: the base-cap force is in the CFD axial coefficient; otherwise the Barrowman base drag is added.
+    pub base_from_cfd: bool,
 }
 
 fn key(a: f64, b: f64) -> (i64, i64) {
@@ -419,7 +421,7 @@ pub fn build_general(inp: &GeneralInput) -> Result<(AeroTable, GeneralFill)> {
                 let f = field.eval(a, b);
                 let (t, th) = (at(a, b), at(ah, bh));
                 let total = (ah.to_radians().cos() * bh.to_radians().cos()).clamp(-1.0, 1.0).acos();
-                let (ca_on, ca_off) = hybrid_axial(inp.flow, inp.fin_edges_in_cfd, model, m, total.min(std::f64::consts::PI - total), -f[0]);
+                let (ca_on, ca_off) = hybrid_axial(inp.flow, inp.fin_edges_in_cfd, inp.base_from_cfd, model, m, total.min(std::f64::consts::PI - total), -f[0]);
                 nodes.push([
                     -ca_on + t.cx_on - th.cx_on,
                     -ca_off + t.cx_off - th.cx_off,
@@ -629,6 +631,7 @@ mod tests {
             mach_step: 0.25,
             fin_cant_ref_deg: 0.0,
             fin_edges_in_cfd: false,
+            base_from_cfd: true,
         };
         let (t, fill) = build_general(&inp).unwrap();
         assert_eq!(t.kind(), aero::table::TableKind::General);
@@ -696,6 +699,7 @@ mod tests {
             mach_step: 0.25,
             fin_cant_ref_deg: 0.0,
             fin_edges_in_cfd: false,
+            base_from_cfd: true,
         };
         let (t, _) = build_general(&inp).unwrap();
         let c = t.lookup6(1.5, 0.0, 0.0);
@@ -724,6 +728,7 @@ mod tests {
             mach_step: 0.5,
             fin_cant_ref_deg: 0.0,
             fin_edges_in_cfd: false,
+            base_from_cfd: true,
         };
         let (t, fill) = build_general(&inp).unwrap();
         assert!(fill.yaw_from_pitch && fill.region.beta_max_deg == 0.0);

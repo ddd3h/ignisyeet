@@ -331,8 +331,9 @@ pub struct CfdOptions {
     pub tail_fairing: f64,
     /// Farfield radius in body lengths.
     pub farfield: f64,
-    /// Surface element size [m]. 2 mm gives about 0.9 M half-model cells for the 1.8 m sample rocket and a
-    /// normal-force error of about 2 % at M 2 (mesh convergence study, doc/data/cfd/mesh_convergence.csv).
+    /// Surface element size [m]. 2 mm gives about 0.9 M half-model cells for the 1.8 m sample rocket with the fins at
+    /// 2 mm too (1.4 M with the Euler default `fin_size`, 1 mm on the 4 mm fins) and a normal-force error of about 2 %
+    /// at M 2 (mesh convergence study with the fins at `wall_size`, doc/data/cfd/mesh_convergence.csv).
     /// RANS default: 3 mm.
     #[serde(default = "unset_size")]
     pub wall_size: f64,

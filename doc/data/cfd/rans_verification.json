@@ -57,11 +57,11 @@
   },
   "V4_cone_M2_Cp": {
    "quantity": "cone surface Cp over x/L_cone 0.2-0.9 vs Taylor-Maccoll (0.10447), 10 deg cone, wall_size 2 mm, converged",
-   "mean_percent": 1.46,
-   "worst_bin_percent": 2.5,
+   "mean_percent": 1.48,
+   "worst_bin_percent": 2.02,
    "worst_bin": "0.2-0.3",
    "threshold_percent": 2.0,
-   "bins_0.3_to_0.9_max_percent": 1.56,
+   "bins_0.3_to_0.9_max_percent": 1.65,
    "pass": false,
    "verdict": "mean within 2 %; only the bin nearest the tip exceeds it",
    "explanation": "viscous Cp above the inviscid Taylor-Maccoll value is expected: the turbulent displacement thickness adds about 0.1 deg of effective cone angle (roughly +2 % in Cp), largest relative to the radius near the tip",
@@ -70,16 +70,16 @@
   "V3_friction_vs_flat_plate": {
    "quantity": "friction part of the wall axial force (surface integration) vs van Driest II over the wetted area, alpha 0, converged cases",
    "values_percent": {
-    "cone_10deg M2 w2mm": 2.6,
-    "sample_body_finless M0.8 w5mm": 7.3,
-    "sample_body_finless M2 w5mm": 5.8
+    "cone_10deg M2 w2mm": 2.5,
+    "sample_body_finless M0.8 w5mm": 7.4,
+    "sample_body_finless M2 w5mm": 5.7
    },
    "threshold_percent": 10.0,
    "pass": true,
    "yplus_p95": {
     "cone_10deg M2": 0.548,
     "sample_body_finless M0.8": 0.401,
-    "sample_body_finless M2": 0.666
+    "sample_body_finless M2": 0.665
    },
    "yplus_p95_threshold": 3.0,
    "note": "cone estimate with the Taylor-Maccoll edge state and the turbulent Mangler rule (plain freestream law: +11.3 %)",
@@ -154,10 +154,12 @@
   },
   "memory": {
    "bytes_per_node": [
-    10131,
-    10087
+    10498,
+    10188,
+    10095,
+    10222
    ],
-   "mean_bytes_per_node": 10109,
+   "mean_bytes_per_node": 10251,
    "model": "40 MB per rank + bytes_per_node x nodes (summed over ranks)",
    "provenance": "rans_memory.csv, rans_before_memory.csv, rans_mesh_sweep.csv (mesher)"
   }

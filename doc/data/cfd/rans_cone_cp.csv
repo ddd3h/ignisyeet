@@ -1,10 +1,10 @@
-# RANS cone verification: 10 deg half-angle cone + cylinder (doc/scripts/rans_geometry.py cone, L 0.5836 m, R 0.05 m, flat base), M 2, alpha 0, ignisyeet aero method cfd, model rans, wall_size 2 mm (1103282 nodes, half model), sea-level US1976 freestream (Re 4.65e7 per m), SU2 8.3.0, 4 ranks, commit 5ce5795, 2026-10-07. The case converged by the CFD-mode acceptance at 402 iterations (y+ P95 0.55); final surface_flow.vtk. A viscous Cp above Taylor-Maccoll is expected: the turbulent displacement thickness adds about 0.1 deg of effective cone angle (roughly +2 % in Cp), most near the tip. Taylor-Maccoll (integrated in rans_cone.py): Cp = 0.10447, shock angle 31.206 deg, cone surface Mach 1.8340. Cp from SU2 Pressure_Coefficient of the wall nodes on the cone (radius within 1 % of x tan 10 deg), binned along x / L_cone.
+# RANS cone verification: 10 deg half-angle cone + cylinder (doc/scripts/rans_geometry.py cone, L 0.5836 m, R 0.05 m, flat base), M 2, alpha 0, ignisyeet aero method cfd, model rans, wall_size 2 mm (1049501 nodes, half model, 45 prism layers, 9.5 mm capped layer), sea-level US1976 freestream (Re 4.65e7 per m), SU2 8.3.0, 4 ranks, peak RSS 10.4 GB, commit 599e9f8, 2026-10-07. Converged by the CFD-mode acceptance at 402 iterations (y+ P95 0.55); final surface_flow.vtk. A viscous Cp above Taylor-Maccoll is expected: the turbulent displacement thickness adds about 0.1 deg of effective cone angle (roughly +2 % in Cp), most near the tip. Taylor-Maccoll (integrated in rans_cone.py): Cp = 0.10447, shock angle 31.206 deg, cone surface Mach 1.8340. Cp from SU2 Pressure_Coefficient of the wall nodes on the cone (radius within 1 % of x tan 10 deg), binned along x / L_cone.
 x_over_lc_from,x_over_lc_to,nodes,cp_mean,error_vs_taylor_maccoll_percent
-0.2,0.3,336,0.10708,2.50
-0.3,0.4,452,0.10611,1.56
-0.4,0.5,590,0.10603,1.50
-0.5,0.6,717,0.10589,1.36
-0.6,0.7,830,0.10584,1.31
-0.7,0.8,937,0.10587,1.33
-0.8,0.9,1062,0.10591,1.37
-0.2,0.9,4924,0.10600,1.46
+0.2,0.3,336,0.10658,2.02
+0.3,0.4,452,0.10619,1.65
+0.4,0.5,590,0.10608,1.54
+0.5,0.6,717,0.10604,1.50
+0.6,0.7,830,0.10593,1.39
+0.7,0.8,937,0.10590,1.36
+0.8,0.9,1062,0.10590,1.37
+0.2,0.9,4924,0.10602,1.48

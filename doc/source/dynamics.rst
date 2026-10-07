@@ -297,6 +297,186 @@ CAD ソフトの多くは慣性乗積を :math:`+\int xy\,\mathrm{d}m` の符号
 とする（:math:`K_r` は :math:`S^r` で同じ形）。部品積み上げ法とパネル法から展開した表では :math:`S^q=S^r` で、\ :eq:`eq-moment-damp` に一致する。
 減衰は、重心が横にずれていても軸上の重心を仮定した式で求める（:ref:`sec-lim-motion`）。
 
+.. _sec-aero-unsteady:
+
+加速度と回転による空気力
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+静的な係数と減衰のモーメント（:eq:`eq-moment-damp`）のほかに、飛翔計算は次の 4 つの項を加える。
+
+* 見かけの質量の遅れ（:math:`\dot\alpha`）と対流の回転によるモーメント（表の ``lag_l0``、``lag_l1``）
+* 回転による法線力（:math:`C_{Nq}`。減衰の和 :math:`S_0,S_1` から）
+* Magnus 力（表の ``cnpa``）
+* 誘導ロール（表の ``cl4``）
+
+どれも状態量を増やさず、そのときの状態とその微分だけで決まる（準定常。:ref:`sec-quasi-steady`）。
+表の列は :ref:`sec-file-axisym` に、各手法での値の出どころは :ref:`sec-aero-damping` にある。
+
+見かけの質量の遅れと対流の回転
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+細長い物体の理論（slender-body theory）:cite:`munk,nielsenbook` では、機体の断面は、断面積 :math:`A(x)` に比例する空気の質量 :math:`\rho A(x)`\ （単位長さあたり）を横向きの運動に連れて動かす（見かけの質量）。
+ノーズ先端から後方へ :math:`x`、重心からの距離を :math:`l=x-x_{cg}` とし、ピッチ面で書くと、断面の横向きの対気速度は :math:`w_c=u_z+\omega_y\,l` で（:math:`\omega_y>0` で機尾は :math:`+z_b` へ動く）、断面に働く力は
+
+.. math::
+   :label: eq-lag-section
+
+   f(x)=-\rho\,\frac{D}{Dt}\bigl[A\,w_c\bigr],\qquad \frac{D}{Dt}=\frac{\partial}{\partial t}+V\frac{\partial}{\partial x},\qquad
+   \frac{D}{Dt}\bigl[A\,w_c\bigr]=A\,(\dot u_z+l\,\dot\omega_y)+V A'\,(u_z+\omega_y\,l)+V A\,\omega_y
+
+である（:math:`A'=\mathrm{d}A/\mathrm{d}x`）。右辺の各項の扱いは次のとおりである。
+
+* :math:`V A' u_z`：静的な法線力（Munk の胴体の法線力）。係数表の :math:`C_N` に入っている。
+* :math:`V A' \omega_y\,l`：回転による局所的な迎角の項。減衰の和 :math:`S_0,S_1,S_2`\ （:eq:`eq-damping`）に入っている。
+* :math:`A\,\dot u_z`：横向きの対気速度の変化に遅れて付いてくる空気の反作用（:math:`\dot\alpha` の項、遅れの項）。この節で加える。
+* :math:`V A\,\omega_y`：対流による回転の項。局所的な迎角の和は :math:`A'` の項だけを数えるので、この項は減衰の和に入っていない。この節で加える。
+* :math:`A\,l\,\dot\omega_y`：角加速度による付加慣性。省く。
+
+:math:`A\dot u_z` と :math:`VA\omega_y` の項は、どちらも断面積 :math:`A` に比例するので、機体全体では容積 :math:`\mathrm{Vol}` の中心 :math:`x_{\mathrm{vol}}` に働く力 :math:`-\rho\,\mathrm{Vol}\,(\dot u_z+V\omega_y)` になる。
+係数表には、これを基準面積で無次元化した遅れの和
+
+.. math::
+   :label: eq-lag-sums
+
+   L_0=\frac{2\,\mathrm{Vol}}{S}\ [\mathrm{m}],\qquad L_1=L_0\,x_{\mathrm{vol}}\ [\mathrm{m^2}]
+
+を Mach 数ごとに持つ（``lag_l0``、``lag_l1``。部品積み上げ法での求め方は :ref:`sec-damping`）。
+力 :math:`-\tfrac12\rho S L_0(\cdot)` が :math:`L_1/L_0` に働くとみなすと、重心まわりのモーメントは
+
+.. math::
+   :label: eq-lag-moment
+
+   \Delta\bm{M}_{b}=-\frac{\rho S}{2}\,\bigl(x_{cg}L_0-L_1\bigr)\,f_{\mathrm{lag}}(\alpha_t')\;\bm{e}_x\times\bm{a}_\perp
+
+である。:math:`\bm{e}_x=(1,0,0)`、:math:`\bm{a}_\perp=(0,a_y,a_z)` は
+
+.. math::
+   :label: eq-lag-accel
+
+   \bm{a}=R^\top\bigl(\dot{\bm{v}}-\dot{\bm{W}}\bigr)-2\,\bm{\omega}_t\times\bm{u},\qquad \bm{\omega}_t=(0,\,\omega_y,\,\omega_z),\qquad
+   \dot{\bm{W}}=\frac{\mathrm{d}\bm{W}}{\mathrm{d}h}\,\dot h
+
+の横の成分である。:math:`\bm{u}` は機体座標の対気速度（:eq:`eq-alpha`）、:math:`\bm{W}` は風である。
+:math:`R^\top(\dot{\bm{v}}-\dot{\bm{W}})-\bm{\omega}_t\times\bm{u}` が対気速度の変化（遅れの項の :math:`\dot u_z`）で、もう一つの :math:`-\bm{\omega}_t\times\bm{u}`\ （横の成分は :math:`u_x\approx V` で :math:`(0,-\omega_zV,\omega_yV)`）が対流の回転の項 :math:`V\omega_y` である。
+対気速度の変化は、機体とともにロールしない軸で微分する（:math:`\bm{\omega}_t` はロール角速度を含まない）。軸対称な機体の見かけの質量は、ロールしても変わらないからである。
+:math:`\dot{\bm{W}}` は、機体が風の高度分布の中を上下に動くことによる風の変化（風のシア）で、:math:`\mathrm{d}\bm{W}/\mathrm{d}h` を高さ :math:`\pm1` cm の中心差分で求める。
+機体が回転しなくても、風が高さとともに変われば横向きの対気速度は変わり、このモーメントが働く。
+:math:`\dot{\bm{v}}` はこの項を除いた力から求めた加速度で、モーメントだけを加え、力 :math:`-\rho\,\mathrm{Vol}\,(\dot u_z+V\omega_y)` は加えない（加えると加速度がこの力自身に依存し、代数的なループになる）。
+見かけの質量の反作用は流れの向きによらないので、後ろ向きの飛行でも向きを反転しない。
+
+:math:`f_{\mathrm{lag}}` は、迎角の大きい流れでこの項を消す係数である。
+
+.. math::
+   :label: eq-lag-fade
+
+   f_{\mathrm{lag}}(\alpha)=|\cos\alpha|\,\bigl(1-3s^2+2s^3\bigr),\qquad s=\min\!\left(1,\ \max\!\left(0,\ \frac{\alpha-20^\circ}{10^\circ}\right)\right)
+
+20° までは :math:`\cos\alpha`、20° から 30° で滑らかに 0 になり、30° を超えると 0 である。
+見かけの質量の理論は小さな迎角の理論で、迎角が大きいと横流れがはく離し、静的な係数（:eq:`eq-body-lift`）がその力を表すからである。
+
+飛行経路の向きがほぼ一定のピッチ振動では :math:`\dot u_z\approx V\omega_y` で、どちらの項も角速度と同じ位相で効くので、\ :eq:`eq-lag-moment` はピッチ減衰を :math:`K` から :math:`K-2\,(x_{cg}L_0-L_1)` に変える（:math:`K` は\ :eq:`eq-moment-damp` の括弧の中）。
+重心が容積の中心より後ろ（:math:`x_{cg}>x_{\mathrm{vol}}`）なら減衰を弱め、前なら強める。
+サンプル（:math:`M=0.3` で :math:`L_0=2.722` m、:math:`L_1=2.226` m\ :sup:`2`、:math:`x_{\mathrm{vol}}=0.818` m）では、:math:`2(x_{cg}L_0-L_1)/K` は燃焼前の重心 0.959 m で 0.25、燃焼後の重心 0.850 m で 0.048 である。
+
+回転による法線力
+^^^^^^^^^^^^^^^^
+
+減衰のモーメントのもとになる局所的な迎角（:ref:`sec-damping`）は、モーメントだけでなく力も作る。
+重心から :math:`l_i` 後ろの部品は、回転によって :math:`l_i\,(\bm{e}_x\times\bm{\omega})` の横速度で空気に対して動き、その法線力は静的な法線力と同じく、この横流れに逆らう向きに働く。
+部品について足すと
+
+.. math::
+   :label: eq-cnq-force
+
+   \Delta\bm{F}_{b}=-\frac{qS}{V}\,\bigl(S_1-x_{cg}S_0\bigr)\,\bm{e}_x\times\bm{\omega},\qquad \bm{e}_x\times\bm{\omega}=(0,\,-\omega_z,\,\omega_y)
+
+である（Etkin の :math:`Z_q` にあたる :cite:`etkin`）。フィンが重心より後ろにあれば（:math:`S_1>x_{cg}S_0`）、:math:`\omega_y>0` で機尾は :math:`+z_b` 向きに動き、力は :math:`-z_b` を向く。
+この力の重心まわりのモーメント :math:`\sum_i l_i\,\bm{e}_x\times\Delta\bm{F}_i=-(qS/V)\sum_iC_{N\alpha,i}l_i^2\,(0,\omega_y,\omega_z)` は、減衰のモーメント\ :eq:`eq-moment-damp` そのものである。
+減衰のモーメントはすでに加えているので、この力は重心に働く力として加え、モーメントを二重に数えない。
+一般表では、:math:`z_b` 方向の力にピッチの和 :math:`S_0^q,S_1^q`、:math:`y_b` 方向の力にヨーの和 :math:`S_0^r,S_1^r` を使う。
+
+この力はピッチの固有振動数の 2 乗を :math:`1-c_q` 倍にする（:math:`c_q=\rho S(S_1-x_{cg}S_0)/(2m)`）。サンプルの地上付近では :math:`c_q` は 0.001〜0.002（:math:`M=0.3` の和、燃焼前と燃焼後）で、ほかの項より小さい。
+
+Magnus 力
+^^^^^^^^^
+
+ロールしている機体が迎角を持つと、迎角の面に垂直な横力（Magnus 力）が生じる :cite:`mccoy`。
+
+.. math::
+   :label: eq-magnus
+
+   \Delta\bm{F}_{b}=q\,S\,C_{Np\alpha}^{*}\,\hat p\,\frac{\bm{u}\times\bm{e}_x}{V},\qquad \hat p=\frac{\omega_xd}{2V},\qquad
+   |\bm{u}\times\bm{e}_x|=V\sin\alpha_t
+
+で、:math:`C_{Np\alpha}^{*}` は表の ``cnpa``\ [1/rad] である。
+大きさは :math:`C_{N,\mathrm{Magnus}}=C_{Np\alpha}^{*}\,\hat p\,\sin\alpha_t` で、向き :math:`\bm{u}\times\bm{e}_x=(0,u_z,-u_y)` は静的な法線力の面から 90° 回った向きである。
+:math:`\omega_x>0` で対気速度の横の成分が :math:`+z_b` 向き（:math:`u_z>0`）なら、``cnpa`` が正のとき力は :math:`+y_b` を向く。
+McCoy の Magnus 力の係数 :math:`C_{Np\alpha}` は :math:`pd/V` で無次元化するので、:math:`\hat p=pd/(2V)` を使う表の値は :math:`C_{Np\alpha}^{*}=2C_{Np\alpha}` である。符号の約束（McCoy の :math:`\bm{V}\times\bm{x}` の向きを正）は同じである。
+Magnus 力は静的な法線力の圧力中心 :math:`x_{cp}`\ （一般表では :eq:`eq-xcp-eff` の等価な圧力中心）に働くとし、そのモーメント :math:`(x_{cg}-x_{cp},0,0)^\top\times\Delta\bm{F}_b` を加える。
+表は Magnus のモーメントの係数を別に持たないので、作用点を圧力中心とするのは仮定である。
+
+誘導ロール
+^^^^^^^^^^
+
+十字形のフィンでは、横流れがフィンの面から外れた向きから当たると、迎角の 2 乗に比例するロールのモーメントが生じる。
+軸対称表では、ロールの係数（:eq:`eq-cl-axisym`）に
+
+.. math::
+   :label: eq-induced-roll
+
+   \Delta C_l=C_{l4}\,\alpha_t'^{\,2}\,\sin\bigl(4(\phi_c-\phi_f)\bigr)\,\sgn(u_x),\qquad \phi_c=\operatorname{atan2}(u_z,\,u_y)
+
+を加える（:math:`C_{l4}` は表の ``cl4``、:math:`\alpha_t'` は rad）。
+:math:`\phi_f` は付随ファイルの ``fin_roll_deg``\ （1 枚のフィンのロール角。:math:`+y_b` から :math:`+z_b` へ測る）である。
+横流れがフィンの面にあるとき（:math:`+` 形と :math:`\times` 形）は対称なので 0 で、22.5° ずれたとき最大になる。カントの強制と同じく、後ろ向きの飛行では向きを反転する。
+一般表では、展開のときにこの項を :math:`C_l` の列に入れる（:ref:`sec-aero-general`）。
+
+.. _sec-roll-resonance:
+
+ロールとピッチの共振の確認
+^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+機体に固定した向きの釣り合いの強制（トリムの強制）があると、その強制は機体とともにロール角速度 :math:`p` で回る。
+:math:`p` がピッチの固有振動数 :math:`\omega_n` に等しくなると、強制が固有振動数でピッチ・ヨーの振動を駆動し、迎角が大きくなる（ロール共振。ロール角速度がそこにとどまると、ロックインや破壊的な首振りになる）。
+飛翔計算は、次のトリムの強制が 1 つでもあるとき、ロール角速度がピッチの固有振動数を横切った時刻を記録する。
+
+* フィンのカント（``fin_cant_deg`` が 0 でない。モンテカルロ解析のばらつきを含む）
+* 乾燥重心の横ずれ（``cg_lateral_dry`` が 0 でない）
+* 推力線の傾きまたはノズルのオフセット
+* 迎角 0、横滑り角 0 のモーメント :math:`|C_m|` または :math:`|C_n|` が :math:`10^{-4}` を超える一般表（非対称な機体の空力的なトリム）
+
+ピッチの固有振動数は
+
+.. math::
+   :label: eq-roll-resonance
+
+   \omega_n=\sqrt{\frac{\max(0,\,R)\,q\,S\,d}{\bar I}},\qquad \bar I=\frac{I_{yy}+I_{zz}}{2}
+
+で、:math:`R` は静安定余裕の判定と同じ小迎角の復元の微係数（:ref:`sec-static-margin-general`。``cn_scale`` の倍率を含む）、:math:`\bar I` はそのときの横の慣性モーメントの平均である。
+自由飛行のうち頂点より前で対気速度が 10 m/s を超える間の、受け入れたステップの始端ごとに :math:`|\omega_x|-\omega_n` を求め、符号が変わったステップで、最初の交差の時刻と Mach 数と振動数を線形補間で求める。
+交差の回数も数える。結果は ``summary.json`` の ``roll_resonance``\ （:ref:`sec-file-summary`）に書き、警告を出す（:ref:`sec-config-checks`）。
+トリムの強制がない機体（サンプルの既定の設定）では確かめない。
+
+例えば、サンプルのフィンに 1° のカントを付けると、ロール角速度は上昇の初めにピッチの固有振動数を横切り、
+``roll resonance: the roll rate crosses the pitch natural frequency (10.1 rad/s) at t = 0.61 s, Mach 0.36; fin cant, a lateral CG offset or thrust misalignment can amplify the angle of attack there``
+の警告が出る。このあとロール角速度は固有振動数（最大で約 63 rad/s）より大きいまま約 88 rad/s まで上がり（:ref:`sec-vaero-barrowman-roll-flight`）、交差は 1 回である。
+この確認は交差を知らせるだけで、迎角の増え方の大きさは飛翔計算そのもの（``trajectory.csv`` の ``alpha_deg``）で見る。
+
+.. _sec-quasi-steady:
+
+準定常の仮定
+^^^^^^^^^^^^
+
+この節の項は、どれもそのときの状態と加速度だけで決まり、流れの履歴を表す状態量（遅れの状態や動的失速の状態）を持たない。
+その根拠は、機体の振動が流れの時間尺度に比べて遅いことである。
+フィンの平均空力翼弦 :math:`c=0.155` m を使った減次振動数 :math:`k=\omega_nc/(2V)` は、サンプルの上昇中（対気速度 10 m/s 超）で 0.006〜0.010、中央値 0.007 である。
+流れがフィンの翼弦を通り過ぎる時間 :math:`c/V` は、振動の周期の :math:`k/\pi\approx0.2\,\%` にあたる。
+2 次元の翼の Theodorsen の関数 :math:`C(k)` :cite:`theodorsen` は、:math:`k=0.007` で :math:`0.988-0.035\,i` で、揚力の振幅を 1.1 % 下げ、位相を 2.0°（周期の 0.6 %）遅らせる。
+アスペクト比の小さいフィンでは、後流の影響はこれより小さい。流れの履歴による揚力の大きさの変化は 1 % 程度で、法線力の不確かさ（``cn_scale``）よりずっと小さい。
+ただし、遅れの位相の成分は、2 次元の翼ではフィンの準定常のピッチ減衰（局所的な迎角の振幅は迎角の振幅の :math:`\omega_n l_f/V=0.033`〜0.065 倍、:math:`l_f` はフィンの重心からの距離）と同じ程度の大きさになりうる。
+減衰の不確かさは ``cmq_scale``\ （:ref:`sec-mc`）で見込む。
+動的失速や大迎角でのはく離の遅れは、この見積もりの外で、扱わない（:ref:`sec-lim-motion`）。
+
 .. _sec-roll-moment:
 
 ロールのモーメント
@@ -322,7 +502,7 @@ CAD ソフトの多くは慣性乗積を :math:`+\int xy\,\mathrm{d}m` の符号
 
    C_l^{\mathrm{tot}} = C_{l\delta}\,\delta\,\sgn(u_x) + C_{lp}\,\hat p
 
-とする。第 1 項がカントの強制項（表に含まれる基準の分とばらつきの分の和）で、後ろ向きの飛行では向きが反転する。
+とする。第 1 項がカントの強制項（表に含まれる基準の分とばらつきの分の和）で、後ろ向きの飛行では向きが反転する。表の ``cl4`` が 0 でなければ、誘導ロール（:eq:`eq-induced-roll`）を加える。
 軸対称表から展開した一般表の :math:`C_l` も、同じ :math:`C_{l\delta}\,\delta_{\mathrm{ref}}\,\sgn(u_x)` である。
 
 部品積み上げ法とパネル法は、設定したカントで表を作る（:math:`\delta_{\mathrm{ref}}=\delta`）。
@@ -335,7 +515,8 @@ CAD ソフトの多くは慣性乗積を :math:`+\int xy\,\mathrm{d}m` の符号
    \omega_x = -\frac{2V\,C_{l\delta}\,\delta}{C_{lp}\,d}
 
 と求まる（軸対称表、またはそれを展開した一般表の場合）。:math:`C_{l\delta}` と :math:`C_{lp}` は部品積み上げ法で求める（:ref:`sec-barrowman-roll`）。
-ロールのモーメントはピッチ・ヨーと連成しない。ロールとピッチ・ヨーの交差する微係数は扱わない（:ref:`sec-lim-motion`）。
+ロールとピッチ・ヨーは、ロール角速度に比例する Magnus 力（:eq:`eq-magnus`）と、迎角の 2 乗に比例する誘導ロール（:eq:`eq-induced-roll`）を通じてつながり、どちらも表の値（既定では 0）で決まる。
+軸対称な機体の線形の交差微係数 :math:`C_{mp},C_{np},C_{mr},C_{nq},C_{lq},C_{lr}` は対称性から 0 なので、扱わない（:ref:`sec-lim-motion`）。
 
 .. _sec-thrust-line:
 
@@ -666,7 +847,7 @@ Dormand–Prince 法（``rk45``）
 
 サンプルで比較した結果を :numref:`tbl-integrators` に示す。「降下」はパラシュート降下を含む約 685 s の飛翔、「弾道」は弾道落下の飛翔（約 62 s）の右辺の評価回数で、着地点と頂点は前者の値、時間は前者を単一スレッドで計算した実測値である。
 ``rk4`` の :math:`\Delta t=0.5` ms を参照解とみなすと、:math:`\Delta t=2` ms の ``rk4`` と既定の許容誤差（``rtol=1e-7``, ``atol=1e-6``）の ``rk45`` は、
-頂点高度で 0.002 m 以内、着地点で 0.010 m 以内で一致する。右辺の評価回数は ``rk45`` が約 1/16 で済む。
+頂点高度で 0.002 m 以内、着地点で 0.011 m 以内で一致する。右辺の評価回数は ``rk45`` が約 1/16 で済む。
 
 .. _tbl-integrators:
 
@@ -682,33 +863,33 @@ Dormand–Prince 法（``rk45``）
      - 着地点 北 [m]
      - 時間 [s]
    * - ``rk4``, :math:`\Delta t=0.5` ms（参照）
-     - 5479968
-     - 495108
-     - 4440.71
-     - −654.73
-     - −7708.11
-     - 0.65
+     - 5479096
+     - 494976
+     - 4439.94
+     - −655.30
+     - −7702.05
+     - 0.69
    * - ``rk4``, :math:`\Delta t=2` ms（既定）
-     - 1369996
-     - 123780
-     - 4440.71
-     - −654.73
-     - −7708.12
-     - 0.17
+     - 1369780
+     - 123748
+     - 4439.95
+     - −655.30
+     - −7702.05
+     - 0.18
    * - ``rk4``, :math:`\Delta t=10` ms
-     - 274004
-     - 24760
-     - 4440.74
-     - −654.74
-     - −7708.17
+     - 273964
+     - 24756
+     - 4439.98
+     - −655.30
+     - −7702.10
      - 0.04
    * - ``rk45``, 既定の許容誤差
-     - 83068
-     - 8289
-     - 4440.71
-     - −654.73
-     - −7708.12
-     - 0.017
+     - 83116
+     - 8397
+     - 4439.95
+     - −655.30
+     - −7702.06
+     - 0.018
 
 ``rk45`` の評価回数のほとんどは、出力間隔による上限（0.05 s）で決まる。降下中は解が滑らかなので誤差の条件より先に上限に達し、
 :math:`685\ \mathrm{s}/0.05\ \mathrm{s}\times6\approx82\,000` 回がその大半を占める。
@@ -791,7 +972,7 @@ Prince と Dormand の 8 次の埋め込み公式 :cite:`princedormand` を、Ha
 一方、サンプルの設定ではこの利点は出ない（:numref:`tbl-integrator-attitude`）。
 空力係数表は区分的に線形なので、Mach 数と迎角が格子点をまたぐところで右辺の微分が不連続になり、高次の方法でも刻み幅は大きくできない。
 さらに、刻み幅は出力間隔（0.05 s）で頭打ちになる。降下中は解が滑らかなので ``rk45`` でも誤差の条件より先にこの上限に達し、
-ステップ数は ``rk45`` が約 1.38 万、``dop853`` が約 1.37 万とほとんど変わらない。1 ステップの評価回数が 12 回と 6 回なので、``dop853`` の評価回数は約 2 倍になる。
+ステップ数は ``rk45`` が約 1.39 万、``dop853`` が約 1.38 万とほとんど変わらない。1 ステップの評価回数が 12 回と 6 回なので、``dop853`` の評価回数は約 2 倍になる。
 このサンプルでは、``rk45`` のほうが評価回数も時間も少ない。
 
 Lie 群による姿勢の積分（``attitude = "lie_group"``）
@@ -971,31 +1152,31 @@ RKMK 法の 1 ステップ
      - 評価回数
      - 時間 [ms]
    * - ``rk4`` / ``normalize``
-     - 4440.711
-     - 1 369 996
-     - 165
+     - 4439.946
+     - 1 369 780
+     - 175
    * - ``rk45`` / ``normalize``
-     - 4440.710
-     - 83 068
-     - 17
+     - 4439.946
+     - 83 116
+     - 18
    * - ``rk45`` / ``lie_group``
-     - 4440.710
-     - 83 068
-     - 22
+     - 4439.946
+     - 83 092
+     - 23
    * - ``dop853`` / ``normalize``
-     - 4440.707
-     - 164 866
+     - 4439.943
+     - 165 022
      - 44
    * - ``dop853`` / ``lie_group``
-     - 4440.708
-     - 165 070
-     - 41
+     - 4439.943
+     - 164 950
+     - 42
    * - ``rk4`` :math:`\Delta t=0.5` ms（参照）
-     - 4440.710
+     - 4439.945
      - ―
      - ―
 
-どの組合せも、頂点高度は参照解と 0.003 m 以内で一致する。``lie_group`` は、``normalize`` に比べて ``rk45`` で時間が 5 ms（約 30 %）増える。
+どの組合せも、頂点高度は参照解と 0.002 m 以内で一致する。``lie_group`` は、``normalize`` に比べて ``rk45`` で時間が 5 ms（約 30 %）増える。
 サンプルでは、姿勢の更新法による頂点高度の差は 0.001 m 以下で、計算時間は、``rk45`` では ``lie_group`` のほうが長く、``dop853`` ではほぼ同じである。
 ``lie_group`` は、正規化に頼らず四元数のノルムを 1 に保ちたいときに選ぶ。
 
@@ -1033,7 +1214,7 @@ RKMK 法の 1 ステップ
    * - 最小静安定余裕（小迎角の余裕）
      - 1.99 cal（ランチャ離脱時、0.25 s、Mach 0.13）
    * - 頂点
-     - 4441 m（26.1 s）
+     - 4440 m（26.1 s）
    * - 着地
      - 685 s、射点から 7.7 km
 

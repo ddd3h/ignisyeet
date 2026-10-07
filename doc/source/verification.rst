@@ -39,7 +39,7 @@
      - 指数写像と対数写像の往復、:math:`\mathrm{dexp}` と逆写像の数値微分との一致、自由剛体での収束次数・ノルム・保存量、通常の方法との比較、埋め込み誤差の合成
    * - ``sim::dispersion``
      - 乱数の再現性、標準偏差 0 での公称飛翔との一致、風向のばらつき、共分散・誤差楕円、失敗サンプル、ばらつきの反映、
-       ロールと非対称の標準偏差が最初の 11 項目の乱数を動かさないことと、6 項目の反映。
+       ロールと非対称の標準偏差が最初の 11 項目の乱数を動かさないことと、6 項目の反映、空力の 3 項目（``lag_scale``、``magnus_scale``、``cmq_scale``）の反映。
        パーセンタイルの線形補間（``percentiles_interpolate``）、着地しないサンプルが統計を不完全にし最大着地距離を下限にすること（``non_landing_samples_make_statistics_incomplete``）、
        短い ``max_time`` で着地なしの要約になること（``short_max_time_gives_unlanded_summaries``）、着地したサンプルが 1000 未満では P99.9 が ``null`` になること、6 項目の標準偏差の検査（``new_monte_carlo_sigmas_are_validated``）、
        レールの傾きの回転（``rail_tilt_rotates_the_axis``）、鉛直のレールでの等方性（``rail_tilt_spread_is_isotropic_for_a_vertical_rail``）、
@@ -48,7 +48,7 @@
        0・負・非数・無限大の ``truncate_sigma`` をモンテカルロ解析の入口で拒み、与えた値を ``summarize`` が記録すること（``monte_carlo_validates_and_reports_truncate_sigma``）
    * - ``ignisyeet``\ （``cli``）
      - 設定ファイルの読み込み（ロール・慣性テンソル・推力の傾き・``table_kind`` の項目を含む）、未知のセクションの拒否、モード間の整合性、外部係数表の読み込み、
-       ロール項のない外部表への補完、
+       ロール項のない外部表への補完、遅れと Magnus の列のない外部表の警告とパネル法・CFD の表への遅れの和の補完（:ref:`sec-verify-unsteady`）、ロール共振の警告と結果パネルの行、
        一般表でのサンプルの頂点高度、カントによるロールとジオメトリへの反映、
        モンテカルロ CSV の列数。
        範囲外と有限でない数値の拒否（``rejects_out_of_range_and_non_finite_numbers``、``rejects_bad_motor_and_monte_carlo_values``）、既定の ``max_time`` が 3600 s であること（``default_max_time_is_one_hour``）、
@@ -89,7 +89,8 @@
      - 真空中の鉛直飛翔と解析解の比較、横風に対する風見効果と流され、ECEF と平面地球の一致、Coriolis 力による西向きのずれ、``rk45`` と ``rk4`` の一致、積分法と姿勢の更新法の全組合せの一致、``dop853`` の評価回数、厳しい許容誤差での着地、
        ロール（定常ロール角速度、カントの基準）、慣性テンソル（符号、乾燥重心の横ずれ、トルクなしの回転）、推力の傾きとノズルのオフセット、一般表の飛翔、ランチャ上のロール角、二段開傘と頂点の補間と発散の検出（:ref:`sec-verify-dual`）、
        ステップ内の事象（ランチャ離脱からの再開、同じステップの着地と開傘、``max_time``、推力曲線の折れ点。:ref:`sec-verify-events`）、
-       小迎角の静安定余裕と最小の位置、横向きの落下の時間、燃焼中の開傘の延期、着地の状態を含む最大値（:ref:`sec-verify-margin`）
+       小迎角の静安定余裕と最小の位置、横向きの落下の時間、燃焼中の開傘の延期、着地の状態を含む最大値（:ref:`sec-verify-margin`）、
+       見かけの質量の遅れ、回転による法線力、Magnus 力、誘導ロール、ロール共振（:ref:`sec-verify-unsteady`）
 
 形状抽出
 --------
@@ -293,20 +294,20 @@ ECEF 座標での積分
      - 評価回数 ``rk4``
      - 評価回数 ``rk45``
    * - 真空・鉛直
-     - :math:`1.6\times10^{-11}`
+     - :math:`1.1\times10^{-11}`
      - :math:`<10^{-12}`
      - 44560
      - 813
    * - サンプル・弾道
-     - :math:`2.7\times10^{-5}`
-     - 0.0010
-     - 128280
-     - 2487
+     - :math:`3.4\times10^{-5}`
+     - 0.0011
+     - 128248
+     - 2529
    * - サンプル・西風 5 m/s・パラシュート
-     - :math:`4.6\times10^{-5}`
-     - 0.0005
-     - 791928
-     - 12652
+     - :math:`2.0\times10^{-4}`
+     - 0.0012
+     - 791392
+     - 12616
 
 .. _sec-verify-events:
 
@@ -380,7 +381,7 @@ ECEF 座標での積分
   観測した次数は ``rk4`` の表で 4.10、Dormand–Prince 5 次の表で 4.92 である。
   :math:`h=0.05` では、姿勢の誤差は RKMK 法が :math:`1.57\times10^{-7}` rad、RK4 と正規化が :math:`2.59\times10^{-7}` rad で、前者のほうが小さい（:numref:`fig-rigid-body-attitude`）。
 * **全組合せの一致**：3 つの積分法と 2 つの姿勢の更新法の 6 通りすべてで、サンプル機体の弾道とパラシュート降下を、``rk4``\ （:math:`\Delta t=0.5` ms）を参照として比べる。
-  頂点高度は 0.5 m 以内、着地点は 2 m 以内を要求し、観測した差はそれぞれ 0.001 m 以下、0.004 m 以下である。
+  頂点高度は 0.5 m 以内、着地点は 2 m 以内を要求し、観測した差はそれぞれ 0.001 m 以下、0.005 m 以下である。
   ECEF モードでも同じ検証をし、さらに ``dop853`` と ``lie_group`` の組合せで軌道が出力されることを確かめている。
   真空中の鉛直飛翔の頂点も、6 通りすべてで解析解と相対誤差 :math:`2\times10^{-3}` 以内で一致する。
 * **ノルムの保存**：``lie_group`` では、パラシュート降下を含む飛翔全体（平面地球と ECEF、3 つの積分法）で :math:`\bigl||\bm{q}|-1\bigr|\le8.9\times10^{-15}` である（テストは :math:`10^{-12}` 未満を要求）。
@@ -422,16 +423,96 @@ ECEF 座標での積分
   （:math:`10^{-9}` 以内）。ノズルは重心より後ろにあるので :math:`+y_b` まわりの角加速度が :math:`(x_{\mathrm{aft}}-x_{cg})T\sin\varepsilon/I_{yy}` になり、傾きが 0 なら 0 である
   （``misaligned_thrust_points_along_azimuth_and_pitches``）。
 * **ノズルのオフセット**：:math:`y_b` 方向に 0.01 m のオフセットを与えると、:math:`z_b` まわりの角加速度が :math:`-0.01\,T/I_{zz}` になる（``nozzle_offset_gives_moment_about_the_cg``）。
-* **一般表の飛翔**：サンプル機体の軸対称表と、それを展開した一般表で飛翔を比べる（無風と 5 m/s の風）。頂点高度の差は 0.03 m 以内（要求は 0.5 m）である。
+* **一般表の飛翔**：サンプル機体の軸対称表と、それを展開した一般表で飛翔を比べる（無風と 5 m/s の風）。頂点高度の差は無風で 0.003 m、5 m/s の風で 0.08 m（要求は 0.5 m）である。
   一般表の最小静安定余裕は、軸対称表の飛翔の各時刻（頂点まで、対気速度 10 m/s 超）で一般表の余裕の定義（:ref:`sec-static-margin-general`）から求めた最小値と 0.02 cal 以内で一致し、迎角と横滑り角はすべて有限である（``general_table_flight_matches_axisymmetric_table``）。
   一般表の余裕は 0 から 2° の割線の傾きから求めるので、0 から 1° の割線から求める軸対称表の余裕より約 0.1 cal 小さい。
-  設定ファイルのサンプルを一般表で飛ばしても、頂点高度は 4440.7 m に 0.5 m 以内で一致する（``general_table_sample_matches_axisymmetric_apogee``）。
+  設定ファイルのサンプルを一般表で飛ばしても、頂点高度は 4439.9 m に 0.5 m 以内で一致する（``general_table_sample_matches_axisymmetric_apogee``）。
 * **ランチャ上のロール角**：仰角 80° で ``roll_deg`` を 90° にすると、:math:`+x_b` は変わらず、:math:`+y_b` が元の :math:`+z_b` に、:math:`+z_b` が元の :math:`-y_b` になる
   （``launch_roll_rotates_the_body_about_the_rail``）。
 * **サンプルでのカント**：``fin_cant_deg = 1.0`` を設定すると、係数表の ``fin_cant_ref_deg`` とシミュレーションのカントが 1° になり、最大ロール角速度が 1 rad/s を超える
   （``fin_cant_rolls_the_sample_and_reaches_the_geometry``。計算では約 88 rad/s）。
 * **外部の表のロール項**：ロール項がない外部の表（``method = "table"``）を読むと、:math:`C_{l\delta}>0`、:math:`C_{lp}<0` の部品積み上げ法の値が入る
   （``external_table_without_roll_terms_gets_barrowman_roll_terms``）。
+
+
+.. _sec-verify-unsteady:
+
+加速度と回転による空気力
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+見かけの質量の遅れと対流の回転のモーメント、回転による法線力、Magnus 力、誘導ロール、ロール共振の確認（:ref:`sec-aero-unsteady`）を、
+線形理論の解析解と、項を 1 つずつ入れ切りした飛翔計算の差で確かめる（``sim`` の ``flight_dyn_tests``）。どれもモデルどうしの検証で、実測との比較ではない。
+
+* **自由振動と線形理論**\ （``free_oscillation_matches_the_linear_theory``）：重力と推力のない一定の大気（:math:`C_{N\alpha}=10` /rad、圧力中心 1.0 m、重心 0.5 m、:math:`I=1` kg m\ :sup:`2`、遅れの和 :math:`L_0=10` m を 0.8 m に置いた、遅れの項を見分けやすい機体）を迎角 0.5° から放し、
+  ``rk4``\ （:math:`h=0.2` ms）で積分した横流れから、Prony 法で 2 つの根を求める。
+  Etkin の短周期の式 :cite:`etkin` に、回転による法線力（:math:`1-c_q`）と、見かけの質量の遅れと対流の回転の項を加えた特性方程式の固有振動数と対数減衰率に、次のとおり一致する（要求はそれぞれ 1 % と 3 %）。
+
+  .. list-table:: 自由振動の固有振動数 :math:`\omega_n` [rad/s] と対数減衰率（計算 / 線形理論）
+     :header-rows: 1
+     :widths: 28 36 36
+
+     * - 入れた項
+       - :math:`\omega_n`
+       - 対数減衰率
+     * - なし（準定常の減衰だけ）
+       - 18.03310 / 18.03330
+       - 2.66865 / 2.66876
+     * - 遅れ
+       - 18.62242 / 18.62257
+       - 3.39354 / 3.39367
+     * - 回転による法線力
+       - 17.52694 / 17.52712
+       - 2.76035 / 2.76047
+     * - 遅れと回転による法線力
+       - 18.13272 / 18.13284
+       - 3.48529 / 3.48543
+
+  差は振動数で 0.001 %、減衰率で 0.005 % 以下である。重心が容積の中心より前にあるこの機体では、遅れの項が減衰を 27 % 増やし、回転による法線力が振動数を 2.8 % 下げる。どちらの変化も許容より大きいので、項の入れ忘れは検出される。
+* **回転する機体と Murphy の理論**\ （``spinning_body_follows_murphys_epicyclic_theory``）：同じ機体を 5 kg、:math:`I_{xx}=0.1` kg m\ :sup:`2`、ロール角速度 300 rad/s にし、``cnpa`` を :math:`+3` と :math:`-3` にして飛ばす。
+  横流れの 2 つの円運動（速いモードと遅いモード）の振動数と減衰率を、Murphy のエピサイクリックな理論 :cite:`mccoy` の近似式と、特性方程式の厳密な根と比べる。
+
+  .. list-table:: 回転する機体の 2 つのモード（計算 / 厳密な根。括弧内は Murphy の近似式）
+     :header-rows: 1
+     :widths: 22 39 39
+
+     * - ``cnpa``、モード
+       - 振動数 [rad/s]
+       - 減衰率 [1/s]
+     * - :math:`+3`、速い
+       - 37.8573 / 37.8574（37.9169）
+       - −2.4600 / −2.4601（−2.4584）
+     * - :math:`+3`、遅い
+       - −7.9112 / −7.9114（−7.9709）
+       - −1.1077 / −1.1077（−1.1095）
+     * - :math:`-3`、速い
+       - 37.8661 / 37.8662（37.9356）
+       - −1.8733 / −1.8734（−1.8731）
+     * - :math:`-3`、遅い
+       - −7.8120 / −7.8122（−7.8816）
+       - −1.6944 / −1.6945（−1.6947）
+
+  厳密な根とは振動数で :math:`10^{-3}`、減衰率で 1 % 以内、Murphy の近似式とは振動数で 1 %、減衰率で 5 % 以内を要求する。
+  重心が圧力中心より前にあるので、``cnpa`` を負にすると Magnus のモーメントは速いモードの減衰を弱め、遅いモードの減衰を強める。計算もこの向きに変わることを確かめ、Magnus 力の符号の誤りを検出する。
+* **Magnus 力の向き**\ （``magnus_force_points_along_u_b_cross_e_x``）：ロール角速度 200 rad/s、対気速度の横の成分が :math:`+z_b` 向き（迎角 2°）、``cnpa = 1`` で、Magnus 力だけの加速度の差が :math:`+y_b` 向きで大きさ :math:`qS\,C_{Np\alpha}^{*}\hat p\sin\alpha` になり（:math:`10^{-9}` 以内）、
+  ほかの成分を持たない。圧力中心（1.0 m、重心 0.5 m）に働くので、:math:`z_b` まわりのモーメント :math:`(x_{cg}-x_{cp})F_y<0` を作る。
+* **回転による法線力の符号**\ （``rotation_induced_force_has_the_sign_of_the_damping_moment``）：軸方向の流れの中で :math:`\omega=(0,2,-1)` rad/s で回る機体の力の差が\ :eq:`eq-cnq-force` に :math:`10^{-12}` で一致し、:math:`-z_b` と :math:`-y_b` を向く。
+  モーメントは変わらない（減衰のモーメントがすでにこの力のモーメントである）。展開した一般表でも同じ力になる。
+* **風のシアの中の遅れのモーメント**\ （``lag_moment_follows_the_crossflow_acceleration_with_wind_shear``）：べき法則の風の中を 100 m/s で鉛直に上がる、回転していない機体（高さ 50 m）で、
+  遅れのモーメントが\ :eq:`eq-lag-moment` と :math:`10^{-9}` で一致する。加速度は遅れの項の入り切りで変わらない（力を加えない）。
+  :math:`\dot{\bm W}` を除いた式とは 20 % 以上違い、風のシアの項が効いていることを確かめる。
+* **迎角による消え方**\ （``lag_fade_is_smooth_and_vanishes_beyond_30_deg``）：:eq:`eq-lag-fade` が 0° で 1、15° で :math:`\cos15^\circ`、30° 以上で 0 で、0.1° 刻みで単調に減り、1 刻みの変化が 0.02 未満である。
+* **準定常のモデルとの一致**\ （``quasi_steady_switch_reproduces_the_quasi_steady_trajectory_bit_for_bit``）：遅れ、Magnus 力、回転による法線力を切った飛翔（カント 1°、重心の横ずれ 1 mm、横風 5 m/s の弾道落下）が、
+  これらの項を持たないモデルの頂点、着地点、最大 Mach 数と **ビット単位で** 一致する（軸対称表と展開した一般表）。項を入れると頂点は変わり、差は 2 m 未満である。
+* **誘導ロール**\ （``induced_roll_follows_the_crossflow_roll_angle_from_the_fin_plane``）：横流れがフィンの面にあるとき 0、22.5° ずれたとき :math:`C_{l4}\alpha^2`、フィンを 45° 回すと符号が反転する。展開した一般表の :math:`C_l` にこの項が入り、後ろ向きの飛行では反転する。
+* **ロール共振**\ （``roll_resonance_is_reported_for_a_canted_rocket_with_a_lateral_cg_offset``、``a_general_table_with_a_zero_angle_moment_is_a_trim_forcing``）：トリムの強制のない機体では記録しない。
+  カント 2° と重心の横ずれ 2 mm を与えると、ランチャ離脱と頂点の間で交差を記録し（:math:`t=0.65` s、Mach 0.15、5.16 rad/s）、その時刻に最も近い記録点のロール角速度が振動数と 5 % 以内、Mach 数が 0.005 以内で一致する。``summary.json`` の往復でも値が変わらない。
+  迎角 0 のピッチモーメントが 0.01 の一般表（カントなし）は、トリムの強制として交差を記録し、対称な一般表は記録しない。
+* **遅れの和**\ （``lag_sums_of_an_ogive_cylinder_and_a_cone``）：接線オジーブと円柱の機体の容積が解析値と 1 % 以内（72 角形の断面による差を含む）、容積の中心が数値積分と全長の 0.5 % 以内で一致し、:math:`L_0=2\mathrm{Vol}/S` である。
+  円錐では容積 :math:`\pi R^2L/3` と中心 :math:`3L/4` に :math:`10^{-12}` で一致する。フィンの吹き下ろしの遅れの和は 0 である。
+* **古い列の組**\ （``older_column_sets_load_with_zero_lag_and_magnus_columns``）：部品積み上げ法の表は形状の遅れの和を持ち、``cl4`` と ``cnpa`` は 0 である。現在の形式の保存と読み込みで ``cl4``、``cnpa``、``lag_l1`` が変わらない。
+  10 個と 8 個の値の軸対称表、15 個の値の一般表は、足りない列が 0 で読める。
+* **外部の表の警告**\ （``external_table_without_lag_columns_warns_and_flies_quasi_steady``、``panel_and_cfd_tables_get_the_lag_sums_of_the_geometry``）：遅れと Magnus の列を持つ外部の表は警告なしでその値を使い、
+  持たない表は ``table has no lag/Magnus columns: quasi-steady terms only`` の警告を 1 つ出して遅れの和を 0 のまま使う。パネル法と CFD の表には、形状から求めた遅れの和が入る。
 
 モンテカルロ解析
 ~~~~~~~~~~~~~~~~
@@ -462,6 +543,7 @@ ECEF 座標での積分
   有効にした項目は 0 でない値を引く（``old_seeds_reproduce_the_old_draws_and_new_sigmas_do_not_move_them``。先頭の乱数は ``seed`` 11 の最初の正規乱数と一致する）。
   公称の傾き 1° に :math:`z_b` 方向 1° を足すと傾きは :math:`\sqrt2` °、方位は 45° になり、公称のオフセット :math:`(0.001,0)` m に :math:`z_b` 方向 0.002 m を足すと :math:`(0.001,0.002)` m、
   カント 0.5° に 0.25° を足すと 0.75°、乾燥重心の横ずれは 0.003 m、:math:`C_l` と :math:`C_{lp}` の倍率は 1.5 と 0.5 になる。
+  空力の 3 項目に :math:`0.2,-0.3,0.1` を与えると、遅れ、Magnus 力、減衰の和の倍率が 1.2、0.7、1.1 になり、回転による法線力だけの倍率は 1 のままである。
   ばらつきがないときは、推力線・カント・倍率が公称と完全に等しい（``new_perturbations_act_on_the_simulation``）。
 
 設定ファイル

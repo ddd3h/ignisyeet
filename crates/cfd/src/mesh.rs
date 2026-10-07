@@ -20,22 +20,26 @@
 //! * Volume (Euler): tetrahedra (HXT) with a size field `min(farfield L / 10, wall_size + 0.2 d)` of the
 //!   distance `d` to the wall, i.e. growth about 1.2 per element row. The SU2 mesh is written by gmsh with the
 //!   physical groups `wall`, `base`, `farfield`, `symmetry`.
-//! * Volume (RANS, [`BlParams`]): prismatic boundary layer on wall and base. The half solid `y >= 0` is meshed on
-//!   its surface (same size field), the layers are extruded along node normals with
-//!   `gmsh.model.geo.extrudeBoundaryLayer` and the rest of a box farfield (half width `farfield L`) is filled with
-//!   tetrahedra. The normals point to the most visible direction of the incident wall triangles, lie in the plane
-//!   on `y = 0` and are smoothed where that keeps them visible; gmsh reads them from a thin shell of tetrahedra
-//!   (a triangle list is ambiguous between the two sides of a rolled fin). The fin edges are blunted (the section
-//!   thickness of `xi` in `[edge_blunt, 1 - edge_blunt]` stretched over the chord, about 8 % of the thickness at
-//!   the edges): knife edges fold the layers. First height from [`first_height`] for `yplus` at 5 % of the body
-//!   length and the largest solved Mach number, total thickness `0.4 wall_size`, growth ratio at most 1.3
-//!   ([`bl_layers`]). The mesh (tetrahedra, prisms; marker triangles and the quadrilateral layer faces on
-//!   `y = 0`) is written by `su2_writer.py`, which orients the cells by their signed volume and rejects inverted
-//!   prisms, cells of non-positive volume and boundary faces without a marker; an invalid layer is meshed again
-//!   once with 10 smoothing passes and `0.25 wall_size`, then it is a mesh error. The full domain is the half
-//!   mirrored about `y = 0`; `z_mirror_mesh` has no effect. A layout that is not symmetric about `y = 0` meshes
-//!   both halves in the full box (with the rolled fins of the sample rocket this fails the validity check, a mesh
-//!   error). The SICN quality covers the tetrahedra only.
+//! * Volume (RANS, [`BlParams`]): prismatic boundary layer on wall and base, built by the script from the surface mesh
+//!   of the half solid `y >= 0` (same size field as Euler). Columns along node normals: the most visible direction of
+//!   the incident wall triangles, in the plane on `y = 0`, smoothed where that keeps them visible and fanned out of
+//!   concave corners (the fin-body junction) like a fillet. Layer law ([`bl_layers`]): first height from
+//!   [`first_height`] for `yplus` at 5 % of the body length and the largest solved Mach number, growth ratio
+//!   [`BL_GROWTH`] until the last layer is [`BL_TOP`] `wall_size` (about the height of the tetrahedra outside, so the
+//!   size changes smoothly at the layer top); 22 to 54 mm in all for wall_size 2.5 to 6 mm on the sample rocket, of the
+//!   order of its boundary layer thickness or more. Near the junction the columns are thinner (at most [`BL_JUNCTION`]
+//!   of the thickness plus the distance to the junction), so are columns that diverge from their neighbours round fin
+//!   edges and tips (the layer top widens by at most [`BL_FAN`] `wall_size`), and columns whose prisms would invert are
+//!   thinned locally (the layer count stays; a thinner column grows more slowly). The fin edges are blunted (the section
+//!   thickness of `xi` in `[edge_blunt, 1 - edge_blunt]` stretched over the chord, about 8 % of the thickness at the
+//!   edges). Outside, gmsh meshes the `y = 0` plane around the layer section and a box farfield (half width `farfield
+//!   L`), and fills the volume with tetrahedra of size `wall_size` at the layer top growing by 1.2 per element row. The
+//!   mesh (tetrahedra, prisms; marker triangles and the quadrilateral layer faces on `y = 0`) is written by
+//!   `su2_writer.py`, which orients the cells by their signed volume and rejects inverted prisms, cells of non-positive
+//!   volume and boundary faces without a marker; an invalid layer is meshed again once with more smoothing and a thinner
+//!   junction, then it is a mesh error. The full domain is the half mirrored about `y = 0`; `z_mirror_mesh` has no
+//!   effect, and a fin layout that is not symmetric about `y = 0` is rejected. The SICN quality covers the tetrahedra
+//!   only.
 //!
 //! The mesh is cached below `<workdir>/mesh/` keyed by a hash of the geometry and the settings.
 
@@ -52,14 +56,17 @@ pub const SCRIPT: &str = include_str!("mesh_gmsh.py");
 /// SU2 writer of the boundary-layer mesh (imported by [`SCRIPT`]).
 pub const WRITER: &str = include_str!("su2_writer.py");
 
-/// Largest growth ratio of the prism layers.
-pub const BL_MAX_RATIO: f64 = 1.3;
-/// Total prism layer thickness in wall sizes (and of the retry after an invalid layer).
-pub const BL_THICKNESS: f64 = 0.4;
-pub const BL_RETRY_THICKNESS: f64 = 0.25;
-/// Normal smoothing passes (and of the retry).
-pub const BL_SMOOTHING: usize = 3;
-pub const BL_RETRY_SMOOTHING: usize = 10;
+/// Growth ratio of the prism layer heights.
+pub const BL_GROWTH: f64 = 1.2;
+/// Height of the last prism layer in wall sizes (about the height of the tetrahedra at the layer top).
+pub const BL_TOP: f64 = 1.3;
+/// Column thickness at the fin-body junction in layer thicknesses (it grows with the distance to the junction).
+pub const BL_JUNCTION: f64 = 0.5;
+/// Largest widening of the layer top where neighbouring columns diverge (round fin edges and tips), in wall sizes.
+pub const BL_FAN: f64 = 2.0;
+/// Attempts of the prism layer, the second after the first failed the validity check: normal smoothing passes and
+/// junction thickness ([`BL_JUNCTION`]).
+pub const BL_ATTEMPTS: [(usize, f64); 2] = [(3, BL_JUNCTION), (10, 0.25)];
 /// Fin edge bluntness: the biconvex section is cut at this fraction of the chord from each edge.
 pub const BL_EDGE_BLUNT: f64 = 0.02;
 /// The first layer height gives `yplus` at this fraction of the body length (behind the nose tip).
@@ -98,47 +105,47 @@ pub struct BlParams {
     pub edge_blunt: f64,
     /// Normal smoothing passes.
     pub smoothing: usize,
-    /// Parameters of the second attempt after an invalid layer (`None` = mesh error).
+    /// Smoothing passes of the normals near the junction (they fan out of the corner).
+    pub corner_smoothing: usize,
+    /// Column thickness at the junction in layer thicknesses (see [`BL_JUNCTION`]).
+    pub junction: f64,
+    /// Largest widening of the layer top over diverging columns, in wall sizes ([`BL_FAN`]).
+    pub fan: f64,
+    /// Parameters of the next attempt after an invalid layer (`None` = mesh error).
     pub retry: Option<Box<BlParams>>,
 }
 
-/// Number of layers and growth ratio of a prism layer of first height `h1` and total thickness `t`: the fewest
-/// layers whose ratio stays at most `rmax`, and the ratio that gives exactly `t` with them. A first layer of at
-/// least `t` is a single layer (ratio 1).
-pub fn bl_layers(h1: f64, t: f64, rmax: f64) -> (usize, f64) {
-    let total = |r: f64, n: usize| if (r - 1.0).abs() < 1e-12 { h1 * n as f64 } else { h1 * (r.powi(n as i32) - 1.0) / (r - 1.0) };
-    if h1 >= t || rmax <= 1.0 {
-        return (if h1 >= t { 1 } else { (t / h1).ceil() as usize }, 1.0);
-    }
-    let mut n = 2;
-    while total(rmax, n) < t {
-        n += 1;
-    }
-    let (mut lo, mut hi) = (1.0, rmax);
-    if total(lo, n) >= t {
-        return (n, 1.0);
-    }
-    for _ in 0..200 {
-        let mid = 0.5 * (lo + hi);
-        if total(mid, n) < t {
-            lo = mid;
-        } else {
-            hi = mid;
-        }
-    }
-    (n, 0.5 * (lo + hi))
+/// Layer count and total thickness of a prism layer of first height `h1` growing by `ratio` until the last layer is at
+/// least `top` high (one layer if `h1` already is).
+pub fn bl_layers(h1: f64, top: f64, ratio: f64) -> (usize, f64) {
+    let n = if h1 >= top || ratio <= 1.0 { 1 } else { ((top / h1).ln() / ratio.ln() - 1e-9).ceil() as usize + 1 };
+    let t = if ratio == 1.0 { h1 * n as f64 } else { h1 * (ratio.powi(n as i32) - 1.0) / (ratio - 1.0) };
+    (n, t)
 }
 
 /// Prism layer of a RANS mesh: first height for `opt.yplus` at [`BL_YPLUS_STATION`] of `length` and the largest
-/// solved Mach number of `atm`, thickness [`BL_THICKNESS`] `wall_size`, and the retry parameters.
+/// solved Mach number of `atm`, growth [`BL_GROWTH`] to a last layer of [`BL_TOP`] `wall_size` ([`bl_layers`]), and
+/// the retry of [`BL_ATTEMPTS`].
 pub fn bl_params(opt: &CfdOptions, length: f64, atm: &Atmosphere) -> BlParams {
     let m = opt.machs.iter().copied().fold(0.0, f64::max);
     let h1 = first_height(opt.yplus, BL_YPLUS_STATION * length, atm, m);
-    let make = |t: f64, smoothing: usize| {
-        let (layers, ratio) = bl_layers(h1, t, BL_MAX_RATIO);
-        BlParams { first_height: h1, layers, ratio, thickness: t.max(h1), edge_blunt: BL_EDGE_BLUNT, smoothing, retry: None }
-    };
-    BlParams { retry: Some(Box::new(make(BL_RETRY_THICKNESS * opt.wall_size, BL_RETRY_SMOOTHING))), ..make(BL_THICKNESS * opt.wall_size, BL_SMOOTHING) }
+    let (layers, thickness) = bl_layers(h1, BL_TOP * opt.wall_size, BL_GROWTH);
+    let mut next: Option<Box<BlParams>> = None;
+    for &(smoothing, junction) in BL_ATTEMPTS.iter().rev() {
+        next = Some(Box::new(BlParams {
+            first_height: h1,
+            layers,
+            ratio: BL_GROWTH,
+            thickness,
+            edge_blunt: BL_EDGE_BLUNT,
+            smoothing,
+            corner_smoothing: (2.0 * thickness / opt.wall_size).round() as usize,
+            junction,
+            fan: BL_FAN,
+            retry: next,
+        }));
+    }
+    *next.expect("BL_ATTEMPTS is not empty")
 }
 
 /// Fin set in the form the script needs (all lengths in metres, body frame).
@@ -354,6 +361,15 @@ pub struct MeshStats {
     /// Inverted prisms of the written mesh (always 0: an invalid layer is a mesh error).
     #[serde(default)]
     pub bl_invalid: usize,
+    /// Attempt of [`BL_ATTEMPTS`] that gave the mesh (1 = first; 0 without a layer).
+    #[serde(default)]
+    pub bl_attempt: usize,
+    /// Size change at the layer top: height of the tetrahedron on a top face over the last layer height there (or
+    /// its inverse), 99th percentile and largest.
+    #[serde(default)]
+    pub bl_top_ratio_p99: f64,
+    #[serde(default)]
+    pub bl_top_ratio_max: f64,
 }
 
 /// A mesh on disk.
@@ -524,28 +540,26 @@ mod tests {
             assert!(SCRIPT.contains(&format!("\"{name}\"")), "{name}");
         }
         assert!(SCRIPT.contains("occ.fuse") && SCRIPT.contains("occ.cut") && SCRIPT.contains("Mesh.Algorithm3D"));
-        assert!(SCRIPT.contains("extrudeBoundaryLayer") && SCRIPT.contains("import su2_writer") && SCRIPT.contains("Geometry.Tolerance"));
+        assert!(SCRIPT.contains("column_heights") && SCRIPT.contains("import su2_writer") && SCRIPT.contains("Geometry.Tolerance"));
         for f in ["def write(", "def mirror(", "def orient(", "def check(", "def unmarked_faces("] {
             assert!(WRITER.contains(f), "{f}");
         }
     }
 
     #[test]
-    fn bl_layers_reach_the_thickness_within_the_ratio() {
-        for (h1, t) in [(7.5e-7, 8e-4), (5.7e-7, 2e-3), (1e-5, 2e-3), (1e-4, 1.2e-3)] {
-            let (n, r) = bl_layers(h1, t, 1.3);
-            assert!(r > 1.0 && r <= 1.3 + 1e-12, "{h1} {t}: {n} {r}");
-            let total: f64 = (0..n).map(|i| h1 * r.powi(i as i32)).sum();
-            assert!((total / t - 1.0).abs() < 1e-9, "{h1} {t}: {total}");
-            // One layer fewer cannot reach the thickness at the largest ratio.
-            assert!(h1 * (1.3f64.powi(n as i32 - 1) - 1.0) / 0.3 < t);
+    fn bl_layers_grow_to_the_top_height() {
+        for (h1, top) in [(5.7e-7, 6.5e-3), (5.7e-7, 3.25e-3), (1e-5, 2e-3), (1e-4, 1.2e-3)] {
+            let (n, t) = bl_layers(h1, top, 1.2);
+            let last = h1 * 1.2f64.powi(n as i32 - 1);
+            assert!(last >= top * (1.0 - 1e-9) && last < 1.2 * top, "{h1} {top}: {n} {last}");
+            let total: f64 = (0..n).map(|i| h1 * 1.2f64.powi(i as i32)).sum();
+            assert!((total / t - 1.0).abs() < 1e-9, "{total} {t}");
         }
-        // 2 mm wall size at y+ 1: 22 layers, ratio 1.30 (the design point).
-        let (n, r) = bl_layers(7.5e-7, 8e-4, 1.3);
-        assert_eq!(n, 22);
-        assert!((r - 1.3).abs() < 0.01, "{r}");
-        // A first layer thicker than the layer is a single layer.
-        assert_eq!(bl_layers(1e-3, 8e-4, 1.3), (1, 1.0));
+        // 5 mm wall size at y+ 1 on the sample: 52 layers, 37 mm (last layer 6.5 mm).
+        let (n, t) = bl_layers(5.715e-7, 1.3 * 0.005, 1.2);
+        assert_eq!(n, 53);
+        assert!(t > 0.03 && t < 0.045, "{t}");
+        assert_eq!(bl_layers(1e-3, 8e-4, 1.2), (1, 1e-3));
     }
 
     #[test]
@@ -584,10 +598,16 @@ mod tests {
         assert!(!r.z_mirror && r.tail_length == 0.0 && r.domain == "half");
         let m = rans.machs.iter().copied().fold(0.0, f64::max);
         assert!((bl.first_height - first_height(1.0, BL_YPLUS_STATION * g.length, &atm, m)).abs() < 1e-15);
-        assert!((bl.thickness - BL_THICKNESS * rans.wall_size).abs() < 1e-15);
-        assert!(bl.ratio <= BL_MAX_RATIO && bl.layers > 10 && bl.smoothing == BL_SMOOTHING && bl.edge_blunt == BL_EDGE_BLUNT);
-        let retry = bl.retry.as_ref().unwrap();
-        assert!((retry.thickness - BL_RETRY_THICKNESS * rans.wall_size).abs() < 1e-15 && retry.smoothing == BL_RETRY_SMOOTHING && retry.retry.is_none());
+        let (n, t) = bl_layers(bl.first_height, BL_TOP * rans.wall_size, BL_GROWTH);
+        assert!(bl.layers == n && bl.thickness == t && bl.ratio == BL_GROWTH && bl.corner_smoothing > 0, "{bl:?}");
+        // The attempts in order, each the retry of the previous one.
+        let mut a = Some(bl);
+        for &(smoothing, junction) in &BL_ATTEMPTS {
+            let b = a.expect("attempt");
+            assert!(b.layers == n && b.smoothing == smoothing && b.junction == junction && b.edge_blunt == BL_EDGE_BLUNT, "{b:?}");
+            a = b.retry.as_deref();
+        }
+        assert!(a.is_none());
         // y+ of the first layer at the body length is below the target (thinner boundary layer at the nose station).
         let y = wall_yplus(&rans, g.length, &atm);
         assert!(y > 0.3 && y < 1.0, "{y}");

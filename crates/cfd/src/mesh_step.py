@@ -932,6 +932,9 @@ for d, t in gmsh.model.getEntities(2):
         body.append(t)
 wall, cap = classify_body_faces(body)
 print("faces: wall %d, base %d, farfield %d, symmetry %d, symz %d" % (len(wall), len(cap), len(far), len(symm), len(symz)))
+if quarter and not wall:
+    # The cut with the edge y = z = 0 through the nose tip failed (the caller meshes the half domain instead).
+    die("the quarter domain cannot be cut from the shape (no wall faces left); QUARTER_FAILED")
 if not wall or not far or (half and not symm) or (quarter and not symz):
     die("could not classify the boundary faces")
 if not cap:

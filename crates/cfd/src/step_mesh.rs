@@ -478,7 +478,7 @@ pub fn register(stl: &[Triangle], step: &[Triangle], wall_size: f64, length: f64
     let cen: Vec<Vec3> = step.iter().map(|t| (t[0] + t[1] + t[2]) / 3.0).collect();
     let back = fidelity::point_distances(&cen, stl);
     let only: Vec<usize> = (0..step.len()).filter(|&i| back[i].0 > detail).collect();
-    r.step_only_area = only.iter().map(|&i| tri_area(&step[i])).sum();
+    r.step_only_area = only.iter().map(|&i| tri_area(&step[i])).sum::<f64>() + 0.0;
     r.step_only_regions = regions(step, &only, 1e-7 * length);
     r.step_to_stl = fidelity::distance_stats(back);
     if r.stl_to_step.max > threshold {
@@ -922,98 +922,120 @@ pub fn ensure_mesh_step(
             geom.length
         );
     }
-    let decision = decide(opt, &report)?;
+    let mut decision = decide(opt, &report)?;
     eprintln!("note: aero.cfd: {}", decision.summary());
-    let ropt = symmetry::apply(&symmetry_options(opt), &decision);
-    let y_mirror = decision.meshed != "full" && !ropt.symmetry;
-    let domain = match (decision.meshed.as_str(), ropt.symmetry) {
-        ("quarter", true) => "quarter_half",
-        ("quarter", false) => "quarter_full",
-        ("half", true) => "half",
-        ("half", false) => "half_mirrored",
-        _ => "full",
-    };
-    let feature = report.smallest_face_width;
-    params.mode = "mesh".into();
-    params.meshed = decision.meshed.clone();
-    params.y_mirror = y_mirror;
-    params.min_size = min_size(feature, opt.wall_size);
-    if opt.model == FlowModel::Rans {
-        let mut bl = mesh::bl_params(&ropt, geom.length, atm);
-        // The CAD edges are meshed as they are (no blunting).
-        let mut b = Some(&mut bl);
-        while let Some(x) = b {
-            x.edge_blunt = 0.0;
-            b = x.retry.as_deref_mut();
-        }
-        params.bl = Some(bl);
+    // The quarter (y >= 0, z >= 0) needs a boolean with the edge y = z = 0 through the nose tip, which OpenCASCADE cannot
+    // always do on an imported shape; then the half is meshed (the shape is still verified symmetric about z = 0, but the
+    // half mesh is not exactly z-symmetric, so -alpha is solved). The failure is remembered per prepared shape.
+    let quarter_stamp = dir.join("step_quarter_failed.json");
+    let prep_hash = prepare_hash(&params, &bytes);
+    if decision.meshed == "quarter" && std::fs::read_to_string(&quarter_stamp).is_ok_and(|t| t.trim() == prep_hash) {
+        half_instead_of_quarter(&mut decision);
     }
     if report.solids > 1 {
         warnings.push(format!("the CAD file holds {} disjoint solids; all of them are walls of the CFD mesh", report.solids));
     }
-    let hash = step_mesh_hash(&params, &bytes);
+    let feature = report.smallest_face_width;
+    params.mode = "mesh".into();
+    params.min_size = min_size(feature, opt.wall_size);
+    loop {
+        // `apply` takes the quarter mesh (z_mirror_mesh) from the decision.
+        let ropt = symmetry::apply(&symmetry_options(opt), &decision);
+        let domain = match (decision.meshed.as_str(), ropt.symmetry) {
+            ("quarter", true) => "quarter_half",
+            ("quarter", false) => "quarter_full",
+            ("half", true) => "half",
+            ("half", false) => "half_mirrored",
+            _ => "full",
+        };
+        params.meshed = decision.meshed.clone();
+        params.y_mirror = decision.meshed != "full" && !ropt.symmetry;
+        params.bl = (opt.model == FlowModel::Rans).then(|| {
+            let mut bl = mesh::bl_params(&ropt, geom.length, atm);
+            // The CAD edges are meshed as they are (no blunting).
+            let mut b = Some(&mut bl);
+            while let Some(x) = b {
+                x.edge_blunt = 0.0;
+                b = x.retry.as_deref_mut();
+            }
+            bl
+        });
+        let (stats, hash, was_cached) = match run_mesh(opt, &dir, &params, &bytes) {
+            Ok(r) => r,
+            Err(e) if decision.meshed == "quarter" && e.to_string().contains(QUARTER_FAILED) => {
+                eprintln!("note: aero.cfd: the quarter domain cannot be cut from the CAD shape; meshing the half domain");
+                std::fs::write(&quarter_stamp, &prep_hash)?;
+                half_instead_of_quarter(&mut decision);
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
+        let info = StepMeshInfo {
+            file: opt.step_file.display().to_string(),
+            format: format.into(),
+            file_unit_m: declared,
+            step_unit: format!("{:?}", opt.step_unit).to_lowercase(),
+            unit_scale: scale,
+            solids_in_file: report.solids_in_file,
+            solids: report.solids,
+            faces: report.faces.len(),
+            base_faces,
+            volume: report.volume,
+            area: report.area,
+            import_notes: report.notes.clone(),
+            registration: reg,
+            symmetry: decision,
+            domain: domain.into(),
+            base_treatment: treatment.into(),
+            fairing: report.fairing.clone(),
+            smallest_feature: feature,
+            min_size: params.min_size,
+            warnings,
+        };
+        return Ok((MeshResult { su2: dir.join("mesh.su2"), hash, stats, cached: was_cached, stl: None, step: Some(info) }, ropt));
+    }
+}
+
+/// Marker of `mesh_step.py` when the quarter domain cannot be cut from the shape.
+const QUARTER_FAILED: &str = "QUARTER_FAILED";
+
+fn half_instead_of_quarter(d: &mut SymmetryDecision) {
+    d.meshed = "half".into();
+    d.reason += "; the quarter domain cannot be cut from the CAD shape (OpenCASCADE boolean), so the half is meshed and -alpha is solved";
+}
+
+/// Runs the mesh mode unless the mesh of this hash exists (HXT, then a Delaunay retry for Euler). Returns the statistics,
+/// the mesh hash and whether the mesh was cached.
+fn run_mesh(opt: &CfdOptions, dir: &Path, params: &StepParams, bytes: &[u8]) -> Result<(MeshStats, String, bool)> {
+    let hash = step_mesh_hash(params, bytes);
     let su2 = dir.join("mesh.su2");
     let stamp_path = dir.join("mesh.json");
-    let cached = std::fs::read_to_string(&stamp_path).ok().and_then(|t| serde_json::from_str::<Stamp>(&t).ok()).filter(|st| st.hash == hash && su2.exists());
-    let was_cached = cached.is_some();
-    let stats = match cached {
-        Some(st) => st.stats,
-        None => {
-            let _ = std::fs::remove_file(&stamp_path);
-            let (py, prefix) = python(opt)?;
-            std::fs::write(dir.join("mesh_step.py"), SCRIPT)?;
-            std::fs::write(dir.join("su2_writer.py"), mesh::WRITER)?;
-            let _ = std::fs::remove_file(dir.join("params_retry.json"));
-            std::fs::write(dir.join("params.json"), serde_json::to_string_pretty(&params)?)?;
-            let what = "gmsh meshing of the CAD surface";
-            if let Err(e) = run_python(&py, prefix.as_deref(), &dir, "mesh_step.py", "params.json", "mesh.log", "MESH_OK", what) {
-                if params.bl.is_some() {
-                    return Err(e);
-                }
-                // HXT can fail on a surface mesh it cannot recover; Delaunay (a fresh process) is slower but more tolerant.
-                eprintln!("note: aero.cfd: HXT could not mesh the volume, retrying with Delaunay");
-                let retry = StepParams { algorithm3d: 1, ..params.clone() };
-                std::fs::write(dir.join("params.json"), serde_json::to_string_pretty(&retry)?)?;
-                run_python(
-                    &py,
-                    prefix.as_deref(),
-                    &dir,
-                    "mesh_step.py",
-                    "params.json",
-                    "mesh.log",
-                    "MESH_OK",
-                    "gmsh meshing of the CAD surface (Delaunay retry)",
-                )
-                .map_err(|e2| anyhow::anyhow!("{e}\n{e2}"))?;
-            }
-            let stats: MeshStats = serde_json::from_str(&std::fs::read_to_string(&params.stats_json)?).context("bad mesh_stats.json")?;
-            std::fs::write(&stamp_path, serde_json::to_string(&Stamp { hash: hash.clone(), stats: stats.clone() })?)?;
-            stats
+    if let Some(st) =
+        std::fs::read_to_string(&stamp_path).ok().and_then(|t| serde_json::from_str::<Stamp>(&t).ok()).filter(|st| st.hash == hash && su2.exists())
+    {
+        return Ok((st.stats, hash, true));
+    }
+    let _ = std::fs::remove_file(&stamp_path);
+    let (py, prefix) = python(opt)?;
+    std::fs::write(dir.join("mesh_step.py"), SCRIPT)?;
+    std::fs::write(dir.join("su2_writer.py"), mesh::WRITER)?;
+    let _ = std::fs::remove_file(dir.join("params_retry.json"));
+    std::fs::write(dir.join("params.json"), serde_json::to_string_pretty(params)?)?;
+    let what = "gmsh meshing of the CAD surface";
+    if let Err(e) = run_python(&py, prefix.as_deref(), dir, "mesh_step.py", "params.json", "mesh.log", "MESH_OK", what) {
+        if params.bl.is_some() || e.to_string().contains(QUARTER_FAILED) {
+            return Err(e);
         }
-    };
-    let info = StepMeshInfo {
-        file: opt.step_file.display().to_string(),
-        format: format.into(),
-        file_unit_m: declared,
-        step_unit: format!("{:?}", opt.step_unit).to_lowercase(),
-        unit_scale: scale,
-        solids_in_file: report.solids_in_file,
-        solids: report.solids,
-        faces: report.faces.len(),
-        base_faces,
-        volume: report.volume,
-        area: report.area,
-        import_notes: report.notes.clone(),
-        registration: reg,
-        symmetry: decision,
-        domain: domain.into(),
-        base_treatment: treatment.into(),
-        fairing: report.fairing.clone(),
-        smallest_feature: feature,
-        min_size: params.min_size,
-        warnings,
-    };
-    Ok((MeshResult { su2, hash, stats, cached: was_cached, stl: None, step: Some(info) }, ropt))
+        // HXT can fail on a surface mesh it cannot recover; Delaunay (a fresh process) is slower but more tolerant.
+        eprintln!("note: aero.cfd: HXT could not mesh the volume, retrying with Delaunay");
+        let retry = StepParams { algorithm3d: 1, ..params.clone() };
+        std::fs::write(dir.join("params.json"), serde_json::to_string_pretty(&retry)?)?;
+        run_python(&py, prefix.as_deref(), dir, "mesh_step.py", "params.json", "mesh.log", "MESH_OK", "gmsh meshing of the CAD surface (Delaunay retry)")
+            .map_err(|e2| anyhow::anyhow!("{e}\n{e2}"))?;
+    }
+    let stats: MeshStats = serde_json::from_str(&std::fs::read_to_string(&params.stats_json)?).context("bad mesh_stats.json")?;
+    std::fs::write(&stamp_path, serde_json::to_string(&Stamp { hash: hash.clone(), stats: stats.clone() })?)?;
+    Ok((stats, hash, false))
 }
 
 #[cfg(test)]

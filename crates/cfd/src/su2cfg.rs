@@ -67,8 +67,9 @@ pub const RANS_STARTUP_MIN_ITER: usize = 100;
 pub const RANS_RESIDUAL_FLOOR: f64 = -14.0;
 /// RANS: upper CFL limit in units of `cfl`.
 pub const RANS_CFL_MAX_FACTOR: f64 = 40.0;
-/// RANS: `OUTPUT_WRT_FREQ` (iterations).
-pub const RANS_OUTPUT_FREQ: usize = 50;
+/// `OUTPUT_WRT_FREQ` (iterations): SU2 exits on SIGTERM without writing, so the runner's early stop waits for the
+/// next periodic output (restart file of the warm starts, surface file).
+pub const OUTPUT_FREQ: usize = 50;
 /// RANS conservative retry after a divergence: upper CFL limit in units of `cfl`.
 pub const RANS_CONSERVATIVE_CFL_FACTOR: f64 = 4.0;
 /// History file (without `.csv`) of the RANS startup stage.
@@ -328,13 +329,9 @@ pub fn su2_config_case(opt: &CfdOptions, spec: &CaseSpec, dims: &RefDims, atm: &
     c.kv("VOLUME_OUTPUT", "( COORDINATES, SOLUTION, PRIMITIVE )");
     c.kv("SCREEN_WRT_FREQ_INNER", "10");
     c.kv("HISTORY_WRT_FREQ_INNER", "1");
-    // RANS: frequent output, because SU2 exits on SIGTERM without writing; the runner's early stop waits for the
-    // next periodic output (restart file of the warm starts, surface file of the y+ check).
-    if rans {
-        c.kv("OUTPUT_WRT_FREQ", RANS_OUTPUT_FREQ);
-    } else {
-        c.kv("OUTPUT_WRT_FREQ", "500");
-    }
+    // Frequent output, because SU2 exits on SIGTERM without writing; the runner's early stop waits for the next
+    // periodic output (restart file of the warm starts, surface file).
+    c.kv("OUTPUT_WRT_FREQ", OUTPUT_FREQ);
     c.0.join("\n") + "\n"
 }
 
@@ -394,6 +391,8 @@ mod tests {
         let area = 0.5 * std::f64::consts::PI * 0.05 * 0.05;
         assert!(has(&s, &format!("REF_AREA= {area:.10}")), "{s}");
         assert!(!s.contains("KIND_TURB_MODEL") && !s.contains("MARKER_HEATFLUX"));
+        // Periodic output that the early stop waits for (restart file of the warm starts).
+        assert!(has(&s, "OUTPUT_WRT_FREQ= 50"), "{s}");
     }
 
     #[test]
@@ -568,7 +567,8 @@ mod tests {
             su2_config(&e, 0.8, 4.0, &dims(), &atm(), &CaseFiles::default())
         );
     }
-    /// Euler configurations are frozen: their text is the input of the case hashes of existing caches.
+    /// Euler configurations are frozen: their text is the input of the case hashes of existing caches (changing it
+    /// re-runs every cached Euler case once).
     #[test]
     fn euler_config_text_is_frozen() {
         let files =
@@ -585,6 +585,6 @@ mod tests {
             all += &su2_config_case(o, &CaseSpec { mach: 1.1, alpha_deg: 2.0, beta_deg: 4.0, roll_hat: 0.0 }, &dims(), &atm(), &files);
         }
         all += &su2_config_case(&CfdOptions { symmetry: false, ..Default::default() }, &CaseSpec::roll(0.8, 0.01), &dims(), &atm(), &files);
-        assert_eq!(crate::case::hash_parts(&[all.as_bytes()]), "2effa5ab3a602c6c", "{all}");
+        assert_eq!(crate::case::hash_parts(&[all.as_bytes()]), "b38200e2f5706094", "{all}");
     }
 }

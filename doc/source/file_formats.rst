@@ -378,13 +378,13 @@ CFD の出力
    * - ``mach`` ``alpha_deg`` ``beta_deg``
      - ケースの Mach 数、迎角 [deg]、横滑り角 [deg]
    * - ``status``
-     - ``converged``\ （収束）、``accepted``\ （収束の判定を満たさないまま、係数が落ち着いているとして受け入れた）、``failed``\ （失敗）。``alpha_mode = "mirror"`` の軸対称表では、正負の解を合わせた行が ``combined`` で末尾に付く
+     - ``converged``\ （収束）、``accepted``\ （Euler で、収束の判定を満たさないまま、係数が落ち着いているとして受け入れた）、``unconverged``\ （RANS で、係数の振動か残差の停滞のまま、窓の平均を受け入れた。:ref:`sec-cfd-int-rans-accept`）、``failed``\ （失敗）。``alpha_mode = "mirror"`` の軸対称表では、正負の解を合わせた行が ``combined`` で末尾に付く
    * - ``iterations``
-     - 反復数（失敗したケースは 0）
+     - 反復数（失敗したケースは 0。RANS は 2 次精度の段の反復数）
    * - ``residual_first`` / ``residual_last``
-     - 最初と最後の反復の密度残差（対数）
+     - 最初と最後の反復の密度残差（対数）。RANS の ``residual_first`` は、受け入れの基準にした密度の残差の最大値（冷えた起動の値、またはそれより大きければその段の最大値）
    * - ``cn_raw`` / ``ca_cfd``
-     - SU2 の生の法線力係数 :math:`C_N` と軸力係数 :math:`C_A`
+     - SU2 の生の法線力係数 :math:`C_N` と軸力係数 :math:`C_A`\ （RANS の :math:`C_A` は壁面の ``CFx(wall)``、``rans_base = "cfd"`` では底面の ``CFx(base)`` を足した値。:ref:`sec-cfd-post`）
    * - ``nose_moment_raw`` / ``xcp_raw_m``
      - SU2 の生のノーズ先端まわりのモーメント（長さの次元 [m]。:math:`C_m` に相当する量）と、そこから求めた圧力中心 [m]
    * - ``cn`` / ``nose_moment`` / ``xcp_m``
@@ -429,7 +429,7 @@ CFD の実行の要約である。項目は次のとおりである。
    * - ``ranks_per_case`` / ``parallel_cases`` / ``bytes_per_case``
      - 実際に使った 1 ケースあたりの MPI ランク数、同時に解いたケース数、1 ケースのメモリの見積もり [byte]
    * - ``est_wall_yplus``
-     - RANS のとき、壁面の最初のセルの :math:`y^+` の見積もり
+     - RANS のとき、最初の層の高さから見積もった、機体の全長の位置での :math:`y^+`\ （:ref:`sec-cfd-prism`）
    * - ``table_kind``
      - 係数表の種類（``axisymmetric`` または ``general``）
    * - ``shape_symmetry`` / ``domain``
@@ -457,13 +457,58 @@ CFD の実行の要約である。項目は次のとおりである。
      - ``surface = "stl"`` の鏡映対称性の判定。``requested``\ （設定値）、``chosen``\ （採用した対称性）、平面ごとの検査 ``y`` と ``z``\ （``symmetric``、``max_mismatch`` [m]、``vertices``、``vertices_matched``、``triangulation_identical``、``tolerance``、``reason``）、メッシュの作り方 ``meshed``\ （``quarter``、``half``、``full``）、``reason``
    * - ``fidelity``
      - ``surface = "stl"`` の形状の忠実度。``fidelity``\ （``stl_fidelity.json`` と同じ内容）、``union``\ （``union_report.json``）、``repair``\ （``repair_report.json``）を持つ
+   * - ``axial_breakdown``
+     - RANS のとき、ロール減衰でないケースごとの軸力の内訳。``mach``、``alpha_deg``、``cfd_wall_ca`` と ``cfd_base_ca``\ （壁面と底面の ``CFx``。履歴に列がなければ ``null``）、
+       ``barrowman_friction`` と ``barrowman_base``\ （その Mach 数の部品積み上げ法の摩擦と底面の抗力。比べるための値で、摩擦は表に足さない）、``base_from_cfd``\ （表の底面の項が CFD の値か）を持つ。Euler では空
+
+``done.json``
+~~~~~~~~~~~~~
+
+各ケースのディレクトリ（``<workdir>/m0.800_a04.00/`` など）に、ケースが終わると書かれる。入力のハッシュが同じなら、次の実行でこのケースを解かずに使う（:ref:`sec-cfd-int-convergence`）。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 70
+   :class: longtable
+
+   * - 項目
+     - 内容
+   * - ``input_hash``
+     - SU2 の設定（暖機起動の行を除く）とメッシュのハッシュ
+   * - ``mach`` / ``alpha_deg`` / ``beta_deg`` / ``roll_hat``
+     - ケースの条件
+   * - ``coeffs`` / ``coeffs6``
+     - 機体軸の係数（``cn``、``ca``、``mom``）と 6 成分（``cx`` ``cy`` ``cz`` ``cl`` ``cm`` ``cn``）。半領域のケースでは、``cy``、``cl``、``cn`` は 0
+   * - ``iterations`` / ``converged`` / ``residual_first`` / ``residual_last`` / ``wall_seconds``
+     - ``cfd_cases.csv`` の同じ名前の列と同じ。``converged`` は、Euler では残差が目標に達したとき、RANS では収束の判定（:ref:`sec-cfd-int-rans-accept`）を満たしたとき真
+   * - ``reference_peak``
+     - RANS のとき、受け入れの基準にした残差の最大値（``rho`` が密度、``nu`` が SA の残差。対数）。暖機起動の次のケースに受け継ぐ
+   * - ``limit_cycle``
+     - RANS で、振動または停滞として窓の平均を受け入れたとき ``true``\ （``false`` のときは書かない）
+   * - ``yplus_p95``
+     - RANS のとき、壁面の :math:`y^+` の 95 パーセンタイル（底面を除く）
+   * - ``axial``
+     - RANS のとき、``wall_cfx`` と ``base_cfx``\ （壁面と底面の ``CFx``）、``base_in_cfx``\ （``coeffs`` の軸力が底面の力を含むか）、``markers_missing``\ （履歴にマーカごとの列がなかったか）
+   * - ``warnings``
+     - 受け入れたケースについての警告（壁面の :math:`y^+`、振動や停滞、暖機起動や発散からの解き直しなど）。ないときは書かない
 
 .. _sec-file-mesh:
 
 ``<workdir>/mesh/`` のファイル
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surface = "stl"`` では、次のファイルも入る。
+CFD のメッシュのキャッシュで、``mesh.su2``、メッシュを作ったときの設定 ``params.json``、ログ ``mesh.log``、メッシュの統計 ``mesh_stats.json`` などが入る。
+
+``mesh_stats.json``
+   ``nodes``、``cells``\ （節点数とセル数）、``by_type``\ （セルの種類ごとの数）、``quality_sicn_min``、``quality_sicn_mean``、``cells_sicn_below_0.05``\ （SICN の最小値、平均、0.05 未満のセル数。RANS のメッシュでは四面体だけについて求める）、
+   ``wall_triangles``、``seconds_setup``、``seconds_mesh`` を持つ。RANS のメッシュでは、プリズム層について次の項目も持つ（:ref:`sec-cfd-prism`）。
+
+   * ``bl_layers`` / ``bl_first_height`` / ``bl_thickness``：層の数、最初の層の高さ [m]、最も厚い柱の厚さ [m]
+   * ``bl_invalid``：書いたメッシュの不正なプリズムの数（不正な層はメッシュのエラーになるので、常に 0）
+   * ``bl_attempt``：何回目の作成で検査に通ったか（1 または 2）
+   * ``bl_top_ratio_p99`` / ``bl_top_ratio_max``：層の上面の四面体の高さと最後の層の高さの比（大きいほうを小さいほうで割った値）の 99 パーセンタイルと最大値
+
+``surface = "stl"`` では、次のファイルも入る。
 
 ``repair_report.json``
    STL の修復の報告。``input_triangles``\ （入力の三角形数）、``weld_tolerance``\ （頂点を溶接する許容値）、``vertices``\ （溶接後の頂点数）、

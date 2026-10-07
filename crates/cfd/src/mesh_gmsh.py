@@ -411,6 +411,10 @@ def boundary_layer_mesh(parts):
     thick = np.full(m, bl["thickness"])
     if len(ce):
         thick = np.minimum(thick, bl["junction"] * bl["thickness"] + distance_to_edges(x0w, x0w, ce))
+    # Columns on the flat base: at most bl["base_thickness"] (the wake next to the base).
+    on_base = np.zeros(m, bool)
+    on_base[tl[kinds == 1].ravel()] = True
+    thick[on_base] = np.minimum(thick[on_base], bl["base_thickness"])
     # Where neighbouring columns diverge by an angle a (fanning round a fin edge or tip), the layer top widens by
     # about thickness * a: at most bl["fan"] wall sizes, so the tetrahedra on the top stay well shaped.
     e0 = np.unique(np.sort(np.concatenate([tl[:, [0, 1]], tl[:, [1, 2]], tl[:, [2, 0]]]), axis=1), axis=0)
@@ -527,10 +531,10 @@ def boundary_layer_mesh(parts):
     f.setNumber(1, "Sampling", 4)
     f.add("Threshold", 2)
     f.setNumber(2, "InField", 1)
-    f.setNumber(2, "SizeMin", h0)
+    f.setNumber(2, "SizeMin", bl["top_size"])
     f.setNumber(2, "SizeMax", hmax)
     f.setNumber(2, "DistMin", 0.0)
-    f.setNumber(2, "DistMax", (hmax - h0) / (grow - 1.0))
+    f.setNumber(2, "DistMax", (hmax - bl["top_size"]) / (grow - 1.0))
     f.setAsBackgroundMesh(2)
     gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 1)
     gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 0)
@@ -581,10 +585,10 @@ def boundary_layer_mesh(parts):
     f.setNumbers(1, "SurfacesList", [1])
     f.add("Threshold", 2)
     f.setNumber(2, "InField", 1)
-    f.setNumber(2, "SizeMin", h0)
+    f.setNumber(2, "SizeMin", bl["top_size"])
     f.setNumber(2, "SizeMax", hmax)
     f.setNumber(2, "DistMin", 0.0)
-    f.setNumber(2, "DistMax", (hmax - h0) / (grow - 1.0))
+    f.setNumber(2, "DistMax", (hmax - bl["top_size"]) / (grow - 1.0))
     f.setAsBackgroundMesh(2)
     gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 1)
     gmsh.option.setNumber("Mesh.Algorithm3D", int(p["algorithm3d"]))
@@ -616,6 +620,10 @@ def boundary_layer_mesh(parts):
     tets = np.vstack(tets)
     if (tets < 0).any():
         raise SystemExit("mesh error: a tetrahedron uses an unknown node")
+    q = gmsh.model.mesh.getElementQualities(gmsh.model.mesh.getElementsByType(4)[0].tolist(), "minSICN")
+    q_min, q_mean, q_bad = float(np.min(q)), float(np.mean(q)), int((np.asarray(q) < 0.05).sum())
+    del q, ntag, ncoord, npos, gmap, known
+    gmsh.model.remove()  # the tetrahedra are copied: free gmsh's mesh before the checks
 
     # ---- cells, markers, checks --------------------------------------------------------------------
     cells = {sw.PRISM: prisms, sw.TET: tets}
@@ -681,9 +689,8 @@ def boundary_layer_mesh(parts):
         "bl_top_ratio_max": jmax,
         "bl_top_ratio_p99": j99,
     }
-    q = gmsh.model.mesh.getElementQualities(gmsh.model.mesh.getElementsByType(4)[0].tolist(), "minSICN")
-    stats["quality_sicn_min"], stats["quality_sicn_mean"] = float(np.min(q)), float(np.mean(q))
-    stats["cells_sicn_below_0.05"] = int((np.asarray(q) < 0.05).sum()) * mult
+    stats["quality_sicn_min"], stats["quality_sicn_mean"] = q_min, q_mean
+    stats["cells_sicn_below_0.05"] = q_bad * mult
     json.dump(stats, open(p["stats_json"], "w"), indent=1)
     print("MESH_OK nodes=%d cells=%d minSICN=%.4f layers %.1fs surfaces %.1fs volume %.1fs"
           % (stats["nodes"], stats["cells"], stats["quality_sicn_min"], t_layers - t1, t_surf - t_layers, t2 - t_surf))

@@ -1285,7 +1285,8 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
      - 意味
    * - ``model``
      - ``"euler"``
-     - 支配方程式。``"euler"`` は非粘性の Euler 方程式（粘性の抗力項は部品積み上げ法で補う）、``"rans"`` は Spalart–Allmaras モデルの RANS（信頼できない。結果に頼らない。:ref:`sec-cfd-run`）
+     - 支配方程式。``"euler"`` は非粘性の Euler 方程式（粘性の抗力項は部品積み上げ法で補う）、``"rans"`` は Spalart–Allmaras モデルの RANS で、壁面にプリズムの境界層を置いたメッシュで解く。
+       RANS は ``surface = "panel_mesh"`` で、フィンの配置が :math:`y=0` について対称なときだけ使え、``roll_damping`` とは組み合わせられない。``wall_size``、``iterations``、``min_iterations``、``stable_window`` の既定値が変わる（:ref:`sec-cfd-rans-use`）
    * - ``machs``
      - ``[0.3, 0.6, 0.8, 0.95, 1.1, 1.3, 1.6, 2.0, 2.5, 3.0]``
      - 解く Mach 数（正、昇順、重複なし）
@@ -1298,13 +1299,13 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
        ``"offset"`` は :math:`\alpha=0` の値を引く、``"single"`` は結果をそのまま使う
    * - ``z_mirror_mesh``
      - ``true``
-     - 1/4 領域をメッシュにして :math:`z=0` で鏡映し、:math:`z` について厳密に対称なメッシュにするか。形状が :math:`z` について対称でないときは無視する（:ref:`sec-cfd-stl-symmetry`）
+     - 1/4 領域をメッシュにして :math:`z=0` で鏡映し、:math:`z` について厳密に対称なメッシュにするか。形状が :math:`z` について対称でないときと RANS では無視する（:ref:`sec-cfd-stl-symmetry`）
    * - ``symmetry``
      - ``true``
      - ピッチ面（:math:`y=0`）で切った半モデルを使ってよいか。使う条件と領域の意味は :ref:`sec-cfd-stl-symmetry`。条件を満たさないときと ``false`` は全領域を解く
    * - ``surface``
      - ``"panel_mesh"``
-     - 壁面の形状。``"panel_mesh"``\ （別名 ``"cad"``）は抽出した胴体とフィンを再構成する。``"stl"`` は入力の STL から壁面を作る（入力の形状と同一ではない。:ref:`sec-cfd-stl`、:ref:`sec-cfd-fidelity`）
+     - 壁面の形状。``"panel_mesh"``\ （別名 ``"cad"``）は抽出した胴体とフィンを再構成する。``"stl"`` は入力の STL から壁面を作る（入力の形状と同一ではない。:ref:`sec-cfd-stl`、:ref:`sec-cfd-fidelity`）。``"stl"`` と ``model = "rans"`` の組合せはエラー（``aero.cfd.surface = "stl" with model = "rans": RANS needs the boundary-layer mesh, which is built only for the CAD surface (surface = "cad")``）
    * - ``betas_deg``
      - ``[0]``
      - 解く横滑り角 [deg]（0 以上、昇順、0 で始まる）。0 だけでないと係数表は 6 成分の一般表になる（:ref:`sec-cfd-table-kind`）
@@ -1314,7 +1315,7 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
        判定と、``stl`` で明示した対称性が検査に通らないときのエラーは :ref:`sec-cfd-stl-symmetry`、表の種類との関係は :ref:`sec-cfd-table-kind` で述べる
    * - ``roll_damping``
      - ``false``
-     - 各 Mach 数でロール減衰の 2 ケースを回転座標系で解き、:math:`C_{lp}` を CFD の値にする（:ref:`sec-cfd-run`、:ref:`sec-cfd-roll-cases`）。Euler だけ
+     - 各 Mach 数でロール減衰の 2 ケースを回転座標系で解き、:math:`C_{lp}` を CFD の値にする（:ref:`sec-cfd-run`、:ref:`sec-cfd-roll-cases`）。Euler だけで、RANS で ``true`` はエラー
    * - ``roll_rate_hat``
      - ``0.01``
      - ロール減衰のケースの無次元ロール角速度 :math:`\hat p=pd/(2V)`\ （0 より大きく 0.05 以下）
@@ -1340,26 +1341,29 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
      - ``20.0``
      - 遠方境界の半径（全長の倍数、5 以上）。半球と球の半径、または箱の半辺
    * - ``wall_size``
-     - ``0.002``
-     - 壁面の要素の大きさ [m]。小さいほど細かく、セル数と時間が増える
+     - ``0.002``\ （RANS は ``0.003``）
+     - 壁面の要素の大きさ [m]。小さいほど細かく、セル数と時間が増える。RANS では境界層の上面の四面体の大きさでもあり、層の数と厚さが決まる（:ref:`sec-cfd-prism`）
    * - ``yplus``
      - ``1.0``
-     - RANS の目標 :math:`y^+`
+     - RANS の最初の層の目標 :math:`y^+`\ （全長の 5 % の位置、最大の Mach 数で決める。:ref:`sec-cfd-prism`）。5 以下は壁面まで解像し（推奨 1）、30 から 150 は標準の壁関数を使う。その間と 150 を超える値はエラー
+   * - ``rans_base``
+     - ``"model"``
+     - RANS の底面抗力の出どころ。``"model"`` は部品積み上げ法の底面抗力、``"cfd"`` は RANS が平らな底面に積分した力（:ref:`sec-cfd-post`）。RANS だけで指定でき、Euler で ``"cfd"`` はエラー
    * - ``iterations``
-     - ``3000``
-     - 1 ケースの最大反復数（RANS は 300 で打ち切る）
+     - ``3000``\ （RANS は ``4000``）
+     - 1 ケースの最大反復数。RANS では 2 次精度の段の反復数
    * - ``min_iterations``
-     - ``100``
-     - 早期終了の最小反復数。これより前にはケースを止めない。``stable_window`` 以上（:ref:`sec-cfd-int-convergence`。Euler の Roe の制限関数もこの反復で固定する）
+     - ``100``\ （RANS は ``400``）
+     - 早期終了の最小反復数。これより前にはケースを止めない。``stable_window`` 以上（:ref:`sec-cfd-int-convergence`。Euler の Roe の制限関数もこの反復で固定する。RANS の制限関数は固定しない）
    * - ``stable_window``
-     - ``60``
-     - 早期終了の判定で、力とモーメントの係数が落ち着いているかを見る直近の反復数（10 以上。:ref:`sec-cfd-int-convergence`）
+     - ``60``\ （RANS は ``200``）
+     - 早期終了の判定で、力とモーメントの係数が落ち着いているかを見る直近の反復数（10 以上。:ref:`sec-cfd-int-convergence`、:ref:`sec-cfd-int-rans-accept`）
    * - ``cfl``
      - ``5.0``
      - CFL 数の初期値（適応的に変える）
    * - ``convergence``
      - ``1e-6``
-     - 密度の二乗平均残差の目標（0 と 1 の間）
+     - Euler の密度の二乗平均残差の目標（0 と 1 の間）。RANS は冷えた起動の残差の最大値からの下がりで判定する（:ref:`sec-cfd-int-rans-accept`）
    * - ``scheme``
      - ``"roe"``
      - 対流フラックス。``"roe"`` または ``"jst"``\ （:ref:`sec-cfd-int-discretization`）

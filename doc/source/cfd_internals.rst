@@ -70,8 +70,11 @@ RANS（Reynolds 平均 Navier–Stokes 方程式）は、:eq:`eq-cfd-euler` に�
    +\frac{1}{\sigma}\left[\nabla\cdot\bigl((\nu+\tilde\nu)\nabla\tilde\nu\bigr)+c_{b2}|\nabla\tilde\nu|^2\right]
 
 で、渦粘性は :math:`\mu_t=\rho\tilde\nu f_{v1}` となる。:math:`d` は最寄りの壁までの距離、:math:`\tilde S` は渦度に基づく生成項、
-:math:`c_{b1},c_{b2},c_{w1},\sigma` はモデル定数、:math:`f_{v1},f_w` は壁近傍の減衰関数であり、SU2 の標準の SA モデルをそのまま使う。
-壁面は断熱の粘着壁とし、壁面の近くの速度分布には対数則に基づく壁関数（SU2 の ``STANDARD_WALL_FUNCTION``）を使う。
+:math:`c_{b1},c_{b2},c_{w1},\sigma` はモデル定数、:math:`f_{v1},f_w` は壁近傍の減衰関数である。
+SU2 の SA モデルを、:math:`\tilde\nu` が負になったときにも解が壊れない負の値の扱い（``NEGATIVE``）と、遷移の項 :math:`f_{t2}`\ （``WITHFT2``）を付けて使う（``SA_OPTIONS= ( NEGATIVE, WITHFT2 )``。SU2 8.3 は ``NEGATIVE`` だけの指定を受け付けない）。
+壁面（``wall`` と ``base``）は断熱の粘着壁（``MARKER_HEATFLUX`` で熱流束 0）である。
+``yplus`` が 5 以下（既定は 1）では、最初の層を粘性底層に置いて壁面まで境界層を解像し、壁関数は使わない。
+``yplus`` が 30 から 150 のときだけ、対数則に基づく壁関数（SU2 の ``STANDARD_WALL_FUNCTION``）を ``wall`` と ``base`` に使う。その間の値は、どちらの扱いも成り立たないのでエラーにする。
 自由流の渦粘性は :math:`\tilde\nu=3\nu`\ （``FREESTREAM_NU_FACTOR = 3``）である。
 
 SU2 の設定と数値解法
@@ -85,7 +88,7 @@ SU2 の設定と数値解法
 ~~~~~~
 
 SU2 は非構造メッシュの節点を中心とする有限体積法で、各節点のまわりの双対セルについて\ :eq:`eq-cfd-euler` を離散化する。
-IgnisYeet が設定する数値解法は次のとおりである。
+IgnisYeet が Euler に設定する数値解法は次のとおりである。
 
 * **対流フラックス**\ ：既定は Roe の近似 Riemann 解法 :cite:`roe`\ 。``scheme = "jst"`` では Jameson–Schmidt–Turkel の中心差分と人工粘性 :cite:`jst`\ （センサ係数 0.5 と 0.02）を使う。
 * **2 次精度化**\ ：Roe のときは MUSCL 形の再構成（勾配は重み付き最小二乗法）に Venkatakrishnan の制限関数 :cite:`venkat`\ （係数 0.05）を組み合わせる。
@@ -98,9 +101,20 @@ IgnisYeet が設定する数値解法は次のとおりである。
 * **マルチグリッド**\ ：``multigrid``\ （``MGLEVEL``、既定 0）を 1 から 4 にすると、SU2 の凝集型マルチグリッドの設定（``MGLEVEL``、``MGCYCLE``）を書く。
   サンプルのメッシュでは SU2 が粗い格子を作れないので、効果がない（:ref:`測定 <sec-cfd-multigrid>`）。
 
-RANS では、乱流量の対流は 1 次風上、時間積分は陰的 Euler 法とし、流れの対流は **1 次精度** の Roe（再構成なし）を使う。
-接線方向に細長い四面体の壁面メッシュで 2 次の再構成が発散したためである。
-CFL の上限は :math:`4\,\mathrm{cfl}` である。残差は 10\ :sup:`-5` 付近で止まり、数百反復のあと発散に向かう一方、係数は 100 反復ごろから平らになるので、反復数の上限を 300 にしている。
+RANS の数値解法は次のとおりである（``scheme = "roe"`` のとき）。
+
+* **対流フラックス**\ ：Roe の近似 Riemann 解法。冷えた状態から始めるケースは、まず 1 次精度（再構成なし）で解き、その解から 2 次精度で解き直す（二段の計算。:ref:`sec-cfd-int-rans-stages`）。
+* **2 次精度化**\ ：MUSCL 形の再構成に、辺ごとの Van Albada の制限関数（``VAN_ALBADA_EDGE``）を組み合わせる。制限関数は固定しない（``LIMITER_ITER`` を書かない）。
+  Venkatakrishnan–Wang の制限関数では、3 次元のケース（サンプル機体の :math:`M=0.8`、円すいの :math:`M=2`）の残差が CFL の上下とともに 10\ :sup:`-4` と 10\ :sup:`-6` の間を行き来し、制限関数を固定すると発散したためである。
+* **勾配**\ ：粘性項と乱流量の勾配は Green–Gauss 法、再構成の勾配は重み付き最小二乗法で求める。
+* **乱流量**\ ：SA の対流は 1 次風上（``SCALAR_UPWIND``、再構成なし）、時間積分は陰的 Euler 法。
+* **時間積分**\ ：陰的 Euler 法による擬似時間の進行で、Roe の正確なヤコビ行列（``USE_ACCURATE_FLUX_JACOBIANS``）を使う。
+  連立 1 次方程式は FGMRES（前処理は ILU(0)、相対許容 0.05、25 反復まで）で解く。各ステップの線形系を緩く解くことで、CFL 数が上限まで増える。
+  CFL 数は初期値 ``cfl`` から Euler と同じ規則で適応的に変え、範囲は :math:`0.2\,\mathrm{cfl}` から :math:`40\,\mathrm{cfl}` である。
+* **収束判定**\ ：SU2 には密度と SA の残差（``RMS_DENSITY``、``RMS_NU_TILDE``）が 10\ :sup:`-14` に下がるまで解かせ、実際の停止はランナーが受け入れの判定（:ref:`sec-cfd-int-rans-accept`）で決める。反復数の上限は ``iterations``\ （RANS の既定 4000）で、2 次精度の段で数える。
+* **出力**\ ：履歴には残差、SA の残差（``rms[nu]``）、相対残差、力の係数、マーカごとの力の係数（``AERO_COEFF_SURF``\ 。``CFx(wall)``、``CFx(base)`` など）、線形解法の反復数、CFL 数を書く。
+  解と壁面の分布（``restart.dat``、``surface_flow.vtk``\ 。壁面の :math:`y^+` を含む）は 50 反復ごと（``OUTPUT_WRT_FREQ= 50``）に書く。SU2 は SIGTERM を受けると何も書かずに終わるので、ランナーはケースを止める前に次の書き出しを待つ（:ref:`sec-cfd-int-rans-accept`）。
+* **マルチグリッド**\ ：使わない（``multigrid`` の既定は 0）。
 
 生成される設定ファイルと基準量
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -140,6 +154,36 @@ CFL の上限は :math:`4\,\mathrm{cfl}` である。残差は 10\ :sup:`-5` 付
    ITER= 3000
    CONV_FIELD= RMS_DENSITY
    CONV_RESIDUAL_MINVAL= -6
+
+RANS の 2 次精度の段（半モデル、``cfl`` = 5、``yplus`` = 1）では、上と異なる主な行は次のとおりである。
+1 次精度の段は ``MUSCL_FLOW= NO`` で、``ITER`` は ``iterations`` と 500 の小さいほう、``CONV_FIELD= REL_RMS_DENSITY``、``CONV_RESIDUAL_MINVAL= -2``、``CONV_STARTITER= 100`` とし、解を ``restart_startup.dat`` に書く。
+
+.. code-block:: text
+
+   SOLVER= RANS
+   KIND_TURB_MODEL= SA
+   SA_OPTIONS= ( NEGATIVE, WITHFT2 )
+   RESTART_SOL= YES
+   SOLUTION_FILENAME= restart_startup.dat
+   VISCOSITY_MODEL= SUTHERLAND
+   FREESTREAM_NU_FACTOR= 3.0
+   MARKER_HEATFLUX= ( wall, 0.0, base, 0.0 )
+   MARKER_MONITORING= ( wall, base )
+   NUM_METHOD_GRAD= GREEN_GAUSS
+   NUM_METHOD_GRAD_RECON= WEIGHTED_LEAST_SQUARES
+   CONV_NUM_METHOD_FLOW= ROE
+   MUSCL_FLOW= YES
+   SLOPE_LIMITER_FLOW= VAN_ALBADA_EDGE
+   USE_ACCURATE_FLUX_JACOBIANS= YES
+   CONV_NUM_METHOD_TURB= SCALAR_UPWIND
+   CFL_ADAPT_PARAM= ( 0.5, 1.2, 1.000, 200.0 )
+   LINEAR_SOLVER_ILU_FILL_IN= 0
+   LINEAR_SOLVER_ERROR= 0.05
+   LINEAR_SOLVER_ITER= 25
+   ITER= 4000
+   CONV_FIELD= ( RMS_DENSITY, RMS_NU_TILDE )
+   CONV_RESIDUAL_MINVAL= -14
+   HISTORY_OUTPUT= ( ITER, RMS_RES, REL_RMS_RES, AERO_COEFF, AERO_COEFF_SURF, LINSOL, CFL_NUMBER )
 
 自由流の圧力と温度は、射点の標高（``launch.altitude``）の大気の値である（上の例は海面の値）。
 機体はメッシュの中に固定し、自由流の向きを迎角 :math:`\alpha` と横滑り角 :math:`\beta` だけ傾けるので、SU2 の力とモーメントの係数がそのまま機体軸の係数になる。
@@ -205,6 +249,9 @@ IgnisYeet はこれを OpenCASCADE の立体として **作り直す**\ 。
 パネル法の表面メッシュを直接使わないのは、その三角形がノーズ先端やフィンの先端が胴体と交わる付近で極端に小さくなり、
 gmsh の離散曲面からの四面体分割が「頂点が線分上にある」というエラーで失敗するためである。
 機体の底面は、Euler では尾部フェアリング（:ref:`sec-cfd-fairing`）、RANS では平らな底面のままにする。
+
+RANS では、フィンの前縁と後縁を少し鈍くする。両凸断面の厚さの分布 :math:`4\xi(1-\xi)` のうち :math:`\xi\in[0.02,\,0.98]` の部分を翼弦の全長に引き伸ばし、前縁と後縁を短い直線で閉じる。
+縁の厚さは最大の厚さの約 8 % になる。鋭い縁ではプリズム層の柱が折れ重なるためである。Euler の形状は変えない。
 
 STL の処理
 ~~~~~~~~~~
@@ -324,7 +371,8 @@ STL モードでは、CFD の壁面が入力の形からどれだけずれたか
 ------------
 
 本節は、体積メッシュの領域、境界のマーカ、セルの大きさの決め方を述べる。
-体積メッシュは四面体で、gmsh の HXT 法で作る。HXT が失敗したときは Delaunay 法でやり直す（``panel_mesh`` は同じプロセスで、``stl`` は新しいプロセスで行う）。
+Euler の体積メッシュは四面体で、gmsh の HXT 法で作る。HXT が失敗したときは Delaunay 法でやり直す（``panel_mesh`` は同じプロセスで、``stl`` は新しいプロセスで行う）。
+RANS のメッシュは、壁面と底面の上のプリズム層と、その外側の四面体からなる（:ref:`sec-cfd-prism`）。
 
 .. _sec-cfd-domain:
 
@@ -349,6 +397,10 @@ STL モードでは、CFD の壁面が入力の形からどれだけずれたか
      - 1/4 または半分の箱を作り、``panel_mesh`` と同じに鏡映して半領域または全領域にする（:ref:`sec-cfd-stl-symmetry-check`）
    * - ``stl``、対称でない（または ``shape_symmetry = "none"``）
      - 一辺 :math:`2\times` ``farfield`` × 全長の箱の全領域（:ref:`sec-cfd-stl`）
+   * - RANS（``panel_mesh`` だけ）、半領域
+     - 半分の箱（:math:`y\ge0`、機体の中央を中心とする一辺 :math:`2\times` ``farfield`` × 全長の立方体の半分）。:math:`y=0` の平面は ``symmetry``
+   * - RANS、全領域（フィンの配置が :math:`y=0` について対称なときだけ）
+     - 半分の箱のメッシュを :math:`y=0` で鏡映した箱。対称でない配置はエラーにする（:ref:`sec-cfd-rans-use`）
 
 半領域を使う条件と ``shape_symmetry`` の値と動作は :ref:`sec-cfd-stl-symmetry` にある。
 形状が :math:`y=0` について対称かどうかは、``panel_mesh`` ではフィンの配置から、``stl`` では和の表面の検査で決まる。
@@ -368,11 +420,11 @@ STL モードでは、CFD の壁面が入力の形からどれだけずれたか
    * - ``wall``
      - 機体表面（胴体とフィン）。力を積分する面。STL モードでは、再メッシュした和の表面のうち ``base`` でない三角形
    * - ``base``
-     - 底面。Euler では尾部フェアリングの面（STL で ``"flat"`` なら平らな底面）で、力を積分しない（RANS では平らな底面で、積分する）
+     - 底面。Euler では尾部フェアリングの面（STL で ``"flat"`` なら平らな底面）で、力を積分しない。RANS では平らな底面の粘着壁で、力を履歴に出す（軸力に使うかは ``rans_base``\ 。:ref:`sec-cfd-post`）
    * - ``farfield``
      - 遠方境界。特性量に基づく非反射の境界条件
    * - ``symmetry``
-     - :math:`y=0` の平面。半領域のときだけ
+     - :math:`y=0` の平面。半領域のときだけ。RANS では、プリズム層の側面の四角形も含む
    * - ``symz``
      - :math:`z=0` の平面。1/4 領域をメッシュにする途中だけにあり、鏡映して半領域にするときに落とす
 
@@ -415,6 +467,7 @@ z 対称メッシュ
 対称でない形状では、``z_mirror_mesh`` は自動的に無視される。
 ``panel_mesh`` では、フィンの配置が :math:`z\to-z` について対称なときに ``z_mirror_mesh`` が働く。``stl`` では、和の表面が :math:`z=0` と :math:`y=0` について鏡映対称と確かめられたとき（:ref:`sec-cfd-stl-symmetry-check`）に働く。
 全領域でも、1/4 領域を :math:`z=0` と :math:`y=0` で鏡映して全領域にする。
+RANS のメッシュは半領域から作るので、``z_mirror_mesh`` は効かない。``alpha_mode = "mirror"`` では負の迎角も解く。
 
 メッシュの大きさ
 ~~~~~~~~~~~~~~~~
@@ -455,6 +508,62 @@ z 対称メッシュ
    対称面 :math:`y=0` での体積メッシュの断面。左から計算領域の全体、機体のまわり、フィンと尾部フェアリングの拡大。灰色の部分は機体（とフィン）の内部である。
 
 メッシュは ``<出力先>/<workdir>/mesh/`` に保存され、形状と設定のハッシュが同じなら再利用される。
+ハッシュには、メッシュを作るスクリプト（RANS では SU2 のメッシュを書くスクリプトも）の内容が入る。
+
+.. _sec-cfd-prism:
+
+境界層のプリズム層（RANS）
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+RANS のメッシュは、壁面の近くをプリズムの層で、その外側を四面体で埋める。
+プリズム層は gmsh の境界層の機能ではなく、メッシュを作るスクリプト（``mesh_gmsh.py``）が壁面の三角形から直接組み立てる。
+gmsh は、壁面の三角形、外側の面の三角形、外側の四面体だけを作る。
+
+**手順**\ 。
+
+1. 作り直した立体（フィンの縁を鈍くしたもの。:ref:`sec-cfd-rebuild`）を :math:`y\ge0` の半分に切り、壁面（``wall``）と底面（``base``）の三角形を Euler と同じ大きさの規則（:eq:`eq-cfd-size`、曲率の大きい部分は円周あたり 24 要素、最小 :math:`h_w/8`）で作る。
+2. 壁面の節点ごとに、層を積む向き（法線）と柱の厚さを決める（下記）。
+3. 各柱に同じ数の層を積む。層の高さは最初の層の高さ :math:`h_1` から等比で増え、柱ごとに比を決めて、層の高さの和を柱の厚さに合わせる。
+4. 層の上面の三角形、:math:`y=0` の平面（層の断面をくり抜いたもの）、半分の箱の遠方境界（:ref:`sec-cfd-domain`）で囲まれた領域を、gmsh で四面体に分ける（HXT 法。失敗したときは新しいプロセスで Delaunay 法でやり直す）。
+   四面体の大きさは、層の上面からの距離 :math:`s` について :eq:`eq-cfd-size` と同じ :math:`\min(h_{\max},\,h_w+0.2\,s)` で、上面では ``wall_size`` から始まり、要素の列ごとに約 1.2 倍になる。
+5. セルを検査して SU2 の形式で書く（下記）。全領域は、半領域を :math:`y=0` で鏡映して作る（:math:`y=0` 上の節点は共有し、``symmetry`` のマーカは落とす）。
+
+**層の高さと数**\ 。最初の層の高さは、ノーズ先端から全長の 5 % の位置で :math:`y^+` が ``yplus`` になるように、平板の乱流の摩擦の式から決める。
+解く最大の Mach 数 :math:`M_{\max}` と基準高度の大気で :math:`U=M_{\max}a`、:math:`x=0.05L` として
+
+.. math::
+   :label: eq-cfd-first-height
+
+   C_f=0.0576\,\mathit{Re}_x^{-1/5},\qquad u_\tau=U\sqrt{C_f/2},\qquad h_1=\frac{y^+\nu}{u_\tau}
+
+である。全長の位置より境界層の薄いノーズ側で決めるので、ほかの位置の :math:`y^+` は ``yplus`` より小さくなる。
+``cfd_report.json`` の ``est_wall_yplus`` は、この :math:`h_1` を全長の位置で :math:`y^+=1` になる高さで割った値で、機体の後部での :math:`y^+` の見積もりである。
+層の高さは 1.2 倍ずつ増やし、最後の層が :math:`1.3\,h_w` 以上になる最小の層数 :math:`n` で止める。厚さは :math:`T=h_1(1.2^n-1)/0.2` である。
+最後の層の高さがその外側の四面体の大きさとほぼ同じなので、層の上面でセルの大きさが急に変わらない。
+上面の四面体の高さと最後の層の高さの比（大きいほうを小さいほうで割った値）の 99 パーセンタイルと最大値は、``mesh_stats.json`` の ``bl_top_ratio_p99`` と ``bl_top_ratio_max`` に記録する。
+サンプル機体（``yplus = 1``、:math:`M_{\max}=2`）では、``wall_size`` 2.5 mm から 6 mm で 49 層から 54 層、厚さ 22 mm から 54 mm である（表は :ref:`sec-cfd-rans-use`）。
+
+**法線**\ 。壁面の三角形の向きをそろえて外向き（流体の側）にする。一つの辺を 3 枚以上の三角形が共有するとき、向きをそろえられないときはエラーにする。
+
+* 節点の法線は、まわりの三角形の法線との余弦の最小値が最も大きくなる向き（どの三角形からも最もよく見える向き）とする。
+* :math:`y=0` 上の節点では、法線の :math:`y` 成分を 0 にして平面内に置き、:math:`y=0` で鏡映した三角形も含めて見える向きを求める。鏡映した全領域でも柱がそろう。
+* 隣の節点の法線と平均して滑らかにする（3 回）。平均した向きが、まわりの三角形との余弦の最小値を元の値と 0.5 の小さいほうより下げるときは、その節点では平均しない。
+* 凹んだ辺（隣り合う三角形が 30 度より大きく凹んで交わる辺。フィンと胴体の付け根）から層の厚さ以内の節点は、さらに :math:`2T/h_w` 回（四捨五入）平均して、隅から扇状に開く向きにする（隅肉のような形）。
+
+**柱の厚さ**\ 。柱の厚さは :math:`T` を基本とし、次の制限をかける。層の数は変えないので、薄い柱では層の高さの比が小さくなる（最小でも :math:`n\,h_1`）。
+
+* フィンと胴体の付け根の近くでは、二つの壁の柱が交わらないように、厚さを :math:`0.5\,T` に付け根の凹んだ辺までの距離を足した値以下にする。
+* フィンの縁や先端のように隣の柱と向きが開く節点では、隣との法線の角度の最大値 :math:`\varphi` に対して厚さを :math:`2h_w/\varphi` 以下にし、上面の広がりを ``wall_size`` の 2 倍程度に抑える。
+* 隣り合う柱の厚さの差を、辺の長さの半分以下にする。
+* プリズムの 6 つの隅の Jacobian（隅の 3 辺の三重積）を求め、0 以下のものがあれば、その柱の厚さを 0.6 倍にして、まわりの差の制限をかけ直す。なくなるまで（最大 30 回）繰り返す。
+
+**検査と書き出し**\ 。SU2 のメッシュは ``su2_writer.py`` が書く。セルは、符号付きの体積が負なら頂点の順序を入れ替えて向きをそろえ、SU2（VTK）の頂点の順序で書く。
+セルは四面体（SU2 の型 10）とプリズム（13）、境界の面は三角形（5）と、:math:`y=0` にあるプリズム層の側面の四角形（9）である。
+書く前に、隅の Jacobian が 0 以下のプリズム、体積が 0 以下のセル、どのマーカにも属さない境界の面、境界でないマーカの面を数える。
+どれかがあれば、法線の平滑化を 10 回、付け根の厚さの係数を 0.25 にして、新しいプロセスで一度だけ作り直す。
+それでも残れば、``mesh error: the prismatic boundary layer is invalid: … (try a different wall_size or yplus)`` でメッシュの作成を止める（``gmsh meshing failed (log: …)`` のエラーになる）。
+何回目で通ったかは ``mesh_stats.json`` の ``bl_attempt`` に残る。SICN の品質は四面体だけについて求める。
+サンプル機体の ``wall_size`` 2.5、3、3.5、4、4.5、5、6 mm と ``fin_roll_deg`` 0 度と 45 度のメッシュは、すべてこの検査を通る。
 
 ケースの実行
 ------------
@@ -515,6 +624,9 @@ z 対称メッシュ
 * ロール減衰のケース：同じ Mach 数の回転しない :math:`\alpha=\beta=0`。
 
 元のケースが終わる（成功でも失敗でも）まで待ち、失敗した場合は自由流から始める。
+RANS では、Mach 数をまたいで暖機起動しない。各 Mach 数の :math:`\alpha=\beta=0` は自由流から始め（冷えた起動）、迎角と横滑り角の列だけを暖機起動でつなぐ。
+残差の大きさは Mach 数で変わるので、受け入れの基準にする残差の最大値（:ref:`sec-cfd-int-rans-accept`）を Mach 数ごとに冷えた起動で決めるためである。
+SA の変数を持たない解（Euler の解）からは始めない。暖機起動のケースが失敗したときは、自由流から解き直す。
 この依存関係のもとで、準備のできたケースを ``parallel_cases`` 個まで同時に実行する。
 最初に :math:`\alpha=\beta=0` の列が Mach 数順に解かれ、そのあと各 Mach 数の角度の列が並列に進む。
 
@@ -532,24 +644,89 @@ Ctrl-C や SIGTERM を受けると、子プロセスをまとめて終了し、�
 
 各ケースは ``<出力先>/<workdir>/m0.800_a04.00/`` のようなディレクトリに入る（負の迎角は ``a-04.00``）。
 横滑り角があれば ``_b04.00``、ロール減衰のケースは ``_r+0.0100`` と ``_r-0.0100`` を名前に足す（例：``m0.800_a04.00_b04.00``）。
-SU2 の設定、ログ、履歴（``history.csv``）、壁面の分布（``surface_flow.csv``）があり、終わると ``done.json``\ （入力のハッシュ、係数、収束の状態）が書かれる。
+SU2 の設定、ログ、履歴（``history.csv``）、壁面の分布（``surface_flow.csv``）があり、終わると ``done.json``\ （入力のハッシュ、係数、収束の状態。項目は :ref:`sec-file-cfd`）が書かれる。
+RANS の冷えた起動では、1 次精度の段の設定、ログ、履歴（``case_startup.cfg``、``su2_startup.log``、``history_startup.csv``）も残る。
 入力のハッシュは SU2 の設定（暖機起動の行を除く）とメッシュのハッシュから作る。
 同じハッシュの ``done.json`` があるケースは次の実行で飛ばす。途中で止めても、あるいは設定を一部変えても、影響を受けないケースは再利用される。
 最初からやり直すには、このディレクトリを削除する。
 
-ケースの結果は、次のいずれかで扱う。
+Euler のケースの結果は、次のいずれかで扱う（RANS は :ref:`sec-cfd-int-rans-accept`）。
 
 * **収束**\ ：残差の目標に達した。最後の反復の係数を使う。
-* **早期終了**\ ：``min_iterations``\ （既定 100）反復を過ぎて、残差が最大値から 3 桁（RANS は 1 桁）以上下がり、直近 ``stable_window``\ （既定 60）反復の力とモーメントが落ち着いたとき（前半と後半の平均の差が力の大きさの 2 % 未満など）、ケースを止めて受け入れる（``status`` は ``accepted``）。
+* **早期終了**\ ：``min_iterations``\ （既定 100）反復を過ぎて、残差が最大値から 3 桁以上下がり、直近 ``stable_window``\ （既定 60）反復の力とモーメントが落ち着いたとき（前半と後半の平均の差が力の大きさの 2 % 未満など）、ケースを止めて受け入れる（``status`` は ``accepted``）。
   落ち着きの判定は、どの場合も軸力 CFx、法線力 CFz、ピッチングモーメント CMy（許容は力の大きさの 2 %＋5e-4、CMy は 25 %＋5e-3）で行い、ケースの種類に応じて次を加える。
   横滑りのケース（:math:`\beta\ne0`）は横力 CFy（力と同じ許容）とヨーイングモーメント CMz（CMy と同じ許容）、ロール減衰のケースは転がりモーメント CMx（自身の平均の 3 %＋2e-5。転がりモーメントは力に比べてはるかに小さいので、自分の大きさで測る）である。
   力だけの判定では、CMx が窓の中でまだ変化していても受け入れてしまうからである。
   ``min_iterations`` は ``stable_window`` 以上でなければならない。Euler の Roe の制限関数は ``min_iterations`` 反復で固定する（``LIMITER_ITER``）。既定値の根拠の測定は :ref:`早期終了の測定 <sec-cfd-early-stop>` に示す。
-* **受け入れ**\ ：反復の上限か時間の上限（``timeout_minutes``、既定 0 で無制限）に達したが、残差が最大値から 3 桁（RANS は 1 桁）以上下がり、
+* **受け入れ**\ ：反復の上限か時間の上限（``timeout_minutes``、既定 0 で無制限）に達したが、残差が最大値から 3 桁以上下がり、
   最後の窓（反復数の 1/4、2 から 100 反復）で早期終了と同じ落ち着きの判定を満たすとき、係数を窓の平均として受け入れる。どちらの場合も「収束」には数えず、``cfd_report.json`` の ``unconverged`` に載る。
   残差は下がりきらなくても係数が平らになる状況（例えば底面の後流が振動する場合）を、結果として使うための扱いである。
 * **失敗**\ ：SU2 のエラー、発散、履歴なし、あるいは収束も安定もしていない場合。``done.json`` は作らない。
   表の作成では、失敗したケースを飛ばして補間する（:ref:`sec-cfd-post`）。
+
+.. _sec-cfd-int-rans-stages:
+
+RANS の二段の計算と発散の扱い
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+RANS のケースを自由流から始めるとき（冷えた起動。各 Mach 数の :math:`\alpha=\beta=0` と、暖機起動に失敗したケース）は、同じディレクトリで二段に分けて解く。
+
+1. **1 次精度の段**\ ：再構成のない Roe で、自由流から解く。反復は ``iterations`` と 500 の小さいほうまでで、100 反復目からは、密度の残差がその最大値から 2 桁下がった時点で終える（``REL_RMS_DENSITY``）。
+   解は ``restart_startup.dat`` に書く。この段の密度の残差と SA の残差の最大値が、そのケースと、そこから暖機起動でつながるケースの受け入れの基準（基準の最大値）になる。
+2. **2 次精度の段**\ ：``restart_startup.dat`` から始め、MUSCL の再構成で解く（:ref:`sec-cfd-int-discretization`）。反復数の上限は ``iterations`` である。
+
+暖機起動のケースは、隣のケースの ``restart.dat`` から 2 次精度の段だけを解き、基準の最大値を隣のケースから受け継ぐ（``done.json`` の ``reference_peak``）。
+
+ランナーは 2 次精度の段の履歴を 1 秒ごとに読み、発散を見つけるとすぐに SU2 を止める。発散は、最後の 5 行の中央値で次のどれかが起きたときとする。
+
+* 密度の残差が、10 行目以降の最小値より 2 桁以上大きい。SA の残差なら 3 桁以上大きい。
+* 残差か係数が有限でない。
+* 力の係数の大きさが 100 を超える。
+
+冷えた起動のケースが発散したときは、``restart_startup.dat`` から、CFL 数の上限を :math:`4\,\mathrm{cfl}` に下げて 2 次精度の段を一度だけ解き直す（制限関数は固定しない）。
+そのとき ``the second-order stage diverged (…); repeated from the first-order solution with CFL <= 20 and the limiter not frozen``\ （``cfl`` = 5 のとき）を警告として記録する。
+解き直しも発散すれば、``diverged twice (the second time with conservative settings): …`` で失敗とする。
+暖機起動のケースが発散したとき、シグナルによらずに SU2 が異常終了したとき、反復の上限で受け入れの判定を満たさなかったときは、``the warm start failed (…); solved again from the freestream`` を記録して、冷えた起動で解き直す。
+
+.. _sec-cfd-int-rans-accept:
+
+RANS の受け入れの判定
+~~~~~~~~~~~~~~~~~~~~~
+
+RANS のケースは、2 次精度の段の履歴を、次の量で判定する。
+
+* **基準の最大値**\ ：冷えた起動の 1 次精度の段の、密度の残差と SA の残差の最大値（:ref:`sec-cfd-int-rans-stages`）。2 次精度の段の残差がそれより大きくなったときは、その段の最大値を使う。
+  暖機起動のケースの残差は低い値から始まるので、自分の最大値から測ると早く受け入れすぎるためである。
+* **残差の下がり**\ ：基準の最大値と、最後の 20 行の残差の最大値の差（桁）。振動する残差が一時的に下がった値では受け入れない。
+* **係数の平らさ**\ ：直近 ``stable_window``\ （RANS の既定 200）行で、軸力 CFx と法線力 CFz（横滑りのケースは横力 CFy も）の前半と後半の平均の差と四分位範囲が、力の大きさ（平均の絶対値の最大）の 0.5 %（:math:`+10^{-5}`）以下であること。
+  圧力中心 :math:`-C_{My}/C_{Fz}`\ （横滑りのケースは :math:`C_{Mz}/C_{Fy}` も）の差と四分位範囲は、全長の 0.002 倍以下とする。法線力がほぼ 0 で圧力中心が定まらないときは、モーメントそのものに力の許容に全長をかけた許容を使う。
+  ロール減衰のケースは RANS では解かない。
+* **傾きの外挿**\ ：窓の中の係数の傾き（1 行あたりの最小二乗の傾き）に、残差の減り方から決める時定数 :math:`\tau` をかけた値を、これから残る変化とみなし、平らさと同じ許容以下であることを求める。
+  係数が残差とともに :math:`\exp(-i/\tau)` のように収束すると、残る変化は傾きの大きさの :math:`\tau` 倍である。
+  :math:`\tau=1/(r\ln10)` で、:math:`r` は窓の中の密度と SA の残差の減る速さ（1 反復あたりの桁）の遅いほうである。:math:`\tau` は ``iterations`` を上限とし、残差が減っていなければ ``iterations`` とする。
+
+判定の結果は次の 4 つである（上から順に調べる）。
+
+* **収束**\ （``converged``）：密度の残差が 3 桁以上、SA の残差が 2 桁以上下がり、係数が平らで、傾きの外挿も許容以下。最後の行の係数を使う。
+* **停滞**\ （``unconverged``）：直近の窓の密度の残差の中央値が基準の最大値より 0.5 桁以上下にあり、その前の窓の中央値から 0.2 桁以上は下がっておらず、二つの窓を合わせた区間で係数が平らで傾きの外挿も許容以下。
+  係数は二つの窓の平均とし、``unconverged: residual stalled … orders below the reference (median of the last … iterations), coefficients stationary over … iterations: CFx …, CFz …`` の形で、残差の位置と力の平均と四分位範囲を警告に記録する。
+* **振動**\ （``unconverged``）：密度の残差が 2 桁以上下がり、窓の中の力の四分位範囲が力の大きさの 1 % 以下、圧力中心の四分位範囲が全長の 0.004 倍以下（平均の差は問わない）。係数は窓の平均とし、``limit cycle: coefficients averaged over the last … iterations`` を警告に記録する。
+* **失敗**\ ：どれでもない。``not converged (iteration limit): density residual … and SA residual … orders below the cold reference peak (need 3 and 2), coefficients …`` の形で、残差の下がりと係数の状態（``stable``、``flat but still trending``、``in a limit cycle``、``still changing``）を示す。
+
+ランナーは ``min_iterations``\ （RANS の既定 400）行を過ぎてから 1 秒ごとに判定し、収束か停滞になったら止める。
+SU2 は SIGTERM で止めると何も書かないので、すぐには止めず、``restart.dat`` と ``surface_flow.vtk`` が次に書き出され（50 反復ごと）、さらに履歴が 1 行進むのを待ってから止める（最大 105 行）。
+暖機起動に使う解と、:math:`y^+` を確かめる壁面の分布が、受け入れた解のものになる。
+振動は、反復の上限か時間の上限で SU2 が終わったときに調べる。
+
+傾きの外挿は、平らさだけでは遅い変化を見逃すために加えた条件である。
+NASA TMR の平板（格子 69×49、137×97、273×193、:math:`M=0.2` と 2）の SU2 の履歴にこの規則を当てはめると、平らさと残差の条件だけでは、:math:`M=0.2` の 273×193 で 1517 反復目に止まり、
+そこでの平板の抗力は残差を 8 桁下げた値と 1.9 % 違う。傾きの外挿を加えると 2465 反復目に止まり、差は 0.08 % になる。6 つの格子と Mach 数の組で、差は最大 0.3 % である（``doc/data/cfd/rans_flatplate.csv``）。
+
+受け入れたケースでは、``surface_flow.vtk`` の壁面の :math:`y^+`\ （底面の節点を除く）の 95 パーセンタイルを ``done.json`` の ``yplus_p95`` に記録する。
+``yplus`` が 5 以下（壁面を解像する設定）でこの値が 3 を超えるときは、``wall y+ P95 = … exceeds 3 (target yplus = …): the first cell is too thick for the resolved wall`` を警告にする。
+:math:`y^+` が分布に含まれなければ ``wall y+ not checked: no Y_Plus in surface_flow.vtk`` を警告にする。
+ケースの警告は ``warning: aero.cfd: case m0.800_a04.00: …`` の形で標準エラー出力にも表示する。
+``done.json`` の ``converged`` は、収束で真、停滞と振動で偽になり、偽のケースは ``cfd_report.json`` の ``unconverged`` に載る。
 
 
 .. _sec-cfd-post:
@@ -596,6 +773,7 @@ CFD の座標は機体座標を :math:`y` まわりに 180 度回したもの（
 
 となる。力は :math:`qS`、モーメントはノーズ先端まわりで :math:`qSd` で無次元化している。
 :eq:`eq-cfd-body` との関係は、:math:`C_Z=-C_N`、:math:`C_m=x_{cp}C_Z/d` である（:eq:`eq-coeff-6-axisym`）。
+半領域の解では、:math:`y=0` の対称面が半分の機体の圧力を受けるので、:math:`C_Y,C_l,C_n` は対称面による見かけの値である。機体は :math:`y=0` について対称なので、半領域のケースではこれらを 0 にする。
 鏡映の像は、:math:`z\to-z` で :math:`(\alpha,\beta)\to(-\alpha,\beta)` となり :math:`C_Z,C_l,C_m` の符号が変わる。
 :math:`y\to-y` では :math:`(\alpha,\beta)\to(\alpha,-\beta)` となり :math:`C_Y,C_l,C_n` の符号が変わる。
 
@@ -616,8 +794,20 @@ CFD の座標は機体座標を :math:`y` まわりに 180 度回したもの（
   ただし ``surface = "stl"`` では、フィンの前縁と後縁の面が CFD の壁面にあり、その圧力抗力は :math:`C_A^{\mathrm{CFD}}` にすでに入っているので、フィン縁の項 :math:`C_{D,\mathrm{fin}}` を足さない（足すと二重に数える）。
   ``panel_mesh`` の形状は、抽出した厚みのフィンを再構成するので、この項を足す。
   燃焼中の値では、底面の項に、ノズル出口の面積を除いた底面積を使う。
-* **RANS**\ ：摩擦、底面圧力、フィン、ボートテールの抗力は CFD が与えるので、追加抗力 :math:`C_{D,\mathrm{extra}}` だけを足す。
-  燃焼中は、ノズル出口の面積にかかる底面圧力の寄与を引く。
+* **RANS**\ ：SU2 の履歴のマーカごとの列（``CFx(wall)``、``CFx(base)``）を使う。壁面の軸力 :math:`C_{Fx}(\mathrm{wall})` は、圧力と摩擦、フィンの縁とボートテールの力を含む。
+  底面の項は ``rans_base`` で選び、
+
+  .. math::
+     :label: eq-cfd-ca-rans
+
+     C_A=\max\Bigl(C_{Fx}(\mathrm{wall})+C_{A,\mathrm{base}}+f(\alpha)\,C_{D,\mathrm{extra}},\,0\Bigr),\qquad
+     C_{A,\mathrm{base}}=\begin{cases}f(\alpha)\,C_{D,\mathrm{base}} & (\text{rans\_base = model})\\ C_{Fx}(\mathrm{base}) & (\text{rans\_base = cfd})\end{cases}
+
+  とする。``"model"``\ （既定）は部品積み上げ法の底面抗力（燃焼中はノズル出口の面積を除いた底面積）、``"cfd"`` は RANS が平らな底面に積分した力である。
+  ``"cfd"`` の燃焼中の値は、ノズル出口の面積にかかる底面圧力の寄与（部品積み上げ法の燃焼後と燃焼中の底面抗力の差）を引く。
+  部品積み上げ法の摩擦、フィン縁、ボートテールの項と、Euler の項は足さない。
+  履歴にマーカごとの列がないときは、監視する力の合計（``wall`` と ``base``\ 。底面を含む）を使い、表全体を ``rans_base = "cfd"`` と同じに作って、``cfd_report.json`` の ``warnings`` に記録する。
+  ケースごとの :math:`C_{Fx}(\mathrm{wall})`、:math:`C_{Fx}(\mathrm{base})` と、部品積み上げ法の摩擦と底面の値は、``cfd_report.json`` の ``axial_breakdown`` に並べて記録する（比べるためのもので、摩擦は表に足さない）。
 
 亜音速の Euler では、CFD の軸力の理論値は 0（d'Alembert のパラドックス）である。実際の値は小さな負の数（本章のサンプルで :math:`-0.03` から :math:`-0.06`）になり、そのまま合計に入る。
 
@@ -807,7 +997,7 @@ CFD の実装について、次の点を確かめた。数値と手順は :ref:`
 
 実装上の制約は :ref:`sec-lim-cfd` にまとめた。本章に関係する主なものは次のとおりである。
 
-* 境界層のプリズム層がなく、RANS は信頼できる結果を出せない。
+* RANS のメッシュは ``panel_mesh`` の形状で、フィンの配置が :math:`y=0` について対称なときだけ作れる。RANS の検証の項目と結果は :ref:`sec-cfd-rans` にある。
 * メッシュ収束は完全でなく、STL のメッシュは作成のたびに少し変わる。
 * Euler の底面は尾部フェアリングで避けるので、底面抗力は経験式による。
 * ピッチ・ヨー減衰（:math:`C_{mq}`、:math:`C_{nr}`）は CFD が直接与えるものではなく、交差する微係数は扱わない。

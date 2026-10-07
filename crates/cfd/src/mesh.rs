@@ -768,7 +768,13 @@ mod tests {
         // RANS: fin_size = wall_size (no refinement), the same parameters as an explicit fin_size = wall_size.
         let r = MeshParams::cad(&CfdOptions::rans(), &g, &atm, Path::new("/a"), 4);
         assert_eq!(r.fin_size, r.wall_size);
-        let rw = MeshParams::cad(&CfdOptions { fin_size: crate::FinSize::Size(0.003), ..CfdOptions::rans() }, &g, &atm, Path::new("/a"), 4);
+        let rw = MeshParams::cad(
+            &CfdOptions { fin_size: crate::FinSize::Size(crate::config::RANS_DEFAULT_WALL_SIZE), ..CfdOptions::rans() },
+            &g,
+            &atm,
+            Path::new("/a"),
+            4,
+        );
         assert_eq!(mesh_hash(&r), mesh_hash(&rw));
         // The fin size field: a Distance + Threshold on the fin faces combined with the wall field by Min, only below
         // wall_size (fin_size = wall_size keeps the single wall field of the background mesh).

@@ -1,0 +1,159 @@
+{
+ "quantity": "GCI_fine (Celik 2008, Fs 1.25) of CN, CA, xcp at alpha 4; |CN(0)| on the medium level",
+ "levels": [
+  {
+   "wall_size_m": 0.008,
+   "nodes": 347876,
+   "cells": 867701,
+   "wall_s": 2696.452966799,
+   "unconverged": [
+    [
+     0.8,
+     0.0
+    ],
+    [
+     0.8,
+     -4.0
+    ],
+    [
+     2.0,
+     0.0
+    ]
+   ],
+   "failed": []
+  },
+  {
+   "wall_size_m": 0.0048,
+   "nodes": 787490,
+   "cells": 1788825,
+   "wall_s": 9053.991912457,
+   "unconverged": [
+    [
+     0.8,
+     0.0
+    ],
+    [
+     2.0,
+     0.0
+    ]
+   ],
+   "failed": []
+  },
+  {
+   "wall_size_m": 0.003,
+   "nodes": 1844927,
+   "cells": 4141848,
+   "wall_s": 9987.167055451,
+   "unconverged": [],
+   "failed": [
+    [
+     2.0,
+     -4.0
+    ]
+   ]
+  }
+ ],
+ "thresholds": {
+  "gci_cn_percent": 3.0,
+  "gci_ca_percent": 5.0,
+  "gci_xcp_m": 0.01,
+  "cn0_abs": 0.005
+ },
+ "mach": {
+  "0.8": {
+   "cn": {
+    "fine": 1.26214665,
+    "medium": 1.27293506,
+    "coarse": 1.30730862,
+    "order": 4.333088778117623,
+    "extrapolated": 1.2576886899323139,
+    "gci_fine_abs": 0.0055724500846075905,
+    "gci_fine": 0.004415057540744248,
+    "monotone": true,
+    "e21": 0.01078840999999997,
+    "e32": 0.034373559999999914
+   },
+   "ca": {
+    "fine": 0.196557395,
+    "medium": 0.199246558,
+    "coarse": 0.204125641,
+    "order": 2.2955179629503615,
+    "extrapolated": 0.1936288949771811,
+    "gci_fine_abs": 0.00366062502852361,
+    "gci_fine": 0.01862369527497864,
+    "monotone": true,
+    "e21": 0.0026891629999999944,
+    "e32": 0.004879083000000006
+   },
+   "xcp": {
+    "fine": 1.22390729,
+    "medium": 1.22298109,
+    "coarse": 1.22132973,
+    "order": 2.232445599069276,
+    "extrapolated": 1.2249547385641155,
+    "gci_fine_abs": 0.0013093107051444029,
+    "gci_fine": 0.0010697793173079333,
+    "monotone": true,
+    "e21": -0.0009262000000000992,
+    "e32": -0.0016513600000001016
+   },
+   "cn0_medium": 0.0343908502,
+   "pass": {
+    "cn": true,
+    "ca": true,
+    "xcp": true,
+    "cn0": false
+   }
+  },
+  "2": {
+   "cn": {
+    "fine": 0.9655345013500001,
+    "medium": 0.97073368,
+    "coarse": 0.982641898,
+    "order": 3.1377568341414706,
+    "extrapolated": 0.9619143934808123,
+    "gci_fine_abs": 0.004525134836484869,
+    "gci_fine": 0.0046866630142764175,
+    "monotone": true,
+    "e21": 0.005199178649999969,
+    "e32": 0.01190821799999997
+   },
+   "ca": {
+    "fine": 0.25590602554999997,
+    "medium": 0.25547424,
+    "coarse": 0.254312139,
+    "order": 3.7216585246432135,
+    "extrapolated": 0.25613628118749143,
+    "gci_fine_abs": 0.00028781954686432854,
+    "gci_fine": 0.0011247079713959027,
+    "monotone": true,
+    "e21": -0.00043178554999995233,
+    "e32": -0.0011621010000000265
+   },
+   "xcp": {
+    "fine": 1.1571607342232024,
+    "medium": 1.15674344,
+    "coarse": 1.15442766,
+    "order": 6.3477829536521435,
+    "extrapolated": 1.157243235723708,
+    "gci_fine_abs": 0.00010312687563186704,
+    "gci_fine": 8.912061443313293e-05,
+    "monotone": true,
+    "e21": -0.000417294223202358,
+    "e32": -0.0023157799999999895
+   },
+   "cn0_medium": 0.000682230612,
+   "pass": {
+    "cn": true,
+    "ca": true,
+    "xcp": true,
+    "cn0": true
+   }
+  }
+ },
+ "pass": false,
+ "notes": [
+  "M2 fine alpha -4 rerun separately (L3m4, 600 final-stage iterations, cold start) and recombined"
+ ],
+ "provenance": "rans_mesh_study.csv"
+}

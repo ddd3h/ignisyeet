@@ -222,7 +222,7 @@ Mach 数の刻みは、作り方で異なる。
      - 必須
      - 迎角と横滑り角が表の範囲外のときの扱い。``"linear"``\ （線形外挿。符号と範囲を制限する）または ``"clamp"``\ （端の値で一定）。Mach 数は、この値にかかわらず端の値で一定（:ref:`sec-aero-interp`）
 
-部品積み上げ法、パネル法、CFD の軸対称表の ``fin_cant_ref_deg`` は、設定したカントである。CFD の一般表では、``stl`` のとき設定したカント、``panel_mesh`` のとき 0 である（形状にカントがないため）。CFD の表の値は ``cfd_report.json`` の ``fin_cant_ref_deg`` にも出る。
+部品積み上げ法、パネル法、CFD の軸対称表の ``fin_cant_ref_deg`` は、設定したカントである。CFD の一般表では、``stl`` と ``step`` のとき設定したカント、``panel_mesh`` のとき 0 である（形状にカントがないため）。CFD の表の値は ``cfd_report.json`` の ``fin_cant_ref_deg`` にも出る。
 
 読み込み時の検査
 ~~~~~~~~~~~~~~~~
@@ -450,16 +450,30 @@ CFD の実行の要約である。項目は次のとおりである。
    * - ``fin_cant_ref_deg``
      - CFD の形状に含まれるフィンのカント [deg]（ロールの強制項の基準）
    * - ``base_treatment``
-     - 底面の扱い（``fairing``、``flat``）。壁面が STL のときと Euler のときに入る
+     - 底面の扱い（``fairing``、``flat``）。壁面が STL か CAD のモデルのときと、Euler のときに入る。``surface = "step"`` の RANS では ``none``
    * - ``warnings``
      - 警告の一覧
    * - ``symmetry_check``
-     - ``surface = "stl"`` の鏡映対称性の判定。``requested``\ （設定値）、``chosen``\ （採用した対称性）、平面ごとの検査 ``y`` と ``z``\ （``symmetric``、``max_mismatch`` [m]、``vertices``、``vertices_matched``、``triangulation_identical``、``tolerance``、``reason``）、メッシュの作り方 ``meshed``\ （``quarter``、``half``、``full``）、``reason``
+     - ``surface = "stl"`` と ``"step"`` の鏡映対称性の判定。``requested``\ （設定値）、``chosen``\ （採用した対称性）、平面ごとの検査 ``y`` と ``z``\ （``symmetric``、``max_mismatch`` [m]、``vertices``、``vertices_matched``、``triangulation_identical``、``tolerance``、``reason``）、メッシュの作り方 ``meshed``\ （``quarter``、``half``、``full``）、``reason``。
+       ``step`` では、``vertices`` は鏡映した曲面上の点の数、``vertices_matched`` は曲面に一致した点の数、``tolerance`` は実際に使った許容（:ref:`sec-cfd-step-internals`）で、``triangulation_identical`` は常に ``false`` である
    * - ``fidelity``
      - ``surface = "stl"`` の形状の忠実度。``fidelity``\ （``stl_fidelity.json`` と同じ内容）、``union``\ （``union_report.json``）、``repair``\ （``repair_report.json``）を持つ
+   * - ``step``
+     - ``surface = "step"`` のときだけ入る。CAD のモデルの読み込み、位置合わせ、計算領域（:ref:`sec-cfd-step`）。
+       ``file``\ （CAD のファイル）、``format``\ （``step``、``iges``、``brep``）、``file_unit_m``\ （ファイルが宣言する単位 [m]、宣言がなければ ``null``）、``step_unit`` と ``unit_scale``\ （設定した単位とそこから決まる倍率）、
+       ``solids_in_file`` と ``solids``\ （融合の前後のソリッドの数）、``faces`` と ``base_faces``\ （面の数と底面の面の数）、``volume`` [m\ :sup:`3`]、``area`` [m\ :sup:`2`]、``import_notes``\ （縫い合わせ、修復、融合の注記）、
+       ``registration``\ （位置合わせ。下記）、``symmetry``\ （``symmetry_check`` と同じ）、``domain``\ （``full``、``half``\ （SU2 の半領域）、``half_mirrored``\ （半領域を鏡映した全領域）、``quarter_half``、``quarter_full``）、
+       ``base_treatment``\ （``fairing``、``flat``、``none``）、``fairing``\ （円すいを付けた底面の位置 ``x``、半径 ``radius``、長さ ``length``、切った位置 ``cut_at``、底面の面積 ``base_face_area``）、
+       ``smallest_feature`` と ``min_size``\ （最も小さい面の幅と最小の要素の大きさ [m]）、``warnings`` を持つ。
+
+       ``registration`` は、``threshold``\ （STL と CAD の面の距離の許容 [m]）、``detail_threshold``\ （CAD の細部とみなす距離 [m]）、
+       ``stl_to_step`` と ``step_to_stl``\ （距離の統計 [m]。``max``、その位置 ``max_at``、``p99``、``rms``、標本数 ``samples``）、``stl_buried_fraction``\ （CAD の立体に埋まって除いた STL の点の割合）、
+       ``step_only_regions`` と ``step_only_area``\ （CAD だけにある細部の領域の数と面積 [m\ :sup:`2`]）、``stl_bbox``、``step_bbox``、``bbox_offsets``\ （包含箱 ``[xmin, ymin, zmin, xmax, ymax, zmax]`` と CAD − STL の差 [m]）、
+       ``problems``\ （合わない理由。通ったときは空）、``hint``\ （推定した原因）を持つ
    * - ``axial_breakdown``
      - RANS のとき、ロール減衰でないケースごとの軸力の内訳。``mach``、``alpha_deg``、``cfd_wall_ca`` と ``cfd_base_ca``\ （壁面と底面の ``CFx``。履歴に列がなければ ``null``）、
-       ``barrowman_friction`` と ``barrowman_base``\ （その Mach 数の部品積み上げ法の摩擦と底面の抗力。比べるための値で、摩擦は表に足さない）、``base_from_cfd``\ （表の底面の項が CFD の値か）を持つ。Euler では空
+       ``barrowman_friction`` と ``barrowman_base``\ （その Mach 数の部品積み上げ法の摩擦と底面の抗力。比べるための値で、摩擦は表に足さない）、
+       ``roughness_increment``\ （表に足す、設定の粗さによる摩擦の増分。:eq:`eq-cfd-rans-rough`）、``fin_edge_increment``\ （表に足す、設定のフィンの縁の増分。:eq:`eq-cfd-rans-fin`。``stl`` と ``step`` では 0）、``base_from_cfd``\ （表の底面の項が CFD の値か）を持つ。Euler では空
 
 ``done.json``
 ~~~~~~~~~~~~~
@@ -529,6 +543,29 @@ CFD のメッシュのキャッシュで、``mesh.su2``、メッシュを作っ�
    * ``cfd_vs_union`` / ``cfd_wall_vs_input``：距離の統計 [m]（``max``、その位置 ``max_at``、``p99``、``rms``、標本数 ``samples``）
    * ``wall_size`` / ``warn_above`` / ``fail_above``：壁面の要素の大きさ、警告の水準（0.5 ``wall_size``）、エラーの水準（``max_geometry_error``）[m]
    * ``genus`` / ``warnings`` / ``symmetry``：和の種数、警告、鏡映対称性の判定（``cfd_report.json`` の ``symmetry_check`` と同じ）
+
+``surface = "step"`` では、次のファイルも入る。
+
+``step_prepared.brep``
+   単位をそろえ、CFD の座標に移し、Euler の ``"fairing"`` では円すいを融合した CAD の立体（OpenCASCADE の BREP、m 単位）。体積メッシュはこれから作る。
+
+``step_surface.stl``
+   準備した立体の三角形分割（面ごとにまとめた二進形式の STL、CFD の座標、m 単位）。位置合わせに使う。
+
+``step_report.json``
+   読み込みの報告。``solids_in_file`` と ``faces_in_file``\ （ファイルのソリッドと面の数）、``notes``\ （縫い合わせ、修復、融合の注記）、``solids``、``volume``、``area``、``bbox``、
+   ``faces``\ （面ごとの ``tag``、``type``、``area``、``centroid``、``normal``、``planar``、``width``\ （:math:`2A/P` [m]）、``bbox``、``base``）、``face_triangles``\ （面ごとの三角形の数）、
+   ``smallest_face_width`` と ``smallest_face``\ （最も細い面の幅とその面）、``smallest_edge`` と ``smallest_edge_tag``\ （最も短い辺の長さとその辺）、``symmetry_y`` と ``symmetry_z``\ （平面ごとの鏡映の検査）、``fairing``\ （円すいの位置と大きさ、または付けられなかった理由 ``error``）、``seconds`` と ``seconds_symmetry``\ （準備の段全体と対称性の検査の時間 [s]）を持つ。
+
+``step_prepare.json`` / ``prepare_params.json`` / ``prepare.log``
+   準備の段のハッシュ、その設定、ログ。ハッシュが同じなら準備の段をやり直さない。
+
+``step_quarter_failed.json``
+   1/4 領域を切り出せなかったときに、準備した形状のハッシュを書く。同じ形状では最初から半領域をメッシュにする（:ref:`sec-cfd-step-internals`）。
+
+``ignisyeet cfd-check 設定ファイル --mesh`` は、``surface = "step"`` のとき、メッシュの統計のあとに ``CAD surface (surface = "step", base treatment: …):`` で始まる報告を表示する。
+行は ``file``、``shape``、``details``、``domain``\ （対称性の判定の 2 行を含む）、``base``、``registration`` 以下の位置合わせの 4 行で、``note:`` と ``warning:`` の行が続くことがある。
+各行の意味と例は :ref:`読み込みと位置合わせの報告 <sec-cfd-step-report>` にある。値は ``cfd_report.json`` の ``step`` と同じである。
 
 形状と断面のファイル
 --------------------

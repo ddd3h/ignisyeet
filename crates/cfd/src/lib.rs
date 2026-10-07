@@ -304,14 +304,14 @@ pub(crate) fn table_base_from_cfd(rans_base_cfd: bool, markers_missing: bool) ->
 }
 
 /// Per-case axial breakdown of the RANS report, from the per-marker values stored with each case.
-fn axial_breakdown(results: &[runner::CaseOutcome], model: &aero::AeroModel) -> Vec<forces::AxialReportEntry> {
+fn axial_breakdown(results: &[runner::CaseOutcome], model: &aero::AeroModel, fin_edges_in_cfd: bool) -> Vec<forces::AxialReportEntry> {
     results
         .iter()
         .filter(|r| !r.spec.is_roll())
         .filter_map(|r| {
             let a = r.result.as_ref()?.axial?;
             let m = forces::MarkerCoeffs { wall_cfx: a.wall_cfx, base_cfx: a.base_cfx, ..Default::default() };
-            let mut e = forces::AxialReportEntry::new(model, r.spec.mach, r.spec.alpha_deg, &m, false);
+            let mut e = forces::AxialReportEntry::new(model, r.spec.mach, r.spec.alpha_deg, &m, false, fin_edges_in_cfd);
             e.base_from_cfd = a.base_in_cfx;
             Some(e)
         })
@@ -506,7 +506,7 @@ pub fn build_table_with_progress(
         report.step = serde_json::to_value(info).ok();
     }
     if cfd.model == FlowModel::Rans {
-        report.axial_breakdown = axial_breakdown(&results, &model);
+        report.axial_breakdown = axial_breakdown(&results, &model, cfd.surface_is_user_shape());
         if report.axial_breakdown.iter().any(|e| e.cfd_wall_ca.is_some()) && markers_missing {
             report.warnings.push("RANS: some cases have no per-marker CFx columns; the table takes the base from CFD for all of them".into());
         }
@@ -563,7 +563,8 @@ pub fn build_table_with_progress(
             .map(|r| table::SolvedPoint { mach: r.spec.mach, alpha_deg: r.spec.alpha_deg, coeffs: r.result.as_ref().map(|x| x.coeffs) })
             .collect();
         let (points, asymmetry) = table::apply_alpha_mode(&points, cfd.alpha_mode);
-        let (tab, fill) = table::build_from_points_roll(&points, &model, cfd.model, hash, extrapolation, &clp, base_from_cfd).map_err(first_error)?;
+        let (tab, fill) = table::build_from_points_roll(&points, &model, cfd.model, hash, extrapolation, &clp, base_from_cfd, cfd.surface_is_user_shape())
+            .map_err(first_error)?;
         runner::write_cases_csv(&out_dir.join("cfd_cases.csv"), &results, &points, cfd.alpha_mode)?;
         report.table_kind = "axisymmetric".into();
         report.filled = fill.filled;

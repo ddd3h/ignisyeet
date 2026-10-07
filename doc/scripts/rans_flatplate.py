@@ -162,8 +162,7 @@ def config(mach, startup, minval=None, post=False):
     if startup:
         c += ["MUSCL_FLOW= NO"]
     else:
-        c += ["MUSCL_FLOW= YES", "SLOPE_LIMITER_FLOW= VENKATAKRISHNAN_WANG", "VENKAT_LIMITER_COEFF= 0.05",
-              "LIMITER_ITER= 400"]
+        c += ["MUSCL_FLOW= YES", "SLOPE_LIMITER_FLOW= VAN_ALBADA_EDGE"]
     c += [
         "USE_ACCURATE_FLUX_JACOBIANS= YES", "TIME_DISCRE_FLOW= EULER_IMPLICIT", "CONV_NUM_METHOD_TURB= SCALAR_UPWIND",
         "MUSCL_TURB= NO", "TIME_DISCRE_TURB= EULER_IMPLICIT", "CFL_NUMBER= 5.0", "CFL_ADAPT= YES",
@@ -178,13 +177,13 @@ def config(mach, startup, minval=None, post=False):
               "CONV_STARTITER= 100", "CONV_FILENAME= history_startup"]
     else:
         c += [f"ITER= {FINAL_ITER}", "CONV_FIELD= RMS_DENSITY", f"CONV_RESIDUAL_MINVAL= {minval:.3f}",
-              "CONV_STARTITER= 10", "SOLUTION_FILENAME= restart.dat", "CONV_FILENAME= history"]
+              "CONV_STARTITER= 10", "SOLUTION_FILENAME= restart_startup.dat", "CONV_FILENAME= history"]
     c += [
-        "MESH_FILENAME= mesh.su2", "MESH_FORMAT= SU2", "RESTART_FILENAME= restart.dat", "SURFACE_FILENAME= surface_flow",
+        "MESH_FILENAME= mesh.su2", "MESH_FORMAT= SU2", f"RESTART_FILENAME= {'restart_startup.dat' if startup else 'restart.dat'}", "SURFACE_FILENAME= surface_flow",
         "TABULAR_FORMAT= CSV", "OUTPUT_FILES= ( RESTART, SURFACE_CSV, SURFACE_PARAVIEW_ASCII )", "VOLUME_OUTPUT= ( COORDINATES, SOLUTION, PRIMITIVE )",
         "HISTORY_OUTPUT= ( ITER, RMS_RES, REL_RMS_RES, AERO_COEFF, LINSOL, CFL_NUMBER )",
         "SCREEN_OUTPUT= ( INNER_ITER, RMS_DENSITY, RMS_NU_TILDE, DRAG, AVG_CFL )",
-        "SCREEN_WRT_FREQ_INNER= 50", "HISTORY_WRT_FREQ_INNER= 1", "OUTPUT_WRT_FREQ= 5000",
+        "SCREEN_WRT_FREQ_INNER= 50", "HISTORY_WRT_FREQ_INNER= 1", "OUTPUT_WRT_FREQ= 50",
     ]
     return "\n".join(c) + "\n"
 
@@ -353,7 +352,7 @@ def collect(args):
     vd, vdp = van_driest2(2.0, RE_PER_M * X_PROBE)
     hdr = (f"# RANS flat plate verification (doc/scripts/rans_flatplate.py), NASA TMR 2DZP grids, Re = 5e6 per m, "
            f"T = 300 K, adiabatic wall, SU2 settings of the ignisyeet RANS mode (SA-neg + WITHFT2, Roe, 1st-order startup "
-           f"then MUSCL/VW, CFL 5..200). cf_x097 = SU2 Skin_Friction_Coefficient_x at x = 0.97 (linear interpolation). "
+           f"then MUSCL/Van Albada edge, CFL 5..200). cf_x097 = SU2 Skin_Friction_Coefficient_x at x = 0.97 (linear interpolation). "
            f"tmr_sa_cf = mean of CFL3D/FUN3D SA on 545x385 (TMR cf_convergence.dat). correlation_cf: M0.2 local "
            f"Karman-Schoenherr ({ks_local(RE_PER_M * X_PROBE):.6e}), M2 van Driest II (Hopkins-Inouye, r = {RECOVERY}, "
            f"Fc = {vdp['Fc']:.4f}, F_Rx = {vdp['F_Rx']:.4f}) = {vd:.6e}; White 0.455/ln^2(0.06 Re_x) = "

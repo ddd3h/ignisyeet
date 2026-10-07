@@ -1,0 +1,59 @@
+{
+ "mach": {
+  "0.8": {
+   "rans_cn_a4": 1.26214665,
+   "euler_cn_a4": 1.2183,
+   "barrowman_cn_a4": 0.9493,
+   "cna_diff_percent": 3.5990027086924448,
+   "rans_xcp_m": 1.22390729,
+   "euler_xcp_m": 1.2203,
+   "barrowman_xcp_m": 1.1374,
+   "xcp_diff_m": 0.0036072900000001518,
+   "rans_friction_ca_a0": 0.18773622881963833,
+   "rans_cfx_wall_a0": 0.2102335672,
+   "euler_pressure_ca_a4_2mm": -0.0382895,
+   "rans_cfx_wall_minus_euler_pressure": 0.2485230672,
+   "barrowman_friction_smooth": 0.1711856,
+   "friction_diff_percent": 9.668236592118928,
+   "pass": {
+    "cna": true,
+    "xcp": true,
+    "friction": true
+   }
+  },
+  "2": {
+   "rans_cn_a4": 0.9655345013500001,
+   "euler_cn_a4": 0.9188,
+   "barrowman_cn_a4": 0.8793,
+   "cna_diff_percent": 5.086471631475842,
+   "rans_xcp_m": 1.1571607342232024,
+   "euler_xcp_m": 1.1537,
+   "barrowman_xcp_m": 1.1392,
+   "xcp_diff_m": 0.0034607342232024774,
+   "rans_friction_ca_a0": 0.12873150785431756,
+   "rans_cfx_wall_a0": 0.2538302407,
+   "euler_pressure_ca_a4_2mm": 0.105384,
+   "rans_cfx_wall_minus_euler_pressure": 0.14844624069999998,
+   "barrowman_friction_smooth": 0.1220101,
+   "friction_diff_percent": 5.5088946360322355,
+   "pass": {
+    "cna": true,
+    "xcp": true,
+    "friction": true
+   }
+  }
+ },
+ "pass": true,
+ "thresholds": {
+  "cna_percent": 8.0,
+  "xcp_m": 0.03,
+  "friction_percent": 25.0
+ },
+ "rans_run": {
+  "mesh_nodes": 1844927,
+  "unconverged": []
+ },
+ "geometry": "RANS: fins with edges blunted at 2 % chord, flat base (rans_base model adds the Barrowman base term); Euler: sharp biconvex fins, conical tail fairing (6 base radii), base drag from Barrowman",
+ "note": "RANS: wall_size 3 mm (1844927 nodes), release daa8b2f, alpha 4 mirror-combined (M2: -4 failed, offset fallback), alpha 0 case for the friction. Euler: doc/data/cfd/sample_euler_vs_models.csv (2 mm, 941k cells). Barrowman: smooth wall (roughness 0), examples/sample.toml geometry. 2026-10-07. M2 alpha 4: CN and xcp recombined with the separately solved alpha -4 case (rans_mesh_study.json).",
+ "provenance": "rans_vs_euler.csv"
+}

@@ -235,7 +235,8 @@ pub const DEFAULT_EULER_MULTIGRID: usize = 0;
 /// RANS defaults of `iterations`, `min_iterations`, `stable_window` and `wall_size`, used when the configuration
 /// selects `model = "rans"` and does not set the value (programmatic options: [`CfdOptions::rans`]). In the sample
 /// mesh study (8 / 4.8 / 3 mm, doc/data/cfd) the 4.8 mm level is within about 1 % (CN) and 1.3 % (CA) of the 3 mm
-/// one; 5 mm needs about 7.5 GB per case, 3 mm about 18 GB.
+/// one; a half-model case needs about 7.5 GB at 5 mm and 18 GB at 3 mm (measured; the eq-cfd-mem-rans estimate is about
+/// 9 GB and 22 GB).
 pub const RANS_DEFAULT_ITERATIONS: usize = 4000;
 pub const RANS_DEFAULT_MIN_ITERATIONS: usize = 400;
 pub const RANS_DEFAULT_STABLE_WINDOW: usize = 200;
@@ -333,7 +334,7 @@ pub struct CfdOptions {
     pub tail_fairing: f64,
     /// Farfield radius in body lengths.
     pub farfield: f64,
-    /// Surface element size [m]. 2 mm gives about 1.4 M half-model cells for the 1.8 m sample rocket with the Euler
+    /// Surface element size [m]. 2 mm gives about 1.4 M half-model cells for the 1.5 m sample rocket with the Euler
     /// default `fin_size` (1 mm on the 4 mm fins; 0.9 M with the fins at 2 mm too) and a normal force within 0.1 % of
     /// the 1.8 mm mesh (mesh study with the fins at 1 mm, doc/data/cfd/mesh_convergence.csv).
     /// RANS default: 5 mm.

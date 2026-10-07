@@ -67,21 +67,6 @@
  },
  "farfield_sensitivity": "farfield_sensitivity.csv (fins at 2 mm, commit e00ed02): M0.8 alpha 4, CN within 0.25 % for 10, 20, 40 body lengths",
  "asymmetry": "asymmetry_study.csv (fins at wall_size 10 mm, commit e00ed02); asymmetry_cause.csv; fin_resolution.csv",
- "rans_case": {
-  "mach": 0.8,
-  "alphas_deg": [
-   0,
-   4
-  ],
-  "cells": 196947,
-  "wall_size_m": 0.005,
-  "ranks": 4,
-  "wall_s": [
-   69,
-   85
-  ],
-  "note": "older run (half model, alpha 0 offset subtracted, before the z-symmetric mesh); no boundary-layer prisms; SA + standard wall function, first-order Roe, 300 iteration cap"
- },
  "memory": {
   "model": "eq-cfd-mem: 40 MB per rank + 3.3 kB per cell, from 4 x the largest-rank peak (4.8 GB at 1416k cells against 4 x 1149600 kB = 4.6 GB)",
   "largest_rank_peak_kB_time_v": {

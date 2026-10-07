@@ -31,10 +31,10 @@
 //!    `shape_symmetry`: both planes give the quarter (Euler with `z_mirror_mesh`), `y = 0` the half, otherwise the full
 //!    domain. RANS never uses the quarter. A lug or a rail button off the pitch plane makes the shape asymmetric: the
 //!    full domain costs about twice the cells of the half domain and solves `+-alpha` and `+-beta`.
-//! 5. **Base**: Euler needs `base_treatment` as for the STL: `fairing` fuses an exact OpenCASCADE cone (`tail_fairing`
-//!    base radii long, cut at 10 % of the base radius) behind the largest flat base face, `flat` keeps the shape. The
-//!    marker `base` holds the faces of the base rule ([`is_base_face`], the rule of the STL surface), `wall` every other
-//!    face of the shape.
+//! 5. **Base**: Euler needs `base_treatment` as for the STL: `fairing` fuses an exact OpenCASCADE cone (to a point
+//!    `tail_fairing` base radii behind the base, cut at 10 % of the base radius like the STL fairing) behind the largest
+//!    flat base face, `flat` keeps the shape. The marker `base` holds the faces of the base rule ([`is_base_face`], the
+//!    rule of the STL surface), `wall` every other face of the shape.
 //! 6. **Mesh** (`mesh_step.py`, mode `mesh`): Euler cuts the solid from the farfield (half or quarter ball, or a box for
 //!    the full domain) and fills it with tetrahedra graded from the wall: size `wall_size` on the wall (Distance +
 //!    Threshold), curvature refinement ([`CURVATURE_ELEMENTS`] per circle) and the smallest size

@@ -273,9 +273,10 @@ def prepare():
     report["seconds_symmetry"] = time.time() - t1
     print("symmetry: y = 0 %s, z = 0 %s (%.1f s)" % (report["symmetry_y"]["symmetric"], report["symmetry_z"]["symmetric"], time.time() - t1))
     gmsh.model.mesh.clear()
-    # Euler tail fairing: a cone (cut at 10 % of the base radius, flat cap) behind the largest flat base face, fused with the body.
-    # A cone to a point (as the profile of the CAD surface) leaves a duplicated or degenerate triangle at the apex of the
-    # OpenCASCADE cone face with every surface algorithm of gmsh; the STL surface cuts its fairing the same way.
+    # Euler tail fairing: the cone of tail_fairing base radii to a point on the axis (the slope of the fairing of the CAD
+    # and STL surfaces), cut at 10 % of the base radius with a flat cap like the STL fairing (surface::fairing_cone), behind
+    # the largest flat base face and fused with the body. The full cone leaves a duplicated or degenerate triangle at the
+    # apex of the OpenCASCADE cone face with every surface algorithm of gmsh.
     fair = p.get("fairing")
     report["fairing"] = None
     if fair:
@@ -291,11 +292,11 @@ def prepare():
         bb = big["bbox"]
         rb = max(abs(bb[1]), abs(bb[2]), abs(bb[4]), abs(bb[5]))
         tl = fair["tail_fairing"] * rb
-        cone = occ.addCone(xb, 0, 0, tl, 0, 0, rb, 0.1 * rb)
+        cone = occ.addCone(xb, 0, 0, 0.9 * tl, 0, 0, rb, 0.1 * rb)
         out, _ = occ.fuse(vols, [(3, cone)])
         occ.synchronize()
         vols = [v for v in out if v[0] == 3]
-        report["fairing"] = {"x": xb, "radius": rb, "length": tl, "base_face_area": big["area"]}
+        report["fairing"] = {"x": xb, "radius": rb, "length": tl, "cut_at": 0.9 * tl, "base_face_area": big["area"]}
     gmsh.write(p["prepared_brep"])
     report["seconds"] = time.time() - t0
     json.dump(report, open(p["report_json"], "w"), indent=1)

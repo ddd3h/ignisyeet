@@ -216,7 +216,8 @@ pub struct RunPlan {
 pub fn case_memory_bytes_mesh(model: FlowModel, cells: usize, nodes: usize, ranks: usize) -> u64 {
     let per_mesh = match model {
         FlowModel::Euler => EULER_BYTES_PER_CELL * cells as f64,
-        FlowModel::Rans => RANS_BYTES_PER_NODE * if nodes > 0 { nodes } else { estimate_nodes(cells) } as f64,
+        // Never below the Euler figure of the same mesh (the RANS state is a superset of the Euler one).
+        FlowModel::Rans => (RANS_BYTES_PER_NODE * if nodes > 0 { nodes } else { estimate_nodes(cells) } as f64).max(EULER_BYTES_PER_CELL * cells as f64),
     };
     (ranks as f64 * 40e6 + per_mesh) as u64
 }
@@ -600,7 +601,7 @@ mod tests {
         // 100 k cells: about 0.49 GB per case -> 4 fit into 2.2 GB.
         let p = plan_resources(&opts(4, 8), &ResourceBudget { threads: 40, memory_bytes: Some(2_200_000_000) }, 100_000, 12);
         assert_eq!(p.parallel, 4, "{p:?}");
-        assert!(case_memory_bytes(FlowModel::Rans, 100_000, 4) > case_memory_bytes(FlowModel::Euler, 100_000, 4));
+        assert!(case_memory_bytes(FlowModel::Rans, 100_000, 4) >= case_memory_bytes(FlowModel::Euler, 100_000, 4));
     }
 
     #[test]
@@ -661,9 +662,9 @@ mod tests {
     fn memory_estimate_per_node_for_rans() {
         // Euler: 40 MB per rank + 3.3 kB per cell, unchanged.
         assert_eq!(case_memory_bytes(FlowModel::Euler, 100_000, 4), (4.0 * 40e6 + 3.3e3 * 100_000.0) as u64);
-        // RANS of a tetrahedral mesh without a node count: 5.5 cells per node.
+        // RANS of a tetrahedral mesh without a node count (5.5 cells per node): not below the Euler figure.
         let tet = case_memory_bytes(FlowModel::Rans, 550_000, 4) as f64;
-        assert!((tet - (4.0 * 40e6 + RANS_BYTES_PER_NODE * 100_000.0)).abs() < 1e5);
+        assert!((tet - (4.0 * 40e6 + (RANS_BYTES_PER_NODE * 100_000.0).max(3.3e3 * 550_000.0))).abs() < 1e5);
         // A prism boundary-layer mesh (one node per cell, here 100 k cells and 100 k nodes) is sized by its nodes.
         let prism = case_memory_bytes_mesh(FlowModel::Rans, 100_000, 100_000, 4);
         assert!(prism > case_memory_bytes_mesh(FlowModel::Rans, 100_000, 0, 4));

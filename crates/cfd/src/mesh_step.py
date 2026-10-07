@@ -148,6 +148,17 @@ def write_stl(path, tris):
         fh.write(rec.tobytes())
 
 
+SYM_SELF_FACTOR = 4.0
+
+
+def symmetry_tolerance(tol, self_err):
+    """Mirror tolerance: the requested `tol` (SYMMETRY_TOL x length), but at least SYM_SELF_FACTOR times the error of
+    projecting the shape's own (unmirrored) surface nodes back onto their faces. That error is the accuracy of the
+    prepared B-spline surfaces and is the resolution limit of any mirror test; it is far below the offset of a lug or
+    a rail button, so asymmetric shapes are still rejected."""
+    return max(tol, SYM_SELF_FACTOR * self_err)
+
+
 def symmetry_check(axis, faces, nodes_of, tol, max_points):
     """Mirror check of the shape about y = 0 (axis 1) or z = 0 (axis 2): interior surface nodes (on the exact surface)
     are mirrored and must lie on a face of the shape within `tol` (closest point on the face's surface, inside the
@@ -155,6 +166,7 @@ def symmetry_check(axis, faces, nodes_of, tol, max_points):
     name = "y" if axis == 1 else "z"
     total = sum(len(v) for v in nodes_of.values())
     pts = []
+    self_err = 0.0
     for f in faces:
         c = nodes_of[f]
         if not len(c):
@@ -162,6 +174,9 @@ def symmetry_check(axis, faces, nodes_of, tol, max_points):
         k = max(8, int(math.ceil(max_points * len(c) / max(total, 1))))
         step = max(1, len(c) // k)
         pts.append(c[::step])
+        cp, _ = gmsh.model.getClosestPoint(2, f, c[::step].ravel().tolist())
+        self_err = max(self_err, float(np.linalg.norm(np.asarray(cp).reshape(-1, 3) - c[::step], axis=1).max()))
+    tol = symmetry_tolerance(tol, self_err)
     pts = np.vstack(pts)
     m = pts.copy()
     m[:, axis] *= -1.0

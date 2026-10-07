@@ -5,7 +5,7 @@ Army-Navy Basic Finner（10 口径の円すい・円柱に矩形フィン 4 枚�
 
 * `measured.csv`：実測値（1 行 1 量の縦長の形式）
 * `geometry.json`：形状、基準量、質量特性、試験条件
-* `first_look_barrowman_panel.csv`：部品積み上げ法とパネル法の値と実測値の比較（下の「最初の比較」）
+* `barrowman_panel_vs_measured.csv`：部品積み上げ法とパネル法の値と実測値の比較（下の「部品積み上げ法とパネル法の比較」）
 * `cna_decomposition.csv`：超音速の CNα の内訳。部品積み上げ法、パネル法、文献の線形理論の積み上げと実測値（下の「CNα と CX0 の内訳」）
 
 ページ番号は、断りのない限り PDF のページ（スキャンの通し番号）である。
@@ -61,24 +61,23 @@ Army-Navy Basic Finner（10 口径の円すい・円柱に矩形フィン 4 枚�
 * L. C. MacAllister, "The Aerodynamic Properties of a Simple Non-Rolling Finned Cone-Cylinder Configuration Between Mach Numbers 1.0 and 2.5", BRL Report No. 934, 1955。BRL の射場の元の値。見つけられなかった（[D97] Fig. 17 と [SG60] の図に重ねてある）。
 * H. Murthy, "Subsonic and Transonic Roll Damping Measurement on Basic Finner", Journal of Spacecraft and Rockets 19(1):86–87, 1982。亜音速の Clp。有料で入手していない。
 
-## 最初の比較（部品積み上げ法とパネル法、Mach 1.08–4.30）
+## 部品積み上げ法とパネル法の比較（Mach 1.08–4.30）
 
-`first_look_barrowman_panel.csv` は、`examples/basic_finner/basic_finner.toml` で作った係数表（迎角 0）を Table IX の Mach 数で線形補間し、実測値と並べたものである。
+`barrowman_panel_vs_measured.csv` は、`examples/basic_finner/basic_finner.toml` で作った係数表（迎角 0）を Table IX の Mach 数で線形補間し、実測値と並べたものである。`doc/scripts/basic_finner_compare.py` が作る（量の定義はスクリプトの説明にある）。
 「extracted」は STL から抽出したフィン、「exactfins」は `rocket.fin_override` で寸法を図面どおり（根元と先端の翼弦 30 mm、スパン 30 mm、後退 0、厚さ 2.4 mm、前縁 270 mm）にしたものである。
-Cmα は 0.165 m まわり、xcp は口径、Cmq は減衰の和の重心まわりの値 −2K/d²、「Cmq+lag」はそれに遅れの和の Cmα̇ の 2 倍（見かけの質量の遅れと対流の回転の項。飛翔計算が加える）を足した値である。
+Cmα は 0.165 m まわり、xcp は口径、Cmq は減衰の和の重心まわりの値 −2K/d²、「Cmq+lag」はそれに遅れの和の項 4(x_cg L₀ − L₁)/d²（見かけの質量の遅れと対流の回転の項。飛翔計算が加える）を足した値である。
 
-Mach 1.83–4.30 での傾向（exactfins）は次のとおりである（「小さい」「大きい」は大きさの比較）。
+Mach 1.83–4.30 での傾向は次のとおりである（「小さい」「大きい」は大きさの比較）。
 
-* CNα：部品積み上げ法が実測より 20–35 % 小さく、パネル法は 33–42 % 小さい。Mach 1.08、1.29 では部品積み上げ法も 31 % 小さい。
-* xcp：部品積み上げ法は ±2.5 % 以内、パネル法は 2–6 % 前寄り。Cmα は CNα の不足をそのまま受けて 21–37 %（部品積み上げ法）小さい。
-* CX0：部品積み上げ法が 19–30 % 小さく、パネル法が 10–19 % 小さい。
-* Clp：Mach 1.8–3.2 で −8 から +6 %、Mach 3.7、4.3 で 13–15 % 小さい。Mach 1.08、1.29 では 45–91 % 大きい。
-* Cmq + Cmα̇：減衰の和だけでは 24–39 % 小さく、遅れの項を足すと部品積み上げ法で −14 から +8 %、パネル法で −0.3 から +18 %（`diff_pct` は (モデル − 実測)/|実測|。負の係数では正が「大きさが小さい」）。
+* CNα：部品積み上げ法が実測より 20–35 % 小さい。パネル法は extracted で 18–34 %、exactfins で 16–31 % 小さい。Mach 1.08、1.29 では部品積み上げ法が 31 % 小さく、パネル法は extracted で 19–20 %、exactfins で 29–45 % 小さい。
+* xcp：部品積み上げ法は −0.5 から +2.4 %、パネル法は +1 から +4 %（後ろ寄り）。Cmα は CNα の不足を受けて、部品積み上げ法で 21–37 %、パネル法で 12–28 % 小さい。
+* CX0：部品積み上げ法が 23–34 %（extracted）、19–30 %（exactfins）小さく、パネル法が 25–34 %（extracted）、10–19 %（exactfins）小さい。
+* Clp：Mach 1.8–3.2 で −8 から +6 %、Mach 3.7、4.3 で 13–15 % 小さい。Mach 1.08、1.29 では 45–92 % 大きい（ロール項はどちらの手法も部品積み上げ法の値）。
+* Cmq + Cmα̇：減衰の和だけでは 21–39 % 小さく、遅れの項を足すと部品積み上げ法で −14 から +8 %、パネル法で −17 から +9 %（`diff_pct` は (モデル − 実測)/|実測|。負の係数では正が「大きさが小さい」）。
 
 ## CNα と CX0 の内訳（Mach 1.8–4.3）
 
-`first_look_barrowman_panel.csv` は IgnisYeet a113f84 の係数表の値である。
-現在の部品積み上げ法とパネル法の CNα は `cna_decomposition.csv` にある。
+部品積み上げ法とパネル法の CNα は `cna_decomposition.csv` にもある。
 STL から抽出したフィンは図面の寸法（根元と先端の翼弦 30 mm、スパン 30 mm、後退 0、前縁 270 mm）になり、厚さは断面の中央値 1.3 mm（後縁の 2.4 mm の約半分）である。
 
 ### CNα

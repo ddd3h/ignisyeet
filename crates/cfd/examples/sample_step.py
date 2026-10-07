@@ -77,8 +77,7 @@ cy, cz = rc * math.cos(phi_l), rc * math.sin(phi_l)
 outer = occ.addCylinder(x_l, cy, cz, lug_len, 0, 0, ro)
 inner = occ.addCylinder(x_l - 1e-3, cy, cz, lug_len + 2e-3, 0, 0, ri)
 lug, _ = occ.cut([(3, outer)], [(3, inner)])
-details = p.get("details", True)
-tools += lug if details else []
+extra = list(lug)
 phi_b = phi_l + 0.5 * math.pi
 d = (0.0, math.cos(phi_b), math.sin(phi_b))
 for xb in (0.35 * L, 0.7 * L):
@@ -86,9 +85,11 @@ for xb in (0.35 * L, 0.7 * L):
     stem = occ.addCylinder(xb, r0 * d[1], r0 * d[2], 0, 6.5e-3 * d[1], 6.5e-3 * d[2], 4e-3)
     r1 = radius(xb) + 4e-3
     flange = occ.addCylinder(xb, r1 * d[1], r1 * d[2], 0, 2e-3 * d[1], 2e-3 * d[2], 5.5e-3)
-    tools += [(3, stem), (3, flange)] if details else []
-if not details:
-    occ.remove(lug + [(3, stem), (3, flange)], recursive=True)
+    extra += [(3, stem), (3, flange)]
+if p.get("details", True):
+    tools += extra
+else:
+    occ.remove(extra, recursive=True)
 out, _ = occ.fuse(body, tools)
 occ.synchronize()
 vols = gmsh.model.getEntities(3)

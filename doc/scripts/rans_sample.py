@@ -139,6 +139,33 @@ def run(a):
     print(json.dumps(meta))
 
 
+def direct(a):
+    """Run the two SU2 stages of a pipeline case (its case_startup.cfg / case.cfg) in a new directory, with the
+    Mach number replaced and the final stage capped at --iterations (for steady-force studies of cases that the
+    acceptance would keep running to the iteration limit). RSS of the ranks is sampled as in `run`."""
+    src, d = os.path.abspath(a.src), os.path.abspath(a.dir)
+    os.makedirs(d, exist_ok=True)
+    peaks, stop = {}, threading.Event()
+    th = threading.Thread(target=rss_sampler, args=(d, stop, peaks), daemon=True)
+    th.start()
+    t0 = time.time()
+    for stage, cfgname, log in (("startup", "case_startup.cfg", "su2_startup.log"), ("final", "case.cfg", "su2.log")):
+        text = open(os.path.join(src, cfgname)).read()
+        if a.mach is not None:
+            text = re.sub(r"^MACH_NUMBER= .*$", f"MACH_NUMBER= {a.mach:.6f}", text, flags=re.M)
+        if stage == "final":
+            text = re.sub(r"^ITER= .*$", f"ITER= {a.iterations}", text, flags=re.M)
+        open(os.path.join(d, cfgname), "w").write(text)
+        cmd = [os.path.join(PREFIX, "bin", "mpirun"), "-np", str(a.ranks), "--bind-to", "none",
+               os.path.join(PREFIX, "bin", "SU2_CFD"), cfgname]
+        with open(os.path.join(d, log), "w") as f:
+            subprocess.run(cmd, cwd=d, stdout=f, stderr=subprocess.STDOUT, env=dict(os.environ, OMP_NUM_THREADS="1"))
+    stop.set()
+    th.join()
+    json.dump({"wall_s": time.time() - t0, "ranks": a.ranks, "rss": peaks.get(d), "src": src, "mach": a.mach,
+               "iterations": a.iterations}, open(os.path.join(d, "direct.json"), "w"), indent=1)
+
+
 def history(path):
     with open(path) as f:
         rows = list(csv.reader(f))
@@ -241,6 +268,12 @@ def main():
     r = sub.add_parser("run")
     r.add_argument("dir")
     r.add_argument("--exe", default=os.path.join(REPO, "target", "release", "ignisyeet"))
+    dr = sub.add_parser("direct")
+    dr.add_argument("src")
+    dr.add_argument("dir")
+    dr.add_argument("--mach", type=float)
+    dr.add_argument("--iterations", type=int, default=1500)
+    dr.add_argument("--ranks", type=int, default=4)
     c = sub.add_parser("collect")
     c.add_argument("dirs", nargs="+")
     c.add_argument("--length-ratio", type=float, default=15.0, help="body length / reference length")
@@ -248,7 +281,7 @@ def main():
     c.add_argument("--window", type=int, default=200)
     c.add_argument("--min-iter", type=int, default=400)
     a = p.parse_args()
-    {"setup": setup, "run": run, "collect": collect}[a.cmd](a)
+    {"setup": setup, "run": run, "collect": collect, "direct": direct}[a.cmd](a)
 
 
 if __name__ == "__main__":

@@ -84,7 +84,7 @@ def white_local(rex):
     return 0.455 / math.log(0.06 * rex) ** 2
 
 
-def van_driest2(mach, rex, tw_te=None, r=RECOVERY):
+def van_driest2(mach, rex, tw_te=None, r=RECOVERY, t_inf=T_INF):
     """van Driest II local cf (Hopkins-Inouye): cf = cf_inc(F_Rx Re_x) / F_c, cf_inc = local Karman-Schoenherr."""
     m = (GAMMA - 1.0) / 2.0 * mach * mach
     taw = 1.0 + r * m
@@ -95,7 +95,7 @@ def van_driest2(mach, rex, tw_te=None, r=RECOVERY):
     al = (2.0 * a * a - b) / den
     be = b / den
     fc = r * m / (math.asin(al) + math.asin(be)) ** 2
-    frt = sutherland(T_INF) / sutherland(T_INF * tw)
+    frt = sutherland(t_inf) / sutherland(t_inf * tw)
     frx = frt / fc
     return ks_local(frx * rex) / fc, {"Fc": fc, "F_Rtheta": frt, "F_Rx": frx, "Tw_Te": tw}
 

@@ -38,11 +38,14 @@
 //!
 //! * [`Stage::Startup`]: first-order Roe from the freestream, at most [`RANS_STARTUP_MAX_ITER`] iterations or until
 //!   the density residual is [`RANS_STARTUP_DROP`] orders below its peak (`REL_RMS_DENSITY`; checked from
-//!   iteration [`RANS_STARTUP_MIN_ITER`] on). History `history_startup.csv`, restart [`STARTUP_RESTART`].
+//!   iteration [`RANS_STARTUP_MIN_ITER`] on), the SA equation at [`RANS_STARTUP_TURB_CFL`] of the flow CFL. History
+//!   `history_startup.csv`, restart [`STARTUP_RESTART`]. After a divergence the runner repeats it once with the
+//!   conservative settings ([`CaseFiles::conservative`]: CFL limited to [`RANS_CONSERVATIVE_CFL_FACTOR`] `cfl`, SA
+//!   equation at [`RANS_CONSERVATIVE_TURB_CFL`] of it), which the second-order stage then keeps.
 //! * [`Stage::Final`]: second-order Roe (MUSCL, edge-based Van Albada limiter, never frozen) restarted from the
 //!   startup result [`STARTUP_RESTART`]; history `history.csv`, restart `restart.dat`. A warm start runs this stage
 //!   only, from the neighbour's `restart.dat`. After a divergence the runner repeats it once from the startup result
-//!   with the CFL limited to [`RANS_CONSERVATIVE_CFL_FACTOR`] `cfl` ([`CaseFiles::conservative`]).
+//!   with the conservative settings.
 //!
 //! Both: Green-Gauss gradients with weighted-least-squares reconstruction gradients, first-order upwind SA,
 //! accurate Roe Jacobians, FGMRES + ILU(0) to a relative tolerance of 0.05 (25 iterations at most), the
@@ -70,8 +73,14 @@ pub const RANS_CFL_MAX_FACTOR: f64 = 40.0;
 /// `OUTPUT_WRT_FREQ` (iterations): SU2 exits on SIGTERM without writing, so the runner's early stop waits for the
 /// next periodic output (restart file of the warm starts, surface file).
 pub const OUTPUT_FREQ: usize = 50;
-/// RANS conservative retry after a divergence: upper CFL limit in units of `cfl`.
+/// RANS conservative retry after a divergence: upper CFL limit in units of `cfl` ...
 pub const RANS_CONSERVATIVE_CFL_FACTOR: f64 = 4.0;
+/// ... and `CFL_REDUCTION_TURB` (the CFL of the SA equation relative to the flow CFL).
+pub const RANS_CONSERVATIVE_TURB_CFL: f64 = 0.2;
+/// RANS startup stage: `CFL_REDUCTION_TURB`. At the full flow CFL (200) the SA residual of the sample rocket at M 2
+/// on the 8 mm mesh grew from 1e-8 to 1e+15 within 80 iterations while the density residual kept falling; with the
+/// SA equation at 0.2 of the flow CFL the startup converged (density residual -8.1, SA -9.0 after 250 iterations).
+pub const RANS_STARTUP_TURB_CFL: f64 = 0.2;
 /// History file (without `.csv`) of the RANS startup stage.
 pub const STARTUP_HISTORY: &str = "history_startup";
 /// Restart file of the RANS startup stage (kept apart from `restart.dat`, so that a diverged second-order stage can
@@ -105,8 +114,8 @@ pub struct CaseFiles {
     /// cold start, the case's own startup result ([`STARTUP_RESTART`]).
     pub restart_from: Option<String>,
     pub stage: Stage,
-    /// RANS final stage: the conservative settings of the retry after a divergence (CFL limit
-    /// [`RANS_CONSERVATIVE_CFL_FACTOR`] `cfl`).
+    /// RANS: the conservative settings of the retry after a divergence (CFL limit [`RANS_CONSERVATIVE_CFL_FACTOR`]
+    /// `cfl`, turbulence CFL [`RANS_CONSERVATIVE_TURB_CFL`] of it).
     pub conservative: bool,
 }
 
@@ -153,7 +162,7 @@ pub fn su2_config_case(opt: &CfdOptions, spec: &CaseSpec, dims: &RefDims, atm: &
     let (mach, alpha_deg) = (spec.mach, spec.alpha_deg);
     let rans = opt.model == FlowModel::Rans;
     let startup = rans && files.stage == Stage::Startup;
-    let conservative = rans && !startup && files.conservative;
+    let conservative = rans && files.conservative;
     let area = if opt.symmetry { 0.5 * dims.area } else { dims.area };
     let mut c = Cfg::default();
     c.kv("SOLVER", if rans { "RANS" } else { "EULER" });
@@ -272,6 +281,11 @@ pub fn su2_config_case(opt: &CfdOptions, spec: &CaseSpec, dims: &RefDims, atm: &
         50.0
     };
     c.kv("CFL_ADAPT_PARAM", format!("( 0.5, 1.2, {:.3}, {:.1} )", 0.2 * opt.cfl, cfl_max * opt.cfl));
+    if conservative {
+        c.kv("CFL_REDUCTION_TURB", RANS_CONSERVATIVE_TURB_CFL);
+    } else if startup {
+        c.kv("CFL_REDUCTION_TURB", RANS_STARTUP_TURB_CFL);
+    }
     let mg = opt.multigrid_levels();
     if mg > 0 {
         c.kv("MGLEVEL", mg);
@@ -550,13 +564,16 @@ mod tests {
         let short =
             su2_config(&CfdOptions { iterations: 300, ..o.clone() }, 0.8, 4.0, &dims(), &atm(), &CaseFiles { stage: Stage::Startup, ..Default::default() });
         assert!(has(&short, "ITER= 300"));
-        // The RANS limiter is never frozen; the conservative retry only lowers the CFL limit.
-        assert!(!b.contains("LIMITER_ITER"));
+        // The RANS limiter is never frozen. The startup runs the SA equation at 0.2 of the flow CFL, the second-order
+        // stage at the full CFL.
+        assert!(!b.contains("LIMITER_ITER") && !b.contains("CFL_REDUCTION_TURB"));
+        assert!(has(&a, "CFL_REDUCTION_TURB= 0.2") && has(&a, "CFL_ADAPT_PARAM= ( 0.5, 1.2, 1.000, 200.0 )"), "{a}");
+        // Conservative retry: CFL limit 4 cfl and the SA equation at 0.2 of it, in both stages.
         let cons = su2_config(&o, 0.8, 4.0, &dims(), &atm(), &CaseFiles { conservative: true, ..own.clone() });
         assert!(has(&cons, "CFL_ADAPT_PARAM= ( 0.5, 1.2, 1.000, 20.0 )") && has(&cons, "MUSCL_FLOW= YES") && !cons.contains("LIMITER_ITER"), "{cons}");
-        assert_eq!(cons.replace("1.000, 20.0 )", "1.000, 200.0 )"), b);
-        // The startup stage ignores the flag.
-        assert_eq!(su2_config(&o, 0.8, 4.0, &dims(), &atm(), &CaseFiles { stage: Stage::Startup, conservative: true, ..Default::default() }), a);
+        assert_eq!(cons.replace("1.000, 20.0 )\nCFL_REDUCTION_TURB= 0.2", "1.000, 200.0 )"), b);
+        let cons_a = su2_config(&o, 0.8, 4.0, &dims(), &atm(), &CaseFiles { stage: Stage::Startup, conservative: true, ..Default::default() });
+        assert_eq!(cons_a.replace("1.000, 20.0 )", "1.000, 200.0 )"), a);
         // Wall-function mode only with a log-layer y+.
         let wf = su2_config(&CfdOptions { yplus: 50.0, ..o.clone() }, 0.8, 4.0, &dims(), &atm(), &own);
         assert!(has(&wf, "MARKER_WALL_FUNCTIONS= ( wall, STANDARD_WALL_FUNCTION, base, STANDARD_WALL_FUNCTION )"), "{wf}");

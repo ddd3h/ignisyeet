@@ -25,8 +25,9 @@
 //!
 //! * A mirrored mesh (quarter or half mirrored, shapes that pass the symmetry check) has none.
 //! * `alpha_mode = "mirror"` and `"offset"` remove it: the axisymmetric table uses the odd part of `+-alpha` or
-//!   subtracts `CN(0)` ([`crate::table::apply_alpha_mode`]); the general table subtracts the lateral components of
-//!   the `(0, 0)` point from every point ([`crate::general`]). For a shape without mirror symmetry this also removes
+//!   subtracts `CN(0)` ([`crate::table::apply_alpha_mode`]); the general table subtracts `CY`, `CZ`, `Cm` and `Cn`
+//!   of the `(0, 0)` point from every point ([`crate::general`]; `Cl` too for a mirror-symmetric shape, while for a
+//!   shape without mirror symmetry it is the roll forcing of canted fins and stays). For a shape without mirror symmetry this also removes
 //!   the zero-angle force of its asymmetric detail (a launch lug, rail buttons), which is small next to the
 //!   spurious fin lift.
 //! * `alpha_mode = "single"` keeps what the shape symmetry does not zero (all of it without mirror symmetry, `CZ`

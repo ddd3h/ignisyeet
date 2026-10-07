@@ -160,8 +160,8 @@ pub enum AlphaMode {
     #[default]
     Mirror,
     /// Only the configured angles; the `alpha = 0` values of `CN` and the nose moment are subtracted. General
-    /// table: the components of the `(0, 0)` point that vanish by symmetry are subtracted, for a shape without
-    /// mirror symmetry all five lateral ones (`CY`, `CZ`, `Cl`, `Cm`, `Cn`; see [`crate::asymmetry`]).
+    /// table: `CY`, `CZ`, `Cm`, `Cn` (and `Cl` of a mirror-symmetric shape) of the `(0, 0)` point are subtracted, as
+    /// in `mirror` mode (see [`crate::asymmetry`]).
     Offset,
     /// Only the configured angles, results used as they are.
     Single,

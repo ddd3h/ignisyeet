@@ -1,0 +1,30 @@
+# Sample rocket, rebuilt geometry (surface = "cad"), Euler, Roe, half model (y = 0 symmetry plane, no z mirror), wall_size 6 mm, pointed tail fairing 6 base radii, residual target 1e-6, unless the description says otherwise.
+# cn0: normal force coefficient at alpha = 0 (true value 0).
+experiment,description,mach,cells,cn0
+base,"cold start",0.8,165618,-0.13934
+restart_p4,"restart from the converged alpha = +4 deg solution",0.8,165618,-0.13917
+restart_m4,"restart from the converged alpha = -4 deg solution",0.8,165618,-0.13954
+tight,"residual target 1e-11 (194 iterations)",0.8,165618,-0.13935
+first_order,"first-order scheme (MUSCL off)",0.8,165618,-0.10693
+no_limiter,"no slope limiter",0.8,165618,-0.12076
+venkat05,"Venkatakrishnan coefficient 0.5",0.8,165618,-0.13898
+green_gauss,"Green-Gauss gradients",0.8,165618,-0.14078
+wall10,"wall_size 10 mm",0.8,87608,-0.05397
+wall8,"wall_size 8 mm",0.8,114029,0.10628
+wall5,"wall_size 5 mm",0.8,214114,0.20179
+mach03,"M 0.3",0.3,165618,-0.17197
+mach06,"M 0.6",0.6,165618,-0.15251
+mach095,"M 0.95",0.95,165618,-0.12513
+mach12,"M 1.2",1.2,165618,-0.08654
+mach2,"M 2",2.0,165618,-0.01456
+fin3,"fin surfaces 3 mm (body 6 mm)",0.8,230714,-0.04002
+fin15,"fin surfaces 1.5 mm (body 6 mm)",0.8,466354,-0.04160
+fin15_m03,"fin surfaces 1.5 mm (body 6 mm), M 0.3",0.3,466354,-0.05632
+fin075,"fin surfaces 0.75 mm (body 6 mm)",0.8,1311974,-0.00724
+fin_te075,"fin trailing edges only 0.75 mm",0.8,243233,0.06048
+fin_edges075,"fin leading, trailing and tip edges only 0.75 mm",0.8,395851,-0.02975
+finless,"body without fins",0.8,144774,-0.00138
+finless_m03,"body without fins, M 0.3",0.3,144774,-0.00364
+finless_cut,"body without fins, tail fairing cut at 10 % of the base radius",0.8,143424,0.00017
+finless_flat,"body without fins, flat base",0.8,130646,-0.00561
+fins_cut,"tail fairing cut at 10 % of the base radius",0.8,163565,-0.09027

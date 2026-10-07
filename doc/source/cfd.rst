@@ -292,6 +292,10 @@ Mach 数の刻みは ``general_mach_step``\ （既定 0.1、0 なら ``[aero]`` 
    * - ``"single"``
      - 設定した迎角だけを解き、結果をそのまま使う
 
+一般表では、``"mirror"`` と ``"offset"`` のどちらでも、:math:`\alpha=\beta=0` の横方向の力とモーメント（:math:`C_Y,C_Z,C_l,C_m,C_n`）を全点から引く（:ref:`sec-cfd-general`）。
+鏡映対称でない形状（ランチラグなど）では、その細部が :math:`\alpha=\beta=0` で生む小さな力も一緒に引かれる。
+``"single"`` では、形状の対称性で 0 にならない成分がそのまま残る。
+
 解く符号は ``shape_symmetry``\ （:ref:`sec-cfd-stl-symmetry`）で決まる。
 
 * ``"axisymmetric"``\ ：:math:`\alpha\ge0` と :math:`\beta\ge0` だけ。``alpha_mode = "mirror"`` で :math:`z` 対称メッシュでないときは、各正の迎角を負の迎角でも解く。
@@ -470,6 +474,8 @@ RANS では、各ケースのディレクトリの ``done.json`` に、壁面の
 * 失敗と未収束の一覧（``failed``、``failed_cases``、``unconverged``）、補間で埋めたケース（``filled``）、警告（``warnings``）、メッシュの大きさと総計算時間。
 * 係数表の種類（``table_kind``）、形状の対称性と領域（``shape_symmetry``、``domain``）、横滑り角、一般表で CFD の値を使う範囲（``cfd_region``）。
 * 軸対称表では、:math:`\alpha=0` の測定された非対称性（``asymmetry``）。
+* :math:`\alpha=\beta=0` の横方向の力（``zero_angle``）。Mach 数ごとに :math:`C_Y`\ （一般表）、:math:`C_Z`、:math:`\alpha=4^\circ` の法線力 :math:`C_{N\alpha}\cdot4^\circ`\ （``cn_ref``）、その比（``ratio``）と、係数表に残る分の比（``ratio_kept``）が入る。
+  対称な機体では 0 になるはずの値で、比が 5 % を超えると警告を出す（原因は :ref:`sec-cfd-val-asym-cause`）。
 * ロール減衰の CFD とモデルの値と採用した側（``clp``、``clp_source``）、基準のカント（``fin_cant_ref_deg``）。
 * 底面の処理（``base_treatment``）、STL の形状の忠実度（``fidelity``）、鏡映対称の検査と選んだ領域（``symmetry_check``）。
 * RANS では、最初の層の :math:`y^+` の見積もり（``est_wall_yplus``）と、ケースごとの軸力の内訳（``axial_breakdown``）。

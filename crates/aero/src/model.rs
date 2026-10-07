@@ -1172,4 +1172,36 @@ mod tests {
             }
         }
     }
+
+    /// Basic Finner of examples/basic_finner (DREV-TM-9703 Fig. 2: 10 deg cone, 10 cal, four 1 x 1 cal
+    /// rectangular fins flush with the base) from its STL. In the supersonic branch the
+    /// component build-up model is the linear-theory build-up of Barrowman / Niskanen:
+    ///
+    /// `CNa = 2 + 2 (4 / beta) (1 - 1 / (2 beta A)) (A_fin / S) (1 + r / (s + r))`
+    ///
+    /// (slender-body nose, Ackeret slope of two effective fins with the tip-loss of one free tip,
+    /// `A = 2 s^2 / A_fin` the aspect ratio of a fin pair, Barrowman's fin-in-body factor). With
+    /// r = s = c = 1 cal: 8.71 /rad at Mach 2 and 6.38 at Mach 3. The measured values (Table IX of
+    /// DREV-TM-9703) are about 11.4 and 8.8: the model leaves out the supersonic lift of the
+    /// cylindrical afterbody, the body carry-over of the fins and the thickness term of the wedge
+    /// section (doc/data/validation/basic_finner/cna_decomposition.csv), and the remaining 11-13 %
+    /// is beyond linear theory; it is not meant to reach the measurement.
+    #[test]
+    fn basic_finner_supersonic_cna_is_the_linear_theory_build_up() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/basic_finner/basic_finner.stl");
+        let tris: Vec<geom::stl::Triangle> = geom::stl::read_stl(&path).unwrap().iter().map(|t| t.map(|v| v * 0.001)).collect();
+        let opt = ExtractOptions { nose_direction: Some(geom::Vec3::new(-1.0, 0.0, 0.0)), ..Default::default() };
+        let m = AeroModel::new(extract(&tris, &opt).unwrap(), AeroOptions::default());
+        let (r, s, c) = (0.015, 0.030, 0.030);
+        let aref = PI * r * r;
+        assert!((m.body_cna() - 2.0).abs() < 0.01, "body {}", m.body_cna());
+        for (mach, expect) in [(2.0, 8.71), (3.0, 6.38)] {
+            let b = (mach * mach - 1.0f64).sqrt();
+            let ar = 2.0 * s * s / (s * c);
+            let textbook = 2.0 + 2.0 * (4.0 / b) * (1.0 - 1.0 / (2.0 * b * ar)) * (s * c / aref) * (1.0 + r / (s + r));
+            assert!((textbook - expect).abs() < 0.005, "M={mach}: textbook {textbook}");
+            let cna = m.cna(mach);
+            assert!((cna / textbook - 1.0).abs() < 0.01, "M={mach}: CNa {cna} vs {textbook}");
+        }
+    }
 }

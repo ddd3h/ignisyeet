@@ -39,13 +39,13 @@
 //!    the full domain) and fills it with tetrahedra graded from the wall: size `wall_size` on the wall (Distance +
 //!    Threshold), curvature refinement ([`CURVATURE_ELEMENTS`] per circle) and the smallest size
 //!    `clamp(smallest feature / 4, wall_size / 8, wall_size)` ([`min_size`]), so a 6 mm lug gets several cells across.
-//!    RANS builds the prism layer of the CAD surface (the column code of `mesh_gmsh.py`, see [`crate::mesh`]) on the
-//!    half or full wall; it is accepted only if it passes the validity check of `su2_writer.py`. CAD edges are not
+//!    RANS builds the prism layer with `bl_layer.py` (the layer law of [`crate::mesh::bl_params`]: thickness cap, base
+//!    columns, tetrahedra from `top_size`) on the half or full wall; it is accepted only if it passes the validity check of `su2_writer.py`. CAD edges are not
 //!    blunted (unlike the fin edges of the rebuilt geometry): a layer that stays invalid after the retry is an error
 //!    that suggests Euler or slightly rounded edges in the CAD model.
 //!
-//! The mesh hash contains the bytes of the CAD file, every parameter of both modes and both scripts
-//! (`mesh_step.py`, `su2_writer.py`).
+//! The mesh hash contains the bytes of the CAD file, every parameter of both modes and the scripts (`mesh_step.py`,
+//! `bl_layer.py`, `su2_writer.py`).
 
 use crate::case::hash_parts;
 use crate::config::{BaseTreatment, CfdOptions, FlowModel, StepUnit};
@@ -643,14 +643,14 @@ pub fn prepare_hash(p: &StepParams, file_bytes: &[u8]) -> String {
     hash_parts(&[file_bytes, serde_json::to_string(&k).unwrap_or_default().as_bytes(), SCRIPT.as_bytes()])
 }
 
-/// Mesh hash: the file bytes, every parameter (paths, mode and thread count excluded) and both scripts.
+/// Mesh hash: the file bytes, every parameter (paths, mode and thread count excluded) and the scripts.
 pub fn step_mesh_hash(p: &StepParams, file_bytes: &[u8]) -> String {
     let mut q = p.clone();
     for s in [&mut q.mode, &mut q.step_file, &mut q.prepared_brep, &mut q.tess_stl, &mut q.report_json, &mut q.out_su2, &mut q.stats_json] {
         s.clear();
     }
     q.threads = 0;
-    hash_parts(&[file_bytes, serde_json::to_string(&q).unwrap_or_default().as_bytes(), SCRIPT.as_bytes(), mesh::WRITER.as_bytes()])
+    hash_parts(&[file_bytes, serde_json::to_string(&q).unwrap_or_default().as_bytes(), SCRIPT.as_bytes(), mesh::BL_LAYER.as_bytes(), mesh::WRITER.as_bytes()])
 }
 
 /// One face of the B-rep (`step_report.json`).
@@ -855,6 +855,7 @@ fn ensure_prepared(opt: &CfdOptions, dir: &Path, params: &StepParams, bytes: &[u
         let (py, prefix) = python(opt)?;
         std::fs::write(dir.join("mesh_step.py"), SCRIPT)?;
         std::fs::write(dir.join("su2_writer.py"), mesh::WRITER)?;
+        std::fs::write(dir.join("bl_layer.py"), mesh::BL_LAYER)?;
         std::fs::write(dir.join("prepare_params.json"), serde_json::to_string_pretty(&StepParams { mode: "prepare".into(), ..params.clone() })?)?;
         run_python(&py, prefix.as_deref(), dir, "mesh_step.py", "prepare_params.json", "prepare.log", "PREPARE_OK", "the import of the CAD file")?;
         std::fs::write(&stamp, &hash)?;
@@ -1019,6 +1020,7 @@ fn run_mesh(opt: &CfdOptions, dir: &Path, params: &StepParams, bytes: &[u8]) -> 
     let (py, prefix) = python(opt)?;
     std::fs::write(dir.join("mesh_step.py"), SCRIPT)?;
     std::fs::write(dir.join("su2_writer.py"), mesh::WRITER)?;
+    std::fs::write(dir.join("bl_layer.py"), mesh::BL_LAYER)?;
     let _ = std::fs::remove_file(dir.join("params_retry.json"));
     std::fs::write(dir.join("params.json"), serde_json::to_string_pretty(params)?)?;
     let what = "gmsh meshing of the CAD surface";
@@ -1232,21 +1234,29 @@ mod tests {
     fn params_and_script_agree() {
         let atm = aero::atmosphere::AtmosphereModel::default().at(0.0);
         let j = serde_json::to_value(StepParams { bl: Some(mesh::bl_params(&CfdOptions::rans(), &sample_geom(), &atm)), ..params() }).unwrap();
+        // Every key the scripts read from params.json (`p["..."]`) and from the layer parameters (`bl["..."]`).
+        let blk = j["bl"].as_object().unwrap();
         let mut keys = 0;
-        for line in SCRIPT.lines() {
-            let mut rest = line;
-            while let Some(i) = rest.find("p[\"") {
-                rest = &rest[i + 3..];
-                let key = &rest[..rest.find('"').unwrap()];
-                assert!(j.get(key).is_some(), "mesh_step.py reads missing key {key}");
-                keys += 1;
+        for (name, script) in [("mesh_step.py", SCRIPT), ("bl_layer.py", mesh::BL_LAYER)] {
+            for line in script.lines() {
+                for (pat, obj) in [("p[\"", j.as_object().unwrap()), ("bl[\"", blk)] {
+                    let mut rest = line;
+                    while let Some(i) = rest.find(pat) {
+                        rest = &rest[i + pat.len()..];
+                        let key = &rest[..rest.find('"').unwrap()];
+                        assert!(obj.contains_key(key), "{name} reads missing key {pat}{key}");
+                        keys += 1;
+                    }
+                }
             }
         }
-        assert!(keys > 20, "{keys}");
+        assert!(keys > 40, "{keys}");
+        // The layer is the shared module, with the thickness cap of the base and the tetrahedra from top_size.
+        assert!(SCRIPT.contains("import bl_layer") && !SCRIPT.contains("def wall_normals"));
+        assert!(mesh::BL_LAYER.contains("bl[\"base_thickness\"]") && mesh::BL_LAYER.contains("bl[\"top_size\"]"));
         // The base rule of the script is the one of is_base_face.
         assert!(SCRIPT.contains("cx > L + base_tol or (abs(cx - L) <= base_tol and planar and abs(nx) > 0.9)"));
         assert!(SCRIPT.contains("Geometry.OCCTargetUnit\", \"M\""));
-        let blk = j["bl"].as_object().unwrap();
         for k in ["layers", "first_height", "thickness", "smoothing", "corner_smoothing", "junction", "fan", "retry"] {
             assert!(blk.contains_key(k), "{k}");
         }

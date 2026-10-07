@@ -58,6 +58,8 @@ use std::path::{Path, PathBuf};
 pub const SCRIPT: &str = include_str!("mesh_gmsh.py");
 /// SU2 writer of the boundary-layer mesh (imported by [`SCRIPT`]).
 pub const WRITER: &str = include_str!("su2_writer.py");
+/// Prismatic boundary layer for the half or full domain (imported by `mesh_step.py`).
+pub const BL_LAYER: &str = include_str!("bl_layer.py");
 
 /// Growth ratio of the prism layer heights.
 pub const BL_GROWTH: f64 = 1.2;
@@ -442,6 +444,8 @@ pub(crate) fn run_python(py: &Path, prefix: Option<&Path>, dir: &Path, script: &
         .arg(dir.join(script))
         .arg(dir.join(params))
         .current_dir(dir)
+        // Unbuffered: the progress lines stay in the log when the process is killed.
+        .env("PYTHONUNBUFFERED", "1")
         .output()
         .with_context(|| format!("cannot run {}", py.display()))?;
     let text = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
@@ -451,7 +455,12 @@ pub(crate) fn run_python(py: &Path, prefix: Option<&Path>, dir: &Path, script: &
         let clean = text.replace('\r', "\n");
         let tail: Vec<&str> =
             clean.lines().filter(|l| !l.contains("%]")).collect::<Vec<_>>().into_iter().rev().take(12).collect::<Vec<_>>().into_iter().rev().collect();
-        bail!("{what} failed (log: {}):\n{}", dir.join(log).display(), tail.join("\n"));
+        let killed = if out.status.success() || failure_kind(&out.status) == "gmsh meshing failed" {
+            String::new()
+        } else {
+            format!(" ({})", failure_kind(&out.status).replacen("gmsh meshing was ", "", 1))
+        };
+        bail!("{what} failed{killed} (log: {}):\n{}", dir.join(log).display(), tail.join("\n"));
     }
     Ok(text)
 }
@@ -598,6 +607,21 @@ mod tests {
         for f in ["def write(", "def mirror(", "def orient(", "def check(", "def unmarked_faces("] {
             assert!(WRITER.contains(f), "{f}");
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn run_python_names_a_killed_process() {
+        let dir = std::env::temp_dir().join(format!("ignisyeet_run_python_kill_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("die.sh"), "echo started\nkill -9 $$\n").unwrap();
+        std::fs::write(dir.join("p.json"), "{}").unwrap();
+        let e = run_python(Path::new("/bin/sh"), None, &dir, "die.sh", "p.json", "log.txt", "OK", "the test mesher").unwrap_err().to_string();
+        assert!(e.contains("the test mesher failed (killed by signal 9 (most likely out of memory") && e.contains("started"), "{e}");
+        std::fs::write(dir.join("fail.sh"), "echo nope\nexit 1\n").unwrap();
+        let e = run_python(Path::new("/bin/sh"), None, &dir, "fail.sh", "p.json", "log.txt", "OK", "the test mesher").unwrap_err().to_string();
+        assert!(e.starts_with("the test mesher failed (log:"), "{e}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[cfg(unix)]

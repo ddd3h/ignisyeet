@@ -27,8 +27,16 @@ impl History {
         if columns.len() < 2 {
             bail!("history header has no columns");
         }
+        // A last line without its newline is still being written (or was cut off by a stopped solver): skipped,
+        // since a cut number can still give the right column count.
+        let complete = text.ends_with('\n');
+        let lines: Vec<&str> = lines.collect();
+        let n_lines = lines.len();
         let mut rows = Vec::new();
-        for l in lines {
+        for (k, l) in lines.into_iter().enumerate() {
+            if k + 1 == n_lines && !complete {
+                continue;
+            }
             let v: Vec<f64> = l.split(',').map(|c| c.trim().trim_matches('"').parse::<f64>().unwrap_or(f64::NAN)).collect();
             // A row cut off by a running solver is skipped.
             if v.len() == columns.len() {
@@ -447,6 +455,14 @@ mod tests {
         assert!(s.converged(-6.0) && !s.converged(-7.0));
         let a = summarize(&h, 2).unwrap();
         assert!((a.cfz.unwrap() - 0.30).abs() < 1e-12);
+    }
+
+    #[test]
+    fn an_unterminated_last_row_is_skipped() {
+        // Cut off in the middle of the last field: right column count, wrong value.
+        let h = History::parse("\"Iteration\",\"rms[Rho]\",\"CFx\"\n0,-1.0,0.31\n1,-2.0,0.3").unwrap();
+        assert_eq!(h.rows.len(), 1);
+        assert_eq!(History::parse("\"Iteration\",\"rms[Rho]\",\"CFx\"\n0,-1.0,0.31\n1,-2.0,0.3\n").unwrap().rows.len(), 2);
     }
 
     #[test]

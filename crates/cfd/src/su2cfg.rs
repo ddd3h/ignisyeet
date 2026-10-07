@@ -522,7 +522,8 @@ mod tests {
         }
         assert!(!b.contains("RANS_MAX") && !b.contains("MARKER_WALL_FUNCTIONS"));
         // The startup stage is capped by `iterations` too.
-        let short = su2_config(&CfdOptions { iterations: 300, ..o.clone() }, 0.8, 4.0, &dims(), &atm(), &CaseFiles { stage: Stage::Startup, ..Default::default() });
+        let short =
+            su2_config(&CfdOptions { iterations: 300, ..o.clone() }, 0.8, 4.0, &dims(), &atm(), &CaseFiles { stage: Stage::Startup, ..Default::default() });
         assert!(has(&short, "ITER= 300"));
         // Wall-function mode only with a log-layer y+.
         let wf = su2_config(&CfdOptions { yplus: 50.0, ..o.clone() }, 0.8, 4.0, &dims(), &atm(), &own);

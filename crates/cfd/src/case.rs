@@ -175,6 +175,29 @@ pub struct ResidualPeak {
     pub nu: f64,
 }
 
+/// RANS: the per-marker axial coefficients of the row selection the case coefficients come from.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+pub struct AxialRecord {
+    /// `CFx` of the wall marker and of the base marker (CFD frame, positive aft); `None` without the columns.
+    #[serde(default)]
+    pub wall_cfx: Option<f64>,
+    #[serde(default)]
+    pub base_cfx: Option<f64>,
+    /// `coeffs.ca` holds the base-cap force: the monitored total was used (marker columns missing) or
+    /// the case was taken with the CFD base (`rans_base = "cfd"`). The table must then not add the Barrowman base.
+    #[serde(default)]
+    pub base_in_cfx: bool,
+    /// The marker columns were missing: `coeffs.ca` is the monitored total.
+    #[serde(default)]
+    pub markers_missing: bool,
+}
+
+impl From<&crate::forces::AxialSplit> for AxialRecord {
+    fn from(a: &crate::forces::AxialSplit) -> Self {
+        Self { wall_cfx: a.wall, base_cfx: a.base, base_in_cfx: a.base_in_cfx, markers_missing: a.wall.is_none() }
+    }
+}
+
 fn is_false(v: &bool) -> bool {
     !*v
 }
@@ -210,6 +233,9 @@ pub struct CaseResult {
     /// RANS: 95th percentile of the wall y+ of the final solution (base cap excluded).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub yplus_p95: Option<f64>,
+    /// RANS: per-marker axial coefficients (wall, base) and whether `coeffs.ca` includes the base cap.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub axial: Option<AxialRecord>,
     /// Remarks on an accepted result (e.g. a first cell above the target y+).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
@@ -341,11 +367,18 @@ mod tests {
             reference_peak: None,
             limit_cycle: false,
             yplus_p95: None,
+            axial: None,
             warnings: vec![],
         };
         // Euler results keep their file layout (no RANS fields).
         let euler = serde_json::to_string(&r).unwrap();
-        assert!(!euler.contains("reference_peak") && !euler.contains("limit_cycle") && !euler.contains("yplus") && !euler.contains("warnings"));
+        assert!(
+            !euler.contains("reference_peak")
+                && !euler.contains("limit_cycle")
+                && !euler.contains("yplus")
+                && !euler.contains("axial")
+                && !euler.contains("warnings")
+        );
         write_done(&dir, &r).unwrap();
         let back = read_done(&dir, &h).unwrap();
         assert_eq!(back.coeffs, r.coeffs);
@@ -355,12 +388,14 @@ mod tests {
             reference_peak: Some(ResidualPeak { rho: -2.1, nu: -5.0 }),
             limit_cycle: true,
             yplus_p95: Some(1.2),
+            axial: Some(AxialRecord { wall_cfx: Some(0.25), base_cfx: Some(0.05), base_in_cfx: false, markers_missing: false }),
             warnings: vec!["w".into()],
             ..r.clone()
         };
         write_done(&dir, &rans).unwrap();
         let back = read_done(&dir, &h).unwrap();
         assert_eq!((back.reference_peak, back.limit_cycle, back.yplus_p95, back.warnings), (rans.reference_peak, true, Some(1.2), vec!["w".to_string()]));
+        assert_eq!(back.axial, rans.axial);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -277,16 +277,28 @@ pub fn plan_resources_mesh(opt: &CfdOptions, budget: &ResourceBudget, cells: usi
     RunPlan { ranks, parallel, bytes_per_case: per, notes }
 }
 
-/// Per-case axial breakdown of the RANS report, read back from the case histories.
-fn axial_breakdown(results: &[runner::CaseOutcome], model: &aero::AeroModel, work: &Path, base_from_cfd: bool) -> Vec<forces::AxialReportEntry> {
+/// Some RANS case has no per-marker `CFx` columns: its axial coefficient is the monitored total, base cap included.
+pub(crate) fn rans_markers_missing<'a>(mut results: impl Iterator<Item = &'a case::CaseResult>) -> bool {
+    results.any(|r| r.axial.is_some_and(|a| a.markers_missing))
+}
+
+/// The table takes the base term from the CFD axial coefficients (no Barrowman base on top): `rans_base = "cfd"`,
+/// or a case whose axial coefficient is the total (a Barrowman base on top would count the base twice).
+pub(crate) fn table_base_from_cfd(rans_base_cfd: bool, markers_missing: bool) -> bool {
+    rans_base_cfd || markers_missing
+}
+
+/// Per-case axial breakdown of the RANS report, from the per-marker values stored with each case.
+fn axial_breakdown(results: &[runner::CaseOutcome], model: &aero::AeroModel) -> Vec<forces::AxialReportEntry> {
     results
         .iter()
-        .filter(|r| r.result.is_some() && !r.spec.is_roll())
+        .filter(|r| !r.spec.is_roll())
         .filter_map(|r| {
-            let h = history::History::read(&r.spec.dir(work).join("history.csv")).ok()?;
-            let window = (h.rows.len() / 4).clamp(2, 100);
-            let m = forces::MarkerCoeffs::from_history(&h, window);
-            Some(forces::AxialReportEntry::new(model, r.spec.mach, r.spec.alpha_deg, &m, base_from_cfd))
+            let a = r.result.as_ref()?.axial?;
+            let m = forces::MarkerCoeffs { wall_cfx: a.wall_cfx, base_cfx: a.base_cfx, ..Default::default() };
+            let mut e = forces::AxialReportEntry::new(model, r.spec.mach, r.spec.alpha_deg, &m, false);
+            e.base_from_cfd = a.base_in_cfx;
+            Some(e)
         })
         .collect()
 }
@@ -386,8 +398,11 @@ pub fn build_table_with_progress(
         Some((s, m)) => anyhow::anyhow!("{e}\nfirst failed case M={} alpha={} beta={} deg ({}): {m}", s.mach, s.alpha_deg, s.beta_deg, s.dir(&work).display()),
         None => e,
     };
-    // One-line switch: `cfd.base_from_cfd()` once the option exists.
-    let base_from_cfd = forces::BASE_FROM_CFD_DEFAULT;
+    // The table takes the base term from CFD when `rans_base = "cfd"` or when any RANS case carries the base cap
+    // in its axial coefficient (marker columns absent: the monitored total): the Barrowman base is then not added.
+    // The choice is table-wide (all cases of a run come from one SU2 configuration, so the columns are all there or all absent).
+    let markers_missing = rans_markers_missing(results.iter().filter_map(|r| r.result.as_ref()));
+    let base_from_cfd = table_base_from_cfd(cfd.base_from_cfd(), markers_missing);
     let base_cfd = |r: &runner::CaseOutcome| !r.spec.is_roll();
     // Roll pairs (alpha = beta = 0, +-roll_rate_hat) per Mach number.
     let roll_pairs: Vec<general::RollPair> = if cfd.roll_damping {
@@ -459,9 +474,14 @@ pub fn build_table_with_progress(
         .ok();
     }
     if cfd.model == FlowModel::Rans {
-        report.axial_breakdown = axial_breakdown(&results, &model, &work, base_from_cfd);
+        report.axial_breakdown = axial_breakdown(&results, &model);
+        if report.axial_breakdown.iter().any(|e| e.cfd_wall_ca.is_some()) && markers_missing {
+            report.warnings.push("RANS: some cases have no per-marker CFx columns; the table takes the base from CFD for all of them".into());
+        }
         if report.axial_breakdown.iter().any(|e| e.cfd_wall_ca.is_none()) {
-            report.warnings.push("RANS: the history has no per-marker CFx(wall) column; the axial force is the monitored total, which includes the base cap".into());
+            report
+                .warnings
+                .push("RANS: the history has no per-marker CFx(wall) column; the axial force is the monitored total, which includes the base cap".into());
         }
     }
     let tab = if cfd.general_table() {

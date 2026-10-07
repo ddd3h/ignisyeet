@@ -695,7 +695,11 @@ mod tests {
     fn rans_table_axial_has_no_euler_terms() {
         let m = model();
         let pts = |ca: f64| -> Vec<SolvedPoint> {
-            [0.5, 2.0].iter().flat_map(|&mach| [0.0, 2.0, 4.0].iter().map(move |&a| (mach, a))).map(|(mach, a)| SolvedPoint { mach, alpha_deg: a, coeffs: Some(BodyCoeffs { cn: 0.3 * a, ca, mom: 0.5 * 0.3 * a }) }).collect()
+            [0.5, 2.0]
+                .iter()
+                .flat_map(|&mach| [0.0, 2.0, 4.0].iter().map(move |&a| (mach, a)))
+                .map(|(mach, a)| SolvedPoint { mach, alpha_deg: a, coeffs: Some(BodyCoeffs { cn: 0.3 * a, ca, mom: 0.5 * 0.3 * a }) })
+                .collect()
         };
         let build = |flow: FlowModel, base: bool| build_from_points_roll(&pts(0.3), &m, flow, "h".into(), Extrapolation::Linear, &[], base).unwrap().0;
         let (eu, rm, rc) = (build(FlowModel::Euler, false), build(FlowModel::Rans, false), build(FlowModel::Rans, true));

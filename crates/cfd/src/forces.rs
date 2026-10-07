@@ -53,10 +53,6 @@ impl Su2Coeffs {
     }
 }
 
-/// Default of the "base pressure from CFD" switch until the configuration supplies it: the base term
-/// of RANS tables is the Barrowman base drag model.
-pub const BASE_FROM_CFD_DEFAULT: bool = false;
-
 /// Name of the CFD surface marker of the body wall (nose, body tube, boattail, fins).
 pub const WALL_MARKER: &str = "wall";
 /// Name of the CFD surface marker of the base cap.

@@ -406,7 +406,7 @@ mod tests {
         assert!(rans_rows(80, 0.2, (10.0, 10.0), 0.0).rans_coefficients_stable(40, k, 18.0));
         assert!(rans_rows(80, 0.2, (10.0, 10.1), 0.0).rans_coefficients_stable(40, k, 18.0)); // drift 0.025 d
         assert!(!rans_rows(80, 0.2, (10.0, 10.4), 0.0).rans_coefficients_stable(40, k, 18.0)); // drift 0.1 d
-        // Axial force: 0.5 % of the scale.
+                                                                                               // Axial force: 0.5 % of the scale.
         assert!(rans_rows(80, 0.2, (10.0, 10.0), 0.01).rans_coefficients_stable(40, k, 18.0));
         assert!(!rans_rows(80, 0.2, (10.0, 10.0), 0.04).rans_coefficients_stable(40, k, 18.0));
         // The Euler rule accepts the 0.1 d centre-of-pressure drift and the 1 % force drift.

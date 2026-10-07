@@ -52,9 +52,9 @@
 //! Children run in their own process group and are killed on Ctrl-C / SIGTERM; finished cases
 //! keep their `done.json`.
 
-use crate::case::{case_hash, case_list, read_done, warm_start_source_for, write_done, CaseResult, CaseSpec, ResidualPeak};
+use crate::case::{case_hash, case_list, read_done, warm_start_source_for, write_done, AxialRecord, CaseResult, CaseSpec, ResidualPeak};
 use crate::config::{AlphaMode, CfdOptions, FlowModel};
-use crate::forces::{BodyCoeffs, BodyCoeffs6, Su2Coeffs, Su2Coeffs6};
+use crate::forces::{BodyCoeffs, BodyCoeffs6, MarkerCoeffs, Su2Coeffs, Su2Coeffs6};
 use crate::history::{summarize, History, HistorySummary, StabilityKind};
 use crate::su2cfg::{su2_config_case, CaseFiles, RefDims, Stage};
 use crate::table::SolvedPoint;
@@ -196,9 +196,26 @@ impl Drop for Group {
     }
 }
 
-/// SU2 configuration text of a case without the restart line: the input of its hash.
+/// Text the input hash is taken of: the SU2 configuration and, for RANS, the base treatment (it decides which
+/// force the stored axial coefficient holds but is not part of the SU2 configuration).
+fn hash_text(setup: &RunSetup, spec: &CaseSpec) -> String {
+    let cfg = base_config(setup, spec);
+    if setup.opt.model == FlowModel::Rans {
+        format!("{cfg}\n# base_from_cfd = {}", setup.opt.base_from_cfd())
+    } else {
+        cfg
+    }
+}
+
+/// SU2 configuration text of a case without the restart line.
 fn base_config(setup: &RunSetup, spec: &CaseSpec) -> String {
-    su2_config_case(setup.opt, spec, &setup.dims, &setup.atm, &CaseFiles { mesh: setup.mesh_file.display().to_string(), restart_from: None, stage: Stage::Final })
+    su2_config_case(
+        setup.opt,
+        spec,
+        &setup.dims,
+        &setup.atm,
+        &CaseFiles { mesh: setup.mesh_file.display().to_string(), restart_from: None, stage: Stage::Final },
+    )
 }
 
 /// Number of grid levels SU2 reports in its "MG Level | CVs | Aggl. Rate" table (fine grid included; 0 when no table).
@@ -331,16 +348,31 @@ fn solve(
     }
 }
 
+/// Coefficients of a finished case: the body coefficients and, for RANS, the per-marker axial record.
+type CaseCoeffs = (HistorySummary, BodyCoeffs, Option<BodyCoeffs6>, Option<AxialRecord>);
+
 /// Body coefficients of a case from the last `window` rows of its history (the single place where the history
-/// becomes [`BodyCoeffs`] / [`BodyCoeffs6`]).
-fn coefficients_from_history(setup: &RunSetup, spec: &CaseSpec, h: &History, window: usize) -> std::result::Result<(HistorySummary, BodyCoeffs, Option<BodyCoeffs6>), String> {
+/// becomes [`BodyCoeffs`] / [`BodyCoeffs6`]). RANS: the axial coefficient is the wall marker (plus the base marker
+/// with `rans_base = "cfd"`), averaged over the same rows as the totals; without marker columns it is the total.
+fn coefficients_from_history(setup: &RunSetup, spec: &CaseSpec, h: &History, window: usize) -> std::result::Result<CaseCoeffs, String> {
     let s = summarize(h, window).ok_or("empty history")?;
-    let coeffs = Su2Coeffs::from_summary(&s, spec.alpha_deg).map(|c| BodyCoeffs::from_su2(&c, setup.dims.length)).map_err(|e| e.to_string())?;
-    let coeffs6 = Su2Coeffs6::from_summary(&s).ok().map(|c| BodyCoeffs6::from_su2(&c));
+    let mut su2 = Su2Coeffs::from_summary(&s, spec.alpha_deg).map_err(|e| e.to_string())?;
+    let mut su26 = Su2Coeffs6::from_summary(&s).ok();
+    let mut axial = None;
+    if setup.opt.model == FlowModel::Rans {
+        let m = MarkerCoeffs::from_history(h, window);
+        let base = setup.opt.base_from_cfd();
+        let (c, split) = su2.with_markers(&m, base);
+        su2 = c;
+        su26 = su26.map(|c6| c6.with_markers(&m, base).0);
+        axial = Some(AxialRecord::from(&split));
+    }
+    let coeffs = BodyCoeffs::from_su2(&su2, setup.dims.length);
+    let coeffs6 = su26.map(|c| BodyCoeffs6::from_su2(&c));
     if coeffs6.is_none() && (spec.is_roll() || setup.opt.general_table()) {
         return Err("the history has no CFx, CFy, CFz, CMx, CMy, CMz columns (needed for sideslip, roll and general tables)".into());
     }
-    Ok((s, coeffs, coeffs6))
+    Ok((s, coeffs, coeffs6, axial))
 }
 
 /// Warm start of a case: the neighbour's restart file and, for RANS, the reference peak of its chain.
@@ -491,7 +523,9 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: Option
     // Practically converged (typical for Euler wake limit cycles): residual down 3 orders and the coefficients
     // flat over `stable_window` iterations. Stop SU2 gracefully before the residual drifts and diverges.
     let stop = |h: &History| {
-        h.rows.len() >= setup.opt.min_iterations && h.residual_drop_from_peak().is_some_and(|d| d >= min_drop) && h.coefficients_stable(setup.opt.stable_window, kind)
+        h.rows.len() >= setup.opt.min_iterations
+            && h.residual_drop_from_peak().is_some_and(|d| d >= min_drop)
+            && h.coefficients_stable(setup.opt.stable_window, kind)
     };
     let cfg = su2_config_case(setup.opt, &spec, &setup.dims, &setup.atm, &files);
     let run = match solve(setup, i, &dir, ("case.cfg", "su2.log", "history.csv"), &cfg, deadline, &stop, tx)? {
@@ -524,7 +558,7 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: Option
             if h.coefficients_stable(window, kind) { "stable" } else { "still changing" }
         )));
     }
-    let (s, coeffs, coeffs6) = match coefficients_from_history(setup, &spec, &h, if reached { 1 } else { window }) {
+    let (s, coeffs, coeffs6, axial) = match coefficients_from_history(setup, &spec, &h, if reached { 1 } else { window }) {
         Ok(c) => c,
         Err(e) => return Ok(fail(e)),
     };
@@ -545,6 +579,7 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: Option
         reference_peak: None,
         limit_cycle: false,
         yplus_p95: None,
+        axial,
         warnings: Vec::new(),
     };
     write_done(&dir, &result)?;
@@ -635,7 +670,7 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
                 return Ok(fail(format!("not converged ({when}): {why}")));
             }
         };
-        let (s, coeffs, coeffs6) = match coefficients_from_history(setup, &spec, &h, if limit_cycle { window } else { 1 }) {
+        let (s, coeffs, coeffs6, axial) = match coefficients_from_history(setup, &spec, &h, if limit_cycle { window } else { 1 }) {
             Ok(c) => c,
             Err(e) => return Ok(fail(e)),
         };
@@ -671,6 +706,7 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
             reference_peak: Some(reference),
             limit_cycle,
             yplus_p95: yplus,
+            axial,
             warnings,
         };
         write_done(&dir, &result)?;
@@ -695,7 +731,7 @@ pub fn run_all(setup: &RunSetup, progress: &(dyn Fn(CfdStage) + Sync)) -> Result
     let n = cases.len();
     let _sig = SignalGuard::new();
     std::fs::create_dir_all(&setup.work)?;
-    let hashes: Vec<String> = cases.iter().map(|c| case_hash(&base_config(setup, c), &setup.mesh_hash)).collect();
+    let hashes: Vec<String> = cases.iter().map(|c| case_hash(&hash_text(setup, c), &setup.mesh_hash)).collect();
     let sources: Vec<Option<usize>> = (0..n).map(|i| warm_start_source_for(&cases, i, setup.opt.model != FlowModel::Rans)).collect();
     let mut outcomes: Vec<Option<CaseOutcome>> = vec![None; n];
     let mut state = vec![St::Pending; n];
@@ -1088,17 +1124,28 @@ if [ "$conv" = history ] && [ $warm = 1 ]; then
   [ "$mode" = warmfail ] && { echo "Error: warm boom" >&2; exit 1; }
   grep -q Nu_Tilde "$sol" || { echo "Error: no SA variable in the restart" >&2; exit 1; }
 fi
-echo '"Inner_Iter","rms[Rho]","rms[nu]","CFx","CFz","CMy"' > $conv.csv
+case "$mode" in markers*) mk=1;; *) mk=0;; esac
+case "$mode" in cycle|markers_cycle) cyc=1;; *) cyc=0;; esac
+if [ $mk = 1 ]; then echo '"Inner_Iter","rms[Rho]","rms[nu]","CFx","CFz","CMy","CFx(wall)","CFx(base)"' > $conv.csv
+else echo '"Inner_Iter","rms[Rho]","rms[nu]","CFx","CFz","CMy"' > $conv.csv; fi
 i=0
 while [ $i -lt 40 ]; do
   if [ "$conv" = history_startup ]; then r=$(echo "-1.0 - 0.05*$i" | bc -l); nu=$(echo "-4.0 - 0.05*$i" | bc -l)
   elif [ $warm = 1 ]; then r=$(echo "-4.5 - 0.1*$i" | bc -l); nu=$(echo "-6.5 - 0.1*$i" | bc -l)
-  elif [ "$mode" = cycle ]; then r=$(echo "-2.0 - 0.03*$i" | bc -l); nu=$(echo "-5.0 - 0.02*$i" | bc -l)
+  elif [ $cyc = 1 ]; then r=$(echo "-2.0 - 0.03*$i" | bc -l); nu=$(echo "-5.0 - 0.02*$i" | bc -l)
   else r=$(echo "-2.0 - 0.2*$i" | bc -l); nu=$(echo "-5.0 - 0.2*$i" | bc -l)
   fi
   fx=0.3; fz=$(echo "$aoa * 0.05" | bc -l); my=$(echo "0 - $aoa * 0.08" | bc -l)
   if [ "$mode" = cycle ] && [ "$conv" = history ] && [ $warm = 0 ]; then par=$((i % 2)); fx=$(echo "0.3 + $par * 0.002" | bc -l); fi
-  echo "$i,$r,$nu,$fx,$fz,$my" >> $conv.csv
+  if [ $mk = 1 ]; then
+    # wall 0.2 (drifting 1e-6 per row, 0.002 apart in the cycle), base 0.1 + 0.05 for the total
+    wx=$(echo "0.2 + $i * 0.000001" | bc -l); bx=0.1
+    if [ "$mode" = markers_cycle ] && [ "$conv" = history ] && [ $warm = 0 ]; then wx=$(echo "0.2 + $((i % 2)) * 0.002" | bc -l); fi
+    fx=$(echo "$wx + $bx" | bc -l)
+    echo "$i,$r,$nu,$fx,$fz,$my,$wx,$bx" >> $conv.csv
+  else
+    echo "$i,$r,$nu,$fx,$fz,$my" >> $conv.csv
+  fi
   i=$((i+1))
 done
 printf 'Density Nu_Tilde restart' > restart.dat
@@ -1185,6 +1232,106 @@ exit 0
         assert!(r.converged && (r.yplus_p95.unwrap() - 4.0).abs() < 1e-12);
         assert!(r.warnings.iter().any(|w| w.contains("y+ P95 = 4.00 exceeds 3")), "{r:?}");
         assert!(done(&e, &out[0])["warnings"][0].as_str().unwrap().contains("y+"));
+        let _ = std::fs::remove_dir_all(&e.dir);
+    }
+
+    fn sample_model() -> aero::AeroModel {
+        use geom::sample::SampleRocket;
+        let g = geom::extract(&SampleRocket::default().mesh(), &geom::ExtractOptions::default()).unwrap();
+        aero::AeroModel::new(g, aero::AeroOptions { mach_max: 3.0, mach_step: 0.25, alpha_max_deg: 16.0, alpha_step_deg: 2.0, ..Default::default() })
+    }
+
+    /// Axisymmetric table of the outcomes, built the way `lib.rs` does (base decision included).
+    fn table_of(e: &Env, out: &[CaseOutcome], model: &aero::AeroModel) -> (aero::AeroTable, bool) {
+        let missing = crate::rans_markers_missing(out.iter().filter_map(|o| o.result.as_ref()));
+        let base = crate::table_base_from_cfd(e.opt.base_from_cfd(), missing);
+        let pts: Vec<SolvedPoint> =
+            out.iter().map(|o| SolvedPoint { mach: o.spec.mach, alpha_deg: o.spec.alpha_deg, coeffs: o.result.as_ref().map(|r| r.coeffs) }).collect();
+        let t = crate::table::build_from_points_roll(&pts, model, FlowModel::Rans, "h".into(), aero::Extrapolation::Linear, &[], base).unwrap().0;
+        (t, base)
+    }
+
+    /// Marker columns present: the axial coefficient is the wall marker (the row the totals come from), the table adds
+    /// the Barrowman base; with `rans_base = "cfd"` it is wall + base and the table adds no base; a changed base
+    /// treatment re-runs the finished cases.
+    #[test]
+    fn rans_marker_columns_decide_the_base_term_of_the_table() {
+        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let mut e = env_rans("rans_markers", "markers");
+        let model = sample_model();
+        let b = model.cd0(0.5, false);
+        let out = run_all(&e.setup(), &|_| {}).unwrap();
+        let n_calls = e.calls().len();
+        // Converged cases: the last row (wall 0.2 + 39e-6, base 0.1).
+        let wall = 0.2 + 39e-6;
+        for o in &out {
+            let r = o.result.as_ref().unwrap();
+            let a = r.axial.expect("RANS cases record the markers");
+            assert!((a.wall_cfx.unwrap() - wall).abs() < 1e-9 && (a.base_cfx.unwrap() - 0.1).abs() < 1e-12, "{a:?}");
+            assert!(!a.base_in_cfx && !a.markers_missing);
+            assert!((r.coeffs.ca - wall).abs() < 1e-9, "ca {} is the wall marker of the last row", r.coeffs.ca);
+            assert!(done(&e, o)["axial"]["wall_cfx"].is_number() && done(&e, o)["axial"]["base_in_cfx"] == false);
+        }
+        let (t, base) = table_of(&e, &out, &model);
+        assert!(!base);
+        assert!((t.lookup(0.5, 0.0).ca_off - (wall + b.base + b.extra)).abs() < 1e-6, "{}", t.lookup(0.5, 0.0).ca_off);
+        // rans_base = "cfd": wall + base, and no Barrowman base on top.
+        e.opt.rans_base = crate::config::RansBase::Cfd;
+        let out = run_all(&e.setup(), &|_| {}).unwrap();
+        assert!(e.calls().len() > n_calls, "the base treatment is part of the case hash");
+        for o in &out {
+            let r = o.result.as_ref().unwrap();
+            assert!(r.axial.unwrap().base_in_cfx && !r.axial.unwrap().markers_missing);
+            assert!((r.coeffs.ca - (wall + 0.1)).abs() < 1e-9, "ca {}", r.coeffs.ca);
+        }
+        let (t, base) = table_of(&e, &out, &model);
+        assert!(base);
+        assert!((t.lookup(0.5, 0.0).ca_off - (wall + 0.1 + b.extra)).abs() < 1e-6);
+        let _ = std::fs::remove_dir_all(&e.dir);
+    }
+
+    /// No marker columns: the monitored total holds the base cap, so the table must not add the Barrowman base.
+    #[test]
+    fn rans_without_marker_columns_uses_the_total_and_adds_no_base() {
+        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let e = env_rans("rans_nomarkers", "ok");
+        let model = sample_model();
+        let out = run_all(&e.setup(), &|_| {}).unwrap();
+        for o in &out {
+            let r = o.result.as_ref().unwrap();
+            let a = r.axial.unwrap();
+            assert!(a.wall_cfx.is_none() && a.base_cfx.is_none() && a.base_in_cfx && a.markers_missing, "{a:?}");
+            assert!((r.coeffs.ca - 0.3).abs() < 1e-12);
+            assert_eq!(done(&e, o)["axial"]["base_in_cfx"], true);
+            assert!(done(&e, o)["axial"].get("wall_cfx").is_some_and(|v| v.is_null()));
+        }
+        let (t, base) = table_of(&e, &out, &model);
+        assert!(base, "no double count of the base");
+        let b = model.cd0(0.5, false);
+        assert!((t.lookup(0.5, 0.0).ca_off - (0.3 + b.extra)).abs() < 1e-6);
+        let _ = std::fs::remove_dir_all(&e.dir);
+    }
+
+    /// Limit cycle: the markers are averaged over the window the totals are averaged over.
+    #[test]
+    fn rans_limit_cycle_markers_use_the_window_of_the_totals() {
+        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let e = env_rans("rans_mk_cycle", "markers_cycle");
+        let out = run_all(&e.setup(), &|_| {}).unwrap();
+        let r0 = out[0].result.as_ref().expect("limit cycle accepted");
+        assert!(r0.limit_cycle);
+        let a = r0.axial.unwrap();
+        assert!((a.wall_cfx.unwrap() - 0.201).abs() < 1e-9 && (r0.coeffs.ca - 0.201).abs() < 1e-9, "{a:?} {}", r0.coeffs.ca);
+        assert!((a.base_cfx.unwrap() - 0.1).abs() < 1e-12);
+        let _ = std::fs::remove_dir_all(&e.dir);
+    }
+
+    #[test]
+    fn euler_done_json_has_no_axial_record() {
+        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let e = env("euler_noaxial", "ok");
+        let out = run_all(&e.setup(), &|_| {}).unwrap();
+        assert!(out.iter().all(|o| o.result.as_ref().unwrap().axial.is_none() && done(&e, o).get("axial").is_none()));
         let _ = std::fs::remove_dir_all(&e.dir);
     }
 

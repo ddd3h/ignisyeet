@@ -765,4 +765,43 @@ mod tests {
         assert!((clp_at(&ok, &m, 2.0) - m.roll_terms(2.0).1 * (-20.0 / b)).abs() < 1e-9);
         assert_eq!(clp_at(&[], &m, 0.8), b);
     }
+
+    /// General table: the CFD axial coefficient is taken as is; the Barrowman base is added only when the base is not
+    /// part of it.
+    #[test]
+    fn general_table_adds_the_barrowman_base_only_without_the_cfd_base() {
+        let m = model();
+        let mut points = Vec::new();
+        for &mach in &[0.5, 2.0] {
+            for &a in &[0.0, 2.0, 4.0] {
+                for &b in &[0.0, 2.0, 4.0] {
+                    let mut c = analytic(mach, a, b);
+                    c.cx = -0.3;
+                    points.push(SolvedPoint6 { mach, alpha_deg: a, beta_deg: b, coeffs: Some(c) });
+                }
+            }
+        }
+        let build = |base_from_cfd: bool| {
+            let inp = GeneralInput {
+                points: &points,
+                roll: &[],
+                model: &m,
+                flow: FlowModel::Rans,
+                source_hash: "h".into(),
+                extrapolation: Extrapolation::Linear,
+                shape: ShapeSymmetry::Axisymmetric,
+                average: true,
+                offset: false,
+                mach_step: 0.25,
+                fin_cant_ref_deg: 0.0,
+                fin_edges_in_cfd: false,
+                base_from_cfd,
+            };
+            build_general(&inp).unwrap().0
+        };
+        let b = m.cd0(0.5, false);
+        let (model_base, cfd_base) = (build(false).lookup6(0.5, 0.0, 0.0), build(true).lookup6(0.5, 0.0, 0.0));
+        assert!((-cfd_base.cx_off - (0.3 + b.extra)).abs() < 1e-6, "{}", cfd_base.cx_off);
+        assert!((-model_base.cx_off - (0.3 + b.base + b.extra)).abs() < 1e-6, "{}", model_base.cx_off);
+    }
 }

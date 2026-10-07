@@ -737,8 +737,7 @@ mod tests {
         r.validate().unwrap();
         assert_eq!(serde_json::to_string(&r).unwrap(), serde_json::to_string(&CfdOptions::rans()).unwrap());
         // Explicit values are kept, also when they equal the Euler defaults.
-        let x: CfdOptions =
-            serde_json::from_str(r#"{"model":"rans","iterations":3000,"min_iterations":100,"stable_window":60,"wall_size":0.002}"#).unwrap();
+        let x: CfdOptions = serde_json::from_str(r#"{"model":"rans","iterations":3000,"min_iterations":100,"stable_window":60,"wall_size":0.002}"#).unwrap();
         assert_eq!((x.iterations, x.min_iterations, x.stable_window, x.wall_size), (3000, 100, 60, 0.002));
         // A serialised RANS configuration reads back unchanged.
         let back: CfdOptions = serde_json::from_str(&serde_json::to_string(&r).unwrap()).unwrap();

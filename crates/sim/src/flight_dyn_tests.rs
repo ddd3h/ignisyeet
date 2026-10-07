@@ -617,7 +617,13 @@ fn convective_apparent_mass_force_and_magnus_moment_directions() {
     // Magnus moment cmpa: p > 0, crossflow along +z_b, cmpa > 0: moment along +z_b (McCoy's
     // v - (v.x) x direction), size q S d cmpa p_hat sin(alpha).
     let b = Body { lag: (0.0, 0.0), damp: [0.0; 3], ..osc_body() };
-    let table = AeroTable::from_fn(table_of(&b).meta.clone(), |_, a| AeroCoeffs { cn: b.cna * a.to_radians(), cna: b.cna, xcp: b.xcp, cmpa: 0.5, ..Default::default() });
+    let table = AeroTable::from_fn(table_of(&b).meta.clone(), |_, a| AeroCoeffs {
+        cn: b.cna * a.to_radians(),
+        cna: b.cna,
+        xcp: b.xcp,
+        cmpa: 0.5,
+        ..Default::default()
+    });
     let motor = no_thrust();
     let mut sim = base_sim(&table, &motor, &b, calm(), AtmosphereModel::constant(RHO, 340.0, 1.8e-5).unwrap());
     let cx = ctx(&sim, false);

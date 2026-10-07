@@ -279,7 +279,10 @@ pub struct Coeffs6 {
 impl Coeffs6 {
     fn to_arr(self) -> [f64; N_GEN] {
         let c = self;
-        [c.cx_on, c.cx_off, c.cy, c.cz, c.cl, c.cm, c.cn, c.cl_delta, c.clp, c.sq[0], c.sq[1], c.sq[2], c.sr[0], c.sr[1], c.sr[2], c.lag_l0, c.lag_l1, c.cnpa, c.cmpa]
+        [
+            c.cx_on, c.cx_off, c.cy, c.cz, c.cl, c.cm, c.cn, c.cl_delta, c.clp, c.sq[0], c.sq[1], c.sq[2], c.sr[0], c.sr[1], c.sr[2], c.lag_l0, c.lag_l1,
+            c.cnpa, c.cmpa,
+        ]
     }
     fn from_arr(a: [f64; N_GEN]) -> Self {
         Self {
@@ -463,7 +466,9 @@ impl AeroTable {
         for &m in &meta.machs {
             for &a in &meta.alphas_deg {
                 let c = f(m, a);
-                data.push([c.cn, c.ca_on, c.ca_off, c.xcp, c.cna, c.damp[0], c.damp[1], c.damp[2], c.cl_delta, c.clp, c.lag_l0, c.lag_l1, c.cl4, c.cnpa, c.cmpa]);
+                data.push([
+                    c.cn, c.ca_on, c.ca_off, c.xcp, c.cna, c.damp[0], c.damp[1], c.damp[2], c.cl_delta, c.clp, c.lag_l0, c.lag_l1, c.cl4, c.cnpa, c.cmpa,
+                ]);
             }
         }
         let meta = TableMeta { kind: TableKind::Axisymmetric, format_version: FORMAT_VERSION, ..meta };
@@ -588,8 +593,11 @@ impl AeroTable {
         // possibly the lag and Magnus columns).
         let expected_header = if meta.kind == TableKind::General { HEADER_GEN } else { HEADER };
         let expected: Vec<&str> = expected_header.split(',').collect();
-        let widths: &[usize] =
-            if meta.kind == TableKind::General { &[N_GEN + 3, N_GEN_V2 + 3, N_GEN_V1 + 3] } else { &[N_FIELDS + 2, N_FIELDS_V3 + 2, N_FIELDS_V2 + 2, N_FIELDS_V1 + 2] };
+        let widths: &[usize] = if meta.kind == TableKind::General {
+            &[N_GEN + 3, N_GEN_V2 + 3, N_GEN_V1 + 3]
+        } else {
+            &[N_FIELDS + 2, N_FIELDS_V3 + 2, N_FIELDS_V2 + 2, N_FIELDS_V1 + 2]
+        };
         let ok = widths.contains(&header.len());
         if !ok || !header.iter().zip(&expected).all(|(h, e)| h.eq_ignore_ascii_case(e)) {
             bail!("aero table {}: unexpected CSV header `{}`; expected `{expected_header}`", csv_path.display(), header.join(","));

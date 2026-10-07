@@ -1192,9 +1192,7 @@ impl<'a> Simulation<'a> {
         // Roll-resonance check: trim forcing fixed in the body, and (t, Mach, |p| - omega_n, |p|) of the previous ascent step.
         // Trim forcing fixed in the body: a lateral CG offset, a misaligned thrust line or a general table
         // with a pitch or yaw moment at zero angles. A symmetric fin cant only rolls the rocket.
-        let trim = self.mass.cg_lateral_dry != [0.0, 0.0]
-            || !self.thrust_line.is_aligned()
-            || self.table.max_zero_angle_moment() > ZERO_ANGLE_MOMENT_TRIM;
+        let trim = self.mass.cg_lateral_dry != [0.0, 0.0] || !self.thrust_line.is_aligned() || self.table.max_zero_angle_moment() > ZERO_ANGLE_MOMENT_TRIM;
         let mut res_prev: Option<(f64, f64, f64, f64)> = None;
         let mut deploy_at = f64::INFINITY;
         let mut past_apogee = false;

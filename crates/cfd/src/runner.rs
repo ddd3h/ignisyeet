@@ -409,7 +409,8 @@ fn coefficients_from_history(setup: &RunSetup, spec: &CaseSpec, h: &History, win
         axial = Some(AxialRecord::from(&split));
     }
     let coeffs = BodyCoeffs::from_su2(&su2, setup.dims.length);
-    let coeffs6 = su26.map(|c| BodyCoeffs6::from_su2(&c));
+    // Half domain: the symmetry plane makes the side force and the roll / yaw moments meaningless (zero by symmetry).
+    let coeffs6 = su26.map(|c| BodyCoeffs6::from_su2(&c)).map(|c| if setup.opt.symmetry { c.half_model() } else { c });
     if coeffs6.is_none() && (spec.is_roll() || setup.opt.general_table()) {
         return Err("the history has no CFx, CFy, CFz, CMx, CMy, CMz columns (needed for sideslip, roll and general tables)".into());
     }

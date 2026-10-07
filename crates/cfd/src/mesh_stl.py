@@ -237,6 +237,40 @@ for f, name in sym_faces:
 gmsh.model.addPhysicalGroup(3, [vol], name="fluid")
 
 # ---- size field --------------------------------------------------------------------------------------
+def profile_radius(x):
+    """Body radius of the CFD profile (tail fairing included) at station x."""
+    prof = p["profile"]
+    if x <= prof[0][0]:
+        return prof[0][1]
+    for (xa, ra), (xb, rb) in zip(prof[:-1], prof[1:]):
+        if x <= xb:
+            return ra + (rb - ra) * (x - xa) / max(xb - xa, 1e-300)
+    return prof[-1][1]
+
+
+def fin_surfaces(surfaces):
+    """Classified surfaces whose area centroid (of the STL triangles they still carry) lies outside the body by more than
+    a tenth of the fin span."""
+    out = []
+    for t in surfaces:
+        tags, coord, _ = gmsh.model.mesh.getNodes(2, t, includeBoundary=True)
+        ety, _, enodes = gmsh.model.mesh.getElements(2, t)
+        tri = [np.asarray(n, np.int64).reshape(-1, 3) for e, n in zip(ety, enodes) if e == 2]
+        if not tri or not len(tags):
+            continue
+        tri = np.vstack(tri)
+        look = {int(k): i for i, k in enumerate(tags)}
+        xyz = np.asarray(coord, float).reshape(-1, 3)
+        v = xyz[np.vectorize(look.get)(tri)]
+        area = 0.5 * np.linalg.norm(np.cross(v[:, 1] - v[:, 0], v[:, 2] - v[:, 0]), axis=1)
+        if area.sum() <= 0.0:
+            continue
+        c = (v.mean(axis=1) * area[:, None]).sum(axis=0) / area.sum()
+        if math.hypot(c[1], c[2]) > profile_radius(c[0]) + 0.1 * p["fins"]["span"]:
+            out.append(t)
+    return out
+
+
 f = gmsh.model.mesh.field
 f.add("Distance", 1)
 f.setNumbers(1, "SurfacesList", body)
@@ -247,12 +281,36 @@ f.setNumber(2, "SizeMin", h0)
 f.setNumber(2, "SizeMax", hmax)
 f.setNumber(2, "DistMin", 0.0)
 f.setNumber(2, "DistMax", (hmax - h0) / (grow - 1.0))
-f.setAsBackgroundMesh(2)
+hmin = h0 / p["min_size_divisor"]
+# Fin faces (classify only, fin_size < wall_size): a second threshold of the distance to the fin surfaces, fin_size on
+# them, graded by `growth` (the minimum of both fields). A fin surface is a classified surface whose area centroid lies
+# outside the body profile by more than a tenth of the span (body surfaces have theirs inside the body).
+hf = min(p["fin_size"], h0)
+finf = fin_surfaces(body) if remesh and p["fins"] and hf < h0 * (1.0 - 1e-9) else []
+if finf:
+    f.add("Distance", 3)
+    f.setNumbers(3, "SurfacesList", finf)
+    f.setNumber(3, "Sampling", 200)
+    f.add("Threshold", 4)
+    f.setNumber(4, "InField", 3)
+    f.setNumber(4, "SizeMin", hf)
+    f.setNumber(4, "SizeMax", hmax)
+    f.setNumber(4, "DistMin", 0.0)
+    f.setNumber(4, "DistMax", (hmax - hf) / (grow - 1.0))
+    f.add("Min", 5)
+    f.setNumbers(5, "FieldsList", [2, 4])
+    f.setAsBackgroundMesh(5)
+    hmin = min(hmin, hf)
+    print("fin surfaces: %d of %d wall surfaces meshed at fin_size %.4g m (wall_size %.4g m)" % (len(finf), len(body), hf, h0))
+else:
+    if remesh and p["fins"] and hf < h0 * (1.0 - 1e-9):
+        print("fin surfaces: none identified; fin_size %.4g m not applied" % hf)
+    f.setAsBackgroundMesh(2)
 gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
 gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
 if remesh:
     gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", int(p["curvature_elements"]))
-    gmsh.option.setNumber("Mesh.MeshSizeMin", h0 / p["min_size_divisor"])
+    gmsh.option.setNumber("Mesh.MeshSizeMin", hmin)
     gmsh.option.setNumber("Mesh.MeshSizeMax", hmax)
     gmsh.option.setNumber("Mesh.Algorithm", 6)
 

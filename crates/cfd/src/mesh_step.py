@@ -393,6 +393,49 @@ def size_field(surfaces):
     gmsh.option.setNumber("Mesh.MeshSizeMin", hmin)
     gmsh.option.setNumber("Mesh.MeshSizeMax", hmax)
     gmsh.option.setNumber("Mesh.Algorithm", 6)
+    fin_field(surfaces)
+
+
+def fin_field(surfaces):
+    """Fin refinement (p["fin_refine"], Euler default): the faces whose centre of mass lies outside the extracted body
+    profile by more than a tenth of the fin span get fin_size, graded by `growth` (the minimum with the wall field)."""
+    fr = p.get("fin_refine")
+    if not fr:
+        return
+    prof = fr["profile"]
+
+    def radius(x):
+        if x <= prof[0][0]:
+            return prof[0][1]
+        for (xa, ra), (xb, rb) in zip(prof[:-1], prof[1:]):
+            if x <= xb:
+                return ra + (rb - ra) * (x - xa) / max(xb - xa, 1e-300)
+        return prof[-1][1]
+
+    fins = []
+    for t in surfaces:
+        cx, cy, cz = occ.getCenterOfMass(2, t)
+        if math.hypot(cy, cz) > radius(cx) + 0.1 * fr["span"]:
+            fins.append(t)
+    hf = fr["fin_size"]
+    if not fins:
+        print("fin faces: none identified; fin_size %.4g m not applied" % hf)
+        return
+    f = gmsh.model.mesh.field
+    f.add("Distance", 3)
+    f.setNumbers(3, "SurfacesList", fins)
+    f.setNumber(3, "Sampling", 200)
+    f.add("Threshold", 4)
+    f.setNumber(4, "InField", 3)
+    f.setNumber(4, "SizeMin", hf)
+    f.setNumber(4, "SizeMax", hmax)
+    f.setNumber(4, "DistMin", 0.0)
+    f.setNumber(4, "DistMax", (hmax - hf) / (grow - 1.0))
+    f.add("Min", 5)
+    f.setNumbers(5, "FieldsList", [2, 4])
+    f.setAsBackgroundMesh(5)
+    gmsh.option.setNumber("Mesh.MeshSizeMin", min(hmin, hf))
+    print("fin faces: %d of %d faces meshed at fin_size %.4g m (wall_size %.4g m)" % (len(fins), len(surfaces), hf, h0))
 
 
 # ---- prismatic boundary layer (RANS) ----------------------------------------------------------------------------------

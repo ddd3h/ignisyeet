@@ -15,7 +15,8 @@
 //! 4. [`crate::symmetry`] checks the mirror symmetry of the union about `y = 0` and `z = 0` and decides, with
 //!    `shape_symmetry`, the symmetry in effect (an explicit symmetry that fails the check is an error). The
 //!    options of the run (shape symmetry, quarter mesh, SU2 half domain) follow from it ([`ensure_mesh_stl`] returns them).
-//! 5. `mesh_stl.py` (gmsh) prepares the wall surface (`stl_remesh`: classify + remesh at `wall_size`, or as is),
+//! 5. `mesh_stl.py` (gmsh) prepares the wall surface (`stl_remesh`: classify + remesh at `wall_size` and at `fin_size` on the
+//!    classified fin surfaces, or as is),
 //!    meshes the box farfield around the union (a quarter or half box around the union clipped at the symmetry
 //!    planes, `union_clip.stl`, when the surface is symmetric; the quarter is mirrored about z = 0, the half is kept or
 //!    mirrored about y = 0) and writes the SU2 mesh with the markers `wall`, `base` (aft-facing facets, see
@@ -224,8 +225,13 @@ pub fn ensure_mesh_stl(opt: &CfdOptions, geom: &Geometry, raw: &[Triangle], work
     params.curvature_elements = 12;
     params.min_size_divisor = 5.0;
     params.tail_length = 0.0;
-    params.profile = Vec::new();
-    params.fins = None;
+    // The extracted profile and fins only serve to find the fin surfaces of the refinement (fin_size < wall_size, the
+    // classified surface; `stl_remesh = "none"` keeps the STL triangles).
+    if params.fin_size >= params.wall_size || opt.stl_remesh == crate::config::StlRemesh::None {
+        params.fin_size = params.wall_size;
+        params.profile = Vec::new();
+        params.fins = None;
+    }
     let hash = mesh_hash(&params);
     let su2 = dir.join("mesh.su2");
     let stamp_path = dir.join("mesh.json");

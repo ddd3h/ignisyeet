@@ -14,12 +14,16 @@
 //! `CN(0) = -0.139` (12 % of `CN(4 deg)`), and its size and sign vary at random when the wall size is changed
 //! from 10 to 5 mm (`-0.054`, `+0.106`, `-0.139`, `+0.202`), because every wall size is still larger than the fin
 //! thickness. Elements of 0.75 mm on the fins alone (the body still 6 mm) bring it down to `-0.007`
-//! (0.6 %) and change the odd part `CN(4 deg)` by 3.5 %.
+//! (0.6 %) and change the odd part `CN(4 deg)` by 3.5 %. Euler therefore meshes the fin faces at a quarter of the fin
+//! thickness by default (`fin_size = "auto"`, [`crate::CfdOptions::fin_size_for`]): at 2 mm on the sample (fins 1 mm)
+//! `CN(0)` at M 0.8 drops from 4.2 % to 0.15 % of `CN(4 deg)` (doc/data/cfd/fin_resolution.csv).
 //!
 //! RANS (half model with the prism layer, flat base) has a smaller one of another origin: at M 0.8 `CN(0) =
 //! 0.011` (8 mm) and `0.034` (4.8 mm), 1 to 3 % of `CN(4 deg)`, and `0.006` to `0.013` without fins. The force is steady (the
 //! residual stalls, the coefficient does not oscillate) and sits on the last base diameter of the body ahead of the
-//! flat base and on the fins next to it: an asymmetric steady base wake. At M 2 it is below `0.001`.
+//! flat base and on the fins next to it: an asymmetric steady base wake. At M 2 it is below `0.001`. RANS keeps the fin
+//! faces at `wall_size` (`fin_size = "auto"`): the source is not the fin surface, and prism columns on fins meshed at a
+//! quarter of their thickness would far exceed the memory of a case.
 //!
 //! # What the table does with it
 //!

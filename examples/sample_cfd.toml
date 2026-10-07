@@ -61,7 +61,7 @@ extrapolation = "linear"   # "linear" | "clamp"
 # pins 8.3.0). `surface = "stl"` also needs manifold3d, see `ignisyeet cfd-check examples/sample_cfd.toml`.
 # Each (Mach, alpha) case is a steady SU2 run on a half-model mesh (one fin in the pitch plane); the
 # solved points are interpolated onto the regular table grid above. This reduced default matrix
-# (4 Mach x 3 alpha, Euler, 2 mm surface mesh) takes about 15-20 minutes on a 20-thread desktop. Cases are cached in
+# (4 Mach x 3 alpha, Euler, 2 mm surface mesh) takes about 30-40 minutes on a 20-thread desktop. Cases are cached in
 # out_cfd/cfd/ and re-used when nothing changed (delete the directory to start over).
 [aero.cfd]
 prefix = "~/.local/share/micromamba/envs/ignisyeet-cfd"  # <prefix>/bin/SU2_CFD, mpirun, python (with gmsh)
@@ -89,7 +89,9 @@ alpha_mode = "mirror"      # "mirror" | "offset" | "single": odd/even combinatio
                            # z_mirror_mesh makes it redundant), "offset" subtracts the alpha = 0 values, "single" uses the raw results
 tail_fairing = 6.0         # euler: conical fairing behind the flat base [base radii], 0 = flat base (rans always flat)
 farfield = 20.0            # farfield radius [body lengths]
-wall_size = 0.002          # surface element size [m]: about 0.9 M cells, CN within ~2 % of the mesh-converged value (0.005 = coarse, 5x cheaper, CN up to ~7 % low at M 2)
+wall_size = 0.002          # surface element size [m]: about 1.4 M cells (fins at 1 mm, see fin_size), CN within ~2 % of the mesh-converged value (0.005 = coarse, 5x cheaper, CN up to ~7 % low at M 2)
+# fin_size = "auto"       # fin surface element size [m]: "auto" = min(wall_size, fin thickness / 4) for euler (removes the spurious
+                           # subsonic fin lift at alpha = 0 of fins meshed coarser than their thickness), wall_size for rans
 yplus = 1.0                # rans: target y+ of the first prism layer
 iterations = 3000
 # min_iterations = 100     # early stop: no case is stopped before this iteration; the Euler slope limiter is frozen here (LIMITER_ITER)

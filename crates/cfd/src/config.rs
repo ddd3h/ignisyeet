@@ -141,6 +141,44 @@ fn is_default_general_mach_step(v: &f64) -> bool {
     *v == 0.1
 }
 
+/// Surface element size on the fins (`fin_size`): `"auto"` or a size [m].
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum FinSize {
+    /// Euler: `min(wall_size, fin thickness / 4)`; RANS: `wall_size` (see [`CfdOptions::fin_size_for`]).
+    #[default]
+    Auto,
+    /// This size [m] on the fin faces.
+    Size(f64),
+}
+
+impl Serialize for FinSize {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        match self {
+            FinSize::Auto => s.serialize_str("auto"),
+            FinSize::Size(v) => s.serialize_f64(*v),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for FinSize {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum Raw {
+            Num(f64),
+            Text(String),
+        }
+        match Raw::deserialize(d)? {
+            Raw::Num(v) => Ok(FinSize::Size(v)),
+            Raw::Text(t) if t == "auto" => Ok(FinSize::Auto),
+            Raw::Text(t) => Err(serde::de::Error::custom(format!("fin_size must be \"auto\" or a size in metres, got \"{t}\""))),
+        }
+    }
+}
+
+/// `fin_size = "auto"` with Euler: the fin faces get elements of the fin thickness divided by this.
+pub const FIN_SIZE_THICKNESS_DIVISOR: f64 = 4.0;
+
 /// Convective flux scheme.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
@@ -295,11 +333,18 @@ pub struct CfdOptions {
     pub tail_fairing: f64,
     /// Farfield radius in body lengths.
     pub farfield: f64,
-    /// Surface element size [m]. 2 mm gives about 0.9 M half-model cells for the 1.8 m sample rocket and a
-    /// normal-force error of about 2 % at M 2 (mesh convergence study, doc/data/cfd/mesh_convergence.csv).
+    /// Surface element size [m]. 2 mm gives about 0.9 M half-model cells for the 1.8 m sample rocket with the fins at
+    /// 2 mm too (1.4 M with the Euler default `fin_size`, 1 mm on the 4 mm fins) and a normal-force error of about 2 %
+    /// at M 2 (mesh convergence study with the fins at `wall_size`, doc/data/cfd/mesh_convergence.csv).
     /// RANS default: 5 mm.
     #[serde(default = "unset_size")]
     pub wall_size: f64,
+    /// Surface element size on the fin faces [m], see [`FinSize`] and [`CfdOptions::fin_size_for`]. Euler on fins
+    /// meshed at `wall_size` (thicker than the fin) carries a spurious steady fin lift at subsonic Mach numbers
+    /// (`CN(0)` about 12 % of `CN(4 deg)` at 6 mm on the 4 mm fins of the sample); elements of a quarter of the fin
+    /// thickness remove it (see [`crate::asymmetry`]).
+    #[serde(skip_serializing_if = "is_default")]
+    pub fin_size: FinSize,
     /// RANS: target y+ of the first layer. At most 5: the boundary layer is resolved down to the wall (no wall
     /// function); 30..150: the standard wall function bridges the inner layer.
     pub yplus: f64,
@@ -374,6 +419,7 @@ impl Default for CfdOptions {
             tail_fairing: 6.0,
             farfield: 20.0,
             wall_size: 0.002,
+            fin_size: FinSize::Auto,
             yplus: 1.0,
             iterations: 3000,
             multigrid: None,
@@ -471,6 +517,20 @@ impl CfdOptions {
         }
     }
 
+    /// Surface element size on the fin faces for fins of `thickness` [m] (`None`: no fins): an explicit `fin_size`;
+    /// `auto` is `min(wall_size, thickness / 4)` for Euler and `wall_size` for RANS (the prism layer on fins meshed at a
+    /// quarter of their thickness is too large a mesh, and the zero-angle force of RANS is a base-wake effect). Never
+    /// larger than `wall_size`; equal to it means no fin refinement.
+    pub fn fin_size_for(&self, thickness: Option<f64>) -> f64 {
+        match self.fin_size {
+            FinSize::Size(v) => v.min(self.wall_size),
+            FinSize::Auto => match (self.model, thickness) {
+                (FlowModel::Euler, Some(t)) if t.is_finite() && t > 0.0 => (t / FIN_SIZE_THICKNESS_DIVISOR).min(self.wall_size),
+                _ => self.wall_size,
+            },
+        }
+    }
+
     /// RANS with `rans_base = "cfd"`: the base drag is the force integrated on the base cap.
     pub fn base_from_cfd(&self) -> bool {
         self.model == FlowModel::Rans && self.rans_base == RansBase::Cfd
@@ -503,6 +563,17 @@ impl CfdOptions {
         for (name, v) in [("farfield", self.farfield), ("wall_size", self.wall_size), ("yplus", self.yplus), ("cfl", self.cfl)] {
             if !(v.is_finite() && v > 0.0) {
                 bail!("aero.cfd.{name} must be positive");
+            }
+        }
+        if let FinSize::Size(v) = self.fin_size {
+            if !(v.is_finite() && v > 0.0) {
+                bail!("aero.cfd.fin_size must be \"auto\" or a positive size in metres");
+            }
+            if v > self.wall_size {
+                bail!("aero.cfd.fin_size = {v} is larger than wall_size = {}: the fin faces are never meshed coarser than the wall", self.wall_size);
+            }
+            if v < self.wall_size / 50.0 {
+                bail!("aero.cfd.fin_size = {v} is below wall_size / 50 = {}: the mesh would be impractically large", self.wall_size / 50.0);
             }
         }
         if self.betas_deg.is_empty() || self.betas_deg.iter().any(|&b| !(b.is_finite() && (0.0..=90.0).contains(&b))) {
@@ -869,6 +940,40 @@ mod tests {
         assert!(e.contains("only used with surface = \"step\""), "{e}");
         assert!(CfdOptions { step_unit: StepUnit::In, ..Default::default() }.validate().is_err());
         assert_eq!((StepUnit::Auto.metres(), StepUnit::In.metres(), StepUnit::Mm.metres()), (None, Some(0.0254), Some(0.001)));
+    }
+
+    #[test]
+    fn fin_size_parses_validates_and_resolves_per_model() {
+        // Default `auto`, not serialised (existing configuration hashes stay).
+        let o = CfdOptions::default();
+        assert_eq!(o.fin_size, FinSize::Auto);
+        assert!(!serde_json::to_string(&o).unwrap().contains("fin_size"));
+        let a: CfdOptions = serde_json::from_str(r#"{"fin_size":"auto"}"#).unwrap();
+        assert_eq!(a.fin_size, FinSize::Auto);
+        let n: CfdOptions = serde_json::from_str(r#"{"fin_size":0.0005}"#).unwrap();
+        assert_eq!(n.fin_size, FinSize::Size(0.0005));
+        n.validate().unwrap();
+        assert!(serde_json::to_string(&n).unwrap().contains("\"fin_size\":0.0005"));
+        let back: CfdOptions = serde_json::from_str(&serde_json::to_string(&n).unwrap()).unwrap();
+        assert_eq!(back.fin_size, FinSize::Size(0.0005));
+        let e = serde_json::from_str::<CfdOptions>(r#"{"fin_size":"fine"}"#).unwrap_err().to_string();
+        assert!(e.contains("fin_size must be \"auto\" or a size in metres"), "{e}");
+        // auto: Euler a quarter of the fin thickness (at most wall_size), RANS wall_size; no fins: wall_size.
+        assert_eq!(o.fin_size_for(Some(0.004)), 0.001);
+        assert_eq!(CfdOptions { wall_size: 0.0008, ..Default::default() }.fin_size_for(Some(0.004)), 0.0008);
+        assert_eq!(o.fin_size_for(None), o.wall_size);
+        assert_eq!(o.fin_size_for(Some(0.0)), o.wall_size);
+        let r = CfdOptions::rans();
+        assert_eq!(r.fin_size_for(Some(0.004)), r.wall_size);
+        // An explicit size applies to both models.
+        assert_eq!(CfdOptions { fin_size: FinSize::Size(0.0015), ..CfdOptions::rans() }.fin_size_for(Some(0.004)), 0.0015);
+        assert_eq!(CfdOptions { fin_size: FinSize::Size(0.0015), ..Default::default() }.fin_size_for(None), 0.0015);
+        // Validation.
+        let bad = |v: f64| CfdOptions { fin_size: FinSize::Size(v), ..Default::default() }.validate().unwrap_err().to_string();
+        assert!(bad(0.0).contains("positive") && bad(f64::NAN).contains("positive"));
+        assert!(bad(0.003).contains("larger than wall_size"), "{}", bad(0.003));
+        assert!(bad(1e-5).contains("below wall_size / 50"), "{}", bad(1e-5));
+        CfdOptions { fin_size: FinSize::Size(0.002), ..Default::default() }.validate().unwrap();
     }
 
     #[test]

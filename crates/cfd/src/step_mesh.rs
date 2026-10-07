@@ -573,6 +573,23 @@ pub struct FairingParams {
     pub tail_fairing: f64,
 }
 
+/// `fin_refine` in `params.json`: the fin faces (centre of mass outside the body profile by more than a tenth of the
+/// span) are meshed at `fin_size`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FinRefine {
+    pub fin_size: f64,
+    pub span: f64,
+    pub profile: Vec<[f64; 2]>,
+}
+
+/// The fin refinement of `opt` for `geom`: `None` without fins or when the fin size is the wall size (RANS default).
+pub fn fin_refine(opt: &CfdOptions, geom: &Geometry) -> Option<FinRefine> {
+    let (profile, fins) = mesh::cad_description(geom);
+    let f = fins?;
+    let fin_size = opt.fin_size_for(Some(f.thickness));
+    (fin_size < opt.wall_size).then_some(FinRefine { fin_size, span: f.span, profile })
+}
+
 /// Everything `mesh_step.py` reads (`params.json`); the prepare mode uses the first group only.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StepParams {
@@ -608,6 +625,10 @@ pub struct StepParams {
     pub algorithm3d: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bl: Option<BlParams>,
+    /// Fin refinement ([`CfdOptions::fin_size_for`] below `wall_size`): the size on the fin faces, the fin span and the
+    /// extracted body profile `(x, r)` that tell the fin faces from the body; `None` = no fin refinement.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fin_refine: Option<FinRefine>,
     pub out_su2: String,
     pub stats_json: String,
     pub threads: usize,
@@ -821,6 +842,7 @@ fn base_params(opt: &CfdOptions, geom: &Geometry, dir: &Path, threads: usize, un
         y_mirror: false,
         algorithm3d: 10,
         bl: None,
+        fin_refine: fin_refine(opt, geom),
         out_su2: p("mesh.su2"),
         stats_json: p("mesh_stats.json"),
         threads: threads.max(1),
@@ -1304,5 +1326,23 @@ print(f(float(sys.argv[2]), float(sys.argv[3])))
         assert_eq!(t, "fairing");
         assert!(w[0].contains("CAD shape is MODIFIED"));
         assert_eq!(base_treatment_notes(&CfdOptions { model: FlowModel::Rans, ..s }).0, "none");
+    }
+
+    #[test]
+    fn fin_refinement_is_euler_only_by_default_and_part_of_the_hash() {
+        let p = params();
+        let fr = p.fin_refine.clone().expect("Euler refines the fins by default");
+        let g = sample_geom();
+        let f = g.fins.as_ref().unwrap();
+        assert!((fr.fin_size - f.thickness / 4.0).abs() < 1e-12 && fr.span == f.span && fr.profile.len() >= 2);
+        let none = StepParams { fin_refine: None, ..p.clone() };
+        assert_ne!(step_mesh_hash(&p, b"x"), step_mesh_hash(&none, b"x"));
+        // The prepared shape does not depend on it.
+        assert_eq!(prepare_hash(&p, b"x"), prepare_hash(&none, b"x"));
+        // RANS (fin_size = wall_size) and an explicit fin_size = wall_size: no refinement, no key in params.json.
+        assert!(fin_refine(&CfdOptions::rans(), &g).is_none());
+        assert!(fin_refine(&CfdOptions { fin_size: crate::FinSize::Size(0.002), ..Default::default() }, &g).is_none());
+        assert!(!serde_json::to_string(&none).unwrap().contains("fin_refine"));
+        assert!(SCRIPT.contains("p.get(\"fin_refine\")") && SCRIPT.contains("    fin_field(surfaces)\n"));
     }
 }

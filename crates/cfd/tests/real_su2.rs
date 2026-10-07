@@ -406,3 +406,44 @@ fn rans_prism_layer_sweep_passes_the_validity_check() {
     let failed: Vec<&String> = rows.iter().filter(|(ok, _)| !ok).map(|(_, l)| l).collect();
     assert!(failed.is_empty(), "{failed:#?}");
 }
+
+/// Finds `name` below `dir`.
+fn find_file(dir: &std::path::Path, name: &str) -> Option<std::path::PathBuf> {
+    for e in std::fs::read_dir(dir).ok()?.flatten() {
+        let p = e.path();
+        if p.is_dir() {
+            if let Some(f) = find_file(&p, name) {
+                return Some(f);
+            }
+        } else if p.file_name().is_some_and(|n| n == name) {
+            return Some(p);
+        }
+    }
+    None
+}
+
+#[test]
+#[ignore = "needs gmsh (IGNISYEET_CFD_PREFIX); about 2 minutes"]
+fn fin_faces_are_refined_for_euler_and_not_for_rans() {
+    let (_, g) = sample_stl();
+    let aero = aero::AeroOptions::default();
+    let mesh = |opt: &CfdOptions, tag: &str| {
+        let dir = std::env::temp_dir().join(format!("ignisyeet_cfd_fin_size_{}_{tag}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let m = cfd::mesh_only(&g, opt, &aero, &dir, &ResourceBudget::default(), None).unwrap();
+        let log = std::fs::read_to_string(find_file(&dir, "mesh.log").unwrap()).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
+        (m.stats, log)
+    };
+    let euler = CfdOptions { wall_size: 0.008, z_mirror_mesh: false, machs: vec![0.8], alphas_deg: vec![0.0, 4.0], ..Default::default() };
+    let (auto, log) = mesh(&euler, "auto");
+    // Half model, roll 0: the fin at +y (two sides and the tip) and the halves of the fins at +-z (one side and half the tip each).
+    assert!(log.contains("fin faces: 7 of ") && log.contains("at fin_size 0.001 m"), "{log}");
+    let (coarse, log) = mesh(&CfdOptions { fin_size: cfd::FinSize::Size(0.008), ..euler.clone() }, "wall");
+    assert!(!log.contains("fin faces"), "{log}");
+    assert!(auto.cells > 3 * coarse.cells && auto.wall_triangles > 4 * coarse.wall_triangles, "{} {}", auto.cells, coarse.cells);
+    // RANS keeps the fins at wall_size.
+    let rans = CfdOptions { wall_size: 0.008, machs: vec![0.8, 2.0], alphas_deg: vec![0.0, 4.0], ..CfdOptions::rans() };
+    let (r, log) = mesh(&rans, "rans");
+    assert!(!log.contains("fin faces") && r.by_type.contains_key("Prism 6"), "{log}");
+}

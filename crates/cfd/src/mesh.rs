@@ -20,6 +20,11 @@
 //! * Volume (Euler): tetrahedra (HXT) with a size field `min(farfield L / 10, wall_size + 0.2 d)` of the
 //!   distance `d` to the wall, i.e. growth about 1.2 per element row. The SU2 mesh is written by gmsh with the
 //!   physical groups `wall`, `base`, `farfield`, `symmetry`.
+//! * Fin faces (`fin_size`, [`CfdOptions::fin_size_for`]; Euler default a quarter of the fin thickness): a second
+//!   threshold field of the distance to the fin faces gives `fin_size` there, graded by the same growth (the minimum of
+//!   both fields; the smallest size is then at most `fin_size`). A fin face is a wall face whose centre of mass lies
+//!   outside the body profile by more than a tenth of the span. With `fin_size = wall_size` (RANS default) the size field
+//!   is the wall field alone.
 //! * Volume (RANS, [`BlParams`]): prismatic boundary layer on wall and base, built by the script from the surface mesh
 //!   of the half solid `y >= 0` (same size field as Euler). Columns along node normals: the most visible direction of
 //!   the incident wall triangles, in the plane on `y = 0`, smoothed where that keeps them visible and fanned out of
@@ -58,7 +63,7 @@ use std::path::{Path, PathBuf};
 pub const SCRIPT: &str = include_str!("mesh_gmsh.py");
 /// SU2 writer of the boundary-layer mesh (imported by [`SCRIPT`]).
 pub const WRITER: &str = include_str!("su2_writer.py");
-/// Prismatic boundary layer for the half or full domain (imported by `mesh_step.py`).
+/// Prismatic boundary layer for the half or full domain (imported by [`SCRIPT`] and `mesh_step.py`).
 pub const BL_LAYER: &str = include_str!("bl_layer.py");
 
 /// Growth ratio of the prism layer heights.
@@ -225,6 +230,8 @@ pub struct MeshParams {
     /// `stl`: 3D algorithm of gmsh, 10 = HXT, 1 = Delaunay (the retry after an HXT failure).
     pub algorithm3d: u32,
     pub wall_size: f64,
+    /// Surface element size on the fin faces ([`CfdOptions::fin_size_for`]); equal to `wall_size`: no fin refinement.
+    pub fin_size: f64,
     pub max_size: f64,
     pub growth: f64,
     pub curvature_elements: usize,
@@ -344,6 +351,7 @@ impl MeshParams {
             farfield_radius: r,
             symmetry: opt.symmetry,
             wall_size: opt.wall_size,
+            fin_size: opt.fin_size_for(fins.as_ref().map(|f| f.thickness)),
             max_size: r / 10.0,
             growth: 1.2,
             curvature_elements: 24,
@@ -432,7 +440,7 @@ pub fn mesh_hash(params: &MeshParams) -> String {
     if q.kind == "stl" {
         hash_parts(&[json.as_bytes(), crate::stl_mesh::SCRIPT.as_bytes(), crate::stl_mesh::UNION_SCRIPT.as_bytes()])
     } else {
-        hash_parts(&[json.as_bytes(), SCRIPT.as_bytes(), WRITER.as_bytes()])
+        hash_parts(&[json.as_bytes(), SCRIPT.as_bytes(), WRITER.as_bytes(), BL_LAYER.as_bytes()])
     }
 }
 
@@ -516,6 +524,7 @@ pub fn ensure_mesh(opt: &CfdOptions, geom: &Geometry, atm: &Atmosphere, workdir:
     }
     std::fs::write(dir.join("mesh_gmsh.py"), SCRIPT)?;
     std::fs::write(dir.join("su2_writer.py"), WRITER)?;
+    std::fs::write(dir.join("bl_layer.py"), BL_LAYER)?;
     let _ = std::fs::remove_file(dir.join("params_retry.json"));
     std::fs::write(dir.join("params.json"), serde_json::to_string_pretty(&params)?)?;
     let py = tools.gmsh.path.clone().context("no python with gmsh")?;
@@ -604,7 +613,7 @@ mod tests {
             assert!(SCRIPT.contains(&format!("\"{name}\"")), "{name}");
         }
         assert!(SCRIPT.contains("occ.fuse") && SCRIPT.contains("occ.cut") && SCRIPT.contains("Mesh.Algorithm3D"));
-        assert!(SCRIPT.contains("column_heights") && SCRIPT.contains("import su2_writer") && SCRIPT.contains("Geometry.Tolerance"));
+        assert!(SCRIPT.contains("bl_layer.build(") && BL_LAYER.contains("def column_heights(") && SCRIPT.contains("Geometry.Tolerance"));
         for f in ["def write(", "def mirror(", "def orient(", "def check(", "def unmarked_faces("] {
             assert!(WRITER.contains(f), "{f}");
         }
@@ -732,16 +741,49 @@ mod tests {
         // Every key the script reads from `bl` is provided.
         let j = serde_json::to_value(bl).unwrap();
         let mut n = 0;
-        for line in SCRIPT.lines() {
+        for line in SCRIPT.lines().chain(BL_LAYER.lines()) {
             let mut rest = line;
             while let Some(i) = rest.find("bl[\"") {
                 rest = &rest[i + 4..];
                 let key = &rest[..rest.find('"').unwrap()];
-                assert!(j.get(key).is_some(), "mesh_gmsh.py reads missing bl key {key}");
+                assert!(j.get(key).is_some(), "mesh_gmsh.py / bl_layer.py reads missing bl key {key}");
                 n += 1;
             }
         }
         assert!(n >= 5, "{n}");
+    }
+
+    #[test]
+    fn fin_size_reaches_the_params_and_the_hash() {
+        let g = sample_geom();
+        let t = g.fins.as_ref().unwrap().thickness;
+        let atm = AtmosphereModel::default().at(0.0);
+        // Euler: a quarter of the fin thickness below wall_size; the script refines the fin faces with it.
+        let e = MeshParams::cad(&CfdOptions { wall_size: 0.006, ..Default::default() }, &g, &atm, Path::new("/a"), 4);
+        assert!((e.fin_size - t / 4.0).abs() < 1e-12 && e.fin_size < e.wall_size, "{} {t}", e.fin_size);
+        assert!(serde_json::to_value(&e).unwrap().get("fin_size").is_some());
+        let ew = MeshParams::cad(&CfdOptions { wall_size: 0.006, fin_size: crate::FinSize::Size(0.006), ..Default::default() }, &g, &atm, Path::new("/a"), 4);
+        assert_eq!(ew.fin_size, ew.wall_size);
+        assert_ne!(mesh_hash(&e), mesh_hash(&ew));
+        // RANS: fin_size = wall_size (no refinement), the same parameters as an explicit fin_size = wall_size.
+        let r = MeshParams::cad(&CfdOptions::rans(), &g, &atm, Path::new("/a"), 4);
+        assert_eq!(r.fin_size, r.wall_size);
+        let rw = MeshParams::cad(&CfdOptions { fin_size: crate::FinSize::Size(0.003), ..CfdOptions::rans() }, &g, &atm, Path::new("/a"), 4);
+        assert_eq!(mesh_hash(&r), mesh_hash(&rw));
+        // The fin size field: a Distance + Threshold on the fin faces combined with the wall field by Min, only below
+        // wall_size (fin_size = wall_size keeps the single wall field of the background mesh).
+        for (name, script) in [("mesh_gmsh.py", SCRIPT), ("mesh_stl.py", crate::stl_mesh::SCRIPT), ("mesh_step.py", crate::step_mesh::SCRIPT)] {
+            for key in ["\"Min\", 5", "SizeMin\", hf", "setAsBackgroundMesh(5)", "setAsBackgroundMesh(2)", "h0 * (1.0 - 1e-9)"] {
+                if name == "mesh_step.py" && key == "h0 * (1.0 - 1e-9)" {
+                    continue; // the caller decides (fin_refine is None at fin_size = wall_size)
+                }
+                assert!(script.contains(key), "{name}: {key}");
+            }
+            assert!(script.contains("+ 0.1 * "), "{name}: fin face test");
+        }
+        // The cad script: the fin faces are found among the wall faces of both the Euler and the RANS surface mesh.
+        assert!(SCRIPT.contains("size_field(wall + cap, wall)") && SCRIPT.contains("size_field(wallsurf + cap, wallsurf)"));
+        assert!(SCRIPT.contains("fin_refine = bool(fins) and hf < h0 * (1.0 - 1e-9)"));
     }
 
     #[test]

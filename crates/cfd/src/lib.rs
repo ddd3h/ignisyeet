@@ -32,7 +32,7 @@ mod test_tmp;
 pub mod tools;
 
 pub use config::{
-    y_symmetric_layout, z_symmetric_layout, AlphaMode, BaseTreatment, CfdOptions, FlowModel, Scheme, ShapeSymmetry, StepUnit, StlRemesh, SurfaceKind,
+    y_symmetric_layout, z_symmetric_layout, AlphaMode, BaseTreatment, CfdOptions, FinSize, FlowModel, Scheme, ShapeSymmetry, StepUnit, StlRemesh, SurfaceKind,
 };
 
 use aero::{AeroOptions, AeroTable, Extrapolation};

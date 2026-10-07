@@ -57,41 +57,48 @@ n_slices = 600
 fin_threshold = 0.05
 extrapolation = "linear"   # "linear" | "clamp"
 
-# SU2 CFD aerodynamics (needs SU2 8.3.0, MPI and gmsh; 8.5.0 crashes on CPUs without AVX-512, so the installer
-# pins 8.3.0). `surface = "stl"` also needs manifold3d, see `ignisyeet cfd-check examples/sample_cfd.toml`.
-# Each (Mach, alpha) case is a steady SU2 run on a half-model mesh (one fin in the pitch plane); the
-# solved points are interpolated onto the regular table grid above. This reduced default matrix
-# (4 Mach x 3 alpha, Euler, 2 mm surface mesh) takes about 30-40 minutes on a 20-thread desktop. Cases are cached in
-# out_cfd/cfd/ and re-used when nothing changed (delete the directory to start over).
+# SU2 CFD aerodynamics on the CAD model (needs SU2 8.3.0, MPI and gmsh; 8.5.0 crashes on CPUs without AVX-512, so the
+# installer pins 8.3.0; manifold3d is not needed), see `ignisyeet cfd-check examples/sample_step.toml --mesh`.
+# The STEP is registered against rocket.stl before meshing (same rocket, same coordinate system, its own details
+# allowed). Its launch lug and rail buttons make the shape mirror-asymmetric, so every (Mach, alpha) case is a steady
+# SU2 run on the full domain (about twice the cells of the half model of sample_cfd.toml) and -alpha is solved too
+# (alpha_mode = "mirror"); the table is a six-component (general) table. This takes clearly longer than the 30-40
+# minutes of sample_cfd.toml. Cases are cached in out_step/cfd/ and re-used when nothing changed, including the CAD
+# file contents (delete the directory to start over).
 [aero.cfd]
 prefix = "~/.local/share/micromamba/envs/ignisyeet-cfd"  # <prefix>/bin/SU2_CFD, mpirun, python (with gmsh)
-model = "euler"            # "euler" | "rans" (Spalart-Allmaras)
+model = "euler"            # "euler" | "rans" (Spalart-Allmaras; on a CAD model the prism layer must pass its validity check)
 machs = [0.3, 0.8, 1.2, 2.0]   # solved Mach numbers (increasing)
 alphas_deg = [0, 4, 8]         # solved angles of attack (must contain 0)
 surface = "step"           # "step": the CAD model of step_file (STEP / IGES / BREP) with every detail as the exact CFD wall;
                            # "cad" (alias "panel_mesh"): geometry rebuilt from the extracted profile + fins as one fused solid;
                            # "stl": the STL itself (overlapping closed shells are united, needs base_treatment for Euler)
-step_file = "sample_rocket.step"  # the rocket of rocket.stl in the same coordinates, plus a launch lug and two rail buttons
-# step_unit = "auto"       # "auto" (the unit the file declares) | "m" | "cm" | "mm" | "in" | "ft"
-base_treatment = "fairing" # step + euler (required): "fairing" fuses a cone behind the base (modifies the CAD shape), "flat" keeps it
+step_file = "sample_rocket.step"  # the rocket of rocket.stl in the same coordinates (millimetres), plus a launch lug and two rail buttons
+# step_unit = "auto"       # "auto" (the unit the file declares; BREP: metres) | "m" | "cm" | "mm" | "in" | "ft"
+base_treatment = "fairing" # step + euler (required): "fairing" fuses a cone behind the base (modifies the CAD shape), "flat" keeps it;
+                           # rans: not used (flat base)
 symmetry = true            # allow the half model about the pitch plane. It is used while the case matrix permits (shape symmetric
                            # about y = 0, betas_deg = [0], no roll cases); otherwise the full domain is solved. false = always full domain.
+                           # This STEP is not symmetric (lug, buttons): full domain.
 # betas_deg = [0, 4, 8]    # sideslip angles [deg] (increasing, start with 0); anything but [0] makes the table a six-component (general) table
 # roll_damping = true      # solve a roll pair per Mach number (rotating frame, alpha = beta = 0) and take Clp from CFD; full domain
 # roll_rate_hat = 0.01     # p d / (2 V) of the roll pair
 # shape_symmetry = "auto"  # "auto" | "axisymmetric" (mirror planes y = 0 and z = 0) | "pitch_plane" (y = 0 only) | "none": which mirror
-                           # images are not solved. stl: auto uses the planes that the mirror check of the united surface verifies (both:
+                           # images are not solved. stl / step: auto uses the planes that the mirror check of the shape verifies (both:
                            # quarter mesh, y = 0 only: half mesh, none: full domain); an explicit axisymmetric / pitch_plane that fails the
                            # check is an error, "none" forces the full domain. "pitch_plane" / "none" give a general table.
 # stl_remesh = "classify" # stl: "classify" (gmsh remeshes the united surface at wall_size) | "none" (the STL triangles as they are: fins under-resolved)
 # max_geometry_error = 0.002  # stl: fail when the CFD wall is farther than this [m] from the input STL (default wall_size)
 # general_mach_step = 0.1  # general table: Mach step of the output grid (0 = [aero] mach_step)
 z_mirror_mesh = true       # mesh a quarter and mirror it about the x-y plane: exactly z-symmetric mesh, no spurious CN at alpha = 0
+                           # (only for a shape verified symmetric about y = 0 and z = 0, so not for this STEP; never for rans)
 alpha_mode = "mirror"      # "mirror" | "offset" | "single": odd/even combination of +alpha and -alpha runs (-alpha is skipped when
                            # z_mirror_mesh makes it redundant), "offset" subtracts the alpha = 0 values, "single" uses the raw results
-tail_fairing = 6.0         # euler: conical fairing behind the flat base [base radii], 0 = flat base (rans always flat)
+tail_fairing = 6.0         # euler + base_treatment = "fairing": cone length behind the flat base [base radii] (rans always flat)
 farfield = 20.0            # farfield radius [body lengths]
-wall_size = 0.002          # surface element size [m]: about 1.4 M cells (fins at 1 mm, see fin_size), CN within ~2 % of the mesh-converged value (0.005 = coarse, 5x cheaper, CN up to ~7 % low at M 2)
+wall_size = 0.002          # surface element size [m] (fins at 1 mm, see fin_size; the smallest size follows the thinnest CAD face, at least
+                           # wall_size / 8). The half model of the rebuilt geometry has about 1.4 M cells at 2 mm; this full domain about twice.
+                           # The registration against rocket.stl allows max(2 wall_size, 1 % of the length).
 # fin_size = "auto"       # fin surface element size [m]: "auto" = min(wall_size, fin thickness / 4) for euler (removes the spurious
                            # subsonic fin lift at alpha = 0 of fins meshed coarser than their thickness), wall_size for rans
 yplus = 1.0                # rans: target y+ of the first prism layer

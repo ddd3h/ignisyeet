@@ -33,7 +33,7 @@ CSV は、1 行目が見出し、2 行目以降が格子点 1 つにつき 1 行
 
 .. code-block:: text
 
-   mach,alpha_deg,cn,ca_on,ca_off,xcp,cna,damp_s0,damp_s1,damp_s2,cl_delta,clp
+   mach,alpha_deg,cn,ca_on,ca_off,xcp,cna,damp_s0,damp_s1,damp_s2,cl_delta,clp,lag_l0,lag_l1,cl4,cnpa
 
 行は Mach 数が外側、迎角が内側の順（Mach 数ごとに迎角を小さい方から並べる）に、全格子点を 1 行ずつ並べる。
 ``alpha_deg`` は全迎角 :math:`\alpha_t` [deg] である（一般表では :math:`\alpha`。:ref:`sec-aero-alpha-beta`）。
@@ -72,10 +72,26 @@ CSV は、1 行目が見出し、2 行目以降が格子点 1 つにつき 1 行
    * - ``clp``
      - 無次元
      - ロール減衰微係数 :math:`C_{lp}=\partial C_l/\partial\hat p`\ （:math:`\hat p=pd/(2V)`。負）
+   * - ``lag_l0``
+     - m
+     - 遅れの和 :math:`L_0=2\,\mathrm{Vol}/S`\ （見かけの質量。:eq:`eq-lag-sums`）
+   * - ``lag_l1``
+     - m\ :sup:`2`
+     - 遅れの和 :math:`L_1=L_0\,x_{\mathrm{vol}}`\ （ノーズ先端まわり。:math:`L_1/L_0` が作用点）
+   * - ``cl4``
+     - 無次元
+     - 誘導ロールの係数 :math:`C_{l4}`\ （:math:`\Delta C_l=C_{l4}\alpha_t^2\sin4(\phi_c-\phi_f)`、:math:`\alpha_t` は rad。:eq:`eq-induced-roll`）
+   * - ``cnpa``
+     - 1/rad
+     - Magnus 力の傾き :math:`C_{Np\alpha}^{*}`\ （:math:`C_{N,\mathrm{Magnus}}=C_{Np\alpha}^{*}\hat p\sin\alpha_t`。McCoy の :math:`pd/V` で無次元化した値の 2 倍。:eq:`eq-magnus`）
 
 既定の格子は、Mach 数が :math:`M=0,0.02,\dots,3.0`\ （151 点）、全迎角が :math:`\alpha_t=0^\circ,1^\circ,\dots,90^\circ`\ （91 点）である
 （設定 ``aero.mach_min`` ``mach_max`` ``mach_step`` と ``alpha_max_deg`` ``alpha_step_deg``。:ref:`[aero] の設定項目 <sec-config-aero>`）。
 飛翔計算は 0 から 90° の :math:`\alpha_t'` で表を引くので、既定の表では範囲を超えない。``alpha_max_deg`` を小さくした表で範囲を超えた迎角は外挿し、その結果は使えないもの（終了ステータス 3）とする（:ref:`sec-aero-table`、:ref:`sec-aero-interp`）。
+
+``lag_l0`` と ``lag_l1`` は、部品積み上げ法では機体の形状から求め（:ref:`sec-damping`）、パネル法と CFD の表にも同じ形状の値を入れる。
+``cl4`` と ``cnpa`` は、部品積み上げ法、パネル法、CFD のどれも推算せず 0 を書く。値を使うには外部の表（``aero.method = "table"``）に書く。
+4 列の値の飛翔計算での使い方は :ref:`sec-aero-unsteady` にある。
 
 .. _sec-file-general:
 
@@ -86,11 +102,11 @@ CSV は、1 行目が見出し、2 行目以降が格子点 1 つにつき 1 行
 
 .. code-block:: text
 
-   mach,alpha_deg,beta_deg,cx_on,cx_off,cy,cz,cl,cm,cn,cl_delta,clp,sq0,sq1,sq2,sr0,sr1,sr2
+   mach,alpha_deg,beta_deg,cx_on,cx_off,cy,cz,cl,cm,cn,cl_delta,clp,sq0,sq1,sq2,sr0,sr1,sr2,lag_l0,lag_l1,cnpa
 
 行は Mach 数が最も外側、迎角が次、横滑り角が最も内側の順に、全格子点を 1 行ずつ並べる。
 ``alpha_deg`` は迎角 :math:`\alpha`、``beta_deg`` は横滑り角 :math:`\beta` である（定義は :ref:`sec-aero-angles`）。
-行は 3 つの格子値に続く 15 個の値を、必ず全部持つ。
+行は 3 つの格子値に続く 18 個の値を持つ（15 個の古い形式は :ref:`sec-file-v1`）。
 
 .. list-table::
    :header-rows: 1
@@ -123,9 +139,13 @@ CSV は、1 行目が見出し、2 行目以降が格子点 1 つにつき 1 行
    * - ``sr0`` / ``sr1`` / ``sr2``
      - ``damp_s0`` から ``damp_s2`` と同じ
      - ヨーの減衰の和 :math:`S_0^r,S_1^r,S_2^r`
+   * - ``lag_l0`` / ``lag_l1`` / ``cnpa``
+     - 軸対称表と同じ
+     - 遅れの和と Magnus 力の傾き（軸対称表の同名の列と同じ意味）
 
 一般表では、単一の圧力中心 :math:`x_{cp}` や :math:`C_{N\alpha}` を飛翔計算に使わない。
 6 成分の定義、符号、基準点は :doc:`aero_coefficients` と :ref:`sec-aero-forces`、減衰の和の使い方は :eq:`eq-moment-damp` にある。
+一般表は ``cl4`` の列を持たない。誘導ロールは :math:`C_l` の列に含める（軸対称表から展開した表では、展開のときに加える）。
 
 迎角 :math:`-180^\circ\le\alpha\le180^\circ` と横滑り角 :math:`-90^\circ\le\beta\le90^\circ` の格子は不等間隔である。
 :math:`\pm30^\circ` の内側は 2° 刻み、外側は 10° 刻みで、迎角は 61 点、横滑り角は 43 点になる。
@@ -158,7 +178,7 @@ Mach 数の刻みは、作り方で異なる。
      - 内容
    * - ``format_version``
      - 任意
-     - 形式のバージョン。書き出すときは常に 2。読み込み時はこの値を使わず、CSV の列数で形式を判定する（:ref:`sec-file-v1`）
+     - 形式のバージョン。書き出すときは常に 3。読み込み時はこの値を使わず、CSV の列数で形式を判定する（:ref:`sec-file-v1`）
    * - ``kind``
      - 任意
      - ``"axisymmetric"``\ （既定）または ``"general"``
@@ -189,6 +209,9 @@ Mach 数の刻みは、作り方で異なる。
    * - ``moment_ref``
      - 任意
      - モーメントの基準点。現在は ``"nose_tip"``\ （既定）だけである（:ref:`sec-aero-moment-ref`）
+   * - ``fin_roll_deg``
+     - 任意
+     - 軸対称表の誘導ロール ``cl4`` の基準になる 1 枚のフィンのロール角 :math:`\phi_f` [deg]（:math:`+y_b` から :math:`+z_b` へ測る。:eq:`eq-induced-roll`）。既定は 0。有限でなければエラー
    * - ``extrapolation``
      - 必須
      - 迎角と横滑り角が表の範囲外のときの扱い。``"linear"``\ （線形外挿。符号と範囲を制限する）または ``"clamp"``\ （端の値で一定）。Mach 数は、この値にかかわらず端の値で一定（:ref:`sec-aero-interp`）
@@ -201,7 +224,7 @@ Mach 数の刻みは、作り方で異なる。
 表を読み込むときは、次を検査する。違反があるとエラーにして、メッセージにファイル名（行に関するものは行番号も）を示す。
 
 * 付随ファイルと CSV が読めること。付随ファイルが無い、JSON として読めないときは、そのファイルの名前を示す。
-* 基準面積 ``ref_area``、基準直径 ``ref_diameter``、全長 ``length`` が有限で正であること。``fin_cant_ref_deg`` が有限であること。
+* 基準面積 ``ref_area``、基準直径 ``ref_diameter``、全長 ``length`` が有限で正であること。``fin_cant_ref_deg`` と ``fin_roll_deg`` が有限であること。
 * ``moment_ref`` が ``"nose_tip"`` であること。ほかの値は、シミュレータが重心まわりへの移し替えをノーズ先端まわりのモーメントから行うので受け付けない。
 * ``machs`` と ``alphas_deg``\ （一般表では ``betas_deg`` も）が空でなく、有限で、厳密に増加すること。
 * 迎角の格子が 0 を含むこと。軸対称表の ``alphas_deg`` は 0 から始まり（違えば ``alphas_deg of an axisymmetric table must start at 0 deg (the total angle of attack), found …: the small-angle coefficients would be extrapolated``）、
@@ -213,19 +236,41 @@ Mach 数の刻みは、作り方で異なる。
 * 格子の座標の列（``mach`` ``alpha_deg`` ``beta_deg``）を含むすべてのセルが有限であること。``NaN`` と ``inf`` は、座標の照合より先に調べ、``row 4 of …: column 1 (mach) is not finite: inf`` の形（行と列は例）で列の位置と見出しを示してエラーにする。
 * 値が数として読めない行、列数が合わない行。
 
-一般表の行は 18 個の値を全部持たなければならない。軸対称表の行は、12 列の形式か、後述のバージョン 1 の 10 列（格子の 2 列に値 8 個）の形式である。
+各行の値の数は見出しの列数に一致しなければならない。軸対称表は 16 列（格子の 2 列に値 14 個）、一般表は 21 列（格子の 3 列に値 18 個）の形式か、次節の古い形式である。
 
 .. _sec-file-v1:
 
-バージョン 1 の軸対称表
-~~~~~~~~~~~~~~~~~~~~~~~
+古い列の組の表
+~~~~~~~~~~~~~~
 
-軸対称表の行が値を 8 個（``mach`` ``alpha_deg`` に続けて ``cn`` から ``damp_s2`` まで、合わせて 10 列）しか持たない表は、ロール項 ``cl_delta`` と ``clp`` を 0 とした軸対称表として読み込む。
-このとき付随ファイルに ``format_version`` がなくてもよい。保存するときは常にバージョン 2（12 列）で書く。
+次の列の組の表も読み込む。足りない列は 0 とする。どの表も、保存するときは現在の形式（バージョン 3）で書く。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 18 60
+
+   * - 表
+     - 列数
+     - 足りない列
+   * - 軸対称表（バージョン 1）
+     - 10（値 8 個）
+     - ``cl_delta`` ``clp`` ``lag_l0`` ``lag_l1`` ``cl4`` ``cnpa``。付随ファイルに ``format_version`` がなくてもよい
+   * - 軸対称表（バージョン 2）
+     - 12（値 10 個）
+     - ``lag_l0`` ``lag_l1`` ``cl4`` ``cnpa``
+   * - 一般表（15 個の値）
+     - 18
+     - ``lag_l0`` ``lag_l1`` ``cnpa``
+
+見出しは、現在の見出しの先頭から、その列数までと一致しなければならない。
 
 ``aero.method = "table"`` で読み込んだ表のロール項がすべて 0 のとき（バージョン 1 の表を含む）は、``aero``、``sim``、``dispersion`` のどれでも、現在の STL のフィンから部品積み上げ法のロール項（:math:`C_{l\delta}` と :math:`C_{lp}`）を求めて表に補う。
 補ったときは、端末に注意書きを表示する。形状を抽出できないときは、注意書きを表示してロール項を 0 のままにし、機体はロールしない。フィンがなければ補う値も 0 で、注意書きは出ない。
 ロール項を含む表は、そのまま使う。補った値は、読み込んだ表のメモリ上だけに入り、元のファイルは書き換えない。
+
+遅れと Magnus の列を持たない外部の表（上の表のバージョン 1、2 と 15 個の値の一般表）は、遅れの和を補わず、0 のまま飛ばす。
+このとき ``table has no lag/Magnus columns: quasi-steady terms only`` の警告を出す。遅れのモーメント、Magnus 力、誘導ロールは働かず、回転による法線力（減衰の和から求める。:eq:`eq-cnq-force`）だけが働く。
+遅れの項を入れるには、表に ``lag_l0`` と ``lag_l1`` の列を加える（部品積み上げ法の ``aero_table.csv`` の値を写してもよい）。
 
 .. _sec-aero-table-format-external:
 
@@ -241,7 +286,8 @@ Mach 数の刻みは、作り方で異なる。
 * 軸対称表の ``alphas_deg`` は 0 から始め、一般表の ``alphas_deg`` と ``betas_deg`` は 0 を含める。格子の座標を含むすべてのセルは有限にする（上の「読み込み時の検査」）。
 * 格子の外の引き出しは、迎角・横滑り角の最初の格子点より小さい側も、最後の格子点より大きい側も、範囲外として数える（``aero_table_range`` の ``angle_beyond``。:ref:`sec-file-summary`）。格子点が 1 つだけの軸では、その値以外はすべて範囲外である。
 * 軸対称な外部の表は、``aero.table_kind = "general"`` で一般表に展開できる（展開した表は書き出さない）。外部の表が最初から一般表なら、そのまま使う。
-* ロール項がすべて 0 の表には、前節のとおり部品積み上げ法のロール項が補われる。
+* ロール項がすべて 0 の表には、前節のとおり部品積み上げ法のロール項が補われる。遅れの和は補われない。
+* 軸対称表の誘導ロール ``cl4`` は、付随ファイルの ``fin_roll_deg`` のフィンの面を基準にした値である。Magnus 力の ``cnpa`` は :math:`\hat p=pd/(2V)` についての傾き（McCoy の :math:`C_{Np\alpha}` の 2 倍）で、正の向きは :math:`\bm{u}\times\bm{e}_x` である（:eq:`eq-magnus`）。
 * CSV の見出しは、列の名前と順序が前節の見出しと一致していなければならない（大文字小文字と前後の空白は無視する）。名前や順序が違うと、読み込みで ``unexpected CSV header`` を含むエラーにする。
 
 .. _sec-file-drag:
@@ -485,6 +531,9 @@ CFD のメッシュのキャッシュで、``mesh.su2`` などが入る。``surf
      - 開傘を推力の終わりまで遅らせたときだけ書く。本来の開傘時刻（頂点 + ``recovery.delay``）``nominal_time`` [s] と、その時刻の推力 ``thrust`` [N] を持つ（:ref:`sec-parachute`）
    * - ``broadside_time`` / ``fell_broadside``
      - 頂点のあとの弾道落下で、全迎角が 60° から 120° の間で飛んだ時間 [s]（パラシュート降下では 0）と、それが 10 s を超えたか（真偽値）。``true`` のときは警告を出す（:ref:`sec-lim-aero`）
+   * - ``roll_resonance``
+     - ロール角速度がピッチの固有振動数を横切ったときだけ書く（トリムの強制がある飛翔で、頂点より前の自由飛行。:ref:`sec-roll-resonance`）。
+       最初の交差の時刻 ``t`` [s]、Mach 数 ``mach``、そのときのロール角速度（＝固有振動数）``frequency`` [rad/s]、上昇中の交差の回数 ``crossings`` を持つ。警告も出す（:ref:`sec-config-checks`）
    * - ``drogue_deploy_speed`` / ``drogue_deploy_q``
      - パラシュート（二段開傘ではドローグ）が開いたときの対気速度 [m/s]\ （風に対する速さ）と動圧 [Pa]。``drogue_deploy_time`` と同じく、開傘しなかった飛翔では書かない。
        対気速度が 50 m/s を超えるか動圧が 2 kPa を超えると警告する（:ref:`sec-config-checks`）
@@ -577,13 +626,13 @@ KML は、このファイルのハッシュが現在の設定と一致すると�
 
 .. code-block:: text
 
-   sample,descent,status,thrust_scale,burn_time_scale,dry_mass,cg,cn_scale,ca_scale,elevation_deg,azimuth_deg,roll_deg,wind_speed_delta,wind_direction_deg_delta,parachute_cd_s_scale,wind_speed,wind_direction_deg,landing_east,landing_north,landing_lat,landing_lon,landing_distance,landing_time,landing_speed,apogee,apogee_time,max_mach,rail_exit_speed,min_stability_cal,thrust_misalignment_y_deg,thrust_misalignment_z_deg,thrust_offset_y,thrust_offset_z,fin_cant_deg,cg_lateral_y,cg_lateral_z,cl_scale,clp_scale,stable,broadside_time
+   sample,descent,status,thrust_scale,burn_time_scale,dry_mass,cg,cn_scale,ca_scale,elevation_deg,azimuth_deg,roll_deg,wind_speed_delta,wind_direction_deg_delta,parachute_cd_s_scale,wind_speed,wind_direction_deg,landing_east,landing_north,landing_lat,landing_lon,landing_distance,landing_time,landing_speed,apogee,apogee_time,max_mach,rail_exit_speed,min_stability_cal,thrust_misalignment_y_deg,thrust_misalignment_z_deg,thrust_offset_y,thrust_offset_z,fin_cant_deg,cg_lateral_y,cg_lateral_z,cl_scale,clp_scale,lag_scale,magnus_scale,cmq_scale,stable,broadside_time
 
 ``status`` は ``ok`` または ``failed`` で、失敗した行は結果の列が空欄になる。``sim.max_time`` までに着地しなかったサンプルも ``failed`` である。
 ``thrust_scale`` から ``parachute_cd_s_scale`` までは引いたばらつきで、相対のものは割合、``wind_speed_delta`` と ``wind_direction_deg_delta`` は風速・風向のずれである。
 ``elevation_deg`` と ``azimuth_deg`` は、引いた値そのものではなく、実際に飛ばしたレールの射角と射方位の公称値からの変化 [deg]、``roll_deg`` は機体のロール角の公称値からの変化 [deg] である（射方位とロール角は :math:`(-180^\circ,180^\circ]` に折り返す。:ref:`sec-mc-rail`）。
 ``wind_speed`` と ``wind_direction_deg`` はそのサンプルの基準風速・風向（``profile`` では表の平均風速 :math:`W` と平均風の風向 :math:`\Psi` を拡大・回転した値）、続く列は着地点（ENU と緯度経度）、着地距離、着地時刻、着地速度、頂点、頂点時刻、最大 Mach 数、ランチャ離脱速度、最小静安定余裕である。
-続く 9 列（``thrust_misalignment_y_deg`` から ``clp_scale``）は、ロールと非対称について引いた値である。
+続く 9 列（``thrust_misalignment_y_deg`` から ``clp_scale``）は、ロールと非対称について引いた値、その次の 3 列（``lag_scale``、``magnus_scale``、``cmq_scale``）は空力の遅れ、Magnus 力、減衰の和について引いた割合である（:ref:`sec-mc`）。
 列 ``stable`` は、そのサンプルが静的に安定か（``summary.json`` の ``stable`` と同じ判定で、安定なら ``true``、不安定なら ``false``）で、判定できないサンプルと失敗したサンプルでは空である（:ref:`sec-dispersion-unstable`）。
 最後の列 ``broadside_time`` は ``dispersion.csv`` と同じで、失敗したサンプルでは空である。
 

@@ -196,5 +196,10 @@ parachute_cd_s_scale = 0.1 # relative: parachute Cd*S
 # cg_lateral = 0.0               # absolute [m]: lateral dry CG offset, normal per body axis y and z
 # cl_scale = 0.0                 # relative: roll-moment coefficient and cant slope
 # clp_scale = 0.0                # relative: roll damping
+# Optional aero rate-term dispersions (all 0 = off; drawn after every other dispersion, so setting them
+# does not change the other draws of a sample):
+# lag_scale = 0.0                # relative: apparent-mass lag sums lag_l0, lag_l1 of the aero table
+# magnus_scale = 0.0             # relative: Magnus slope cnpa of the aero table (0 in the built-in tables)
+# cmq_scale = 0.0                # relative: pitch/yaw damping sums (damping moment and CN_q force), on top of cn_scale
 # Optional: clip every standard-normal draw to +-truncate_sigma sigma (e.g. 3.0); unset = untruncated normals.
 # truncate_sigma = 3.0

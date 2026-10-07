@@ -539,7 +539,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
    ``sim`` の完了画面。結果パネル、書き出したファイルの一覧、所要時間が並ぶ。
 
 二段開傘（``recovery.main_cd_s``）のときは、結果パネルにメインの開傘の高さと時刻の行（``main deploy``）を加え、設定パネルにはメインの抗力面積と開傘高度、ドローグとメインの終端降下速度（海面、乾燥質量）を示す。
-プレーンモードでは、パラシュート（二段開傘ではドローグ）が開いた時刻、そのときの対気速度と動圧を ``deploy          27.11 s, 28.4 m/s, q 0.32 kPa`` の形の行に示し（サンプルの値）、``main deploy`` の行にもメインが開いたときの対気速度と動圧を添える。どちらも ``summary.json`` に残る（:ref:`sec-file-summary`）。
+プレーンモードでは、パラシュート（二段開傘ではドローグ）が開いた時刻、そのときの対気速度と動圧を ``deploy          27.10 s, 28.6 m/s, q 0.32 kPa`` の形の行に示し（サンプルの値）、``main deploy`` の行にもメインが開いたときの対気速度と動圧を添える。どちらも ``summary.json`` に残る（:ref:`sec-file-summary`）。
 飛翔が推力曲線の終わりより前に終わったとき（``sim.max_time`` で打ち切ったときなど）は、燃焼終了の行（``burnout``）に ``not reached (the flight ended before the end of the thrust curve)`` と示し、``summary.json`` の ``burnout_time`` は ``null`` にする。
 ``wind.model = "profile"`` の設定パネルの風の行は、``wind.speed`` と ``wind.direction_deg``\ （``profile`` では使わない）ではなく、``mean 15.6 m/s from 270 deg`` の形で ``wind.profile_mean_speed`` と ``wind.profile_mean_direction_deg``\ （:ref:`sec-wind-scaling`）を示す。指定のない側は ``table speeds``、``table directions`` と書く（表のまま）。
 ``profile`` では、``sim`` と ``dispersion`` の結果のあとに、公称の表の風を ``wind.ref_height`` で求めた ``profile wind at wind.ref_height = 2 m: 3.04 m/s from 10 deg (mean wind 11.89 m/s)`` の形の行も出す（例の表の値。``-q`` では出さない）。同じ値が ``summary.json`` などの ``wind_at_ref_height`` に残る（:ref:`sec-file-summary`）。
@@ -879,6 +879,11 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
   * 迎角の刻みが 5° を超える（``aero.alpha_step_deg = … is coarse (> 5 deg): the normal force and centre of pressure are interpolated linearly between the rows (1 deg is typical)``）。
 
   ``aero``、``sim``、``dispersion`` で表示する。外部の係数表（``method = "table"``）は、表そのものの格子なので対象外である。
+* 外部の係数表（``method = "table"``）が遅れと Magnus の列（``lag_l0``、``lag_l1``、``cl4``、``cnpa``。一般表では ``cl4`` を除く 3 列）を持たない古い形式である（``table has no lag/Magnus columns: quasi-steady terms only``）。
+  遅れの和を補わずに、遅れのモーメント、Magnus 力、誘導ロールなしで飛ばす（:ref:`sec-file-v1`）。``aero``、``sim``、``dispersion`` で端末に表示する（``warnings`` には入らない）。
+* トリムの強制（フィンのカント、乾燥重心の横ずれ、推力線の傾きかオフセット、迎角 0 のモーメントを持つ一般表）がある飛翔（``sim`` と、``dispersion`` の公称の飛翔）で、上昇中にロール角速度がピッチの固有振動数を横切った
+  （``roll resonance: the roll rate crosses the pitch natural frequency (10.1 rad/s) at t = 0.61 s, Mach 0.36; fin cant, a lateral CG offset or thrust misalignment can amplify the angle of attack there``。数はサンプルにカント 1° を与えた例。2 回以上横切ったときは ``(2 crossings)`` の形で回数を添える）。
+  結果パネルにも ``roll resonance`` の行が出る。終了ステータスは変えない（:ref:`sec-roll-resonance`）。
 * 外部の係数表（``method = "table"``）で、迎角 0 の軸力係数 ``ca_on`` または ``ca_off`` が負である（``aero table: ca_off at Mach …, alpha 0 is … (negative axial force / thrust-like drag)``）。列ごとに、最初の Mach 数を示す。
 * ``dispersion`` で、静的に不安定なケースまたはサンプル、静的な安定を判定できないケースまたはサンプルがある。降下モードごとに数と最小の静安定余裕（判定できないものは数と最初の理由）を示す（:ref:`sec-dispersion-unstable`）。
 * モンテカルロ解析で、着地したサンプルが 30 未満の降下モードがある（``only … landed samples: the statistics are rough``）。
@@ -943,7 +948,7 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 飛翔計算は全迎角を :math:`\min(\alpha_t,\,180^\circ-\alpha_t)` に折り返して表を引くので（:ref:`sec-aero-table`）、軸対称表では既定の ``alpha_max_deg = 90`` で範囲を超えることはない。
 
 係数表の Mach 数の範囲を超えた引き出しも、結果を使えないものとする。Mach 数は外挿せず、表の端の値で一定とするので（:ref:`sec-aero-interp`）、表が飛翔の Mach 数より手前で終わると、上昇全体の抗力と安定が変わる。
-``sim`` と ``dispersion`` は、そのような引き出しが 1 回でもあれば、``RESULTS NOT USABLE: 4426 of 53893 lookups beyond the aero table's Mach range (max Mach 1.53 > mach_max 1.20): coefficients are held at the edge; build the table up to at least Mach 1.6`` の形の行を書いて終了ステータス 3 で終わる。
+``sim`` と ``dispersion`` は、そのような引き出しが 1 回でもあれば、``RESULTS NOT USABLE: 4426 of 53877 lookups beyond the aero table's Mach range (max Mach 1.53 > mach_max 1.20): coefficients are held at the edge; build the table up to at least Mach 1.6`` の形の行を書いて終了ステータス 3 で終わる。
 これは、サンプルを ``aero.mach_max = 1.2`` にしたときの ``sim`` の表示である。末尾の Mach 数は、要求された最大の Mach 数を 0.1 単位で切り上げた値である。
 表の最小の Mach 数より小さい引き出し（外部の表が Mach 0 から始まらないとき）では、``RESULTS NOT USABLE: … lookups below the aero table's Mach range (first Mach …): coefficients are held at the edge; build the table down to Mach 0`` の形になる。
 このとき ``aero_table_range`` の ``machs_in_range`` が ``false`` になる（:ref:`sec-file-summary`）。迎角の範囲外と重なったときは、両方の文を ``;`` でつなぐ。
@@ -1591,12 +1596,22 @@ CFD の準備は ``ignisyeet cfd-check 設定ファイル [--mesh]`` で確か�
    * - ``clp_scale``
      - ``0``
      - 相対。ロール減衰微係数 :math:`C_{lp}`
+   * - ``lag_scale``
+     - ``0``
+     - 相対。遅れの和 ``lag_l0``、``lag_l1``\ （見かけの質量の遅れと対流の回転のモーメント。:ref:`sec-aero-unsteady`）
+   * - ``magnus_scale``
+     - ``0``
+     - 相対。Magnus 力の傾き ``cnpa``
+   * - ``cmq_scale``
+     - ``0``
+     - 相対。ピッチ・ヨーの減衰の和（減衰のモーメントと回転による法線力）。``cn_scale`` の倍率に重ねて掛ける
    * - ``truncate_sigma``
      - なし
      - 指定すると、引いたすべての標準正規乱数 :math:`z` を :math:`[-k,k]`\ （:math:`k` はこの値）に切ってから標準偏差を掛ける。有限で正（``dispersion.monte_carlo.truncate_sigma must be a finite number > 0 (the bound of the clipped draws in sigma, e.g. 3.0), found …``）。省略すると切らない正規分布（:ref:`sec-mc`）
 
-``truncate_sigma`` の前の 6 項目（``thrust_misalignment_deg`` から ``clp_scale``）は既定で無効である。
-乱数はこれらを表の最後に引くので、最初の 11 項目の値はこの 6 項目の設定に依存しない。
+``truncate_sigma`` の前の 9 項目（``thrust_misalignment_deg`` から ``cmq_scale``）は既定で無効である。標準偏差は有限で 0 以上でなければならない（負、``nan``、``inf`` はエラー）。
+乱数は、ロールと非対称の 6 項目を最初の 11 項目のあとに、空力の 3 項目（``lag_scale``、``magnus_scale``、``cmq_scale``）をさらにそのあとの最後に引く。
+したがって、最初の 11 項目の値はこの 9 項目の設定に依存せず、空力の 3 項目の設定は、ほかのどの項目の値も変えない。
 各項目の扱いの詳細は :ref:`sec-mc` で述べる。
 
 .. _sec-usage-external-table:

@@ -1,0 +1,22 @@
+# Solved cases of the RANS table run (doc/scripts/rans_table.py). examples/sample_cfd.toml with model rans, wall_size 5 mm, machs [0.3, 0.8, 1.2, 2.0], alphas [0, 4, 8] (+ -4, -8 solved), RANS defaults, 4 ranks x 2 cases, release daa8b2f (worktree 6568e81), SU2 8.3.0, 2026-10-07. Euler: 2 mm, sample_euler_vs_models.csv.
+mach,alpha_deg,status,iterations,wall_seconds,warm_start
+0.3,0,unconverged,1352,3678.0,false
+0.3,4,converged,552,1250.8,true
+0.3,8,converged,752,1780.6,true
+0.3,-4,unconverged,802,1921.5,true
+0.3,-8,unconverged,802,1839.8,true
+0.8,0,unconverged,452,1696.9,false
+0.8,4,converged,402,1422.5,true
+0.8,8,converged,402,1058.9,true
+0.8,-4,converged,402,1216.2,true
+0.8,-8,converged,402,1124.6,true
+1.2,0,converged,452,2016.1,false
+1.2,4,converged,402,1181.8,true
+1.2,8,converged,402,1344.2,true
+1.2,-4,converged,402,1212.9,true
+1.2,-8,converged,402,1374.3,true
+2,0,unconverged,452,2349.6,false
+2,4,converged,402,1128.7,true
+2,8,converged,402,1268.0,true
+2,-4,converged,402,1118.9,true
+2,-8,converged,402,853.6,true

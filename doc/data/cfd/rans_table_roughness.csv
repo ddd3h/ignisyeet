@@ -1,0 +1,14 @@
+# Post-hoc roughness correction of the RANS table comparison (doc/scripts/rans_v8_roughness.py, commit 148ce98): not a rerun. rans_ca_off_stored and euler_ca_off are the values of rans_table.csv (RANS 5 mm table solved without the roughness term; Euler 2 mm). roughness_increment = Barrowman friction with roughness 6e-05 m minus roughness 0 (ignisyeet aero, method barrowman, sample_cfd.toml; = cfd::forces::roughness_increment). rans_ca_off_corrected = stored + k_alpha * roughness_increment (k_alpha = axial_alpha_factor). cfx_wall = stored - k_alpha (base + extra), the Barrowman base and extra_cd terms of the same configuration. barrowman_fins: the Barrowman fin-edge term (in the Euler ca_off, not in RANS).
+mach,alpha_deg,k_alpha,cfx_wall,base,extra,barrowman_fins,roughness_increment,rans_ca_off_stored,rans_ca_off_corrected,euler_ca_off,diff_stored_percent,diff_corrected_percent
+0.3,0,1,0.25786,0.1317,0.02,0.0318205,0.0987172,0.40956,0.508277,0.4174,-1.87829,21.7722
+0.3,4,1.04201,0.248497,0.1317,0.02,0.0318205,0.0987172,0.40657,0.509434,0.4312,-5.71197,18.1434
+0.3,8,1.13678,0.23155,0.1317,0.02,0.0318205,0.0987172,0.404,0.51622,0.4627,-12.6864,11.5668
+0.8,0,1,0.2122,0.2032,0.02,0.107443,0.12132,0.4354,0.55672,0.5714,-23.8012,-2.56916
+0.8,4,1.04201,0.199353,0.2032,0.02,0.107443,0.12132,0.43193,0.558347,0.5901,-26.8039,-5.38103
+0.8,8,1.13678,0.182441,0.2032,0.02,0.107443,0.12132,0.43617,0.574084,0.6322,-31.0076,-9.19267
+1.2,0,1,0.316787,0.208333,0.02,0.15661,0.0943419,0.54512,0.639462,0.7158,-23.8446,-10.6647
+1.2,4,1.04201,0.313574,0.208333,0.02,0.15661,0.0943419,0.5515,0.649805,0.7415,-25.6237,-12.3661
+1.2,8,1.13678,0.311975,0.208333,0.02,0.15661,0.0943419,0.57154,0.678786,0.7982,-28.3964,-14.9604
+2,0,1,0.25336,0.125,0.02,0.161656,0.0596793,0.39836,0.458039,0.573,-30.4782,-20.0629
+2,4,1.04201,0.255378,0.125,0.02,0.161656,0.0596793,0.40647,0.468656,0.5934,-31.5015,-21.0218
+2,8,1.13678,0.259557,0.125,0.02,0.161656,0.0596793,0.42439,0.492232,0.6399,-33.6787,-23.0767

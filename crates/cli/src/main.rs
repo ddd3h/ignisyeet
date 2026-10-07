@@ -1349,6 +1349,15 @@ fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
             t.elapsed()
         );
         println!("  cell types: {:?}", s.by_type);
+        if s.bl_layers > 0 {
+            println!(
+                "  boundary layer: {} prism layers, first height {:.2e} m, thickness {:.2} mm, {} invalid prisms",
+                s.bl_layers,
+                s.bl_first_height,
+                s.bl_thickness * 1e3,
+                s.bl_invalid
+            );
+        }
         println!("  quality (SICN, 1 = ideal): min {:.3}, mean {:.3}, {} cells below 0.05", s.quality_sicn_min, s.quality_sicn_mean, s.cells_bad);
         if let Some(info) = &m.stl {
             println!("STL geometry fidelity (base treatment: {}):", info.base_treatment);

@@ -416,6 +416,14 @@ pub fn ensure_mesh(opt: &CfdOptions, geom: &Geometry, atm: &Atmosphere, workdir:
     let dir = workdir.join("mesh");
     std::fs::create_dir_all(&dir).with_context(|| format!("cannot create {}", dir.display()))?;
     let params = MeshParams::cad(opt, geom, atm, &dir, threads);
+    if params.bl.is_some() && params.domain == "full_box" {
+        bail!(
+            "aero.cfd: the RANS boundary-layer mesh needs a fin layout symmetric about the y = 0 plane (fin_roll_deg = {} with {} fins is not): \
+             use a symmetric fin_roll_deg (for example 0 or 45 with 4 fins) or model = \"euler\"",
+            opt.fin_roll_deg,
+            cad_description(geom).1.map_or(0, |f| f.count)
+        );
+    }
     let hash = mesh_hash(&params);
     let su2 = dir.join("mesh.su2");
     let stamp_path = dir.join("mesh.json");
@@ -538,6 +546,18 @@ mod tests {
         assert!((r - 1.3).abs() < 0.01, "{r}");
         // A first layer thicker than the layer is a single layer.
         assert_eq!(bl_layers(1e-3, 8e-4, 1.3), (1, 1.0));
+    }
+
+    #[test]
+    fn rans_rejects_a_fin_layout_asymmetric_about_y() {
+        let g = sample_geom();
+        let atm = AtmosphereModel::default().at(0.0);
+        let dir = std::env::temp_dir().join(format!("ignisyeet_rans_box_{}", std::process::id()));
+        let opt = CfdOptions { model: FlowModel::Rans, symmetry: false, fin_roll_deg: 10.0, ..Default::default() };
+        // Checked before gmsh runs, so the test needs no tools.
+        let e = ensure_mesh(&opt, &g, &atm, &dir, 1).unwrap_err().to_string();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(e.contains("symmetric about the y = 0 plane") && e.contains("fin_roll_deg = 10"), "{e}");
     }
 
     #[test]

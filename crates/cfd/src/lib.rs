@@ -166,7 +166,8 @@ pub fn resolve_options(geom: &Geometry, cfd: &CfdOptions) -> CfdOptions {
     };
     if !stl {
         o.shape_symmetry = Some(shape);
-        o.z_mirror_mesh = o.z_mirror_mesh && ysym && zsym;
+        // The RANS boundary-layer mesh is not exactly z-symmetric, so the -alpha cases are solved, not mirrored.
+        o.z_mirror_mesh = o.z_mirror_mesh && ysym && zsym && o.model != FlowModel::Rans;
         o.symmetry = o.symmetry && ysym && shape != ShapeSymmetry::None && !sideslip && !o.roll_damping;
     }
     o
@@ -616,6 +617,9 @@ mod tests {
             let r = resolve_options(&g, &o);
             assert!(!r.symmetry && r.z_mirror_mesh, "{r:?}");
         }
+        // The RANS boundary-layer mesh is not z-symmetric: the -alpha cases are solved.
+        let r = resolve_options(&g, &CfdOptions { model: FlowModel::Rans, ..Default::default() });
+        assert!(r.symmetry && !r.z_mirror_mesh, "{r:?}");
         // The fin layout decides the shape symmetry when sideslip is solved.
         let r = resolve_options(&g, &CfdOptions { betas_deg: vec![0.0, 4.0], fin_roll_deg: 10.0, ..Default::default() });
         assert_eq!((r.shape(), r.z_mirror_mesh, r.symmetry), (ShapeSymmetry::None, false, false));

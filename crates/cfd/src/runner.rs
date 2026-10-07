@@ -1113,6 +1113,8 @@ exit 0
     /// cold from -2 / -5 (or a limit cycle), warm from -4.5 / -6.5. Modes: ok | cycle | warmfail | thick (y+ 4).
     const MOCK_RANS: &str = r#"#!/bin/sh
 cfg=$1
+# Like SU2, write the restart file when the early stop terminates the run.
+trap 'printf "Density Nu_Tilde restart" > restart.dat; exit 1' TERM
 mach=$(grep '^MACH_NUMBER' $cfg | cut -d' ' -f2)
 aoa=$(grep '^AOA' $cfg | cut -d' ' -f2)
 sol=$(grep '^SOLUTION_FILENAME' $cfg | cut -d' ' -f2)
@@ -1262,18 +1264,24 @@ exit 0
         let b = model.cd0(0.5, false);
         let out = run_all(&e.setup(), &|_| {}).unwrap();
         let n_calls = e.calls().len();
-        // Converged cases: the last row (wall 0.2 + 39e-6, base 0.1).
-        let wall = 0.2 + 39e-6;
+        // Converged cases: the row the totals come from (the last row read, wall 0.2 + i 1e-6 with i <= 39 when the
+        // early stop reads a partial history), base 0.1.
         for o in &out {
             let r = o.result.as_ref().unwrap();
             let a = r.axial.expect("RANS cases record the markers");
-            assert!((a.wall_cfx.unwrap() - wall).abs() < 1e-9 && (a.base_cfx.unwrap() - 0.1).abs() < 1e-12, "{a:?}");
+            let wall = a.wall_cfx.unwrap();
+            assert!((0.2..=0.2 + 39e-6 + 1e-12).contains(&wall) && (a.base_cfx.unwrap() - 0.1).abs() < 1e-12, "{a:?}");
             assert!(!a.base_in_cfx && !a.markers_missing);
-            assert!((r.coeffs.ca - wall).abs() < 1e-9, "ca {} is the wall marker of the last row", r.coeffs.ca);
+            assert!((r.coeffs.ca - wall).abs() < 1e-9, "ca {} is the wall marker of the same row", r.coeffs.ca);
             assert!(done(&e, o)["axial"]["wall_cfx"].is_number() && done(&e, o)["axial"]["base_in_cfx"] == false);
         }
+        let wall_at = |out: &[CaseOutcome]| {
+            let o = out.iter().find(|o| o.spec.mach == 0.5 && o.spec.alpha_deg == 0.0).expect("case M 0.5, alpha 0");
+            o.result.as_ref().unwrap().axial.unwrap().wall_cfx.unwrap()
+        };
         let (t, base) = table_of(&e, &out, &model);
         assert!(!base);
+        let wall = wall_at(&out);
         assert!((t.lookup(0.5, 0.0).ca_off - (wall + b.base + b.extra)).abs() < 1e-6, "{}", t.lookup(0.5, 0.0).ca_off);
         // rans_base = "cfd": wall + base, and no Barrowman base on top.
         e.opt.rans_base = crate::config::RansBase::Cfd;
@@ -1281,11 +1289,13 @@ exit 0
         assert!(e.calls().len() > n_calls, "the base treatment is part of the case hash");
         for o in &out {
             let r = o.result.as_ref().unwrap();
-            assert!(r.axial.unwrap().base_in_cfx && !r.axial.unwrap().markers_missing);
-            assert!((r.coeffs.ca - (wall + 0.1)).abs() < 1e-9, "ca {}", r.coeffs.ca);
+            let a = r.axial.unwrap();
+            assert!(a.base_in_cfx && !a.markers_missing);
+            assert!((r.coeffs.ca - (a.wall_cfx.unwrap() + 0.1)).abs() < 1e-9, "ca {}", r.coeffs.ca);
         }
         let (t, base) = table_of(&e, &out, &model);
         assert!(base);
+        let wall = wall_at(&out);
         assert!((t.lookup(0.5, 0.0).ca_off - (wall + 0.1 + b.extra)).abs() < 1e-6);
         let _ = std::fs::remove_dir_all(&e.dir);
     }

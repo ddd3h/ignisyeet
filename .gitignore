@@ -9,3 +9,4 @@ __pycache__/
 .claude/
 .serena/
 /dist/
+/examples/basic_finner/out*/

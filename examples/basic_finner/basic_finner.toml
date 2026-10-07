@@ -1,0 +1,95 @@
+# Army-Navy Basic Finner reference projectile: validation case of the aerodynamic methods against measured data.
+# Geometry, mass properties and test conditions: Dupuis & Hathaway, DREV-TM-9703 (1997), Fig. 2, Tables I, II and V.
+# Measured coefficients: doc/data/validation/basic_finner/measured.csv (sources in sources.md next to it).
+# The STEP and STL are written by make_basic_finner.py (gmsh python of the CFD tools) in this directory.
+#
+# This file is for the aerodynamic table only (`ignisyeet geom` and `ignisyeet aero`); [motor], [launch] and
+# [recovery] are required by the loader and are placeholders without meaning for this case.
+#
+#   ignisyeet geom basic_finner.toml
+#   ignisyeet aero basic_finner.toml                                          # Barrowman (method below)
+#   ignisyeet aero basic_finner.toml --set aero.method=panel --out out_panel
+#   ignisyeet aero basic_finner.toml --set aero.method=cfd --out out_euler    # SU2 Euler, STEP wall, run matrix below
+#   ignisyeet aero basic_finner.toml --set aero.method=cfd --set aero.cfd.model=rans --out out_rans
+#
+# Reference quantities of the measured data: d = 30 mm, S = pi d^2 / 4, moments about the CG of the models at
+# 5.50 cal = 0.165 m from the nose tip (Table I; Tables II: 5.485-5.541 cal). Pitch damping and roll damping are per
+# q d / (2V) and p d / (2V).
+
+[output]
+dir = "out"
+kml = false
+
+[rocket]
+stl = "basic_finner.stl"
+stl_scale = 0.001          # STL in millimetres
+nose_direction = "-x"      # nose tip at x = 0, base at x = 300 mm
+dry_mass = 1.58            # kg (DREV-TM-9703 Table I, nominal model)
+cg_dry = 0.165             # m from the nose tip = 5.50 cal: moment reference point of the measured data
+ixx_dry = 1.92e-4          # kg m^2 (Table I: 1.92 kg cm^2)
+iyy_dry = 9.785e-3         # kg m^2 (Table I: 97.85 kg cm^2)
+roughness = 2e-6           # m: machined steel model (not stated in the source; an assumption)
+fin_le = "sharp"           # leading-edge radius 0.004 cal
+fin_te = "square"          # wedge section: blunt trailing edge 0.08 cal thick, flush with the base
+extra_cd = 0.0
+
+[motor]
+eng = "../sample_motor.eng"  # placeholder: the projectile has no motor (aero only)
+aft_x = 0.3
+nozzle_exit_diameter = 0.0
+
+[launch]
+latitude = 46.87           # placeholder (no flight is simulated)
+longitude = -71.50
+altitude = 0.0
+rail_length = 1.0
+elevation_deg = 85.0
+azimuth_deg = 0.0
+
+[recovery]
+enabled = false
+cd_s = 0.1
+delay = 1.0
+
+[atmosphere]
+model = "us1976"           # range air: rho 1.16-1.20 kg/m^3, a 343.4-344.0 m/s (Table V), about sea level
+
+[aero]
+method = "barrowman"       # "barrowman" | "panel" | "cfd" (see the commands above)
+mach_min = 0.0
+mach_max = 4.5             # the range data reach Mach 4.47
+mach_step = 0.02
+alpha_max_deg = 90.0
+alpha_step_deg = 1.0
+n_slices = 600
+fin_threshold = 0.05
+extrapolation = "linear"
+
+# Phase-2 CFD run matrix: the mid-range Mach numbers of the multiple fits of DREV-TM-9703 Table IX (1.08 to 4.30),
+# plus two subsonic points (0.5, 0.8) for the pitch damping comparison with the wind tunnel data (no tabulated
+# static subsonic data are available).
+[aero.cfd]
+prefix = "~/.local/share/micromamba/envs/ignisyeet-cfd"
+model = "euler"            # RANS variant: --set aero.cfd.model=rans
+machs = [0.5, 0.8, 1.08, 1.29, 1.83, 2.38, 2.72, 3.15, 3.73, 4.30]
+alphas_deg = [0, 2, 4]
+surface = "step"
+step_file = "basic_finner.step"
+step_unit = "auto"         # the STEP declares millimetres
+base_treatment = "fairing" # Euler: cone behind the base; the base drag is the model's (the measured CX0 contains the real base drag)
+symmetry = true
+z_mirror_mesh = true
+alpha_mode = "mirror"
+fin_roll_deg = 0.0         # "+" arrangement: two fins in the plane y = 0 (as the STEP)
+tail_fairing = 6.0
+farfield = 20.0
+wall_size = 0.0015         # 1.5 mm = 0.05 cal; the fin is 2.4 mm thick at the base and 30 mm in chord and span
+yplus = 1.0                # RANS: resolved wall (Re_L 7e6 to 3e7 in the range tests)
+iterations = 3000
+cfl = 5.0
+convergence = 1e-6
+scheme = "roe"
+ranks_per_case = 4
+parallel_cases = 2
+timeout_minutes = 0
+workdir = "cfd"

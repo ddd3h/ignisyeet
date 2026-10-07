@@ -423,6 +423,8 @@ pub enum RansVerdict {
     Rejected(String),
 }
 
+/// RANS acceptance: the residual drops are measured from the largest residual of this many last rows.
+pub const RANS_RESIDUAL_ROWS: usize = 20;
 /// RANS stalled residual: least density-residual drop below the reference (orders, median of the window).
 pub const RANS_STALL_RHO_DROP: f64 = 0.5;
 /// RANS stalled residual: the median over the last window is not this much lower than over the window before.
@@ -474,8 +476,14 @@ fn rans_stalled(h: &History, reference: ResidualPeak, window: usize, kind: Stabi
 /// the iteration limit of the stage (the longest trend extrapolation, see [`History::rans_trend_settled`]).
 pub fn rans_verdict(h: &History, reference: ResidualPeak, window: usize, kind: StabilityKind, length_ratio: f64, budget: usize) -> RansVerdict {
     let r = effective_reference(reference, h);
-    let rho = h.last_residual().map(|x| r.rho - x);
-    let nu = h.last_nu().map(|x| r.nu - x);
+    // The largest residual of the last rows: a dip of a chattering residual (e.g. while the CFL is cut) is no drop.
+    let worst = |names: &[&str]| -> Option<f64> {
+        let c = h.col(names)?;
+        let v = h.rows[h.rows.len().saturating_sub(RANS_RESIDUAL_ROWS)..].iter().map(|r| r[c]).fold(f64::NEG_INFINITY, f64::max);
+        v.is_finite().then_some(v)
+    };
+    let rho = worst(&["rms[Rho]", "Res_Flow[0]", "rms[P]"]).map(|x| r.rho - x);
+    let nu = worst(&["rms[nu]", "rms[Nu_Tilde]", "rms[nu_tilde]"]).map(|x| r.nu - x);
     let flat = h.rans_coefficients_stable(window, kind, length_ratio);
     let stable = flat && h.rans_trend_settled(window, kind, length_ratio, budget);
     if rho.is_some_and(|d| d >= RANS_RHO_DROP) && nu.is_some_and(|d| d >= RANS_NU_DROP) && stable {
@@ -1308,7 +1316,7 @@ i=0
 while [ $i -lt 40 ]; do
   if [ "$conv" = history_startup ]; then r=$(echo "-1.0 - 0.05*$i" | bc -l); nu=$(echo "-4.0 - 0.05*$i" | bc -l)
   elif [ $warm = 1 ]; then r=$(echo "-4.5 - 0.1*$i" | bc -l); nu=$(echo "-6.5 - 0.1*$i" | bc -l)
-  elif [ $cyc = 1 ]; then r=$(echo "-2.0 - 0.03*$i" | bc -l); nu=$(echo "-5.0 - 0.02*$i" | bc -l)
+  elif [ $cyc = 1 ]; then r=$(echo "-2.0 - 0.08*$i" | bc -l); nu=$(echo "-5.0 - 0.02*$i" | bc -l)
   else r=$(echo "-2.0 - 0.2*$i" | bc -l); nu=$(echo "-5.0 - 0.2*$i" | bc -l)
   fi
   if [ "$conv" = history ] && [ $warm = 0 ] && [ $i -ge 20 ] && { [ "$mode" = diverge2 ] || { [ "$mode" = diverge ] && [ $cons = 0 ]; }; }; then
@@ -1530,11 +1538,12 @@ exit 0
         History::parse(&t).unwrap()
     }
 
-    /// `n` rows, residuals linear from (rho0, nu0) to (rho1, nu1), constant coefficients unless `cycle`.
+    /// `n` rows, residuals linear from (rho0, nu0) to (rho1, nu1) and then flat, constant coefficients unless `cycle`.
     fn ramp(n: usize, rho: (f64, f64), nu: (f64, f64), cycle: f64) -> History {
         let rows: Vec<_> = (0..n)
             .map(|i| {
-                let f = i as f64 / (n - 1) as f64;
+                // linear, then flat over the last RANS_RESIDUAL_ROWS rows (the rows the drops are measured on)
+                let f = (i as f64 / n.saturating_sub(RANS_RESIDUAL_ROWS + 1).max(1) as f64).min(1.0);
                 let c = if i % 2 == 1 { cycle } else { 0.0 };
                 (rho.0 + (rho.1 - rho.0) * f, nu.0 + (nu.1 - nu.0) * f, 0.3 + c, 0.2, -1.6)
             })
@@ -1700,5 +1709,18 @@ exit 0
         // Stalled at the level of the reference (no drop): rejected.
         let high = ResidualPeak { rho: -4.6, nu: -7.0 };
         assert!(matches!(rans_verdict(&mk(800, 0.0, 0.0), high, 200, k, 18.0, 4000), RansVerdict::Rejected(_)));
+    }
+
+    #[test]
+    fn rans_residual_dip_is_not_a_drop() {
+        // The sample rocket at M 0.8: the residual chatters near -5.9 with a dip to -7.1 in the last row while the CFL
+        // is cut; the reference is -3.65. Judged on the last row it would be 3.5 orders, i.e. converged.
+        let k = StabilityKind::Pitch;
+        let reference = ResidualPeak { rho: -3.65, nu: -7.96 };
+        let mut rows: Vec<_> = (0..421).map(|i| (if i % 30 < 3 { -6.0 } else { -5.9 }, -9.1, 0.4366, -0.0121, 0.172)).collect();
+        rows.push((-7.13, -9.95, 0.4366, -0.0121, 0.172));
+        let v = rans_verdict(&hist(&rows), reference, 200, k, 18.0, 4000);
+        assert!(!matches!(v, RansVerdict::Converged), "{v:?}");
+        assert!(matches!(&v, RansVerdict::Stalled(m) if m.contains("residual stalled 2.3 orders")), "{v:?}");
     }
 }

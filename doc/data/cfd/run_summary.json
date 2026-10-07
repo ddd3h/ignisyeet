@@ -9,7 +9,6 @@
                        "M2.0": {"fit_order": 2.65, "cn_extrapolated": 0.9394, "gci_fine_pair_percent": 5.6, "cn_error_at_2mm_percent": -2.2}},
   "farfield_sensitivity": "farfield_sensitivity.csv: M0.8 alpha 4, CN within 0.25 % for 10, 20, 40 body lengths",
   "asymmetry": "asymmetry_study.csv",
-  "rans_case": {"mach": 0.8, "alphas_deg": [0, 4], "cells": 196947, "wall_size_m": 0.005, "ranks": 4, "wall_s": [69, 85], "note": "older run (half model, alpha 0 offset subtracted, before the z-symmetric mesh); no boundary-layer prisms; SA + standard wall function, first-order Roe, 300 iteration cap"},
   "memory": {"su2_peak_rss_per_rank_MB": {"93k cells": 266, "222k cells": 332, "379k cells": 444, "649k cells": 629, "941k cells": 819, "1124k cells": 923}, "model": "40 MB per rank + 3.3 kB per cell (Euler, summed over ranks)"},
   "cone_validation": "cone_cp.csv (older run, wall_size 10..2.5 mm)"
 }

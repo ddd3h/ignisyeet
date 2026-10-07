@@ -28,7 +28,43 @@ pub enum SurfaceKind {
     PanelMesh,
     /// The raw STL, transformed to the CFD frame; it must be watertight.
     Stl,
+    /// The CAD B-rep of `step_file` (STEP, IGES or BREP) with every detail, moved to the CFD frame like the STL and
+    /// checked against it (see [`crate::step_mesh`]).
+    Step,
 }
+
+/// `surface = "step"`: the length unit of the CAD file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum StepUnit {
+    /// The unit the file declares (STEP, IGES); a BREP file has none and is read as metres.
+    #[default]
+    Auto,
+    M,
+    Cm,
+    Mm,
+    /// Inch.
+    In,
+    /// Foot.
+    Ft,
+}
+
+impl StepUnit {
+    /// Metres per unit (`None` for `auto`).
+    pub fn metres(self) -> Option<f64> {
+        match self {
+            StepUnit::Auto => None,
+            StepUnit::M => Some(1.0),
+            StepUnit::Cm => Some(0.01),
+            StepUnit::Mm => Some(0.001),
+            StepUnit::In => Some(0.0254),
+            StepUnit::Ft => Some(0.3048),
+        }
+    }
+}
+
+/// File extensions accepted for `step_file` (case-insensitive).
+pub const STEP_EXTENSIONS: [&str; 6] = ["step", "stp", "iges", "igs", "brep", "brp"];
 
 /// Mirror symmetries of the shape that the case matrix may use to skip runs.
 ///
@@ -74,6 +110,10 @@ pub enum BaseTreatment {
 
 fn is_default<T: Default + PartialEq>(v: &T) -> bool {
     *v == T::default()
+}
+
+fn is_empty_path(p: &std::path::Path) -> bool {
+    p.as_os_str().is_empty()
 }
 
 #[allow(clippy::ptr_arg)] // serde `skip_serializing_if` passes `&Vec<f64>`
@@ -226,6 +266,13 @@ pub struct CfdOptions {
     /// `surface = "stl"` with Euler: required, see [`BaseTreatment`].
     #[serde(skip_serializing_if = "Option::is_none")]
     pub base_treatment: Option<BaseTreatment>,
+    /// `surface = "step"`: the CAD file (STEP, IGES or BREP). A relative path is relative to the configuration file
+    /// (the command line resolves it before the CFD mode sees it).
+    #[serde(skip_serializing_if = "is_empty_path")]
+    pub step_file: PathBuf,
+    /// `surface = "step"`: length unit of `step_file`, see [`StepUnit`].
+    #[serde(skip_serializing_if = "is_default")]
+    pub step_unit: StepUnit,
     /// `surface = "stl"`: preparation of the wall surface, see [`StlRemesh`].
     #[serde(skip_serializing_if = "is_default")]
     pub stl_remesh: StlRemesh,
@@ -315,6 +362,8 @@ impl Default for CfdOptions {
             roll_rate_hat: default_roll_rate(),
             shape_symmetry: None,
             base_treatment: None,
+            step_file: PathBuf::new(),
+            step_unit: StepUnit::Auto,
             stl_remesh: StlRemesh::Classify,
             max_geometry_error: None,
             general_mach_step: default_general_mach_step(),
@@ -480,14 +529,41 @@ impl CfdOptions {
                  and cases that do not converge fail."
             );
         }
-        if self.base_treatment == Some(BaseTreatment::Fairing) && self.surface == SurfaceKind::Stl && self.model == FlowModel::Euler && self.tail_fairing <= 0.0
+        if self.surface == SurfaceKind::Step {
+            if self.step_file.as_os_str().is_empty() {
+                bail!("aero.cfd.surface = \"step\" needs step_file = \"<path>\" (the CAD model as STEP, IGES or BREP, relative to the configuration file)");
+            }
+            let ext = self.step_file.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).unwrap_or_default();
+            if !STEP_EXTENSIONS.contains(&ext.as_str()) {
+                bail!(
+                    "aero.cfd.step_file = \"{}\": not a CAD file OpenCASCADE reads; use a STEP (.step, .stp), IGES (.iges, .igs) or BREP (.brep, .brp) file",
+                    self.step_file.display()
+                );
+            }
+            if self.model == FlowModel::Euler && self.base_treatment.is_none() {
+                bail!(
+                    "aero.cfd.surface = \"step\" with model = \"euler\" needs base_treatment: the inviscid flow behind a flat base does not converge \
+                     (the residual stalls and the normal force flips sign).\n  \
+                     base_treatment = \"fairing\": an exact cone (tail_fairing x base radius long) is fused with the CAD solid behind its flat base; \
+                     this MODIFIES the CAD shape and the base drag comes from the empirical base term.\n  \
+                     base_treatment = \"flat\": the shape is kept, the base is not integrated, but the solution is likely not to converge \
+                     and cases that do not converge fail."
+                );
+            }
+        } else if !self.step_file.as_os_str().is_empty() || self.step_unit != StepUnit::Auto {
+            bail!("aero.cfd.step_file and aero.cfd.step_unit are only used with surface = \"step\"");
+        }
+        if self.base_treatment == Some(BaseTreatment::Fairing)
+            && matches!(self.surface, SurfaceKind::Stl | SurfaceKind::Step)
+            && self.model == FlowModel::Euler
+            && self.tail_fairing <= 0.0
         {
             bail!("aero.cfd.base_treatment = \"fairing\" needs tail_fairing > 0 (cone length in base radii)");
         }
         if self.surface == SurfaceKind::Stl && self.model == FlowModel::Rans {
             bail!(
                 "aero.cfd.surface = \"stl\" with model = \"rans\": RANS needs the boundary-layer mesh, which is built only for the CAD surface \
-                 (surface = \"cad\")"
+                 (surface = \"cad\") and the CAD B-rep (surface = \"step\")"
             );
         }
         if self.model == FlowModel::Rans && !(self.yplus <= RANS_YPLUS_RESOLVED_MAX || RANS_YPLUS_WALL_FUNCTION.contains(&self.yplus)) {
@@ -550,24 +626,31 @@ impl CfdOptions {
         w
     }
 
-    /// Whether the table built from this configuration is a general (six-component) table: an STL surface,
+    /// Whether the table built from this configuration is a general (six-component) table: an STL or STEP surface,
     /// an explicit `none` / `pitch_plane` shape symmetry, or a non-zero sideslip.
     pub fn general_table(&self) -> bool {
-        self.surface == SurfaceKind::Stl
+        self.surface_is_user_shape()
             || matches!(self.shape_symmetry, Some(ShapeSymmetry::None | ShapeSymmetry::PitchPlane))
             || self.betas_deg.iter().any(|&b| b != 0.0)
     }
 
     /// The shape symmetry that determines the case matrix. `auto` is `axisymmetric` for the rebuilt geometry (use
-    /// [`crate::resolve_options`] to take the fin layout into account when sideslip is solved). For an STL surface it
-    /// is `none` until the united surface has been checked: [`crate::stl_mesh::ensure_mesh_stl`] returns the options
-    /// with the verified symmetry, and the case matrix must be made from those.
+    /// [`crate::resolve_options`] to take the fin layout into account when sideslip is solved). For an STL or STEP
+    /// surface it is `none` until the shape has been checked: [`crate::stl_mesh::ensure_mesh_stl`] and
+    /// [`crate::step_mesh::ensure_mesh_step`] return the options with the verified symmetry, and the case matrix must be
+    /// made from those.
     pub fn shape(&self) -> ShapeSymmetry {
         match self.shape_symmetry {
             Some(s) if s != ShapeSymmetry::Auto => s,
-            _ if self.surface == SurfaceKind::Stl => ShapeSymmetry::None,
+            _ if self.surface_is_user_shape() => ShapeSymmetry::None,
             _ => ShapeSymmetry::Axisymmetric,
         }
+    }
+
+    /// The wall is the user's own geometry (`stl` or `step`), not the rebuilt body of revolution: its symmetry is
+    /// checked on the shape, the table is a general (six-component) table, and fin cant and fin edges are part of it.
+    pub fn surface_is_user_shape(&self) -> bool {
+        matches!(self.surface, SurfaceKind::Stl | SurfaceKind::Step)
     }
 
     /// Multigrid levels in effect: the explicit value, else [`DEFAULT_EULER_MULTIGRID`] for Euler and 0 for RANS.
@@ -744,6 +827,44 @@ mod tests {
         assert_eq!((back.iterations, back.min_iterations, back.stable_window, back.wall_size), (4000, 400, 200, 0.003));
         // `deny_unknown_fields` still applies.
         assert!(serde_json::from_str::<CfdOptions>(r#"{"model":"rans","bogus":1}"#).is_err());
+    }
+
+    #[test]
+    fn step_surface_options_are_validated() {
+        // Parsing: `surface = "step"`, the file and the unit; defaults are not serialised.
+        let o: CfdOptions = serde_json::from_str(r#"{"surface":"step","step_file":"cad/rocket.STEP","step_unit":"mm","base_treatment":"fairing"}"#).unwrap();
+        assert_eq!((o.surface, o.step_unit), (SurfaceKind::Step, StepUnit::Mm));
+        o.validate().unwrap();
+        assert!(o.general_table() && o.surface_is_user_shape());
+        assert_eq!(o.shape(), ShapeSymmetry::None);
+        let j = serde_json::to_string(&CfdOptions::default()).unwrap();
+        assert!(!j.contains("step_file") && !j.contains("step_unit"), "{j}");
+        assert!(serde_json::from_str::<CfdOptions>(r#"{"step_unit":"furlong"}"#).is_err());
+        let step = CfdOptions { surface: SurfaceKind::Step, base_treatment: Some(BaseTreatment::Flat), ..Default::default() };
+        // The file is required and must be a CAD format OpenCASCADE reads.
+        let e = step.validate().unwrap_err().to_string();
+        assert!(e.contains("needs step_file"), "{e}");
+        for f in ["r.step", "r.stp", "r.STP", "r.iges", "r.igs", "r.brep", "r.brp"] {
+            CfdOptions { step_file: f.into(), ..step.clone() }.validate().unwrap();
+        }
+        for f in ["r.stl", "r", "r.obj"] {
+            let e = CfdOptions { step_file: f.into(), ..step.clone() }.validate().unwrap_err().to_string();
+            assert!(e.contains("STEP (.step, .stp), IGES (.iges, .igs) or BREP (.brep, .brp)"), "{e}");
+        }
+        // Euler needs a base treatment as for the STL; RANS does not.
+        let e = CfdOptions { base_treatment: None, step_file: "r.step".into(), ..step.clone() }.validate().unwrap_err().to_string();
+        assert!(e.contains("surface = \"step\" with model = \"euler\" needs base_treatment") && e.contains("MODIFIES the CAD shape"), "{e}");
+        CfdOptions { surface: SurfaceKind::Step, step_file: "r.step".into(), ..CfdOptions::rans() }.validate().unwrap();
+        let e = CfdOptions { step_file: "r.step".into(), base_treatment: Some(BaseTreatment::Fairing), tail_fairing: 0.0, ..step.clone() }
+            .validate()
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("tail_fairing"), "{e}");
+        // The STEP options belong to the STEP surface.
+        let e = CfdOptions { step_file: "r.step".into(), ..Default::default() }.validate().unwrap_err().to_string();
+        assert!(e.contains("only used with surface = \"step\""), "{e}");
+        assert!(CfdOptions { step_unit: StepUnit::In, ..Default::default() }.validate().is_err());
+        assert_eq!((StepUnit::Auto.metres(), StepUnit::In.metres(), StepUnit::Mm.metres()), (None, Some(0.0254), Some(0.001)));
     }
 
     #[test]

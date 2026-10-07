@@ -817,11 +817,13 @@ pub fn half_surface(s: &WallSurface, length: f64) -> Result<WallSurface> {
     Ok(h)
 }
 
-/// Surface according to `opt.surface`; `raw` is the STL (metres) for `SurfaceKind::Stl`.
+/// Surface according to `opt.surface`; `raw` is the STL (metres) for `SurfaceKind::Stl`. The CAD B-rep of
+/// `SurfaceKind::Step` has no triangle surface of its own here (the mesher tessellates it, see [`crate::step_mesh`]).
 pub fn build_surface(geom: &Geometry, opt: &CfdOptions, raw: Option<&[Triangle]>) -> Result<WallSurface> {
     match opt.surface {
         SurfaceKind::PanelMesh => panel_mesh_surface(geom, opt),
         SurfaceKind::Stl => stl_surface(raw.context("surface = \"stl\" needs the STL triangles")?, geom),
+        SurfaceKind::Step => bail!("surface = \"step\": the wall is the CAD B-rep, which only the mesher tessellates (see step_mesh)"),
     }
 }
 

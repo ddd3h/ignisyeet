@@ -394,6 +394,28 @@ fn summarize(mut d: Vec<(f64, Vec3)>) -> Distances {
     Distances { max, max_at: [at.x, at.y, at.z], p99: d[((d.len() - 1) as f64 * 0.99) as usize].0, rms, samples: d.len() }
 }
 
+/// Every vertex and `n` area-weighted random points (deterministic generator) of a surface, as sampled by [`compute`].
+pub fn sample_points(tris: &[Triangle], n: usize) -> Vec<Vec3> {
+    if tris.is_empty() {
+        return Vec::new();
+    }
+    samples(tris, n)
+}
+
+/// Distance of every point to the surface `tris` (exact nearest-triangle search), paired with the point.
+pub fn point_distances(points: &[Vec3], tris: &[Triangle]) -> Vec<(f64, Vec3)> {
+    if tris.is_empty() {
+        return points.iter().map(|&p| (f64::INFINITY, p)).collect();
+    }
+    let g = TriGrid::new(tris);
+    points.iter().map(|&p| (g.nearest(p).1, p)).collect()
+}
+
+/// Maximum (and where), 99th percentile and root mean square of distances.
+pub fn distance_stats(d: Vec<(f64, Vec3)>) -> Distances {
+    summarize(d)
+}
+
 /// Inputs of [`compute`].
 pub struct FidelityInput<'a> {
     pub input: &'a [Triangle],

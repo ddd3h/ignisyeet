@@ -650,6 +650,12 @@ fn exit_message(setup: &RunSetup, what: &str, st: &std::process::ExitStatus, log
     }
 }
 
+/// SU2 stopped because the residual exceeded its divergence limit or became non-finite.
+fn su2_aborted_on_divergence(log: &Path) -> bool {
+    let t = std::fs::read_to_string(log).unwrap_or_default();
+    t.contains("SU2 has diverged") || t.contains("Residual > 10^20")
+}
+
 /// Relative path of a sibling case's restart file (SU2 aborts with "buffer overflow detected" on long paths).
 fn restart_path(dir: &Path, p: &Path) -> String {
     match p.parent().and_then(|d| d.file_name()) {
@@ -770,7 +776,9 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
     let mut notes: Vec<String> = Vec::new();
     // Cold start whose startup result can be reused (the conservative retry after a divergence).
     let mut startup: Option<ResidualPeak> = None;
+    // Conservative settings: after a divergence of the startup (then for both stages) or of the second-order stage.
     let mut conservative = false;
+    let mut startup_was_conservative = false;
     loop {
         let is_warm = warm.is_some();
         let fail = |msg: String| CaseOutcome { spec, result: None, error: Some(msg), cached: false, warm: is_warm };
@@ -781,14 +789,33 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
                 for f in CASE_FILES {
                     let _ = std::fs::remove_file(dir.join(f));
                 }
-                let files = CaseFiles { mesh: mesh.clone(), restart_from: None, stage: Stage::Startup, conservative: false };
+                let files = CaseFiles { mesh: mesh.clone(), restart_from: None, stage: Stage::Startup, conservative };
                 let cfg = su2_config_case(opt, &spec, &setup.dims, &setup.atm, &files);
                 let names = ("case_startup.cfg", "su2_startup.log", "history_startup.csv");
-                let run = match solve(setup, i, &dir, names, &cfg, deadline, &|_| StopAction::Continue, tx)? {
+                let stop = |h: &History| if h.rans_divergence().is_some() { StopAction::Now } else { StopAction::Continue };
+                let run = match solve(setup, i, &dir, names, &cfg, deadline, &stop, tx)? {
                     Ok(r) => r,
                     Err(e) => return Ok(fail(e)),
                 };
                 let log = dir.join("su2_startup.log");
+                // Diverged: stopped by the runner, or SU2 aborted on its own ("Residual > 10^20", non-finite values).
+                let killed = run.status.as_ref().is_some_and(|st| killing_signal(st, &std::fs::read_to_string(&log).unwrap_or_default()).is_some());
+                let diverged = History::read(&dir.join("history_startup.csv")).ok().and_then(|h| h.rans_divergence()).or_else(|| {
+                    (run.status.is_some_and(|st| !st.success()) && !killed && su2_aborted_on_divergence(&log))
+                        .then(|| "SU2 stopped on a residual above 1e20".to_string())
+                });
+                if let Some(why) = diverged {
+                    if !conservative {
+                        notes.push(format!(
+                            "the first-order startup diverged ({why}); repeated with CFL <= {} and the turbulence CFL reduced to {}",
+                            crate::su2cfg::RANS_CONSERVATIVE_CFL_FACTOR * opt.cfl,
+                            crate::su2cfg::RANS_CONSERVATIVE_TURB_CFL
+                        ));
+                        conservative = true;
+                        continue;
+                    }
+                    return Ok(fail(format!("the first-order startup diverged twice (the second time with conservative settings): {why}")));
+                }
                 if let Some(st) = run.status.filter(|s| !s.success()) {
                     return Ok(fail(exit_message(setup, "SU2 (first-order startup)", &st, &log)));
                 }
@@ -803,6 +830,7 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
                     return Ok(fail(format!("the first-order startup wrote no {STARTUP_RESTART}")));
                 }
                 startup = Some(r);
+                startup_was_conservative = conservative;
                 (r, STARTUP_RESTART.to_string())
             }
         };
@@ -836,11 +864,15 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
             }
             if !conservative {
                 notes.push(format!(
-                    "the second-order stage diverged ({why}); repeated from the first-order solution with CFL <= {} and the limiter not frozen",
-                    crate::su2cfg::RANS_CONSERVATIVE_CFL_FACTOR * opt.cfl
+                    "the second-order stage diverged ({why}); repeated from the first-order solution with CFL <= {} and the turbulence CFL reduced to {}",
+                    crate::su2cfg::RANS_CONSERVATIVE_CFL_FACTOR * opt.cfl,
+                    crate::su2cfg::RANS_CONSERVATIVE_TURB_CFL
                 ));
                 conservative = true;
                 continue;
+            }
+            if startup_was_conservative {
+                return Ok(fail(format!("the second-order stage diverged with the conservative settings of the repeated first-order startup: {why}")));
             }
             return Ok(fail(format!("diverged twice (the second time with conservative settings): {why}")));
         }
@@ -1129,9 +1161,13 @@ if [ "$mode" = slow ]; then
   [ -n "$sol" ] && { [ -f "$sol" ] && echo "$mach $aoa $sol $(cat $sol)" || echo "$mach $aoa $sol missing"; } >> "$(dirname "$0")/solutions"
   freq=$(grep '^OUTPUT_WRT_FREQ' $cfg | cut -d' ' -f2)
   echo '"Inner_Iter","rms[Rho]","CFx","CFz","CMy"' > history.csv
+  # Rows are written by shell builtins only: the runner's SIGTERM goes to the whole process group, and a child
+  # killed inside a row (e.g. bc) would leave an empty field, which SU2 never writes.
+  fz=$(echo "$aoa * 0.05" | bc -l); my=$(echo "0 - $aoa * 0.08" | bc -l)
   i=0
   while [ $i -lt 1000 ]; do
-    echo "$i,$(echo "-1.0 - 0.02*$i" | bc -l),0.3,$(echo "$aoa * 0.05" | bc -l),$(echo "0 - $aoa * 0.08" | bc -l)" >> history.csv
+    r=$((100 + 2 * i))
+    printf '%d,-%d.%02d,0.3,%s,%s\n' $i $((r / 100)) $((r % 100)) $fz $my >> history.csv
     [ $(( (i + 1) % freq )) -eq 0 ] && { echo "restart $i" > restart.dat; echo "surface $i" > surface_flow.vtk; }
     sleep 0.01
     i=$((i+1))
@@ -1354,6 +1390,8 @@ exit 0
     }
     /// Mock SU2 for RANS: startup stage (`CONV_FILENAME= history_startup`) with peaks rho -1, nu -4; final stage
     /// cold from -2 / -5 (or a limit cycle), warm from -4.5 / -6.5. Modes: ok | cycle | warmfail | thick (y+ 4) |
+    /// sdiverge / sabort (the startup diverges unless conservative; sabort ends like SU2's own "Residual > 10^20"
+    /// abort) | sdiverge2 (the startup always diverges) |
     /// diverge (the cold second-order stage diverges unless conservative) | diverge2 (always) | kill9 (SIGKILL in
     /// the cold second-order stage).
     const MOCK_RANS: &str = r#"#!/bin/sh
@@ -1394,6 +1432,13 @@ while [ $i -lt $n ]; do
   fi
   if [ "$conv" = history ] && [ $warm = 0 ] && [ $i -ge 20 ] && { [ "$mode" = diverge2 ] || { [ "$mode" = diverge ] && [ $cons = 0 ]; }; }; then
     nu=$(echo "-9.0 + 0.5*($i - 20)" | bc -l)
+  fi
+  # startup divergence: the SA residual climbs (sample rocket at M 2 on the 8 mm mesh); "abort" ends like SU2 itself
+  if [ "$conv" = history_startup ] && [ $i -ge 20 ] && { [ "$mode" = sdiverge2 ] || { [ "$mode" = sdiverge ] && [ $cons = 0 ]; } || { [ "$mode" = sabort ] && [ $cons = 0 ]; }; }; then
+    nu=$(echo "-6.0 + 0.5*($i - 20)" | bc -l)
+    if [ "$mode" = sabort ] && [ $i -ge 30 ]; then
+      mv $hf $conv.csv; echo "SU2 has diverged. (Residual > 10^20 detected)."; exit 1
+    fi
   fi
   fx=0.3; fz=$(echo "$aoa * 0.05" | bc -l); my=$(echo "0 - $aoa * 0.08" | bc -l)
   if [ "$mode" = cycle ] && [ "$conv" = history ] && [ $warm = 0 ]; then par=$((i % 2)); fx=$(echo "0.3 + $par * 0.002" | bc -l); fi
@@ -1849,6 +1894,39 @@ exit 0
         // The early-stopped case keeps its surface file of the same iteration.
         let vtk = std::fs::read_to_string(out[1].spec.dir(&e.dir.join("work")).join("surface_flow.vtk")).unwrap();
         assert!(vtk.starts_with("surface "), "{vtk}");
+        let _ = std::fs::remove_dir_all(&e.dir);
+    }
+
+    #[test]
+    fn rans_startup_divergence_is_retried_conservatively_then_fails() {
+        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let stages = |e: &Env| std::fs::read_to_string(e.dir.join("stages")).unwrap_or_default();
+        for mode in ["sdiverge", "sabort"] {
+            let mut e = env_rans(&format!("rans_{mode}"), mode);
+            e.opt.machs = vec![2.0];
+            e.opt.alphas_deg = vec![0.0, 4.0];
+            let out = run_all(&e.setup(), &|_| {}).unwrap();
+            let r = out[0].result.as_ref().unwrap_or_else(|| panic!("{mode}: {:?} {}", out[0].error, stages(&e)));
+            assert!(r.converged, "{mode}: {r:?}");
+            assert!(r.warnings.iter().any(|w| w.contains("first-order startup diverged") && w.contains("CFL <= 20")), "{mode}: {r:?}");
+            // startup, startup again (conservative), then the second-order stage with the conservative settings
+            let st = stages(&e);
+            let a0: Vec<&str> = st.lines().filter(|l| l.starts_with("2.000000 0.000000")).collect();
+            assert_eq!(
+                a0,
+                ["2.000000 0.000000 history_startup cons=0", "2.000000 0.000000 history_startup cons=1", "2.000000 0.000000 history cons=1"],
+                "{mode}"
+            );
+            assert!(out[1].warm && out[1].result.as_ref().unwrap().converged);
+            let _ = std::fs::remove_dir_all(&e.dir);
+        }
+        let mut e = env_rans("rans_sdiverge2", "sdiverge2");
+        e.opt.machs = vec![2.0];
+        e.opt.alphas_deg = vec![0.0];
+        let out = run_all(&e.setup(), &|_| {}).unwrap();
+        let msg = out[0].error.as_ref().unwrap();
+        assert!(msg.contains("first-order startup diverged twice") && msg.contains("SA residual rose"), "{msg}");
+        assert_eq!(stages(&e).lines().count(), 2);
         let _ = std::fs::remove_dir_all(&e.dir);
     }
 }

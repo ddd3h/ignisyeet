@@ -454,6 +454,61 @@ impl AeroModel {
         [self.body_s[0] + cnf, self.body_s[1] + cnf * xf, self.body_s[2] + cnf * xf * xf]
     }
 
+    /// Lag (alpha-dot) sums `(L0 [m], L1 [m^2])` at Mach `m`: the lateral force
+    /// `-(rho S / 2) L0 du_perp/dt` acting at `L1 / L0` aft of the nose tip, `du_perp/dt` the
+    /// lateral acceleration of the body relative to the air.
+    ///
+    /// Body: slender-body apparent mass. Each section carries the air mass `rho pi r^2` per unit
+    /// length with its lateral motion (Munk; Nielsen, Missile Aerodynamics, ch. 3), so the body
+    /// carries `rho Vol` at the volume centroid `x_vol`: `L0 = K_B = 2 Vol / S`, `L1 = K_B x_vol`.
+    /// The convective part of the same apparent-mass momentum is the static Munk normal force
+    /// already in the table; only the acceleration part is added here. Independent of Mach in
+    /// slender-body theory.
+    ///
+    /// Fins: the downwash lag of an aft surface in the wake of a forward lifting surface (canard or
+    /// first fin set; Nielsen ch. 9, Etkin, Dynamics of Flight, ch. 5 for the tail of an aircraft)
+    /// needs a lifting surface ahead of the fins. With a single fin set there is none, so the fin
+    /// term is zero ([`fin_lag_sums`](Self::fin_lag_sums)).
+    pub fn lag_sums(&self, m: f64) -> (f64, f64) {
+        let (vol, moment) = self.body_volume_moment();
+        let s = self.geom.ref_area;
+        let (fl0, fl1) = self.fin_lag_sums(m);
+        if s.is_nan() || s <= 0.0 {
+            return (fl0, fl1);
+        }
+        (2.0 * vol / s + fl0, 2.0 * moment / s + fl1)
+    }
+
+    /// Downwash-lag sums of the fins: zero for the single fin set this model knows (no lifting
+    /// surface ahead of it whose wake the fins could see with a delay).
+    pub fn fin_lag_sums(&self, _m: f64) -> (f64, f64) {
+        (0.0, 0.0)
+    }
+
+    /// Volume of the body of revolution [m^3] and its first moment about the nose tip [m^4] from
+    /// the profile (conical frustums between the profile points, the nose tip at radius 0 and the
+    /// base at `base_radius`).
+    pub fn body_volume_moment(&self) -> (f64, f64) {
+        let g = &self.geom;
+        let mut pts = vec![(0.0, 0.0)];
+        pts.extend(g.profile.iter().map(|p| (p.x, p.r)));
+        pts.push((g.length, g.base_radius));
+        let (mut vol, mut mom) = (0.0, 0.0);
+        for w in pts.windows(2) {
+            let ((x1, r1), (x2, r2)) = (w[0], w[1]);
+            let l = x2 - x1;
+            if l <= 0.0 {
+                continue;
+            }
+            // Integrals of pi r^2 and pi r^2 (x - x1) over the frustum, r linear in x.
+            let v = PI * l / 3.0 * (r1 * r1 + r1 * r2 + r2 * r2);
+            let t = PI * l * l / 12.0 * (r1 * r1 + 2.0 * r1 * r2 + 3.0 * r2 * r2);
+            vol += v;
+            mom += x1 * v + t;
+        }
+        (vol, mom)
+    }
+
     /// Zero-lift axial (drag) coefficient at Mach `m`.
     pub fn cd0(&self, m: f64, power_on: bool) -> DragBreakdown {
         let g = &self.geom;
@@ -847,6 +902,46 @@ mod tests {
         // Continuous through the transonic blend.
         let (a, b) = (m4.roll_terms(0.899).1, m4.roll_terms(0.901).1);
         assert!((a - b).abs() < 1e-2 * a.abs());
+    }
+
+    #[test]
+    fn lag_sums_of_an_ogive_cylinder_and_a_cone() {
+        // Tangent ogive (0.30 m) on a cylinder of radius 0.05 m, 1.5 m long: apparent mass of the
+        // volume, K_B = 2 Vol / S. The 72-facet mesh has the area of a polygon, (72 / 2pi) sin(2pi / 72)
+        // = 0.99873 of the circle.
+        let (m, rk) = model();
+        let (r, ln, l) = (rk.radius, rk.nose_length, rk.length);
+        let rho = (r * r + ln * ln) / (2.0 * r);
+        let v_nose = PI * (ln * rho * rho - ln.powi(3) / 3.0 - (rho - r) * rho * rho * (ln / rho).asin());
+        let v_cyl = PI * r * r * (l - ln);
+        let vol = v_nose + v_cyl;
+        let (vm, _) = m.body_volume_moment();
+        assert!((vm / vol - 1.0).abs() < 0.01, "volume {vm} vs {vol}");
+        let (l0, l1) = m.lag_sums(0.5);
+        let s = m.geom.ref_area;
+        assert!((l0 - 2.0 * vm / s).abs() < 1e-12);
+        // Centroid: the nose part of the ogive and the cylinder about the nose tip (nose centroid by quadrature).
+        let n = 20000;
+        let nose_mom: f64 = (0..n)
+            .map(|i| {
+                let x = (i as f64 + 0.5) * ln / n as f64;
+                x * PI * rk.nose_radius(x).powi(2) * ln / n as f64
+            })
+            .sum();
+        let x_vol = (nose_mom + v_cyl * 0.5 * (ln + l)) / vol;
+        assert!((l1 / l0 - x_vol).abs() < 0.005 * l, "x_vol {} vs {x_vol}", l1 / l0);
+        assert_eq!(m.fin_lag_sums(0.5), (0.0, 0.0));
+        // A cone: centroid 3 L / 4 from the tip, volume pi R^2 L / 3 (exact for the frustum sum).
+        let mut g = m.geom.clone();
+        let (cl, cr) = (0.8, 0.06);
+        g.profile = (1..=40).map(|i| geom::extract::ProfilePoint { x: cl * i as f64 / 40.0, r: cr * i as f64 / 40.0, fin_span: 0.0 }).collect();
+        g.length = cl;
+        g.base_radius = cr;
+        g.fins = None;
+        let cone = AeroModel::new(g, AeroOptions::default());
+        let (l0, l1) = cone.lag_sums(1.2);
+        assert!((l1 / l0 - 0.75 * cl).abs() < 1e-12, "cone centroid {}", l1 / l0);
+        assert!((l0 * cone.geom.ref_area / 2.0 - PI * cr * cr * cl / 3.0).abs() < 1e-12);
     }
 
     /// Sample body with rectangular fins of span `span` and chord `chord` on a body of radius 0.05 m.

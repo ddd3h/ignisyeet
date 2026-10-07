@@ -178,7 +178,7 @@ impl Drop for Group {
 
 /// SU2 configuration text of a case without the restart line: the input of its hash.
 fn base_config(setup: &RunSetup, spec: &CaseSpec) -> String {
-    su2_config_case(setup.opt, spec, &setup.dims, &setup.atm, &CaseFiles { mesh: setup.mesh_file.display().to_string(), restart_from: None })
+    su2_config_case(setup.opt, spec, &setup.dims, &setup.atm, &CaseFiles { mesh: setup.mesh_file.display().to_string(), restart_from: None, stage: Default::default() })
 }
 
 /// Number of grid levels SU2 reports in its "MG Level | CVs | Aggl. Rate" table (fine grid included; 0 when no table).
@@ -261,7 +261,7 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, restart: Opt
         Some(case) if p.parent().and_then(|d| d.parent()) == dir.parent() => format!("../{}/restart.dat", case.to_string_lossy()),
         _ => p.display().to_string(),
     });
-    let files = CaseFiles { mesh: setup.mesh_file.display().to_string(), restart_from };
+    let files = CaseFiles { mesh: setup.mesh_file.display().to_string(), restart_from, stage: Default::default() };
     std::fs::write(dir.join("case.cfg"), su2_config_case(setup.opt, &spec, &setup.dims, &setup.atm, &files))?;
     let t0 = Instant::now();
     let mut cmd = command(setup, &dir)?;

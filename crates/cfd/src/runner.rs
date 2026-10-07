@@ -684,13 +684,14 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: Option
     let deadline = (setup.opt.timeout_minutes > 0.0).then(|| t0 + Duration::from_secs_f64(setup.opt.timeout_minutes * 60.0));
     let min_drop = 3.0;
     // Practically converged (typical for Euler wake limit cycles): residual down 3 orders and the coefficients
-    // flat over `stable_window` iterations. Stop SU2 gracefully before the residual drifts and diverges.
+    // flat over `stable_window` iterations. Stop SU2 gracefully before the residual drifts and diverges, after its
+    // next periodic output (the restart file of the warm starts).
     let stop = |h: &History| {
         if h.rows.len() >= setup.opt.min_iterations
             && h.residual_drop_from_peak().is_some_and(|d| d >= min_drop)
             && h.coefficients_stable(setup.opt.stable_window, kind)
         {
-            StopAction::Now
+            StopAction::AfterOutput(2 * crate::su2cfg::OUTPUT_FREQ + 5)
         } else {
             StopAction::Continue
         }
@@ -814,7 +815,7 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
             } else if h.rows.len() >= opt.min_iterations
                 && matches!(rans_verdict(h, reference, opt.stable_window, kind, ratio, opt.iterations), RansVerdict::Converged | RansVerdict::Stalled(_))
             {
-                StopAction::AfterOutput(2 * crate::su2cfg::RANS_OUTPUT_FREQ + 5)
+                StopAction::AfterOutput(2 * crate::su2cfg::OUTPUT_FREQ + 5)
             } else {
                 StopAction::Continue
             }
@@ -1120,6 +1121,23 @@ mode=$(cat "$(dirname "$0")/mode")
 echo "$mach $aoa $restart" >> "$(dirname "$0")/calls"
 echo "mock su2 $mode"
 [ "$mode" = fail ] && { echo "boom" >&2; exit 1; }
+if [ "$mode" = slow ]; then
+  # Like SU2 8.3: the history grows row by row, the output files are written every OUTPUT_WRT_FREQ iterations,
+  # and SIGTERM ends the run without writing anything.
+  trap 'exit 1' TERM
+  sol=$(grep '^SOLUTION_FILENAME' $cfg | cut -d' ' -f2)
+  [ -n "$sol" ] && { [ -f "$sol" ] && echo "$mach $aoa $sol $(cat $sol)" || echo "$mach $aoa $sol missing"; } >> "$(dirname "$0")/solutions"
+  freq=$(grep '^OUTPUT_WRT_FREQ' $cfg | cut -d' ' -f2)
+  echo '"Inner_Iter","rms[Rho]","CFx","CFz","CMy"' > history.csv
+  i=0
+  while [ $i -lt 1000 ]; do
+    echo "$i,$(echo "-1.0 - 0.02*$i" | bc -l),0.3,$(echo "$aoa * 0.05" | bc -l),$(echo "0 - $aoa * 0.08" | bc -l)" >> history.csv
+    [ $(( (i + 1) % freq )) -eq 0 ] && { echo "restart $i" > restart.dat; echo "surface $i" > surface_flow.vtk; }
+    sleep 0.01
+    i=$((i+1))
+  done
+  exit 0
+fi
 echo '"Inner_Iter","rms[Rho]","CFx","CFz","CMy"' > history.part
 i=0
 while [ $i -lt 30 ]; do
@@ -1802,8 +1820,35 @@ exit 0
         // (restart.dat itself is removed once no case needs it; the surface file is written with it.)
         let vtk = std::fs::read_to_string(dir.join("surface_flow.vtk")).unwrap();
         let written: usize = vtk.trim().rsplit(' ').next().unwrap().parse().unwrap();
-        assert_eq!((written + 1) % crate::su2cfg::RANS_OUTPUT_FREQ, 0);
+        assert_eq!((written + 1) % crate::su2cfg::OUTPUT_FREQ, 0);
         assert!(written >= e.opt.min_iterations && rows > written + 1, "written {written}, rows {rows}");
+        let _ = std::fs::remove_dir_all(&e.dir);
+    }
+
+    #[test]
+    fn euler_early_stop_keeps_the_restart_file_for_the_warm_successor() {
+        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let mut e = env("euler_slow", "slow");
+        e.opt.machs = vec![0.5];
+        e.opt.alphas_deg = vec![0.0, 4.0];
+        e.opt.iterations = 1000;
+        e.opt.convergence = 1e-30; // only the early stop ends the runs
+        let out = run_all(&e.setup(), &|_| {}).unwrap();
+        for o in &out {
+            let r = o.result.as_ref().unwrap_or_else(|| panic!("{:?}", o.error));
+            assert!(!r.converged && r.iterations < 1000, "{r:?}");
+        }
+        // The successor started from the restart file the predecessor wrote at its last periodic output (a
+        // multiple of OUTPUT_WRT_FREQ = 50 iterations, after the stop decision at 150 iterations or later).
+        let sols = std::fs::read_to_string(e.dir.join("solutions")).unwrap();
+        let line = sols.lines().find(|l| l.starts_with("0.500000 4.000000 ")).unwrap_or_else(|| panic!("{sols}"));
+        assert!(line.contains(" ../m0.500_a00.00/restart.dat restart "), "{line}");
+        let it: usize = line.rsplit(' ').next().unwrap().parse().unwrap();
+        assert!((it + 1).is_multiple_of(crate::su2cfg::OUTPUT_FREQ) && it >= 149, "{line}");
+        assert!(out[1].warm);
+        // The early-stopped case keeps its surface file of the same iteration.
+        let vtk = std::fs::read_to_string(out[1].spec.dir(&e.dir.join("work")).join("surface_flow.vtk")).unwrap();
+        assert!(vtk.starts_with("surface "), "{vtk}");
         let _ = std::fs::remove_dir_all(&e.dir);
     }
 }

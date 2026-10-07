@@ -4,7 +4,7 @@
 #
 # Builds the rocket as an OpenCASCADE solid (body of revolution united with the fins), cuts it out
 # of the farfield ball (or half ball with the y = 0 symmetry plane), meshes the volume with
-# tetrahedra graded away from the wall and writes an SU2 mesh with the markers wall, base, farfield,
+# tetrahedra graded away from the wall (finer on the fin faces when fin_size < wall_size) and writes an SU2 mesh with the markers wall, base, farfield,
 # symmetry. Full domain: a y-symmetric layout is meshed as the half ball and mirrored about y = 0
 # (the `symmetry` marker is dropped; a full ball fails in HXT at the periodic seam), any other layout
 # uses a box farfield (the OpenCASCADE box shares its edges between the faces). Without `bl` the volume is all
@@ -149,6 +149,75 @@ if (half or bl) and len(parts) > 1:
 occ.synchronize()
 
 
+# ---- size field ------------------------------------------------------------------------------------
+# Tetrahedra graded from the wall: wall_size on the wall, growing by `growth` per element row up to max_size. With
+# fin_size < wall_size (Euler default: a quarter of the fin thickness) a second threshold of the distance to the fin
+# faces gives fin_size on the fins, graded the same way up to wall_size and beyond (the minimum of both fields).
+hf = min(p["fin_size"], h0)
+fin_refine = bool(fins) and hf < h0 * (1.0 - 1e-9)
+
+
+def profile_radius(x):
+    """Body radius of the CFD profile (tail fairing included) at station x."""
+    if x <= prof[0][0]:
+        return prof[0][1]
+    for (xa, ra), (xb, rb) in zip(prof[:-1], prof[1:]):
+        if x <= xb:
+            return ra + (rb - ra) * (x - xa) / max(xb - xa, 1e-300)
+    return prof[-1][1]
+
+
+def fin_faces(faces):
+    """The faces of `faces` that belong to a fin: their centre of mass lies outside the body by more than a tenth of the
+    span (a face of the body of revolution, also a narrow sector of it, has its centre of mass inside the body)."""
+    out = []
+    for t in faces:
+        cx, cy, cz = occ.getCenterOfMass(2, t)
+        if math.hypot(cy, cz) > profile_radius(cx) + 0.1 * fins["span"]:
+            out.append(t)
+    return out
+
+
+def size_field(surfaces, wall_faces):
+    f = gmsh.model.mesh.field
+    f.add("Distance", 1)
+    f.setNumbers(1, "SurfacesList", surfaces)
+    f.setNumber(1, "Sampling", 200)
+    f.add("Threshold", 2)
+    f.setNumber(2, "InField", 1)
+    f.setNumber(2, "SizeMin", h0)
+    f.setNumber(2, "SizeMax", hmax)
+    f.setNumber(2, "DistMin", 0.0)
+    f.setNumber(2, "DistMax", (hmax - h0) / (grow - 1.0))
+    hmin = h0 / p["min_size_divisor"]
+    finf = fin_faces(wall_faces) if fin_refine else []
+    if finf:
+        f.add("Distance", 3)
+        f.setNumbers(3, "SurfacesList", finf)
+        f.setNumber(3, "Sampling", 200)
+        f.add("Threshold", 4)
+        f.setNumber(4, "InField", 3)
+        f.setNumber(4, "SizeMin", hf)
+        f.setNumber(4, "SizeMax", hmax)
+        f.setNumber(4, "DistMin", 0.0)
+        f.setNumber(4, "DistMax", (hmax - hf) / (grow - 1.0))
+        f.add("Min", 5)
+        f.setNumbers(5, "FieldsList", [2, 4])
+        f.setAsBackgroundMesh(5)
+        hmin = min(hmin, hf)
+        print("fin faces: %d of %d wall faces meshed at fin_size %.4g m (wall_size %.4g m)" % (len(finf), len(wall_faces), hf, h0))
+    else:
+        if fin_refine:
+            print("fin faces: none identified; fin_size %.4g m not applied" % hf)
+        f.setAsBackgroundMesh(2)
+    gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
+    gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", int(p["curvature_elements"]))
+    gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
+    gmsh.option.setNumber("Mesh.MeshSizeMin", hmin)
+    gmsh.option.setNumber("Mesh.MeshSizeMax", hmax)
+    gmsh.option.setNumber("Mesh.Algorithm", 6)
+
+
 # ---- prismatic boundary layer (RANS) ----------------------------------------------------------------
 # The layer itself is bl_layer.py (shared with the STEP surface mesher).
 def boundary_layer_mesh(parts):
@@ -181,23 +250,7 @@ def boundary_layer_mesh(parts):
     occ.remove([(2, t) for t in cut])
     occ.synchronize()
 
-    f = gmsh.model.mesh.field
-    f.add("Distance", 1)
-    f.setNumbers(1, "SurfacesList", wall + cap)
-    f.setNumber(1, "Sampling", 200)
-    f.add("Threshold", 2)
-    f.setNumber(2, "InField", 1)
-    f.setNumber(2, "SizeMin", h0)
-    f.setNumber(2, "SizeMax", hmax)
-    f.setNumber(2, "DistMin", 0.0)
-    f.setNumber(2, "DistMax", (hmax - h0) / (grow - 1.0))
-    f.setAsBackgroundMesh(2)
-    gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
-    gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", int(p["curvature_elements"]))
-    gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
-    gmsh.option.setNumber("Mesh.MeshSizeMin", h0 / p["min_size_divisor"])
-    gmsh.option.setNumber("Mesh.MeshSizeMax", hmax)
-    gmsh.option.setNumber("Mesh.Algorithm", 6)
+    size_field(wall + cap, wall)
     t1 = time.time()
     gmsh.model.mesh.generate(2)
     bl_layer.build(p, wall, cap, True, t0, t1)
@@ -238,24 +291,8 @@ print("faces: wall %d, base %d, farfield %d, symmetry %d" % (len(wallsurf), len(
 if not wallsurf or not far or not cap or (half and not symm):
     raise SystemExit("mesh error: could not classify the boundary faces")
 
-# ---- size field ------------------------------------------------------------------------------------
-f = gmsh.model.mesh.field
-f.add("Distance", 1)
-f.setNumbers(1, "SurfacesList", wallsurf + cap)
-f.setNumber(1, "Sampling", 200)
-f.add("Threshold", 2)
-f.setNumber(2, "InField", 1)
-f.setNumber(2, "SizeMin", h0)
-f.setNumber(2, "SizeMax", hmax)
-f.setNumber(2, "DistMin", 0.0)
-f.setNumber(2, "DistMax", (hmax - h0) / (grow - 1.0))
-f.setAsBackgroundMesh(2)
-gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
-gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", int(p["curvature_elements"]))
-gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
-gmsh.option.setNumber("Mesh.MeshSizeMin", h0 / p["min_size_divisor"])
-gmsh.option.setNumber("Mesh.MeshSizeMax", hmax)
-gmsh.option.setNumber("Mesh.Algorithm", 6)
+# ---- size field (see size_field) -------------------------------------------------------------------
+size_field(wallsurf + cap, wallsurf)
 
 # ---- physical groups -------------------------------------------------------------------------------
 pg = gmsh.model.addPhysicalGroup

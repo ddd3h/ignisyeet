@@ -312,6 +312,7 @@ pub fn build_from_points(
 
 /// [`build_from_points`] with the roll-damping entries of the CFD roll pairs (empty: Barrowman `Clp`).
 /// `cl_delta` is always the Barrowman cant forcing; the table's reference cant is the geometry cant.
+#[allow(clippy::too_many_arguments)]
 pub fn build_from_points_roll(
     points: &[SolvedPoint],
     model: &AeroModel,

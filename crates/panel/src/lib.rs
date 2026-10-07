@@ -553,7 +553,12 @@ pub fn build_table_with_progress(
         alphas: alphas_deg.iter().map(|a| a.to_radians()).collect(),
         sub,
         fric: viscous::Friction::new(&mesh, s_ref),
-        sup: supersonic::SupersonicPanels::new(&mesh, s_ref, geom.fins.as_ref().map(|f| (f.x_le_root + f.sweep, f.body_radius + f.span))),
+        sup: supersonic::SupersonicPanels::new(
+            &mesh,
+            s_ref,
+            geom.fins.as_ref().map(|f| (f.x_le_root + f.sweep, f.body_radius + f.span)),
+            geom.fins.as_ref().map(|f| (f.body_radius, f.x_le_root + f.root_chord)),
+        ),
     };
 
     progress(PanelStage::SupersonicDone);

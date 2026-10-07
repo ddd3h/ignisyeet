@@ -4,7 +4,13 @@
 //!
 //! Each panel sees the freestream at the local inclination `delta` between its plane and the
 //! flow (`delta > 0`: compression).
-//! * Fin panels: tangent wedge (exact oblique shock, weak branch) for compression, beyond the
+//! * Fin panels: the local flow includes the body upwash, the two-dimensional potential crossflow
+//!   around the body cylinder at the panel ([`cylinder_crossflow`]); a fin normal to the crossflow
+//!   sees it raised by `1 + r^2 / rho^2` (slender-body fin-body interference, whose span average over
+//!   a rectangular fin is Barrowman's `1 + r / (s + r)`), a fin aligned with it none. It applies where
+//!   the method is valid, faded out at low supersonic Mach numbers where the tip Mach cone covers
+//!   the fin ([`upwash_weight`]).
+//!   Tangent wedge (exact oblique shock, weak branch) for compression, beyond the
 //!   detachment limit a Newtonian-shaped rise from the attached value at detachment to the
 //!   stagnation value at 90 deg ([`detached_cp`]), Prandtl–Meyer expansion from the freestream
 //!   for expansion (leeward shadow), clipped at the vacuum limit.
@@ -386,11 +392,65 @@ pub struct SupersonicPanels {
     delta0: Vec<f64>,
     /// Fin tip leading-edge corner `(x, radius)` for the 3-D tip relief.
     tip_le: Option<(f64, f64)>,
+    /// Body radius at the fins and axial position of the root trailing edge, for the body upwash on
+    /// the fin panels (`None`: no upwash).
+    fin_root: Option<(f64, f64)>,
     s_ref: f64,
 }
 
+/// Lower and upper bound of the validity parameter `q` of [`upwash_weight`].
+pub const UPWASH_Q: [f64; 2] = [0.5, 1.0];
+
+/// Weight of the body upwash on the fin panels from the validity parameter
+/// `q = beta s / L` (`beta = sqrt(M^2 - 1)`, `s` the exposed span, `L` the axial distance from the tip
+/// leading-edge corner to the root trailing edge).
+///
+/// * `q >= 1`: the Mach cone of the tip leading edge does not reach the root within the chord. The
+///   root region is in two-dimensional flow and the tip region is the conical flow of one free tip,
+///   the conditions under which the local inclination with the half-loading tip relief reproduces
+///   linear theory; the upwash applies in full (weight 1).
+/// * `q <= 1/2`: the tip cone reaches the root, and its reflection at the root (the image tip of the
+///   linear-theory reflection plane) reaches back to the tip before the trailing edge; the whole fin
+///   lies in the interacting tip region, where the linear tip loss `1 - 1 / (2 beta A)` of a rectangular
+///   fin (valid for `beta A >= 1`, i.e. `q >= 1/2`) and the pointwise local-inclination loading have no
+///   basis. The local inclination there overestimates the fin loading (it grows like `1 / beta`), and
+///   the upwash is not applied (weight 0).
+/// * in between, the C1 smoothstep `3 t^2 - 2 t^3`, `t = (q - 1/2) / (1/2)`: a continuous transition
+///   between the two limits, not a fit.
+pub fn upwash_weight(q: f64) -> f64 {
+    let [lo, hi] = UPWASH_Q;
+    if !q.is_finite() || q >= hi {
+        return 1.0;
+    }
+    let t = ((q - lo) / (hi - lo)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// Crossflow velocity `(v_y, v_z)` at `(y, z)` around a circular cylinder of radius `r` in the uniform
+/// crossflow `(w_y, w_z)` (two-dimensional potential flow, complex velocity
+/// `u_y - i u_z = (w_y - i w_z) - (w_y + i w_z) r^2 / zeta^2`, `zeta = y + i z`); points inside the
+/// cylinder are taken on its surface. In the plane of the crossflow through the axis' normal (a fin
+/// normal to the crossflow) the crossflow is raised by `1 + r^2 / rho^2`; in the plane containing the
+/// crossflow (a fin aligned with it) the component normal to the fin stays zero.
+pub fn cylinder_crossflow(y: f64, z: f64, r: f64, w_y: f64, w_z: f64) -> (f64, f64) {
+    let rho2 = y * y + z * z;
+    if r <= 0.0 || rho2 <= 0.0 {
+        return (w_y, w_z);
+    }
+    let k = (r * r / rho2).min(1.0);
+    // zeta^2 / |zeta|^2 = (y^2 - z^2 + 2 i y z) / rho^2; r^2 / zeta^2 = k (y^2 - z^2 - 2 i y z) / rho^2.
+    let (cr, ci) = (k * (y * y - z * z) / rho2, -k * 2.0 * y * z / rho2);
+    // (w_y + i w_z) (cr + i ci)
+    let (pr, pi) = (w_y * cr - w_z * ci, w_y * ci + w_z * cr);
+    // u_y - i u_z = (w_y - pr) - i (w_z + pi)
+    (w_y - pr, w_z + pi)
+}
+
 impl SupersonicPanels {
-    pub fn new(mesh: &Mesh, s_ref: f64, tip_le: Option<(f64, f64)>) -> Self {
+    /// `tip_le`: fin tip leading-edge corner `(x, radius)`; `fin_root`: body radius at the fins and
+    /// axial position of the root trailing edge, for the body upwash on the fin panels (`None`: none;
+    /// needs `tip_le`).
+    pub fn new(mesh: &Mesh, s_ref: f64, tip_le: Option<(f64, f64)>, fin_root: Option<(f64, f64)>) -> Self {
         let p: Vec<&crate::mesh::Panel> = mesh.panels.iter().filter(|q| q.part != Part::Tail).collect();
         Self {
             c: p.iter().map(|q| q.centroid).collect(),
@@ -399,6 +459,7 @@ impl SupersonicPanels {
             part: p.iter().map(|q| q.part).collect(),
             delta0: p.iter().map(|q| (-q.normal.x).clamp(-1.0, 1.0).asin()).collect(),
             tip_le,
+            fin_root,
             s_ref,
         }
     }
@@ -416,13 +477,35 @@ impl SupersonicPanels {
         }
     }
 
+    /// Body radius and weight of the body upwash on the fin panels at Mach `m` ([`upwash_weight`]).
+    pub fn upwash(&self, m: f64) -> (f64, f64) {
+        let (Some((r, x_te)), Some((x_tip, r_tip))) = (self.fin_root, self.tip_le) else { return (0.0, 0.0) };
+        if r <= 0.0 {
+            return (0.0, 0.0);
+        }
+        let beta = (m * m - 1.0).max(0.0).sqrt();
+        let len = x_te - x_tip;
+        let q = if len > 0.0 { beta * (r_tip - r) / len } else { f64::INFINITY };
+        (r, upwash_weight(q))
+    }
+
     /// Forces at Mach `m`, angle of attack `alpha` and nondimensional pitch rate `omega`
     /// (rotation about the nose tip: extra local incidence `omega * x`).
     pub fn forces(&self, m: f64, alpha: f64, omega: f64) -> Forces {
         let (sa, ca) = alpha.sin_cos();
+        let (r_up, k_up) = self.upwash(m);
         let mut f = Forces::default();
         for i in 0..self.c.len() {
-            let u = Vec3::new(ca, 0.0, sa + omega * self.c[i].x).normalized();
+            let w = sa + omega * self.c[i].x;
+            let u = if self.part[i] == Part::Body || k_up <= 0.0 {
+                Vec3::new(ca, 0.0, w)
+            } else {
+                // Fins see the body upwash: the crossflow around the cylinder at the panel, weighted
+                // by the validity of the method at this Mach number.
+                let (vy, vz) = cylinder_crossflow(self.c[i].y, self.c[i].z, r_up, 0.0, w);
+                Vec3::new(ca, k_up * vy, w + k_up * (vz - w))
+            }
+            .normalized();
             let delta = (-self.n[i].dot(u)).clamp(-1.0, 1.0).asin();
             let cp = if self.part[i] == Part::Body {
                 body_cp(m, delta, self.delta0[i])

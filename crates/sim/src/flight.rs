@@ -1104,7 +1104,8 @@ impl<'a> Simulation<'a> {
             bail!("sim.rtol, sim.atol and sim.output_interval must be positive for the adaptive integrators (rk45, dop853)");
         }
         let frame = Frame::new(&self.earth, &self.launch);
-        let cx = Ctx { frame, rail: frame.from_launch_enu(self.launch.rail_dir_enu()), cd_s: Default::default(), segment: Default::default(), gravity_off: false };
+        let cx =
+            Ctx { frame, rail: frame.from_launch_enu(self.launch.rail_dir_enu()), cd_s: Default::default(), segment: Default::default(), gravity_off: false };
         let mut s = State { pos: frame.origin(), vel: Vec3::ZERO, q: self.initial_attitude(&frame), w: Vec3::ZERO };
         cx.cd_s.set(self.recovery.cd_s);
         let main = if self.recovery.enabled { self.recovery.main() } else { None };

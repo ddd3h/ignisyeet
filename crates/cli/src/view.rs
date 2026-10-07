@@ -342,7 +342,11 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
 pub fn roll_resonance(r: &sim::RollResonance) -> String {
     let g = ui().g();
     let more = if r.crossings > 1 { format!(", {}x", r.crossings) } else { String::new() };
-    format!("{} {}", style(g.warn).yellow().bold(), style(format!("p = omega_n {:.1} rad/s at {:.2} s, Mach {:.2}{more}", r.frequency, r.t, r.mach)).yellow().bold())
+    format!(
+        "{} {}",
+        style(g.warn).yellow().bold(),
+        style(format!("p = omega_n {:.1} rad/s at {:.2} s, Mach {:.2}{more}", r.frequency, r.t, r.mach)).yellow().bold()
+    )
 }
 
 fn stability(cal: f64) -> String {

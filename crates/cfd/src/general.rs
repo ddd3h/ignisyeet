@@ -509,7 +509,20 @@ pub fn build_general(inp: &GeneralInput) -> Result<(AeroTable, GeneralFill)> {
         let (i, ..) = (k / (na * nb), 0);
         let pm = &per_mach[i];
         debug_assert_eq!(pm.0, m);
-        Coeffs6 { cx_on: v[0], cx_off: v[1], cy: v[2], cz: v[3], cl: v[4], cm: v[5], cn: v[6], cl_delta: model.roll_terms(m).0, clp: pm.3, sq: pm.1, sr: pm.2, ..Default::default() }
+        Coeffs6 {
+            cx_on: v[0],
+            cx_off: v[1],
+            cy: v[2],
+            cz: v[3],
+            cl: v[4],
+            cm: v[5],
+            cn: v[6],
+            cl_delta: model.roll_terms(m).0,
+            clp: pm.3,
+            sq: pm.1,
+            sr: pm.2,
+            ..Default::default()
+        }
     });
     Ok((table, fill))
 }

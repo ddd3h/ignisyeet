@@ -8,7 +8,7 @@
 
 use super::*;
 use crate::env::{WindConfig, WindModel};
-use aero::table::{TableMeta, Extrapolation};
+use aero::table::{Extrapolation, TableMeta};
 use aero::{AeroModel, AeroOptions};
 use geom::sample::SampleRocket;
 use geom::{extract, ExtractOptions};
@@ -518,9 +518,8 @@ fn a_general_table_with_a_zero_angle_moment_is_a_trim_forcing() {
     // Rolling rockets (a tabulated roll moment, no fin cant in the configuration): the symmetric table
     // has no trim forcing, the asymmetric one reports the crossing.
     let run = |t: &AeroTable| sample_sim(t, &motor, 0.0).run(Descent::Ballistic, false).unwrap().summary.roll_resonance;
-    let with_roll = |t: &AeroTable| {
-        AeroTable::general_from_fn(t.meta.clone(), |m, a, b| aero::table::Coeffs6 { cl: 0.3, ..t.lookup6(m, a.to_radians(), b.to_radians()) })
-    };
+    let with_roll =
+        |t: &AeroTable| AeroTable::general_from_fn(t.meta.clone(), |m, a, b| aero::table::Coeffs6 { cl: 0.3, ..t.lookup6(m, a.to_radians(), b.to_radians()) });
     assert_eq!(run(&with_roll(&general)), None);
     let res = run(&with_roll(&asym)).expect("roll resonance with an aerodynamic trim moment");
     assert!(res.t > 0.0 && res.mach > 0.0, "{res:?}");

@@ -509,6 +509,15 @@ fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: Option<f64>) -> Vec
             s.broadside_time
         ));
     }
+    if let Some(r) = &s.roll_resonance {
+        w.push(format!(
+            "roll resonance: the roll rate crosses the pitch natural frequency ({:.1} rad/s) at t = {:.2} s, Mach {:.2}{}; fin cant, a lateral CG offset or thrust misalignment can amplify the angle of attack there",
+            r.frequency,
+            r.t,
+            r.mach,
+            if r.crossings > 1 { format!(" ({} crossings)", r.crossings) } else { String::new() }
+        ));
+    }
     w.extend(rail_exit_warnings_at(cfg, s, wind_speed));
     let rec = &cfg.recovery;
     if let (true, Some(_), Some(m)) = (rec.enabled, rec.main_cd_s, rec.main_altitude) {
@@ -893,7 +902,7 @@ fn aero_options(cfg: &Config) -> Result<AeroOptions> {
 
 /// Version of the aerodynamic model and of the table layout. Bump it whenever a change of the code
 /// alters the coefficients computed from the same inputs, so that older cached tables are rebuilt.
-const MODEL_VERSION: u32 = 9;
+const MODEL_VERSION: u32 = 10;
 
 /// The part of the aero settings that determines the table: unused method blocks and the
 /// resource/path-only CFD fields do not change the coefficients and are left out.
@@ -2395,7 +2404,7 @@ fn write_monte_carlo_csv_to(f: &mut impl Write, rows: &[sim::dispersion::McRow])
         f,
         "sample,descent,status,thrust_scale,burn_time_scale,dry_mass,cg,cn_scale,ca_scale,elevation_deg,azimuth_deg,roll_deg,wind_speed_delta,wind_direction_deg_delta,parachute_cd_s_scale,\
 wind_speed,wind_direction_deg,landing_east,landing_north,landing_lat,landing_lon,landing_distance,landing_time,landing_speed,apogee,apogee_time,max_mach,rail_exit_speed,min_stability_cal,\
-thrust_misalignment_y_deg,thrust_misalignment_z_deg,thrust_offset_y,thrust_offset_z,fin_cant_deg,cg_lateral_y,cg_lateral_z,cl_scale,clp_scale,stable,broadside_time"
+thrust_misalignment_y_deg,thrust_misalignment_z_deg,thrust_offset_y,thrust_offset_z,fin_cant_deg,cg_lateral_y,cg_lateral_z,cl_scale,clp_scale,lag_scale,magnus_scale,cmq_scale,stable,broadside_time"
     )?;
     for row in rows {
         let p = &row.perturbation;
@@ -2441,7 +2450,7 @@ thrust_misalignment_y_deg,thrust_misalignment_z_deg,thrust_offset_y,thrust_offse
         }
         writeln!(
             f,
-            ",{},{},{},{},{},{},{},{},{},{},{}",
+            ",{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
             p.misalignment_y_deg,
             p.misalignment_z_deg,
             p.offset_y,
@@ -2451,6 +2460,9 @@ thrust_misalignment_y_deg,thrust_misalignment_z_deg,thrust_offset_y,thrust_offse
             p.cg_lateral_z,
             p.cl_scale,
             p.clp_scale,
+            p.lag_scale,
+            p.magnus_scale,
+            p.cmq_scale,
             row.result.as_ref().ok().and_then(stable_flag).map_or(String::new(), |b| b.to_string()),
             broadside_field(row.result.as_ref().ok())
         )?;
@@ -2536,10 +2548,20 @@ mod tests {
             ..Default::default()
         };
         let csv = tmp.join("t.csv");
-        AeroTable::from_fn(meta, |_, a| aero::AeroCoeffs { cn: a, ca_off: 0.5, xcp: 0.6, lag_l0: 1.0, lag_l1: 0.5, cl_delta: 1.0, clp: -5.0, ..Default::default() })
-            .save(&csv)
-            .unwrap();
-        let text = include_str!("../../../examples/sample.toml").replace("method = \"barrowman\"", &format!("method = \"table\"\ntable = \"{}\"", csv.display()));
+        AeroTable::from_fn(meta, |_, a| aero::AeroCoeffs {
+            cn: a,
+            ca_off: 0.5,
+            xcp: 0.6,
+            lag_l0: 1.0,
+            lag_l1: 0.5,
+            cl_delta: 1.0,
+            clp: -5.0,
+            ..Default::default()
+        })
+        .save(&csv)
+        .unwrap();
+        let text =
+            include_str!("../../../examples/sample.toml").replace("method = \"barrowman\"", &format!("method = \"table\"\ntable = \"{}\"", csv.display()));
         let cfg = Config::from_value(toml::from_str(&text).unwrap(), Some(&dir)).unwrap();
         // With the lag and Magnus columns: no warning, the tabulated lag sums are used.
         let t = aero_table(&cfg, false).unwrap();
@@ -2563,7 +2585,8 @@ mod tests {
     fn panel_and_cfd_tables_get_the_lag_sums_of_the_geometry() {
         let cfg = sample_config("lagfill");
         let g = geometry(&cfg).unwrap();
-        let meta = aero::table::TableMeta { ref_area: 0.01, ref_diameter: 0.1, length: 1.5, machs: vec![0.0, 2.0], alphas_deg: vec![0.0, 10.0], ..Default::default() };
+        let meta =
+            aero::table::TableMeta { ref_area: 0.01, ref_diameter: 0.1, length: 1.5, machs: vec![0.0, 2.0], alphas_deg: vec![0.0, 10.0], ..Default::default() };
         let mut t = AeroTable::from_fn(meta, |_, a| aero::AeroCoeffs { cn: a, xcp: 0.6, ..Default::default() });
         assert!(!t.has_lag_terms());
         fill_lag_terms(&cfg, &g, &mut t).unwrap();
@@ -2624,7 +2647,8 @@ mod tests {
         assert!(lines.iter().all(|l| l.len() == lines[0].len()), "{:?}", lines.iter().map(Vec::len).collect::<Vec<_>>());
         // New columns are appended at the end.
         let col = lines[0].iter().position(|c| *c == "cl_scale").unwrap();
-        assert_eq!(col, lines[0].len() - 4);
+        assert_eq!(col, lines[0].len() - 7);
+        assert_eq!(&lines[0][col + 2..col + 5], ["lag_scale", "magnus_scale", "cmq_scale"]);
         assert_eq!(&lines[0][lines[0].len() - 2..], ["stable", "broadside_time"]);
         assert_eq!(lines[1][col], "0.25");
         // The roll change of the rail tilt follows the azimuth.
@@ -2933,6 +2957,11 @@ mod tests {
         let cfg = load_sample(include_str!("../../../examples/sample.toml"));
         let ok = sim::Summary { min_stability_cal: 2.0, stability_at_rail_exit: 2.0, apogee: 500.0, ..sample_summary() };
         assert!(flight_warnings(&cfg, &ok).is_empty());
+        let resonant = sim::Summary { roll_resonance: Some(sim::RollResonance { t: 0.65, mach: 0.155, frequency: 18.0, crossings: 2 }), ..ok.clone() };
+        assert_eq!(
+            flight_warnings(&cfg, &resonant),
+            ["roll resonance: the roll rate crosses the pitch natural frequency (18.0 rad/s) at t = 0.65 s, Mach 0.15 (2 crossings); fin cant, a lateral CG offset or thrust misalignment can amplify the angle of attack there"]
+        );
         let marginal = sim::Summary { min_stability_cal: 1.2, ..ok.clone() };
         assert!(flight_warnings(&cfg, &marginal).iter().any(|w| w.contains("1.20 cal") && w.contains("marginal")));
         let unstable = sim::Summary { min_stability_cal: 0.6, ..ok.clone() };

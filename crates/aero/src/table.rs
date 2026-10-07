@@ -881,7 +881,14 @@ impl AeroTable {
                 let [u, v, w] = airspeed_direction(alpha, beta);
                 let total = v.hypot(w).atan2(u);
                 let eff = total.min(std::f64::consts::PI - total);
-                return expand_axisymmetric(&self.lookup_rec(m, eff, rec), alpha, beta, self.meta.ref_diameter, self.meta.fin_cant_ref_deg.to_radians(), self.meta.fin_roll_deg.to_radians());
+                return expand_axisymmetric(
+                    &self.lookup_rec(m, eff, rec),
+                    alpha,
+                    beta,
+                    self.meta.ref_diameter,
+                    self.meta.fin_cant_ref_deg.to_radians(),
+                    self.meta.fin_roll_deg.to_radians(),
+                );
             }
         };
         let clamp = self.meta.extrapolation == Extrapolation::Clamp;

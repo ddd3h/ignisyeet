@@ -34,8 +34,8 @@ pub struct SolvedPoint {
 /// Removes the numerical zero-angle offset of the normal force and nose moment.
 ///
 /// The body is axisymmetric / mirror symmetric, so `CN(0) = 0` exactly; the steady solution on an
-/// unstructured mesh can nevertheless carry a (sometimes large, mesh-dependent) asymmetric offset,
-/// most visibly in the subsonic Euler wake. Per Mach number the `alpha = 0` values of `CN` and the
+/// unstructured mesh can nevertheless carry a (sometimes large, mesh-dependent) asymmetric offset: a spurious
+/// lift of under-resolved fins at subsonic Mach numbers (see [`crate::asymmetry`]). Per Mach number the `alpha = 0` values of `CN` and the
 /// nose moment are subtracted from all angles of that Mach number (and the `alpha = 0` point itself
 /// becomes 0). The axial coefficient is left alone. Returns the removed `(mach, CN0, moment0)`.
 pub fn remove_zero_offset(points: &mut [SolvedPoint]) -> Vec<(f64, f64, f64)> {

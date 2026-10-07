@@ -14,7 +14,8 @@
 //!    ([`BodyCoeffs6::mirror_z`], [`BodyCoeffs6::mirror_y`]). In `mirror` mode all images that fall
 //!    on the same `(alpha, beta)` are averaged (this removes numerical asymmetry); otherwise a solved
 //!    point wins over an image. In `offset` mode the values that must vanish at `(0, 0)` by symmetry
-//!    are subtracted from all points first.
+//!    are subtracted from all points first; without a mirror symmetry (`none`) that is every lateral
+//!    component (`CY`, `CZ`, `Cl`, `Cm`, `Cn`), see [`crate::asymmetry`].
 //! 2. **CFD interpolant `F(alpha, beta)`** on the solved rectangle `R = [a_min, a_max] x [b_min, b_max]`:
 //!    PCHIP along `alpha` for every solved `beta`, then PCHIP along `beta` of those values (separable).
 //! 3. **Model fill.** `T(alpha, beta)` is the Barrowman model expanded to six components
@@ -186,14 +187,16 @@ fn key(a: f64, b: f64) -> (i64, i64) {
 /// Solved points of one Mach number completed by the mirror symmetries; keyed by `(alpha, beta)` in micro-degrees.
 fn complete(pts: &[(f64, f64, BodyCoeffs6)], shape: ShapeSymmetry, average: bool, offset: bool) -> BTreeMap<(i64, i64), BodyCoeffs6> {
     let mut pts = pts.to_vec();
-    if offset && matches!(shape, ShapeSymmetry::Axisymmetric | ShapeSymmetry::PitchPlane) {
+    if offset {
         if let Some(&(_, _, z)) = pts.iter().find(|p| p.0 == 0.0 && p.1 == 0.0) {
             for p in &mut pts {
-                // y-odd (and, with two planes, z-odd) components vanish at zero angle.
+                // y-odd (and, with two planes, z-odd) components vanish at zero angle. Without a mirror symmetry all
+                // five lateral components are taken as the offset (together with the zero-angle force of an
+                // asymmetric detail, which is small next to the offset of under-resolved fins, see crate::asymmetry).
                 p.2.cy -= z.cy;
                 p.2.cl -= z.cl;
                 p.2.cn -= z.cn;
-                if shape == ShapeSymmetry::Axisymmetric {
+                if shape != ShapeSymmetry::PitchPlane {
                     p.2.cz -= z.cz;
                     p.2.cm -= z.cm;
                 }
@@ -615,6 +618,15 @@ mod tests {
         // Without symmetry the offset stays (no images).
         assert!((avg[&key(4.0, 0.0)].cz - analytic(1.0, 4.0, 0.0).cz - 0.01).abs() < 1e-12);
         let pts_ax: Vec<_> = vec![p(0.0, 0.01), p(4.0, 0.01)];
+        // Offset mode without symmetry: every lateral component of (0, 0) is removed, CX is kept.
+        let mut p0 = p(0.0, 0.01);
+        p0.2.cy += 0.1;
+        p0.2.cn += 0.2;
+        let none = complete(&[p0, p(4.0, 0.01), p(-4.0, 0.01)], ShapeSymmetry::None, true, true);
+        let (c0, c4) = (none[&key(0.0, 0.0)], none[&key(4.0, 0.0)]);
+        let a4 = analytic(1.0, 4.0, 0.0);
+        assert!([c0.cy, c0.cz, c0.cl, c0.cm, c0.cn].iter().all(|v| v.abs() < 1e-12), "{c0:?}");
+        assert!((c4.cz - a4.cz).abs() < 1e-12 && (c4.cy - (a4.cy - 0.1)).abs() < 1e-12 && c4.cx == a4.cx, "{c4:?}");
         let off = complete(&pts_ax, ShapeSymmetry::Axisymmetric, false, true);
         assert!(off[&key(0.0, 0.0)].cz.abs() < 1e-12);
         assert!((off[&key(4.0, 0.0)].cz - analytic(1.0, 4.0, 0.0).cz).abs() < 1e-12);

@@ -58,7 +58,7 @@ use std::path::{Path, PathBuf};
 pub const SCRIPT: &str = include_str!("mesh_gmsh.py");
 /// SU2 writer of the boundary-layer mesh (imported by [`SCRIPT`]).
 pub const WRITER: &str = include_str!("su2_writer.py");
-/// Prismatic boundary layer for the half or full domain (imported by `mesh_step.py`).
+/// Prismatic boundary layer for the half or full domain (imported by [`SCRIPT`] and `mesh_step.py`).
 pub const BL_LAYER: &str = include_str!("bl_layer.py");
 
 /// Growth ratio of the prism layer heights.
@@ -432,7 +432,7 @@ pub fn mesh_hash(params: &MeshParams) -> String {
     if q.kind == "stl" {
         hash_parts(&[json.as_bytes(), crate::stl_mesh::SCRIPT.as_bytes(), crate::stl_mesh::UNION_SCRIPT.as_bytes()])
     } else {
-        hash_parts(&[json.as_bytes(), SCRIPT.as_bytes(), WRITER.as_bytes()])
+        hash_parts(&[json.as_bytes(), SCRIPT.as_bytes(), WRITER.as_bytes(), BL_LAYER.as_bytes()])
     }
 }
 
@@ -516,6 +516,7 @@ pub fn ensure_mesh(opt: &CfdOptions, geom: &Geometry, atm: &Atmosphere, workdir:
     }
     std::fs::write(dir.join("mesh_gmsh.py"), SCRIPT)?;
     std::fs::write(dir.join("su2_writer.py"), WRITER)?;
+    std::fs::write(dir.join("bl_layer.py"), BL_LAYER)?;
     let _ = std::fs::remove_file(dir.join("params_retry.json"));
     std::fs::write(dir.join("params.json"), serde_json::to_string_pretty(&params)?)?;
     let py = tools.gmsh.path.clone().context("no python with gmsh")?;
@@ -603,7 +604,7 @@ mod tests {
             assert!(SCRIPT.contains(&format!("\"{name}\"")), "{name}");
         }
         assert!(SCRIPT.contains("occ.fuse") && SCRIPT.contains("occ.cut") && SCRIPT.contains("Mesh.Algorithm3D"));
-        assert!(SCRIPT.contains("column_heights") && SCRIPT.contains("import su2_writer") && SCRIPT.contains("Geometry.Tolerance"));
+        assert!(SCRIPT.contains("bl_layer.build(") && BL_LAYER.contains("def column_heights(") && SCRIPT.contains("Geometry.Tolerance"));
         for f in ["def write(", "def mirror(", "def orient(", "def check(", "def unmarked_faces("] {
             assert!(WRITER.contains(f), "{f}");
         }
@@ -733,12 +734,12 @@ mod tests {
         // Every key the script reads from `bl` is provided.
         let j = serde_json::to_value(bl).unwrap();
         let mut n = 0;
-        for line in SCRIPT.lines() {
+        for line in SCRIPT.lines().chain(BL_LAYER.lines()) {
             let mut rest = line;
             while let Some(i) = rest.find("bl[\"") {
                 rest = &rest[i + 4..];
                 let key = &rest[..rest.find('"').unwrap()];
-                assert!(j.get(key).is_some(), "mesh_gmsh.py reads missing bl key {key}");
+                assert!(j.get(key).is_some(), "mesh_gmsh.py / bl_layer.py reads missing bl key {key}");
                 n += 1;
             }
         }

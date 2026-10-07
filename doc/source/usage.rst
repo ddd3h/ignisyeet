@@ -880,9 +880,10 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 
   ``aero``、``sim``、``dispersion`` で表示する。外部の係数表（``method = "table"``）は、表そのものの格子なので対象外である。
 * 外部の係数表（``method = "table"``）が遅れと Magnus の列（``lag_l0``、``lag_l1``、``cl4``、``cnpa``。一般表では ``cl4`` を除く 3 列）を持たない古い形式である。
-  STL の形状が読めれば、遅れの和を形状から補い（``the external aero table has no lag/Magnus columns: the apparent-mass (lag) sums were filled from the geometry (component build-up); Magnus force and induced roll are 0``）、
+  STL の形状が読めれば、遅れの和を形状から補い（``the external aero table has no lag/Magnus columns: the apparent-mass (lag) sums were filled from the geometry (component build-up); Magnus force and induced roll are 0. If its damping sums hold a measured or CFD Cmq + Cmalphadot (which already contains these terms), write lag_l0 and lag_l1 columns of 0 so they are not counted twice``）、
   読めなければ遅れの和を 0 のまま飛ばす（``the external aero table has no lag/Magnus columns and the geometry is unavailable: the flight has no apparent-mass (lag) terms, Magnus force or induced roll``）（:ref:`sec-file-v1`）。
   ``aero``、``sim``、``dispersion`` で端末に表示する（``warnings`` には入らない）。
+* 外部の係数表（``method = "table"``）の軸対称表が誘導ロール ``cl4`` を持つのに、付随ファイルに ``fin_count`` がない（``the aero table has an induced roll cl4 but no fin_count in its sidecar: the sin(4 phi) form of four fins is assumed``）。
 * モンテカルロ解析で、``magnus_scale`` が正なのに表に Magnus の値（``cnpa``、``cmpa``）がない（``dispersion.monte_carlo.magnus_scale = … has no effect: the aero table has no Magnus slopes (cnpa = cmpa = 0; no built-in method estimates them, supply them in an external table)``）、
   または ``lag_scale`` が正なのに遅れの和がない（``dispersion.monte_carlo.lag_scale = … has no effect: the aero table has no lag sums (lag_l0 = lag_l1 = 0)``）。
 * トリムの強制（乾燥重心の横ずれ、推力線の傾きかオフセット、迎角 0 のモーメントを持つ一般表）がある飛翔（``sim`` と、``dispersion`` の公称の飛翔）で、上昇中にロール角速度が共振のロール角速度を横切った
@@ -1610,13 +1611,13 @@ CFD の準備は ``ignisyeet cfd-check 設定ファイル [--mesh]`` で確か�
      - 相対。ロール減衰微係数 :math:`C_{lp}`
    * - ``lag_scale``
      - ``0``
-     - 相対。遅れの和 ``lag_l0``、``lag_l1``\ （見かけの質量の遅れと対流の回転の項。:ref:`sec-aero-unsteady`）
+     - 相対。遅れの和 ``lag_l0``、``lag_l1``\ （胴体とフィンの見かけの質量の遅れと対流の回転の項。:ref:`sec-aero-unsteady`）。危険区域の計算には 0.25 を勧める（:ref:`sec-quasi-steady`）
    * - ``magnus_scale``
      - ``0``
      - 相対。Magnus 力とモーメントの傾き ``cnpa``、``cmpa``。どの組み込みの手法もこれらを推算しないので、外部の表で値を与えたときだけ効く（値がなければ警告）
    * - ``cmq_scale``
      - ``0``
-     - 相対。ピッチ・ヨーの減衰の和（減衰のモーメントと回転による法線力）。``cn_scale`` の倍率に重ねて掛ける。危険区域の計算には 0.1 を勧める（:ref:`sec-quasi-steady`）
+     - 相対。ピッチ・ヨーの減衰の和（減衰のモーメントと回転による法線力）。``cn_scale`` の倍率に重ねて掛ける。見かけの質量の項には掛からない。危険区域の計算には 0.1 を勧める（:ref:`sec-quasi-steady`）
    * - ``truncate_sigma``
      - なし
      - 指定すると、引いたすべての標準正規乱数 :math:`z` を :math:`[-k,k]`\ （:math:`k` はこの値）に切ってから標準偏差を掛ける。有限で正（``dispersion.monte_carlo.truncate_sigma must be a finite number > 0 (the bound of the clipped draws in sigma, e.g. 3.0), found …``）。省略すると切らない正規分布（:ref:`sec-mc`）

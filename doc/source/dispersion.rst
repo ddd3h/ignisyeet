@@ -266,7 +266,10 @@
 ``cl_scale`` は :math:`C_l` と :math:`C_{l\delta}` と誘導ロールの :math:`C_{l4}` を、``clp_scale`` は :math:`C_{lp}` を同様に倍率で変える。
 ``cmq_scale`` は減衰の和だけに :math:`f_N` に重ねて掛け、:math:`C_N` と圧力中心は変えない。``lag_scale`` は遅れの和、``magnus_scale`` は ``cnpa`` と ``cmpa`` に掛ける（これらの項の式は :ref:`sec-aero-unsteady`）。
 これらの倍率は ``sim.quasi_steady`` の設定に重ねて掛けるので、準定常の設定では ``lag_scale`` と ``magnus_scale`` は効かない。
-危険区域を求める解析では ``cmq_scale`` を 0.1 にすることを勧める。フィンの揚力の循環の遅れ（ピッチ減衰の 3〜4 %）とピッチ減衰のモデルの不確かさ（細長い物体の理論との差 6〜7 %）を見込む大きさである（:ref:`sec-quasi-steady`）。
+危険区域を求める解析では ``cmq_scale`` を 0.1、``lag_scale`` を 0.25 にすることを勧める（:ref:`sec-quasi-steady`）。
+``cmq_scale`` は局所的な迎角の和（減衰のモーメントと回転による法線力）だけに掛かり、サンプルのピッチ減衰の 16〜29 % を占める見かけの質量の項（遅れの和）には掛からない。
+後者の不確かさ（フィンの見かけの質量を Barrowman の傾きにそろえる仮定。細長い物体の理論のままなら 1.47 倍）は ``lag_scale`` で見込む。
+循環の遅れとモデルの差は向きの決まった偏りで、平均 0 のばらつきでは表せない（:ref:`sec-quasi-steady`）。
 ロールの係数の倍率は :math:`C_l^{\mathrm{tot}}`\ （:eq:`eq-cl-total`）の強制項と減衰項に別々に効くので、
 定常なロール角速度（:eq:`eq-roll-steady`）は :math:`f_{Cl}/f_{Clp}` 倍になる。
 

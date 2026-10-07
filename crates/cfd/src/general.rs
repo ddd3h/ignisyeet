@@ -13,8 +13,10 @@
 //!    `(-alpha, beta, C.mirror_z())`, under `y -> -y` it is `(alpha, -beta, C.mirror_y())`
 //!    ([`BodyCoeffs6::mirror_z`], [`BodyCoeffs6::mirror_y`]). In `mirror` mode all images that fall
 //!    on the same `(alpha, beta)` are averaged (this removes numerical asymmetry); otherwise a solved
-//!    point wins over an image. In `offset` mode the values that must vanish at `(0, 0)` by symmetry
-//!    are subtracted from all points first.
+//!    point wins over an image. In `mirror` and `offset` mode the side and normal forces and the pitch and yaw
+//!    moments (`CY`, `CZ`, `Cm`, `Cn`, and `Cl` of a mirror-symmetric shape) of the `(0, 0)` point are subtracted
+//!    from all points first (see [`crate::asymmetry`]); the roll moment of a shape without mirror symmetry is the
+//!    roll forcing of canted fins and stays.
 //! 2. **CFD interpolant `F(alpha, beta)`** on the solved rectangle `R = [a_min, a_max] x [b_min, b_max]`:
 //!    PCHIP along `alpha` for every solved `beta`, then PCHIP along `beta` of those values (separable).
 //! 3. **Model fill.** `T(alpha, beta)` is the Barrowman model expanded to six components
@@ -186,16 +188,21 @@ fn key(a: f64, b: f64) -> (i64, i64) {
 /// Solved points of one Mach number completed by the mirror symmetries; keyed by `(alpha, beta)` in micro-degrees.
 fn complete(pts: &[(f64, f64, BodyCoeffs6)], shape: ShapeSymmetry, average: bool, offset: bool) -> BTreeMap<(i64, i64), BodyCoeffs6> {
     let mut pts = pts.to_vec();
-    if offset && matches!(shape, ShapeSymmetry::Axisymmetric | ShapeSymmetry::PitchPlane) {
+    if offset || average {
+        // The lateral force and moments at zero angle are the numerical asymmetry of the mesh (see crate::asymmetry) and
+        // are removed from every point. For a mirror-symmetric shape they are 0 exactly, and in `mirror` mode the
+        // averaging with the images cancels them anyway; without an image (no mirror symmetry, CZ / Cm of a pitch-plane
+        // shape) the subtraction is what removes them, together with the zero-angle force of an asymmetric detail,
+        // which is small next to the spurious fin lift. The roll moment of a shape without mirror symmetry stays: it
+        // is the roll forcing of canted fins.
         if let Some(&(_, _, z)) = pts.iter().find(|p| p.0 == 0.0 && p.1 == 0.0) {
             for p in &mut pts {
-                // y-odd (and, with two planes, z-odd) components vanish at zero angle.
                 p.2.cy -= z.cy;
-                p.2.cl -= z.cl;
+                p.2.cz -= z.cz;
+                p.2.cm -= z.cm;
                 p.2.cn -= z.cn;
-                if shape == ShapeSymmetry::Axisymmetric {
-                    p.2.cz -= z.cz;
-                    p.2.cm -= z.cm;
+                if shape != ShapeSymmetry::None {
+                    p.2.cl -= z.cl;
                 }
             }
         }
@@ -612,9 +619,30 @@ mod tests {
         };
         let pts = vec![p(0.0, 0.01), p(4.0, 0.01), p(-4.0, 0.01)];
         let avg = complete(&pts, ShapeSymmetry::None, true, false);
-        // Without symmetry the offset stays (no images).
-        assert!((avg[&key(4.0, 0.0)].cz - analytic(1.0, 4.0, 0.0).cz - 0.01).abs() < 1e-12);
+        // Without symmetry there are no images: the zero-angle value is subtracted.
+        assert!((avg[&key(4.0, 0.0)].cz - analytic(1.0, 4.0, 0.0).cz).abs() < 1e-12);
+        assert!((avg[&key(-4.0, 0.0)].cz - analytic(1.0, -4.0, 0.0).cz).abs() < 1e-12);
+        // Single mode keeps it.
+        let raw = complete(&pts, ShapeSymmetry::None, false, false);
+        assert!((raw[&key(4.0, 0.0)].cz - analytic(1.0, 4.0, 0.0).cz - 0.01).abs() < 1e-12);
+        // Pitch-plane shape: CZ has no z image, the subtraction removes it in mirror mode too.
+        let pp = complete(&pts, ShapeSymmetry::PitchPlane, true, false);
+        assert!(pp[&key(0.0, 0.0)].cz.abs() < 1e-12 && (pp[&key(4.0, 0.0)].cz - analytic(1.0, 4.0, 0.0).cz).abs() < 1e-12);
         let pts_ax: Vec<_> = vec![p(0.0, 0.01), p(4.0, 0.01)];
+        // Offset mode without symmetry: every lateral component of (0, 0) is removed, CX is kept.
+        // The roll moment (fin cant) stays.
+        let cant = |mut q: (f64, f64, BodyCoeffs6)| {
+            q.2.cl = 0.03;
+            q
+        };
+        let mut p0 = cant(p(0.0, 0.01));
+        p0.2.cy += 0.1;
+        p0.2.cn += 0.2;
+        let none = complete(&[p0, cant(p(4.0, 0.01)), cant(p(-4.0, 0.01))], ShapeSymmetry::None, false, true);
+        let (c0, c4) = (none[&key(0.0, 0.0)], none[&key(4.0, 0.0)]);
+        let a4 = analytic(1.0, 4.0, 0.0);
+        assert!([c0.cy, c0.cz, c0.cm, c0.cn].iter().all(|v| v.abs() < 1e-12) && c0.cl == 0.03 && c4.cl == 0.03, "{c0:?} {c4:?}");
+        assert!((c4.cz - a4.cz).abs() < 1e-12 && (c4.cy - (a4.cy - 0.1)).abs() < 1e-12 && c4.cx == a4.cx, "{c4:?}");
         let off = complete(&pts_ax, ShapeSymmetry::Axisymmetric, false, true);
         assert!(off[&key(0.0, 0.0)].cz.abs() < 1e-12);
         assert!((off[&key(4.0, 0.0)].cz - analytic(1.0, 4.0, 0.0).cz).abs() < 1e-12);

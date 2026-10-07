@@ -11,6 +11,7 @@
 //!
 //! Frames and sign conventions are documented in [`su2cfg`] and [`forces`].
 
+pub mod asymmetry;
 pub mod case;
 pub mod config;
 pub mod fidelity;
@@ -81,6 +82,8 @@ pub struct CfdReport {
     /// Measured alpha = 0 asymmetry per Mach (`CN`, nose moment [m]; the body is symmetric, so the true
     /// values are 0). Removed in `offset` mode, only reported in `mirror` mode.
     pub asymmetry: Vec<table::Asymmetry>,
+    /// Lateral force at alpha = beta = 0 relative to CN at 4 deg per Mach (accuracy indicator, see [`asymmetry`]).
+    pub zero_angle: Vec<asymmetry::ZeroAngle>,
     /// Resolved MPI ranks per case, concurrent cases and the estimated memory per case [bytes].
     pub ranks_per_case: usize,
     pub parallel_cases: usize,
@@ -545,6 +548,7 @@ pub fn build_table_with_progress(
         report.filled = fill.filled.iter().map(|f| (f.0, f.1)).collect();
         report.cfd_region = Some(fill.region);
         report.model_outside_cfd_region = true;
+        report.zero_angle = asymmetry::from_general(&points, &fill.slopes, shape, cfd.alpha_mode);
         report.diagnostics = fill.slopes;
         report.yaw_damping_from_pitch = fill.yaw_from_pitch;
         report.fin_cant_ref_deg = cant_ref;
@@ -563,9 +567,11 @@ pub fn build_table_with_progress(
         report.asymmetry = asymmetry;
         report.diagnostics =
             fill.slopes.iter().map(|&(mach, cna, xcp)| general::Slopes { mach, cna_pitch: cna, xcp_pitch: xcp, cna_yaw: None, xcp_yaw: None }).collect();
+        report.zero_angle = asymmetry::from_axisymmetric(&report.asymmetry, &report.diagnostics, cfd.alpha_mode);
         report.fin_cant_ref_deg = tab.meta.fin_cant_ref_deg;
         tab
     };
+    report.warnings.extend(asymmetry::warnings(&report.zero_angle, geom.fins.as_ref().map(|f| (cfd.wall_size, f.thickness)), cfd.model == FlowModel::Rans));
     let solved_m = results.iter().filter(|r| r.result.is_some()).map(|r| r.spec.mach);
     let (lo, hi) = solved_m.fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), m| (a.min(m), b.max(m)));
     if lo <= hi {

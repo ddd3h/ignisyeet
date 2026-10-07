@@ -87,6 +87,14 @@ const NU: [&str; 3] = ["rms[nu]", "rms[Nu_Tilde]", "rms[nu_tilde]"];
 pub const RANS_FORCE_DRIFT: f64 = 0.005;
 /// Largest drift of the centre of pressure, in body lengths.
 pub const RANS_XCP_DRIFT: f64 = 0.002;
+/// RANS divergence ([`History::rans_divergence`]): rows of the median ...
+pub const DIVERGENCE_ROWS: usize = 5;
+/// ... rise of the density residual above its minimum (orders) ...
+pub const DIVERGENCE_RHO_RISE: f64 = 2.0;
+/// ... rise of the SA residual above its minimum (orders) ...
+pub const DIVERGENCE_NU_RISE: f64 = 3.0;
+/// ... and largest plausible force coefficient magnitude.
+pub const ABSURD_FORCE: f64 = 100.0;
 /// Limit cycle: largest inter-quartile range of the forces, as a fraction of the force scale.
 pub const LIMIT_CYCLE_SPREAD: f64 = 0.01;
 
@@ -246,6 +254,46 @@ impl History {
             moment(&["CFy"], &["CMz"], 1.0);
         }
         ok
+    }
+
+    /// RANS divergence (the reason), judged on the median of the last [`DIVERGENCE_ROWS`] rows: the density residual
+    /// [`DIVERGENCE_RHO_RISE`] or the SA residual [`DIVERGENCE_NU_RISE`] orders above its minimum since row 10, a
+    /// non-finite residual or coefficient, or a force coefficient above [`ABSURD_FORCE`] in magnitude.
+    pub fn rans_divergence(&self) -> Option<String> {
+        let n = self.rows.len();
+        if n < DIVERGENCE_ROWS + 10 {
+            return None;
+        }
+        let median = |c: usize| {
+            let mut v: Vec<f64> = self.rows[n - DIVERGENCE_ROWS..].iter().map(|r| r[c]).collect();
+            if v.iter().any(|x| !x.is_finite()) {
+                return f64::NAN;
+            }
+            v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            v[v.len() / 2]
+        };
+        for (names, what, rise) in [(&RHO[..], "density", DIVERGENCE_RHO_RISE), (&NU[..], "SA", DIVERGENCE_NU_RISE)] {
+            let Some(c) = self.col(names) else { continue };
+            let now = median(c);
+            if !now.is_finite() {
+                return Some(format!("the {what} residual is not finite"));
+            }
+            let min = self.rows[10..].iter().map(|r| r[c]).filter(|x| x.is_finite()).fold(f64::INFINITY, f64::min);
+            if now - min >= rise {
+                return Some(format!("the {what} residual rose {:.1} orders above its minimum ({min:.2} -> {now:.2})", now - min));
+            }
+        }
+        for name in ["CFx", "CFy", "CFz", "CMx", "CMy", "CMz"] {
+            let Some(c) = self.col(&[name]) else { continue };
+            let now = median(c);
+            if !now.is_finite() {
+                return Some(format!("{name} is not finite"));
+            }
+            if name.starts_with("CF") && now.abs() > ABSURD_FORCE {
+                return Some(format!("{name} = {now:.3e}"));
+            }
+        }
+        None
     }
 
     /// log10 RMS density residual of the last row.
@@ -474,5 +522,41 @@ mod tests {
         assert_eq!(History::parse(V8).unwrap().nu_peak(), None);
         // Too few rows.
         assert!(!rans_rows(10, 0.2, (10.0, 10.0), 0.0).rans_coefficients_stable(40, k, 18.0));
+    }
+
+    #[test]
+    fn rans_divergence_detection() {
+        let mk = |rows: &[(f64, f64, f64)]| {
+            let mut t = String::from("\"Inner_Iter\",\"rms[Rho]\",\"rms[nu]\",\"CFx\",\"CFz\",\"CMy\"\n");
+            for (i, (r, nu, fz)) in rows.iter().enumerate() {
+                t += &format!("{i},{r},{nu},0.39,{fz},0.07\n");
+            }
+            History::parse(&t).unwrap()
+        };
+        // Stalled limiter chatter (residual swinging by about one order): not a divergence.
+        let stall: Vec<_> = (0..400).map(|i| (if i % 50 < 5 { -5.1 } else { -4.0 }, -7.8, -0.005)).collect();
+        assert_eq!(mk(&stall).rans_divergence(), None);
+        // The M 0.8 sample case after the limiter freeze: the SA residual jumps from -7.7 to -2.2.
+        let mut blow = stall.clone();
+        blow.extend((0..20).map(|i| (-4.0 + 0.05 * i as f64, -7.7 + 0.3 * i as f64, 0.1 * i as f64)));
+        let why = mk(&blow).rans_divergence().unwrap();
+        assert!(why.contains("SA residual rose"), "{why}");
+        // Density residual 2 orders above its minimum.
+        let mut up = stall.clone();
+        up.extend((0..10).map(|_| (-3.0, -7.8, -0.005)));
+        assert!(mk(&up).rans_divergence().unwrap().contains("density residual rose 2.1"));
+        // One spike is not enough (median of the last rows).
+        let mut spike = stall.clone();
+        spike.extend([(-1.0, -1.0, 0.0), (-4.0, -7.8, -0.005), (-4.0, -7.8, -0.005)]);
+        assert_eq!(mk(&spike).rans_divergence(), None);
+        // Absurd and non-finite coefficients.
+        let mut big = stall.clone();
+        big.extend((0..5).map(|_| (-4.0, -7.8, -394.0)));
+        assert!(mk(&big).rans_divergence().unwrap().contains("CFz = -3.940e2"));
+        let mut nan = stall.clone();
+        nan.extend((0..5).map(|_| (f64::NAN, -7.8, 0.0)));
+        assert!(mk(&nan).rans_divergence().unwrap().contains("not finite"));
+        // Too short to judge.
+        assert_eq!(mk(&blow[..12]).rans_divergence(), None);
     }
 }

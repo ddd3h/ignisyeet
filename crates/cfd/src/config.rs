@@ -263,7 +263,7 @@ pub struct CfdOptions {
     #[serde(skip_serializing_if = "is_default")]
     pub multigrid_cycle: MultigridCycle,
     /// Early stop: no case is stopped before this iteration, and the Euler slope limiter is frozen at it
-    /// (`LIMITER_ITER`), so that the residual can drop below the limiter-chatter level.
+    /// (`LIMITER_ITER`), so that the residual can drop below the limiter-chatter level (RANS: never frozen).
     /// RANS default: 400.
     #[serde(default = "unset_count", skip_serializing_if = "is_default_min_iterations")]
     pub min_iterations: usize,

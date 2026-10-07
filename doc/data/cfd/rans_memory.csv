@@ -1,0 +1,5 @@
+# Peak resident set size of SU2 8.3.0 RANS cases (SA-neg, both stages: first-order startup and second-order final stage) on the prism-layer meshes of the CFD mode, sampled once per second from /proc/<pid>/status (VmRSS) of every SU2_CFD rank of the case (doc/scripts/rans_sample.py run / direct). sum = largest sum over the ranks at one sample. bytes_per_node = (sum - 40 MB per rank) / nodes, the form of lib.rs case_memory_bytes_mesh. Open MPI 5.0.11, i7-12700, 2026-10-07.
+geometry,wall_size_m,mesh_nodes,mesh_cells,ranks,rank_peak_mib,sum_peak_mib,bytes_per_node
+sample_rocket,0.005,405590,901081,3,1428.7,4091.6,10280
+cone_10deg,0.002,571269,1269467,4,1510.7,5775.3,10320
+sample_body_finless,0.005,322685,721276,4,856.2,3310.9,10260

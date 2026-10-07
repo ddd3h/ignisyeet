@@ -22,7 +22,8 @@ STL をそのまま解くこともでき、横滑りとロールを含む 6 成�
 CFD が出す係数表は、他の手法の表と同じ形式なので、飛翔計算の側は区別しない。
 
 本実装の既定は非粘性の Euler 方程式である。粘性による摩擦抗力、底面抗力、フィン縁の抗力は CFD からは得られず、部品積み上げ法の項で補う（:ref:`sec-cfd-trust`）。
-乱流を含む RANS も選べるが、現状は検証できておらず、信頼できる結果を出せる段階にはない（:ref:`sec-cfd-rans`）。
+``model = "rans"`` を選ぶと、乱流を Spalart–Allmaras モデルで表す RANS 方程式を、壁面にプリズムの境界層を置いたメッシュで解き、摩擦抗力も CFD から得る（:ref:`sec-cfd-rans-use`）。
+RANS の検証の項目と結果は :ref:`sec-cfd-rans` にある。係数表に使う前に、そこで扱う範囲と結果を確かめる。
 
 必要なツールと準備
 ------------------
@@ -153,7 +154,7 @@ STL を Euler で解くときは、``base_treatment`` を **必ず** 指定す�
    サンプルの STL で試したところ、残差は :math:`10^{-2.5}` 付近で止まり、力の係数 :math:`C_{Fz}` は反復 400 回付近で符号が反転して振動した。
    警告を出し、収束しないケースは失敗として扱う。
 
-どちらの場合も、``base`` マーカは力の積分から外す。RANS は後流が解の一部なので、この設定は使わず、平らな底面を残す。
+どちらの場合も、``base`` マーカは力の積分から外す。RANS は ``surface = "stl"`` では使えない（:ref:`sec-cfd-rans-use`）。
 
 ``panel_mesh`` では、Euler のとき尾部フェアリングを置く。長さは ``tail_fairing``\ （既定 6、単位は底面半径）で指定し、0 にすると平らな底面になる。
 RANS は常に平らな底面のままにする。
@@ -261,7 +262,8 @@ Mach 数の刻みは ``general_mach_step``\ （既定 0.1、0 なら ``[aero]`` 
 ``model`` で流れのモデルを選ぶ。
 
 * **Euler**\ （既定）：非粘性の圧縮性流れ。壁面の力は圧力だけで決まるので、摩擦抗力は含まれない。摩擦、底面、フィン縁の抗力は部品積み上げ法の項で補う。
-* **RANS**\ ：乱流を含む。動かす経路は用意してあるが、**結果は検証できておらず、信頼できない**。壁面の境界層を解像するメッシュが作れず、2 次精度で解けないためで、係数表には使わない（:ref:`sec-cfd-rans`）。
+* **RANS**\ ：Spalart–Allmaras モデルで乱流を含めて解く。壁面の摩擦と底面の圧力も CFD の解に入る。
+  ``surface = "panel_mesh"`` だけで使え、壁面にプリズムの境界層を置いたメッシュを作る。使い方と制約は :ref:`sec-cfd-rans-use` にある。
 
 方程式と数値解法は :doc:`cfd_internals` に示す。
 
@@ -307,6 +309,97 @@ Mach 数の刻みは ``general_mach_step``\ （既定 0.1、0 なら ``[aero]`` 
 2 ケースの差からロール減衰微係数 :math:`C_{lp}` を求め、係数表に入れる。差を取るので、フィンのカントや非対称による回転なしのずれは打ち消される。
 ``roll_damping`` を指定しないときの :math:`C_{lp}` は部品積み上げ法の値である。設定の詳細は :ref:`sec-cfd-roll-cases` と :ref:`sec-cfd-sideslip` にある。
 
+.. _sec-cfd-rans-use:
+
+RANS で解く
+~~~~~~~~~~~
+
+``model = "rans"`` は、Spalart–Allmaras モデルの RANS 方程式を、壁面にプリズムの境界層を置いたメッシュで解く。
+方程式、メッシュの作り方、数値解法、受け入れの判定は :doc:`cfd_internals` にある。本節は、使うときに知っておくことをまとめる。
+
+**使える条件**\ 。次のどれかに当たると、計算を始める前にエラーになる。
+
+* ``surface = "stl"``\ ：境界層のメッシュは作り直した形状にしか作らない（``aero.cfd.surface = "stl" with model = "rans": RANS needs the boundary-layer mesh, which is built only for the CAD surface (surface = "cad")``）。
+* フィンの配置が :math:`y=0` について対称でない（``fin_roll_deg`` が 10 度の 4 枚フィンなど）：境界層のメッシュは半領域で作り、全領域はそれを :math:`y=0` で鏡映して作るからである。
+  エラーは ``aero.cfd: the RANS boundary-layer mesh needs a fin layout symmetric about the y = 0 plane (fin_roll_deg = 10 with 4 fins is not): use a symmetric fin_roll_deg (for example 0 or 45 with 4 fins) or model = "euler"`` である。
+* ``roll_damping = true``\ （``aero.cfd.roll_damping is only implemented for model = "euler"``）。
+* ``yplus`` が 5 より大きく 30 より小さい、または 150 より大きい（``aero.cfd.yplus = … lies in the buffer layer, where neither a resolved wall nor a wall function is valid: use yplus <= 5 (resolved wall, recommended 1) or 30..150 (standard wall function)``）。
+
+**既定値**\ 。``model = "rans"`` で次の項目を設定しないときは、Euler と異なる既定値を使う。
+``wall_size`` 3 mm、``iterations`` 4000（2 次精度の段の反復数）、``min_iterations`` 400、``stable_window`` 200 である。
+``yplus`` の既定は 1 で、壁面まで境界層を解像する。``z_mirror_mesh`` は効かず、``alpha_mode = "mirror"`` では負の迎角も解く（メッシュが :math:`z` について厳密に対称でないため）。
+底面は常に平らで、尾部フェアリングは置かない。
+
+**メッシュの大きさ**\ 。境界層の厚さと層数は ``wall_size`` と ``yplus``、解く最大の Mach 数で決まる（:ref:`sec-cfd-prism`）。
+サンプル機体の半モデル（``yplus = 1``、最大の Mach 数 2、``fin_roll_deg = 0``）では次のとおりである。
+1 ケースのメモリは :eq:`eq-cfd-mem-rans` による 4 ランクの見積もりである。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 14 14 14 12 16 14 16
+
+   * - ``wall_size``
+     - 節点数
+     - セル数
+     - 層数
+     - 境界層の厚さ
+     - メッシュの作成時間
+     - メモリの見積もり
+   * - 2.5 mm
+     - 258 万
+     - 582 万
+     - 49
+     - 21.6 mm
+     - 186 s
+     - 31 GB
+   * - 3 mm
+     - 187 万
+     - 417 万
+     - 50
+     - 26.0 mm
+     - 140 s
+     - 23 GB
+   * - 3.5 mm
+     - 143 万
+     - 317 万
+     - 51
+     - 31.2 mm
+     - 107 s
+     - 17 GB
+   * - 4 mm
+     - 114 万
+     - 250 万
+     - 52
+     - 37.4 mm
+     - 94 s
+     - 14 GB
+   * - 5 mm
+     - 78 万
+     - 170 万
+     - 53
+     - 44.9 mm
+     - 43 s
+     - 9.5 GB
+   * - 6 mm
+     - 57 万
+     - 126 万
+     - 54
+     - 53.8 mm
+     - 33 s
+     - 7.0 GB
+
+``wall_size`` 5 mm のケースを 4 ランクで解いたときの実測のピークは、ランクの合計で約 7.8 GB であった。
+全領域は節点数もメモリも約 2 倍になる。メモリの予算（``[resources]`` の ``memory_gb``）に合わせて ``parallel_cases`` が減るので、同時に解けるケースは Euler よりずっと少ない。
+``ignisyeet cfd-check 設定ファイル --mesh`` は、境界層の層数、最初の層の高さ、厚さ、不正なプリズムの数（常に 0）も表示する。
+
+**抗力の内訳**\ 。軸力は、壁面（``wall``）の力の積分（圧力と摩擦）に、底面の項と追加抗力を足したものである。
+底面の項は ``rans_base`` で選ぶ。``"model"``\ （既定）は部品積み上げ法の底面抗力、``"cfd"`` は CFD が底面（``base``）に積分した力である（:ref:`sec-cfd-post`）。
+部品積み上げ法の摩擦抗力は足さない。ケースごとの壁面と底面の軸力は、部品積み上げ法の摩擦と底面の値と並べて ``cfd_report.json`` の ``axial_breakdown`` に記録される。
+
+**結果の状態**\ 。RANS のケースは ``converged``\ （残差が十分に下がり、係数が落ち着いた）か、``unconverged``\ （残差が下がりきらないまま、係数が振動の中で、または残差が止まったまま一定になったので、窓の平均を受け入れた）か、失敗である。
+``unconverged`` のケースは ``cfd_report.json`` の ``unconverged`` に載り、警告に係数のばらつきが示される。
+受け入れたケースでは、壁面の :math:`y^+` の 95 パーセンタイルを確かめ、3 を超えると警告を出す（判定の詳細は :ref:`sec-cfd-int-rans-accept`）。
+
 計算量と資源
 ~~~~~~~~~~~~
 
@@ -330,8 +423,17 @@ Mach 数の刻みは ``general_mach_step``\ （既定 0.1、0 なら ``[aero]`` 
    B \approx 40\ \mathrm{MB}\times n_r+3.3\ \mathrm{kB}\times N
 
 と見積もる（Euler。SU2 8.3.0、四面体メッシュ、4 ランクで測ったピークの値から求めた）。
-RANS は乱流量と勾配、大きな線形系のぶん、セルあたりの項を 1.5 倍にする。
-ピークの測定値との比較は :ref:`sec-vaero-timing` に示す。``nice`` は子プロセスにも引き継がれる。
+ピークの測定値との比較は :ref:`sec-vaero-timing` に示す。
+RANS は、SU2 が解と勾配と線形系を節点ごとに持つので、節点数 :math:`N_n` から
+
+.. math::
+   :label: eq-cfd-mem-rans
+
+   B \approx 40\ \mathrm{MB}\times n_r+\max\bigl(12\ \mathrm{kB}\times N_n,\ 3.3\ \mathrm{kB}\times N\bigr)
+
+と見積もる。節点あたりの値は、プリズム層と四面体のメッシュで SU2 8.3.0 の RANS（両方の段）のピークを測った 10.3 kB に、約 15 % の余裕を足したものである。
+プリズム層のメッシュは節点あたりのセル数が四面体のメッシュ（約 5.5）より少ないので、セルあたりの値では見積もりが大きくなりすぎる。
+同じメッシュの Euler の見積もりを下回ることはない。``nice`` は子プロセスにも引き継がれる。
 
 実行、再開、収束の扱い
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -340,7 +442,7 @@ RANS は乱流量と勾配、大きな線形系のぶん、セルあたりの項
 同じハッシュの ``done.json`` があるケースは次の実行で飛ばすので、途中で止めても、設定を一部変えても、影響を受けないケースは再利用される。
 最初からやり直すには、このディレクトリを削除する。Ctrl-C や SIGTERM を受けると、子プロセスをまとめて終了し、終わったケースの結果は残す。
 
-ケースの結果は、次のいずれかで扱う。
+Euler のケースの結果は、次のいずれかで扱う。
 
 * **収束**\ ：残差が目標に達した。
 * **早期終了**\ ：反復の途中で残差が十分に下がり、力とモーメントが落ち着いたので、止めて受け入れた（``status`` は ``accepted``）。
@@ -348,7 +450,12 @@ RANS は乱流量と勾配、大きな線形系のぶん、セルあたりの項
 * **受け入れ**\ ：反復の上限か時間の上限に達したが、残差がある程度下がり、最後の窓で力とモーメントがほぼ一定のとき、窓の平均を係数として受け入れる。「収束」には数えず、``cfd_report.json`` の ``unconverged`` に載る。
 * **失敗**\ ：SU2 のエラー、発散、収束も安定もしていない場合。表の作成では、失敗したケースを飛ばして補間する。
 
-判定の条件は :ref:`sec-cfd-int-convergence` にある。平らな底面の Euler（STL の ``base_treatment = "flat"``）は収束しないことがあり、そのときは失敗として扱う。
+RANS のケースは、``converged``、``unconverged``\ （振動や残差の停滞のまま係数が一定で、窓の平均を受け入れた）、失敗のいずれかになる（:ref:`sec-cfd-rans-use`）。
+発散したケースは、反復の上限を待たずに止め、一度だけ控えめな設定で解き直す。
+
+判定の条件は :ref:`sec-cfd-int-convergence` と :ref:`sec-cfd-int-rans-accept` にある。平らな底面の Euler（STL の ``base_treatment = "flat"``）は収束しないことがあり、そのときは失敗として扱う。
+失敗したケースは、実行の最後に ``error: aero.cfd: case m0.800_a04.00 failed: <理由>`` の形で 1 行ずつまとめて表示する。
+SU2 がシグナル 9 で止められたときは、理由に ``SU2 was killed by signal 9 (SIGKILL; most likely out of memory: about … GB per case with … ranks and … concurrent cases; lower parallel_cases or ranks_per_case)`` と、メモリ不足の可能性と 1 ケースのメモリの見積もりを示す。
 
 出力の見方
 ----------
@@ -356,7 +463,8 @@ RANS は乱流量と勾配、大きな線形系のぶん、セルあたりの項
 本節は、CFD の実行が残すファイルを、どれを見て何を判断するかの順に述べる。全項目は :doc:`file_formats` にある。
 
 ``cfd_cases.csv`` には全ケースの状態、反復数、残差、係数（6 成分を含む）、計算時間が入る。
-まず ``status`` を見て、``unconverged`` と失敗のケースがないか確かめる。
+まず ``status`` を見て、``accepted``\ （Euler）や ``unconverged``\ （RANS）と失敗のケースがないか確かめる。
+RANS では、各ケースのディレクトリの ``done.json`` に、壁面の :math:`y^+` の 95 パーセンタイル（``yplus_p95``）、受け入れの基準にした残差の最大値（``reference_peak``）、壁面と底面の軸力（``axial``）、警告（``warnings``）も入る（:ref:`sec-file-cfd`）。
 ``cfd_report.json`` には、次の項目が入る。
 
 * 失敗と未収束の一覧（``failed``、``failed_cases``、``unconverged``）、補間で埋めたケース（``filled``）、警告（``warnings``）、メッシュの大きさと総計算時間。
@@ -364,6 +472,7 @@ RANS は乱流量と勾配、大きな線形系のぶん、セルあたりの項
 * 軸対称表では、:math:`\alpha=0` の測定された非対称性（``asymmetry``）。
 * ロール減衰の CFD とモデルの値と採用した側（``clp``、``clp_source``）、基準のカント（``fin_cant_ref_deg``）。
 * 底面の処理（``base_treatment``）、STL の形状の忠実度（``fidelity``）、鏡映対称の検査と選んだ領域（``symmetry_check``）。
+* RANS では、最初の層の :math:`y^+` の見積もり（``est_wall_yplus``）と、ケースごとの軸力の内訳（``axial_breakdown``）。
 
 :numref:`fig-cfd-convergence` に収束の履歴の例を示す。
 SU2 の密度の残差（RMS の常用対数）が :math:`10^{-6}` に達するまで、:math:`M=0.8` では 90 反復ほど、:math:`M=2` では 140 から 250 反復かかった。
@@ -434,7 +543,7 @@ CFD が与える値
 解いたケースの壁面の圧力の積分から、次の値が得られる。
 
 * 法線力 :math:`C_N`（機体軸の :math:`C_Z`）と、ノーズまわりのモーメントから求める圧力中心 :math:`x_{cp}`。
-* 軸力のうち圧力による抗力（造波抗力）。
+* 軸力のうち圧力による抗力（造波抗力）。RANS では、壁面の摩擦抗力と、``rans_base = "cfd"`` のときは底面の抗力も。
 * 横滑りを解けば、横力 :math:`C_Y` とヨーモーメント :math:`C_n`。
 * ``roll_damping`` を指定すれば、ロール減衰微係数 :math:`C_{lp}`。回転座標系の Euler の定常解の差から求める。
 
@@ -443,7 +552,8 @@ CFD が与える値
 
 次の値は CFD が直接与えるものではなく、部品積み上げ法（またはパネル法）のモデルで補う。
 
-* 摩擦抗力、底面抗力、フィン縁とボートテールの抗力（Euler は粘性を含まないため）。ただし ``surface = "stl"`` では、フィンの前縁と後縁の面が CFD の壁面にあり、その圧力抗力が CFD の軸力にすでに入っているので、フィン縁の項は加えない。``panel_mesh`` では加える（:ref:`sec-cfd-post`）。
+* Euler では、摩擦抗力、底面抗力、フィン縁とボートテールの抗力（Euler は粘性を含まないため）。ただし ``surface = "stl"`` では、フィンの前縁と後縁の面が CFD の壁面にあり、その圧力抗力が CFD の軸力にすでに入っているので、フィン縁の項は加えない。``panel_mesh`` では加える（:ref:`sec-cfd-post`）。
+  RANS では、追加抗力と、``rans_base = "model"``\ （既定）のときの底面抗力だけを足す。
 * ピッチとヨーの減衰 :math:`C_{mq}`、:math:`C_{nr}`。定常な計算は与えないので、モデルの和のばらつきを残し、CFD の傾きと重心に合わせて取り替える（:ref:`sec-aero-damping`）。
 * ロールのカント強制 :math:`C_{l\delta}`。
 * ロールとピッチ・ヨーの交差する微係数は、どの手法でもモデルにない。
@@ -465,7 +575,8 @@ Mach 数の方向には、``extrapolation`` にかかわらず外挿しない。
 ~~~~~~~~~~~~~~
 
 CFD の一般表は、(M, α, β) の点ごとに解いた定常解を並べた、6 成分の準定常空力の表である。角速度に依存する非定常な空力を、すべて表現するものではない。
-CFD は非粘性の Euler 方程式の解であり、境界層の摩擦やはく離は含まない。RANS は信頼できない。
+既定の CFD は非粘性の Euler 方程式の解であり、境界層の摩擦やはく離は含まない。
+RANS はそれらを含むが、どこまで確かめたかは :ref:`sec-cfd-rans` の検証の項目と結果で判断する。
 メッシュ収束は確認できていない（:ref:`sec-vaero-cfd-mesh`）。既定の 2 mm と最も細かい 1.8 mm の :math:`C_N` の差は、:math:`M=0.8` で 0.6 %、:math:`M=2` で 0.8 % である。
 :math:`M=2` では、最も細かいメッシュでも :math:`C_N` がまだ増えており、収束値は当てはめによる推定にとどまる。:math:`M=0.8` は単調に収束しない。
 STL のメッシュは作成のたびに少し変わるので、:math:`C_N` には、この差を超える不確かさがありうる。
@@ -488,7 +599,8 @@ CFD モードについて、次の点を確かめた。数値と手順は :ref:`
 実装上の制約は :ref:`sec-lim-cfd` にまとめた。使うときに特に注意する点は次のとおりである。
 
 * CFD の壁面は、``stl`` でも入力と同一ではない。形状の忠実度の報告を読む。
-* RANS は信頼できない。既定の Euler を使う。
+* RANS は ``surface = "panel_mesh"`` で、フィンの配置が :math:`y=0` について対称なときだけ使える。1 ケースのメモリが大きい（:ref:`sec-cfd-rans-use`）。
+  検証の項目と結果（:ref:`sec-cfd-rans`）を確かめてから係数表に使う。
 * Euler の底面は尾部フェアリング（``"fairing"``）で、形状が変わる。``"flat"`` は収束しないことがあり、サンプルの STL では収束しなかった。
 * 一般表の CFD の領域の外はモデルの値である。
 * ピッチ・ヨー減衰は CFD が直接与えるものではなく、交差する微係数は扱わない。

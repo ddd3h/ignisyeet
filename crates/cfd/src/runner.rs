@@ -286,6 +286,20 @@ fn command(setup: &RunSetup, dir: &Path, cfg: &str, log: &str) -> Result<std::pr
     Ok(c)
 }
 
+/// What the early-stop check of [`solve`] asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StopAction {
+    Continue,
+    /// Stop now (SU2 exits on SIGTERM without writing its output files).
+    Now,
+    /// Stop once SU2 has written its next periodic output (`OUTPUT_WRT_FREQ`): the restart file of a warm start
+    /// and the surface file of the y+ check are then those of the accepted solution. At most this many more rows.
+    AfterOutput(usize),
+}
+
+/// Files whose rewrite [`StopAction::AfterOutput`] waits for.
+const OUTPUT_FILES: [&str; 2] = ["restart.dat", "surface_flow.vtk"];
+
 /// One SU2 process of a case.
 struct Solve {
     /// `None`: stopped by the runner (early stop or timeout).
@@ -304,7 +318,7 @@ fn solve(
     (cfg, log, history): (&str, &str, &str),
     cfg_text: &str,
     deadline: Option<Instant>,
-    stop: &dyn Fn(&History) -> bool,
+    stop: &dyn Fn(&History) -> StopAction,
     tx: &mpsc::Sender<Event>,
 ) -> Result<std::result::Result<Solve, String>> {
     std::fs::write(dir.join(cfg), cfg_text)?;
@@ -316,6 +330,9 @@ fn solve(
         Err(e) => return Ok(Err(format!("cannot start SU2: {e}"))),
     };
     let mut last_poll = Instant::now() - Duration::from_secs(10);
+    // AfterOutput: (time of the decision, rows then, row limit, rows when the new output was first seen)
+    let mut pending: Option<(std::time::SystemTime, usize, usize, Option<usize>)> = None;
+    let written_after = |t: std::time::SystemTime| OUTPUT_FILES.iter().all(|f| std::fs::metadata(dir.join(f)).and_then(|m| m.modified()).is_ok_and(|m| m > t));
     loop {
         if CANCEL.load(Ordering::SeqCst) {
             child.kill(sys::SIGTERM);
@@ -340,7 +357,25 @@ fn solve(
                 if let Some(r) = h.last_residual() {
                     let _ = tx.send(Event::Progress { i, iter: h.last_iteration(), residual: r });
                 }
-                if stop(&h) {
+                let now = match pending {
+                    None => match stop(&h) {
+                        StopAction::Continue => false,
+                        StopAction::Now => true,
+                        StopAction::AfterOutput(extra) => {
+                            pending = Some((std::time::SystemTime::now(), h.rows.len(), extra, None));
+                            false
+                        }
+                    },
+                    Some((t, rows, extra, seen)) => {
+                        // One more history row after the rewrite was seen: the files are complete.
+                        let done = seen.is_some_and(|r| h.rows.len() > r);
+                        if seen.is_none() && written_after(t) {
+                            pending = Some((t, rows, extra, Some(h.rows.len())));
+                        }
+                        done || h.rows.len() > rows + extra
+                    }
+                };
+                if now {
                     child.kill(sys::SIGTERM);
                     let t = Instant::now();
                     while t.elapsed() < Duration::from_secs(30) && child.0.try_wait()?.is_none() {
@@ -650,9 +685,14 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: Option
     // Practically converged (typical for Euler wake limit cycles): residual down 3 orders and the coefficients
     // flat over `stable_window` iterations. Stop SU2 gracefully before the residual drifts and diverges.
     let stop = |h: &History| {
-        h.rows.len() >= setup.opt.min_iterations
+        if h.rows.len() >= setup.opt.min_iterations
             && h.residual_drop_from_peak().is_some_and(|d| d >= min_drop)
             && h.coefficients_stable(setup.opt.stable_window, kind)
+        {
+            StopAction::Now
+        } else {
+            StopAction::Continue
+        }
     };
     let cfg = su2_config_case(setup.opt, &spec, &setup.dims, &setup.atm, &files);
     let run = match solve(setup, i, &dir, ("case.cfg", "su2.log", "history.csv"), &cfg, deadline, &stop, tx)? {
@@ -742,7 +782,7 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
                 let files = CaseFiles { mesh: mesh.clone(), restart_from: None, stage: Stage::Startup, conservative: false };
                 let cfg = su2_config_case(opt, &spec, &setup.dims, &setup.atm, &files);
                 let names = ("case_startup.cfg", "su2_startup.log", "history_startup.csv");
-                let run = match solve(setup, i, &dir, names, &cfg, deadline, &|_| false, tx)? {
+                let run = match solve(setup, i, &dir, names, &cfg, deadline, &|_| StopAction::Continue, tx)? {
                     Ok(r) => r,
                     Err(e) => return Ok(fail(e)),
                 };
@@ -768,9 +808,15 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
         let cfg = su2_config_case(opt, &spec, &setup.dims, &setup.atm, &files);
         // Stop when converged, or early when the solution diverges (instead of running into the iteration limit).
         let stop = |h: &History| {
-            h.rans_divergence().is_some()
-                || h.rows.len() >= opt.min_iterations
-                    && matches!(rans_verdict(h, reference, opt.stable_window, kind, ratio, opt.iterations), RansVerdict::Converged | RansVerdict::Stalled(_))
+            if h.rans_divergence().is_some() {
+                StopAction::Now
+            } else if h.rows.len() >= opt.min_iterations
+                && matches!(rans_verdict(h, reference, opt.stable_window, kind, ratio, opt.iterations), RansVerdict::Converged | RansVerdict::Stalled(_))
+            {
+                StopAction::AfterOutput(2 * crate::su2cfg::RANS_OUTPUT_FREQ + 5)
+            } else {
+                StopAction::Continue
+            }
         };
         let run = match solve(setup, i, &dir, ("case.cfg", "su2.log", "history.csv"), &cfg, deadline, &stop, tx)? {
             Ok(r) => r,
@@ -1292,8 +1338,9 @@ exit 0
     const MOCK_RANS: &str = r#"#!/bin/sh
 cfg=$1
 rf=$(grep '^RESTART_FILENAME' $cfg | cut -d' ' -f2)
-# Like SU2, write the restart file when the early stop terminates the run.
-trap 'printf "Density Nu_Tilde restart" > $rf; exit 1' TERM
+# Like SU2 8.3: SIGTERM ends the run without writing any output.
+trap 'exit 1' TERM
+freq=$(grep '^OUTPUT_WRT_FREQ' $cfg | cut -d' ' -f2)
 mach=$(grep '^MACH_NUMBER' $cfg | cut -d' ' -f2)
 aoa=$(grep '^AOA' $cfg | cut -d' ' -f2)
 sol=$(grep '^SOLUTION_FILENAME' $cfg | cut -d' ' -f2)
@@ -1312,8 +1359,9 @@ case "$mode" in markers*) mk=1;; *) mk=0;; esac
 case "$mode" in cycle|markers_cycle) cyc=1;; *) cyc=0;; esac
 if [ $mk = 1 ]; then echo '"Inner_Iter","rms[Rho]","rms[nu]","CFx","CFz","CMy","CFx(wall)","CFx(base)"' > $conv.csv
 else echo '"Inner_Iter","rms[Rho]","rms[nu]","CFx","CFz","CMy"' > $conv.csv; fi
+n=40; [ "$mode" = slow ] && [ "$conv" = history ] && n=400
 i=0
-while [ $i -lt 40 ]; do
+while [ $i -lt $n ]; do
   if [ "$conv" = history_startup ]; then r=$(echo "-1.0 - 0.05*$i" | bc -l); nu=$(echo "-4.0 - 0.05*$i" | bc -l)
   elif [ $warm = 1 ]; then r=$(echo "-4.5 - 0.1*$i" | bc -l); nu=$(echo "-6.5 - 0.1*$i" | bc -l)
   elif [ $cyc = 1 ]; then r=$(echo "-2.0 - 0.08*$i" | bc -l); nu=$(echo "-5.0 - 0.02*$i" | bc -l)
@@ -1332,6 +1380,11 @@ while [ $i -lt 40 ]; do
     echo "$i,$r,$nu,$fx,$fz,$my,$wx,$bx" >> $conv.csv
   else
     echo "$i,$r,$nu,$fx,$fz,$my" >> $conv.csv
+  fi
+  if [ "$mode" = slow ] && [ "$conv" = history ]; then
+    # periodic output (OUTPUT_WRT_FREQ) after the history row of the iteration, then the next iteration
+    [ $(( (i + 1) % freq )) -eq 0 ] && { printf "Density Nu_Tilde restart %s" $i > $rf; printf '# vtk %s\n' $i > surface_flow.vtk; }
+    sleep 0.02
   fi
   i=$((i+1))
 done
@@ -1722,5 +1775,27 @@ exit 0
         let v = rans_verdict(&hist(&rows), reference, 200, k, 18.0, 4000);
         assert!(!matches!(v, RansVerdict::Converged), "{v:?}");
         assert!(matches!(&v, RansVerdict::Stalled(m) if m.contains("residual stalled 2.3 orders")), "{v:?}");
+    }
+
+    #[test]
+    fn rans_early_stop_waits_for_the_periodic_output() {
+        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let mut e = env_rans("rans_slow", "slow");
+        e.opt.machs = vec![0.5];
+        e.opt.alphas_deg = vec![0.0];
+        let out = run_all(&e.setup(), &|_| {}).unwrap();
+        let r = out[0].result.as_ref().unwrap_or_else(|| panic!("{:?}", out[0].error));
+        assert!(r.converged);
+        let dir = out[0].spec.dir(&e.dir.join("work"));
+        // Stopped early (400 rows available) but only after a periodic output following the decision: the output
+        // files are those written at a multiple of OUTPUT_WRT_FREQ = 50 iterations, at or after the stop decision.
+        let rows = History::read(&dir.join("history.csv")).unwrap().rows.len();
+        assert!(rows < 400, "{rows}");
+        // (restart.dat itself is removed once no case needs it; the surface file is written with it.)
+        let vtk = std::fs::read_to_string(dir.join("surface_flow.vtk")).unwrap();
+        let written: usize = vtk.trim().rsplit(' ').next().unwrap().parse().unwrap();
+        assert_eq!((written + 1) % crate::su2cfg::RANS_OUTPUT_FREQ, 0);
+        assert!(written >= e.opt.min_iterations && rows > written + 1, "written {written}, rows {rows}");
+        let _ = std::fs::remove_dir_all(&e.dir);
     }
 }

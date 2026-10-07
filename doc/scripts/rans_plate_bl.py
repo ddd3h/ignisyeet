@@ -135,6 +135,10 @@ def collect(a):
     for name in sorted(os.listdir(a.work)):
         d = os.path.join(a.work, name)
         if not os.path.exists(os.path.join(d, "meta.json")):
+            if os.path.exists(os.path.join(d, "log_final.txt")) and "diverged" in open(os.path.join(d, "log_final.txt"), errors="replace").read():
+                head, data = fp.read_history(os.path.join(d, "history.csv"))
+                rows.append({"mach": float(name.split("_")[0][1:]), "grid": name.split("_", 1)[1].replace("pipeline_", "pipeline_"),
+                             "state": f"SU2 diverged at iteration {len(data)}"})
             continue
         m = json.load(open(os.path.join(d, "meta.json")))
         set_freestream(m["mach"])
@@ -143,13 +147,16 @@ def collect(a):
         row = {"mach": m["mach"], "grid": m["kind"] if m["kind"] != "pipeline" else f"pipeline_w{m['wall_size'] * 1000:g}mm",
                "re_per_m": m["re_per_m"], "prism_layers": m["layers"], "cells_below_20mm": m["cells_below_20mm"],
                "iterations": len(data), "rho_drop_orders": m["rho_peak"] - data[-1][head.index("rms[Rho]")]}
+        row["state"] = "converged (8 orders)" if row["rho_drop_orders"] >= 7.99 else "not converged (stopped)"
         for x in X_PROBES:
             cfx = fp.interp(pts, x)
             ref = fp.van_driest2(m["mach"], fp.RE_PER_M * x, t_inf=T_SEA)[0]
             row[f"cf_x{x:g}"] = cfx
             row[f"err_x{x:g}_percent"] = 100 * (cfx / ref - 1)
         rows.append(row)
-    keys = list(rows[0].keys())
+    keys = []
+    for r in rows:
+        keys += [k for k in r if k not in keys]
     with open(a.out, "w") as f:
         f.write("# Flat plate with the wall-normal spacing of the ignisyeet RANS meshes (doc/scripts/rans_plate_bl.py): "
                 "pipeline_wW = prism layers (first height 5.72e-7 m, growth <= 1.3) to 0.4 W, then dy = W + 0.2 y and dx = W; "
@@ -159,7 +166,7 @@ def collect(a):
                 f"cells_below_20mm: cells within 20 mm of the wall (boundary layer about 20-30 mm at x = 1 m). {a.provenance}\n")
         f.write(",".join(keys) + "\n")
         for r in rows:
-            f.write(",".join(f"{r[k]:.6g}" if isinstance(r[k], float) else str(r[k]) for k in keys) + "\n")
+            f.write(",".join(f"{r[k]:.6g}" if isinstance(r.get(k), float) else str(r.get(k, "")) for k in keys) + "\n")
     print(open(a.out).read())
 
 

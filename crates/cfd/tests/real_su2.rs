@@ -383,7 +383,14 @@ fn rans_prism_layer_sweep_passes_the_validity_check() {
     let mut rows = Vec::new();
     for roll in [0.0, 45.0] {
         for ws in [0.0025, 0.003, 0.0035, 0.004, 0.0045, 0.005, 0.006] {
-            let opt = CfdOptions { model: cfd::FlowModel::Rans, wall_size: ws, fin_roll_deg: roll, machs: vec![0.8, 2.0], alphas_deg: vec![0.0, 4.0], ..Default::default() };
+            let opt = CfdOptions {
+                model: cfd::FlowModel::Rans,
+                wall_size: ws,
+                fin_roll_deg: roll,
+                machs: vec![0.8, 2.0],
+                alphas_deg: vec![0.0, 4.0],
+                ..Default::default()
+            };
             let dir = std::env::temp_dir().join(format!("ignisyeet_cfd_rans_sweep_{}_{roll}_{ws}", std::process::id()));
             let _ = std::fs::remove_dir_all(&dir);
             let t = std::time::Instant::now();

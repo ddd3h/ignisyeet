@@ -284,3 +284,22 @@ print("BL_OK")
     assert!(out.status.success() && log.contains("BL_OK"), "{log}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+#[ignore = "needs gmsh (IGNISYEET_CFD_PREFIX)"]
+fn symmetry_check_accepts_the_basic_finner_and_rejects_the_lug_and_buttons() {
+    let dir = tmp("symtol");
+    // Basic Finner (0.3 m): symmetric about y = 0 and z = 0; the B-spline projection accuracy exceeds SYMMETRY_TOL x L.
+    let raw: Vec<Triangle> = geom::stl::read_stl(&examples().join("basic_finner/basic_finner.stl")).unwrap().into_iter().map(|t| t.map(|v| v * 0.001)).collect();
+    let g = extract(&raw, &ExtractOptions::default()).unwrap();
+    let opt = CfdOptions { step_file: examples().join("basic_finner/basic_finner.step"), base_treatment: Some(BaseTreatment::Flat), ..step_options() };
+    let (_, d) = cfd::step_mesh::check_step(&opt, &g, &raw, &dir.join("finner")).unwrap();
+    assert!(d.y.symmetric && d.z.symmetric, "{}", d.summary());
+    assert_eq!(d.chosen, "axisymmetric");
+    // The sample rocket with its lug and two rail buttons is not symmetric.
+    let (raw, g) = sample_stl();
+    let (_, d) = cfd::step_mesh::check_step(&step_options(), &g, &raw, &dir.join("sample")).unwrap();
+    assert!(!d.y.symmetric || !d.z.symmetric, "{}", d.summary());
+    assert_eq!(d.chosen, "none");
+    let _ = std::fs::remove_dir_all(&dir);
+}

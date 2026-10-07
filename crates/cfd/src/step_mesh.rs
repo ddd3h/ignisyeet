@@ -1045,6 +1045,41 @@ mod tests {
     use super::*;
     use crate::config::SurfaceKind;
 
+    /// `symmetry_tolerance` of `mesh_step.py` (the script imports gmsh, so the two rule lines are run on their own).
+    #[test]
+    fn symmetry_tolerance_follows_the_self_projection_error() {
+        let Ok(py) = std::process::Command::new("python3").arg("--version").output() else { return };
+        if !py.status.success() {
+            return;
+        }
+        let code = r#"
+import ast, sys
+src = open(sys.argv[1]).read()
+keep = [n for n in ast.parse(src).body if (isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "SYM_SELF_FACTOR") or (isinstance(n, ast.FunctionDef) and n.name == "symmetry_tolerance")]
+ns = {}
+exec(compile(ast.Module(keep, []), "rule", "exec"), ns)
+f = ns["symmetry_tolerance"]
+print(f(float(sys.argv[2]), float(sys.argv[3])))
+"#;
+        let dir = std::env::temp_dir().join(format!("ignisyeet_symtol_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let script = dir.join("mesh_step.py");
+        std::fs::write(&script, SCRIPT).unwrap();
+        let tol = |base: f64, self_err: f64| -> f64 {
+            let o = std::process::Command::new("python3").args(["-c", code]).arg(&script).arg(base.to_string()).arg(self_err.to_string()).output().unwrap();
+            String::from_utf8_lossy(&o.stdout).trim().parse().unwrap_or_else(|_| panic!("{}", String::from_utf8_lossy(&o.stderr)))
+        };
+        let l = 0.3;
+        let base = symmetry::SYMMETRY_TOL * l;
+        // Exact projection: the requested tolerance. Basic Finner (self error 6e-7 m): raised above it. Never below it.
+        assert_eq!(tol(base, 0.0), base);
+        assert_eq!(tol(base, 1e-8), base);
+        assert!(tol(base, 6e-7) >= 4.0 * 6e-7 && tol(base, 6e-7) > base);
+        // Still far below a rail button / lug offset (millimetres), so asymmetric shapes stay rejected.
+        assert!(tol(base, 6e-7) < 1e-4 * l);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     fn sample_geom() -> Geometry {
         use geom::sample::SampleRocket;
         geom::extract(&SampleRocket::default().mesh(), &geom::ExtractOptions::default()).unwrap()

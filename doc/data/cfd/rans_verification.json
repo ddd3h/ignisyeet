@@ -3,90 +3,96 @@
  "date": "2026-10-07",
  "tools": "SU2 8.3.0, Open MPI 5.0.11, gmsh 4.15.2",
  "machine": "i7-12700 (20 threads, 30 GB), shared with other jobs",
- "commits": "flat plate 8f745ae; CLI cases 3acdb89 (release/v0.4.0 73d22f8 merged)",
+ "commits": "each data file header names its commit",
  "gates": {
   "V1_flat_plate_M0.2": {
    "quantity": "cf at x = 0.97, finest grid (273x193) vs NASA TMR SA (CFL3D/FUN3D 545x385, 2.7055e-3)",
-   "value_percent": 0.774001,
+   "value_percent": 0.791115,
    "threshold_percent": 2.0,
-   "vs_karman_schoenherr_percent": -0.647167,
+   "vs_karman_schoenherr_percent": -0.630293,
    "grid_convergence": "monotone",
    "cf_by_grid": {
-    "69x49": 0.00271816,
-    "137x97": 0.00272452,
-    "273x193": 0.00272645
+    "69x49": 0.00272236,
+    "137x97": 0.00272564,
+    "273x193": 0.00272692
    },
    "pass": true,
    "note": "cf rises for x > 1.5 because of the farfield outflow at the plate end; plate CD not compared",
-   "provenance": "rans_flatplate.csv, rans_flatplate_cf.csv (doc/scripts/rans_flatplate.py)"
+   "provenance": "rans_flatplate.csv, rans_flatplate_cf.csv (doc/scripts/rans_flatplate.py; SU2 settings of the CFD mode, header names the commit)"
   },
   "V2_flat_plate_M2_adiabatic": {
    "quantity": "cf at x = 0.97, finest grid (273x193) vs van Driest II (Hopkins-Inouye, r = 0.89)",
-   "value_percent": -1.19501,
+   "value_percent": -1.18257,
    "threshold_percent": 5.0,
    "grid_convergence": "monotone",
    "cf_by_grid": {
-    "69x49": 0.00210589,
-    "137x97": 0.00211093,
-    "273x193": 0.00211287
+    "69x49": 0.00210812,
+    "137x97": 0.00211156,
+    "273x193": 0.00211314
    },
    "pass": true,
+   "note": "137x97 stopped at the 20000-iteration cap 5.8 orders below the startup peak (the others 8 orders)",
    "provenance": "rans_flatplate.csv"
   },
   "acceptance_rule_replay_flat_plate": {
-   "quantity": "plate CD at the iteration the CFD-mode acceptance would stop vs the run to 8 orders",
+   "quantity": "plate CD at the iteration an acceptance rule would stop vs the run to 8 orders",
    "old_rule_percent": {
-    "M0.2 69x49": 0.125719,
-    "M0.2 137x97": 0.622553,
-    "M0.2 273x193": 1.8921,
-    "M2 69x49": 0.000209136,
-    "M2 137x97": 0.0817945,
-    "M2 273x193": 0.664287
+    "M0.2 69x49": 0.116789,
+    "M0.2 137x97": 0.622387,
+    "M0.2 273x193": 1.8943,
+    "M2 69x49": 0.000205526,
+    "M2 137x97": 0.0815541,
+    "M2 273x193": 0.661958
    },
    "trend_rule_percent": {
-    "M0.2 69x49": 0.0604985,
-    "M0.2 137x97": 0.161289,
-    "M0.2 273x193": 0.0842464,
-    "M2 69x49": 0.000209136,
-    "M2 137x97": 0.0817945,
-    "M2 273x193": 0.288081
+    "M0.2 69x49": 0.0581886,
+    "M0.2 137x97": 0.162054,
+    "M0.2 273x193": 0.0720704,
+    "M2 69x49": 0.000205526,
+    "M2 137x97": 0.0815541,
+    "M2 273x193": 0.28724
    },
-   "note": "old rule = 3/2 orders + flat window; trend rule = release/v0.4.0 73d22f8 (rans_replay.py)",
+   "note": "old rule = 3/2 orders + flat window; trend rule = 73d22f8 (rans_replay.py); the shipped rule adds the worst-of-20-rows drop",
    "provenance": "rans_flatplate.csv"
   },
   "V4_cone_M2_Cp": {
-   "quantity": "cone surface Cp over x/L_cone 0.2-0.9 vs Taylor-Maccoll (0.10447), 10 deg cone, wall_size 2 mm",
-   "mean_percent": 1.7,
-   "worst_bin_percent": 2.2,
+   "quantity": "cone surface Cp over x/L_cone 0.2-0.9 vs Taylor-Maccoll (0.10447), 10 deg cone, wall_size 2 mm, converged",
+   "mean_percent": 1.46,
+   "worst_bin_percent": 2.5,
+   "worst_bin": "0.2-0.3",
    "threshold_percent": 2.0,
+   "bins_0.3_to_0.9_max_percent": 1.56,
    "pass": false,
-   "verdict": "marginal fail: mean +1.7 % within 2 %, worst bin +2.2 % (x/L 0.5-0.6)",
-   "explanation": "the turbulent displacement-thickness growth adds about 0.13 deg of effective cone angle near x = 0.1 m, which raises Cp by roughly 2 %: a viscous Cp above the inviscid Taylor-Maccoll value is expected",
-   "convergence": "second-order stage stalled (rms[Rho] -2.2..-5.4, never 3 orders below the reference); wall axial force steady (CFx(wall) 0.1299 +- 0.0006); snapshot of iteration 1000",
+   "verdict": "mean within 2 %; only the bin nearest the tip exceeds it",
+   "explanation": "viscous Cp above the inviscid Taylor-Maccoll value is expected: the turbulent displacement thickness adds about 0.1 deg of effective cone angle (roughly +2 % in Cp), largest relative to the radius near the tip",
    "provenance": "rans_cone_cp.csv (doc/scripts/rans_cone.py, rans_geometry.py)"
   },
   "V3_friction_vs_flat_plate": {
-   "quantity": "friction part of the wall axial force vs flat-plate van Driest II over the wetted area, alpha 0",
+   "quantity": "friction part of the wall axial force (surface integration) vs van Driest II over the wetted area, alpha 0, converged cases",
    "values_percent": {
-    "cone_10deg M2 w2mm": -24.8,
-    "sample_body_finless M0.8 w5mm": -42.2,
-    "sample_body_finless M2 w5mm": -24.1
+    "cone_10deg M2 w2mm": 2.6,
+    "sample_body_finless M0.8 w5mm": 7.3,
+    "sample_body_finless M2 w5mm": 5.8
    },
    "threshold_percent": 10.0,
-   "pass": false,
+   "pass": true,
    "yplus_p95": {
     "cone_10deg M2": 0.548,
-    "sample_body_finless M0.8": 0.587,
-    "sample_body_finless M2": 0.612
+    "sample_body_finless M0.8": 0.401,
+    "sample_body_finless M2": 0.666
    },
    "yplus_p95_threshold": 3.0,
-   "state": "before the boundary-layer mesh redesign: none of the cases converged (stall; the finless body diverges at M 0.8 after LIMITER_ITER 400 and at M 2 from about iteration 1000); values from surface snapshots while CFx(wall) was steady",
-   "cause": "under-resolved boundary layer: prism layer only 0.4 wall_size thick, then a 12x jump to cells of wall_size + 0.2 d; reproduced in 2-D (V3b)",
-   "provenance": "rans_body_friction.csv (doc/scripts/rans_friction.py, rans_surface.py)"
+   "note": "cone estimate with the Taylor-Maccoll edge state and the turbulent Mangler rule (plain freestream law: +11.3 %)",
+   "provenance": "rans_body_friction.csv, rans_body_cases.csv (doc/scripts/rans_friction.py, rans_surface.py)"
   },
-  "V3b_plate_with_cfd_mode_spacing": {
-   "quantity": "cf on a 2-D plate with the wall-normal spacing of the CFD-mode meshes vs a resolved grid (sea-level Re, M 0.8 / 2)",
-   "rows": [
+  "before_mesh_fix": {
+   "state": "prism layer 0.4 wall_size, Venkatakrishnan-Wang limiter frozen at iteration 400 (8f745ae / 3acdb89)",
+   "friction_percent": {
+    "cone_10deg M2": -24.8,
+    "sample_body_finless M0.8": -42.2,
+    "sample_body_finless M2": -24.1
+   },
+   "plate_with_cfd_mode_spacing": [
     {
      "mach": "0.8",
      "grid": "pipeline_w3mm",
@@ -124,37 +130,36 @@
      "err_x0.97_percent": "0.766872"
     }
    ],
-   "provenance": "rans_plate_bl.csv (doc/scripts/rans_plate_bl.py)"
+   "provenance": "rans_before_*.csv"
   },
   "V5_herrin_dutton_base_flow": {
    "pass": null,
    "status": "not run",
-   "reason": "validation needs the measured approach boundary layer of the M 2.46 cylinder (wind-tunnel afterbody, no nose) and a converged base wake; the CFD mode meshes a body with a nose from an STL (no axisymmetric or wedge domain), the flat-base wake is where the second-order stage stalls, and the boundary layer is under-resolved (V3)"
+   "reason": "validation needs the measured approach boundary layer of the M 2.46 cylinder (wind-tunnel afterbody, no nose); the CFD mode meshes a body with a nose from an STL and has no axisymmetric or wedge domain"
   },
   "V6_sample_mesh_convergence": {
    "pass": null,
    "status": "not run",
-   "reason": "held: 5 mm M0.8 alpha 0 diverged after LIMITER_ITER 400; 3 mm cases need about 10 GB each and were stopped (OOM kill with concurrent jobs, then held) until the boundary-layer mesh and the stage-B numerics are revised; wall_size 3.5 mm does not mesh (1 inverted prism, 18 unmarked faces)"
+   "reason": "waiting for the RANS startup retry (8 mm M 2 startup diverged on 5ce5795)"
   },
   "V7_rans_vs_euler": {
    "pass": null,
    "status": "not run",
-   "reason": "held with V6"
+   "reason": "waiting for the RANS startup retry (8 mm M 2 startup diverged on 5ce5795)"
   },
   "V8_rans_table": {
    "pass": null,
    "status": "not run",
-   "reason": "held with V6"
+   "reason": "waiting for the RANS startup retry (8 mm M 2 startup diverged on 5ce5795)"
   },
   "memory": {
    "bytes_per_node": [
-    10280,
-    10320,
-    10260
+    10131,
+    10087
    ],
-   "mean_bytes_per_node": 10287,
-   "model": "40 MB per rank + bytes_per_node x nodes (summed over ranks, 3 and 4 ranks)",
-   "provenance": "rans_memory.csv"
+   "mean_bytes_per_node": 10109,
+   "model": "40 MB per rank + bytes_per_node x nodes (summed over ranks)",
+   "provenance": "rans_memory.csv, rans_before_memory.csv, rans_mesh_sweep.csv (mesher)"
   }
  }
 }

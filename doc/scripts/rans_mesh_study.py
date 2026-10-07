@@ -63,14 +63,32 @@ def main():
     ap.add_argument("fine")
     ap.add_argument("--out-csv", required=True)
     ap.add_argument("--out-json", required=True)
+    ap.add_argument("--fine-minus", action="append", help="MACH=DIR of a separately solved fine-level alpha -4 case")
     a = ap.parse_args()
     L = [level(a.fine), level(a.medium), level(a.coarse)]
+    notes = []
+    for spec in a.fine_minus or []:
+        # MACH=DIR: the fine level's -4 case solved separately (rans_sample.py direct); recombine with the +4 case:
+        # CN = (CN+ - CN-) / 2, CA = (CA+ + CA-) / 2, xcp = (M+ - M-) / (CN+ - CN-)
+        m, d = spec.split("=", 1)
+        m = float(m)
+        h = list(csv.reader(open(os.path.join(d, "history.csv"))))
+        head = [x.strip().strip('"') for x in h[0]]
+        last = [float(x) for x in h[-1]]
+        cn_m, ca_m, my_m = last[head.index("CFz")], last[head.index("CFx(wall)")], last[head.index("CMy")]
+        mom_m = -my_m * 0.1  # nose moment CN xcp [m] (REF_LENGTH 0.1)
+        plus = [r for r in csv.DictReader(open(os.path.join(a.fine, "out", "cfd_cases.csv")))
+                if abs(float(r["mach"]) - m) < 1e-9 and abs(float(r["alpha_deg"]) - 4) < 1e-9 and r["status"] != "combined"][0]
+        cn_p, ca_p, mom_p = float(plus["cn_raw"]), float(plus["ca_cfd"]), float(plus["nose_moment_raw"])
+        e = L[0]["m"][m]
+        e.update(cn=(cn_p - cn_m) / 2, ca=(ca_p + ca_m) / 2, xcp=(mom_p - mom_m) / (cn_p - cn_m), status_m4="rerun (direct)")
+        notes.append(f"M{m:g} fine alpha -4 rerun separately ({os.path.basename(d)}, {len(h) - 1} final-stage iterations, cold start) and recombined")
     h = [lv["nodes"] ** (-1 / 3) for lv in L]
     commit = subprocess.run(["git", "-C", os.path.dirname(os.path.abspath(__file__)), "rev-parse", "--short", "HEAD"], capture_output=True, text=True).stdout.strip()
     lines = [f"# RANS mesh convergence of the sample rocket (doc/scripts/rans_mesh_study.py): ignisyeet aero method cfd, model rans, half model, "
              f"machs [0.8, 2.0], alphas [0, 4] (+ -4 solved, mirror-combined), levels {', '.join(f'{lv['wall_size_m'] * 1000:g} mm' for lv in L[::-1])}; "
              f"N^(1/3) ratios {h[1] / h[0]:.3f} (fine/medium), {h[2] / h[1]:.3f} (medium/coarse). cn, ca (CFx(wall)), xcp at alpha 4; "
-             f"cn0 = raw CN of the alpha 0 case. Scripts at {commit}, 2026-10-07.",
+             f"cn0 = raw CN of the alpha 0 case. Scripts at {commit}, 2026-10-07. " + " ".join(notes),
              "wall_size_m,nodes,cells,run_wall_s,mach,cn,ca_wall,xcp_m,cn0,status_a0,status_a4,status_am4,iterations_a4"]
     for lv in L[::-1]:
         for m, e in sorted(lv["m"].items()):
@@ -102,6 +120,7 @@ def main():
         ok = ok and all(passes.values())
         res["mach"][f"{m:g}"] = r
     res["pass"] = ok
+    res["notes"] = notes
     res["provenance"] = os.path.basename(a.out_csv)
     json.dump(res, open(a.out_json, "w"), indent=1)
     print(open(a.out_csv).read())

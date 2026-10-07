@@ -246,39 +246,39 @@
     },
     "2": {
      "cn": {
-      "fine": 0.96665043,
+      "fine": 0.9655345013500001,
       "medium": 0.97073368,
       "coarse": 0.982641898,
-      "order": 4.012439762335235,
-      "extrapolated": 0.9647266994711156,
-      "gci_fine_abs": 0.002404663161105673,
-      "gci_fine": 0.002487624363965444,
+      "order": 3.1377568341414706,
+      "extrapolated": 0.9619143934808123,
+      "gci_fine_abs": 0.004525134836484869,
+      "gci_fine": 0.0046866630142764175,
       "monotone": true,
-      "e21": 0.004083250000000094,
+      "e21": 0.005199178649999969,
       "e32": 0.01190821799999997
      },
      "ca": {
-      "fine": 0.255892607,
+      "fine": 0.25590602554999997,
       "medium": 0.25547424,
       "coarse": 0.254312139,
-      "order": 3.8359910197752924,
-      "extrapolated": 0.2561049692804351,
-      "gci_fine_abs": 0.00026545285054381225,
-      "gci_fine": 0.001037360374165918,
+      "order": 3.7216585246432135,
+      "extrapolated": 0.25613628118749143,
+      "gci_fine_abs": 0.00028781954686432854,
+      "gci_fine": 0.0011247079713959027,
       "monotone": true,
-      "e21": -0.00041836699999997506,
+      "e21": -0.00043178554999995233,
       "e32": -0.0011621010000000265
      },
      "xcp": {
-      "fine": 1.15724328,
+      "fine": 1.1571607342232024,
       "medium": 1.15674344,
       "coarse": 1.15442766,
-      "order": 5.691757721909497,
-      "extrapolated": 1.1573673414838979,
-      "gci_fine_abs": 0.0001550768548722208,
-      "gci_fine": 0.00013400540539083606,
+      "order": 6.3477829536521435,
+      "extrapolated": 1.157243235723708,
+      "gci_fine_abs": 0.00010312687563186704,
+      "gci_fine": 8.912061443313293e-05,
       "monotone": true,
-      "e21": -0.0004998400000000291,
+      "e21": -0.000417294223202358,
       "e32": -0.0023157799999999895
      },
      "cn0_medium": 0.000682230612,
@@ -291,6 +291,9 @@
     }
    },
    "pass": false,
+   "notes": [
+    "M2 fine alpha -4 rerun separately (L3m4, 600 final-stage iterations, cold start) and recombined"
+   ],
    "provenance": "rans_mesh_study.csv"
   },
   "V7_rans_vs_euler": {
@@ -317,14 +320,14 @@
      }
     },
     "2": {
-     "rans_cn_a4": 0.96665043,
+     "rans_cn_a4": 0.9655345013500001,
      "euler_cn_a4": 0.9188,
      "barrowman_cn_a4": 0.8793,
-     "cna_diff_percent": 5.20792664344798,
-     "rans_xcp_m": 1.15724328,
+     "cna_diff_percent": 5.086471631475842,
+     "rans_xcp_m": 1.1571607342232024,
      "euler_xcp_m": 1.1537,
      "barrowman_xcp_m": 1.1392,
-     "xcp_diff_m": 0.0035432800000001485,
+     "xcp_diff_m": 0.0034607342232024774,
      "rans_friction_ca_a0": 0.12873150785431756,
      "rans_cfx_wall_a0": 0.2538302407,
      "euler_pressure_ca_a4_2mm": 0.105384,
@@ -349,7 +352,7 @@
     "unconverged": []
    },
    "geometry": "RANS: fins with edges blunted at 2 % chord, flat base (rans_base model adds the Barrowman base term); Euler: sharp biconvex fins, conical tail fairing (6 base radii), base drag from Barrowman",
-   "note": "RANS: wall_size 3 mm (1844927 nodes), release daa8b2f, alpha 4 mirror-combined (M2: -4 failed, offset fallback), alpha 0 case for the friction. Euler: doc/data/cfd/sample_euler_vs_models.csv (2 mm, 941k cells). Barrowman: smooth wall (roughness 0), examples/sample.toml geometry. 2026-10-07.",
+   "note": "RANS: wall_size 3 mm (1844927 nodes), release daa8b2f, alpha 4 mirror-combined (M2: -4 failed, offset fallback), alpha 0 case for the friction. Euler: doc/data/cfd/sample_euler_vs_models.csv (2 mm, 941k cells). Barrowman: smooth wall (roughness 0), examples/sample.toml geometry. 2026-10-07. M2 alpha 4: CN and xcp recombined with the separately solved alpha -4 case (rans_mesh_study.json).",
    "provenance": "rans_vs_euler.csv"
   },
   "V8_rans_table": {

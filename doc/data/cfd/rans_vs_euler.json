@@ -22,14 +22,14 @@
    }
   },
   "2": {
-   "rans_cn_a4": 0.96665043,
+   "rans_cn_a4": 0.9655345013500001,
    "euler_cn_a4": 0.9188,
    "barrowman_cn_a4": 0.8793,
-   "cna_diff_percent": 5.20792664344798,
-   "rans_xcp_m": 1.15724328,
+   "cna_diff_percent": 5.086471631475842,
+   "rans_xcp_m": 1.1571607342232024,
    "euler_xcp_m": 1.1537,
    "barrowman_xcp_m": 1.1392,
-   "xcp_diff_m": 0.0035432800000001485,
+   "xcp_diff_m": 0.0034607342232024774,
    "rans_friction_ca_a0": 0.12873150785431756,
    "rans_cfx_wall_a0": 0.2538302407,
    "euler_pressure_ca_a4_2mm": 0.105384,
@@ -54,6 +54,6 @@
   "unconverged": []
  },
  "geometry": "RANS: fins with edges blunted at 2 % chord, flat base (rans_base model adds the Barrowman base term); Euler: sharp biconvex fins, conical tail fairing (6 base radii), base drag from Barrowman",
- "note": "RANS: wall_size 3 mm (1844927 nodes), release daa8b2f, alpha 4 mirror-combined (M2: -4 failed, offset fallback), alpha 0 case for the friction. Euler: doc/data/cfd/sample_euler_vs_models.csv (2 mm, 941k cells). Barrowman: smooth wall (roughness 0), examples/sample.toml geometry. 2026-10-07.",
+ "note": "RANS: wall_size 3 mm (1844927 nodes), release daa8b2f, alpha 4 mirror-combined (M2: -4 failed, offset fallback), alpha 0 case for the friction. Euler: doc/data/cfd/sample_euler_vs_models.csv (2 mm, 941k cells). Barrowman: smooth wall (roughness 0), examples/sample.toml geometry. 2026-10-07. M2 alpha 4: CN and xcp recombined with the separately solved alpha -4 case (rans_mesh_study.json).",
  "provenance": "rans_vs_euler.csv"
 }

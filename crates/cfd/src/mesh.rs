@@ -26,20 +26,23 @@
 //!   concave corners (the fin-body junction) like a fillet. Layer law ([`bl_layers`]): first height from
 //!   [`first_height`] for `yplus` at 5 % of the body length and the largest solved Mach number, growth ratio
 //!   [`BL_GROWTH`] until the last layer is [`BL_TOP`] `wall_size` (about the height of the tetrahedra outside, so the
-//!   size changes smoothly at the layer top); 22 to 54 mm in all for wall_size 2.5 to 6 mm on the sample rocket, of the
-//!   order of its boundary layer thickness or more. Near the junction the columns are thinner (at most [`BL_JUNCTION`]
-//!   of the thickness plus the distance to the junction), so are columns that diverge from their neighbours round fin
-//!   edges and tips (the layer top widens by at most [`BL_FAN`] `wall_size`), and columns whose prisms would invert are
-//!   thinned locally (the layer count stays; a thinner column grows more slowly). The fin edges are blunted (the section
-//!   thickness of `xi` in `[edge_blunt, 1 - edge_blunt]` stretched over the chord, about 8 % of the thickness at the
-//!   edges). Outside, gmsh meshes the `y = 0` plane around the layer section and a box farfield (half width `farfield
-//!   L`), and fills the volume with tetrahedra of size `wall_size` at the layer top growing by 1.2 per element row. The
-//!   mesh (tetrahedra, prisms; marker triangles and the quadrilateral layer faces on `y = 0`) is written by
-//!   `su2_writer.py`, which orients the cells by their signed volume and rejects inverted prisms, cells of non-positive
-//!   volume and boundary faces without a marker; an invalid layer is meshed again once with more smoothing and a thinner
-//!   junction, then it is a mesh error. The full domain is the half mirrored about `y = 0`; `z_mirror_mesh` has no
-//!   effect, and a fin layout that is not symmetric about `y = 0` is rejected. The SICN quality covers the tetrahedra
-//!   only.
+//!   size changes smoothly at the layer top), with fewer layers where that would be thicker than [`BL_DELTA_FACTOR`]
+//!   turbulent boundary layer thicknesses at the body end or [`BL_RADIUS_FRACTION`] of the body radius (the tetrahedra
+//!   then start from the last layer height and grow by 1.2 per row up to `wall_size`); 22 mm at wall_size 2.5 mm, 25 mm
+//!   (half the body radius) from 3 mm on for the sample rocket. Base columns are at most [`BL_BASE_FRACTION`] of the
+//!   base radius: behind the base they only resolve the reverse flow of the wake. Near the junction the columns are
+//!   thinner (at most [`BL_JUNCTION`] of the thickness plus the distance to the junction), so are columns that diverge
+//!   from their neighbours round fin edges and tips (the layer top widens by at most [`BL_FAN`] `wall_size`), and
+//!   columns whose prisms would invert are thinned locally (the layer count stays; a thinner column grows more slowly).
+//!   The fin edges are blunted (the section thickness of `xi` in `[edge_blunt, 1 - edge_blunt]` stretched over the
+//!   chord, about 8 % of the thickness at the edges). Outside, gmsh meshes the `y = 0` plane around the layer section
+//!   and a box farfield (half width `farfield L`), and fills the volume with tetrahedra of size `wall_size` at the layer
+//!   top growing by 1.2 per element row. The mesh (tetrahedra, prisms; marker triangles and the quadrilateral layer
+//!   faces on `y = 0`) is written by `su2_writer.py`, which orients the cells by their signed volume and rejects
+//!   inverted prisms, cells of non-positive volume and boundary faces without a marker; an invalid layer is meshed again
+//!   once with more smoothing and a thinner junction, then it is a mesh error. The full domain is the half mirrored
+//!   about `y = 0`; `z_mirror_mesh` has no effect, and a fin layout that is not symmetric about `y = 0` is rejected. The
+//!   SICN quality covers the tetrahedra only.
 //!
 //! The mesh is cached below `<workdir>/mesh/` keyed by a hash of the geometry and the settings.
 
@@ -62,6 +65,14 @@ pub const BL_GROWTH: f64 = 1.2;
 pub const BL_TOP: f64 = 1.3;
 /// Column thickness at the fin-body junction in layer thicknesses (it grows with the distance to the junction).
 pub const BL_JUNCTION: f64 = 0.5;
+/// Cap of the layer thickness: this multiple of the turbulent flat-plate boundary layer thickness `0.37 L Re_L^-0.2`
+/// at the body end and the smallest solved Mach number (the thickest boundary layer of the run).
+pub const BL_DELTA_FACTOR: f64 = 1.5;
+/// Cap of the layer thickness in largest body radii.
+pub const BL_RADIUS_FRACTION: f64 = 0.5;
+/// Cap of the columns on the flat base in base radii: behind the base the layers only resolve the reverse flow of the
+/// wake next to the wall.
+pub const BL_BASE_FRACTION: f64 = 0.25;
 /// Largest widening of the layer top where neighbouring columns diverge (round fin edges and tips), in wall sizes.
 pub const BL_FAN: f64 = 2.0;
 /// Attempts of the prism layer, the second after the first failed the validity check: normal smoothing passes and
@@ -88,7 +99,7 @@ pub fn first_height(yplus: f64, length: f64, atm: &Atmosphere, mach: f64) -> f64
 /// solved Mach number (see [`first_height`]).
 pub fn wall_yplus(opt: &CfdOptions, length: f64, atm: &Atmosphere) -> f64 {
     let m = opt.machs.iter().copied().fold(0.0, f64::max);
-    bl_params(opt, length, atm).first_height / first_height(1.0, length, atm, m)
+    first_height(opt.yplus, BL_YPLUS_STATION * length, atm, m) / first_height(1.0, length, atm, m)
 }
 
 /// Prism boundary layer (RANS), `bl` in `params.json`.
@@ -111,6 +122,11 @@ pub struct BlParams {
     pub junction: f64,
     /// Largest widening of the layer top over diverging columns, in wall sizes ([`BL_FAN`]).
     pub fan: f64,
+    /// Thickness cap of the columns on the base [m] ([`BL_BASE_FRACTION`]).
+    pub base_thickness: f64,
+    /// Size of the tetrahedra at the layer top [m]: the smaller of `wall_size` and the last layer height; they grow
+    /// by 1.2 per element row from there.
+    pub top_size: f64,
     /// Parameters of the next attempt after an invalid layer (`None` = mesh error).
     pub retry: Option<Box<BlParams>>,
 }
@@ -123,13 +139,29 @@ pub fn bl_layers(h1: f64, top: f64, ratio: f64) -> (usize, f64) {
     (n, t)
 }
 
-/// Prism layer of a RANS mesh: first height for `opt.yplus` at [`BL_YPLUS_STATION`] of `length` and the largest
-/// solved Mach number of `atm`, growth [`BL_GROWTH`] to a last layer of [`BL_TOP`] `wall_size` ([`bl_layers`]), and
-/// the retry of [`BL_ATTEMPTS`].
-pub fn bl_params(opt: &CfdOptions, length: f64, atm: &Atmosphere) -> BlParams {
-    let m = opt.machs.iter().copied().fold(0.0, f64::max);
-    let h1 = first_height(opt.yplus, BL_YPLUS_STATION * length, atm, m);
-    let (layers, thickness) = bl_layers(h1, BL_TOP * opt.wall_size, BL_GROWTH);
+/// Turbulent flat-plate boundary layer thickness `0.37 x Re_x^-0.2` at `x` for the freestream of `atm` at `mach`.
+pub fn turbulent_delta(x: f64, atm: &Atmosphere, mach: f64) -> f64 {
+    let re = mach * atm.sound_speed * x / atm.kinematic_viscosity();
+    0.37 * x * re.powf(-0.2)
+}
+
+/// Prism layer of a RANS mesh: first height for `opt.yplus` at [`BL_YPLUS_STATION`] of the body length and the
+/// largest solved Mach number of `atm`; growth [`BL_GROWTH`] to a last layer of [`BL_TOP`] `wall_size`
+/// ([`bl_layers`]), with fewer layers where that is thicker than [`BL_DELTA_FACTOR`] boundary layer thicknesses at the
+/// body end (smallest solved Mach number) or [`BL_RADIUS_FRACTION`] of the largest body radius; base columns at most
+/// [`BL_BASE_FRACTION`] of the base radius; and the retry of [`BL_ATTEMPTS`].
+pub fn bl_params(opt: &CfdOptions, geom: &Geometry, atm: &Atmosphere) -> BlParams {
+    let m_max = opt.machs.iter().copied().fold(0.0, f64::max);
+    let m_min = opt.machs.iter().copied().filter(|&m| m > 0.0).fold(f64::INFINITY, f64::min).min(m_max);
+    let h1 = first_height(opt.yplus, BL_YPLUS_STATION * geom.length, atm, m_max);
+    let (mut layers, mut thickness) = bl_layers(h1, BL_TOP * opt.wall_size, BL_GROWTH);
+    let radius = geom.profile.iter().map(|p| p.r).fold(geom.base_radius, f64::max);
+    let cap = (BL_DELTA_FACTOR * turbulent_delta(geom.length, atm, m_min)).min(BL_RADIUS_FRACTION * radius);
+    while layers > 1 && thickness > cap {
+        layers -= 1;
+        thickness = h1 * (BL_GROWTH.powi(layers as i32) - 1.0) / (BL_GROWTH - 1.0);
+    }
+    let last = h1 * BL_GROWTH.powi(layers as i32 - 1);
     let mut next: Option<Box<BlParams>> = None;
     for &(smoothing, junction) in BL_ATTEMPTS.iter().rev() {
         next = Some(Box::new(BlParams {
@@ -142,6 +174,8 @@ pub fn bl_params(opt: &CfdOptions, length: f64, atm: &Atmosphere) -> BlParams {
             corner_smoothing: (2.0 * thickness / opt.wall_size).round() as usize,
             junction,
             fan: BL_FAN,
+            base_thickness: thickness.min(BL_BASE_FRACTION * geom.base_radius),
+            top_size: opt.wall_size.min(last),
             retry: next,
         }));
     }
@@ -327,7 +361,7 @@ impl MeshParams {
     pub fn cad(opt: &CfdOptions, geom: &Geometry, atm: &Atmosphere, dir: &Path, threads: usize) -> Self {
         let mut p = Self::new(opt, geom, dir, threads);
         if opt.model == FlowModel::Rans {
-            p.bl = Some(bl_params(opt, geom.length, atm));
+            p.bl = Some(bl_params(opt, geom, atm));
             p.z_mirror = false;
         }
         p
@@ -426,6 +460,22 @@ struct Stamp {
     stats: MeshStats,
 }
 
+/// What went wrong with the mesher process: killed by a signal (`SIGKILL`, 9, is the out-of-memory killer) or failed.
+fn failure_kind(status: &std::process::ExitStatus) -> String {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(sig) = status.signal() {
+            return format!(
+                "gmsh meshing was killed by signal {sig}{}",
+                if sig == 9 { " (most likely out of memory: close other programs or use a larger wall_size)" } else { "" }
+            );
+        }
+    }
+    let _ = status;
+    "gmsh meshing failed".into()
+}
+
 /// Meshes (or reuses the cached mesh) into `<workdir>/mesh/`. `atm` is the freestream of the cases (prism layer
 /// height of RANS).
 pub fn ensure_mesh(opt: &CfdOptions, geom: &Geometry, atm: &Atmosphere, workdir: &Path, threads: usize) -> Result<MeshResult> {
@@ -462,13 +512,15 @@ pub fn ensure_mesh(opt: &CfdOptions, geom: &Geometry, atm: &Atmosphere, workdir:
         .arg(dir.join("mesh_gmsh.py"))
         .arg(dir.join("params.json"))
         .current_dir(&dir)
+        // Unbuffered: the progress lines stay in the log when the process is killed.
+        .env("PYTHONUNBUFFERED", "1")
         .output()
         .with_context(|| format!("cannot run {}", py.display()))?;
     let log = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
     std::fs::write(dir.join("mesh.log"), &log)?;
     if !out.status.success() || !log.contains("MESH_OK") {
         let tail: Vec<&str> = log.lines().rev().take(15).collect::<Vec<_>>().into_iter().rev().collect();
-        bail!("gmsh meshing failed (log: {}):\n{}", dir.join("mesh.log").display(), tail.join("\n"));
+        bail!("{} (log: {}):\n{}", failure_kind(&out.status), dir.join("mesh.log").display(), tail.join("\n"));
     }
     let stats: MeshStats = serde_json::from_str(&std::fs::read_to_string(&params.stats_json)?).context("bad mesh_stats.json")?;
     std::fs::write(&stamp_path, serde_json::to_string(&Stamp { hash: hash.clone(), stats: stats.clone() })?)?;
@@ -546,6 +598,15 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn a_killed_mesher_is_reported_as_such() {
+        use std::os::unix::process::ExitStatusExt;
+        let killed = failure_kind(&std::process::ExitStatus::from_raw(9));
+        assert!(killed.contains("killed by signal 9") && killed.contains("out of memory"), "{killed}");
+        assert_eq!(failure_kind(&std::process::ExitStatus::from_raw(1 << 8)), "gmsh meshing failed");
+    }
+
     #[test]
     fn bl_layers_grow_to_the_top_height() {
         for (h1, top) in [(5.7e-7, 6.5e-3), (5.7e-7, 3.25e-3), (1e-5, 2e-3), (1e-4, 1.2e-3)] {
@@ -560,6 +621,34 @@ mod tests {
         assert_eq!(n, 53);
         assert!(t > 0.03 && t < 0.045, "{t}");
         assert_eq!(bl_layers(1e-3, 8e-4, 1.2), (1, 1e-3));
+    }
+
+    #[test]
+    fn bl_thickness_is_capped_by_the_boundary_layer_and_the_body_radius() {
+        let g = sample_geom();
+        let atm = AtmosphereModel::default().at(0.0);
+        let radius = g.profile.iter().map(|p| p.r).fold(g.base_radius, f64::max);
+        let o = |w: f64, machs: Vec<f64>| CfdOptions { model: FlowModel::Rans, wall_size: w, machs, ..Default::default() };
+        // 8 mm: the growth law alone gives about 65 mm (more than the body radius); the cap is the smaller of 1.5 delta
+        // at the body end (M 0.8) and half the body radius.
+        let b = bl_params(&o(0.008, vec![0.8, 2.0]), &g, &atm);
+        let cap = (BL_DELTA_FACTOR * turbulent_delta(g.length, &atm, 0.8)).min(BL_RADIUS_FRACTION * radius);
+        let (n_law, t_law) = bl_layers(b.first_height, BL_TOP * 0.008, BL_GROWTH);
+        assert!(t_law > 0.06 && b.thickness <= cap && b.layers < n_law, "{b:?} {t_law}");
+        // As many layers as fit: one more would pass the cap.
+        assert!(b.first_height * (BL_GROWTH.powi(b.layers as i32 + 1) - 1.0) / (BL_GROWTH - 1.0) > cap);
+        // The tetrahedra at the top start from the last layer height, smaller than the wall size.
+        let last = b.first_height * BL_GROWTH.powi(b.layers as i32 - 1);
+        assert!((b.top_size - last).abs() < 1e-15 && b.top_size < 0.008, "{b:?}");
+        assert!(b.base_thickness <= BL_BASE_FRACTION * g.base_radius + 1e-15);
+        // 2.5 mm stays uncapped (about 22 mm) and keeps the wall size at the top.
+        let c = bl_params(&o(0.0025, vec![0.8, 2.0]), &g, &atm);
+        assert_eq!((c.layers, c.thickness), bl_layers(c.first_height, BL_TOP * 0.0025, BL_GROWTH));
+        assert_eq!(c.top_size, 0.0025);
+        // A lower Mach number has the thicker boundary layer.
+        assert!(turbulent_delta(g.length, &atm, 0.3) > turbulent_delta(g.length, &atm, 2.0));
+        let delta = turbulent_delta(1.0, &atm, 0.8);
+        assert!(delta > 0.01 && delta < 0.02, "{delta}");
     }
 
     #[test]
@@ -600,6 +689,7 @@ mod tests {
         assert!((bl.first_height - first_height(1.0, BL_YPLUS_STATION * g.length, &atm, m)).abs() < 1e-15);
         let (n, t) = bl_layers(bl.first_height, BL_TOP * rans.wall_size, BL_GROWTH);
         assert!(bl.layers == n && bl.thickness == t && bl.ratio == BL_GROWTH && bl.corner_smoothing > 0, "{bl:?}");
+        assert!(bl.top_size == rans.wall_size && bl.base_thickness == t.min(BL_BASE_FRACTION * g.base_radius), "{bl:?}");
         // The attempts in order, each the retry of the previous one.
         let mut a = Some(bl);
         for &(smoothing, junction) in &BL_ATTEMPTS {

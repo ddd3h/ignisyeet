@@ -458,12 +458,18 @@ impl AeroModel {
     /// `-(rho S / 2) L0 du_perp/dt` acting at `L1 / L0` aft of the nose tip, `du_perp/dt` the
     /// lateral acceleration of the body relative to the air.
     ///
-    /// Body: slender-body apparent mass. Each section carries the air mass `rho pi r^2` per unit
+    /// Body: slender-body apparent mass. Each section carries the air mass `rho A(x)` per unit
     /// length with its lateral motion (Munk; Nielsen, Missile Aerodynamics, ch. 3), so the body
     /// carries `rho Vol` at the volume centroid `x_vol`: `L0 = K_B = 2 Vol / S`, `L1 = K_B x_vol`.
-    /// The convective part of the same apparent-mass momentum is the static Munk normal force
-    /// already in the table; only the acceleration part is added here. Independent of Mach in
-    /// slender-body theory.
+    ///
+    /// The section force is `f = -rho D/Dt [A w_c]`, `D/Dt = d/dt + V d/dx` (x aft), with the local
+    /// crossflow `w_c = w + q l`, `l = x - x_cg`:
+    /// `D/Dt [A w_c] = A (dw/dt + l dq/dt) + V A' (w + q l) + V A q`. `V A' w` is the static Munk
+    /// normal force (in the table), `V A' q l` the local-incidence strip sum of
+    /// [`damping_sums`](Self::damping_sums), `A dw/dt` the lag (alpha-dot) term and `V A q` the
+    /// convective rotation term, whose moment `-rho V q Vol (x_vol - x_cg)` has the same form as the
+    /// lag moment with `dw/dt` replaced by `V q`; the flight model applies both from these sums.
+    /// The added inertia `A l dq/dt` is neglected. Independent of Mach in slender-body theory.
     ///
     /// Fins: the downwash lag of an aft surface in the wake of a forward lifting surface (canard or
     /// first fin set; Nielsen ch. 9, Etkin, Dynamics of Flight, ch. 5 for the tail of an aircraft)

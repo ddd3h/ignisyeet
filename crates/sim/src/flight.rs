@@ -967,22 +967,30 @@ impl<'a> Simulation<'a> {
                 }
                 let acc = rot.mul_vec(f_body) / mass + g;
                 if let Some((l0, l1, fade)) = lag.filter(|l| l.2 > 0.0) {
-                    // Lag (alpha-dot) moment from the acceleration of the body relative to the air, known
-                    // here without an algebraic loop: no lag force is added, so `acc` does not depend on
-                    // it. du_b/dt = R^T (dv/dt - dW/dt) - w_t x u_b, with dW/dt = (dW/dh) dh/dt the change
-                    // of the wind along the trajectory (shear) and w_t = (0, q, r): the crossflow is
+                    // Lag (alpha-dot) and convective rotation moments of the apparent mass, known here
+                    // without an algebraic loop: no lag force is added, so `acc` does not depend on it.
+                    // du_b/dt = R^T (dv/dt - dW/dt) - w_t x u_b, with dW/dt = (dW/dh) dh/dt the change of
+                    // the wind along the trajectory (shear) and w_t = (0, q, r): the crossflow is
                     // differentiated in axes that do not roll with the body, since the apparent mass of a
                     // body of revolution does not change when it rolls (with p = 0 this is the body-axis
-                    // derivative). The apparent mass (rho S / 2) L0 resists the lateral part du_perp/dt
-                    // like a static normal force along -du_perp/dt, acting at L1 / L0 aft of the nose:
-                    // dM = -(rho S / 2)(x_cg L0 - L1)(e_x x du_perp/dt). The reaction of the air the body
-                    // carries does not depend on whether the nose or the tail leads (as the static normal
-                    // force and the damping), so it is not reversed in tail-first flow.
+                    // derivative). In slender-body theory (see `AeroModel::lag_sums`) the section force
+                    // -rho D/Dt[A w_c] has, besides the static and local-incidence parts of the table, the
+                    // acceleration term A du_perp/dt and the convective rotation term V A q, whose
+                    // lateral vector is -w_t x u_b (lateral part (0, -r V, q V)). Both act as a force
+                    // -(rho S / 2) L0 (...) at L1 / L0 aft of the nose, so the moment is
+                    // dM = -(rho S / 2)(x_cg L0 - L1)(e_x x a_perp), a = du_b/dt - w_t x u_b
+                    // = R^T (dv/dt - dW/dt) - 2 w_t x u_b. Their forces (-rho Vol (dw/dt + V q)) are not
+                    // applied. The reaction of the air the body carries does not depend on whether the
+                    // nose or the tail leads (as the static normal force and the damping), so it is not
+                    // reversed in tail-first flow.
+                    //
+                    // dW/dh is a central difference over +-1 cm; at a knot of a wind profile it is the
+                    // mean of the two slopes (the profile is only piecewise smooth).
                     const DH: f64 = 0.01;
                     let h = loc.height;
                     let dwdh = (self.wind.at(h + DH) - self.wind.at(h - DH)) / (2.0 * DH);
                     let w_dot = loc.to_frame(dwdh) * s.vel.dot(loc.up);
-                    let u_dot = rot.transpose_mul_vec(acc - w_dot) - Vec3::new(0.0, s.w.y, s.w.z).cross(ub);
+                    let u_dot = rot.transpose_mul_vec(acc - w_dot) - Vec3::new(0.0, s.w.y, s.w.z).cross(ub) * 2.0;
                     let k = -0.5 * atm.density * s_ref * (x_cg * l0 - l1) * fade;
                     m_body += Vec3::new(0.0, -u_dot.z, u_dot.y) * k;
                 }
@@ -1147,7 +1155,11 @@ impl<'a> Simulation<'a> {
             roll_resonance: None,
         };
         // Roll-resonance check: trim forcing fixed in the body, and (t, Mach, |p| - omega_n, |p|) of the previous ascent step.
-        let trim = self.fin_cant_deg != 0.0 || self.mass.cg_lateral_dry != [0.0, 0.0] || !self.thrust_line.is_aligned();
+        // A general table with a pitch or yaw moment at zero angles is a built-in (aerodynamic) trim forcing.
+        let trim = self.fin_cant_deg != 0.0
+            || self.mass.cg_lateral_dry != [0.0, 0.0]
+            || !self.thrust_line.is_aligned()
+            || self.table.max_zero_angle_moment() > ZERO_ANGLE_MOMENT_TRIM;
         let mut res_prev: Option<(f64, f64, f64, f64)> = None;
         let mut deploy_at = f64::INFINITY;
         let mut past_apogee = false;
@@ -1521,6 +1533,10 @@ impl MarginTrack {
         sum.stability_unknown = self.unknown;
     }
 }
+
+/// Pitch or yaw moment coefficient at zero angles of a general table above which it counts as a trim
+/// forcing of the roll-resonance check.
+const ZERO_ANGLE_MOMENT_TRIM: f64 = 1e-4;
 
 #[cfg(test)]
 #[path = "flight_dyn_tests.rs"]
@@ -2609,8 +2625,11 @@ mod tests {
         assert!((s.broadside_time - n as f64 * dt).abs() <= 2.0 * dt + 0.05, "{} vs {}", s.broadside_time, n as f64 * dt);
         assert!(s.broadside_time < BROADSIDE_LIMIT && !s.fell_broadside(), "{s:?}");
         assert_eq!(sim.run(Descent::Parachute, false).unwrap().summary.broadside_time, 0.0);
-        // A rocket with its CG far aft (CP ahead of the CG) falls partly broadside.
-        let tail_heavy = Simulation { mass: MassProperties::axisymmetric(8.0, 1.45, 0.02, 1.5), ..sample_sim(&table, &motor, 3.0) };
+        // A rocket with its CG far aft (CP ahead of the CG) falls partly broadside; its angle of attack
+        // swings through the 60 deg bound, so the reference samples at 0.01 s.
+        let mut tail_heavy = Simulation { mass: MassProperties::axisymmetric(8.0, 1.45, 0.02, 1.5), ..sample_sim(&table, &motor, 3.0) };
+        tail_heavy.settings.output_interval = 0.01;
+        let dt = tail_heavy.settings.output_interval;
         let t = tail_heavy.run(Descent::Ballistic, true).unwrap();
         let n = t.samples.iter().filter(|x| x.t > t.summary.apogee_time && (60.0..=120.0).contains(&x.alpha_deg)).count();
         assert!((t.summary.broadside_time - n as f64 * dt).abs() <= 2.0 * dt + 0.05, "{} vs {}", t.summary.broadside_time, n as f64 * dt);

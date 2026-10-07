@@ -200,17 +200,20 @@ fn fly(b: &Body, scale: AeroScale, alpha0: f64, p0: f64, h: f64, every: usize, n
 /// `xi'' + B xi' + K xi = 0` (Murphy's `H - i P` and `-(M + i P T)`), from
 ///
 /// * `xi' = -(a + i f_m) xi + i (1 - c_q) mu` (normal force, Magnus force, rotation-induced force),
-/// * `mu' = (i M0 - m_m) xi - h mu + i P mu - i g xi'` (static, Magnus, damping and lag moments,
-///   gyroscopic coupling), `mu = q + i r`,
+/// * `mu' = (i M0 - m_m) xi - h mu + i P mu - i g (xi' + i mu)` (static, Magnus, damping moments,
+///   gyroscopic coupling, and the apparent-mass moment of the lag term `xi'` and the convective
+///   rotation term `i mu`: the lateral vector `-w_t x u_b = i V mu`), `mu = q + i r`,
 ///
 /// with `a = CNa q S / (m V)`, `h = q S k / (V I)`, `k` the damping sum about the CG,
 /// `c_q = q S (S1 - x_cg S0) / (m V^2)`, `M0 = CNa q S (x_cp - x_cg) / I`,
 /// `g = (rho S V / 2)(x_cg L0 - L1) / I`, `f_m = q S cnpa p_hat / (m V)`,
-/// `m_m = (x_cp - x_cg) q S cnpa p_hat / I`, `P = Ixx p / I`. Eliminating mu:
-/// `B = a + h - (1 - c_q) g - i (P - f_m)` and
-/// `K = (1 - c_q) M0 + h a + P f_m + i ((1 - c_q) m_m - P a + h f_m)`.
+/// `m_m = (x_cp - x_cg) q S cnpa p_hat / I`, `P = Ixx p / I`. With `h' = h - g` (the convective term
+/// is a pitch-damping contribution) and eliminating mu:
+/// `B = a + h' - (1 - c_q) g - i (P - f_m)` and
+/// `K = (1 - c_q) M0 + h' a + P f_m + i ((1 - c_q) m_m - P a + h' f_m)`.
 /// Without spin, `B = -[rho V S d^2 (Cmq + Cmalphadot) / (4 I) - rho V S CNa / (2 m)]` (with
-/// `c_q = 0`) and `K = omega^2`, the classical short-period equation.
+/// `c_q = 0`, `rho V S d^2 Cmq / (4 I) = -h'` and `rho V S d^2 Cmalphadot / (4 I) = g`) and
+/// `K = omega^2`, the classical short-period equation.
 fn theory(b: &Body, scale: AeroScale, p: f64) -> (C, C) {
     let qs = 0.5 * RHO * V * V * S;
     let [s0, s1, s2] = b.damp;
@@ -227,6 +230,7 @@ fn theory(b: &Body, scale: AeroScale, p: f64) -> (C, C) {
     let mm = (b.xcp - x) * qs * cnpa * p_hat / b.iyy;
     let pp = b.ixx * p / b.iyy;
     let kap = 1.0 - cq;
+    let h = h - g;
     let bb = C(a + h - kap * g, -(pp - fm));
     let kk = C(kap * m0 + h * a + pp * fm, kap * mm - pp * a + h * fm);
     (bb, kk)
@@ -273,6 +277,7 @@ fn spinning_body_follows_murphys_epicyclic_theory() {
     // 5 kg, I = 1 kg m^2, Ixx = 0.1 kg m^2, p = 300 rad/s: P = 30 rad/s against omega = 17 rad/s.
     let base = Body { mass: 5.0, damp: [10.0, 10.0, 10.25], lag: (2.0, 1.6), ..osc_body() };
     let p = 300.0;
+    let mut sim_damping = Vec::new();
     for cnpa in [3.0, -3.0] {
         let b = Body { cnpa, ..base };
         let scale = AeroScale::default();
@@ -300,15 +305,14 @@ fn spinning_body_follows_murphys_epicyclic_theory() {
             assert!((lam[i].0 / damping[i] - 1.0).abs() < 0.05, "cnpa {cnpa} {mode} damping {} vs {}", lam[i].0, damping[i]);
             assert!((lam[i].1 / exact[i].1 - 1.0).abs() < 1e-3 && (lam[i].0 / exact[i].0 - 1.0).abs() < 1e-2);
         }
-        // The Magnus moment (CG ahead of the centre of pressure) damps the slow mode and undamps
-        // the fast one for cnpa < 0, and the reverse for cnpa > 0 (Murphy's 2T - H).
-        let (fast, slow) = (damping[0], damping[1]);
-        if cnpa < 0.0 {
-            assert!(slow < fast, "{fast} {slow}");
-        } else {
-            assert!(fast < slow, "{fast} {slow}");
-        }
+        sim_damping.push((lam[0].0, lam[1].0));
     }
+    // Murphy: the Magnus moment enters through T, d(lambda_f) = +P dT / sqrt(D) and
+    // d(lambda_s) = -P dT / sqrt(D), with P dT = -(1 - c_q) dm_m. With the CG ahead of the centre of
+    // pressure, cnpa < 0 gives dm_m < 0, so it undamps the fast mode and damps the slow one compared
+    // with cnpa > 0.
+    let [(fast_pos, slow_pos), (fast_neg, slow_neg)] = [sim_damping[0], sim_damping[1]];
+    assert!(fast_neg > fast_pos && slow_neg < slow_pos, "{sim_damping:?}");
 }
 
 /// Derivative at a free-flight state of the harness body with lag sums (10, 8) and `scale`.
@@ -469,4 +473,55 @@ fn roll_resonance_is_reported_for_a_canted_rocket_with_a_lateral_cg_offset() {
     // Summary JSON round trip.
     let j = serde_json::to_value(&r.summary).unwrap();
     assert_eq!(serde_json::from_value::<RollResonance>(j["roll_resonance"].clone()).unwrap(), res);
+}
+
+#[test]
+fn magnus_force_points_along_u_b_cross_e_x() {
+    // p = 200 rad/s, crossflow w = V tan(2 deg) > 0 along +z_b (the body moves along +z_b relative to
+    // the air), cnpa = 1. McCoy's V x x with V = u_b = (u, 0, w) and x = e_x:
+    // (u, 0, w) x (1, 0, 0) = (0 * 0 - w * 0, w * 1 - u * 0, u * 0 - 0 * 1) = (0, w, 0): +y_b. Its size is
+    // q S cnpa p_hat sin(alpha) with p_hat = p d / (2 V); no other component.
+    let b = Body { lag: (0.0, 0.0), damp: [0.0; 3], cnpa: 1.0, ..osc_body() };
+    let (u, w, p) = (V, V * 2f64.to_radians().tan(), 200.0);
+    let s = State { pos: Vec3::new(0.0, 0.0, 100.0), vel: Vec3::new(u, 0.0, w), q: Quat::IDENTITY, w: Vec3::new(p, 0.0, 0.0) };
+    let (on, _) = deriv_at(&b, AeroScale::default(), calm(), &s);
+    let (off, _) = deriv_at(&b, AeroScale { magnus: 0.0, ..AeroScale::default() }, calm(), &s);
+    let vt = (u * u + w * w).sqrt();
+    let f = 0.5 * RHO * vt * vt * S * 1.0 * (p * D / (2.0 * vt)) * (w / vt);
+    let got = (on.vel - off.vel) * b.mass;
+    assert!((got - Vec3::new(0.0, f, 0.0)).norm() < 1e-9 * f, "{got:?} vs (0, {f}, 0)");
+    assert!(got.y > 0.0);
+    // Applied at the centre of pressure (1.0 m, CG 0.5 m): the moment (x_cg - x_cp) e_x x F turns the
+    // nose about z_b: M_z = (x_cg - x_cp) F_y < 0.
+    let dm = (on.w - off.w) * b.iyy;
+    assert!((dm - Vec3::new(0.0, 0.0, (b.x_cg - b.xcp) * f)).norm() < 1e-9 * f, "{dm:?}");
+}
+
+#[test]
+fn a_general_table_with_a_zero_angle_moment_is_a_trim_forcing() {
+    let (table, motor) = sample_parts();
+    let axes = || (aero::table::angle_axis(180.0, 30.0, 2.0, 10.0), aero::table::angle_axis(90.0, 30.0, 2.0, 10.0));
+    let (al, be) = axes();
+    let general = table.to_general(al, be);
+    assert_eq!(general.max_zero_angle_moment(), 0.0);
+    assert_eq!(table.max_zero_angle_moment(), 0.0);
+    // The same table with a pitch moment of 0.01 everywhere (an asymmetric rocket) and fin cant 0.
+    let mut meta = general.meta.clone();
+    let (al, be) = axes();
+    meta.alphas_deg = al;
+    meta.betas_deg = be;
+    let asym = AeroTable::general_from_fn(meta, |m, a, b| {
+        let c = general.lookup6(m, a.to_radians(), b.to_radians());
+        aero::table::Coeffs6 { cm: c.cm + 0.01, ..c }
+    });
+    assert!((asym.max_zero_angle_moment() - 0.01).abs() < 1e-12);
+    // Rolling rockets (a tabulated roll moment, no fin cant in the configuration): the symmetric table
+    // has no trim forcing, the asymmetric one reports the crossing.
+    let run = |t: &AeroTable| sample_sim(t, &motor, 0.0).run(Descent::Ballistic, false).unwrap().summary.roll_resonance;
+    let with_roll = |t: &AeroTable| {
+        AeroTable::general_from_fn(t.meta.clone(), |m, a, b| aero::table::Coeffs6 { cl: 0.3, ..t.lookup6(m, a.to_radians(), b.to_radians()) })
+    };
+    assert_eq!(run(&with_roll(&general)), None);
+    let res = run(&with_roll(&asym)).expect("roll resonance with an aerodynamic trim moment");
+    assert!(res.t > 0.0 && res.mach > 0.0, "{res:?}");
 }

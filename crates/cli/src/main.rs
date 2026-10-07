@@ -3681,8 +3681,8 @@ mod tests {
         let p = prepare(&cfg).unwrap();
         let (r, _) = fly_sample(&cfg, &p, Descent::Parachute);
         let s = &r.summary;
-        assert!((s.apogee - 4440.2).abs() < 0.05 && (s.apogee_time - 26.10).abs() < 0.005, "{} at {}", s.apogee, s.apogee_time);
-        assert!((s.landing_east + 655.2).abs() < 0.05 && (s.landing_north + 7704.5).abs() < 0.05, "{} {}", s.landing_east, s.landing_north);
+        assert!((s.apogee - 4439.95).abs() < 0.05 && (s.apogee_time - 26.10).abs() < 0.005, "{} at {}", s.apogee, s.apogee_time);
+        assert!((s.landing_east + 655.3).abs() < 0.05 && (s.landing_north + 7702.05).abs() < 0.05, "{} {}", s.landing_east, s.landing_north);
         let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 
@@ -3693,7 +3693,7 @@ mod tests {
         let p = prepare(&cfg).unwrap();
         assert_eq!(p.table.kind(), aero::table::TableKind::General);
         let (r, _) = fly_sample(&cfg, &p, Descent::Parachute);
-        assert!((r.summary.apogee - 4440.7).abs() < 0.5, "apogee {}", r.summary.apogee);
+        assert!((r.summary.apogee - 4439.95).abs() < 0.5, "apogee {}", r.summary.apogee);
         let _ = std::fs::remove_dir_all(&cfg.output.dir);
     }
 

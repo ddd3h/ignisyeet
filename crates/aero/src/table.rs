@@ -223,8 +223,13 @@ pub struct AeroCoeffs {
     /// Induced roll: `Cl = cl4 alpha^2 sin(4 phi_w)` (alpha the total angle of attack [rad],
     /// `phi_w` the roll angle of the crossflow from a fin, see [`TableMeta::fin_roll_deg`]).
     pub cl4: f64,
-    /// Magnus force slope [1/rad^2]: `C_N,Magnus = cnpa p_hat alpha`, 90 deg from the plane of the
-    /// static normal force (see the flight model for the direction).
+    /// Magnus force slope [1/rad] (per radian of angle of attack; `p_hat = p d / (2 V)` is
+    /// dimensionless): `C_N,Magnus = cnpa p_hat sin(alpha)`. With McCoy's normalisation by
+    /// `p d / V` (Modern Exterior Ballistics, ch. 2), `cnpa = 2 C_Npa`. Positive along
+    /// `u_b x e_x` (McCoy's `V x x`, `u_b` the velocity of the body relative to the air in body
+    /// axes): for `p > 0` and a crossflow along +z_b the force points along +y_b, 90 deg from the
+    /// static normal force. The flight model applies it at the centre of pressure of the static
+    /// normal force (an assumption: the table has no separate Magnus moment `C_mpa`).
     pub cnpa: f64,
 }
 
@@ -1018,6 +1023,18 @@ impl AeroTable {
         let (p, n) = (self.lookup6_rec(m, 0.0, db, false), self.lookup6_rec(m, 0.0, -db, false));
         let yaw = ((p.cn - n.cn) + x_cg / d * (p.cy - n.cy)) / (2.0 * db);
         pitch.min(yaw)
+    }
+
+    /// Largest |Cm| and |Cn| (moments about the nose tip, normalised by q S d) of a general table at
+    /// zero angle of attack and sideslip over its Mach rows: an aerodynamic asymmetry (trim
+    /// moment). 0 for an axisymmetric table, and when the grid holds no zero-angle node.
+    pub fn max_zero_angle_moment(&self) -> f64 {
+        let TableData::General(d) = &self.data else { return 0.0 };
+        let (na, nb) = (self.meta.alphas_deg.len(), self.meta.betas_deg.len());
+        let (Some(ia), Some(ib)) = (self.meta.alphas_deg.iter().position(|a| a.abs() < 1e-9), self.meta.betas_deg.iter().position(|b| b.abs() < 1e-9)) else {
+            return 0.0;
+        };
+        (0..self.meta.machs.len()).map(|i| &d[(i * na + ia) * nb + ib]).map(|r| r[5].abs().max(r[6].abs())).fold(0.0, f64::max)
     }
 
     /// Sanity warnings for a table that was not built by this program: a negative axial force

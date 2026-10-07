@@ -184,7 +184,6 @@ RANS の 2 次精度の段（半モデル、``cfl`` = 5、``yplus`` = 1）では
    CONV_FIELD= ( RMS_DENSITY, RMS_NU_TILDE )
    CONV_RESIDUAL_MINVAL= -14
    HISTORY_OUTPUT= ( ITER, RMS_RES, REL_RMS_RES, AERO_COEFF, AERO_COEFF_SURF, LINSOL, CFL_NUMBER )
-   OUTPUT_WRT_FREQ= 50
 
 自由流の圧力と温度は、射点の標高（``launch.altitude``）の大気の値である（上の例は海面の値）。
 機体はメッシュの中に固定し、自由流の向きを迎角 :math:`\alpha` と横滑り角 :math:`\beta` だけ傾けるので、SU2 の力とモーメントの係数がそのまま機体軸の係数になる。

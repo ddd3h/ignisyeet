@@ -297,15 +297,15 @@ fn supersonic_comparison_with_barrowman() {
         if (m - 1.5).abs() < 1e-9 {
             assert!((c.cna / model.cna(m) - 1.0).abs() < 0.30, "M=1.5 CNa {} vs {}", c.cna, model.cna(m));
         }
-        // Mach 2: Euler CFD of this rocket 13.04 (doc/data/cfd/sample_euler_vs_models.csv).
+        // Mach 2: Euler CFD of this rocket 13.24 (doc/data/cfd/sample_euler_vs_models.csv).
         if (m - 2.0).abs() < 1e-9 {
-            assert!((c.cna / 13.04 - 1.0).abs() < 0.10, "M=2 CNa {} vs Euler 13.04", c.cna);
+            assert!((c.cna / 13.24 - 1.0).abs() < 0.10, "M=2 CNa {} vs Euler 13.24", c.cna);
         }
         if (m - 2.0).abs() < 1e-9 {
             assert!((c.xcp - xb).abs() < 0.06, "M=2 xcp {} vs {xb}", c.xcp);
         }
     }
-    // No unphysical transonic peak. Euler CFD of this rocket: 18.46 at Mach 1.2 against 16.40 at
+    // No unphysical transonic peak. Euler CFD of this rocket: 18.50 at Mach 1.2 against 15.83 at
     // Mach 0.8 (doc/data/cfd/sample_euler_vs_models.csv); the local-inclination methods at the band
     // edge, where the fin leading edges already sit past wedge detachment, give about 1.36 times (the
     // body upwash is faded out there, `upwash_weight`).

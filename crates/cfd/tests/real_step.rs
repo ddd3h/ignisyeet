@@ -231,6 +231,9 @@ fn rans_on_the_step_fixture_is_valid_or_names_the_sharp_edges() {
             eprintln!("RANS mesh of the STEP fixture: {:?} in {:.1?}", m.stats, t.elapsed());
             let s = &m.stats;
             assert_eq!(s.bl_invalid, 0);
+            // The thinned columns at the lug and the rail buttons keep all their layers: their last layer is far below
+            // the tetrahedra on it (the body and the fins alone stay below 8 at the 99th percentile).
+            assert!(s.bl_top_ratio_p99 < 30.0, "{s:?}");
             assert!(s.by_type.get("Prism 6").copied().unwrap_or(0) > 100_000, "{:?}", s.by_type);
             let (cells, nodes, marks) = read_su2(&m.su2);
             assert!(cells.iter().all(|(k, c)| su2_volume(*k, c, &nodes) > 0.0));
@@ -242,5 +245,42 @@ fn rans_on_the_step_fixture_is_valid_or_names_the_sharp_edges() {
             assert!(e.contains("use model = \"euler\", or round the sharp edges"), "{e}");
         }
     }
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+#[ignore = "needs the python of the CFD tools with numpy (IGNISYEET_CFD_PREFIX)"]
+fn bl_layer_finds_opposite_walls_and_crossing_columns() {
+    // Two parallel plates 4 mm apart (the slot under a rail button flange) and a single plate.
+    let dir = tmp("bl_gap");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("bl_layer.py"), cfd::mesh::BL_LAYER).unwrap();
+    std::fs::write(
+        dir.join("check.py"),
+        r#"import sys
+import numpy as np
+import bl_layer as b
+g = np.linspace(0, 0.05, 11)
+X, Y = np.meshgrid(g, g)
+P = np.c_[X.ravel(), Y.ravel()]
+T = np.array([t for i in range(10) for j in range(10) for t in ([i * 11 + j, i * 11 + j + 1, i * 11 + j + 12], [i * 11 + j, i * 11 + j + 12, i * 11 + j + 11])])
+low, up = np.c_[P, np.zeros(len(P))], np.c_[P, np.full(len(P), 0.004)]
+x = np.vstack([low, up])
+n = np.vstack([np.tile([0, 0, 1.0], (len(P), 1)), np.tile([0, 0, -1.0], (len(P), 1))])
+tri = np.vstack([T, T + len(P)])
+d = b.wall_hits(x, n, tri, 0.05, 0.005)
+assert abs(d.min() - 0.004) < 1e-12 and abs(d.max() - 0.004) < 1e-12, d
+assert np.isinf(b.wall_hits(low, n[: len(P)], T, 0.05, 0.005)).all()
+cap = b.column_collisions(x, n, np.full(len(x), 0.01), np.full(len(x), 0.005))
+assert (cap < 0.004).all(), cap
+assert np.isinf(b.column_collisions(low, n[: len(P)], np.full(len(P), 0.01), np.full(len(P), 0.005))).all()
+print("BL_OK")
+"#,
+    )
+    .unwrap();
+    let tools = cfd::tools::check_tools(&CfdOptions::default(), &[]);
+    let out = cfd::tools::command(tools.gmsh.path.as_ref().unwrap(), tools.prefix.as_deref()).arg(dir.join("check.py")).current_dir(&dir).output().unwrap();
+    let log = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    assert!(out.status.success() && log.contains("BL_OK"), "{log}");
     let _ = std::fs::remove_dir_all(&dir);
 }

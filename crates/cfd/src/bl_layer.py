@@ -168,6 +168,117 @@ def distance_to_edges(q, xyz, edges):
     return dist
 
 
+def wall_hits(x, n, tri, reach, h):
+    """Distance along the normal from each wall node to the wall itself (the first triangle the ray x_i + s n_i,
+    0 < s <= reach, passes through; inf if none): the free height of the column over an opposite wall (a lug bore, the
+    slot under a rail button flange). Triangles `tri` (indices into `x`) are binned in cubes of `h`; each ray is sampled
+    every h / 2 and tested (Moeller-Trumbore) against the triangles of the cubes it passes; the triangles of the node
+    itself are skipped."""
+    m = len(x)
+    out = np.full(m, np.inf)
+    if m == 0 or not (np.isfinite(reach) and reach > 0.0 and h > 0.0):
+        return out
+    lo = np.minimum(x.min(axis=0), (x + reach * n).min(axis=0)) - h
+    span = np.maximum(x.max(axis=0), (x + reach * n).max(axis=0)) + h - lo
+    dims = np.floor(span / h).astype(np.int64) + 2
+    keyf = lambda c: (c[:, 0] * dims[1] + c[:, 1]) * dims[2] + c[:, 2]  # noqa: E731
+    # Cubes covered by each triangle's bounding box.
+    p0, p1, p2 = x[tri[:, 0]], x[tri[:, 1]], x[tri[:, 2]]
+    cmin = np.floor((np.minimum(np.minimum(p0, p1), p2) - lo) / h).astype(np.int64)
+    cmax = np.floor((np.maximum(np.maximum(p0, p1), p2) - lo) / h).astype(np.int64)
+    ext = cmax - cmin + 1
+    tk_list, tt_list = [], []
+    for ox in range(int(ext[:, 0].max())):
+        for oy in range(int(ext[:, 1].max())):
+            for oz in range(int(ext[:, 2].max())):
+                sel = np.flatnonzero((ox < ext[:, 0]) & (oy < ext[:, 1]) & (oz < ext[:, 2]))
+                tk_list.append(keyf(cmin[sel] + np.array([ox, oy, oz])))
+                tt_list.append(sel)
+    tkey, ttri = np.concatenate(tk_list), np.concatenate(tt_list)
+    o = np.argsort(tkey, kind="stable")
+    tkey, ttri = tkey[o], ttri[o]
+    # (node, cube) pairs along the rays.
+    steps = np.arange(0, int(np.ceil(reach / (0.5 * h))) + 1) * 0.5 * h
+    nk = []
+    for s_ in steps:
+        nk.append(keyf(np.floor((x + s_ * n - lo) / h).astype(np.int64)))
+    nk = np.stack(nk, axis=1)  # (m, k)
+    node = np.repeat(np.arange(m), nk.shape[1])
+    pair = np.unique(np.stack([node, nk.ravel()], axis=1), axis=0)
+    eps = 1e-9
+    for c0 in range(0, len(pair), 200000):
+        pr = pair[c0:c0 + 200000]
+        a0 = np.searchsorted(tkey, pr[:, 1], "left")
+        cnt = np.searchsorted(tkey, pr[:, 1], "right") - a0
+        if not cnt.any():
+            continue
+        ii = np.repeat(pr[:, 0], cnt)
+        off = np.arange(len(ii)) - np.repeat(np.cumsum(cnt) - cnt, cnt)
+        tt = ttri[np.repeat(a0, cnt) + off]
+        own = (tri[tt] == ii[:, None]).any(axis=1)
+        ii, tt = ii[~own], tt[~own]
+        if not len(ii):
+            continue
+        v0, v1, v2 = x[tri[tt, 0]], x[tri[tt, 1]], x[tri[tt, 2]]
+        d = n[ii]
+        e1, e2 = v1 - v0, v2 - v0
+        pv = np.cross(d, e2)
+        det = np.einsum("ij,ij->i", e1, pv)
+        good = np.abs(det) > eps * np.linalg.norm(e1, axis=1) * np.linalg.norm(e2, axis=1)
+        inv = np.where(good, 1.0 / np.where(good, det, 1.0), 0.0)
+        tv = x[ii] - v0
+        u = np.einsum("ij,ij->i", tv, pv) * inv
+        qv = np.cross(tv, e1)
+        v = np.einsum("ij,ij->i", d, qv) * inv
+        t = np.einsum("ij,ij->i", e2, qv) * inv
+        ok = good & (u >= 0.0) & (v >= 0.0) & (u + v <= 1.0) & (t > 1e-6 * h) & (t <= reach)
+        if ok.any():
+            np.minimum.at(out, ii[ok], t[ok])
+    return out
+
+
+def column_collisions(x, n, t, hn, k=8, frac=0.3):
+    """Height caps of crossing columns: column i runs from x_i along n_i for t_i; its points at k heights are compared
+    with those of all other columns, and two points closer than `frac` of the smaller local edge length `hn` and than
+    half the distance of the two wall nodes (the columns of one smooth wall stay about as far apart as their nodes)
+    mean the columns meet. Both columns get 0.6 of the
+    lower meeting height as their cap (inf where nothing meets)."""
+    m = len(x)
+    cap = np.full(m, np.inf)
+    lev = (np.arange(1, k + 1) / k)[:, None]
+    hs = (lev * t[None, :]).ravel()  # (k m) heights, level-major
+    owner = np.tile(np.arange(m), k)
+    pts = np.repeat(x[None, :, :], k, axis=0).reshape(-1, 3) + hs[:, None] * np.repeat(n[None, :, :], k, axis=0).reshape(-1, 3)
+    c = max(float(np.median(hn)) * frac, 1e-9)
+    lo = pts.min(axis=0)
+    cell = np.floor((pts - lo) / c).astype(np.int64)
+    dims = cell.max(axis=0) + 3
+    keyf = lambda q: ((q[:, 0] + 1) * dims[1] + q[:, 1] + 1) * dims[2] + q[:, 2] + 1  # noqa: E731
+    key = keyf(cell)
+    order = np.argsort(key, kind="stable")
+    ks = key[order]
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            for dz in (-1, 0, 1):
+                tk = keyf(cell + np.array([dx, dy, dz]))
+                a0 = np.searchsorted(ks, tk, "left")
+                cnt = np.searchsorted(ks, tk, "right") - a0
+                if not cnt.any():
+                    continue
+                aa = np.repeat(np.arange(len(pts)), cnt)
+                off = np.arange(len(aa)) - np.repeat(np.cumsum(cnt) - cnt, cnt)
+                bb = order[np.repeat(a0, cnt) + off]
+                i, j = owner[aa], owner[bb]
+                ok = i != j
+                dd = np.linalg.norm(pts[aa] - pts[bb], axis=1)
+                ok &= (dd < frac * np.minimum(hn[i], hn[j])) & (dd < 0.5 * np.linalg.norm(x[i] - x[j], axis=1))
+                if ok.any():
+                    meet = 0.6 * np.minimum(hs[aa], hs[bb])[ok]
+                    np.minimum.at(cap, i[ok], meet)
+                    np.minimum.at(cap, j[ok], meet)
+    return cap
+
+
 def column_heights(h1, n, thick):
     """Cumulative layer heights (n + 1, m) of columns with first height h1, n layers and total thicknesses `thick`
     (geometric growth, ratio solved per column; at least n h1)."""
@@ -194,10 +305,11 @@ def rerun(q, why):
     os.execv(sys.executable, [sys.executable, os.path.abspath(sys.argv[0]), path])
 
 
-def build(p, wall, cap, half, t0, t1, invalid_hint=" (try a different wall_size or yplus)", tet_hint=""):
+def build(p, wall, cap, half, t0, t1, invalid_hint=" (try a different wall_size or yplus)", tet_hint="", gap=None):
     """Prism layers on the surface mesh of the faces `wall` and `cap` (base) of the current gmsh model, tetrahedra in
     the box farfield (half box y >= 0 when `half`); writes the SU2 mesh (mirrored to the full domain for p["y_mirror"])
-    and the statistics, then exits. `t0`, `t1`: start of the script and of the surface mesh (statistics)."""
+    and the statistics, then exits. `t0`, `t1`: start of the script and of the surface mesh (statistics). `gap`: columns
+    facing an opposite wall are at most this fraction of the distance to it (see facing_gaps; None = no gap rule)."""
     import su2_writer as sw
 
     bl = p["bl"]
@@ -253,6 +365,15 @@ def build(p, wall, cap, half, t0, t1, invalid_hint=" (try a different wall_size 
     np.maximum.at(spread, e0[:, 0], ang)
     np.maximum.at(spread, e0[:, 1], ang)
     thick = np.minimum(thick, bl["fan"] * h0 / np.maximum(spread, 1e-6))
+    if gap is not None:
+        # Narrow gaps between opposite walls (a lug bore, the slot under a rail button flange): the layers of the two
+        # walls would cross and the layer top intersect itself.
+        reach = bl["thickness"] / gap
+        dgap = wall_hits(x0w, nw, tl, reach, float(np.median(np.linalg.norm(x0w[e0[:, 0]] - x0w[e0[:, 1]], axis=1))))
+        narrow = dgap < np.inf
+        thick[narrow] = np.minimum(thick[narrow], gap * dgap[narrow])
+        print("boundary layer: %d columns reach the wall again within %.3g m (closest %.3g m)"
+              % (int(narrow.sum()), reach, float(dgap.min()) if narrow.any() else float("nan")))
     # Columns of prisms whose corners invert are made thinner (with their neighbours, Lipschitz 0.5) until none does.
     e = e0
     elen = np.linalg.norm(x0w[e[:, 0]] - x0w[e[:, 1]], axis=1)
@@ -268,6 +389,9 @@ def build(p, wall, cap, half, t0, t1, invalid_hint=" (try a different wall_size 
         return t
 
     thick = limit(thick)
+    hnode = np.zeros(m)
+    np.maximum.at(hnode, e[:, 0], elen)
+    np.maximum.at(hnode, e[:, 1], elen)
     for it in range(30):
         s = column_heights(h1, n_lay, thick)
         lay = x0w[None, :, :] + s[:, :, None] * nw[None, :, :]  # (n + 1, m, 3)
@@ -275,6 +399,15 @@ def build(p, wall, cap, half, t0, t1, invalid_hint=" (try a different wall_size 
         prisms = np.concatenate([np.concatenate([tl + k * m, tl + (k + 1) * m], axis=1) for k in range(n_lay)])
         jac = sw.prism_corner_jacobians(pts_all, prisms).min(axis=1)
         bad = jac <= 0.0
+        if not bad.any() and gap is not None:
+            # Columns of different walls that come closer than a third of the local edge length cross (concave slots
+            # such as the gap between a rail button flange and the body): both are cut below the meeting point.
+            cap_ = column_collisions(x0w, nw, thick, hnode)
+            hit = cap_ < thick
+            if hit.any():
+                print("boundary layer: %d columns cross other columns; thinning them" % int(hit.sum()))
+                thick = limit(np.minimum(thick, cap_))
+                continue
         if not bad.any():
             break
         badnodes = np.unique(prisms[bad] % m)

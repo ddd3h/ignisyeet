@@ -433,6 +433,7 @@ def boundary_layer_mesh(parts):
         invalid_hint="; " + SHARP_HINT,
         tet_hint=": the layer top probably intersects itself (narrow gaps such as a lug bore or the space between a button and "
         "the body are thinner than the layer); " + SHARP_HINT,
+        gap=0.4,
     )
 
 

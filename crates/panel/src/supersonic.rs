@@ -4,7 +4,11 @@
 //!
 //! Each panel sees the freestream at the local inclination `delta` between its plane and the
 //! flow (`delta > 0`: compression).
-//! * Fin panels: tangent wedge (exact oblique shock, weak branch) for compression, beyond the
+//! * Fin panels: the local flow includes the body upwash, the two-dimensional potential crossflow
+//!   around the body cylinder at the panel ([`cylinder_crossflow`]); a fin normal to the crossflow
+//!   sees it raised by `1 + r^2 / rho^2` (slender-body fin-body interference, whose span average over
+//!   a rectangular fin is Barrowman's `1 + r / (s + r)`), a fin aligned with it none.
+//!   Tangent wedge (exact oblique shock, weak branch) for compression, beyond the
 //!   detachment limit a Newtonian-shaped rise from the attached value at detachment to the
 //!   stagnation value at 90 deg ([`detached_cp`]), Prandtl–Meyer expansion from the freestream
 //!   for expansion (leeward shadow), clipped at the vacuum limit.
@@ -386,11 +390,35 @@ pub struct SupersonicPanels {
     delta0: Vec<f64>,
     /// Fin tip leading-edge corner `(x, radius)` for the 3-D tip relief.
     tip_le: Option<(f64, f64)>,
+    /// Body radius at the fins (0: no body upwash on the fins).
+    fin_body_radius: f64,
     s_ref: f64,
 }
 
+/// Crossflow velocity `(v_y, v_z)` at `(y, z)` around a circular cylinder of radius `r` in the uniform
+/// crossflow `(w_y, w_z)` (two-dimensional potential flow, complex velocity
+/// `u_y - i u_z = (w_y - i w_z) - (w_y + i w_z) r^2 / zeta^2`, `zeta = y + i z`); points inside the
+/// cylinder are taken on its surface. In the plane of the crossflow through the axis' normal (a fin
+/// normal to the crossflow) the crossflow is raised by `1 + r^2 / rho^2`; in the plane containing the
+/// crossflow (a fin aligned with it) the component normal to the fin stays zero.
+pub fn cylinder_crossflow(y: f64, z: f64, r: f64, w_y: f64, w_z: f64) -> (f64, f64) {
+    let rho2 = y * y + z * z;
+    if r <= 0.0 || rho2 <= 0.0 {
+        return (w_y, w_z);
+    }
+    let k = (r * r / rho2).min(1.0);
+    // zeta^2 / |zeta|^2 = (y^2 - z^2 + 2 i y z) / rho^2; r^2 / zeta^2 = k (y^2 - z^2 - 2 i y z) / rho^2.
+    let (cr, ci) = (k * (y * y - z * z) / rho2, -k * 2.0 * y * z / rho2);
+    // (w_y + i w_z) (cr + i ci)
+    let (pr, pi) = (w_y * cr - w_z * ci, w_y * ci + w_z * cr);
+    // u_y - i u_z = (w_y - pr) - i (w_z + pi)
+    (w_y - pr, w_z + pi)
+}
+
 impl SupersonicPanels {
-    pub fn new(mesh: &Mesh, s_ref: f64, tip_le: Option<(f64, f64)>) -> Self {
+    /// `tip_le`: fin tip leading-edge corner `(x, radius)`; `fin_body_radius`: body radius at the
+    /// fins, for the body upwash on the fin panels (0: none).
+    pub fn new(mesh: &Mesh, s_ref: f64, tip_le: Option<(f64, f64)>, fin_body_radius: f64) -> Self {
         let p: Vec<&crate::mesh::Panel> = mesh.panels.iter().filter(|q| q.part != Part::Tail).collect();
         Self {
             c: p.iter().map(|q| q.centroid).collect(),
@@ -399,6 +427,7 @@ impl SupersonicPanels {
             part: p.iter().map(|q| q.part).collect(),
             delta0: p.iter().map(|q| (-q.normal.x).clamp(-1.0, 1.0).asin()).collect(),
             tip_le,
+            fin_body_radius: fin_body_radius.max(0.0),
             s_ref,
         }
     }
@@ -422,7 +451,15 @@ impl SupersonicPanels {
         let (sa, ca) = alpha.sin_cos();
         let mut f = Forces::default();
         for i in 0..self.c.len() {
-            let u = Vec3::new(ca, 0.0, sa + omega * self.c[i].x).normalized();
+            let w = sa + omega * self.c[i].x;
+            let u = if self.part[i] == Part::Body {
+                Vec3::new(ca, 0.0, w)
+            } else {
+                // Fins see the body upwash: the crossflow around the cylinder at the panel.
+                let (vy, vz) = cylinder_crossflow(self.c[i].y, self.c[i].z, self.fin_body_radius, 0.0, w);
+                Vec3::new(ca, vy, vz)
+            }
+            .normalized();
             let delta = (-self.n[i].dot(u)).clamp(-1.0, 1.0).asin();
             let cp = if self.part[i] == Part::Body {
                 body_cp(m, delta, self.delta0[i])

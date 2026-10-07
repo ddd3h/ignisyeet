@@ -262,7 +262,7 @@ fn cone_cylinder_cna_at_mach_2() {
     let rk = SampleRocket { nose_shape: NoseShape::Cone, nose_length: 0.05 / 10f64.to_radians().tan(), fin_count: 0, ..Default::default() };
     let g = geometry(&rk);
     let mesh = Mesh::from_geometry(&g, &coarse()).unwrap();
-    let sp = supersonic::SupersonicPanels::new(&mesh, g.ref_area, None);
+    let sp = supersonic::SupersonicPanels::new(&mesh, g.ref_area, None, 0.0);
     let d = sp.derivatives(2.0, g.length);
     println!("10 deg cone-cylinder M=2: CNa {:.3}", d[0]);
     assert!((d[0] - 2.0).abs() < 0.3, "CNa {}", d[0]);
@@ -289,17 +289,25 @@ fn supersonic_comparison_with_barrowman() {
         if [0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5, 2.0, 3.0].iter().any(|v| (v - m).abs() < 1e-9) {
             println!("{m:.1}  {:.2}  {:.2}  {xb:.3}  {:.3}  {:.3}  {:.3}", model.cna(m), c.cna, c.xcp, model.cd0(m, false).total(), c.ca_off);
         }
+        // The local-inclination fins carry the body upwash, the component build-up fins only Barrowman's
+        // fin-in-body factor (no body carry-over): the panel value is about 27 % higher at Mach 1.5.
         if (m - 1.5).abs() < 1e-9 {
-            assert!((c.cna / model.cna(m) - 1.0).abs() < 0.25, "M=1.5 CNa {} vs {}", c.cna, model.cna(m));
+            assert!((c.cna / model.cna(m) - 1.0).abs() < 0.32, "M=1.5 CNa {} vs {}", c.cna, model.cna(m));
+        }
+        // Mach 2: Euler CFD of this rocket 13.04 (doc/data/cfd/sample_euler_vs_models.csv).
+        if (m - 2.0).abs() < 1e-9 {
+            assert!((c.cna / 13.04 - 1.0).abs() < 0.10, "M=2 CNa {} vs Euler 13.04", c.cna);
         }
         if (m - 2.0).abs() < 1e-9 {
             assert!((c.xcp - xb).abs() < 0.06, "M=2 xcp {} vs {xb}", c.xcp);
         }
     }
-    // No unphysical transonic peak. Euler CFD of this rocket: 18.46 at Mach 1.2 against 16.40 at
-    // Mach 0.8 (doc/data/cfd/sample_euler_vs_models.csv); the local-inclination methods at the band
-    // edge, where the fin leading edges already sit past wedge detachment, give about 1.36 times.
-    assert!(peak <= 1.4 * c08, "CNa peak {peak} vs M=0.8 value {c08}");
+    // Bounded transonic peak. Euler CFD of this rocket: 18.46 at Mach 1.2 against 16.40 at Mach 0.8
+    // (doc/data/cfd/sample_euler_vs_models.csv). The local-inclination methods at the band edge
+    // (Mach 1.2) overestimate it: the fin loading grows like 1 / beta, the tip Mach cone covers the
+    // whole fin and reaches the body (beta s < c), where the half-loading tip relief no longer holds,
+    // and the body upwash multiplies it; they give about 1.8 times the Mach 0.8 value.
+    assert!(peak <= 1.9 * c08, "CNa peak {peak} vs M=0.8 value {c08}");
 }
 
 #[test]
@@ -420,7 +428,7 @@ fn subsonic_nose_moment_is_the_full_cross_product() {
 #[test]
 fn supersonic_nose_moment_is_the_full_cross_product() {
     let mesh = sphere_mesh(80);
-    let sp = supersonic::SupersonicPanels::new(&mesh, PI, None);
+    let sp = supersonic::SupersonicPanels::new(&mesh, PI, None, 0.0);
     for deg in [5.0f64, 30.0, 60.0] {
         let f = sp.forces(2.0, deg.to_radians(), 0.0);
         assert!((f.mz / f.fz - 1.0).abs() < 0.03, "{deg}°: xcp {}", f.mz / f.fz);
@@ -492,4 +500,86 @@ fn transonic_band_starts_at_its_lower_edge() {
     for &m in &ta.meta.machs {
         assert_eq!(ta.lookup(m, a).cn, tn.lookup(m, a).cn, "M={m}");
     }
+}
+
+/// The two-dimensional crossflow around the body cylinder: raised by `1 + r^2 / rho^2` normal to the
+/// crossflow (fins normal to it), lowered by `1 - r^2 / rho^2` along it (no flow through the
+/// cylinder), unchanged far away, and linear in the crossflow.
+#[test]
+fn cylinder_crossflow_upwash() {
+    use supersonic::cylinder_crossflow as cf;
+    let r = 0.5;
+    let (vy, vz) = cf(1.0, 0.0, r, 0.0, 2.0);
+    assert!(vy.abs() < 1e-12 && (vz - 2.0 * 1.25).abs() < 1e-12, "{vy} {vz}");
+    let (vy, vz) = cf(0.0, -1.0, r, 0.0, 2.0);
+    assert!(vy.abs() < 1e-12 && (vz - 2.0 * 0.75).abs() < 1e-12, "{vy} {vz}");
+    // Crossflow along y: the fin in the plane z = 0 is aligned with it, the one in y = 0 normal to it.
+    let (vy, vz) = cf(1.0, 0.0, r, 2.0, 0.0);
+    assert!((vy - 1.5).abs() < 1e-12 && vz.abs() < 1e-12, "{vy} {vz}");
+    let (vy, vz) = cf(0.0, 1.0, r, 2.0, 0.0);
+    assert!((vy - 2.5).abs() < 1e-12 && vz.abs() < 1e-12, "{vy} {vz}");
+    let (vy, vz) = cf(300.0, 400.0, r, 0.3, -0.7);
+    assert!((vy - 0.3).abs() < 1e-6 && (vz + 0.7).abs() < 1e-6);
+    // No body: the freestream crossflow.
+    assert_eq!(cf(0.1, 0.2, 0.0, 0.3, -0.7), (0.3, -0.7));
+    // On the surface the flow is tangential: radial component zero.
+    let th = 0.7f64;
+    let (y, z) = (r * th.cos(), r * th.sin());
+    let (vy, vz) = cf(y, z, r, 0.4, 1.1);
+    assert!((vy * th.cos() + vz * th.sin()).abs() < 1e-12);
+}
+
+/// Supersonic fin-body interference of the local-inclination method: four rectangular fins (no sweep,
+/// r / (s + r) = 1/3, the proportions of the Basic Finner) on a cone-cylinder at Mach 2. The fin normal
+/// force with the body upwash over that without it is the planform average of `1 + r^2 / y^2`
+/// weighted with the tip relief (half loading in the tip Mach cone), about Barrowman's
+/// `1 + r / (s + r) = 4/3`; and the fin normal-force slope then agrees with Barrowman's (Ackeret
+/// `4 / beta` with the same tip loss and interference factor) within 6 %.
+#[test]
+fn supersonic_fins_see_the_body_upwash() {
+    use geom::sample::NoseShape;
+    let base = SampleRocket {
+        nose_shape: NoseShape::Cone,
+        nose_length: 0.05 / 10f64.to_radians().tan(),
+        tip_chord: 0.10,
+        root_chord: 0.10,
+        span: 0.10,
+        sweep: 0.0,
+        ..Default::default()
+    };
+    let g = geometry(&base);
+    let f = g.fins.clone().unwrap();
+    let (r, s, c) = (f.body_radius, f.span, f.root_chord);
+    let mesh = Mesh::from_geometry(&g, &coarse()).unwrap();
+    let tip = Some((f.x_le_root + f.sweep, r + s));
+    let m = 2.0;
+    let with = supersonic::SupersonicPanels::new(&mesh, g.ref_area, tip, r).derivatives(m, g.length)[0];
+    let without = supersonic::SupersonicPanels::new(&mesh, g.ref_area, tip, 0.0).derivatives(m, g.length)[0];
+    let gb = geometry(&SampleRocket { fin_count: 0, ..base.clone() });
+    let mb = Mesh::from_geometry(&gb, &coarse()).unwrap();
+    let body = supersonic::SupersonicPanels::new(&mb, gb.ref_area, None, 0.0).derivatives(m, gb.length)[0];
+    let ratio = (with - body) / (without - body);
+    // Expected: upwash averaged over the planform with the tip relief weight.
+    let beta = (m * m - 1.0f64).sqrt();
+    let (n, mut num, mut den) = (400, 0.0, 0.0);
+    for i in 0..n {
+        for j in 0..n {
+            let x = (i as f64 + 0.5) / n as f64 * c;
+            let y = r + (j as f64 + 0.5) / n as f64 * s;
+            let wgt = if x >= beta * (r + s - y) { 0.5 } else { 1.0 };
+            num += wgt * (1.0 + r * r / (y * y));
+            den += wgt;
+        }
+    }
+    let expect = num / den;
+    let model = AeroModel::new(g.clone(), AeroOptions::default());
+    let fin_barrowman = model.cna(m) - model.body_cna();
+    println!(
+        "M=2 fins: with upwash {:.3}, without {:.3}, ratio {ratio:.4} (expected {expect:.4}, Barrowman 1 + r/(s+r) = {:.4}); Barrowman fin CNa {fin_barrowman:.3}",
+        with - body,
+        without - body,
+        1.0 + r / (s + r)
+    );
+    assert!((ratio / expect - 1.0).abs() < 0.03, "ratio {ratio} vs {expect}");
+    assert!(((with - body) / fin_barrowman - 1.0).abs() < 0.06, "fin CNa {} vs Barrowman {fin_barrowman}", with - body);
 }

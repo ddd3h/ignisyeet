@@ -1366,8 +1366,7 @@ mod tests {
         let text = std::fs::read_to_string(&p).unwrap();
         let cut: String = text.lines().map(|l| l.split(',').take(nc + n_values).collect::<Vec<_>>().join(",") + "\n").collect();
         std::fs::write(&p, cut).unwrap();
-        let u = AeroTable::load(&p).unwrap();
-        u
+        AeroTable::load(&p).unwrap()
     }
 
     #[test]

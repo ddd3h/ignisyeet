@@ -798,8 +798,7 @@ mod tests {
         let td = TempDir::new(&format!("disp_{tag}"));
         let path = td.join("profile.csv");
         std::fs::write(&path, csv).unwrap();
-        let w = Wind::from_config(&WindConfig { model: WindModel::Profile, profile: Some(path.clone()), ..Default::default() }).unwrap();
-        w
+        Wind::from_config(&WindConfig { model: WindModel::Profile, profile: Some(path.clone()), ..Default::default() }).unwrap()
     }
 
     const CALM_SURFACE: &str = "altitude_m,speed,direction_deg\n0,0,270\n50,6,270\n3000,12,270\n";

@@ -414,8 +414,60 @@ pub enum RansVerdict {
     /// Density residual [`RANS_CYCLE_RHO_DROP`] orders below the reference and the coefficients oscillating
     /// within [`History::limit_cycle`]: accepted, listed as unconverged, coefficients averaged over the window.
     LimitCycle,
+    /// The residual has stalled ([`RANS_STALL_RHO_DROP`] orders or more below the reference, its median over the
+    /// last window no lower than over the window before) while the coefficients are stationary over both windows:
+    /// flat and without a trend extrapolated over the iteration budget. Accepted, listed as unconverged, with the
+    /// spread of the forces (the text).
+    Stalled(String),
     /// Not acceptable (the reason).
     Rejected(String),
+}
+
+/// RANS stalled residual: least density-residual drop below the reference (orders, median of the window).
+pub const RANS_STALL_RHO_DROP: f64 = 0.5;
+/// RANS stalled residual: the median over the last window is not this much lower than over the window before.
+pub const RANS_STALL_PROGRESS: f64 = 0.2;
+
+/// Median of the column `names` over rows `from..to` of `h`.
+fn median_rows(h: &History, names: &[&str], from: usize, to: usize) -> Option<f64> {
+    let c = h.col(names)?;
+    let mut v: Vec<f64> = h.rows[from..to].iter().map(|r| r[c]).filter(|x| x.is_finite()).collect();
+    if v.is_empty() {
+        return None;
+    }
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    Some(v[v.len() / 2])
+}
+
+/// [`RansVerdict::Stalled`] check; the text gives the residual level and the spread of the forces.
+fn rans_stalled(h: &History, reference: ResidualPeak, window: usize, kind: StabilityKind, length_ratio: f64, budget: usize) -> Option<String> {
+    let n = h.rows.len();
+    if window < 2 || n < 2 * window {
+        return None;
+    }
+    let rho = ["rms[Rho]", "Res_Flow[0]", "rms[P]"];
+    let now = median_rows(h, &rho, n - window, n)?;
+    let before = median_rows(h, &rho, n - 2 * window, n - window)?;
+    let drop = effective_reference(reference, h).rho - now;
+    if drop < RANS_STALL_RHO_DROP || before - now > RANS_STALL_PROGRESS {
+        return None;
+    }
+    if !(h.rans_coefficients_stable(2 * window, kind, length_ratio) && h.rans_trend_settled(2 * window, kind, length_ratio, budget)) {
+        return None;
+    }
+    let spread = |names: &[&str]| -> Option<String> {
+        let c = h.col(names)?;
+        let mut v: Vec<f64> = h.rows[n - 2 * window..].iter().map(|r| r[c]).collect();
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let mean = v.iter().sum::<f64>() / v.len() as f64;
+        Some(format!("{} {mean:.5} (inter-quartile range {:.2e})", names[0], v[3 * v.len() / 4] - v[v.len() / 4]))
+    };
+    let forces: Vec<String> = [&["CFx", "CD"][..], &["CFz", "CL"][..]].iter().filter_map(|c| spread(c)).collect();
+    Some(format!(
+        "residual stalled {drop:.1} orders below the reference (median of the last {window} iterations), coefficients stationary over {} iterations: {}",
+        2 * window,
+        forces.join(", ")
+    ))
 }
 
 /// Judges the final-stage history `h` of a RANS case against `reference` over the last `window` rows; `budget` is
@@ -428,6 +480,9 @@ pub fn rans_verdict(h: &History, reference: ResidualPeak, window: usize, kind: S
     let stable = flat && h.rans_trend_settled(window, kind, length_ratio, budget);
     if rho.is_some_and(|d| d >= RANS_RHO_DROP) && nu.is_some_and(|d| d >= RANS_NU_DROP) && stable {
         return RansVerdict::Converged;
+    }
+    if let Some(why) = rans_stalled(h, reference, window, kind, length_ratio, budget) {
+        return RansVerdict::Stalled(why);
     }
     if rho.is_some_and(|d| d >= RANS_CYCLE_RHO_DROP) && h.limit_cycle(window, kind, length_ratio) {
         return RansVerdict::LimitCycle;
@@ -706,7 +761,8 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
         // Stop when converged, or early when the solution diverges (instead of running into the iteration limit).
         let stop = |h: &History| {
             h.rans_divergence().is_some()
-                || h.rows.len() >= opt.min_iterations && rans_verdict(h, reference, opt.stable_window, kind, ratio, opt.iterations) == RansVerdict::Converged
+                || h.rows.len() >= opt.min_iterations
+                    && matches!(rans_verdict(h, reference, opt.stable_window, kind, ratio, opt.iterations), RansVerdict::Converged | RansVerdict::Stalled(_))
         };
         let run = match solve(setup, i, &dir, ("case.cfg", "su2.log", "history.csv"), &cfg, deadline, &stop, tx)? {
             Ok(r) => r,
@@ -747,9 +803,14 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
         };
         let window = opt.stable_window.min(h.rows.len()).max(2);
         let verdict = rans_verdict(&h, reference, window, kind, ratio, opt.iterations);
+        let mut stalled: Option<String> = None;
         let limit_cycle = match verdict {
             RansVerdict::Converged => false,
             RansVerdict::LimitCycle => true,
+            RansVerdict::Stalled(why) => {
+                stalled = Some(why);
+                true
+            }
             RansVerdict::Rejected(why) => {
                 if is_warm && !run.timed_out {
                     retry(why, &mut notes);
@@ -759,12 +820,16 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
                 return Ok(fail(format!("not converged ({when}): {why}")));
             }
         };
-        let (s, coeffs, coeffs6, axial) = match coefficients_from_history(setup, &spec, &h, if limit_cycle { window } else { 1 }) {
+        // Stalled: averaged over both windows of the check.
+        let avg = if stalled.is_some() { (2 * window).min(h.rows.len()) } else { window };
+        let (s, coeffs, coeffs6, axial) = match coefficients_from_history(setup, &spec, &h, if limit_cycle { avg } else { 1 }) {
             Ok(c) => c,
             Err(e) => return Ok(fail(e)),
         };
         let mut warnings = notes.clone();
-        if limit_cycle {
+        if let Some(why) = &stalled {
+            warnings.push(format!("unconverged: {why}; coefficients averaged over the last {avg} iterations"));
+        } else if limit_cycle {
             warnings.push(format!("limit cycle: coefficients averaged over the last {window} iterations"));
         }
         let yplus = std::fs::read_to_string(dir.join("surface_flow.vtk")).ok().as_deref().and_then(wall_yplus_p95);
@@ -792,7 +857,7 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
             residual_first: Some(effective_reference(reference, &h).rho),
             residual_last: h.last_residual(),
             wall_seconds: t0.elapsed().as_secs_f64(),
-            reference_peak: Some(reference),
+            reference_peak: Some(effective_reference(reference, &h)),
             limit_cycle,
             yplus_p95: yplus,
             axial,
@@ -1606,5 +1671,34 @@ exit 0
         assert_eq!(killing_signal(&std::process::ExitStatus::from_raw(137 << 8), ""), Some(9));
         assert_eq!(killing_signal(&std::process::ExitStatus::from_raw(9), ""), Some(9));
         assert_eq!(killing_signal(&st, "Error: boom"), None);
+    }
+
+    #[test]
+    fn rans_stalled_residual_with_stationary_coefficients_is_accepted_unconverged() {
+        let k = StabilityKind::Pitch;
+        let reference = ResidualPeak { rho: -3.5, nu: -7.0 };
+        // Residual chattering between -4.1 and -5.9 (the sample rocket at M 0.8), forces with a small oscillation.
+        let mk = |n: usize, cfx_slope: f64, rho_slope: f64| {
+            let mut t = String::from("\"Inner_Iter\",\"rms[Rho]\",\"rms[nu]\",\"CFx\",\"CFz\",\"CMy\"\n");
+            for i in 0..n {
+                let rho = if i % 40 < 8 { -5.9 } else { -4.4 } - rho_slope * i as f64;
+                let w = 1e-4 * ((i % 7) as f64 - 3.0);
+                t += &format!("{i},{rho},-8.3,{},{},{}\n", 0.39 + w + cfx_slope * i as f64, 0.1 + w, -1.2 - 12.0 * w);
+            }
+            History::parse(&t).unwrap()
+        };
+        let v = rans_verdict(&mk(800, 0.0, 0.0), reference, 200, k, 18.0, 4000);
+        let RansVerdict::Stalled(why) = &v else { panic!("{v:?}") };
+        assert!(why.contains("residual stalled 0.9 orders"), "{why}");
+        assert!(why.contains("CFx 0.39") && why.contains("inter-quartile range"), "{why}");
+        // Too few rows for two windows: not yet.
+        assert!(!matches!(rans_verdict(&mk(350, 0.0, 0.0), reference, 200, k, 18.0, 4000), RansVerdict::Stalled(_)));
+        // A force that still drifts (1e-6 per iteration, 1 % over the budget) is not stationary.
+        assert!(matches!(rans_verdict(&mk(800, 1e-6, 0.0), reference, 200, k, 18.0, 4000), RansVerdict::Rejected(_)));
+        // A residual that is still falling is not stalled (it may converge).
+        assert!(!matches!(rans_verdict(&mk(800, 0.0, 0.002), reference, 200, k, 18.0, 4000), RansVerdict::Stalled(_)));
+        // Stalled at the level of the reference (no drop): rejected.
+        let high = ResidualPeak { rho: -4.6, nu: -7.0 };
+        assert!(matches!(rans_verdict(&mk(800, 0.0, 0.0), high, 200, k, 18.0, 4000), RansVerdict::Rejected(_)));
     }
 }

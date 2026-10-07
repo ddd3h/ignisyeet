@@ -39,7 +39,7 @@
 //! * [`Stage::Startup`]: first-order Roe from the freestream, at most [`RANS_STARTUP_MAX_ITER`] iterations or until
 //!   the density residual is [`RANS_STARTUP_DROP`] orders below its peak (`REL_RMS_DENSITY`; checked from
 //!   iteration [`RANS_STARTUP_MIN_ITER`] on). History `history_startup.csv`, restart [`STARTUP_RESTART`].
-//! * [`Stage::Final`]: second-order Roe (MUSCL, Venkatakrishnan-Wang limiter, never frozen) restarted from the
+//! * [`Stage::Final`]: second-order Roe (MUSCL, edge-based Van Albada limiter, never frozen) restarted from the
 //!   startup result [`STARTUP_RESTART`]; history `history.csv`, restart `restart.dat`. A warm start runs this stage
 //!   only, from the neighbour's `restart.dat`. After a divergence the runner repeats it once from the startup result
 //!   with the CFL limited to [`RANS_CONSERVATIVE_CFL_FACTOR`] `cfl` ([`CaseFiles::conservative`]).
@@ -236,10 +236,10 @@ pub fn su2_config_case(opt: &CfdOptions, spec: &CaseSpec, dims: &RefDims, atm: &
             c.kv("MUSCL_FLOW", "NO");
         } else {
             c.kv("MUSCL_FLOW", "YES");
-            c.kv("SLOPE_LIMITER_FLOW", "VENKATAKRISHNAN_WANG");
-            c.kv("VENKAT_LIMITER_COEFF", "0.05");
-            // No LIMITER_ITER: freezing the limiter of a 3-D RANS solution whose residual still chatters made it
-            // diverge (sample rocket, M 0.8, the SA residual up 6 orders within 50 iterations of the freeze).
+            // The smooth edge-based Van Albada limiter: with Venkatakrishnan-Wang the residual of the 3-D cases
+            // (sample rocket at M 0.8, cone at M 2) chattered between 1e-4 and 1e-6 with the CFL cycling, and freezing
+            // that limiter (LIMITER_ITER) made them diverge. Never frozen.
+            c.kv("SLOPE_LIMITER_FLOW", "VAN_ALBADA_EDGE");
         }
         c.kv("USE_ACCURATE_FLUX_JACOBIANS", "YES");
     } else {
@@ -527,8 +527,7 @@ mod tests {
             "RESTART_SOL= YES",
             "SOLUTION_FILENAME= restart.dat",
             "MUSCL_FLOW= YES",
-            "SLOPE_LIMITER_FLOW= VENKATAKRISHNAN_WANG",
-            "VENKAT_LIMITER_COEFF= 0.05",
+            "SLOPE_LIMITER_FLOW= VAN_ALBADA_EDGE",
             "ITER= 4000",
             "CONV_FIELD= ( RMS_DENSITY, RMS_NU_TILDE )",
             "CONV_RESIDUAL_MINVAL= -14",

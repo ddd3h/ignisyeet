@@ -172,9 +172,18 @@ pub fn read_su2_markers(path: &Path, tags: &[&str]) -> Result<HashMap<String, Ve
             for _ in 0..n {
                 let l = lines.next().context("truncated marker")??;
                 if wanted {
-                    let v: Vec<usize> = l.split_whitespace().skip(1).filter_map(|s| s.parse().ok()).collect();
-                    if v.len() >= 3 && v.iter().take(3).all(|&i| i < nodes.len()) {
+                    // Triangle (5) or quadrilateral (9, split into two triangles; the prism layer faces on y = 0).
+                    let v: Vec<usize> = l.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+                    let n = match v.first() {
+                        Some(9) => 4,
+                        _ => 3,
+                    };
+                    let v = &v[1.min(v.len())..];
+                    if v.len() >= n && v.iter().take(n).all(|&i| i < nodes.len()) {
                         tris.push([nodes[v[0]], nodes[v[1]], nodes[v[2]]]);
+                        if n == 4 {
+                            tris.push([nodes[v[0]], nodes[v[2]], nodes[v[3]]]);
+                        }
                     }
                 }
             }
@@ -550,5 +559,24 @@ mod tests {
         let _ = std::fs::remove_file(&p);
         assert_eq!(m.len(), 1);
         assert_eq!(m["wall"], vec![[Vec3::new(0.0, 0.0, 0.0), Vec3::new(1.0, 0.0, 0.0), Vec3::new(0.0, 1.0, 0.0)]]);
+    }
+
+    #[test]
+    fn splits_quadrilateral_marker_faces() {
+        // One prism (SU2 type 13) with a triangle and a quadrilateral (type 9) in the marker.
+        let text = "NDIME= 3\nNELEM= 1\n13 0 2 1 3 5 4 0\nNPOIN= 6\n0 0 0 0\n1 0 0 1\n0 1 0 2\n0 0 1 3\n1 0 1 4\n0 1 1 5\nNMARK= 1\n\
+                    MARKER_TAG= symmetry\nMARKER_ELEMS= 2\n5 0 1 2\n9 0 1 4 3\n";
+        let p = std::env::temp_dir().join(format!("ignisyeet_fid_quad_{}.su2", std::process::id()));
+        std::fs::write(&p, text).unwrap();
+        let m = read_su2_markers(&p, &["symmetry"]).unwrap();
+        let _ = std::fs::remove_file(&p);
+        let t = &m["symmetry"];
+        assert_eq!(t.len(), 3);
+        let v = |x: f64, y: f64, z: f64| Vec3::new(x, y, z);
+        assert_eq!(t[1], [v(0.0, 0.0, 0.0), v(1.0, 0.0, 0.0), v(1.0, 0.0, 1.0)]);
+        assert_eq!(t[2], [v(0.0, 0.0, 0.0), v(1.0, 0.0, 1.0), v(0.0, 0.0, 1.0)]);
+        // The two triangles cover the unit square.
+        let area: f64 = t[1..].iter().map(|t| 0.5 * (t[1] - t[0]).cross(t[2] - t[0]).norm()).sum();
+        assert!((area - 1.0).abs() < 1e-12);
     }
 }

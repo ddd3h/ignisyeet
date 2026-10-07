@@ -325,6 +325,7 @@ fn ensure_mesh_any(
     cfd: &CfdOptions,
     geom: &Geometry,
     raw: Option<&[geom::stl::Triangle]>,
+    atm: &aero::atmosphere::Atmosphere,
     work: &Path,
     threads: usize,
 ) -> Result<(mesh::MeshResult, CfdOptions)> {
@@ -332,7 +333,7 @@ fn ensure_mesh_any(
         SurfaceKind::Stl => {
             stl_mesh::ensure_mesh_stl(cfd, geom, raw.ok_or_else(|| anyhow::anyhow!("surface = \"stl\" needs the STL triangles"))?, work, threads)
         }
-        SurfaceKind::PanelMesh => Ok((mesh::ensure_mesh(cfd, geom, work, threads)?, cfd.clone())),
+        SurfaceKind::PanelMesh => Ok((mesh::ensure_mesh(cfd, geom, atm, work, threads)?, cfd.clone())),
     }
 }
 
@@ -340,7 +341,7 @@ fn ensure_mesh_any(
 pub fn mesh_only(
     geom: &Geometry,
     cfd: &CfdOptions,
-    _aero: &AeroOptions,
+    aero: &AeroOptions,
     out_dir: &Path,
     budget: &ResourceBudget,
     raw: Option<&[geom::stl::Triangle]>,
@@ -348,7 +349,8 @@ pub fn mesh_only(
     cfd.validate()?;
     let cfd = &resolve_options(geom, cfd);
     check_tools(cfd)?;
-    Ok(ensure_mesh_any(cfd, geom, raw, &work_dir(cfd, out_dir), budget.threads)?.0)
+    let atm = aero.atmosphere.at(aero.reference_altitude);
+    Ok(ensure_mesh_any(cfd, geom, raw, &atm, &work_dir(cfd, out_dir), budget.threads)?.0)
 }
 
 /// Builds the aerodynamic table with SU2: surface, mesh, case runner, table fill.
@@ -373,7 +375,7 @@ pub fn build_table_with_progress(
     progress(CfdStage::Mesh);
     let atm = aero.atmosphere.at(aero.reference_altitude);
     let work = work_dir(cfd, out_dir);
-    let (mesh, resolved) = ensure_mesh_any(cfd, geom, raw, &work, budget.threads)?;
+    let (mesh, resolved) = ensure_mesh_any(cfd, geom, raw, &atm, &work, budget.threads)?;
     let cfd = &resolved;
     let dims = ref_dims(geom);
     let plan = plan_resources_mesh(cfd, budget, mesh.stats.cells, mesh.stats.nodes, case::case_list(cfd).len());

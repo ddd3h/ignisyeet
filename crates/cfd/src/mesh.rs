@@ -17,12 +17,25 @@
 //! * Half model (`symmetry`): the ball is cut at `y = 0` with an OCC boolean (`symmetry` marker is the
 //!   resulting plane face, with the body section as a hole). The body-of-revolution seam is placed away
 //!   from `y = 0`.
-//! * Volume: tetrahedra (HXT) with a size field `min(farfield L / 10, wall_size + 0.2 d)` of the
-//!   distance `d` to the wall, i.e. growth about 1.2 per element row.
-//! * RANS: no prismatic boundary layer (gmsh 4.15 has no 3D boundary-layer extrusion for OpenCASCADE
-//!   surfaces); the tetrahedral wall mesh is used with a no-slip wall (SU2's wall functions diverged on it),
-//!   so RANS skin friction is under-resolved, see [`wall_yplus`].
-//! * The SU2 mesh is written with the physical groups `wall`, `base`, `farfield`, `symmetry`.
+//! * Volume (Euler): tetrahedra (HXT) with a size field `min(farfield L / 10, wall_size + 0.2 d)` of the
+//!   distance `d` to the wall, i.e. growth about 1.2 per element row. The SU2 mesh is written by gmsh with the
+//!   physical groups `wall`, `base`, `farfield`, `symmetry`.
+//! * Volume (RANS, [`BlParams`]): prismatic boundary layer on wall and base. The half solid `y >= 0` is meshed on
+//!   its surface (same size field), the layers are extruded along node normals with
+//!   `gmsh.model.geo.extrudeBoundaryLayer` and the rest of a box farfield (half width `farfield L`) is filled with
+//!   tetrahedra. The normals point to the most visible direction of the incident wall triangles, lie in the plane
+//!   on `y = 0` and are smoothed where that keeps them visible; gmsh reads them from a thin shell of tetrahedra
+//!   (a triangle list is ambiguous between the two sides of a rolled fin). The fin edges are blunted (the section
+//!   thickness of `xi` in `[edge_blunt, 1 - edge_blunt]` stretched over the chord, about 8 % of the thickness at
+//!   the edges): knife edges fold the layers. First height from [`first_height`] for `yplus` at 5 % of the body
+//!   length and the largest solved Mach number, total thickness `0.4 wall_size`, growth ratio at most 1.3
+//!   ([`bl_layers`]). The mesh (tetrahedra, prisms; marker triangles and the quadrilateral layer faces on
+//!   `y = 0`) is written by `su2_writer.py`, which orients the cells by their signed volume and rejects inverted
+//!   prisms, cells of non-positive volume and boundary faces without a marker; an invalid layer is meshed again
+//!   once with 10 smoothing passes and `0.25 wall_size`, then it is a mesh error. The full domain is the half
+//!   mirrored about `y = 0`; `z_mirror_mesh` has no effect. A layout that is not symmetric about `y = 0` meshes
+//!   both halves in the full box (with the rolled fins of the sample rocket this fails the validity check, a mesh
+//!   error). The SICN quality covers the tetrahedra only.
 //!
 //! The mesh is cached below `<workdir>/mesh/` keyed by a hash of the geometry and the settings.
 
@@ -36,6 +49,21 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 pub const SCRIPT: &str = include_str!("mesh_gmsh.py");
+/// SU2 writer of the boundary-layer mesh (imported by [`SCRIPT`]).
+pub const WRITER: &str = include_str!("su2_writer.py");
+
+/// Largest growth ratio of the prism layers.
+pub const BL_MAX_RATIO: f64 = 1.3;
+/// Total prism layer thickness in wall sizes (and of the retry after an invalid layer).
+pub const BL_THICKNESS: f64 = 0.4;
+pub const BL_RETRY_THICKNESS: f64 = 0.25;
+/// Normal smoothing passes (and of the retry).
+pub const BL_SMOOTHING: usize = 3;
+pub const BL_RETRY_SMOOTHING: usize = 10;
+/// Fin edge bluntness: the biconvex section is cut at this fraction of the chord from each edge.
+pub const BL_EDGE_BLUNT: f64 = 0.02;
+/// The first layer height gives `yplus` at this fraction of the body length (behind the nose tip).
+pub const BL_YPLUS_STATION: f64 = 0.05;
 
 /// Flat-plate estimate of the wall distance of the first cell centre that gives `yplus`.
 ///
@@ -48,12 +76,69 @@ pub fn first_height(yplus: f64, length: f64, atm: &Atmosphere, mach: f64) -> f64
     yplus * atm.kinematic_viscosity() / (u * (0.5 * cf).sqrt())
 }
 
-/// Estimated y+ of the first cell centre of the tetrahedral wall mesh: the centroid of a wall
-/// tetrahedron of edge `wall_size` is about `0.2 wall_size` above the wall. Evaluated at the largest
-/// solved Mach number (flat-plate friction, see [`first_height`]).
+/// Estimated y+ of the first prism layer (RANS): the first layer height of [`bl_params`] (chosen for `yplus` at
+/// [`BL_YPLUS_STATION`] of the body length) over the flat-plate height of y+ = 1 at the body length, at the largest
+/// solved Mach number (see [`first_height`]).
 pub fn wall_yplus(opt: &CfdOptions, length: f64, atm: &Atmosphere) -> f64 {
     let m = opt.machs.iter().copied().fold(0.0, f64::max);
-    0.2 * opt.wall_size / first_height(1.0, length, atm, m)
+    bl_params(opt, length, atm).first_height / first_height(1.0, length, atm, m)
+}
+
+/// Prism boundary layer (RANS), `bl` in `params.json`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BlParams {
+    /// First layer height [m].
+    pub first_height: f64,
+    pub layers: usize,
+    /// Geometric growth ratio of the layer heights.
+    pub ratio: f64,
+    /// Total thickness [m].
+    pub thickness: f64,
+    /// Fin edge bluntness (fraction of the chord, see [`BL_EDGE_BLUNT`]).
+    pub edge_blunt: f64,
+    /// Normal smoothing passes.
+    pub smoothing: usize,
+    /// Parameters of the second attempt after an invalid layer (`None` = mesh error).
+    pub retry: Option<Box<BlParams>>,
+}
+
+/// Number of layers and growth ratio of a prism layer of first height `h1` and total thickness `t`: the fewest
+/// layers whose ratio stays at most `rmax`, and the ratio that gives exactly `t` with them. A first layer of at
+/// least `t` is a single layer (ratio 1).
+pub fn bl_layers(h1: f64, t: f64, rmax: f64) -> (usize, f64) {
+    let total = |r: f64, n: usize| if (r - 1.0).abs() < 1e-12 { h1 * n as f64 } else { h1 * (r.powi(n as i32) - 1.0) / (r - 1.0) };
+    if h1 >= t || rmax <= 1.0 {
+        return (if h1 >= t { 1 } else { (t / h1).ceil() as usize }, 1.0);
+    }
+    let mut n = 2;
+    while total(rmax, n) < t {
+        n += 1;
+    }
+    let (mut lo, mut hi) = (1.0, rmax);
+    if total(lo, n) >= t {
+        return (n, 1.0);
+    }
+    for _ in 0..200 {
+        let mid = 0.5 * (lo + hi);
+        if total(mid, n) < t {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    (n, 0.5 * (lo + hi))
+}
+
+/// Prism layer of a RANS mesh: first height for `opt.yplus` at [`BL_YPLUS_STATION`] of `length` and the largest
+/// solved Mach number of `atm`, thickness [`BL_THICKNESS`] `wall_size`, and the retry parameters.
+pub fn bl_params(opt: &CfdOptions, length: f64, atm: &Atmosphere) -> BlParams {
+    let m = opt.machs.iter().copied().fold(0.0, f64::max);
+    let h1 = first_height(opt.yplus, BL_YPLUS_STATION * length, atm, m);
+    let make = |t: f64, smoothing: usize| {
+        let (layers, ratio) = bl_layers(h1, t, BL_MAX_RATIO);
+        BlParams { first_height: h1, layers, ratio, thickness: t.max(h1), edge_blunt: BL_EDGE_BLUNT, smoothing, retry: None }
+    };
+    BlParams { retry: Some(Box::new(make(BL_RETRY_THICKNESS * opt.wall_size, BL_RETRY_SMOOTHING))), ..make(BL_THICKNESS * opt.wall_size, BL_SMOOTHING) }
 }
 
 /// Fin set in the form the script needs (all lengths in metres, body frame).
@@ -111,6 +196,9 @@ pub struct MeshParams {
     /// Body profile `(x, r)` from the nose tip to the base.
     pub profile: Vec<[f64; 2]>,
     pub fins: Option<FinParams>,
+    /// Prismatic boundary layer (RANS on the rebuilt geometry); `None` = tetrahedra only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bl: Option<BlParams>,
 }
 
 /// Douglas-Peucker simplification of the profile with tolerance `tol` (end points kept).
@@ -223,7 +311,19 @@ impl MeshParams {
             z_mirror: opt.z_mirror_mesh,
             profile,
             fins,
+            bl: None,
         }
+    }
+
+    /// Parameters of the rebuilt geometry (`surface = "cad"`): [`MeshParams::new`] plus the prism layer for RANS
+    /// ([`bl_params`] with the freestream `atm`), which is meshed as the half model (no `z_mirror`).
+    pub fn cad(opt: &CfdOptions, geom: &Geometry, atm: &Atmosphere, dir: &Path, threads: usize) -> Self {
+        let mut p = Self::new(opt, geom, dir, threads);
+        if opt.model == FlowModel::Rans {
+            p.bl = Some(bl_params(opt, geom.length, atm));
+            p.z_mirror = false;
+        }
+        p
     }
 }
 
@@ -244,6 +344,16 @@ pub struct MeshStats {
     pub seconds_setup: f64,
     #[serde(default)]
     pub seconds_mesh: f64,
+    /// Prism layer (RANS): number of layers, first height and total thickness [m] (0 without a layer).
+    #[serde(default)]
+    pub bl_layers: usize,
+    #[serde(default)]
+    pub bl_first_height: f64,
+    #[serde(default)]
+    pub bl_thickness: f64,
+    /// Inverted prisms of the written mesh (always 0: an invalid layer is a mesh error).
+    #[serde(default)]
+    pub bl_invalid: usize,
 }
 
 /// A mesh on disk.
@@ -268,7 +378,7 @@ pub fn mesh_hash(params: &MeshParams) -> String {
     if q.kind == "stl" {
         hash_parts(&[json.as_bytes(), crate::stl_mesh::SCRIPT.as_bytes(), crate::stl_mesh::UNION_SCRIPT.as_bytes()])
     } else {
-        hash_parts(&[json.as_bytes(), SCRIPT.as_bytes()])
+        hash_parts(&[json.as_bytes(), SCRIPT.as_bytes(), WRITER.as_bytes()])
     }
 }
 
@@ -300,11 +410,12 @@ struct Stamp {
     stats: MeshStats,
 }
 
-/// Meshes (or reuses the cached mesh) into `<workdir>/mesh/`.
-pub fn ensure_mesh(opt: &CfdOptions, geom: &Geometry, workdir: &Path, threads: usize) -> Result<MeshResult> {
+/// Meshes (or reuses the cached mesh) into `<workdir>/mesh/`. `atm` is the freestream of the cases (prism layer
+/// height of RANS).
+pub fn ensure_mesh(opt: &CfdOptions, geom: &Geometry, atm: &Atmosphere, workdir: &Path, threads: usize) -> Result<MeshResult> {
     let dir = workdir.join("mesh");
     std::fs::create_dir_all(&dir).with_context(|| format!("cannot create {}", dir.display()))?;
-    let params = MeshParams::new(opt, geom, &dir, threads);
+    let params = MeshParams::cad(opt, geom, atm, &dir, threads);
     let hash = mesh_hash(&params);
     let su2 = dir.join("mesh.su2");
     let stamp_path = dir.join("mesh.json");
@@ -319,6 +430,8 @@ pub fn ensure_mesh(opt: &CfdOptions, geom: &Geometry, workdir: &Path, threads: u
         bail!("{}", crate::not_installed_message(&tools, opt));
     }
     std::fs::write(dir.join("mesh_gmsh.py"), SCRIPT)?;
+    std::fs::write(dir.join("su2_writer.py"), WRITER)?;
+    let _ = std::fs::remove_file(dir.join("params_retry.json"));
     std::fs::write(dir.join("params.json"), serde_json::to_string_pretty(&params)?)?;
     let py = tools.gmsh.path.clone().context("no python with gmsh")?;
     let out = tools::command(&py, tools.prefix.as_deref())
@@ -351,7 +464,8 @@ mod tests {
         assert!((first_height(2.0, 1.6, &atm, 0.8) / y - 2.0).abs() < 1e-12);
         assert!(first_height(1.0, 1.6, &atm, 2.0) < y);
         let o = CfdOptions { machs: vec![0.3, 2.0], wall_size: 0.005, ..Default::default() };
-        assert!((wall_yplus(&o, 1.6, &atm) - 0.2 * 0.005 / first_height(1.0, 1.6, &atm, 2.0)).abs() < 1e-9);
+        let h1 = first_height(1.0, BL_YPLUS_STATION * 1.6, &atm, 2.0);
+        assert!((wall_yplus(&o, 1.6, &atm) - h1 / first_height(1.0, 1.6, &atm, 2.0)).abs() < 1e-9);
     }
 
     fn sample_geom() -> Geometry {
@@ -402,6 +516,77 @@ mod tests {
             assert!(SCRIPT.contains(&format!("\"{name}\"")), "{name}");
         }
         assert!(SCRIPT.contains("occ.fuse") && SCRIPT.contains("occ.cut") && SCRIPT.contains("Mesh.Algorithm3D"));
+        assert!(SCRIPT.contains("extrudeBoundaryLayer") && SCRIPT.contains("import su2_writer") && SCRIPT.contains("Geometry.Tolerance"));
+        for f in ["def write(", "def mirror(", "def orient(", "def check(", "def unmarked_faces("] {
+            assert!(WRITER.contains(f), "{f}");
+        }
+    }
+
+    #[test]
+    fn bl_layers_reach_the_thickness_within_the_ratio() {
+        for (h1, t) in [(7.5e-7, 8e-4), (5.7e-7, 2e-3), (1e-5, 2e-3), (1e-4, 1.2e-3)] {
+            let (n, r) = bl_layers(h1, t, 1.3);
+            assert!(r > 1.0 && r <= 1.3 + 1e-12, "{h1} {t}: {n} {r}");
+            let total: f64 = (0..n).map(|i| h1 * r.powi(i as i32)).sum();
+            assert!((total / t - 1.0).abs() < 1e-9, "{h1} {t}: {total}");
+            // One layer fewer cannot reach the thickness at the largest ratio.
+            assert!(h1 * (1.3f64.powi(n as i32 - 1) - 1.0) / 0.3 < t);
+        }
+        // 2 mm wall size at y+ 1: 22 layers, ratio 1.30 (the design point).
+        let (n, r) = bl_layers(7.5e-7, 8e-4, 1.3);
+        assert_eq!(n, 22);
+        assert!((r - 1.3).abs() < 0.01, "{r}");
+        // A first layer thicker than the layer is a single layer.
+        assert_eq!(bl_layers(1e-3, 8e-4, 1.3), (1, 1.0));
+    }
+
+    #[test]
+    fn rans_gets_a_prism_layer_and_euler_is_unchanged() {
+        let g = sample_geom();
+        let atm = AtmosphereModel::default().at(0.0);
+        let euler = CfdOptions::default();
+        let rans = CfdOptions { model: FlowModel::Rans, ..euler.clone() };
+        let dir = Path::new("/a");
+        // Euler: the CAD parameters are those of `new` (no `bl` key in params.json, so the same hash inputs).
+        let e = MeshParams::cad(&euler, &g, &atm, dir, 4);
+        assert!(e.bl.is_none() && e.z_mirror);
+        assert_eq!(serde_json::to_string(&e).unwrap(), serde_json::to_string(&MeshParams::new(&euler, &g, dir, 4)).unwrap());
+        assert!(!serde_json::to_string(&e).unwrap().contains("\"bl\""));
+        // y+ changes the hash of RANS only.
+        let e2 = MeshParams::cad(&CfdOptions { yplus: 5.0, ..euler.clone() }, &g, &atm, dir, 4);
+        assert_eq!(mesh_hash(&e), mesh_hash(&e2));
+        let r = MeshParams::cad(&rans, &g, &atm, dir, 4);
+        let r2 = MeshParams::cad(&CfdOptions { yplus: 5.0, ..rans.clone() }, &g, &atm, dir, 4);
+        assert_ne!(mesh_hash(&r), mesh_hash(&r2));
+        assert_ne!(mesh_hash(&r), mesh_hash(&e));
+        // The layer: half model without the quarter mirror, flat base, first height from the nose station.
+        let bl = r.bl.as_ref().unwrap();
+        assert!(!r.z_mirror && r.tail_length == 0.0 && r.domain == "half");
+        let m = rans.machs.iter().copied().fold(0.0, f64::max);
+        assert!((bl.first_height - first_height(1.0, BL_YPLUS_STATION * g.length, &atm, m)).abs() < 1e-15);
+        assert!((bl.thickness - BL_THICKNESS * rans.wall_size).abs() < 1e-15);
+        assert!(bl.ratio <= BL_MAX_RATIO && bl.layers > 10 && bl.smoothing == BL_SMOOTHING && bl.edge_blunt == BL_EDGE_BLUNT);
+        let retry = bl.retry.as_ref().unwrap();
+        assert!((retry.thickness - BL_RETRY_THICKNESS * rans.wall_size).abs() < 1e-15 && retry.smoothing == BL_RETRY_SMOOTHING && retry.retry.is_none());
+        // y+ of the first layer at the body length is below the target (thinner boundary layer at the nose station).
+        let y = wall_yplus(&rans, g.length, &atm);
+        assert!(y > 0.3 && y < 1.0, "{y}");
+        // Full domain of the symmetric layout: the half mesh mirrored.
+        let f = MeshParams::cad(&CfdOptions { symmetry: false, ..rans.clone() }, &g, &atm, dir, 4);
+        assert!(f.y_mirror && !f.z_mirror && f.bl.is_some());
+        // Every key the script reads from `bl` is provided.
+        let j = serde_json::to_value(bl).unwrap();
+        let mut n = 0;
+        for line in SCRIPT.lines() {
+            let mut rest = line;
+            while let Some(i) = rest.find("bl[\"") {
+                rest = &rest[i + 4..];
+                let key = &rest[..rest.find('"').unwrap()];
+                assert!(j.get(key).is_some(), "mesh_gmsh.py reads missing bl key {key}");
+                n += 1;
+            }
+        }
+        assert!(n >= 5, "{n}");
     }
 
     #[test]

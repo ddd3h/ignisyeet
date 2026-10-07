@@ -231,9 +231,10 @@ fn rans_on_the_step_fixture_is_valid_or_names_the_sharp_edges() {
             eprintln!("RANS mesh of the STEP fixture: {:?} in {:.1?}", m.stats, t.elapsed());
             let s = &m.stats;
             assert_eq!(s.bl_invalid, 0);
-            // The thinned columns at the lug and the rail buttons keep all their layers: their last layer is far below
-            // the tetrahedra on it (the body and the fins alone stay below 8 at the 99th percentile).
-            assert!(s.bl_top_ratio_p99 < 30.0, "{s:?}");
+            // Thin columns at the lug and the rail buttons grow by the layer ratio only over their top layers, and the
+            // tetrahedra on them start from their last layer (gap mode): the size jump stays below 8 at the 99th
+            // percentile (14.5 without both).
+            assert!(s.bl_top_ratio_p99 < 8.0, "{s:?}");
             assert!(s.by_type.get("Prism 6").copied().unwrap_or(0) > 100_000, "{:?}", s.by_type);
             let (cells, nodes, marks) = read_su2(&m.su2);
             assert!(cells.iter().all(|(k, c)| su2_volume(*k, c, &nodes) > 0.0));
@@ -250,7 +251,7 @@ fn rans_on_the_step_fixture_is_valid_or_names_the_sharp_edges() {
 
 #[test]
 #[ignore = "needs the python of the CFD tools with numpy (IGNISYEET_CFD_PREFIX)"]
-fn bl_layer_finds_opposite_walls_and_crossing_columns() {
+fn bl_layer_finds_opposite_walls_and_crossing_columns_and_pads_thin_columns() {
     // Two parallel plates 4 mm apart (the slot under a rail button flange) and a single plate.
     let dir = tmp("bl_gap");
     std::fs::create_dir_all(&dir).unwrap();
@@ -274,6 +275,16 @@ assert np.isinf(b.wall_hits(low, n[: len(P)], T, 0.05, 0.005)).all()
 cap = b.column_collisions(x, n, np.full(len(x), 0.01), np.full(len(x), 0.005))
 assert (cap < 0.004).all(), cap
 assert np.isinf(b.column_collisions(low, n[: len(P)], np.full(len(P), 0.01), np.full(len(P), 0.005))).all()
+# Padded heights: the full column is the geometric one, a thin column keeps the growth and a large last layer.
+h1, nl = 5.71e-7, 49
+full = h1 * (1.2 ** nl - 1.0) / 0.2
+s = b.column_heights_padded(h1, nl, np.array([full, 1e-4, 1e-3]), 1.2)
+g = b.column_heights(h1, nl, np.array([full]))
+assert np.abs(s[:, 0] - g[:, 0]).max() < 1e-5 * full
+assert np.allclose(s[-1], [full, 1e-4, 1e-3])
+d = np.diff(s, axis=0)
+assert d.min() > 0.0 and (d[1:] / d[:-1]).max() < 1.2 + 1e-9
+assert d[-1, 1] > 0.1 * 1e-4 and d[-1, 2] > 0.15 * 1e-3, d[-1]
 print("BL_OK")
 "#,
     )

@@ -295,6 +295,22 @@ def column_heights(h1, n, thick):
     return h1 * (r[None, :] ** k - 1.0) / (r[None, :] - 1.0)
 
 
+def column_heights_padded(h1, n, thick, g):
+    """Cumulative layer heights (n + 1, m) for gap mode: a column that is too thin for n layers growing by `g` from h1
+    starts with layers of h1 and grows by `g` only over its top layers, so its last layer is as high as the growth
+    allows (about (g - 1) / g of the column instead of about 1 / n). A column of the full geometric thickness keeps the
+    plain geometric heights; the heights are scaled to the column thickness."""
+    t = np.maximum(thick, n * h1 * (1.0 + 1e-9))
+    mm = np.arange(n)
+    tot = (n - mm) * h1 + h1 * g * (g ** mm - 1.0) / (g - 1.0)
+    big = np.clip(np.searchsorted(tot, t, side="right") - 1, 0, n - 1)
+    j = np.arange(n)[:, None]
+    start = (n - big)[None, :]
+    h = np.where(j < start, h1, h1 * g ** (j - start + 1.0))
+    h = h * (t / tot[big])[None, :]
+    return np.vstack([np.zeros((1, len(t))), np.cumsum(h, axis=0)])
+
+
 def rerun(q, why):
     """Runs this script again in a fresh process with the parameters `q` (written next to the original ones)."""
     path = os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), "params_retry.json")
@@ -393,7 +409,7 @@ def build(p, wall, cap, half, t0, t1, invalid_hint=" (try a different wall_size 
     np.maximum.at(hnode, e[:, 0], elen)
     np.maximum.at(hnode, e[:, 1], elen)
     for it in range(30):
-        s = column_heights(h1, n_lay, thick)
+        s = column_heights(h1, n_lay, thick) if gap is None else column_heights_padded(h1, n_lay, thick, bl["ratio"])
         lay = x0w[None, :, :] + s[:, :, None] * nw[None, :, :]  # (n + 1, m, 3)
         pts_all = lay.reshape(-1, 3)
         prisms = np.concatenate([np.concatenate([tl + k * m, tl + (k + 1) * m], axis=1) for k in range(n_lay)])
@@ -542,26 +558,64 @@ def build(p, wall, cap, half, t0, t1, invalid_hint=" (try a different wall_size 
     bnd = np.vstack(outer_sets)
     bn = np.unique(bnd)
     gmsh.model.add("fluid")
-    for k, st in enumerate(outer_sets, start=1):
+    # Gap mode: the faces of the layer top over thin columns (whose last layer is far below the tetrahedra that would
+    # sit on them) become separate discrete surfaces, grouped by the size of the tetrahedra they need: twice the last layer
+    # height (the tetrahedra come out about 1.6 times as high as that size), but at least a third of the face (smaller
+    # ones would be slivers), in halvings of top_size; each group gets its own size field growing by `growth`.
+    sets, groups = list(outer_sets), []
+    if gap is not None:
+        h_end = s[n_lay] - s[n_lay - 1]
+        tp = toplay[tl]
+        edge = (np.linalg.norm(tp[:, 1] - tp[:, 0], axis=1) + np.linalg.norm(tp[:, 2] - tp[:, 1], axis=1)
+                + np.linalg.norm(tp[:, 0] - tp[:, 2], axis=1)) / 3.0
+        # Not below a third of the face size: smaller tetrahedra on the face would be slivers.
+        want = np.maximum(2.0 * h_end[tl].mean(axis=1), edge / 3.0)
+        lim = 0.5 * bl["top_size"]
+        level = np.where(want < lim, np.ceil(np.log2(lim / np.maximum(want, 1e-12))), 0).astype(np.int64)
+        sets[0] = top_tri[level == 0]
+        for lv in sorted(set(level[level > 0].tolist())):
+            sets.append(top_tri[level == lv])
+            groups.append((len(sets), lim / 2.0 ** lv))
+        print("boundary layer: %d of %d top faces in %d refined groups (smallest tetrahedron size %.3g m)"
+              % (int((level > 0).sum()), len(level), len(groups), min([g_[1] for g_ in groups], default=lim)))
+    for k, st in enumerate(sets, start=1):
         gmsh.model.addDiscreteEntity(2, k)
         if k == 1:
             gmsh.model.mesh.addNodes(2, 1, (bn + 1).tolist(), allxyz[bn].ravel().tolist())
         gmsh.model.mesh.addElementsByType(k, 2, [], (st + 1).ravel().tolist())
+    tops = [1] + [g_[0] for g_ in groups]
     if half:
-        gmsh.model.geo.addVolume([gmsh.model.geo.addSurfaceLoop([1, 2, 3])])
+        gmsh.model.geo.addVolume([gmsh.model.geo.addSurfaceLoop([1, 2, 3] + tops[1:])])
     else:
         # Two closed shells: the farfield box and the layer top.
-        gmsh.model.geo.addVolume([gmsh.model.geo.addSurfaceLoop([2]), gmsh.model.geo.addSurfaceLoop([1])])
+        gmsh.model.geo.addVolume([gmsh.model.geo.addSurfaceLoop([2]), gmsh.model.geo.addSurfaceLoop(tops)])
     gmsh.model.geo.synchronize()
     f.add("Distance", 1)
-    f.setNumbers(1, "SurfacesList", [1])
+    f.setNumbers(1, "SurfacesList", tops)
     f.add("Threshold", 2)
     f.setNumber(2, "InField", 1)
     f.setNumber(2, "SizeMin", bl["top_size"])
     f.setNumber(2, "SizeMax", hmax)
     f.setNumber(2, "DistMin", 0.0)
     f.setNumber(2, "DistMax", (hmax - bl["top_size"]) / (grow - 1.0))
-    f.setAsBackgroundMesh(2)
+    if groups:
+        mins = [2]
+        for j, (ent, size) in enumerate(groups):
+            fd, ft = 10 + 2 * j, 11 + 2 * j
+            f.add("Distance", fd)
+            f.setNumbers(fd, "SurfacesList", [ent])
+            f.add("Threshold", ft)
+            f.setNumber(ft, "InField", fd)
+            f.setNumber(ft, "SizeMin", size)
+            f.setNumber(ft, "SizeMax", hmax)
+            f.setNumber(ft, "DistMin", 0.0)
+            f.setNumber(ft, "DistMax", (hmax - size) / (grow - 1.0))
+            mins.append(ft)
+        f.add("Min", 3)
+        f.setNumbers(3, "FieldsList", mins)
+        f.setAsBackgroundMesh(3)
+    else:
+        f.setAsBackgroundMesh(2)
     gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 1)
     gmsh.option.setNumber("Mesh.Algorithm3D", int(p["algorithm3d"]))
     gmsh.option.setNumber("Mesh.Renumber", 0)  # the node tags of the boundary are the global node numbers + 1

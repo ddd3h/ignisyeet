@@ -274,6 +274,8 @@ def prepare():
     print("symmetry: y = 0 %s, z = 0 %s (%.1f s)" % (report["symmetry_y"]["symmetric"], report["symmetry_z"]["symmetric"], time.time() - t1))
     gmsh.model.mesh.clear()
     # Euler tail fairing: a cone (cut at 10 % of the base radius, flat cap) behind the largest flat base face, fused with the body.
+    # A cone to a point (as the profile of the CAD surface) leaves a duplicated or degenerate triangle at the apex of the
+    # OpenCASCADE cone face with every surface algorithm of gmsh; the STL surface cuts its fairing the same way.
     fair = p.get("fairing")
     report["fairing"] = None
     if fair:

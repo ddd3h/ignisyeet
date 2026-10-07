@@ -1119,7 +1119,7 @@ mode=$(cat "$(dirname "$0")/mode")
 echo "$mach $aoa $restart" >> "$(dirname "$0")/calls"
 echo "mock su2 $mode"
 [ "$mode" = fail ] && { echo "boom" >&2; exit 1; }
-echo '"Inner_Iter","rms[Rho]","CFx","CFz","CMy"' > history.csv
+echo '"Inner_Iter","rms[Rho]","CFx","CFz","CMy"' > history.part
 i=0
 while [ $i -lt 30 ]; do
   case $mode in
@@ -1129,11 +1129,13 @@ while [ $i -lt 30 ]; do
   esac
   fx=0.3; fz=$(echo "$aoa * 0.05" | bc -l); my=$(echo "0 - $aoa * 0.08" | bc -l)
   [ "$mode" = unstable ] && { par=$((i % 2)); fz=$(echo "$aoa * 0.05 + $par * 0.3" | bc -l); }
-  echo "$i,$r,$fx,$fz,$my" >> history.csv
+  echo "$i,$r,$fx,$fz,$my" >> history.part
   [ "$mode" = ok ] && [ $i -ge 24 ] && break
   i=$((i+1))
 done
 echo restart > restart.dat
+# published at once, so that the early-stop poll never judges a part of it
+mv history.part history.csv
 exit 0
 "#;
 
@@ -1356,9 +1358,13 @@ if [ "$conv" = history ] && [ $warm = 1 ]; then
   grep -q Nu_Tilde "$sol" || { echo "Error: no SA variable in the restart" >&2; exit 1; }
 fi
 case "$mode" in markers*) mk=1;; *) mk=0;; esac
+# The history appears at once when the run is complete (except the slow mode), so the runner's once-a-second poll
+# never judges a part of it: the outcome does not depend on the timing (as with a real run, whose early stop the
+# slow mode tests).
+hf=$conv.csv.part; [ "$mode" = slow ] && [ "$conv" = history ] && hf=$conv.csv
 case "$mode" in cycle|markers_cycle) cyc=1;; *) cyc=0;; esac
-if [ $mk = 1 ]; then echo '"Inner_Iter","rms[Rho]","rms[nu]","CFx","CFz","CMy","CFx(wall)","CFx(base)"' > $conv.csv
-else echo '"Inner_Iter","rms[Rho]","rms[nu]","CFx","CFz","CMy"' > $conv.csv; fi
+if [ $mk = 1 ]; then echo '"Inner_Iter","rms[Rho]","rms[nu]","CFx","CFz","CMy","CFx(wall)","CFx(base)"' > $hf
+else echo '"Inner_Iter","rms[Rho]","rms[nu]","CFx","CFz","CMy"' > $hf; fi
 n=40; [ "$mode" = slow ] && [ "$conv" = history ] && n=400
 i=0
 while [ $i -lt $n ]; do
@@ -1377,9 +1383,9 @@ while [ $i -lt $n ]; do
     wx=$(echo "0.2 + $i * 0.000001" | bc -l); bx=0.1
     if [ "$mode" = markers_cycle ] && [ "$conv" = history ] && [ $warm = 0 ]; then wx=$(echo "0.2 + $((i % 2)) * 0.002" | bc -l); fi
     fx=$(echo "$wx + $bx" | bc -l)
-    echo "$i,$r,$nu,$fx,$fz,$my,$wx,$bx" >> $conv.csv
+    echo "$i,$r,$nu,$fx,$fz,$my,$wx,$bx" >> $hf
   else
-    echo "$i,$r,$nu,$fx,$fz,$my" >> $conv.csv
+    echo "$i,$r,$nu,$fx,$fz,$my" >> $hf
   fi
   if [ "$mode" = slow ] && [ "$conv" = history ]; then
     # periodic output (OUTPUT_WRT_FREQ) after the history row of the iteration, then the next iteration
@@ -1391,6 +1397,7 @@ done
 printf 'Density Nu_Tilde restart' > $rf
 yp=1.0; [ "$mode" = thick ] && yp=4.0
 printf '# vtk DataFile Version 3.0\nvtk output\nASCII\nDATASET UNSTRUCTURED_GRID\nPOINTS 3 double\n0 0 0 0.5 0 0\n1 0 0\nPOINT_DATA 3\nSCALARS Y_Plus double 1\nLOOKUP_TABLE default\n%s %s 0.1\n' $yp $yp > surface_flow.vtk
+[ "$hf" != "$conv.csv" ] && mv $hf $conv.csv
 exit 0
 "#;
 

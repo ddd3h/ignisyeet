@@ -207,6 +207,12 @@ impl BodyCoeffs6 {
         Self { cx: -c.cfx, cy: c.cfy, cz: -c.cfz, cl: -c.cmx, cm: c.cmy, cn: -c.cmz }
     }
 
+    /// Half model (SU2 `SYMMETRY` plane at y = 0): the plane carries the pressure of the half body, so `CFy`, `CMx` and `CMz`
+    /// (here `cy`, `cl`, `cn`) are plane artefacts, not physical. The body is symmetric about y = 0, so they are 0.
+    pub fn half_model(self) -> Self {
+        Self { cy: 0.0, cl: 0.0, cn: 0.0, ..self }
+    }
+
     /// Image under the reflection z -> -z (flow `(alpha, beta) -> (-alpha, beta)`): `CZ`, `Cl`, `Cm` change sign.
     pub fn mirror_z(&self) -> Self {
         Self { cx: self.cx, cy: self.cy, cz: -self.cz, cl: -self.cl, cm: -self.cm, cn: self.cn }
@@ -351,6 +357,18 @@ mod tests {
         // z-mirror of a pure pitch-plane state: CZ and Cm flip, the axial force stays.
         assert_eq!((m.mirror_z().cx, m.mirror_z().cz, m.mirror_z().cm), (m.cx, -m.cz, -m.cm));
         assert!(Su2Coeffs6::from_summary(&HistorySummary { cfx: Some(0.3), ..Default::default() }).is_err());
+    }
+
+    #[test]
+    fn half_model_side_quantities_are_zeroed() {
+        // Synthetic half-model history: the y = 0 plane gives CFy 1.56, CMx 0.3, CMz 16.9.
+        let h = History::parse("\"Inner_Iter\",\"CFx\",\"CFy\",\"CFz\",\"CMx\",\"CMy\",\"CMz\"\n0,0.3,1.56,0.5,0.3,-2.0,16.9\n").unwrap();
+        let s = crate::history::summarize(&h, 1).unwrap();
+        let raw = BodyCoeffs6::from_su2(&Su2Coeffs6::from_summary(&s).unwrap());
+        assert!((raw.cy - 1.56).abs() < 1e-12 && (raw.cn + 16.9).abs() < 1e-12);
+        let c = raw.half_model();
+        assert_eq!((c.cy, c.cl, c.cn), (0.0, 0.0, 0.0));
+        assert_eq!((c.cx, c.cz, c.cm), (raw.cx, raw.cz, raw.cm));
     }
 
     #[test]

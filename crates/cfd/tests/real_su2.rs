@@ -318,8 +318,8 @@ fn rans_mesh_has_a_valid_prism_layer() {
     assert!(s.by_type.get("Tetrahedron 4").copied().unwrap_or(0) > 10_000, "{:?}", s.by_type);
     assert_eq!(s.bl_invalid, 0);
     assert!(s.bl_layers > 10 && s.bl_first_height > 1e-7 && s.bl_first_height < 1e-5, "{s:?}");
-    let (layers, thickness) = cfd::mesh::bl_layers(s.bl_first_height, cfd::mesh::BL_TOP * opt.wall_size, cfd::mesh::BL_GROWTH);
-    assert!(s.bl_layers == layers && (s.bl_thickness - thickness).abs() < 1e-9, "{s:?}");
+    let bl = cfd::mesh::bl_params(&cfd::resolve_options(&g, &opt), &g, &aero.atmosphere.at(aero.reference_altitude));
+    assert!(s.bl_layers == bl.layers && (s.bl_thickness - bl.thickness).abs() < 1e-9, "{s:?} {bl:?}");
     // The tetrahedra at the layer top are about as high as the last layer (a few junction and fin-edge cells excepted).
     assert!(s.bl_top_ratio_p99 > 1.0 && s.bl_top_ratio_p99 < 6.0, "{s:?}");
 
@@ -376,13 +376,13 @@ fn rans_mesh_has_a_valid_prism_layer() {
 }
 
 #[test]
-#[ignore = "needs gmsh (IGNISYEET_CFD_PREFIX); about 20 minutes"]
+#[ignore = "needs gmsh (IGNISYEET_CFD_PREFIX); about 30 minutes"]
 fn rans_prism_layer_sweep_passes_the_validity_check() {
     let (_, g) = sample_stl();
     let aero = aero::AeroOptions::default();
     let mut rows = Vec::new();
     for roll in [0.0, 45.0] {
-        for ws in [0.0025, 0.003, 0.0035, 0.004, 0.0045, 0.005, 0.006] {
+        for ws in [0.002, 0.0025, 0.003, 0.0035, 0.004, 0.0045, 0.005, 0.006, 0.007, 0.008] {
             let opt = CfdOptions {
                 model: cfd::FlowModel::Rans,
                 wall_size: ws,

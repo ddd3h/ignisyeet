@@ -60,7 +60,7 @@ use crate::case::{case_hash, case_list, read_done, warm_start_source_for, write_
 use crate::config::{AlphaMode, CfdOptions, FlowModel};
 use crate::forces::{BodyCoeffs, BodyCoeffs6, MarkerCoeffs, Su2Coeffs, Su2Coeffs6};
 use crate::history::{summarize, History, HistorySummary, StabilityKind};
-use crate::su2cfg::{su2_config_case, CaseFiles, RefDims, Stage};
+use crate::su2cfg::{su2_config_case, CaseFiles, RefDims, Stage, STARTUP_RESTART};
 use crate::table::SolvedPoint;
 use crate::tools::{self, ToolReport};
 use crate::CfdStage;
@@ -218,7 +218,7 @@ fn base_config(setup: &RunSetup, spec: &CaseSpec) -> String {
         spec,
         &setup.dims,
         &setup.atm,
-        &CaseFiles { mesh: setup.mesh_file.display().to_string(), restart_from: None, stage: Stage::Final },
+        &CaseFiles { mesh: setup.mesh_file.display().to_string(), restart_from: None, stage: Stage::Final, conservative: false },
     )
 }
 
@@ -308,6 +308,8 @@ fn solve(
     tx: &mpsc::Sender<Event>,
 ) -> Result<std::result::Result<Solve, String>> {
     std::fs::write(dir.join(cfg), cfg_text)?;
+    // A history left by an earlier attempt must not be judged as this run's.
+    let _ = std::fs::remove_file(dir.join(history));
     let mut cmd = command(setup, dir, cfg, log)?;
     let mut child = match cmd.spawn() {
         Ok(c) => Group(c),
@@ -502,6 +504,53 @@ pub fn wall_yplus_p95(vtk: &str) -> Option<f64> {
     Some(v[((0.95 * v.len() as f64).ceil() as usize).clamp(1, v.len()) - 1])
 }
 
+/// Signal that killed SU2: from the exit status (a signal, or the shell convention `128 + n`) or from the MPI
+/// launcher's report in the log ("... exited on signal 9 ...").
+pub fn killing_signal(status: &std::process::ExitStatus, log: &str) -> Option<i32> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::ExitStatusExt;
+        if let Some(sig) = status.signal() {
+            return Some(sig);
+        }
+    }
+    if let Some(c) = status.code().filter(|c| (129..=159).contains(c)) {
+        return Some(c - 128);
+    }
+    log.lines().filter(|l| l.contains("on signal")).find_map(|l| {
+        let rest = &l[l.find("on signal")? + "on signal".len()..];
+        rest.split(|ch: char| !ch.is_ascii_digit()).find(|t| !t.is_empty())?.parse().ok()
+    })
+}
+
+/// Estimated memory of one case [bytes] from the mesh statistics next to the mesh (`mesh_stats.json`).
+fn case_memory_estimate(setup: &RunSetup) -> Option<u64> {
+    let t = std::fs::read_to_string(setup.mesh_file.with_file_name("mesh_stats.json")).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&t).ok()?;
+    let cells = v.get("cells")?.as_u64()? as usize;
+    let nodes = v.get("nodes").and_then(|n| n.as_u64()).unwrap_or(0) as usize;
+    Some(crate::case_memory_bytes_mesh(setup.opt.model, cells, nodes, setup.ranks.max(1)))
+}
+
+/// Failure reason of an SU2 run that exited unsuccessfully (`what`: "SU2" or "SU2 (first-order startup)"). A kill by a
+/// signal is named, SIGKILL with the out-of-memory hint.
+fn exit_message(setup: &RunSetup, what: &str, st: &std::process::ExitStatus, log: &Path) -> String {
+    let text = std::fs::read_to_string(log).unwrap_or_default();
+    let name = log.file_name().map_or(String::new(), |n| n.to_string_lossy().into_owned());
+    match killing_signal(st, &text) {
+        Some(9) => format!(
+            "{what} was killed by signal 9 (SIGKILL; most likely out of memory: about {} per case with {} ranks and {} concurrent cases; \
+             lower parallel_cases or ranks_per_case); end of {name}:\n{}",
+            case_memory_estimate(setup).map_or("? GB".to_string(), |b| format!("{:.1} GB", b as f64 / 1e9)),
+            setup.ranks,
+            setup.parallel,
+            tail(log, 8)
+        ),
+        Some(sig) => format!("{what} was killed by signal {sig}; end of {name}:\n{}", tail(log, 8)),
+        None => format!("{what} exited with {st}; end of {name}:\n{}", tail(log, 8)),
+    }
+}
+
 /// Relative path of a sibling case's restart file (SU2 aborts with "buffer overflow detected" on long paths).
 fn restart_path(dir: &Path, p: &Path) -> String {
     match p.parent().and_then(|d| d.file_name()) {
@@ -510,7 +559,8 @@ fn restart_path(dir: &Path, p: &Path) -> String {
     }
 }
 
-const CASE_FILES: [&str; 6] = ["history.csv", "history_startup.csv", "done.json", "surface_flow.csv", "surface_flow.vtk", "restart.dat"];
+const CASE_FILES: [&str; 7] =
+    ["history.csv", "history_startup.csv", "done.json", "surface_flow.csv", "surface_flow.vtk", "restart.dat", crate::su2cfg::STARTUP_RESTART];
 
 /// Runs one case to completion (or failure). Returns `Err` only when cancelled.
 fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: Option<WarmStart>, tx: &mpsc::Sender<Event>) -> Result<CaseOutcome> {
@@ -525,7 +575,12 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: Option
     let warm_flag = warm.is_some();
     let kind = StabilityKind::of(&spec);
     let fail = |msg: String| CaseOutcome { spec, result: None, error: Some(msg), cached: false, warm: warm_flag };
-    let files = CaseFiles { mesh: setup.mesh_file.display().to_string(), restart_from: warm.map(|w| restart_path(&dir, &w.restart)), stage: Stage::Final };
+    let files = CaseFiles {
+        mesh: setup.mesh_file.display().to_string(),
+        restart_from: warm.map(|w| restart_path(&dir, &w.restart)),
+        stage: Stage::Final,
+        conservative: false,
+    };
     let t0 = Instant::now();
     let deadline = (setup.opt.timeout_minutes > 0.0).then(|| t0 + Duration::from_secs_f64(setup.opt.timeout_minutes * 60.0));
     let min_drop = 3.0;
@@ -545,7 +600,7 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: Option
     let log = dir.join("su2.log");
     if let Some(st) = run.status {
         if !st.success() {
-            return Ok(fail(format!("SU2 exited with {st}; end of su2.log:\n{}", tail(&log, 8))));
+            return Ok(fail(exit_message(setup, "SU2", &st, &log)));
         }
     }
     note_multigrid(setup.opt, &log);
@@ -608,16 +663,20 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
     // Only a RANS restart with a known reference can seed the case (never an Euler solution).
     let mut warm = warm.and_then(|w| Some((w.reference?, w.restart))).filter(|(_, p)| restart_has_turbulence(p));
     let mut notes: Vec<String> = Vec::new();
+    // Cold start whose startup result can be reused (the conservative retry after a divergence).
+    let mut startup: Option<ResidualPeak> = None;
+    let mut conservative = false;
     loop {
         let is_warm = warm.is_some();
         let fail = |msg: String| CaseOutcome { spec, result: None, error: Some(msg), cached: false, warm: is_warm };
-        let (reference, restart_from) = match warm.take() {
-            Some((r, p)) => (r, restart_path(&dir, &p)),
-            None => {
+        let (reference, restart_from) = match (warm.take(), startup) {
+            (Some((r, p)), _) => (r, restart_path(&dir, &p)),
+            (None, Some(r)) => (r, STARTUP_RESTART.to_string()),
+            (None, None) => {
                 for f in CASE_FILES {
                     let _ = std::fs::remove_file(dir.join(f));
                 }
-                let files = CaseFiles { mesh: mesh.clone(), restart_from: None, stage: Stage::Startup };
+                let files = CaseFiles { mesh: mesh.clone(), restart_from: None, stage: Stage::Startup, conservative: false };
                 let cfg = su2_config_case(opt, &spec, &setup.dims, &setup.atm, &files);
                 let names = ("case_startup.cfg", "su2_startup.log", "history_startup.csv");
                 let run = match solve(setup, i, &dir, names, &cfg, deadline, &|_| false, tx)? {
@@ -626,7 +685,7 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
                 };
                 let log = dir.join("su2_startup.log");
                 if let Some(st) = run.status.filter(|s| !s.success()) {
-                    return Ok(fail(format!("SU2 (first-order startup) exited with {st}; end of su2_startup.log:\n{}", tail(&log, 8))));
+                    return Ok(fail(exit_message(setup, "SU2 (first-order startup)", &st, &log)));
                 }
                 if run.timed_out {
                     return Ok(fail("not converged (timeout during the first-order startup)".into()));
@@ -635,16 +694,19 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
                 let Some(r) = h.as_ref().and_then(|h| Some(ResidualPeak { rho: h.residual_peak()?, nu: h.nu_peak()? })) else {
                     return Ok(fail(format!("the first-order startup produced no density and SA residuals; end of su2_startup.log:\n{}", tail(&log, 8))));
                 };
-                if !dir.join("restart.dat").exists() {
-                    return Ok(fail("the first-order startup wrote no restart.dat".into()));
+                if !dir.join(STARTUP_RESTART).exists() {
+                    return Ok(fail(format!("the first-order startup wrote no {STARTUP_RESTART}")));
                 }
-                (r, "restart.dat".to_string())
+                startup = Some(r);
+                (r, STARTUP_RESTART.to_string())
             }
         };
-        let files = CaseFiles { mesh: mesh.clone(), restart_from: Some(restart_from), stage: Stage::Final };
+        let files = CaseFiles { mesh: mesh.clone(), restart_from: Some(restart_from), stage: Stage::Final, conservative };
         let cfg = su2_config_case(opt, &spec, &setup.dims, &setup.atm, &files);
+        // Stop when converged, or early when the solution diverges (instead of running into the iteration limit).
         let stop = |h: &History| {
-            h.rows.len() >= opt.min_iterations && rans_verdict(h, reference, opt.stable_window, kind, ratio, opt.iterations) == RansVerdict::Converged
+            h.rans_divergence().is_some()
+                || h.rows.len() >= opt.min_iterations && rans_verdict(h, reference, opt.stable_window, kind, ratio, opt.iterations) == RansVerdict::Converged
         };
         let run = match solve(setup, i, &dir, ("case.cfg", "su2.log", "history.csv"), &cfg, deadline, &stop, tx)? {
             Ok(r) => r,
@@ -654,9 +716,25 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
         let retry = |why: String, notes: &mut Vec<String>| {
             notes.push(format!("the warm start failed ({why}); solved again from the freestream"));
         };
+        if let Some(why) = History::read(&dir.join("history.csv")).ok().and_then(|h| h.rans_divergence()) {
+            let _ = std::fs::remove_file(dir.join("restart.dat"));
+            if is_warm {
+                retry(format!("diverged: {why}"), &mut notes);
+                continue;
+            }
+            if !conservative {
+                notes.push(format!(
+                    "the second-order stage diverged ({why}); repeated from the first-order solution with CFL <= {} and the limiter not frozen",
+                    crate::su2cfg::RANS_CONSERVATIVE_CFL_FACTOR * opt.cfl
+                ));
+                conservative = true;
+                continue;
+            }
+            return Ok(fail(format!("diverged twice (the second time with conservative settings): {why}")));
+        }
         if let Some(st) = run.status.filter(|s| !s.success()) {
-            let msg = format!("SU2 exited with {st}; end of su2.log:\n{}", tail(&log, 8));
-            if is_warm && !run.timed_out {
+            let msg = exit_message(setup, "SU2", &st, &log);
+            if is_warm && !run.timed_out && killing_signal(&st, &std::fs::read_to_string(&log).unwrap_or_default()).is_none() {
                 retry(format!("SU2 exited with {st}"), &mut notes);
                 continue;
             }
@@ -721,6 +799,7 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
             warnings,
         };
         write_done(&dir, &result)?;
+        let _ = std::fs::remove_file(dir.join(STARTUP_RESTART));
         return Ok(CaseOutcome { spec, result: Some(result), error: None, cached: false, warm: is_warm });
     }
 }
@@ -816,7 +895,20 @@ pub fn run_all(setup: &RunSetup, progress: &(dyn Fn(CfdStage) + Sync)) -> Result
     if CANCEL.load(Ordering::SeqCst) {
         bail!("interrupted");
     }
-    Ok(outcomes.into_iter().map(|o| o.expect("every case has an outcome")).collect())
+    let outcomes: Vec<CaseOutcome> = outcomes.into_iter().map(|o| o.expect("every case has an outcome")).collect();
+    for line in failure_summary(&outcomes) {
+        eprintln!("{line}");
+    }
+    Ok(outcomes)
+}
+
+/// One line per failed case with its reason (first line of the error), printed at the end of a run.
+pub fn failure_summary(outcomes: &[CaseOutcome]) -> Vec<String> {
+    outcomes
+        .iter()
+        .filter(|o| o.result.is_none())
+        .map(|o| format!("error: aero.cfd: case {} failed: {}", o.spec.dir_name(), o.error.as_deref().unwrap_or("unknown reason").lines().next().unwrap_or("")))
+        .collect()
 }
 
 /// Writes `cfd_cases.csv`: every solved case (raw, including the negative angles of `mirror` mode)
@@ -1121,11 +1213,14 @@ exit 0
         let _ = std::fs::remove_dir_all(&e.dir);
     }
     /// Mock SU2 for RANS: startup stage (`CONV_FILENAME= history_startup`) with peaks rho -1, nu -4; final stage
-    /// cold from -2 / -5 (or a limit cycle), warm from -4.5 / -6.5. Modes: ok | cycle | warmfail | thick (y+ 4).
+    /// cold from -2 / -5 (or a limit cycle), warm from -4.5 / -6.5. Modes: ok | cycle | warmfail | thick (y+ 4) |
+    /// diverge (the cold second-order stage diverges unless conservative) | diverge2 (always) | kill9 (SIGKILL in
+    /// the cold second-order stage).
     const MOCK_RANS: &str = r#"#!/bin/sh
 cfg=$1
+rf=$(grep '^RESTART_FILENAME' $cfg | cut -d' ' -f2)
 # Like SU2, write the restart file when the early stop terminates the run.
-trap 'printf "Density Nu_Tilde restart" > restart.dat; exit 1' TERM
+trap 'printf "Density Nu_Tilde restart" > $rf; exit 1' TERM
 mach=$(grep '^MACH_NUMBER' $cfg | cut -d' ' -f2)
 aoa=$(grep '^AOA' $cfg | cut -d' ' -f2)
 sol=$(grep '^SOLUTION_FILENAME' $cfg | cut -d' ' -f2)
@@ -1133,6 +1228,9 @@ conv=$(grep '^CONV_FILENAME' $cfg | cut -d' ' -f2)
 mode=$(cat "$(dirname "$0")/mode")
 echo "$mach $aoa $conv ${sol:-none}" >> "$(dirname "$0")/calls"
 case "$sol" in ../*) warm=1;; *) warm=0;; esac
+cons=0; grep -q '^CFL_ADAPT_PARAM=.*, 20.0 )' $cfg && cons=1
+echo "$mach $aoa $conv cons=$cons" >> "$(dirname "$0")/stages"
+[ "$mode" = kill9 ] && [ "$conv" = history ] && [ $warm = 0 ] && kill -9 $$
 if [ "$conv" = history ] && [ $warm = 1 ]; then
   [ "$mode" = warmfail ] && { echo "Error: warm boom" >&2; exit 1; }
   grep -q Nu_Tilde "$sol" || { echo "Error: no SA variable in the restart" >&2; exit 1; }
@@ -1148,6 +1246,9 @@ while [ $i -lt 40 ]; do
   elif [ $cyc = 1 ]; then r=$(echo "-2.0 - 0.03*$i" | bc -l); nu=$(echo "-5.0 - 0.02*$i" | bc -l)
   else r=$(echo "-2.0 - 0.2*$i" | bc -l); nu=$(echo "-5.0 - 0.2*$i" | bc -l)
   fi
+  if [ "$conv" = history ] && [ $warm = 0 ] && [ $i -ge 20 ] && { [ "$mode" = diverge2 ] || { [ "$mode" = diverge ] && [ $cons = 0 ]; }; }; then
+    nu=$(echo "-9.0 + 0.5*($i - 20)" | bc -l)
+  fi
   fx=0.3; fz=$(echo "$aoa * 0.05" | bc -l); my=$(echo "0 - $aoa * 0.08" | bc -l)
   if [ "$mode" = cycle ] && [ "$conv" = history ] && [ $warm = 0 ]; then par=$((i % 2)); fx=$(echo "0.3 + $par * 0.002" | bc -l); fi
   if [ $mk = 1 ]; then
@@ -1161,7 +1262,7 @@ while [ $i -lt 40 ]; do
   fi
   i=$((i+1))
 done
-printf 'Density Nu_Tilde restart' > restart.dat
+printf 'Density Nu_Tilde restart' > $rf
 yp=1.0; [ "$mode" = thick ] && yp=4.0
 printf '# vtk DataFile Version 3.0\nvtk output\nASCII\nDATASET UNSTRUCTURED_GRID\nPOINTS 3 double\n0 0 0 0.5 0 0\n1 0 0\nPOINT_DATA 3\nSCALARS Y_Plus double 1\nLOOKUP_TABLE default\n%s %s 0.1\n' $yp $yp > surface_flow.vtk
 exit 0
@@ -1190,7 +1291,7 @@ exit 0
         // Every Mach number starts cold (startup + final stage), the alpha chain is warm.
         let calls = e.calls();
         assert_eq!(calls.iter().filter(|c| c.contains(" history_startup none")).count(), 2, "{calls:?}");
-        assert_eq!(calls.iter().filter(|c| c.ends_with(" history restart.dat")).count(), 2, "{calls:?}");
+        assert_eq!(calls.iter().filter(|c| c.ends_with(" history restart_startup.dat")).count(), 2, "{calls:?}");
         assert!(calls.contains(&"0.500000 8.000000 history ../m0.500_a04.00/restart.dat".to_string()), "{calls:?}");
         assert_eq!(calls.len(), 2 * 2 + 4);
         assert!(!out[0].warm && out[1].warm && out[2].warm && !out[3].warm);
@@ -1449,5 +1550,61 @@ exit 0
         let stalled = History::parse(&t).unwrap();
         assert!(stalled.rans_coefficients_stable(200, k, 18.0));
         assert!(!stalled.rans_trend_settled(200, k, 18.0, 4000) && stalled.rans_trend_settled(200, k, 18.0, 1000));
+    }
+
+    #[test]
+    fn rans_divergence_is_retried_conservatively_then_fails() {
+        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let stages = |e: &Env| std::fs::read_to_string(e.dir.join("stages")).unwrap_or_default();
+        // Diverges with the normal settings, converges with the conservative ones (startup not repeated).
+        let mut e = env_rans("rans_diverge", "diverge");
+        e.opt.machs = vec![0.5];
+        e.opt.alphas_deg = vec![0.0, 4.0];
+        let out = run_all(&e.setup(), &|_| {}).unwrap();
+        let r = out[0].result.as_ref().unwrap_or_else(|| panic!("{:?} {}", out[0].error, stages(&e)));
+        assert!(r.converged && r.warnings.iter().any(|w| w.contains("diverged") && w.contains("SA residual rose") && w.contains("CFL <= 20")), "{r:?}");
+        let st = stages(&e);
+        assert_eq!(
+            st.lines().filter(|l| l.starts_with("0.500000 0.000000")).collect::<Vec<_>>(),
+            ["0.500000 0.000000 history_startup cons=0", "0.500000 0.000000 history cons=0", "0.500000 0.000000 history cons=1"]
+        );
+        // The warm alpha = 4 case does not diverge and seeds from the retried solution.
+        assert!(out[1].warm && out[1].result.as_ref().unwrap().converged);
+        assert!(!out[0].spec.dir(&e.dir.join("work")).join(crate::su2cfg::STARTUP_RESTART).exists());
+        let _ = std::fs::remove_dir_all(&e.dir);
+        // Diverges with both: failed with the reason, after one retry, not after the iteration limit.
+        let mut e = env_rans("rans_diverge2", "diverge2");
+        e.opt.machs = vec![0.5];
+        e.opt.alphas_deg = vec![0.0, 4.0];
+        let out = run_all(&e.setup(), &|_| {}).unwrap();
+        let msg = out[0].error.as_ref().unwrap();
+        assert!(out[0].result.is_none() && msg.contains("diverged twice") && msg.contains("SA residual rose"), "{msg}");
+        assert_eq!(stages(&e).lines().filter(|l| l.starts_with("0.500000 0.000000 history ")).count(), 2);
+        assert!(failure_summary(&out)[0].starts_with("error: aero.cfd: case m0.500_a00.00 failed: diverged twice"), "{:?}", failure_summary(&out));
+        let _ = std::fs::remove_dir_all(&e.dir);
+    }
+
+    #[test]
+    fn killed_su2_names_the_signal_and_the_memory_hint() {
+        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        let mut e = env_rans("rans_kill9", "kill9");
+        e.opt.machs = vec![0.5];
+        e.opt.alphas_deg = vec![0.0, 4.0];
+        std::fs::write(e.dir.join("mesh_stats.json"), r#"{"nodes": 405590, "cells": 901081}"#).unwrap();
+        let out = run_all(&e.setup(), &|_| {}).unwrap();
+        let msg = out[0].error.as_ref().unwrap();
+        assert!(msg.starts_with("SU2 was killed by signal 9 (SIGKILL; most likely out of memory: about ") && msg.contains("GB per case"), "{msg}");
+        assert!(msg.contains("lower parallel_cases or ranks_per_case"), "{msg}");
+        let sum = failure_summary(&out);
+        assert!(sum.iter().any(|l| l.contains("m0.500_a00.00 failed: SU2 was killed by signal 9")), "{sum:?}");
+        let _ = std::fs::remove_dir_all(&e.dir);
+        // mpirun reports a killed rank in its log and exits with an ordinary code.
+        use std::os::unix::process::ExitStatusExt;
+        let st = std::process::ExitStatus::from_raw(1 << 8);
+        let log = "prterun noticed that process rank 2 with PID 0 on node kuro exited on signal 9 (Killed).";
+        assert_eq!(killing_signal(&st, log), Some(9));
+        assert_eq!(killing_signal(&std::process::ExitStatus::from_raw(137 << 8), ""), Some(9));
+        assert_eq!(killing_signal(&std::process::ExitStatus::from_raw(9), ""), Some(9));
+        assert_eq!(killing_signal(&st, "Error: boom"), None);
     }
 }

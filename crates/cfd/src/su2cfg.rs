@@ -38,9 +38,11 @@
 //!
 //! * [`Stage::Startup`]: first-order Roe from the freestream, at most [`RANS_STARTUP_MAX_ITER`] iterations or until
 //!   the density residual is [`RANS_STARTUP_DROP`] orders below its peak (`REL_RMS_DENSITY`; checked from
-//!   iteration [`RANS_STARTUP_MIN_ITER`] on). History `history_startup.csv`, restart `restart.dat`.
-//! * [`Stage::Final`]: second-order Roe (MUSCL, Venkatakrishnan-Wang limiter frozen at `min_iterations`) restarted
-//!   from `restart.dat`; history `history.csv`. A warm start runs this stage only, from the neighbour's restart file.
+//!   iteration [`RANS_STARTUP_MIN_ITER`] on). History `history_startup.csv`, restart [`STARTUP_RESTART`].
+//! * [`Stage::Final`]: second-order Roe (MUSCL, Venkatakrishnan-Wang limiter, never frozen) restarted from the
+//!   startup result [`STARTUP_RESTART`]; history `history.csv`, restart `restart.dat`. A warm start runs this stage
+//!   only, from the neighbour's `restart.dat`. After a divergence the runner repeats it once from the startup result
+//!   with the CFL limited to [`RANS_CONSERVATIVE_CFL_FACTOR`] `cfl` ([`CaseFiles::conservative`]).
 //!
 //! Both: Green-Gauss gradients with weighted-least-squares reconstruction gradients, first-order upwind SA,
 //! accurate Roe Jacobians, FGMRES + ILU(0) to a relative tolerance of 0.05 (25 iterations at most), the
@@ -65,8 +67,13 @@ pub const RANS_STARTUP_MIN_ITER: usize = 100;
 pub const RANS_RESIDUAL_FLOOR: f64 = -14.0;
 /// RANS: upper CFL limit in units of `cfl`.
 pub const RANS_CFL_MAX_FACTOR: f64 = 40.0;
+/// RANS conservative retry after a divergence: upper CFL limit in units of `cfl`.
+pub const RANS_CONSERVATIVE_CFL_FACTOR: f64 = 4.0;
 /// History file (without `.csv`) of the RANS startup stage.
 pub const STARTUP_HISTORY: &str = "history_startup";
+/// Restart file of the RANS startup stage (kept apart from `restart.dat`, so that a diverged second-order stage can
+/// be repeated from it).
+pub const STARTUP_RESTART: &str = "restart_startup.dat";
 
 /// Stage of a case. Euler cases have the single stage [`Stage::Final`]; see the module documentation for RANS.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -92,14 +99,17 @@ pub struct RefDims {
 pub struct CaseFiles {
     pub mesh: String,
     /// Restart file used as initial solution: a neighbouring case (warm start) or, in the RANS final stage of a
-    /// cold start, the case's own startup result (`restart.dat`).
+    /// cold start, the case's own startup result ([`STARTUP_RESTART`]).
     pub restart_from: Option<String>,
     pub stage: Stage,
+    /// RANS final stage: the conservative settings of the retry after a divergence (CFL limit
+    /// [`RANS_CONSERVATIVE_CFL_FACTOR`] `cfl`).
+    pub conservative: bool,
 }
 
 impl Default for CaseFiles {
     fn default() -> Self {
-        Self { mesh: "mesh.su2".into(), restart_from: None, stage: Stage::Final }
+        Self { mesh: "mesh.su2".into(), restart_from: None, stage: Stage::Final, conservative: false }
     }
 }
 
@@ -140,6 +150,7 @@ pub fn su2_config_case(opt: &CfdOptions, spec: &CaseSpec, dims: &RefDims, atm: &
     let (mach, alpha_deg) = (spec.mach, spec.alpha_deg);
     let rans = opt.model == FlowModel::Rans;
     let startup = rans && files.stage == Stage::Startup;
+    let conservative = rans && !startup && files.conservative;
     let area = if opt.symmetry { 0.5 * dims.area } else { dims.area };
     let mut c = Cfg::default();
     c.kv("SOLVER", if rans { "RANS" } else { "EULER" });
@@ -227,7 +238,8 @@ pub fn su2_config_case(opt: &CfdOptions, spec: &CaseSpec, dims: &RefDims, atm: &
             c.kv("MUSCL_FLOW", "YES");
             c.kv("SLOPE_LIMITER_FLOW", "VENKATAKRISHNAN_WANG");
             c.kv("VENKAT_LIMITER_COEFF", "0.05");
-            c.kv("LIMITER_ITER", opt.min_iterations);
+            // No LIMITER_ITER: freezing the limiter of a 3-D RANS solution whose residual still chatters made it
+            // diverge (sample rocket, M 0.8, the SA residual up 6 orders within 50 iterations of the freeze).
         }
         c.kv("USE_ACCURATE_FLUX_JACOBIANS", "YES");
     } else {
@@ -249,7 +261,13 @@ pub fn su2_config_case(opt: &CfdOptions, spec: &CaseSpec, dims: &RefDims, atm: &
     c.kv("CFL_NUMBER", opt.cfl);
     c.kv("CFL_ADAPT", "YES");
     // ( factor down, factor up, CFL min, CFL max )
-    let cfl_max = if rans { RANS_CFL_MAX_FACTOR } else { 50.0 };
+    let cfl_max = if conservative {
+        RANS_CONSERVATIVE_CFL_FACTOR
+    } else if rans {
+        RANS_CFL_MAX_FACTOR
+    } else {
+        50.0
+    };
     c.kv("CFL_ADAPT_PARAM", format!("( 0.5, 1.2, {:.3}, {:.1} )", 0.2 * opt.cfl, cfl_max * opt.cfl));
     let mg = opt.multigrid_levels();
     if mg > 0 {
@@ -293,7 +311,7 @@ pub fn su2_config_case(opt: &CfdOptions, spec: &CaseSpec, dims: &RefDims, atm: &
     c.blank();
     c.kv("MESH_FILENAME", &files.mesh);
     c.kv("MESH_FORMAT", "SU2");
-    c.kv("RESTART_FILENAME", "restart.dat");
+    c.kv("RESTART_FILENAME", if startup { STARTUP_RESTART } else { "restart.dat" });
     c.kv("CONV_FILENAME", if startup { STARTUP_HISTORY } else { "history" });
     c.kv("SURFACE_FILENAME", "surface_flow");
     c.kv("TABULAR_FORMAT", "CSV");
@@ -431,7 +449,7 @@ mod tests {
     #[test]
     fn rans_full_model_with_warm_start() {
         let o = CfdOptions { model: FlowModel::Rans, symmetry: false, scheme: Scheme::Jst, ..Default::default() };
-        let f = CaseFiles { mesh: "../mesh.su2".into(), restart_from: Some("../m0.600_a02.00/restart.dat".into()), stage: Stage::Final };
+        let f = CaseFiles { mesh: "../mesh.su2".into(), restart_from: Some("../m0.600_a02.00/restart.dat".into()), stage: Stage::Final, conservative: false };
         let s = su2_config(&o, 0.6, 8.0, &dims(), &atm(), &f);
         for l in [
             "SOLVER= RANS",
@@ -482,7 +500,6 @@ mod tests {
             "LINEAR_SOLVER_ILU_FILL_IN= 0",
             "LINEAR_SOLVER_ERROR= 0.05",
             "LINEAR_SOLVER_ITER= 25",
-            "RESTART_FILENAME= restart.dat",
             "OUTPUT_FILES= ( RESTART, SURFACE_CSV, SURFACE_PARAVIEW_ASCII )",
             "HISTORY_OUTPUT= ( ITER, RMS_RES, REL_RMS_RES, AERO_COEFF, AERO_COEFF_SURF, LINSOL, CFL_NUMBER )",
             "SCREEN_OUTPUT= ( INNER_ITER, RMS_DENSITY, RMS_NU_TILDE, LIFT, DRAG, MOMENT_Y, AVG_CFL )",
@@ -498,6 +515,7 @@ mod tests {
             "CONV_RESIDUAL_MINVAL= -2",
             "CONV_STARTITER= 100",
             "CONV_FILENAME= history_startup",
+            "RESTART_FILENAME= restart_startup.dat",
         ]) {
             assert!(has(&a, l), "stage A: missing {l:?} in\n{a}");
         }
@@ -511,12 +529,12 @@ mod tests {
             "MUSCL_FLOW= YES",
             "SLOPE_LIMITER_FLOW= VENKATAKRISHNAN_WANG",
             "VENKAT_LIMITER_COEFF= 0.05",
-            "LIMITER_ITER= 400",
             "ITER= 4000",
             "CONV_FIELD= ( RMS_DENSITY, RMS_NU_TILDE )",
             "CONV_RESIDUAL_MINVAL= -14",
             "CONV_STARTITER= 10",
             "CONV_FILENAME= history",
+            "RESTART_FILENAME= restart.dat",
         ]) {
             assert!(has(&b, l), "stage B: missing {l:?} in\n{b}");
         }
@@ -525,6 +543,13 @@ mod tests {
         let short =
             su2_config(&CfdOptions { iterations: 300, ..o.clone() }, 0.8, 4.0, &dims(), &atm(), &CaseFiles { stage: Stage::Startup, ..Default::default() });
         assert!(has(&short, "ITER= 300"));
+        // The RANS limiter is never frozen; the conservative retry only lowers the CFL limit.
+        assert!(!b.contains("LIMITER_ITER"));
+        let cons = su2_config(&o, 0.8, 4.0, &dims(), &atm(), &CaseFiles { conservative: true, ..own.clone() });
+        assert!(has(&cons, "CFL_ADAPT_PARAM= ( 0.5, 1.2, 1.000, 20.0 )") && has(&cons, "MUSCL_FLOW= YES") && !cons.contains("LIMITER_ITER"), "{cons}");
+        assert_eq!(cons.replace("1.000, 20.0 )", "1.000, 200.0 )"), b);
+        // The startup stage ignores the flag.
+        assert_eq!(su2_config(&o, 0.8, 4.0, &dims(), &atm(), &CaseFiles { stage: Stage::Startup, conservative: true, ..Default::default() }), a);
         // Wall-function mode only with a log-layer y+.
         let wf = su2_config(&CfdOptions { yplus: 50.0, ..o.clone() }, 0.8, 4.0, &dims(), &atm(), &own);
         assert!(has(&wf, "MARKER_WALL_FUNCTIONS= ( wall, STANDARD_WALL_FUNCTION, base, STANDARD_WALL_FUNCTION )"), "{wf}");
@@ -538,7 +563,8 @@ mod tests {
     /// Euler configurations are frozen: their text is the input of the case hashes of existing caches.
     #[test]
     fn euler_config_text_is_frozen() {
-        let files = CaseFiles { mesh: "../mesh.su2".into(), restart_from: Some("../m0.600_a02.00/restart.dat".into()), stage: Stage::Final };
+        let files =
+            CaseFiles { mesh: "../mesh.su2".into(), restart_from: Some("../m0.600_a02.00/restart.dat".into()), stage: Stage::Final, conservative: false };
         let opts = [
             CfdOptions::default(),
             CfdOptions { symmetry: false, scheme: Scheme::Jst, ..Default::default() },

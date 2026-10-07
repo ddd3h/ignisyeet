@@ -195,11 +195,13 @@ pub const DEFAULT_STABLE_WINDOW: usize = 60;
 /// Default agglomeration multigrid levels of Euler cases (RANS: 0).
 pub const DEFAULT_EULER_MULTIGRID: usize = 0;
 /// RANS defaults of `iterations`, `min_iterations`, `stable_window` and `wall_size`, used when the configuration
-/// selects `model = "rans"` and does not set the value (programmatic options: [`CfdOptions::rans`]).
+/// selects `model = "rans"` and does not set the value (programmatic options: [`CfdOptions::rans`]). In the sample
+/// mesh study (8 / 4.8 / 3 mm, doc/data/cfd) the 4.8 mm level is within about 1 % (CN) and 1.3 % (CA) of the 3 mm
+/// one; 5 mm needs about 7.5 GB per case, 3 mm about 18 GB.
 pub const RANS_DEFAULT_ITERATIONS: usize = 4000;
 pub const RANS_DEFAULT_MIN_ITERATIONS: usize = 400;
 pub const RANS_DEFAULT_STABLE_WINDOW: usize = 200;
-pub const RANS_DEFAULT_WALL_SIZE: f64 = 0.003;
+pub const RANS_DEFAULT_WALL_SIZE: f64 = 0.005;
 /// RANS `yplus` ranges: resolved wall (no wall function) up to this value ...
 pub const RANS_YPLUS_RESOLVED_MAX: f64 = 5.0;
 /// ... or the log layer of the standard wall function.
@@ -295,7 +297,7 @@ pub struct CfdOptions {
     pub farfield: f64,
     /// Surface element size [m]. 2 mm gives about 0.9 M half-model cells for the 1.8 m sample rocket and a
     /// normal-force error of about 2 % at M 2 (mesh convergence study, doc/data/cfd/mesh_convergence.csv).
-    /// RANS default: 3 mm.
+    /// RANS default: 5 mm.
     #[serde(default = "unset_size")]
     pub wall_size: f64,
     /// RANS: target y+ of the first layer. At most 5: the boundary layer is resolved down to the wall (no wall
@@ -818,7 +820,7 @@ mod tests {
         assert!(!serde_json::to_string(&e).unwrap().contains("rans_base"));
         // RANS without explicit values: the RANS defaults.
         let r: CfdOptions = serde_json::from_str(r#"{"model":"rans"}"#).unwrap();
-        assert_eq!((r.iterations, r.min_iterations, r.stable_window, r.wall_size), (4000, 400, 200, 0.003));
+        assert_eq!((r.iterations, r.min_iterations, r.stable_window, r.wall_size), (4000, 400, 200, 0.005));
         r.validate().unwrap();
         assert_eq!(serde_json::to_string(&r).unwrap(), serde_json::to_string(&CfdOptions::rans()).unwrap());
         // Explicit values are kept, also when they equal the Euler defaults.
@@ -826,7 +828,7 @@ mod tests {
         assert_eq!((x.iterations, x.min_iterations, x.stable_window, x.wall_size), (3000, 100, 60, 0.002));
         // A serialised RANS configuration reads back unchanged.
         let back: CfdOptions = serde_json::from_str(&serde_json::to_string(&r).unwrap()).unwrap();
-        assert_eq!((back.iterations, back.min_iterations, back.stable_window, back.wall_size), (4000, 400, 200, 0.003));
+        assert_eq!((back.iterations, back.min_iterations, back.stable_window, back.wall_size), (4000, 400, 200, 0.005));
         // `deny_unknown_fields` still applies.
         assert!(serde_json::from_str::<CfdOptions>(r#"{"model":"rans","bogus":1}"#).is_err());
     }

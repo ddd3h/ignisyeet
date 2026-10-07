@@ -1579,7 +1579,11 @@ exit 0
         let (t, base) = table_of(&e, &out, &model);
         assert!(!base);
         let wall = wall_at(&out);
-        assert!((t.lookup(0.5, 0.0).ca_off - (wall + b.base + b.extra)).abs() < 1e-6, "{}", t.lookup(0.5, 0.0).ca_off);
+        assert!(
+            (t.lookup(0.5, 0.0).ca_off - (wall + b.base + b.extra + crate::forces::roughness_increment(&model, 0.5))).abs() < 1e-6,
+            "{}",
+            t.lookup(0.5, 0.0).ca_off
+        );
         // rans_base = "cfd": wall + base, and no Barrowman base on top.
         e.opt.rans_base = crate::config::RansBase::Cfd;
         let out = run_all(&e.setup(), &|_| {}).unwrap();
@@ -1593,7 +1597,7 @@ exit 0
         let (t, base) = table_of(&e, &out, &model);
         assert!(base);
         let wall = wall_at(&out);
-        assert!((t.lookup(0.5, 0.0).ca_off - (wall + 0.1 + b.extra)).abs() < 1e-6);
+        assert!((t.lookup(0.5, 0.0).ca_off - (wall + 0.1 + b.extra + crate::forces::roughness_increment(&model, 0.5))).abs() < 1e-6);
     }
 
     /// No marker columns: the monitored total holds the base cap, so the table must not add the Barrowman base.
@@ -1614,7 +1618,7 @@ exit 0
         let (t, base) = table_of(&e, &out, &model);
         assert!(base, "no double count of the base");
         let b = model.cd0(0.5, false);
-        assert!((t.lookup(0.5, 0.0).ca_off - (0.3 + b.extra)).abs() < 1e-6);
+        assert!((t.lookup(0.5, 0.0).ca_off - (0.3 + b.extra + crate::forces::roughness_increment(&model, 0.5))).abs() < 1e-6);
     }
 
     /// Limit cycle: the markers are averaged over the window the totals are averaged over.

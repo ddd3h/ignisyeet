@@ -134,28 +134,55 @@ pub enum MultigridCycle {
     V,
 }
 
+/// RANS: where the base drag of the table comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum RansBase {
+    /// The empirical base-drag term of the flight model, as for Euler; the pressure that RANS integrates on the
+    /// base cap is not used.
+    #[default]
+    Model,
+    /// The axial force that RANS integrates on the base cap (marker `base`) replaces the empirical base term.
+    Cfd,
+}
+
 /// Default early-stop minimum iteration count (also the iteration at which the Euler slope limiter is frozen).
 pub const DEFAULT_MIN_ITERATIONS: usize = 100;
 /// Default length of the coefficient-stability window of the early stop.
 pub const DEFAULT_STABLE_WINDOW: usize = 60;
 /// Default agglomeration multigrid levels of Euler cases (RANS: 0).
 pub const DEFAULT_EULER_MULTIGRID: usize = 0;
+/// RANS defaults of `iterations`, `min_iterations`, `stable_window` and `wall_size`, used when the configuration
+/// selects `model = "rans"` and does not set the value (programmatic options: [`CfdOptions::rans`]).
+pub const RANS_DEFAULT_ITERATIONS: usize = 4000;
+pub const RANS_DEFAULT_MIN_ITERATIONS: usize = 400;
+pub const RANS_DEFAULT_STABLE_WINDOW: usize = 200;
+pub const RANS_DEFAULT_WALL_SIZE: f64 = 0.003;
+/// RANS `yplus` ranges: resolved wall (no wall function) up to this value ...
+pub const RANS_YPLUS_RESOLVED_MAX: f64 = 5.0;
+/// ... or the log layer of the standard wall function.
+pub const RANS_YPLUS_WALL_FUNCTION: std::ops::RangeInclusive<f64> = 30.0..=150.0;
 
-fn default_min_iterations() -> usize {
-    DEFAULT_MIN_ITERATIONS
+/// Deserialisation placeholders of the options whose default depends on `model` (replaced right after parsing).
+const UNSET_COUNT: usize = usize::MAX;
+fn unset_count() -> usize {
+    UNSET_COUNT
 }
+fn unset_size() -> f64 {
+    f64::NAN
+}
+
 fn is_default_min_iterations(v: &usize) -> bool {
     *v == DEFAULT_MIN_ITERATIONS
-}
-fn default_stable_window() -> usize {
-    DEFAULT_STABLE_WINDOW
 }
 fn is_default_stable_window(v: &usize) -> bool {
     *v == DEFAULT_STABLE_WINDOW
 }
 
+/// `Serialize` / `Deserialize` go through the derived (`remote = "Self"`) functions; deserialisation then fills the
+/// model-dependent defaults (see [`RANS_DEFAULT_ITERATIONS`]).
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, default)]
+#[serde(deny_unknown_fields, default, remote = "Self")]
 pub struct CfdOptions {
     /// Treatment of the angle-of-attack asymmetry, see [`AlphaMode`].
     pub alpha_mode: AlphaMode,
@@ -219,10 +246,14 @@ pub struct CfdOptions {
     pub farfield: f64,
     /// Surface element size [m]. 2 mm gives about 0.9 M half-model cells for the 1.8 m sample rocket and a
     /// normal-force error of about 2 % at M 2 (mesh convergence study, doc/data/cfd/mesh_convergence.csv).
+    /// RANS default: 3 mm.
+    #[serde(default = "unset_size")]
     pub wall_size: f64,
-    /// RANS: target y+ of the first layer.
+    /// RANS: target y+ of the first layer. At most 5: the boundary layer is resolved down to the wall (no wall
+    /// function); 30..150: the standard wall function bridges the inner layer.
     pub yplus: f64,
-    /// Maximum iterations per case.
+    /// Maximum iterations per case (RANS default: 4000, counted in the second-order stage).
+    #[serde(default = "unset_count")]
     pub iterations: usize,
     /// Agglomeration multigrid levels (`MGLEVEL`, 0..=4; 0 = single grid). `None` = automatic: the measured
     /// default for Euler, 0 for RANS.
@@ -233,14 +264,20 @@ pub struct CfdOptions {
     pub multigrid_cycle: MultigridCycle,
     /// Early stop: no case is stopped before this iteration, and the Euler slope limiter is frozen at it
     /// (`LIMITER_ITER`), so that the residual can drop below the limiter-chatter level.
-    #[serde(default = "default_min_iterations", skip_serializing_if = "is_default_min_iterations")]
+    /// RANS default: 400.
+    #[serde(default = "unset_count", skip_serializing_if = "is_default_min_iterations")]
     pub min_iterations: usize,
     /// Early stop: the force coefficients must be flat over this many last iterations.
-    #[serde(default = "default_stable_window", skip_serializing_if = "is_default_stable_window")]
+    /// RANS default: 200.
+    #[serde(default = "unset_count", skip_serializing_if = "is_default_stable_window")]
     pub stable_window: usize,
     pub cfl: f64,
-    /// Target level of the RMS density residual (e.g. 1e-6 -> `CONV_RESIDUAL_MINVAL = -6`).
+    /// Euler: target level of the RMS density residual (e.g. 1e-6 -> `CONV_RESIDUAL_MINVAL = -6`). RANS cases are
+    /// judged by the drop below the residual peak of their cold start instead (see `runner`).
     pub convergence: f64,
+    /// RANS: source of the base drag, see [`RansBase`].
+    #[serde(skip_serializing_if = "is_default")]
+    pub rans_base: RansBase,
     /// Convective scheme.
     pub scheme: Scheme,
     /// Installation prefix of the CFD tools (`<prefix>/bin/SU2_CFD`, `mpirun`, `python` with gmsh).
@@ -292,6 +329,7 @@ impl Default for CfdOptions {
             stable_window: DEFAULT_STABLE_WINDOW,
             cfl: 5.0,
             convergence: 1e-6,
+            rans_base: RansBase::Model,
             scheme: Scheme::Roe,
             prefix: String::new(),
             su2: "SU2_CFD".into(),
@@ -336,7 +374,60 @@ fn strictly_increasing(v: &[f64]) -> bool {
     v.windows(2).all(|w| w[0] < w[1])
 }
 
+impl<'de> Deserialize<'de> for CfdOptions {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Self, D::Error> {
+        let mut o = CfdOptions::deserialize(d)?;
+        o.fill_model_defaults();
+        Ok(o)
+    }
+}
+
+impl Serialize for CfdOptions {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> std::result::Result<S::Ok, S::Error> {
+        CfdOptions::serialize(self, s)
+    }
+}
+
 impl CfdOptions {
+    /// The defaults with `model = "rans"` and the RANS defaults of the iteration counts and the wall size.
+    pub fn rans() -> Self {
+        Self {
+            model: FlowModel::Rans,
+            iterations: RANS_DEFAULT_ITERATIONS,
+            min_iterations: RANS_DEFAULT_MIN_ITERATIONS,
+            stable_window: RANS_DEFAULT_STABLE_WINDOW,
+            wall_size: RANS_DEFAULT_WALL_SIZE,
+            ..Default::default()
+        }
+    }
+
+    /// Replaces the placeholders of the values the configuration did not set by the defaults of `model`.
+    fn fill_model_defaults(&mut self) {
+        let d = if self.model == FlowModel::Rans { Self::rans() } else { Self::default() };
+        if self.iterations == UNSET_COUNT {
+            self.iterations = d.iterations;
+        }
+        if self.min_iterations == UNSET_COUNT {
+            self.min_iterations = d.min_iterations;
+        }
+        if self.stable_window == UNSET_COUNT {
+            self.stable_window = d.stable_window;
+        }
+        if self.wall_size.is_nan() {
+            self.wall_size = d.wall_size;
+        }
+    }
+
+    /// RANS with `rans_base = "cfd"`: the base drag is the force integrated on the base cap.
+    pub fn base_from_cfd(&self) -> bool {
+        self.model == FlowModel::Rans && self.rans_base == RansBase::Cfd
+    }
+
+    /// RANS with the standard wall function (`yplus` in the log layer); otherwise the wall is resolved.
+    pub fn wall_function(&self) -> bool {
+        self.model == FlowModel::Rans && self.yplus > RANS_YPLUS_RESOLVED_MAX
+    }
+
     pub fn validate(&self) -> Result<()> {
         if self.machs.is_empty() || self.machs.iter().any(|&m| !(m.is_finite() && m > 0.0)) {
             bail!("aero.cfd.machs must be a non-empty list of positive Mach numbers");
@@ -392,6 +483,22 @@ impl CfdOptions {
         if self.base_treatment == Some(BaseTreatment::Fairing) && self.surface == SurfaceKind::Stl && self.model == FlowModel::Euler && self.tail_fairing <= 0.0
         {
             bail!("aero.cfd.base_treatment = \"fairing\" needs tail_fairing > 0 (cone length in base radii)");
+        }
+        if self.surface == SurfaceKind::Stl && self.model == FlowModel::Rans {
+            bail!(
+                "aero.cfd.surface = \"stl\" with model = \"rans\": RANS needs the boundary-layer mesh, which is built only for the CAD surface \
+                 (surface = \"cad\")"
+            );
+        }
+        if self.model == FlowModel::Rans && !(self.yplus <= RANS_YPLUS_RESOLVED_MAX || RANS_YPLUS_WALL_FUNCTION.contains(&self.yplus)) {
+            bail!(
+                "aero.cfd.yplus = {} lies in the buffer layer, where neither a resolved wall nor a wall function is valid: \
+                 use yplus <= 5 (resolved wall, recommended 1) or 30..150 (standard wall function)",
+                self.yplus
+            );
+        }
+        if self.rans_base == RansBase::Cfd && self.model != FlowModel::Rans {
+            bail!("aero.cfd.rans_base = \"cfd\" needs model = \"rans\" (the inviscid base pressure is not used)");
         }
         if self.roll_damping && self.model == FlowModel::Rans {
             bail!("aero.cfd.roll_damping is only implemented for model = \"euler\"");
@@ -540,8 +647,6 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("max_geometry_error"));
-        // RANS keeps the flat base and needs no choice.
-        CfdOptions { model: FlowModel::Rans, ..stl.clone() }.validate().unwrap();
         let p: CfdOptions =
             serde_json::from_str(r#"{"shape_symmetry":"pitch_plane","base_treatment":"fairing","betas_deg":[0,4],"roll_damping":true,"symmetry":false}"#)
                 .unwrap();
@@ -618,5 +723,52 @@ mod tests {
         assert_eq!(o.model, FlowModel::Rans);
         assert_eq!(o.surface, SurfaceKind::Stl);
         assert!(serde_json::from_str::<CfdOptions>(r#"{"bogus":1}"#).is_err());
+    }
+    #[test]
+    fn rans_defaults_apply_only_to_values_left_unset() {
+        // Euler: the familiar defaults, and nothing new is serialised.
+        let e: CfdOptions = serde_json::from_str("{}").unwrap();
+        assert_eq!((e.iterations, e.min_iterations, e.stable_window, e.wall_size), (3000, 100, 60, 0.002));
+        assert_eq!(serde_json::to_string(&e).unwrap(), serde_json::to_string(&CfdOptions::default()).unwrap());
+        assert!(!serde_json::to_string(&e).unwrap().contains("rans_base"));
+        // RANS without explicit values: the RANS defaults.
+        let r: CfdOptions = serde_json::from_str(r#"{"model":"rans"}"#).unwrap();
+        assert_eq!((r.iterations, r.min_iterations, r.stable_window, r.wall_size), (4000, 400, 200, 0.003));
+        r.validate().unwrap();
+        assert_eq!(serde_json::to_string(&r).unwrap(), serde_json::to_string(&CfdOptions::rans()).unwrap());
+        // Explicit values are kept, also when they equal the Euler defaults.
+        let x: CfdOptions =
+            serde_json::from_str(r#"{"model":"rans","iterations":3000,"min_iterations":100,"stable_window":60,"wall_size":0.002}"#).unwrap();
+        assert_eq!((x.iterations, x.min_iterations, x.stable_window, x.wall_size), (3000, 100, 60, 0.002));
+        // A serialised RANS configuration reads back unchanged.
+        let back: CfdOptions = serde_json::from_str(&serde_json::to_string(&r).unwrap()).unwrap();
+        assert_eq!((back.iterations, back.min_iterations, back.stable_window, back.wall_size), (4000, 400, 200, 0.003));
+        // `deny_unknown_fields` still applies.
+        assert!(serde_json::from_str::<CfdOptions>(r#"{"model":"rans","bogus":1}"#).is_err());
+    }
+
+    #[test]
+    fn rans_surface_yplus_and_base_validation() {
+        let e = CfdOptions { surface: SurfaceKind::Stl, ..CfdOptions::rans() }.validate().unwrap_err().to_string();
+        assert!(e.contains("RANS needs the boundary-layer mesh, which is built only for the CAD surface"), "{e}");
+        for y in [0.5, 1.0, 5.0, 30.0, 100.0, 150.0] {
+            CfdOptions { yplus: y, ..CfdOptions::rans() }.validate().unwrap();
+        }
+        for y in [5.5, 10.0, 29.0, 151.0, 300.0] {
+            let e = CfdOptions { yplus: y, ..CfdOptions::rans() }.validate().unwrap_err().to_string();
+            assert!(e.contains("yplus") && e.contains("buffer layer"), "{e}");
+        }
+        // Euler ignores yplus (it is only checked for being positive).
+        CfdOptions { yplus: 10.0, ..Default::default() }.validate().unwrap();
+        assert!(!CfdOptions::rans().wall_function() && CfdOptions { yplus: 50.0, ..CfdOptions::rans() }.wall_function());
+        assert!(!CfdOptions { yplus: 50.0, ..Default::default() }.wall_function());
+        // rans_base
+        let r: CfdOptions = serde_json::from_str(r#"{"model":"rans","rans_base":"cfd"}"#).unwrap();
+        assert!(r.base_from_cfd());
+        assert!(serde_json::to_string(&r).unwrap().contains("\"rans_base\":\"cfd\""));
+        assert!(!CfdOptions::rans().base_from_cfd() && !CfdOptions::default().base_from_cfd());
+        let e = CfdOptions { rans_base: RansBase::Cfd, ..Default::default() }.validate().unwrap_err().to_string();
+        assert!(e.contains("rans_base"), "{e}");
+        assert!(serde_json::from_str::<CfdOptions>(r#"{"rans_base":"wake"}"#).is_err());
     }
 }

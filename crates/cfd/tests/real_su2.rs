@@ -260,3 +260,114 @@ fn stl_half_domain_matches_the_full_domain_in_cn() {
     assert!((ch.cz / cf.cz - 1.0).abs() < 0.06, "CN half {} vs full {}", -ch.cz, -cf.cz);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Cells (SU2 type, nodes), node coordinates and markers (tag, faces with their SU2 type) of an SU2 mesh file.
+type Su2Mesh = (Vec<(u32, Vec<usize>)>, Vec<[f64; 3]>, Vec<(String, Vec<(u32, Vec<usize>)>)>);
+
+fn read_su2(path: &std::path::Path) -> Su2Mesh {
+    let text = std::fs::read_to_string(path).unwrap();
+    let mut lines = text.lines();
+    let (mut cells, mut nodes, mut marks) = (Vec::new(), Vec::new(), Vec::new());
+    let count = |l: &str| l.split('=').nth(1).unwrap().trim().parse::<usize>().unwrap();
+    let ints = |l: &str| l.split_whitespace().map(|v| v.parse::<usize>().unwrap()).collect::<Vec<_>>();
+    while let Some(l) = lines.next() {
+        if l.starts_with("NELEM=") {
+            for _ in 0..count(l) {
+                let v = ints(lines.next().unwrap());
+                cells.push((v[0] as u32, v[1..v.len() - 1].to_vec()));
+            }
+        } else if l.starts_with("NPOIN=") {
+            for _ in 0..count(l) {
+                let v: Vec<f64> = lines.next().unwrap().split_whitespace().take(3).map(|v| v.parse().unwrap()).collect();
+                nodes.push([v[0], v[1], v[2]]);
+            }
+        } else if let Some(tag) = l.strip_prefix("MARKER_TAG=") {
+            let n = count(lines.next().unwrap());
+            let faces = (0..n).map(|_| ints(lines.next().unwrap())).map(|v| (v[0] as u32, v[1..].to_vec())).collect();
+            marks.push((tag.trim().to_string(), faces));
+        }
+    }
+    (cells, nodes, marks)
+}
+
+/// Signed volume of an SU2 cell (tetrahedron 10, prism 13 in the VTK node order).
+fn su2_volume(kind: u32, c: &[usize], x: &[[f64; 3]]) -> f64 {
+    let p = |i: usize| Vec3::new(x[c[i]][0], x[c[i]][1], x[c[i]][2]);
+    let tet = |a: usize, b: usize, cc: usize, d: usize| (p(b) - p(a)).cross(p(cc) - p(a)).dot(p(d) - p(a)) / 6.0;
+    match kind {
+        10 => tet(0, 1, 2, 3),
+        // VTK wedge: (0, 1, 2) turns clockwise seen from (3, 4, 5); the gmsh order is (0, 2, 1, 3, 5, 4).
+        13 => tet(0, 2, 1, 3) + tet(2, 1, 3, 5) + tet(1, 3, 5, 4),
+        _ => panic!("unexpected cell type {kind}"),
+    }
+}
+
+#[test]
+#[ignore = "needs SU2 and gmsh (IGNISYEET_CFD_PREFIX)"]
+fn rans_mesh_has_a_valid_prism_layer() {
+    let (_, g) = sample_stl();
+    let aero = aero::AeroOptions::default();
+    let opt = CfdOptions { model: cfd::FlowModel::Rans, wall_size: 0.005, machs: vec![0.8, 2.0], alphas_deg: vec![0.0, 4.0], ..Default::default() };
+    let dir = std::env::temp_dir().join(format!("ignisyeet_cfd_rans_mesh_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let t = std::time::Instant::now();
+    let half = cfd::mesh_only(&g, &opt, &aero, &dir, &ResourceBudget::default(), None).unwrap();
+    eprintln!("half model: {:?} in {:.1?}", half.stats, t.elapsed());
+    let s = &half.stats;
+    assert!(s.by_type.get("Prism 6").copied().unwrap_or(0) > 100_000, "{:?}", s.by_type);
+    assert!(s.by_type.get("Tetrahedron 4").copied().unwrap_or(0) > 10_000, "{:?}", s.by_type);
+    assert_eq!(s.bl_invalid, 0);
+    assert!(s.bl_layers > 10 && s.bl_first_height > 1e-7 && s.bl_first_height < 1e-5, "{s:?}");
+    assert!((s.bl_thickness - 0.4 * opt.wall_size).abs() < 1e-9, "{s:?}");
+
+    let (cells, nodes, marks) = read_su2(&half.su2);
+    assert_eq!(cells.len(), s.cells);
+    let (mut prisms, mut worst) = (0, f64::INFINITY);
+    for (k, c) in &cells {
+        prisms += usize::from(*k == 13);
+        worst = worst.min(su2_volume(*k, c, &nodes));
+    }
+    assert!(prisms > 0 && worst > 0.0, "prisms {prisms}, smallest volume {worst}");
+    let tags: Vec<&str> = marks.iter().map(|(t, _)| t.as_str()).collect();
+    assert_eq!(tags, ["wall", "base", "farfield", "symmetry"]);
+    let sym = &marks[3].1;
+    let quads = sym.iter().filter(|(k, _)| *k == 9).count();
+    assert!(quads > 1000, "{quads} symmetry quads");
+    assert!(sym.iter().all(|(_, f)| f.iter().all(|&i| nodes[i][1].abs() < 1e-12)));
+    // The wall markers stay triangles; the quad faces are only the layer sides on y = 0.
+    assert!(marks[..3].iter().all(|(_, f)| f.iter().all(|(k, _)| *k == 5)));
+    let fid = cfd::fidelity::read_su2_markers(&half.su2, &["symmetry"]).unwrap();
+    assert_eq!(fid["symmetry"].len(), sym.len() + quads);
+
+    // SU2 reads the mesh, finds every cell correctly oriented and runs one RANS iteration.
+    let tools = cfd::tools::check_tools(&opt, &[]);
+    let su2 = tools.su2.path.clone().expect("SU2_CFD");
+    let cfg = dir.join("one_iteration.cfg");
+    std::fs::write(
+        &cfg,
+        format!(
+            "SOLVER= RANS\nKIND_TURB_MODEL= SA\nMACH_NUMBER= 0.8\nAOA= 4.0\nFREESTREAM_PRESSURE= 101325.0\nFREESTREAM_TEMPERATURE= 288.15\n\
+             REYNOLDS_NUMBER= 2.7e7\nREYNOLDS_LENGTH= 1.5\nREF_LENGTH= 0.1\nREF_AREA= 0.00785\nMARKER_HEATFLUX= ( wall, 0.0, base, 0.0 )\n\
+             MARKER_FAR= ( farfield )\nMARKER_SYM= ( symmetry )\nMARKER_MONITORING= ( wall, base )\nNUM_METHOD_GRAD= WEIGHTED_LEAST_SQUARES\n\
+             CFL_NUMBER= 1.0\nCONV_NUM_METHOD_FLOW= ROE\nCONV_NUM_METHOD_TURB= SCALAR_UPWIND\nITER= 1\nMESH_FILENAME= {}\nMESH_FORMAT= SU2\nOUTPUT_FILES= NONE\n",
+            half.su2.display()
+        ),
+    )
+    .unwrap();
+    let out = cfd::tools::command(&su2, tools.prefix.as_deref()).arg("-t").arg("4").arg(&cfg).current_dir(&dir).output().unwrap();
+    let log = format!("{}{}", String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    assert!(out.status.success() && log.contains("Exit Success"), "{log}");
+    assert!(log.contains("All volume elements are correctly oriented"), "{log}");
+    assert!(log.contains(&format!("{prisms} prisms")), "{log}");
+
+    // Full domain: the half mirrored about y = 0 (no symmetry marker, twice the cells).
+    let full = cfd::mesh_only(&g, &CfdOptions { symmetry: false, ..opt.clone() }, &aero, &dir.join("full"), &ResourceBudget::default(), None).unwrap();
+    assert_eq!(full.stats.cells, 2 * s.cells);
+    assert_eq!(full.stats.by_type["Prism 6"], 2 * s.by_type["Prism 6"]);
+    let (cells, nodes, marks) = read_su2(&full.su2);
+    assert_eq!(cells.len(), 2 * s.cells);
+    assert!(cells.iter().all(|(k, c)| su2_volume(*k, c, &nodes) > 0.0));
+    assert_eq!(marks.iter().map(|(t, _)| t.as_str()).collect::<Vec<_>>(), ["wall", "base", "farfield"]);
+    assert!(nodes.iter().any(|p| p[1] < -0.05) && nodes.iter().any(|p| p[1] > 0.05));
+    let _ = std::fs::remove_dir_all(&dir);
+}

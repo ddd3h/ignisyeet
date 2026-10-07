@@ -225,11 +225,11 @@
    * - ``lag_scale``
      - 相対
      - 0
-     - 遅れの和 :math:`L_0,L_1`\ （見かけの質量の遅れと対流の回転のモーメント。:eq:`eq-lag-moment`）に :math:`f(\epsilon)` を掛ける
+     - 遅れの和 :math:`L_0,L_1`\ （胴体とフィンの見かけの質量の遅れと対流の回転の項。:eq:`eq-lag-moment`、:eq:`eq-lag-conv-force`）に :math:`f(\epsilon)` を掛ける
    * - ``magnus_scale``
      - 相対
      - 0
-     - Magnus 力の傾き ``cnpa``\ （:eq:`eq-magnus`）に :math:`f(\epsilon)` を掛ける
+     - Magnus 力とモーメントの傾き ``cnpa``、``cmpa``\ （:eq:`eq-magnus`、:eq:`eq-magnus-moment`）に :math:`f(\epsilon)` を掛ける。表にこれらの値がなければ効かず、警告を出す
    * - ``cmq_scale``
      - 相対
      - 0
@@ -264,7 +264,9 @@
 軸力は :math:`C_A^{\mathrm{on}}` と :math:`C_A^{\mathrm{off}}` の両方を :math:`f_A` 倍する。
 係数表そのものは全サンプルで共有するので、サンプルごとに作り直すことはない。
 ``cl_scale`` は :math:`C_l` と :math:`C_{l\delta}` と誘導ロールの :math:`C_{l4}` を、``clp_scale`` は :math:`C_{lp}` を同様に倍率で変える。
-``cmq_scale`` は減衰の和だけに :math:`f_N` に重ねて掛け、:math:`C_N` と圧力中心は変えない。``lag_scale`` は遅れの和、``magnus_scale`` は ``cnpa`` に掛ける（これらの項の式は :ref:`sec-aero-unsteady`）。
+``cmq_scale`` は減衰の和だけに :math:`f_N` に重ねて掛け、:math:`C_N` と圧力中心は変えない。``lag_scale`` は遅れの和、``magnus_scale`` は ``cnpa`` と ``cmpa`` に掛ける（これらの項の式は :ref:`sec-aero-unsteady`）。
+これらの倍率は ``sim.quasi_steady`` の設定に重ねて掛けるので、準定常の設定では ``lag_scale`` と ``magnus_scale`` は効かない。
+危険区域を求める解析では ``cmq_scale`` を 0.1 にすることを勧める。フィンの揚力の循環の遅れ（ピッチ減衰の 3〜4 %）とピッチ減衰のモデルの不確かさ（細長い物体の理論との差 6〜7 %）を見込む大きさである（:ref:`sec-quasi-steady`）。
 ロールの係数の倍率は :math:`C_l^{\mathrm{tot}}`\ （:eq:`eq-cl-total`）の強制項と減衰項に別々に効くので、
 定常なロール角速度（:eq:`eq-roll-steady`）は :math:`f_{Cl}/f_{Clp}` 倍になる。
 

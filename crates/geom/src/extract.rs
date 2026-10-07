@@ -694,12 +694,17 @@ fn detect_fins(slices: &[Slice], info: &[FinSlice], dx: f64) -> Option<FinSet> {
 
     let root: Vec<usize> = group.clone().filter(|&k| info[k].attached).collect();
     let (r0, r1) = (*root.first()?, *root.last()?);
-    // Fin points are only visible beyond the threshold radius, so extrapolate the span
-    // profile linearly to zero at both ends of the root to locate the edges.
+    // Fin points are only visible beyond the threshold radius, so where the span rises from
+    // zero along the edge (swept or rounded edge: the end slice holds less than half the span)
+    // extrapolate the span profile linearly to zero at both ends of the root to locate the
+    // edges. An edge normal to the axis (unswept leading edge, trailing edge flush with the base)
+    // reaches the full span within one slice; there the span difference of the two end slices is
+    // noise, and the edge is the outer boundary of the end slice.
+    let span_max = group.clone().map(|k| info[k].span).fold(0.0, f64::max);
     let edge = |k: usize, k2: usize, dir: f64| {
         let (s1, s2) = (info[k].span, info[k2].span);
         let half = slices[k].x + dir * 0.5 * dx;
-        if k2 != k && s2 > s1 {
+        if k2 != k && s2 > s1 && s1 < 0.5 * span_max {
             let x0 = slices[k].x + dir * s1 * dx / (s2 - s1);
             if dir < 0.0 {
                 x0.max(slices[k].x - 3.0 * dx).min(half)
@@ -713,7 +718,7 @@ fn detect_fins(slices: &[Slice], info: &[FinSlice], dx: f64) -> Option<FinSet> {
     let x_le_root = edge(r0, (r0 + 1).min(r1), -1.0);
     let x_te_root = edge(r1, r1.saturating_sub(1).max(r0), 1.0);
     let root_chord = x_te_root - x_le_root;
-    let span = group.clone().map(|k| info[k].span).fold(0.0, f64::max);
+    let span = span_max;
     let fin_area: f64 = group.clone().map(|k| info[k].span * dx).sum();
     let tip_chord = (2.0 * fin_area / span - root_chord).clamp(0.0, 3.0 * root_chord);
     let k_tip = group.clone().find(|&k| info[k].span >= 0.97 * span)?;
@@ -856,6 +861,43 @@ mod tests {
         assert!(close(f.sweep, rk.sweep, 0.008), "sweep {}", f.sweep);
         assert!(close(f.thickness, rk.thickness, 0.0008), "thickness {}", f.thickness);
         assert!(close(f.x_le_root, rk.length - rk.root_chord, 0.006), "x_le {}", f.x_le_root);
+    }
+
+    /// Rectangular fins (no sweep, tip chord = root chord) whose trailing edges are flush with the
+    /// base: both chord edges are normal to the axis, and the extracted root and tip chords, sweep
+    /// and leading edge must be those of the drawing (no edge pushed out by the linear
+    /// extrapolation meant for swept edges).
+    #[test]
+    fn rectangular_fins_flush_with_the_base() {
+        let rk = SampleRocket { tip_chord: 0.20, sweep: 0.0, ..Default::default() };
+        let g = extract(&rk.mesh(), &ExtractOptions::default()).unwrap();
+        let dx = g.length / 600.0;
+        let f = g.fins.clone().expect("fins detected");
+        assert!(close(f.root_chord, rk.root_chord, dx), "root {}", f.root_chord);
+        assert!(close(f.tip_chord, rk.tip_chord, 2.0 * dx), "tip {}", f.tip_chord);
+        assert!(f.sweep.abs() <= dx, "sweep {}", f.sweep);
+        assert!(close(f.x_le_root, rk.length - rk.root_chord, dx), "x_le {}", f.x_le_root);
+        assert!(fin_overhang_warning(&f, g.length).is_none());
+    }
+
+    /// The Basic Finner of examples/basic_finner (DREV-TM-9703 Fig. 2): four rectangular wedge fins of
+    /// 1 x 1 calibre (30 mm), unswept, trailing edges flush with the base at 300 mm.
+    #[test]
+    fn basic_finner_fins_are_rectangular_and_end_at_the_base() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/basic_finner/basic_finner.stl");
+        let tris: Vec<Triangle> = crate::stl::read_stl(&path).unwrap().iter().map(|t| t.map(|v| v * 0.001)).collect();
+        let opt = ExtractOptions { nose_direction: Some(Vec3::new(-1.0, 0.0, 0.0)), ..Default::default() };
+        let g = extract(&tris, &opt).unwrap();
+        assert!(close(g.length, 0.300, 1e-4), "length {}", g.length);
+        let f = g.fins.clone().expect("fins detected");
+        let dx = g.length / 600.0;
+        assert_eq!(f.count, 4);
+        assert!(close(f.root_chord, 0.030, dx), "root {}", f.root_chord);
+        assert!(close(f.tip_chord, 0.030, 2.0 * dx), "tip {}", f.tip_chord);
+        assert!(close(f.span, 0.030, dx), "span {}", f.span);
+        assert!(f.sweep.abs() <= dx, "sweep {}", f.sweep);
+        assert!(close(f.x_le_root, 0.270, dx), "x_le {}", f.x_le_root);
+        assert!(fin_overhang_warning(&f, g.length).is_none(), "{:?}", fin_overhang_warning(&f, g.length));
     }
 
     #[test]

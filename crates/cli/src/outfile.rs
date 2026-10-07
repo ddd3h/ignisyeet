@@ -117,12 +117,10 @@ pub fn unlock_all() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_tmp::TempDir;
 
-    fn tmpdir(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("ignisyeet-outfile-{tag}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn tmpdir(tag: &str) -> TempDir {
+        TempDir::new(&format!("outfile_{tag}"))
     }
 
     #[test]
@@ -138,7 +136,6 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&p).unwrap(), "two");
         let names: Vec<_> = std::fs::read_dir(&d).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
         assert_eq!(names, vec!["a.csv"]);
-        std::fs::remove_dir_all(&d).unwrap();
     }
 
     #[cfg(unix)]
@@ -159,6 +156,5 @@ mod tests {
         let pid: u32 = std::fs::read_to_string(d.join(LOCK_FILE)).unwrap().trim().parse().unwrap();
         assert_eq!(pid, std::process::id());
         lock_dir(&d).unwrap(); // the same process again
-        std::fs::remove_dir_all(&d).unwrap();
     }
 }

@@ -839,6 +839,7 @@ pub fn write_surface(dir: &Path, s: &WallSurface) -> Result<(PathBuf, PathBuf)> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_tmp::TempDir;
     use geom::sample::SampleRocket;
     use geom::{extract, ExtractOptions, Quat};
 
@@ -999,13 +1000,12 @@ mod tests {
     fn writes_two_stl_files() {
         let g = geom_of(&SampleRocket::default());
         let s = panel_mesh_surface(&g, &CfdOptions::default()).unwrap();
-        let dir = std::env::temp_dir().join(format!("ignisyeet_cfd_surf_{}", std::process::id()));
+        let dir = TempDir::new("cfd_surf");
         let (w, b) = write_surface(&dir, &s).unwrap();
         assert_eq!(geom::stl::read_stl(&w).unwrap().len(), s.wall.len());
         assert_eq!(geom::stl::read_stl(&b).unwrap().len(), s.base.len());
         let back: Vec<Triangle> = geom::stl::read_stl(&w).unwrap().into_iter().chain(geom::stl::read_stl(&b).unwrap()).collect();
         check_watertight(&back, 1e-8 * g.length).unwrap();
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn sample_stl() -> (Vec<Triangle>, Geometry) {

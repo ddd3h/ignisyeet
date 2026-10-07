@@ -1044,6 +1044,7 @@ fn run_mesh(opt: &CfdOptions, dir: &Path, params: &StepParams, bytes: &[u8]) -> 
 mod tests {
     use super::*;
     use crate::config::SurfaceKind;
+    use crate::test_tmp::TempDir;
 
     /// `symmetry_tolerance` of `mesh_step.py` (the script imports gmsh, so the two rule lines are run on their own).
     #[test]
@@ -1061,7 +1062,7 @@ exec(compile(ast.Module(keep, []), "rule", "exec"), ns)
 f = ns["symmetry_tolerance"]
 print(f(float(sys.argv[2]), float(sys.argv[3])))
 "#;
-        let dir = std::env::temp_dir().join(format!("ignisyeet_symtol_{}", std::process::id()));
+        let dir = TempDir::new("symtol");
         std::fs::create_dir_all(&dir).unwrap();
         let script = dir.join("mesh_step.py");
         std::fs::write(&script, SCRIPT).unwrap();
@@ -1077,7 +1078,6 @@ print(f(float(sys.argv[2]), float(sys.argv[3])))
         assert!(tol(base, 6e-7) >= 4.0 * 6e-7 && tol(base, 6e-7) > base);
         // Still far below a rail button / lug offset (millimetres), so asymmetric shapes stay rejected.
         assert!(tol(base, 6e-7) < 1e-4 * l);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn sample_geom() -> Geometry {

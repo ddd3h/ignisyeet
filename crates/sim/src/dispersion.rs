@@ -725,6 +725,7 @@ mod tests {
     use super::*;
     use crate::env::{AtmosphereModel, Earth, IntegratorKind, Wind, WindConfig, WindModel};
     use crate::flight::{Launch, MassProperties, Recovery, Settings, ThrustLine};
+    use crate::test_tmp::TempDir;
     use aero::table::TableMeta;
     use aero::{AeroCoeffs, AeroTable, Extrapolation};
 
@@ -794,11 +795,10 @@ mod tests {
     }
 
     fn profile_wind(tag: &str, csv: &str) -> Wind {
-        let path = std::env::temp_dir().join(format!("ignisyeet_disp_{}_{tag}.csv", std::process::id()));
+        let td = TempDir::new(&format!("disp_{tag}"));
+        let path = td.join("profile.csv");
         std::fs::write(&path, csv).unwrap();
-        let w = Wind::from_config(&WindConfig { model: WindModel::Profile, profile: Some(path.clone()), ..Default::default() }).unwrap();
-        let _ = std::fs::remove_file(path);
-        w
+        Wind::from_config(&WindConfig { model: WindModel::Profile, profile: Some(path.clone()), ..Default::default() }).unwrap()
     }
 
     const CALM_SURFACE: &str = "altitude_m,speed,direction_deg\n0,0,270\n50,6,270\n3000,12,270\n";

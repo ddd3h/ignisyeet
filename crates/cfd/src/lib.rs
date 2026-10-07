@@ -26,6 +26,9 @@ pub mod su2cfg;
 pub mod surface;
 pub mod symmetry;
 pub mod table;
+#[cfg(test)]
+#[path = "../../../testutil/tmp.rs"]
+mod test_tmp;
 pub mod tools;
 
 pub use config::{

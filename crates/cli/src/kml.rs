@@ -762,6 +762,7 @@ pub fn load_monte_carlo(dir: &Path, hash: &str) -> Result<Option<MonteCarlo>, St
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_tmp::TempDir;
 
     /// Minimal well-formedness check: balanced tags, CDATA and comments skipped, attributes ignored.
     fn check_xml(s: &str) {
@@ -1060,11 +1061,8 @@ mod tests {
         j
     }
 
-    fn temp_dir(name: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("ignisyeet_kml_{name}_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&d);
-        std::fs::create_dir_all(&d).unwrap();
-        d
+    fn temp_dir(name: &str) -> TempDir {
+        TempDir::new(&format!("kml_{name}"))
     }
 
     #[test]

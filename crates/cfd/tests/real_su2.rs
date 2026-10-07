@@ -3,9 +3,12 @@
 //! Integration test with the real SU2 / gmsh / MPI tools. Needs `IGNISYEET_CFD_PREFIX` (or the tools
 //! in `PATH`); run with `cargo test --release -p cfd -- --ignored`.
 
+#[path = "../../../testutil/tmp.rs"]
+mod test_tmp;
 use cfd::{CfdOptions, ResourceBudget};
 use geom::stl::Triangle;
 use geom::{extract, ExtractOptions, Vec3};
+use test_tmp::TempDir;
 
 /// Closed 10 degree half-angle cone (tip at the origin, +x aft) + cylinder, R = 0.05 m.
 fn cone_cylinder() -> (Vec<Triangle>, f64) {
@@ -52,8 +55,7 @@ fn cone_cp_matches_taylor_maccoll() {
     let (tris, lc) = cone_cylinder();
     let g = extract(&tris, &ExtractOptions::default()).unwrap();
     let opt = CfdOptions { machs: vec![2.0], alphas_deg: vec![0.0, 2.0], wall_size: 0.005, ranks_per_case: 4, parallel_cases: 1, ..Default::default() };
-    let dir = std::env::temp_dir().join(format!("ignisyeet_cfd_real_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = TempDir::new("cfd_real");
     let aero = aero::AeroOptions { mach_max: 3.0, mach_step: 0.5, alpha_max_deg: 4.0, alpha_step_deg: 1.0, ..Default::default() };
     let (table, report) =
         cfd::build_table_with_progress(&g, &opt, &aero, &dir, "h".into(), aero::Extrapolation::Linear, &ResourceBudget::default(), None, &|_| {}).unwrap();
@@ -84,7 +86,6 @@ fn cone_cp_matches_taylor_maccoll() {
     let mean = cps.iter().sum::<f64>() / cps.len() as f64;
     let tm = panel::supersonic::cone_cp(2.0, delta).unwrap();
     assert!((mean - tm).abs() / tm < 0.10, "cone Cp {mean} vs Taylor-Maccoll {tm}");
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 fn sample_stl() -> (Vec<Triangle>, geom::Geometry) {
@@ -113,8 +114,7 @@ fn stl_options() -> CfdOptions {
 #[ignore = "needs gmsh and manifold3d (IGNISYEET_CFD_PREFIX)"]
 fn stl_union_is_genus_zero_and_meshes() {
     let (raw, g) = sample_stl();
-    let dir = std::env::temp_dir().join(format!("ignisyeet_cfd_stl_mesh_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = TempDir::new("cfd_stl_mesh");
     let aero = aero::AeroOptions::default();
     let m = cfd::mesh_only(&g, &stl_options(), &aero, &dir, &ResourceBudget::default(), Some(&raw)).unwrap();
     let info = m.stl.as_ref().unwrap();
@@ -126,15 +126,13 @@ fn stl_union_is_genus_zero_and_meshes() {
     // The remeshed wall stays within the wall size of the union and encloses its volume.
     assert!(info.fidelity.max_error() < 0.01, "{:?}", info.fidelity);
     assert!((info.fidelity.cfd.volume.unwrap() / info.fidelity.union.volume.unwrap() - 1.0).abs() < 5e-3);
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 #[ignore = "needs SU2, gmsh, manifold3d and MPI (IGNISYEET_CFD_PREFIX)"]
 fn stl_euler_case_and_roll_pair() {
     let (raw, g) = sample_stl();
-    let dir = std::env::temp_dir().join(format!("ignisyeet_cfd_stl_run_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = TempDir::new("cfd_stl_run");
     let aero = aero::AeroOptions { mach_max: 1.0, mach_step: 0.5, ..Default::default() };
     let opt = stl_options();
     let (table, report) =
@@ -150,7 +148,6 @@ fn stl_euler_case_and_roll_pair() {
     assert!(c.cz < -0.3 && c.cz > -3.0, "CZ {}", c.cz);
     assert!((table.lookup6(0.8, -4f64.to_radians(), 0.0).cz + c.cz).abs() < 0.2 * c.cz.abs());
     assert!(report.fidelity.is_some() && report.warnings.iter().any(|w| w.contains("MODIFIED")));
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// Cells of the volume mesh written by the STL mesher (`meshed domain (quarter|half|full): cells N` in `mesh.log`).
@@ -169,8 +166,7 @@ fn stl_symmetry_is_verified_and_the_domain_follows() {
     let aero = aero::AeroOptions::default();
     let base = CfdOptions { roll_damping: false, symmetry: true, ..stl_options() };
     let run = |name: &str, o: &CfdOptions| {
-        let dir = std::env::temp_dir().join(format!("ignisyeet_cfd_stl_sym_{name}_{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
+        let dir = TempDir::new(&format!("cfd_stl_sym_{name}"));
         let m = cfd::mesh_only(&g, o, &aero, &dir, &ResourceBudget::default(), Some(&raw)).unwrap();
         (m, dir)
     };
@@ -206,8 +202,7 @@ fn explicit_symmetry_on_an_asymmetric_stl_is_an_error() {
     // One fin is skewed (its outer vertices move 2 mm along the axis): the shell stays closed, the union is one solid,
     // and the surface is no longer mirror symmetric about either plane.
     let skewed: Vec<Triangle> = raw.iter().map(|t| t.map(|v| if v.x > 0.055 && v.y > 0.055 { Vec3::new(v.x, v.y, v.z + 0.002) } else { v })).collect();
-    let dir = std::env::temp_dir().join(format!("ignisyeet_cfd_stl_asym_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = TempDir::new("cfd_stl_asym");
     let auto = cfd::stl_mesh::check_symmetry(&CfdOptions { roll_damping: false, ..stl_options() }, &g, &skewed, &dir).unwrap();
     assert!(!auto.y.symmetric && !auto.z.symmetric && auto.y.max_mismatch > 1e-4, "{auto:?}");
     assert_eq!((auto.chosen.as_str(), auto.meshed.as_str()), ("none", "full"));
@@ -219,7 +214,6 @@ fn explicit_symmetry_on_an_asymmetric_stl_is_an_error() {
         .unwrap_err()
         .to_string();
     assert!(e.contains("pitch_plane"), "{e}");
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -238,8 +232,7 @@ fn stl_half_domain_matches_the_full_domain_in_cn() {
     let a = 4f64.to_radians();
     // Half domain (SU2 symmetry marker) and the same quarter mesh mirrored to the full domain, in one work directory
     // so that both use the same union (manifold3d does not order its triangles reproducibly) and so the same mesh.
-    let dir = std::env::temp_dir().join(format!("ignisyeet_cfd_stl_cn_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = TempDir::new("cfd_stl_cn");
     let (half, rh) = solve(&dir, &base);
     assert_eq!((rh.shape_symmetry.as_str(), rh.domain.as_str()), ("axisymmetric", "half"));
     assert_eq!(rh.symmetry_check.as_ref().unwrap()["chosen"], "axisymmetric");
@@ -249,16 +242,13 @@ fn stl_half_domain_matches_the_full_domain_in_cn() {
     assert!((ch.cz / cm.cz - 1.0).abs() < 0.01, "CN half {} vs mirrored full {}", -ch.cz, -cm.cz);
     // -alpha is the mirror image of +alpha in the exactly z-symmetric mesh.
     assert!((half.lookup6(0.8, -a, 0.0).cz + ch.cz).abs() < 1e-3 * ch.cz.abs());
-    let _ = std::fs::remove_dir_all(&dir);
     // The directly meshed full domain is a different mesh (and a different union); at 5 mm the normal force of two such
     // meshes scatters by a few per cent, so this is a plausibility bound only.
-    let dir = std::env::temp_dir().join(format!("ignisyeet_cfd_stl_cn_full_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = TempDir::new("cfd_stl_cn_full");
     let (full, rf) = solve(&dir, &CfdOptions { shape_symmetry: Some(cfd::ShapeSymmetry::None), ..base });
     assert_eq!((rf.shape_symmetry.as_str(), rf.domain.as_str()), ("none", "full"));
     let cf = full.lookup6(0.8, a, 0.0);
     assert!((ch.cz / cf.cz - 1.0).abs() < 0.06, "CN half {} vs full {}", -ch.cz, -cf.cz);
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 /// Cells (SU2 type, nodes), node coordinates and markers (tag, faces with their SU2 type) of an SU2 mesh file.
@@ -308,8 +298,7 @@ fn rans_mesh_has_a_valid_prism_layer() {
     let (_, g) = sample_stl();
     let aero = aero::AeroOptions::default();
     let opt = CfdOptions { model: cfd::FlowModel::Rans, wall_size: 0.005, machs: vec![0.8, 2.0], alphas_deg: vec![0.0, 4.0], ..Default::default() };
-    let dir = std::env::temp_dir().join(format!("ignisyeet_cfd_rans_mesh_{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = TempDir::new("cfd_rans_mesh");
     let t = std::time::Instant::now();
     let half = cfd::mesh_only(&g, &opt, &aero, &dir, &ResourceBudget::default(), None).unwrap();
     eprintln!("half model: {:?} in {:.1?}", half.stats, t.elapsed());
@@ -372,7 +361,6 @@ fn rans_mesh_has_a_valid_prism_layer() {
     assert!(cells.iter().all(|(k, c)| su2_volume(*k, c, &nodes) > 0.0));
     assert_eq!(marks.iter().map(|(t, _)| t.as_str()).collect::<Vec<_>>(), ["wall", "base", "farfield"]);
     assert!(nodes.iter().any(|p| p[1] < -0.05) && nodes.iter().any(|p| p[1] > 0.05));
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -391,11 +379,9 @@ fn rans_prism_layer_sweep_passes_the_validity_check() {
                 alphas_deg: vec![0.0, 4.0],
                 ..Default::default()
             };
-            let dir = std::env::temp_dir().join(format!("ignisyeet_cfd_rans_sweep_{}_{roll}_{ws}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&dir);
+            let dir = TempDir::new(&format!("cfd_rans_sweep_{roll}_{ws}"));
             let t = std::time::Instant::now();
             let r = cfd::mesh_only(&g, &opt, &aero, &dir, &ResourceBudget::default(), None);
-            let _ = std::fs::remove_dir_all(&dir);
             let line = match &r {
                 Ok(m) => format!(
                     "roll {roll:4.1} wall_size {:.1} mm: cells {}, nodes {}, prisms {}, layers {}, thickness {:.1} mm, top size ratio p99 {:.2} max {:.1}, attempt {}, invalid {}, {:.0?}",

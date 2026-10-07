@@ -3,6 +3,7 @@
 use super::*;
 use crate::mesh::Mesh;
 use crate::solver::{coefficients, solve_potential};
+use crate::test_tmp::TempDir;
 use aero::AeroModel;
 use geom::sample::SampleRocket;
 use geom::{extract, ExtractOptions, FinSet};
@@ -229,11 +230,12 @@ fn table_is_finite() {
             model.damping_sums(m)
         );
     }
-    let path = std::env::temp_dir().join("ignisyeet_panel_cp_test.csv");
+    let td = TempDir::new("panel_cp");
+    let path = td.join("cp_test.csv");
     write_surface_cp(&path, &rep).unwrap();
     let text = std::fs::read_to_string(&path).unwrap();
     assert!(text.starts_with("x,y,z,nx,ny,nz,area,cp,part") && text.contains(",fin") && text.contains(",body"));
-    let vtk = std::env::temp_dir().join("ignisyeet_panel_mesh_test.vtk");
+    let vtk = td.join("mesh_test.vtk");
     Mesh::from_geometry(&g, &coarse()).unwrap().write_vtk(&vtk).unwrap();
 }
 

@@ -11,6 +11,9 @@ pub mod lie;
 pub mod motor;
 pub mod stepper;
 pub mod tableau;
+#[cfg(test)]
+#[path = "../../../testutil/tmp.rs"]
+mod test_tmp;
 
 pub use dispersion::{DispersionConfig, DispersionMode, McResult, McRow, MonteCarloConfig, Perturbation};
 pub use env::{AtmosphereConfig, AtmosphereModel, AttitudeKind, Earth, EarthConfig, EarthModel, GravityModel, IntegratorKind, Wind, WindConfig, WindModel};

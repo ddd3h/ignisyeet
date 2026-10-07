@@ -107,12 +107,14 @@ pub fn write_stl_binary(path: &Path, tris: &[Triangle]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_tmp::TempDir;
 
     #[test]
     fn ascii_and_binary_agree() {
         let ascii = b"solid t\nfacet normal 0 0 1\nouter loop\nvertex 0 0 0\nvertex 1 0 0\nvertex 0 1 0\nendloop\nendfacet\nendsolid t\n";
         let a = parse_stl(ascii).unwrap();
-        let dir = std::env::temp_dir().join("ignisyeet_stl_test.stl");
+        let td = TempDir::new("stl_test");
+        let dir = td.join("ignisyeet_stl_test.stl");
         write_stl_binary(&dir, &a).unwrap();
         let b = read_stl(&dir).unwrap();
         assert_eq!(a, b);
@@ -157,7 +159,8 @@ mod tests {
 
     #[test]
     fn read_errors_name_the_file() {
-        let p = std::env::temp_dir().join("ignisyeet_stl_garbage_test.stl");
+        let td = TempDir::new("stl_garbage");
+        let p = td.join("ignisyeet_stl_garbage_test.stl");
         std::fs::write(&p, b"garbage").unwrap();
         let e = format!("{:#}", read_stl(&p).unwrap_err());
         assert!(e.contains("ignisyeet_stl_garbage_test.stl") && e.contains("unrecognised"), "{e}");

@@ -39,7 +39,7 @@ CFD モードは次の外部プログラムを呼び出す。それぞれの役�
    * - SU2_CFD（8.3.0）
      - 流れの解法。Euler 方程式と RANS 方程式を解く :cite:`su2`
    * - gmsh（Python API）
-     - 体積メッシュの生成。形状の再構成には OpenCASCADE のカーネルを使う :cite:`gmsh,occt`
+     - 体積メッシュの生成。形状の再構成と、CAD のファイル（STEP、IGES、BREP）の読み込みには OpenCASCADE のカーネルを使う :cite:`gmsh,occt`
    * - Open MPI（``mpirun``）
      - 1 ケースを複数のランクで並列に解くとき（``ranks_per_case`` が 2 以上のとき）に必要 :cite:`openmpi`
    * - manifold3d（Python）
@@ -77,9 +77,9 @@ IgnisYeet は、設定の ``prefix`` で指す環境の ``bin`` にある実行�
    ignisyeet cfd-check examples/sample_cfd.toml --mesh
 
 最初のコマンドは、SU2、MPI、gmsh（``surface = "stl"`` のときは manifold3d も）の場所とバージョンを表示し、設定の計算ケース数とともに「CFD mode is ready」または不足しているツールを報告する。
-``surface = "stl"`` で ``shape_symmetry`` が ``"auto"`` のときは、鏡映対称が和を作るまで分からないので、ケース数は全領域を解く場合の上限として示される。
+``surface = "stl"`` と ``"step"`` で ``shape_symmetry`` が ``"auto"`` のときは、鏡映対称が形状を検査するまで分からないので、ケース数は全領域を解く場合の上限として示される。
 ``--mesh`` を付けると、実際にメッシュを作り、節点数、セル数、壁面の三角形数、セルの種類、品質（SICN の最小値と平均、0.05 未満のセル数）を表示する。
-``surface = "stl"`` では、形状の忠実度（:ref:`sec-cfd-fidelity`）も表示する。
+``surface = "stl"`` では形状の忠実度（:ref:`sec-cfd-fidelity`）も、``surface = "step"`` では CAD のモデルの読み込みと位置合わせの結果（:ref:`読み込みと位置合わせの報告 <sec-cfd-step-report>`）も表示する。
 メッシュはキャッシュされるので、本番の計算でそのまま再利用される。
 必要なツールが足りないとき、``cfd-check`` は不足を報告して終了ステータス 1 で終わる。
 CFD モードで ``aero`` を実行したときも、先に同じ検査を行い、ツールが足りなければ計算を始める前にエラーで止まる。
@@ -92,8 +92,9 @@ SU2 のバージョンが 8.3.x でないときは、``cfd-check`` も CFD の�
 ----------
 
 本節は、CFD が解く機体の壁面を何から作るか、その壁面は入力とどれだけ違うか、そして対称性と計算領域をどう扱うかを述べる。
-壁面の形状は ``aero.cfd.surface`` で選び、:numref:`fig-cfd-surface-modes` のように、抽出した寸法から立体を作り直す ``panel_mesh`` と、入力の STL を修復して使う ``stl`` がある。
-どちらの場合も、CFD の壁面は入力の STL と同一ではない。
+壁面の形状は ``aero.cfd.surface`` で選ぶ。:numref:`fig-cfd-surface-modes` のように、抽出した寸法から立体を作り直す ``panel_mesh`` と、入力の STL を修復して使う ``stl`` があり、
+このほかに、CAD のモデル（STEP、IGES、BREP）の立体をそのまま壁面にする ``step`` がある。
+``panel_mesh`` と ``stl`` の壁面は入力の STL と同一ではない。``step`` の壁面は CAD の曲面そのもので、Euler で ``base_treatment = "fairing"`` としたときだけ底面の後ろが変わる。
 
 .. _fig-cfd-surface-modes:
 
@@ -113,6 +114,9 @@ SU2 のバージョンが 8.3.x でないときは、``cfd-check`` も CFD の�
      - 抽出した半径分布とフィンの寸法から、形状を OpenCASCADE の立体として作り直す（:ref:`sec-cfd-rebuild`）。名前に反して、パネル法の表面メッシュは使わない。形状は回転体と台形フィンに限られ、レールボタンやポッド、非対称な突起は入らない
    * - ``"stl"``
      - 入力の STL を修復し、重なった閉じた殻を一つの立体に統合して壁面にする。レールボタンや非対称な部品も壁面に入る（:ref:`sec-cfd-stl`）。壁面は再メッシュされ、Euler では底面も変わるので、入力と同一ではない。和の表面が鏡映対称と確かめられれば、1/4 領域または半領域だけをメッシュにする
+   * - ``"step"``
+     - ``step_file`` の CAD のモデル（STEP、IGES、BREP）の立体を、細部（ランチラグ、レールボタン、カメラのポッドなど）を含めてそのまま壁面にする（:ref:`sec-cfd-step`）。
+       ``rocket.stl`` と同じ機体であることを位置合わせで確かめる。曲面は CAD の厳密な曲面のままメッシュにする。形状が鏡映対称と確かめられれば、1/4 領域または半領域だけをメッシュにする。RANS でも使える
 
 .. _sec-cfd-stl:
 
@@ -142,12 +146,13 @@ STL は、サンプル機体のようにフィンが胴体に埋め込まれた�
 ~~~~~~~~~~~~~~~~~~~
 
 非粘性の流れでは、平らな底面の後ろの流れは定まらない（:ref:`sec-cfd-fairing`）。
-STL を Euler で解くときは、``base_treatment`` を **必ず** 指定する（指定がなければエラーになる）。
+STL と CAD のモデル（``surface = "step"``）を Euler で解くときは、``base_treatment`` を **必ず** 指定する（指定がなければエラーになる）。
 
 ``"fairing"``
    底面の後ろに、尾部フェアリングの円すいを和に加える。長さは ``tail_fairing`` × 底面半径で、半径は一次関数で小さくなり、底面半径の 10 % で切って平らな面で閉じる（尖った頂点があると gmsh が曲面を作れない）。
    円すいの前面は、胴体の底面の縁の多角形と同じ形で、底面と同一平面に重なるので、和に段差や細長い三角形が残らない。
    **入力の STL を変更する** ので、警告を出す。底面の抗力は経験式（部品積み上げ法の底面抗力）で補う（:ref:`sec-cfd-trust`）。
+   ``surface = "step"`` では、OpenCASCADE の厳密な円すい（同じ傾きで、底面半径の 10 % で切る）を、最も大きい平らな底面の後ろに CAD の立体と融合する。**CAD の形状を変更する** ので、同じく警告を出す。
 
 ``"flat"``
    STL の形状を変えず、平らな底面を残す。ただし、この Euler の解は収束しないことがある。
@@ -155,6 +160,7 @@ STL を Euler で解くときは、``base_treatment`` を **必ず** 指定す�
    警告を出し、収束しないケースは失敗として扱う。
 
 どちらの場合も、``base`` マーカは力の積分から外す。RANS は ``surface = "stl"`` では使えない（:ref:`sec-cfd-rans-use`）。
+``surface = "step"`` の RANS は ``base_treatment`` を使わず、平らな底面のまま解く（指定しても無視する）。
 
 ``panel_mesh`` では、Euler のとき尾部フェアリングを置く。長さは ``tail_fairing``\ （既定 6、単位は底面半径）で指定し、0 にすると平らな底面になる。
 RANS は常に平らな底面のままにする。
@@ -183,6 +189,174 @@ STL モードでは、CFD の壁面が入力の形からどれだけずれたか
 入力からの最大のずれはフェアリングが底面とつながる位置にあって、意図した変更である。この最大値は ``wall_size`` の半分を超えるので警告が出るが、99 パーセンタイルは ``wall_size`` よりはるかに小さい。
 三つの面の表と距離の表は :ref:`sec-vaero-cfd-fidelity` に示す。
 
+.. _sec-cfd-step:
+
+CAD のモデル（STEP）を解く
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``surface = "step"`` は、``step_file`` に書いた CAD のモデル（STEP、IGES、BREP）の立体を、そのまま CFD の壁面にするモードである。
+ランチラグ、レールボタン、カメラのポッド、ノズルのように STL の抽出では扱えない細部も、CAD にあれば壁面に入る。
+曲面は三角形に近似せず、OpenCASCADE の厳密な曲面のまま gmsh がメッシュにするので、``stl`` のような再メッシュによるずれはない。manifold3d も使わない。
+
+飛翔計算の形状（基準面積、全長、フィンの寸法、部品積み上げ法の項）は、どの壁面のモードでも ``rocket.stl`` から抽出する。
+CFD の壁面と飛翔計算の形状が別の機体にならないように、IgnisYeet は CAD のモデルを ``rocket.stl`` と照合し（位置合わせ）、合わなければメッシュを作る前にエラーにする。
+付属の例は ``examples/sample_step.toml`` で、サンプル機体にランチラグ 1 本とレールボタン 2 個を足した ``examples/sample_rocket.step``\ （mm 単位）を解く。
+ランチラグは外径 6.35 mm、内径 4.8 mm、長さ 50 mm の管で、全長の 45 % の位置にある。レールボタンは軸の直径 8 mm、つばの直径 11 mm、胴体からの高さ 6 mm で、ランチラグから周方向に 90 度離れている。
+
+**CAD からの書き出し**\ 。次の点を守ってファイルを書き出す。
+
+* **形式**\ ：STEP（``.step``、``.stp``）、IGES（``.iges``、``.igs``）、BREP（``.brep``、``.brp``）。拡張子の大文字と小文字は区別しない。
+* **単位**\ ：STEP と IGES は、ファイルが宣言する長さの単位から m に換算して読む。BREP は単位を持たないので m として読む。
+  ファイルの宣言が誤っているときや BREP が m でないときは、``step_unit`` で単位を指定する（``"m"``、``"cm"``、``"mm"``、``"in"``、``"ft"``）。
+  単位を宣言していない STEP や IGES では ``step_unit`` を使えない。単位を宣言して書き出し直す。
+  STL の単位（``rocket.stl_scale``）とは別に扱うので、STL が mm で STEP が inch でもよい。
+* **一つの閉じた立体**\ ：機体を一つのソリッド（閉じた立体）として書き出す。複数のソリッドは一つに融合し（内部の面は消える）、離れたままのソリッドが残れば、すべてを壁面にして警告を出す。
+  ソリッドのない面の集まりは縫い合わせて立体にするが、閉じた立体にならなければエラーになる。
+* **座標系**\ ：``rocket.stl`` と同じ座標系（同じ原点、同じノーズの向き、同じロールの向き）で書き出す。IgnisYeet は、STL を CFD の座標に移す変換（:ref:`sec-cfd-stl`）を、CAD のモデルにもそのまま当てる。
+  ``rocket.nose_direction`` は両方に効く。CAD の中でモデルを動かしたり回したりしたあとで STL だけを書き出し直すと、位置合わせで止まる。
+* **含めるもの**\ ：流れに触れる外形（ノーズ、胴体、フィン、ランチラグ、レールボタン、ポッド、底面から突き出たノズルなど）。モーターや内部の構造は含めない。
+  機体の後端は、STL の機体の後端 :math:`x=L` にある平らな後ろ向きの面（底面）で閉じる。``"fairing"`` は、その平らな面の後ろに円すいを付ける。
+  底面より後ろにある面（突き出たノズル）は底面の扱いになり、力を積分しない（:ref:`sec-cfd-domain`）。
+* **鋭い縁**\ ：Euler では縁が鋭くてもよい。RANS のプリズム層は、鋭い縁や狭いすき間（ランチラグの穴、レールボタンのつばと胴体の間）に沿えないことがあり、そのときは縁を少し丸めて書き出し直す（下の表）。
+
+**設定**\ 。``[aero.cfd]`` の次の項目を使う（全項目は :ref:`[aero.cfd] の設定項目 <sec-config-aero>`）。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 76
+
+   * - 項目
+     - 内容
+   * - ``surface = "step"``
+     - CAD のモデルを壁面にする
+   * - ``step_file``
+     - CAD のファイル。相対パスは設定ファイルのディレクトリから解釈する。設定を読むときに、ファイルがあることと拡張子を確かめる
+   * - ``step_unit``
+     - 長さの単位。``"auto"``\ （既定。ファイルが宣言する単位、BREP は m）、``"m"``、``"cm"``、``"mm"``、``"in"``、``"ft"``
+   * - ``base_treatment``
+     - Euler で **必須**\ 。``"fairing"`` か ``"flat"``\ （:ref:`sec-cfd-stl-base`）。RANS では使わない
+   * - ``tail_fairing``
+     - ``"fairing"`` の円すいの長さ（底面半径の倍数、既定 6）
+   * - ``wall_size`` / ``fin_size``
+     - 壁面とフィンの面の要素の大きさ。位置合わせの許容（下記）も ``wall_size`` で決まる
+   * - ``shape_symmetry`` / ``symmetry`` / ``z_mirror_mesh``
+     - ``stl`` と同じく、形状の検査に通った平面だけを使う（:ref:`sec-cfd-stl-symmetry`）
+
+``step_file`` と ``step_unit`` を ``surface = "step"`` 以外で書くとエラーになる。
+CAD のファイルの内容は係数表のハッシュとメッシュのハッシュに入るので、ファイルを書き換えると、係数表もメッシュもケースも作り直す。
+メッシュのハッシュはファイルの場所を含まないので、同じ内容のファイルを別の場所に移しても、メッシュとケースは再利用される。
+``aero`` などの設定の要約では、``cfd`` の行に ``surface step (sample_rocket.step)`` のようにファイル名が出る。
+
+**処理の流れ**\ （詳細は :ref:`sec-cfd-step-internals`）。
+
+1. ファイルを読み、単位を m にそろえ、STL と同じ変換で CFD の座標に移す。面の種類、面積、重心、法線、最も細い面の幅を調べる。
+2. ``rocket.stl`` と照合する（位置合わせ）。
+3. 形状が :math:`y=0` と :math:`z=0` について鏡映対称かを、CAD の曲面で検査し、計算領域を決める。
+4. Euler の ``"fairing"`` では、底面の後ろに円すいを融合する。
+5. 体積メッシュを作る。Euler は四面体、RANS はプリズム層と四面体である。
+
+読み込みと対称性の検査の結果は ``<出力先>/<workdir>/mesh/`` にキャッシュされ、メッシュの設定だけを変えたときは読み込みからやり直さない。
+
+**位置合わせ**\ 。``rocket.stl`` を CFD の座標に移した面と、CAD のモデルの面を比べ、次のすべてを満たすときに同じ機体とみなす。
+:math:`L` は STL から抽出した全長、:math:`h_w` は ``wall_size`` である。
+
+* STL の包含箱が、CAD のモデルの包含箱に :math:`0.01L` の余裕で収まる。
+* ノーズの先端（:math:`x` の最小値）の差が :math:`0.01L` 以下である。
+* CAD のモデルの包含箱が、どの軸でも STL の 1.25 倍（と :math:`0.01L`）を超えない（細部で大きくなるのはこの範囲まで）。
+* STL の面の上に選んだ 4 万点が、すべて CAD のモデルの面から :math:`\max(2h_w,\,0.01L)` 以内にある。
+  CAD の立体の内側に :math:`\max(h_w,\,0.002L)` より深く埋まった点は除く。胴体に差し込んだ箱で表したフィンのように、STL の中に埋まった面があるためである。
+* 除いた点が STL の点の 25 % 以下である（多ければ CAD のモデルが STL より大きい）。
+
+CAD のモデルにあって STL にない部分（STL の面から :math:`\max(h_w,\,0.002L)` より離れた部分）は、CAD の細部として許し、つながった領域の数と面積を報告する。
+サンプル機体（:math:`L` は約 1.8 m）を ``wall_size`` 2 mm で照合すると、許容は 18 mm、細部とみなす距離は 3.6 mm である。付属の ``sample_rocket.step`` では、ランチラグと 2 個のレールボタンが 3 つの細部の領域になる。
+照合は CFD の座標で行うので、CAD のモデルを書き出し直したときに位置や向きがずれれば、ここで分かる。
+許容は形の大きな食い違い（単位、向き、別の版のモデル）を見つけるためのもので、:math:`\max(2h_w,\,0.01L)` より小さい形の違い（フィンの厚さの違いなど）は通る。
+
+.. _sec-cfd-step-report:
+
+**読み込みと位置合わせの報告**\ 。``ignisyeet cfd-check 設定ファイル --mesh`` は、メッシュの統計のあとに次の形の報告を表示する（数値は省略した）。
+
+.. code-block:: text
+
+   CAD surface (surface = "step", base treatment: fairing):
+     file        …/sample_rocket.step (step, unit declared 0.001 m, step_unit auto, scale 1)
+     shape       1 solid(s) in the file, 1 after fusion; … faces (… base), area … m^2, volume … m^3
+     details     3 STEP-only region(s), … m^2; smallest face width … m -> smallest mesh size … m
+     domain      full: shape symmetry none (requested auto), full mesh: auto: not symmetric (y = 0: …; z = 0: …)
+       y = 0: not symmetric (max mismatch … m, …)
+       z = 0: not symmetric (max mismatch … m, …)
+     base        fairing {…}
+     registration  STL -> STEP surface: max … m at (…), p99 … m, rms … m (… samples, allowed … m; … % of the samples buried inside the STEP solid)
+     STEP -> STL: max … m, p99 … m; 3 STEP-only region(s) farther than … m from the STL, … m^2
+     bounding box [m]: STL  x xmin..xmax y ymin..ymax z zmin..zmax
+                       STEP x xmin..xmax y ymin..ymax z zmin..zmax
+     offsets STEP - STL [m]: min (…, …, …), max (…, …, …)
+
+``file`` は単位の宣言と換算の倍率、``shape`` は融合の前後のソリッドの数と面の数、``details`` は CAD だけにある細部と最も細い面の幅、``domain`` は計算領域と対称性の判定、``base`` は底面の処理、``registration`` 以下は位置合わせの距離と包含箱である。
+読み込みで縫い合わせや形状の修復をしたときは ``note:`` の行に、離れたソリッドや ``"fairing"`` で形を変えたことは ``warning:`` の行に出る。
+同じ内容は ``cfd_report.json`` の ``step`` に入る（:ref:`sec-file-cfd`）。
+
+**対称性と計算領域**\ 。CAD のモデルの鏡映対称は、``stl`` と同じく :math:`y=0` と :math:`z=0` の平面について検査する（方法は :ref:`sec-cfd-step-internals`）。
+``shape_symmetry = "auto"`` では検査に通った平面だけを使い、``"axisymmetric"`` や ``"pitch_plane"`` を明示して通らなければエラーにする（:ref:`sec-cfd-stl-symmetry`）。
+対称な面からずれたランチラグやレールボタンがあると、形状は鏡映対称でなく、全領域を解く。全領域は半領域の約 2 倍のセルになり、負の迎角も（横滑りを解くときは負の横滑り角も）解く。
+付属の ``sample_rocket.step`` は対称でなく、全領域になる。
+係数表は常に 6 成分の一般表である（:ref:`sec-cfd-table-kind`）。
+両方の平面について対称と確かめられ、1/4 領域を CAD の形状から切り出せないとき（ノーズ先端を通る :math:`y=z=0` の辺のブーリアン演算に OpenCASCADE が失敗したとき）は、半領域をメッシュにして負の迎角も解き、その旨を表示する。
+
+**計算量**\ 。1 ケースのセル数は、``panel_mesh`` と同じく ``wall_size`` と ``fin_size`` でほぼ決まり、全領域ならその約 2 倍である。
+例えば ``wall_size`` 6 mm（フィンの面は 1 mm）で、``sample_rocket.step`` の全領域は 162 万セル、同じ大きさの ``panel_mesh`` の半モデルは 81 万セルであった（``doc/data/cfd/fin_resolution.csv``）。
+細い面（ランチラグの管の壁など）には、その幅の 1/4 まで（``wall_size`` の 1/8 より小さくはしない）細かい要素を置くので、細部の多いモデルではセルが増える。
+このメッシュでの :math:`\alpha=0` の横方向の力の比較は :ref:`フィンの面の大きさの比較 <sec-cfd-val-fin-size>` にある。
+
+**RANS**\ 。``surface = "step"`` は ``model = "rans"`` でも使える。プリズム層を CAD の壁面のメッシュに積み、層の検査（不正なプリズム、体積が 0 以下のセル、マーカのない境界の面がないこと）に通ったときだけメッシュとして使う。
+CAD の縁は鈍くしない（``panel_mesh`` の RANS ではフィンの縁を鈍くする）。ランチラグの穴やレールボタンのつばの下のような狭いすき間では、向かい合う壁の層が交わらないように柱を短くする（:ref:`sec-cfd-step-internals`）。
+RANS は 1/4 領域を使わず、半領域か全領域でメッシュを作る。
+付属の ``sample_rocket.step`` の RANS のメッシュ（``wall_size`` 5 mm、全領域）の試験は、層の検査に通ったメッシュのすべてのセルの体積が正で、層の上面の大きさの比の 99 パーセンタイルが 8 未満であること、通らないときは鋭い縁を示すエラーで止まることを確かめる。STEP の壁面の RANS の解（SU2 の計算）は確かめていない。
+
+**エラーと対処**\ 。``surface = "step"`` に固有のエラーと対処は次のとおりである（``…`` は値やパス）。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 50 50
+   :class: longtable
+
+   * - エラー
+     - 原因と対処
+   * - ``aero.cfd.surface = "step" needs step_file = "<path>" (the CAD model as STEP, IGES or BREP, relative to the configuration file)``
+     - ``step_file`` がない。CAD のファイルを指定する
+   * - ``aero.cfd.step_file = "…": not a CAD file OpenCASCADE reads; use a STEP (.step, .stp), IGES (.iges, .igs) or BREP (.brep, .brp) file``
+     - 拡張子が読める形式でない。CAD から STEP などで書き出す
+   * - ``aero.cfd.step_file = "…": no such file (…; a relative path is relative to the configuration file)``
+     - ファイルがない。相対パスは設定ファイルのディレクトリからである
+   * - ``aero.cfd.surface = "step" with model = "euler" needs base_treatment: …``
+     - Euler で ``base_treatment`` がない。``"fairing"`` か ``"flat"`` を指定する（:ref:`sec-cfd-stl-base`）
+   * - ``aero.cfd.step_file and aero.cfd.step_unit are only used with surface = "step"``
+     - ほかの ``surface`` で ``step_file`` か ``step_unit`` を書いた。消すか ``surface = "step"`` にする
+   * - ``aero.cfd.step_unit = "…": the length unit of … cannot be read from the file, so it cannot be overridden; use step_unit = "auto"``
+     - 単位を宣言していない STEP か IGES で ``step_unit`` を指定した。単位を宣言して書き出し直す
+   * - ``aero.cfd.surface = "step": … does not describe the same rocket as rocket.stl (compared in the CFD frame, after the transform of the STL):`` に続く理由と ``likely cause: …``
+     - 位置合わせに通らない。理由の行（``the nose tips differ``、``the STL extends beyond the STEP along …``、``the STEP is … times as large as the STL along …``、``the STL lies up to … m from the STEP surface …``、``… % of the STL lies inside the STEP solid``）と報告の包含箱を見る。
+       ``likely cause: units: …`` は単位（``step_unit`` と ``rocket.stl_scale`` を確かめる）、``a different orientation or position: …`` は向きか原点の違い（STL と同じ座標系で書き出し直す）、``a different revision of the CAD model …`` は別の版のモデルである
+   * - ``the import of the CAD file failed (log: …/prepare.log):`` と ``mesh error: … contains no closed solid (… faces could not be sewn into one); export the rocket as a solid body``
+     - ファイルに閉じた立体がなく、面を縫い合わせても閉じない。CAD でソリッドとして書き出す
+   * - ``mesh error: gmsh cannot mesh the surface of …, even after shape healing (…); repair the CAD model or export it again``
+     - 形状の修復をしても表面のメッシュができない。CAD でモデルを直すか、書き出し直す
+   * - ``aero.cfd.surface = "step": base_treatment = "fairing" needs a flat aft-facing base face at x = … m (the base of the STL geometry), but the shape has none; use base_treatment = "flat" (the shape is kept as it is)``
+     - STL の後端の位置に平らな底面がない。底面を平らにするか、``"flat"`` にする
+   * - ``aero.cfd.surface = "step": the shape has no base faces (aft-facing faces at the base x = … m of the STL geometry); the CAD model must end in a flat base``
+     - 底面とみなす面がない。機体の後端を平らな面で閉じる
+   * - ``shape_symmetry = "axisymmetric" needs a surface that is mirror symmetric about y = 0 and z = 0, but the CAD shape is not: …``\ （``"pitch_plane"`` も同じ形）
+     - 明示した対称性が検査に通らない。``"auto"`` か ``"none"`` にする
+   * - ``gmsh meshing of the CAD surface failed (log: …/mesh.log):`` と ``mesh error: the prismatic boundary layer is invalid: …; the CAD surface is meshed as it is and its sharp edges (…) are not blunted, which the prism layer cannot always follow: use model = "euler", or round the sharp edges slightly in the CAD model``
+     - RANS のプリズム層が検査に通らない。``model = "euler"`` にするか、CAD でフィンの前縁と後縁、ランチラグやレールボタンの縁を少し丸める
+   * - ``mesh error: the tetrahedral mesh outside the boundary layer failed (…): the layer top probably intersects itself (narrow gaps such as a lug bore or the space between a button and the body are thinner than the layer); …``
+     - RANS の層の上面が狭いすき間で自分自身と交わった。すき間を広げるか埋める、縁を丸める、または Euler にする
+   * - ``mesh error: the surface mesh of the CAD faces … has duplicated or degenerate triangles with every surface algorithm``
+     - どの表面メッシャでも、その面に重なった三角形や縮退した三角形ができる。CAD でその面を作り直すか、``wall_size`` を変える
+
+**注意**\ 。CFD の壁面は CAD のモデルで、飛翔計算の部品積み上げ法の項（底面抗力、摩擦抗力、Euler で補う項）は ``rocket.stl`` の形状から求める。CAD の細部の抗力のうち CFD が解く圧力の抗力は CFD の軸力に入るので、``rocket.extra_cd`` で二重に数えないようにする（付属の例は 0）。
+Euler の摩擦抗力は STL の形状から求めるので、細部の摩擦抗力は入らない。
+
 .. _sec-cfd-stl-symmetry:
 
 対称性と計算領域
@@ -199,6 +373,7 @@ STL モードでは、CFD の壁面が入力の形からどれだけずれたか
 半領域を使うのは、``symmetry = true``\ （既定）で、かつ、形状が :math:`y=0` について対称で、``shape_symmetry`` に :math:`y=0` の鏡映が含まれ、``betas_deg = [0]`` で、ロール減衰のケースがないときだけである。
 どれか一つでも崩れると全領域を解く。``symmetry = false`` は全領域を強制する。
 ``stl`` の対称性は、和の表面を :math:`y=0` と :math:`z=0` の平面について検査して確かめる（検査の方法は :ref:`sec-cfd-stl-symmetry-check`）。
+``step`` では、CAD のモデルの曲面を同じ二つの平面について検査する（:ref:`sec-cfd-step-internals`）。
 
 ``shape_symmetry`` は、鏡映像として得られるケースを解かずに省く対称性を指定する。
 
@@ -210,7 +385,7 @@ STL モードでは、CFD の壁面が入力の形からどれだけずれたか
      - 動作
    * - ``"auto"``\ （既定）
      - ``panel_mesh`` では、横滑りを解かないとき ``"axisymmetric"``\ 。横滑りを解くときは、フィンの配置から決める（両面について対称なら ``"axisymmetric"``、:math:`y=0` だけなら ``"pitch_plane"``、それ以外は ``"none"``）。
-       ``stl`` では、検査に通った平面だけを使う（両方なら ``"axisymmetric"``\ （既定の ``z_mirror_mesh`` では 1/4 領域、``false`` なら半領域をメッシュにする）、:math:`y=0` だけなら ``"pitch_plane"``\ （半領域）、それ以外は ``"none"``\ （全領域））。:math:`z=0` だけが通ったときは、使える形状の対称性がないので ``"none"`` とする
+       ``stl`` と ``step`` では、検査に通った平面だけを使う（両方なら ``"axisymmetric"``\ （既定の ``z_mirror_mesh`` では 1/4 領域、``false`` なら半領域をメッシュにする）、:math:`y=0` だけなら ``"pitch_plane"``\ （半領域）、それ以外は ``"none"``\ （全領域））。:math:`z=0` だけが通ったときは、使える形状の対称性がないので ``"none"`` とする
    * - ``"axisymmetric"``
      - :math:`y=0` と :math:`z=0` の両方について鏡映対称（フィンが 4 枚で ``fin_roll_deg`` が 0 度または 45 度など）。:math:`\alpha\ge0`、:math:`\beta\ge0` だけを解く
    * - ``"pitch_plane"``
@@ -218,9 +393,9 @@ STL モードでは、CFD の壁面が入力の形からどれだけずれたか
    * - ``"none"``
      - 対称性を使わない。検査にかかわらず全領域で、:math:`\pm\alpha` と :math:`\pm\beta` を解く
 
-``stl`` で ``"axisymmetric"`` か ``"pitch_plane"`` を明示したとき、和の表面が検査に通らなければ **エラー** にして、最大の距離と理由を示す。
+``stl`` と ``step`` で ``"axisymmetric"`` か ``"pitch_plane"`` を明示したとき、形状が検査に通らなければ **エラー** にして、最大の距離と理由を示す。
 非対称な形状を黙って鏡映して、鏡映像の係数を誤ることはない。``panel_mesh`` では検査をせず、明示した値をそのまま使うので、フィンの配置と合う値を指定する。
-選んだ対称性と理由は、実行のとき標準エラー出力に表示し、``stl_fidelity.json`` と ``cfd_report.json``\ （``symmetry_check``）に記録する。
+選んだ対称性と理由は、実行のとき標準エラー出力に表示し、``cfd_report.json``\ （``symmetry_check``）に記録する。``stl`` では ``stl_fidelity.json``、``step`` では ``cfd_report.json`` の ``step`` にも入る。
 STL の三角形分割が曲面を鏡映の関係にない平面で近似していれば、人の目に対称でも検査に通らず、全領域を解く。許容は変えられない。
 
 フィンは既定では :math:`\pm y` と :math:`\pm z` の 4 方向に付き、:math:`y=0` 面に二枚のフィンが載る。
@@ -238,7 +413,7 @@ STL の三角形分割が曲面を鏡映の関係にない平面で近似して�
 CFD が作る係数表には、軸対称表と一般表（6 成分、:ref:`sec-aero-coeff6`）の二種類がある。
 次のどれかのとき、一般表になる。
 
-* ``surface = "stl"`` である。
+* ``surface = "stl"`` か ``"step"`` である。
 * ``shape_symmetry`` が ``"pitch_plane"`` か ``"none"`` と明示されている。
 * ``betas_deg`` に 0 以外がある。
 
@@ -263,7 +438,7 @@ Mach 数の刻みは ``general_mach_step``\ （既定 0.1、0 なら ``[aero]`` 
 
 * **Euler**\ （既定）：非粘性の圧縮性流れ。壁面の力は圧力だけで決まるので、摩擦抗力は含まれない。摩擦、底面、フィン縁の抗力は部品積み上げ法の項で補う。
 * **RANS**\ ：Spalart–Allmaras モデルで乱流を含めて解く。壁面の摩擦と底面の圧力も CFD の解に入る。
-  ``surface = "panel_mesh"`` だけで使え、壁面にプリズムの境界層を置いたメッシュを作る。使い方と制約は :ref:`sec-cfd-rans-use` にある。
+  ``surface = "panel_mesh"`` と ``"step"`` で使え、壁面にプリズムの境界層を置いたメッシュを作る。使い方と制約は :ref:`sec-cfd-rans-use` にある。
 
 方程式と数値解法は :doc:`cfd_internals` に示す。
 
@@ -324,16 +499,18 @@ RANS で解く
 
 **使える条件**\ 。次のどれかに当たると、計算を始める前にエラーになる。
 
-* ``surface = "stl"``\ ：境界層のメッシュは作り直した形状にしか作らない（``aero.cfd.surface = "stl" with model = "rans": RANS needs the boundary-layer mesh, which is built only for the CAD surface (surface = "cad")``）。
-* フィンの配置が :math:`y=0` について対称でない（``fin_roll_deg`` が 10 度の 4 枚フィンなど）：境界層のメッシュは半領域で作り、全領域はそれを :math:`y=0` で鏡映して作るからである。
+* ``surface = "stl"``\ ：境界層のメッシュは作り直した形状と CAD のモデルにしか作らない（``aero.cfd.surface = "stl" with model = "rans": RANS needs the boundary-layer mesh, which is built only for the CAD surface (surface = "cad") and the CAD B-rep (surface = "step")``）。
+* ``surface = "panel_mesh"`` で、フィンの配置が :math:`y=0` について対称でない（``fin_roll_deg`` が 10 度の 4 枚フィンなど）：境界層のメッシュは半領域で作り、全領域はそれを :math:`y=0` で鏡映して作るからである。
+  ``surface = "step"`` では、形状が対称でなければ全領域に直接プリズム層を積むので、この制約はない。
   エラーは ``aero.cfd: the RANS boundary-layer mesh needs a fin layout symmetric about the y = 0 plane (fin_roll_deg = 10 with 4 fins is not): use a symmetric fin_roll_deg (for example 0 or 45 with 4 fins) or model = "euler"`` である。
 * ``roll_damping = true``\ （``aero.cfd.roll_damping is only implemented for model = "euler"``）。
 * ``yplus`` が 5 より大きく 30 より小さい、または 150 より大きい（``aero.cfd.yplus = … lies in the buffer layer, where neither a resolved wall nor a wall function is valid: use yplus <= 5 (resolved wall, recommended 1) or 30..150 (standard wall function)``）。
 
 **既定値**\ 。``model = "rans"`` で次の項目を設定しないときは、Euler と異なる既定値を使う。
-``wall_size`` 3 mm、``iterations`` 4000（2 次精度の段の反復数）、``min_iterations`` 400、``stable_window`` 200 である。
+``wall_size`` 5 mm、``iterations`` 4000（2 次精度の段の反復数）、``min_iterations`` 400、``stable_window`` 200 である。
 ``yplus`` の既定は 1 で、壁面まで境界層を解像する。``z_mirror_mesh`` は効かず、``alpha_mode = "mirror"`` では負の迎角も解く（メッシュが :math:`z` について厳密に対称でないため）。
 底面は常に平らで、尾部フェアリングは置かない。
+``surface = "step"`` で使うときの注意（鋭い縁、狭いすき間、確かめた範囲）は :ref:`sec-cfd-step` にある。
 
 **メッシュの大きさ**\ 。境界層の厚さと層数は ``wall_size`` と ``yplus``、解く最大の Mach 数で決まる（:ref:`sec-cfd-prism`）。
 サンプル機体の半モデル（``yplus = 1``、最大の Mach 数 2、``fin_roll_deg = 0``）では次のとおりである。
@@ -459,7 +636,7 @@ Euler のケースの結果は、次のいずれかで扱う。
 RANS のケースは、``converged``、``unconverged``\ （振動や残差の停滞のまま係数が一定で、窓の平均を受け入れた）、失敗のいずれかになる（:ref:`sec-cfd-rans-use`）。
 発散したケースは、反復の上限を待たずに止め、一度だけ控えめな設定で解き直す。
 
-判定の条件は :ref:`sec-cfd-int-convergence` と :ref:`sec-cfd-int-rans-accept` にある。平らな底面の Euler（STL の ``base_treatment = "flat"``）は収束しないことがあり、そのときは失敗として扱う。
+判定の条件は :ref:`sec-cfd-int-convergence` と :ref:`sec-cfd-int-rans-accept` にある。平らな底面の Euler（STL と CAD のモデルの ``base_treatment = "flat"``）は収束しないことがあり、そのときは失敗として扱う。
 失敗したケースは、実行の最後に ``error: aero.cfd: case m0.800_a04.00 failed: <理由>`` の形で 1 行ずつまとめて表示する。
 SU2 がシグナル 9 で止められたときは、理由に ``SU2 was killed by signal 9 (SIGKILL; most likely out of memory: about … GB per case with … ranks and … concurrent cases; lower parallel_cases or ranks_per_case)`` と、メモリ不足の可能性と 1 ケースのメモリの見積もりを示す。
 
@@ -479,7 +656,7 @@ RANS では、各ケースのディレクトリの ``done.json`` に、壁面の
 * :math:`\alpha=\beta=0` の横方向の力（``zero_angle``）。Mach 数ごとに :math:`C_Y`\ （一般表）、:math:`C_Z`、:math:`\alpha=4^\circ` の法線力 :math:`C_{N\alpha}\cdot4^\circ`\ （``cn_ref``）、その比（``ratio``）と、係数表に残る分の比（``ratio_kept``）が入る。
   対称な機体では 0 になるはずの値で、比が 5 % を超えると警告を出す（原因は :ref:`sec-cfd-val-asym-cause`）。
 * ロール減衰の CFD とモデルの値と採用した側（``clp``、``clp_source``）、基準のカント（``fin_cant_ref_deg``）。
-* 底面の処理（``base_treatment``）、STL の形状の忠実度（``fidelity``）、鏡映対称の検査と選んだ領域（``symmetry_check``）。
+* 底面の処理（``base_treatment``）、STL の形状の忠実度（``fidelity``）、鏡映対称の検査と選んだ領域（``symmetry_check``）、CAD のモデルの読み込みと位置合わせ（``step``）。
 * RANS では、最初の層の :math:`y^+` の見積もり（``est_wall_yplus``）と、ケースごとの軸力の内訳（``axial_breakdown``）。
 
 :numref:`fig-cfd-convergence` に収束の履歴の例を示す。
@@ -560,7 +737,7 @@ CFD が与える値
 
 次の値は CFD が直接与えるものではなく、部品積み上げ法（またはパネル法）のモデルで補う。
 
-* Euler では、摩擦抗力、底面抗力、フィン縁とボートテールの抗力（Euler は粘性を含まないため）。ただし ``surface = "stl"`` では、フィンの前縁と後縁の面が CFD の壁面にあり、その圧力抗力が CFD の軸力にすでに入っているので、フィン縁の項は加えない。``panel_mesh`` では加える（:ref:`sec-cfd-post`）。
+* Euler では、摩擦抗力、底面抗力、フィン縁とボートテールの抗力（Euler は粘性を含まないため）。ただし ``surface = "stl"`` と ``"step"`` では、フィンの前縁と後縁の面が CFD の壁面にあり、その圧力抗力が CFD の軸力にすでに入っているので、フィン縁の項は加えない。``panel_mesh`` では加える（:ref:`sec-cfd-post`）。
   RANS では、追加抗力と、``rans_base = "model"``\ （既定）のときの底面抗力だけを足す。
 * ピッチとヨーの減衰 :math:`C_{mq}`、:math:`C_{nr}`。定常な計算は与えないので、モデルの和のばらつきを残し、CFD の傾きと重心に合わせて取り替える（:ref:`sec-aero-damping`）。
 * ロールのカント強制 :math:`C_{l\delta}`。
@@ -600,14 +777,16 @@ CFD モードについて、次の点を確かめた。数値と手順は :ref:`
 * ロール減衰と横滑りの符号は、軸対称表を展開した値と一致する。
 * 亜音速の係数は、CFD とパネル法がよく一致する（手法どうしの相互比較）。
 * STL をそのまま解く計算は、作り直した形状による計算と相互比較した。
+* CAD のモデル（``sample_rocket.step``）の全領域のメッシュ、単位の誤りの検出、対称な CAD のモデルの 1/4 領域と半領域、Basic Finner の STEP の対称性の判定を、gmsh で試験した（メッシュは SU2 で 1 反復だけ解いて読めることを確かめた）。
 
 注意
 ----
 
 実装上の制約は :ref:`sec-lim-cfd` にまとめた。使うときに特に注意する点は次のとおりである。
 
-* CFD の壁面は、``stl`` でも入力と同一ではない。形状の忠実度の報告を読む。
-* RANS は ``surface = "panel_mesh"`` で、フィンの配置が :math:`y=0` について対称なときだけ使える。1 ケースのメモリが大きい（:ref:`sec-cfd-rans-use`）。
+* CFD の壁面は、``stl`` でも入力と同一ではない。形状の忠実度の報告を読む。``step`` の壁面は CAD のモデルで、``rocket.stl`` との位置合わせの報告を読む。
+* RANS は ``surface = "panel_mesh"``\ （フィンの配置が :math:`y=0` について対称なときだけ）と ``"step"`` で使える。1 ケースのメモリが大きい（:ref:`sec-cfd-rans-use`）。
+  ``"step"`` の RANS は、メッシュの検査までを確かめ、SU2 の解は確かめていない。
   検証の項目と結果（:ref:`sec-cfd-rans`）を確かめてから係数表に使う。
 * Euler の底面は尾部フェアリング（``"fairing"``）で、形状が変わる。``"flat"`` は収束しないことがあり、サンプルの STL では収束しなかった。
 * 一般表の CFD の領域の外はモデルの値である。

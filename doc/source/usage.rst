@@ -639,7 +639,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
        実行の最初に、出力先にある同じモードの前回の結果（風の格子では ``dispersion.csv`` と ``dispersion_meta.json``、モンテカルロでは ``dispersion_mc.csv`` と ``dispersion_summary.json``）を消す。実行が失敗したとき、出力先に残った前回の結果をその実行の結果と取り違えないようにするためである。もう一方のモードの結果は残す。
        風の格子のすべてのケースが積分のエラーで止まったときは、``dispersion.csv`` などを書いたうえで終了ステータス 1 で終わる（:ref:`sec-wind-grid-failed`）。
    * - ``cfd-check <config> [--mesh]``
-     - CFD に必要なツール（SU2、MPI、gmsh。``surface = "stl"`` では manifold3d も）の有無と版、ケース数を表示する。``--mesh`` は壁面のメッシュも作って品質を表示する（:doc:`cfd`）。
+     - CFD に必要なツール（SU2、MPI、gmsh。``surface = "stl"`` では manifold3d も）の有無と版、ケース数を表示する。``--mesh`` は壁面のメッシュも作って品質を表示する（``surface = "stl"`` では形状の忠実度、``"step"`` では CAD のモデルの読み込みと位置合わせも。:doc:`cfd`）。
        必要なツールが足りないときは終了ステータス 1 で終わる。
    * - ``sample-stl <path>``
      - 付属のサンプル機体の STL（mm 単位、ノーズ +z 向き）を書き出す。
@@ -647,7 +647,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
 ``geom``、``aero``、``sim``、``dispersion`` は、設定ファイルを書き換えずに設定を変えるオプション ``--set`` と ``--out`` を、``aero``、``sim``、``dispersion`` は係数表を使い回すオプション ``--aero-table`` を受け付ける（:ref:`sec-cli-overrides`）。
 
 ``sim`` と ``dispersion`` は、係数表がない場合や入力が変わった場合に自動で ``aero`` を実行する。
-入力の同一性は、STL の内容と設定値から計算したハッシュ値（FNV-1a）で判定する。
+入力の同一性は、STL の内容と設定値から計算したハッシュ値（FNV-1a）で判定する。``aero.cfd.surface = "step"`` では、CAD のファイル（``step_file``）の内容も入る。
 ハッシュには、プログラムの版と、空力モデルの版（係数の計算方法が変わると上げる内部の番号）も入るので、計算方法が変わった版では保存済みの表を使わずに作り直す。
 空力に使わない設定は、ハッシュに入れない。選んでいない手法のブロック（``method = "barrowman"`` のときの ``[aero.panel]`` と ``[aero.cfd]`` など）、
 外部の係数表の指定、``method = "cfd"`` の資源とパスの項目（``prefix`` ``su2`` ``mpi`` ``ranks_per_case`` ``parallel_cases`` ``timeout_minutes`` ``workdir``）である。
@@ -1286,7 +1286,7 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
    * - ``model``
      - ``"euler"``
      - 支配方程式。``"euler"`` は非粘性の Euler 方程式（粘性の抗力項は部品積み上げ法で補う）、``"rans"`` は Spalart–Allmaras モデルの RANS で、壁面にプリズムの境界層を置いたメッシュで解く。
-       RANS は ``surface = "panel_mesh"`` で、フィンの配置が :math:`y=0` について対称なときだけ使え、``roll_damping`` とは組み合わせられない。``wall_size``、``iterations``、``min_iterations``、``stable_window`` の既定値が変わる（:ref:`sec-cfd-rans-use`）
+       RANS は ``surface = "panel_mesh"``\ （フィンの配置が :math:`y=0` について対称なときだけ）と ``"step"`` で使え、``roll_damping`` とは組み合わせられない。``wall_size``、``iterations``、``min_iterations``、``stable_window`` の既定値が変わる（:ref:`sec-cfd-rans-use`）
    * - ``machs``
      - ``[0.3, 0.6, 0.8, 0.95, 1.1, 1.3, 1.6, 2.0, 2.5, 3.0]``
      - 解く Mach 数（正、昇順、重複なし）
@@ -1305,14 +1305,15 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
      - ピッチ面（:math:`y=0`）で切った半モデルを使ってよいか。使う条件と領域の意味は :ref:`sec-cfd-stl-symmetry`。条件を満たさないときと ``false`` は全領域を解く
    * - ``surface``
      - ``"panel_mesh"``
-     - 壁面の形状。``"panel_mesh"``\ （別名 ``"cad"``）は抽出した胴体とフィンを再構成する。``"stl"`` は入力の STL から壁面を作る（入力の形状と同一ではない。:ref:`sec-cfd-stl`、:ref:`sec-cfd-fidelity`）。``"stl"`` と ``model = "rans"`` の組合せはエラー（``aero.cfd.surface = "stl" with model = "rans": RANS needs the boundary-layer mesh, which is built only for the CAD surface (surface = "cad")``）
+     - 壁面の形状。``"panel_mesh"``\ （別名 ``"cad"``）は抽出した胴体とフィンを再構成する。``"stl"`` は入力の STL から壁面を作る（入力の形状と同一ではない。:ref:`sec-cfd-stl`、:ref:`sec-cfd-fidelity`）。``"step"`` は ``step_file`` の CAD のモデルをそのまま壁面にする（``rocket.stl`` と照合する。:ref:`sec-cfd-step`）。
+       ``"stl"`` と ``model = "rans"`` の組合せはエラー（``aero.cfd.surface = "stl" with model = "rans": RANS needs the boundary-layer mesh, which is built only for the CAD surface (surface = "cad") and the CAD B-rep (surface = "step")``）
    * - ``betas_deg``
      - ``[0]``
      - 解く横滑り角 [deg]（0 以上、昇順、0 で始まる）。0 だけでないと係数表は 6 成分の一般表になる（:ref:`sec-cfd-table-kind`）
    * - ``shape_symmetry``
      - ``"auto"``
      - 鏡映像として得て解かない対称性。``"axisymmetric"``\ （:math:`y=0` と :math:`z=0`）、``"pitch_plane"``\ （:math:`y=0`）、``"none"``\ （使わない）、``"auto"``\ （形状から判定する）。
-       判定と、``stl`` で明示した対称性が検査に通らないときのエラーは :ref:`sec-cfd-stl-symmetry`、表の種類との関係は :ref:`sec-cfd-table-kind` で述べる
+       判定と、``stl`` と ``step`` で明示した対称性が検査に通らないときのエラーは :ref:`sec-cfd-stl-symmetry`、表の種類との関係は :ref:`sec-cfd-table-kind` で述べる
    * - ``roll_damping``
      - ``false``
      - 各 Mach 数でロール減衰の 2 ケースを回転座標系で解き、:math:`C_{lp}` を CFD の値にする（:ref:`sec-cfd-run`、:ref:`sec-cfd-roll-cases`）。Euler だけで、RANS で ``true`` はエラー
@@ -1321,7 +1322,14 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
      - ロール減衰のケースの無次元ロール角速度 :math:`\hat p=pd/(2V)`\ （0 より大きく 0.05 以下）
    * - ``base_treatment``
      - なし
-     - ``surface = "stl"`` かつ Euler のとき **必須**\ 。``"fairing"`` は底面の後ろに円すいを足す（入力の STL を変更する）、``"flat"`` は平らな底面のままにする（Euler の解は収束しないことがあり、収束しないケースは失敗。:ref:`sec-cfd-stl-base`）
+     - ``surface = "stl"`` または ``"step"`` で Euler のとき **必須**\ 。``"fairing"`` は底面の後ろに円すいを足す（入力の STL や CAD のモデルを変更する）、``"flat"`` は平らな底面のままにする（Euler の解は収束しないことがあり、収束しないケースは失敗。:ref:`sec-cfd-stl-base`）
+   * - ``step_file``
+     - なし
+     - ``surface = "step"`` で **必須**\ 。CAD のファイル（STEP ``.step``/``.stp``、IGES ``.iges``/``.igs``、BREP ``.brep``/``.brp``）。相対パスは設定ファイルのディレクトリから解釈する。``rocket.stl`` と同じ座標系で、一つの閉じた立体として書き出す（:ref:`sec-cfd-step`）
+   * - ``step_unit``
+     - ``"auto"``
+     - ``step_file`` の長さの単位。``"auto"`` はファイルが宣言する単位（BREP は m）、``"m"``、``"cm"``、``"mm"``、``"in"``、``"ft"`` はその単位で読む。単位を宣言していない STEP と IGES では指定できない。
+       ``step_file`` と ``step_unit`` は ``surface = "step"`` 以外ではエラー
    * - ``stl_remesh``
      - ``"classify"``
      - ``surface = "stl"`` の壁面の処理。``"classify"`` は gmsh で曲面を作り ``wall_size`` で作り直す、``"none"`` は STL の三角形をそのまま使う（フィンの解像が足りず法線力が低くなる）
@@ -1341,7 +1349,7 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
      - ``20.0``
      - 遠方境界の半径（全長の倍数、5 以上）。半球と球の半径、または箱の半辺
    * - ``wall_size``
-     - ``0.002``\ （RANS は ``0.003``）
+     - ``0.002``\ （RANS は ``0.005``）
      - 壁面の要素の大きさ [m]。小さいほど細かく、セル数と時間が増える。RANS では境界層の上面の四面体の大きさでもあり、層の数と厚さが決まる（:ref:`sec-cfd-prism`）
    * - ``fin_size``
      - ``"auto"``

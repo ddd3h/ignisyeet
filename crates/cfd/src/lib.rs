@@ -233,9 +233,10 @@ pub fn estimate_nodes(cells: usize) -> usize {
 }
 
 pub const EULER_BYTES_PER_CELL: f64 = 3.3e3;
-/// RANS bytes per mesh node (summed over ranks): the Euler per-cell figure scaled by 1.5 for the RANS
-/// state and 5.5 cells per node of a tetrahedral mesh. It is refit from measured peak RSS of RANS runs.
-pub const RANS_BYTES_PER_NODE: f64 = EULER_BYTES_PER_CELL * 1.5 * 5.5;
+/// RANS bytes per mesh node (summed over ranks). Measured (SU2 8.3, SA, Roe + MUSCL, accurate Jacobians,
+/// FGMRES/ILU, prism boundary layer + tetrahedra, peak RSS minus 40 MB per rank): 10.28 kB at 406 k nodes
+/// (3 ranks), 10.32 kB at 571 k nodes (4 ranks), 10.26 kB at 323 k nodes (4 ranks); 12 kB keeps a 15 % margin.
+pub const RANS_BYTES_PER_NODE: f64 = 12e3;
 
 /// Resolves `ranks_per_case` / `parallel_cases` (0 = auto) against the budget.
 ///
@@ -660,9 +661,9 @@ mod tests {
     fn memory_estimate_per_node_for_rans() {
         // Euler: 40 MB per rank + 3.3 kB per cell, unchanged.
         assert_eq!(case_memory_bytes(FlowModel::Euler, 100_000, 4), (4.0 * 40e6 + 3.3e3 * 100_000.0) as u64);
-        // RANS of a tetrahedral mesh: 5.5 cells per node reproduces 1.5 x the Euler per-cell figure.
+        // RANS of a tetrahedral mesh without a node count: 5.5 cells per node.
         let tet = case_memory_bytes(FlowModel::Rans, 550_000, 4) as f64;
-        assert!((tet - (4.0 * 40e6 + 1.5 * 3.3e3 * 550_000.0)).abs() < 1e5);
+        assert!((tet - (4.0 * 40e6 + RANS_BYTES_PER_NODE * 100_000.0)).abs() < 1e5);
         // A prism boundary-layer mesh (one node per cell, here 100 k cells and 100 k nodes) is sized by its nodes.
         let prism = case_memory_bytes_mesh(FlowModel::Rans, 100_000, 100_000, 4);
         assert!(prism > case_memory_bytes_mesh(FlowModel::Rans, 100_000, 0, 4));

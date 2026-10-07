@@ -318,7 +318,10 @@ fn rans_mesh_has_a_valid_prism_layer() {
     assert!(s.by_type.get("Tetrahedron 4").copied().unwrap_or(0) > 10_000, "{:?}", s.by_type);
     assert_eq!(s.bl_invalid, 0);
     assert!(s.bl_layers > 10 && s.bl_first_height > 1e-7 && s.bl_first_height < 1e-5, "{s:?}");
-    assert!((s.bl_thickness - 0.4 * opt.wall_size).abs() < 1e-9, "{s:?}");
+    let (layers, thickness) = cfd::mesh::bl_layers(s.bl_first_height, cfd::mesh::BL_TOP * opt.wall_size, cfd::mesh::BL_GROWTH);
+    assert!(s.bl_layers == layers && (s.bl_thickness - thickness).abs() < 1e-9, "{s:?}");
+    // The tetrahedra at the layer top are about as high as the last layer (a few junction and fin-edge cells excepted).
+    assert!(s.bl_top_ratio_p99 > 1.0 && s.bl_top_ratio_p99 < 6.0, "{s:?}");
 
     let (cells, nodes, marks) = read_su2(&half.su2);
     assert_eq!(cells.len(), s.cells);
@@ -370,4 +373,43 @@ fn rans_mesh_has_a_valid_prism_layer() {
     assert_eq!(marks.iter().map(|(t, _)| t.as_str()).collect::<Vec<_>>(), ["wall", "base", "farfield"]);
     assert!(nodes.iter().any(|p| p[1] < -0.05) && nodes.iter().any(|p| p[1] > 0.05));
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+#[ignore = "needs gmsh (IGNISYEET_CFD_PREFIX); about 20 minutes"]
+fn rans_prism_layer_sweep_passes_the_validity_check() {
+    let (_, g) = sample_stl();
+    let aero = aero::AeroOptions::default();
+    let mut rows = Vec::new();
+    for roll in [0.0, 45.0] {
+        for ws in [0.0025, 0.003, 0.0035, 0.004, 0.0045, 0.005, 0.006] {
+            let opt = CfdOptions { model: cfd::FlowModel::Rans, wall_size: ws, fin_roll_deg: roll, machs: vec![0.8, 2.0], alphas_deg: vec![0.0, 4.0], ..Default::default() };
+            let dir = std::env::temp_dir().join(format!("ignisyeet_cfd_rans_sweep_{}_{roll}_{ws}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            let t = std::time::Instant::now();
+            let r = cfd::mesh_only(&g, &opt, &aero, &dir, &ResourceBudget::default(), None);
+            let _ = std::fs::remove_dir_all(&dir);
+            let line = match &r {
+                Ok(m) => format!(
+                    "roll {roll:4.1} wall_size {:.1} mm: cells {}, nodes {}, prisms {}, layers {}, thickness {:.1} mm, top size ratio p99 {:.2} max {:.1}, attempt {}, invalid {}, {:.0?}",
+                    ws * 1e3,
+                    m.stats.cells,
+                    m.stats.nodes,
+                    m.stats.by_type.get("Prism 6").copied().unwrap_or(0),
+                    m.stats.bl_layers,
+                    m.stats.bl_thickness * 1e3,
+                    m.stats.bl_top_ratio_p99,
+                    m.stats.bl_top_ratio_max,
+                    m.stats.bl_attempt,
+                    m.stats.bl_invalid,
+                    t.elapsed()
+                ),
+                Err(e) => format!("roll {roll:4.1} wall_size {:.1} mm: FAILED {e:#}", ws * 1e3),
+            };
+            eprintln!("{line}");
+            rows.push((r.map(|m| m.stats.bl_invalid == 0 && m.stats.by_type.contains_key("Prism 6")).unwrap_or(false), line));
+        }
+    }
+    let failed: Vec<&String> = rows.iter().filter(|(ok, _)| !ok).map(|(_, l)| l).collect();
+    assert!(failed.is_empty(), "{failed:#?}");
 }

@@ -316,3 +316,29 @@ fn symmetry_check_accepts_the_basic_finner_and_rejects_the_lug_and_buttons() {
     assert_eq!(d.chosen, "none");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+#[ignore = "needs gmsh (IGNISYEET_CFD_PREFIX); about 1 minute"]
+fn fairing_of_the_basic_finner_starts_at_the_body_radius_not_at_the_fin_tips() {
+    // The fin trailing edges are flush with the base and belong to the flat base face, whose extent reaches the fin tips
+    // (45 mm); the fairing cone must start just inside the body base radius (15 mm).
+    let raw: Vec<Triangle> =
+        geom::stl::read_stl(&examples().join("basic_finner/basic_finner.stl")).unwrap().into_iter().map(|t| t.map(|v| v * 0.001)).collect();
+    let g = extract(&raw, &ExtractOptions::default()).unwrap();
+    let dir = tmp("finner_fairing");
+    let opt = CfdOptions {
+        step_file: examples().join("basic_finner/basic_finner.step"),
+        wall_size: 0.004,
+        fin_size: cfd::FinSize::Size(0.002),
+        ..step_options()
+    };
+    let m = cfd::mesh_only(&g, &opt, &aero::AeroOptions::default(), &dir, &budget(), Some(&raw)).unwrap();
+    let info = m.step.as_ref().unwrap();
+    let f = info.fairing.as_ref().unwrap();
+    let (r, extent) = (f["radius"].as_f64().unwrap(), f["base_face_extent"].as_f64().unwrap());
+    // 98 % of the circular body edge of the CAD base (15 mm).
+    assert!((r - 0.98 * 0.015).abs() < 1e-6, "{f}");
+    assert!(extent > 0.044, "the base face includes the fin trailing edges: {f}");
+    assert!(m.stats.cells > 10_000, "{:?}", m.stats);
+    let _ = std::fs::remove_dir_all(&dir);
+}

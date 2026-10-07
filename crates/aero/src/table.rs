@@ -678,8 +678,7 @@ impl AeroTable {
     }
 
     /// False for a table loaded from a file without the lag and Magnus columns (an older column
-    /// set); such a table flies with the quasi-steady terms only unless [`set_lag_terms`](Self::set_lag_terms)
-    /// fills the lag sums.
+    /// set); its lag sums are zero unless [`set_lag_terms`](Self::set_lag_terms) fills them.
     pub fn has_lag_columns(&self) -> bool {
         self.lag_columns
     }

@@ -511,7 +511,7 @@ fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: Option<f64>) -> Vec
     }
     if let Some(r) = &s.roll_resonance {
         w.push(format!(
-            "roll resonance: the roll rate crosses the pitch natural frequency ({:.1} rad/s) at t = {:.2} s, Mach {:.2}{}; fin cant, a lateral CG offset or thrust misalignment can amplify the angle of attack there",
+            "roll resonance: the roll rate crosses the resonance rate of the pitch oscillation ({:.1} rad/s) at t = {:.2} s, Mach {:.2}{}; the lateral CG offset, thrust misalignment or asymmetric aero moment can amplify the angle of attack there",
             r.frequency,
             r.t,
             r.mach,
@@ -3011,7 +3011,7 @@ mod tests {
         let resonant = sim::Summary { roll_resonance: Some(sim::RollResonance { t: 0.65, mach: 0.155, frequency: 18.0, crossings: 2 }), ..ok.clone() };
         assert_eq!(
             flight_warnings(&cfg, &resonant),
-            ["roll resonance: the roll rate crosses the pitch natural frequency (18.0 rad/s) at t = 0.65 s, Mach 0.15 (2 crossings); fin cant, a lateral CG offset or thrust misalignment can amplify the angle of attack there"]
+            ["roll resonance: the roll rate crosses the resonance rate of the pitch oscillation (18.0 rad/s) at t = 0.65 s, Mach 0.15 (2 crossings); the lateral CG offset, thrust misalignment or asymmetric aero moment can amplify the angle of attack there"]
         );
         let marginal = sim::Summary { min_stability_cal: 1.2, ..ok.clone() };
         assert!(flight_warnings(&cfg, &marginal).iter().any(|w| w.contains("1.20 cal") && w.contains("marginal")));

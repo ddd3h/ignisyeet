@@ -951,7 +951,7 @@ pub fn ensure_mesh_step(
         params.meshed = decision.meshed.clone();
         params.y_mirror = decision.meshed != "full" && !ropt.symmetry;
         params.bl = (opt.model == FlowModel::Rans).then(|| {
-            let mut bl = mesh::bl_params(&ropt, geom.length, atm);
+            let mut bl = mesh::bl_params(&ropt, geom, atm);
             // The CAD edges are meshed as they are (no blunting).
             let mut b = Some(&mut bl);
             while let Some(x) = b {
@@ -1231,7 +1231,7 @@ mod tests {
     #[test]
     fn params_and_script_agree() {
         let atm = aero::atmosphere::AtmosphereModel::default().at(0.0);
-        let j = serde_json::to_value(StepParams { bl: Some(mesh::bl_params(&CfdOptions::rans(), 1.5, &atm)), ..params() }).unwrap();
+        let j = serde_json::to_value(StepParams { bl: Some(mesh::bl_params(&CfdOptions::rans(), &sample_geom(), &atm)), ..params() }).unwrap();
         let mut keys = 0;
         for line in SCRIPT.lines() {
             let mut rest = line;

@@ -413,7 +413,7 @@ ECEF 座標での積分
   物理的でない符号で復元するモーメントの面と、法線力の傾きが 0 の面は求まらず、理由（``… is positive at Mach 0.50``、``… is zero``）を返す。
 * **慣性テンソルの検査**\ （``ill_conditioned_inertia_is_an_error``）：主慣性モーメントの比が :math:`10^{8}` を超える乾燥の慣性テンソル、:math:`I_{xx}=0`、負の :math:`I_{xx}` は、``inertia tensor is singular or ill-conditioned`` のエラーになり、条件のよい非対称なテンソルは飛ぶ。
 * **乾燥重心の横ずれ**：乾燥重心を :math:`y_b` 方向に 0.02 m ずらすと、推進剤を含めた重心の横ずれが :math:`m_dy_d/m` になり、慣性乗積 :math:`I_{xy}` が
-  :math:`-\sum m\,\Delta x\,\Delta y`（重心からの距離で、乾燥部分と推進剤の和）と :math:`10^{-12}` で一致する。慣性テンソルの行列式は正である
+  :math:`-\sum m\,\Delta x\,\Delta y`\ （重心からの距離で、乾燥部分と推進剤の和）と :math:`10^{-12}` で一致する。慣性テンソルの行列式は正である
   （``off_axis_dry_cg_gives_product_of_inertia_with_propellant``）。
 * **トルクなしの回転**：非対称な剛体（:math:`I_{xx}=0.02`, :math:`I_{yy}=1.5`, :math:`I_{zz}=1.8`、乗積 :math:`0.05,-0.03,0.1` kg m\ :sup:`2`、重心の横ずれあり）に
   初期角速度 :math:`(0.5,3.0,0.4)` rad/s を与え、60 s 積分する。角運動量の大きさとエネルギーの相対誤差の要求は :math:`10^{-6}` 未満で、

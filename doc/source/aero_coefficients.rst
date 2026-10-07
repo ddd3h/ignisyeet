@@ -198,7 +198,7 @@
 である。:math:`\beta=0` ならば :math:`\alpha_t=|\alpha|`、:math:`\alpha=0` ならば :math:`\alpha_t=|\beta|` となる。
 定義の式（:eq:`eq-alpha-beta`、:eq:`eq-alpha`）と図（:numref:`fig-body-axes`）は :ref:`sec-aero-angles` にある。
 
-係数表を引くときの角度は、軸対称表では全迎角 :math:`\alpha_t`（実際には :math:`\min(\alpha_t,\pi-\alpha_t)`）、一般表では :math:`\alpha` と :math:`\beta` である。
+係数表を引くときの角度は、軸対称表では全迎角 :math:`\alpha_t`\ （実際には :math:`\min(\alpha_t,\pi-\alpha_t)`）、一般表では :math:`\alpha` と :math:`\beta` である。
 引く範囲、既定の表が持つ範囲、範囲の外の扱い、後ろ向きの飛行の扱いは :ref:`sec-aero-table` と :ref:`sec-aero-interp` にある。
 
 係数表の CSV の列 ``alpha_deg`` は、軸対称表では全迎角 :math:`\alpha_t`、一般表では迎角 :math:`\alpha` を表す。

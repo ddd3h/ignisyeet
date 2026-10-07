@@ -1046,7 +1046,7 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
      - 推進剤を除いたときのヨー慣性モーメント [kg m\ :sup:`2`]
    * - ``ixy_dry`` / ``ixz_dry`` / ``iyz_dry``
      - ``0``
-     - 慣性テンソルの非対角要素 [kg m\ :sup:`2`]（乾燥重心まわり、機体座標）。**テンソルの行列要素** で、:math:`I_{xy}=-\int xy\,\mathrm{d}m`（:eq:`eq-inertia-tensor`）。
+     - 慣性テンソルの非対角要素 [kg m\ :sup:`2`]（乾燥重心まわり、機体座標）。**テンソルの行列要素** で、:math:`I_{xy}=-\int xy\,\mathrm{d}m`\ （:eq:`eq-inertia-tensor`）。
        CAD の慣性乗積の表示は符号が逆のことが多いので、確認すること（下の注意）
    * - ``cg_lateral_dry``
      - ``[0, 0]``

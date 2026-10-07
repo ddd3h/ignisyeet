@@ -378,7 +378,7 @@ pub fn build_from_points_roll(
                 let (cn, mom) = if a == 0.0 { (0.0, 0.0) } else { (cn_p[j].eval(m, false), mom_p[j].eval(m, false)) };
                 let xcp = if cn.abs() > 1e-9 { mom / cn } else { xcp0 };
                 let (ca_on, ca_off) = hybrid_axial(flow, false, base_from_cfd, model, m, a.to_radians(), ca_p[j].eval(m, false));
-                AeroCoeffs { cn, ca_on, ca_off, xcp, cna, damp, cl_delta, clp }
+                AeroCoeffs { cn, ca_on, ca_off, xcp, cna, damp, cl_delta, clp, ..Default::default() }
             })
             .collect();
         rows.push(row);

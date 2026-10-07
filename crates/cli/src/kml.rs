@@ -597,6 +597,7 @@ fn summary_from_json(v: &serde_json::Value) -> Result<Summary, String> {
         main_deploy_speed: v.get("main_deploy_speed").and_then(|x| x.as_f64()),
         main_deploy_q: v.get("main_deploy_q").and_then(|x| x.as_f64()),
         wind_scale: v.get("wind_scale").and_then(|x| x.as_f64()),
+        roll_resonance: v.get("roll_resonance").and_then(|x| serde_json::from_value(x.clone()).ok()),
     };
     if !(s.landing_lat.is_finite() && s.landing_lon.is_finite()) {
         return Err("no landing position".into());
@@ -646,6 +647,7 @@ fn summary_from_row(t: &Csv, r: &[String]) -> Result<Summary, String> {
         main_deploy_speed: None,
         main_deploy_q: None,
         wind_scale: None,
+        roll_resonance: None,
     })
 }
 
@@ -743,6 +745,9 @@ pub fn load_monte_carlo(dir: &Path, hash: &str) -> Result<Option<MonteCarlo>, St
             cg_lateral_z: g("cg_lateral_z"),
             cl_scale: g("cl_scale"),
             clp_scale: g("clp_scale"),
+            lag_scale: g("lag_scale"),
+            magnus_scale: g("magnus_scale"),
+            cmq_scale: g("cmq_scale"),
         };
         let result = if t.text(r, "status") == Some("ok") {
             Ok(summary_from_row(&t, r).map_err(|e| format!("{}: {e}", csv.display()))?)
@@ -874,6 +879,7 @@ mod tests {
             main_deploy_speed: None,
             main_deploy_q: None,
             wind_scale: None,
+            roll_resonance: None,
         }
     }
 

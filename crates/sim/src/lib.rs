@@ -14,5 +14,5 @@ pub mod tableau;
 
 pub use dispersion::{DispersionConfig, DispersionMode, McResult, McRow, MonteCarloConfig, Perturbation};
 pub use env::{AtmosphereConfig, AtmosphereModel, AttitudeKind, Earth, EarthConfig, EarthModel, GravityModel, IntegratorKind, Wind, WindConfig, WindModel};
-pub use flight::{AeroScale, Descent, Launch, MassProperties, MassState, Recovery, Settings, SimResult, Simulation, Summary, ThrustLine};
+pub use flight::{AeroScale, Descent, Launch, MassProperties, MassState, Recovery, RollResonance, Settings, SimResult, Simulation, Summary, ThrustLine};
 pub use motor::Motor;

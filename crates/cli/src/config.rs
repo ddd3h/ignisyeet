@@ -685,6 +685,9 @@ impl Config {
             ("cg_lateral", mc.cg_lateral),
             ("cl_scale", mc.cl_scale),
             ("clp_scale", mc.clp_scale),
+            ("lag_scale", mc.lag_scale),
+            ("magnus_scale", mc.magnus_scale),
+            ("cmq_scale", mc.cmq_scale),
         ] {
             non_negative(&format!("dispersion.monte_carlo.{k} (1-sigma)"), v)?;
         }
@@ -1207,7 +1210,7 @@ mod tests {
     #[test]
     fn rejects_bad_motor_and_monte_carlo_values() {
         let sample = include_str!("../../../examples/sample.toml");
-        // The six new sigmas are commented out in the sample, so they are added under the header.
+        // These sigmas are not set in the sample, so they are added under the header.
         for (line, key) in [
             ("thrust_misalignment_deg = -1.0", "thrust_misalignment_deg"),
             ("thrust_offset = -0.001", "thrust_offset"),
@@ -1215,6 +1218,9 @@ mod tests {
             ("cg_lateral = nan", "cg_lateral"),
             ("cl_scale = -0.1", "cl_scale"),
             ("clp_scale = -0.1", "clp_scale"),
+            ("lag_scale = -0.1", "lag_scale"),
+            ("magnus_scale = inf", "magnus_scale"),
+            ("cmq_scale = nan", "cmq_scale"),
         ] {
             let e = parse(&sample.replace("[dispersion.monte_carlo]", &format!("[dispersion.monte_carlo]\n{line}")))
                 .err()

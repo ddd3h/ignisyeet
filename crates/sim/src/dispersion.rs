@@ -77,6 +77,12 @@ pub struct MonteCarloConfig {
     pub cl_scale: f64,
     /// Relative: roll-damping derivative Clp.
     pub clp_scale: f64,
+    /// Relative: lag (apparent-mass, alpha-dot) sums of the table.
+    pub lag_scale: f64,
+    /// Relative: Magnus slope `cnpa` of the table.
+    pub magnus_scale: f64,
+    /// Relative: pitch-damping sums (damping moment and rotation-induced force), on top of `cn_scale`.
+    pub cmq_scale: f64,
     /// Optional bound `k` of every standard-normal draw: each draw `z ~ N(0, 1)` is clipped to
     /// `[-k, k]` before it is scaled by its sigma (relative and absolute dispersions alike), so no
     /// perturbation exceeds `k` sigma. Clipping (not redrawing) keeps the number and order of the
@@ -107,6 +113,9 @@ impl Default for MonteCarloConfig {
             cg_lateral: 0.0,
             cl_scale: 0.0,
             clp_scale: 0.0,
+            lag_scale: 0.0,
+            magnus_scale: 0.0,
+            cmq_scale: 0.0,
             truncate_sigma: None,
         }
     }
@@ -195,6 +204,9 @@ pub struct Perturbation {
     pub cg_lateral_z: f64,
     pub cl_scale: f64,
     pub clp_scale: f64,
+    pub lag_scale: f64,
+    pub magnus_scale: f64,
+    pub cmq_scale: f64,
 }
 
 /// Smallest allowed multiplicative factor.
@@ -209,7 +221,8 @@ impl Perturbation {
     /// All normals are always drawn (in field order: the eleven original dispersions from
     /// `thrust_scale` to `parachute_cd_s_scale`, then the nine of the thrust line, fin cant,
     /// lateral CG and roll coefficients from `misalignment_y_deg` to `clp_scale`, the cross-plane
-    /// rail tilt last; `roll_deg` is not drawn but follows from the rail draws), so
+    /// rail tilt, then `lag_scale`, `magnus_scale` and `cmq_scale`; `roll_deg` is not drawn but
+    /// follows from the rail draws), so
     /// switching one sigma on or off does not change the draws of the others. The rail draws
     /// (in-plane tilt, rotation about the vertical, cross-plane tilt) are turned into the
     /// elevation, azimuth and roll changes of the launch `launch` (see [`tilt_launch`]).
@@ -243,8 +256,15 @@ impl Perturbation {
             cg_lateral_z: n(cfg.cg_lateral),
             cl_scale: n(cfg.cl_scale),
             clp_scale: n(cfg.clp_scale),
+            lag_scale: 0.0,
+            magnus_scale: 0.0,
+            cmq_scale: 0.0,
         };
         let cross = n(cfg.elevation_deg);
+        // Drawn after every older dispersion, so their draws do not change.
+        p.lag_scale = n(cfg.lag_scale);
+        p.magnus_scale = n(cfg.magnus_scale);
+        p.cmq_scale = n(cfg.cmq_scale);
         let (el, az, roll) = tilt_launch(launch, p.elevation_deg, cross, p.azimuth_deg);
         p.elevation_deg = el - launch.elevation_deg;
         p.azimuth_deg = wrap180(az - launch.azimuth_deg);
@@ -272,7 +292,16 @@ impl Perturbation {
         s.mass.cg_dry += self.cg;
         s.mass.cg_lateral_dry[0] += self.cg_lateral_y;
         s.mass.cg_lateral_dry[1] += self.cg_lateral_z;
-        s.aero_scale = AeroScale { cn: factor(self.cn_scale), ca: factor(self.ca_scale), cl: factor(self.cl_scale), clp: factor(self.clp_scale) };
+        s.aero_scale = AeroScale {
+            cn: factor(self.cn_scale),
+            ca: factor(self.ca_scale),
+            cl: factor(self.cl_scale),
+            clp: factor(self.clp_scale),
+            lag: factor(self.lag_scale),
+            magnus: factor(self.magnus_scale),
+            damp: factor(self.cmq_scale),
+            ..base.aero_scale
+        };
         s.fin_cant_deg += self.fin_cant_deg;
         s.thrust_line.offset[0] += self.offset_y;
         s.thrust_line.offset[1] += self.offset_z;
@@ -756,6 +785,9 @@ mod tests {
             cg_lateral: 0.0,
             cl_scale: 0.0,
             clp_scale: 0.0,
+            lag_scale: 0.0,
+            magnus_scale: 0.0,
+            cmq_scale: 0.0,
             truncate_sigma: None,
         }
     }
@@ -1038,7 +1070,7 @@ mod tests {
         assert!((pm.total_impulse() - 1.1 * m.total_impulse()).abs() < 1e-9 && (pm.burn_time() - 2.5).abs() < 1e-12);
         assert_eq!(pm.propellant_mass, m.propellant_mass);
         assert!((s.mass.dry_mass - 12.0).abs() < 1e-12 && (s.mass.iyy_dry - 1.2).abs() < 1e-12 && (s.mass.cg_dry - 0.51).abs() < 1e-12);
-        assert_eq!(s.aero_scale, AeroScale { cn: 1.1, ca: 0.05, cl: 1.0, clp: 1.0 });
+        assert_eq!(s.aero_scale, AeroScale { cn: 1.1, ca: 0.05, cl: 1.0, clp: 1.0, ..Default::default() });
         assert_eq!((s.launch.elevation_deg, s.launch.azimuth_deg), (89.0, 2.0));
         assert_eq!((s.wind.speed, s.wind.direction_deg), (0.0, 10.0));
         assert!((s.recovery.cd_s - 1.5).abs() < 1e-12);
@@ -1114,10 +1146,14 @@ mod tests {
             cg_lateral_y: 0.003,
             cl_scale: 0.5,
             clp_scale: -0.5,
+            lag_scale: 0.2,
+            magnus_scale: -0.3,
+            cmq_scale: 0.1,
             ..Default::default()
         };
         let pm = p.motor(&m);
         let s = p.simulation(&b, &pm);
+        assert_eq!((s.aero_scale.lag, s.aero_scale.magnus, s.aero_scale.damp, s.aero_scale.cnq), (1.2, 0.7, 1.1, 1.0));
         // Nominal tilt (1, 0) deg plus (0, 1) deg.
         assert!((s.thrust_line.misalignment_deg - 2f64.sqrt()).abs() < 1e-12 && (s.thrust_line.misalignment_azimuth_deg - 45.0).abs() < 1e-9);
         assert_eq!(s.thrust_line.offset, [0.001, 0.002]);
@@ -1168,6 +1204,7 @@ mod tests {
             main_deploy_speed: None,
             main_deploy_q: None,
             wind_scale: None,
+            roll_resonance: None,
         }
     }
 

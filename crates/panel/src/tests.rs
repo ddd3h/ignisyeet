@@ -262,7 +262,7 @@ fn cone_cylinder_cna_at_mach_2() {
     let rk = SampleRocket { nose_shape: NoseShape::Cone, nose_length: 0.05 / 10f64.to_radians().tan(), fin_count: 0, ..Default::default() };
     let g = geometry(&rk);
     let mesh = Mesh::from_geometry(&g, &coarse()).unwrap();
-    let sp = supersonic::SupersonicPanels::new(&mesh, g.ref_area, None, 0.0);
+    let sp = supersonic::SupersonicPanels::new(&mesh, g.ref_area, None, None);
     let d = sp.derivatives(2.0, g.length);
     println!("10 deg cone-cylinder M=2: CNa {:.3}", d[0]);
     assert!((d[0] - 2.0).abs() < 0.3, "CNa {}", d[0]);
@@ -289,10 +289,11 @@ fn supersonic_comparison_with_barrowman() {
         if [0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.5, 2.0, 3.0].iter().any(|v| (v - m).abs() < 1e-9) {
             println!("{m:.1}  {:.2}  {:.2}  {xb:.3}  {:.3}  {:.3}  {:.3}", model.cna(m), c.cna, c.xcp, model.cd0(m, false).total(), c.ca_off);
         }
-        // The local-inclination fins carry the body upwash, the component build-up fins only Barrowman's
-        // fin-in-body factor (no body carry-over): the panel value is about 27 % higher at Mach 1.5.
+        // Mach 1.5: the local-inclination fins carry the body upwash (weight 0.96 here, `upwash_weight`),
+        // the component build-up only Barrowman's fin factor with its rectangular tip loss: the panel value
+        // is 25.5 % higher (Mach 2: 17 %), where the panel value agrees with Euler CFD.
         if (m - 1.5).abs() < 1e-9 {
-            assert!((c.cna / model.cna(m) - 1.0).abs() < 0.32, "M=1.5 CNa {} vs {}", c.cna, model.cna(m));
+            assert!((c.cna / model.cna(m) - 1.0).abs() < 0.30, "M=1.5 CNa {} vs {}", c.cna, model.cna(m));
         }
         // Mach 2: Euler CFD of this rocket 13.04 (doc/data/cfd/sample_euler_vs_models.csv).
         if (m - 2.0).abs() < 1e-9 {
@@ -302,12 +303,11 @@ fn supersonic_comparison_with_barrowman() {
             assert!((c.xcp - xb).abs() < 0.06, "M=2 xcp {} vs {xb}", c.xcp);
         }
     }
-    // Bounded transonic peak. Euler CFD of this rocket: 18.46 at Mach 1.2 against 16.40 at Mach 0.8
-    // (doc/data/cfd/sample_euler_vs_models.csv). The local-inclination methods at the band edge
-    // (Mach 1.2) overestimate it: the fin loading grows like 1 / beta, the tip Mach cone covers the
-    // whole fin and reaches the body (beta s < c), where the half-loading tip relief no longer holds,
-    // and the body upwash multiplies it; they give about 1.8 times the Mach 0.8 value.
-    assert!(peak <= 1.9 * c08, "CNa peak {peak} vs M=0.8 value {c08}");
+    // No unphysical transonic peak. Euler CFD of this rocket: 18.46 at Mach 1.2 against 16.40 at
+    // Mach 0.8 (doc/data/cfd/sample_euler_vs_models.csv); the local-inclination methods at the band
+    // edge, where the fin leading edges already sit past wedge detachment, give about 1.36 times (the
+    // body upwash is faded out there, `upwash_weight`).
+    assert!(peak <= 1.4 * c08, "CNa peak {peak} vs M=0.8 value {c08}");
 }
 
 #[test]
@@ -428,7 +428,7 @@ fn subsonic_nose_moment_is_the_full_cross_product() {
 #[test]
 fn supersonic_nose_moment_is_the_full_cross_product() {
     let mesh = sphere_mesh(80);
-    let sp = supersonic::SupersonicPanels::new(&mesh, PI, None, 0.0);
+    let sp = supersonic::SupersonicPanels::new(&mesh, PI, None, None);
     for deg in [5.0f64, 30.0, 60.0] {
         let f = sp.forces(2.0, deg.to_radians(), 0.0);
         assert!((f.mz / f.fz - 1.0).abs() < 0.03, "{deg}°: xcp {}", f.mz / f.fz);
@@ -553,11 +553,11 @@ fn supersonic_fins_see_the_body_upwash() {
     let mesh = Mesh::from_geometry(&g, &coarse()).unwrap();
     let tip = Some((f.x_le_root + f.sweep, r + s));
     let m = 2.0;
-    let with = supersonic::SupersonicPanels::new(&mesh, g.ref_area, tip, r).derivatives(m, g.length)[0];
-    let without = supersonic::SupersonicPanels::new(&mesh, g.ref_area, tip, 0.0).derivatives(m, g.length)[0];
+    let with = supersonic::SupersonicPanels::new(&mesh, g.ref_area, tip, Some((r, f.x_le_root + c))).derivatives(m, g.length)[0];
+    let without = supersonic::SupersonicPanels::new(&mesh, g.ref_area, tip, None).derivatives(m, g.length)[0];
     let gb = geometry(&SampleRocket { fin_count: 0, ..base.clone() });
     let mb = Mesh::from_geometry(&gb, &coarse()).unwrap();
-    let body = supersonic::SupersonicPanels::new(&mb, gb.ref_area, None, 0.0).derivatives(m, gb.length)[0];
+    let body = supersonic::SupersonicPanels::new(&mb, gb.ref_area, None, None).derivatives(m, gb.length)[0];
     let ratio = (with - body) / (without - body);
     // Expected: upwash averaged over the planform with the tip relief weight.
     let beta = (m * m - 1.0f64).sqrt();
@@ -582,4 +582,41 @@ fn supersonic_fins_see_the_body_upwash() {
     );
     assert!((ratio / expect - 1.0).abs() < 0.03, "ratio {ratio} vs {expect}");
     assert!(((with - body) / fin_barrowman - 1.0).abs() < 0.06, "fin CNa {} vs Barrowman {fin_barrowman}", with - body);
+}
+
+/// Validity weight of the body upwash: 0 up to q = 1/2 (whole fin in the interacting tip region),
+/// 1 from q = 1 (tip Mach cone clear of the root), C1 smoothstep between; and the sample rocket gets
+/// almost none at the edge of the transonic band (Mach 1.2), the full upwash at Mach 2.
+#[test]
+fn upwash_is_faded_out_where_the_tip_cone_covers_the_fin() {
+    use supersonic::upwash_weight as w;
+    assert_eq!(w(0.0), 0.0);
+    assert_eq!(w(0.5), 0.0);
+    assert_eq!(w(1.0), 1.0);
+    assert_eq!(w(5.0), 1.0);
+    assert_eq!(w(f64::INFINITY), 1.0);
+    assert!((w(0.75) - 0.5).abs() < 1e-12);
+    let h = 1e-6;
+    for q in [0.5, 1.0] {
+        assert!(((w(q + h) - w(q - h)) / (2.0 * h)).abs() < 1e-3, "slope at {q}");
+    }
+    let mut prev = 0.0;
+    for k in 0..=200 {
+        let v = w(0.4 + 0.004 * k as f64);
+        assert!(v >= prev);
+        prev = v;
+    }
+    let g = geometry(&SampleRocket::default());
+    let f = g.fins.clone().unwrap();
+    let mesh = Mesh::from_geometry(&g, &coarse()).unwrap();
+    let sp = supersonic::SupersonicPanels::new(
+        &mesh,
+        g.ref_area,
+        Some((f.x_le_root + f.sweep, f.body_radius + f.span)),
+        Some((f.body_radius, f.x_le_root + f.root_chord)),
+    );
+    let (_, k12) = sp.upwash(1.2);
+    let (_, k2) = sp.upwash(2.0);
+    println!("sample upwash weight: M=1.2 {k12:.3}, M=2 {k2:.3}");
+    assert!(k12 < 0.05 && k2 == 1.0, "{k12} {k2}");
 }

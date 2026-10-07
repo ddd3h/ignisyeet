@@ -557,7 +557,7 @@ pub fn build_table_with_progress(
             &mesh,
             s_ref,
             geom.fins.as_ref().map(|f| (f.x_le_root + f.sweep, f.body_radius + f.span)),
-            geom.fins.as_ref().map_or(0.0, |f| f.body_radius),
+            geom.fins.as_ref().map(|f| (f.body_radius, f.x_le_root + f.root_chord)),
         ),
     };
 

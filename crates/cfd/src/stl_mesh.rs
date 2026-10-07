@@ -291,7 +291,7 @@ pub fn ensure_mesh_stl(opt: &CfdOptions, geom: &Geometry, raw: &[Triangle], work
         warnings: notes,
         symmetry: decision,
     };
-    let res = MeshResult { su2, hash, stats, cached: was_cached, stl: Some(info) };
+    let res = MeshResult { su2, hash, stats, cached: was_cached, stl: Some(info), step: None };
     fidelity.check()?;
     Ok((res, ropt))
 }

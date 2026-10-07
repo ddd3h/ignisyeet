@@ -19,6 +19,7 @@ pub mod general;
 pub mod history;
 pub mod mesh;
 pub mod runner;
+pub mod step_mesh;
 pub mod stl_mesh;
 pub mod su2cfg;
 pub mod surface;
@@ -26,7 +27,9 @@ pub mod symmetry;
 pub mod table;
 pub mod tools;
 
-pub use config::{y_symmetric_layout, z_symmetric_layout, AlphaMode, BaseTreatment, CfdOptions, FlowModel, Scheme, ShapeSymmetry, StlRemesh, SurfaceKind};
+pub use config::{
+    y_symmetric_layout, z_symmetric_layout, AlphaMode, BaseTreatment, CfdOptions, FlowModel, Scheme, ShapeSymmetry, StepUnit, StlRemesh, SurfaceKind,
+};
 
 use aero::{AeroOptions, AeroTable, Extrapolation};
 use anyhow::{bail, Result};
@@ -110,8 +113,11 @@ pub struct CfdReport {
     pub warnings: Vec<String>,
     /// STL surface: geometry fidelity of the CFD wall (see [`fidelity`]).
     pub fidelity: Option<serde_json::Value>,
-    /// STL surface: mirror-symmetry check of the united surface and the domain chosen from it.
+    /// STL / STEP surface: mirror-symmetry check of the shape and the domain chosen from it.
     pub symmetry_check: Option<serde_json::Value>,
+    /// STEP surface: import, registration against the STL, details and domain ([`step_mesh::StepMeshInfo`]).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub step: Option<serde_json::Value>,
     /// The table is constant (edge value held) above this Mach number: the highest solved one, set only when the
     /// table grid extends beyond it. CFD tables are never extrapolated in Mach.
     pub mach_clamped_above: Option<f64>,
@@ -140,18 +146,18 @@ pub fn check_tools(opt: &CfdOptions) -> Result<tools::ToolReport> {
 
 /// The options with every automatic choice made.
 ///
-/// * `shape_symmetry`: `auto` becomes `none` for an STL surface; for the rebuilt geometry it is
-///   `axisymmetric` (the table is roll-averaged) unless sideslip is solved, where the fin layout decides
-///   (`axisymmetric`: symmetric about y = 0 and z = 0, `pitch_plane`: about y = 0 only, else `none`).
-///   For an STL surface it stays as configured: the symmetry is resolved from the united surface by
-///   [`stl_mesh::ensure_mesh_stl`] ([`symmetry::decide`]).
+/// * `shape_symmetry`: for the rebuilt geometry `auto` is `axisymmetric` (the table is roll-averaged) unless
+///   sideslip is solved, where the fin layout decides (`axisymmetric`: symmetric about y = 0 and z = 0,
+///   `pitch_plane`: about y = 0 only, else `none`). For an STL or STEP surface it stays as configured: the symmetry is
+///   resolved from the shape by [`stl_mesh::ensure_mesh_stl`] and [`step_mesh::ensure_mesh_step`]
+///   ([`symmetry::decide`]).
 /// * `symmetry` (the SU2 half domain) is kept only with a layout symmetric about y = 0 (rebuilt geometry), a shape
 ///   symmetry that includes y = 0, `betas_deg = [0]` and no roll cases; otherwise the full domain is solved (the
 ///   mesher mirrors the half mesh when the layout is symmetric, else it uses a box farfield).
 /// * `z_mirror_mesh` stays on only for layouts symmetric about both planes.
 pub fn resolve_options(geom: &Geometry, cfd: &CfdOptions) -> CfdOptions {
     let mut o = cfd.clone();
-    let stl = o.surface == SurfaceKind::Stl;
+    let stl = o.surface_is_user_shape();
     let (count, roll) = mesh::cad_description(geom).1.map_or((0, 0.0), |f| (f.count, cfd.fin_roll_deg));
     let (ysym, zsym) = (y_symmetric_layout(count, roll), z_symmetric_layout(count, roll));
     let sideslip = o.betas_deg.iter().any(|&b| b != 0.0);
@@ -322,8 +328,9 @@ pub fn prepare_surface(geom: &Geometry, cfd: &CfdOptions, raw: Option<&[geom::st
     }
 }
 
-/// Meshes the rebuilt geometry or the STL surface according to `cfd.surface` (`raw` in metres for the STL). Returns
-/// the mesh and the options to run with: for an STL surface the symmetry is resolved from the united surface.
+/// Meshes the rebuilt geometry, the STL surface or the CAD B-rep according to `cfd.surface` (`raw`: the STL in metres for
+/// `stl` and `step`). Returns the mesh and the options to run with: for an STL or STEP surface the symmetry is resolved
+/// from the shape.
 fn ensure_mesh_any(
     cfd: &CfdOptions,
     geom: &Geometry,
@@ -336,6 +343,14 @@ fn ensure_mesh_any(
         SurfaceKind::Stl => {
             stl_mesh::ensure_mesh_stl(cfd, geom, raw.ok_or_else(|| anyhow::anyhow!("surface = \"stl\" needs the STL triangles"))?, work, threads)
         }
+        SurfaceKind::Step => step_mesh::ensure_mesh_step(
+            cfd,
+            geom,
+            raw.ok_or_else(|| anyhow::anyhow!("surface = \"step\" needs the STL triangles (the registration reference)"))?,
+            atm,
+            work,
+            threads,
+        ),
         SurfaceKind::PanelMesh => Ok((mesh::ensure_mesh(cfd, geom, atm, work, threads)?, cfd.clone())),
     }
 }
@@ -358,7 +373,7 @@ pub fn mesh_only(
 
 /// Builds the aerodynamic table with SU2: surface, mesh, case runner, table fill.
 ///
-/// `raw` is the STL in metres, needed for `surface = "stl"`.
+/// `raw` is the STL in metres, needed for `surface = "stl"` and `surface = "step"` (the registration reference).
 #[allow(clippy::too_many_arguments)]
 pub fn build_table_with_progress(
     geom: &Geometry,
@@ -478,6 +493,12 @@ pub fn build_table_with_progress(
         }))
         .ok();
     }
+    if let Some(info) = &mesh.step {
+        report.base_treatment = Some(info.base_treatment.clone());
+        report.warnings.extend(info.warnings.clone());
+        report.symmetry_check = serde_json::to_value(&info.symmetry).ok();
+        report.step = serde_json::to_value(info).ok();
+    }
     if cfd.model == FlowModel::Rans {
         report.axial_breakdown = axial_breakdown(&results, &model);
         if report.axial_breakdown.iter().any(|e| e.cfd_wall_ca.is_some()) && markers_missing {
@@ -500,8 +521,9 @@ pub fn build_table_with_progress(
                 coeffs: r.result.as_ref().and_then(|x| x.coeffs6),
             })
             .collect();
-        // The rebuilt geometry has no fin cant, so its roll forcing is the model's: reference cant 0.
-        let cant_ref = if cfd.surface == SurfaceKind::Stl { geom.fins.as_ref().map_or(0.0, |f| f.cant_deg) } else { 0.0 };
+        // The rebuilt geometry has no fin cant, so its roll forcing is the model's: reference cant 0. The STL and the
+        // STEP contain the cant of the real fins.
+        let cant_ref = if cfd.surface_is_user_shape() { geom.fins.as_ref().map_or(0.0, |f| f.cant_deg) } else { 0.0 };
         let inp = general::GeneralInput {
             points: &points,
             roll: &roll_pairs,
@@ -514,7 +536,7 @@ pub fn build_table_with_progress(
             offset: cfd.alpha_mode == AlphaMode::Offset,
             mach_step: cfd.general_mach_step,
             fin_cant_ref_deg: cant_ref,
-            fin_edges_in_cfd: cfd.surface == SurfaceKind::Stl,
+            fin_edges_in_cfd: cfd.surface_is_user_shape(),
             base_from_cfd,
         };
         let (tab, fill) = general::build_general(&inp).map_err(first_error)?;

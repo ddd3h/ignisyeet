@@ -931,6 +931,11 @@ fn source_hash(cfg: &Config) -> Result<String> {
     // The extracted geometry (after scale, nose direction, fin override and cant) enters as well, so a change
     // of the extraction code invalidates cached tables without a MODEL_VERSION bump.
     fnv1a(&mut h, &serde_json::to_vec(&geometry(cfg)?)?);
+    if cfg.aero.method == config::AeroMethod::Cfd && cfg.aero.cfd.surface == cfd::SurfaceKind::Step {
+        // The CAD file is the CFD wall.
+        let f = cfg.cfd_options().step_file;
+        fnv1a(&mut h, &std::fs::read(&f).with_context(|| format!("cannot read the CAD file {}", f.display()))?);
+    }
     #[derive(Serialize)]
     struct Inputs<'a> {
         scale: f64,
@@ -994,6 +999,9 @@ fn run_hash(cfg: &Config, kind: RunKind) -> String {
     fnv1a(&mut h, env!("CARGO_PKG_VERSION").as_bytes());
     fnv1a(&mut h, &MODEL_VERSION.to_le_bytes());
     let mut files = vec![cfg.resolve(&cfg.rocket.stl), cfg.resolve(&cfg.motor.eng)];
+    if cfg.aero.method == config::AeroMethod::Cfd && cfg.aero.cfd.surface == cfd::SurfaceKind::Step {
+        files.push(cfg.cfd_options().step_file);
+    }
     files.extend(cfg.wind.profile.as_deref().map(|p| cfg.resolve(p)));
     if let Some(t) = cfg.aero.table.as_deref().map(|p| cfg.resolve(p)) {
         // The JSON sidecar (reference area and diameter, length, extrapolation, ...) belongs to the table.
@@ -1299,18 +1307,10 @@ fn cfd_table(cfg: &Config, g: Geometry, hash: String, path: &Path, start: std::t
         St::Done => {}
     };
     let out_dir = cfg.out_dir();
-    let raw = if cfg.aero.cfd.surface == cfd::SurfaceKind::Stl { Some(raw_stl(cfg)?) } else { None };
-    let built = cfd::build_table_with_progress(
-        &g,
-        &cfg.aero.cfd,
-        &aero_options(cfg)?,
-        &out_dir,
-        hash,
-        cfg.aero.extrapolation,
-        &cfd_budget(cfg),
-        raw.as_deref(),
-        &progress,
-    );
+    let opt = cfg.cfd_options();
+    let raw = if opt.surface_is_user_shape() { Some(raw_stl(cfg)?) } else { None };
+    let built =
+        cfd::build_table_with_progress(&g, &opt, &aero_options(cfg)?, &out_dir, hash, cfg.aero.extrapolation, &cfd_budget(cfg), raw.as_deref(), &progress);
     pb.finish_and_clear();
     let (mut table, report) = built?;
     fill_lag_terms(cfg, &g, &mut table)?;
@@ -1359,10 +1359,11 @@ fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
     }
     if r.ready(opt) {
         let n = cfd::case::case_list(opt).len();
-        if opt.surface == cfd::SurfaceKind::Stl && matches!(opt.shape_symmetry, None | Some(cfd::config::ShapeSymmetry::Auto)) {
-            // The mirror symmetry of an STL is only known after the union (`--mesh`); without it the count is the
-            // full-domain upper bound.
-            println!("CFD mode is ready (up to {n} cases for model {:?}; mirror symmetry of the STL reduces this, see --mesh).", opt.model);
+        if opt.surface_is_user_shape() && matches!(opt.shape_symmetry, None | Some(cfd::config::ShapeSymmetry::Auto)) {
+            // The mirror symmetry of an STL or STEP shape is only known after its check (`--mesh`); without it the count
+            // is the full-domain upper bound.
+            let what = if opt.surface == cfd::SurfaceKind::Step { "the STEP shape" } else { "the STL" };
+            println!("CFD mode is ready (up to {n} cases for model {:?}; mirror symmetry of {what} reduces this, see --mesh).", opt.model);
         } else {
             println!("CFD mode is ready ({n} cases for model {:?}).", opt.model);
         }
@@ -1372,9 +1373,9 @@ fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
     }
     if mesh {
         let g = geometry(cfg)?;
-        let raw = if opt.surface == cfd::SurfaceKind::Stl { Some(raw_stl(cfg)?) } else { None };
+        let raw = if opt.surface_is_user_shape() { Some(raw_stl(cfg)?) } else { None };
         let t = std::time::Instant::now();
-        let m = cfd::mesh_only(&g, opt, &aero_options(cfg)?, &cfg.out_dir(), &cfd_budget(cfg), raw.as_deref())?;
+        let m = cfd::mesh_only(&g, &cfg.cfd_options(), &aero_options(cfg)?, &cfg.out_dir(), &cfd_budget(cfg), raw.as_deref())?;
         let s = &m.stats;
         println!(
             "Mesh {} ({}): {} nodes, {} cells, {} wall triangles, {:.1?}",
@@ -1399,6 +1400,10 @@ fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
         if let Some(info) = &m.stl {
             println!("STL geometry fidelity (base treatment: {}):", info.base_treatment);
             println!("{}", info.fidelity.summary());
+        }
+        if let Some(info) = &m.step {
+            println!("CAD surface (surface = \"step\", base treatment: {}):", info.base_treatment);
+            println!("{}", info.summary());
         }
     }
     Ok(())
@@ -2925,6 +2930,26 @@ mod tests {
         let b = load(&text.replace("threads = 0 ", "threads = 1 ").replace("memory_gb = 0 ", "memory_gb = 4 ").replace("nice = 0 ", "nice = 5 "));
         assert_eq!((b.resources.threads, b.resources.nice), (1, 5));
         assert_eq!(source_hash(&a).unwrap(), source_hash(&b).unwrap());
+    }
+
+    #[test]
+    fn step_file_bytes_are_part_of_the_cache_keys() {
+        // Two copies of the sample STEP that differ in one byte of the header give different keys.
+        let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+        let dir = std::env::temp_dir().join(format!("ignisyeet_step_hash_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let step = std::fs::read_to_string(examples.join("sample_rocket.step")).unwrap();
+        std::fs::write(dir.join("a.step"), &step).unwrap();
+        std::fs::write(dir.join("b.step"), step.replacen("Open CASCADE Model", "Open CASCADE Modex", 1)).unwrap();
+        let text = include_str!("../../../examples/sample_step.toml");
+        let load = |f: &str| {
+            let t = text.replace("step_file = \"sample_rocket.step\"", &format!("step_file = \"{}\"", dir.join(f).display()));
+            Config::from_value(toml::from_str(&t).unwrap(), Some(&examples)).unwrap()
+        };
+        let (a, b) = (load("a.step"), load("b.step"));
+        assert_ne!(source_hash(&a).unwrap(), source_hash(&b).unwrap());
+        assert_ne!(run_hash(&a, RunKind::Flight), run_hash(&b, RunKind::Flight));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn load_sample(text: &str) -> Config {

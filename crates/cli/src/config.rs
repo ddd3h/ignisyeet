@@ -770,6 +770,16 @@ impl Config {
         }
         if self.aero.method == AeroMethod::Cfd {
             self.aero.cfd.validate()?;
+            if self.aero.cfd.surface == cfd::config::SurfaceKind::Step {
+                let f = self.resolve(&self.aero.cfd.step_file);
+                if !f.is_file() {
+                    bail!(
+                        "aero.cfd.step_file = \"{}\": no such file ({}; a relative path is relative to the configuration file)",
+                        self.aero.cfd.step_file.display(),
+                        f.display()
+                    );
+                }
+            }
         }
         self.atmosphere.build()?;
         if self.earth.model == sim::EarthModel::Flat && self.earth.gravity == sim::GravityModel::J2 {
@@ -843,6 +853,15 @@ impl Config {
         } else {
             self.base_dir.join(p)
         }
+    }
+
+    /// `[aero.cfd]` with `step_file` resolved against the configuration directory (what the CFD mode is given).
+    pub fn cfd_options(&self) -> cfd::CfdOptions {
+        let mut o = self.aero.cfd.clone();
+        if !o.step_file.as_os_str().is_empty() {
+            o.step_file = self.resolve(&o.step_file);
+        }
+        o
     }
 
     pub fn out_dir(&self) -> PathBuf {
@@ -1396,6 +1415,32 @@ mod tests {
         assert!(sample_set(&["wind..speed=1"]).unwrap_err().to_string().contains("invalid key"));
         let e = sample_set(&["wind.model.x=1"]).unwrap_err().to_string();
         assert!(e.contains("wind.model is not a table"), "{e}");
+    }
+
+    #[test]
+    fn step_sample_resolves_the_cad_file_next_to_the_config() {
+        let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+        let c = Config::load_with(&examples.join("sample_step.toml"), &Overrides::default()).unwrap();
+        assert_eq!(c.aero.cfd.surface, cfd::SurfaceKind::Step);
+        // The configuration keeps the relative path; the CFD mode gets it resolved against the configuration directory.
+        assert_eq!(c.aero.cfd.step_file, std::path::PathBuf::from("sample_rocket.step"));
+        assert_eq!(c.cfd_options().step_file, examples.join("sample_rocket.step"));
+        assert!(c.cfd_options().step_file.is_file());
+        // A missing file is an error at load time that names the key and the resolved path.
+        let dir = std::env::temp_dir().join(format!("ignisyeet_cfg_step_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let text = std::fs::read_to_string(examples.join("sample_step.toml")).unwrap();
+        std::fs::write(dir.join("c.toml"), &text).unwrap();
+        let e = format!("{:#}", Config::load_with(&dir.join("c.toml"), &Overrides::default()).unwrap_err());
+        assert!(
+            e.contains("aero.cfd.step_file = \"sample_rocket.step\": no such file") && e.contains(&dir.join("sample_rocket.step").display().to_string()),
+            "{e}"
+        );
+        // Not a CAD format.
+        std::fs::write(dir.join("c.toml"), text.replace("step_file = \"sample_rocket.step\"", "step_file = \"rocket.stl\"")).unwrap();
+        let e = format!("{:#}", Config::load_with(&dir.join("c.toml"), &Overrides::default()).unwrap_err());
+        assert!(e.contains("not a CAD file OpenCASCADE reads"), "{e}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

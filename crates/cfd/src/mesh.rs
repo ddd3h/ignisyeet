@@ -415,6 +415,8 @@ pub struct MeshResult {
     pub cached: bool,
     /// `surface = "stl"`: repair, union and geometry fidelity of the wall.
     pub stl: Option<crate::stl_mesh::StlMeshInfo>,
+    /// `surface = "step"`: import, registration against the STL, symmetry and domain.
+    pub step: Option<crate::step_mesh::StepMeshInfo>,
 }
 
 /// Hash of the geometry description, every setting that changes the mesh and the script itself.
@@ -495,7 +497,7 @@ pub fn ensure_mesh(opt: &CfdOptions, geom: &Geometry, atm: &Atmosphere, workdir:
     let stamp_path = dir.join("mesh.json");
     if let Some(st) = std::fs::read_to_string(&stamp_path).ok().and_then(|t| serde_json::from_str::<Stamp>(&t).ok()) {
         if st.hash == hash && su2.exists() {
-            return Ok(MeshResult { su2, hash, stats: st.stats, cached: true, stl: None });
+            return Ok(MeshResult { su2, hash, stats: st.stats, cached: true, stl: None, step: None });
         }
     }
     let _ = std::fs::remove_file(&stamp_path);
@@ -524,7 +526,7 @@ pub fn ensure_mesh(opt: &CfdOptions, geom: &Geometry, atm: &Atmosphere, workdir:
     }
     let stats: MeshStats = serde_json::from_str(&std::fs::read_to_string(&params.stats_json)?).context("bad mesh_stats.json")?;
     std::fs::write(&stamp_path, serde_json::to_string(&Stamp { hash: hash.clone(), stats: stats.clone() })?)?;
-    Ok(MeshResult { su2, hash, stats, cached: false, stl: None })
+    Ok(MeshResult { su2, hash, stats, cached: false, stl: None, step: None })
 }
 
 #[cfg(test)]

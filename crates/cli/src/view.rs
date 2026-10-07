@@ -212,14 +212,13 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
         }
         if a.method == AeroMethod::Cfd {
             let c = &a.cfd;
+            let surface = match c.surface {
+                cfd::SurfaceKind::Step => format!("step ({})", c.step_file.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default()),
+                _ => name(&c.surface),
+            };
             p.row(
                 "cfd",
-                format!(
-                    "{}{s}surface {}{s}{}",
-                    style(name(&c.model)).bold(),
-                    style(name(&c.surface)).bold(),
-                    if c.symmetry { "half model" } else { "full model" }
-                ),
+                format!("{}{s}surface {}{s}{}", style(name(&c.model)).bold(), style(surface).bold(), if c.symmetry { "half model" } else { "full model" }),
             );
             let ms: Vec<String> = c.machs.iter().map(|m| format!("{m}")).collect();
             let al: Vec<String> = c.alphas_deg.iter().map(|m| format!("{m}")).collect();

@@ -24,12 +24,17 @@ FLIP = {
 TO_SU2 = {TET: [0, 1, 2, 3], PRISM: [0, 2, 1, 3, 5, 4], PYRAMID: [0, 1, 2, 3, 4]}
 
 
+CHUNK = 500000  # cells per vectorised block (bounds the temporary memory at about 100 MB)
+
+
 def _det(a, b, c):
     return np.einsum("ij,ij->i", np.cross(a, b), c)
 
 
 def signed_volume(kind, xyz, conn):
     """Signed volume of the cells `conn` (gmsh node order, indices into `xyz`); positive = gmsh orientation."""
+    if len(conn) > CHUNK:
+        return np.concatenate([signed_volume(kind, xyz, conn[i:i + CHUNK]) for i in range(0, len(conn), CHUNK)])
     p = [xyz[conn[:, k]] for k in range(conn.shape[1])]
     if kind == TET:
         return _det(p[1] - p[0], p[2] - p[0], p[3] - p[0]) / 6.0
@@ -44,6 +49,8 @@ def signed_volume(kind, xyz, conn):
 
 def prism_corner_jacobians(xyz, conn):
     """Corner Jacobians (6 per prism, gmsh order): all positive for a valid gmsh-oriented prism."""
+    if len(conn) > CHUNK:
+        return np.concatenate([prism_corner_jacobians(xyz, conn[i:i + CHUNK]) for i in range(0, len(conn), CHUNK)])
     p = [xyz[conn[:, k]] for k in range(6)]
     out = []
     for (a, b, c, up) in ((0, 1, 2, 3), (1, 2, 0, 4), (2, 0, 1, 5)):
@@ -88,12 +95,14 @@ def unmarked_faces(cells, markers):
     missing = extra = 0
     for kind, slot in ((TRI, 0), (QUAD, 1)):
         n = NODES[kind]
-        allf = [np.sort(c[:, f], axis=1) for k, c in cells.items() for f in CELL_FACES[k][slot]]
-        allf = np.vstack(allf) if allf else np.zeros((0, n), np.int64)
+        # int32 node numbers: half the memory of the face lists (millions of faces on the finer meshes).
+        allf = [np.sort(c[:, f].astype(np.int32), axis=1) for k, c in cells.items() for f in CELL_FACES[k][slot]]
+        allf = np.vstack(allf) if allf else np.zeros((0, n), np.int32)
         u, cnt = np.unique(allf, axis=0, return_counts=True)
         bnd = u[cnt == 1]
-        mk = [np.sort(c, axis=1) for _, faces in markers for k, c in faces if k == kind and len(c)]
-        mk = np.unique(np.vstack(mk), axis=0) if mk else np.zeros((0, n), np.int64)
+        del allf
+        mk = [np.sort(c.astype(np.int32), axis=1) for _, faces in markers for k, c in faces if k == kind and len(c)]
+        mk = np.unique(np.vstack(mk), axis=0) if mk else np.zeros((0, n), np.int32)
         both = np.unique(np.vstack([bnd, mk]), axis=0, return_counts=True)[1]
         common = int((both == 2).sum())
         missing += len(bnd) - common

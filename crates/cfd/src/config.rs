@@ -256,6 +256,15 @@ fn unset_count() -> usize {
 fn unset_size() -> f64 {
     f64::NAN
 }
+/// An explicit size must be finite: NaN is the placeholder of "not set" and must not be written in the file.
+fn finite_size<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<f64, D::Error> {
+    let v = f64::deserialize(d)?;
+    if v.is_finite() {
+        Ok(v)
+    } else {
+        Err(serde::de::Error::custom(format!("wall_size = {v} is not a finite length; leave it out to use the default of the model")))
+    }
+}
 
 fn is_default_min_iterations(v: &usize) -> bool {
     *v == DEFAULT_MIN_ITERATIONS
@@ -340,7 +349,7 @@ pub struct CfdOptions {
     /// default `fin_size` (1 mm on the 4 mm fins; 0.9 M with the fins at 2 mm too) and a normal force within 0.1 % of
     /// the 1.8 mm mesh (mesh study with the fins at 1 mm, doc/data/cfd/mesh_convergence.csv).
     /// RANS default: 5 mm.
-    #[serde(default = "unset_size")]
+    #[serde(default = "unset_size", deserialize_with = "finite_size")]
     pub wall_size: f64,
     /// Surface element size on the fin faces [m], see [`FinSize`] and [`CfdOptions::fin_size_for`]. Euler on fins
     /// meshed at `wall_size` (thicker than the fin) carries a spurious steady fin lift at subsonic Mach numbers

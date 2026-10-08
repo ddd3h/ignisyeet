@@ -935,6 +935,17 @@ mod tests {
     }
 
     #[test]
+    fn cfd_wall_size_nan_is_rejected_not_read_as_unset() {
+        let sample = include_str!("../../../examples/sample.toml");
+        let with = |v: &str| parse(&format!("{sample}\n[aero.cfd]\nwall_size = {v}\n"));
+        for bad in ["nan", "inf", "-inf"] {
+            let e = format!("{:#}", with(bad).err().unwrap_or_else(|| panic!("wall_size = {bad} was accepted")));
+            assert!(e.contains("wall_size") && e.contains("finite"), "{e}");
+        }
+        assert_eq!(with("0.003").unwrap().aero.cfd.wall_size, 0.003);
+    }
+
+    #[test]
     fn monte_carlo_truncation_key() {
         let sample = include_str!("../../../examples/sample.toml");
         assert_eq!(parse(sample).unwrap().dispersion.monte_carlo.truncate_sigma, None);

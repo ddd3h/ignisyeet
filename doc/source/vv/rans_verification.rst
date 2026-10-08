@@ -118,6 +118,8 @@ NASA Turbulence Modeling Resource（TMR）の 2 次元の平板（2DZP）の格�
 
 どちらの Mach 数も、格子を細かくすると :math:`c_f` は単調に変わり、変化は 0.3 % 以内である。:math:`M=0.2` の値は、局所の Kármán–Schoenherr の式とも :math:`-0.63` % で一致する。
 
+平板の摩擦係数と局所 Reynolds 数の関係を :numref:`fig-rans-flatplate` に示す。
+
 .. _fig-rans-flatplate:
 
 .. figure:: /_generated/plots/rans_flatplate.*
@@ -268,6 +270,8 @@ NASA Turbulence Modeling Resource（TMR）の 2 次元の平板（2DZP）の格�
 どの量も単調に収束し、GCI は基準（:math:`C_N` 3 %、:math:`C_A` 5 %、:math:`x_{cp}` 10 mm）を満たす。見かけの次数（2.2〜6.3）は、2 次精度の方法の理論値 2 より大きいものが多い。3 段の差から求めた次数は格子の比が小さいと大きくぶれるので、GCI は目安として扱う。
 既定の 5 mm の :math:`C_N`\ （:ref:`sec-cfd-rans-table`）は、外挿値より :math:`M=0.8` で 1.6 %、:math:`M=2` で 1.0 % 大きい。
 
+メッシュ収束の様子を :numref:`fig-rans-mesh-study` に示す。
+
 .. _fig-rans-mesh-study:
 
 .. figure:: /_generated/plots/rans_mesh_study.*
@@ -413,6 +417,8 @@ Euler の表（設定の粗さ 60 μm の摩擦とフィンの縁の項を含む
 
 再計算した RANS の軸力は、Euler の表に対して :math:`M=0.3` で 8〜16 %、:math:`M=0.8` で 3〜8 %、:math:`M=1.2` で 1〜4 % 大きく、:math:`M=2` では :math:`-1`〜:math:`+1` % である（:math:`\alpha=0,4,8^\circ` の範囲）。差は Mach 数が低いほど大きく、どの Mach 数でも迎角とともに小さくなる。
 これは二つのモデルの相互比較で、差の原因は切り分けていない。Euler の側には、亜音速の圧力の軸力が非粘性の理論値 0 より小さくなる性質がある（:math:`M=0.3` で :math:`-0.03`〜:math:`-0.05`。:ref:`sec-lim-cfd`）。
+
+RANS と Euler の係数表の比較を :numref:`fig-rans-vs-euler` に示す。
 
 .. _fig-rans-vs-euler:
 

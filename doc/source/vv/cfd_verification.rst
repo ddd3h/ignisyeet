@@ -157,6 +157,8 @@ CFD（Euler）の検証
      - 0.7962
      -
 
+非対称メッシュで残る :math:`\alpha=0` のずれを :numref:`fig-cfd-asym` に示す。
+
 .. _fig-cfd-asym:
 
 .. figure:: /_generated/plots/cfd_asymmetry.*
@@ -460,6 +462,8 @@ RANS では、フィンの面を細かくする理由がない（原因がフィ
      - 0.9360
      - 0
      - 1.1576
+
+メッシュの大きさによる :math:`C_N` の変化を :numref:`fig-cfd-conv` に示す。
 
 .. _fig-cfd-conv:
 

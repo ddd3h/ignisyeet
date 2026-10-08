@@ -171,7 +171,7 @@ impl<'de> Deserialize<'de> for FinSize {
         match Raw::deserialize(d)? {
             Raw::Num(v) => Ok(FinSize::Size(v)),
             Raw::Text(t) if t == "auto" => Ok(FinSize::Auto),
-            Raw::Text(t) => Err(serde::de::Error::custom(format!("fin_size must be \"auto\" or a size in metres, got \"{t}\""))),
+            Raw::Text(t) => Err(serde::de::Error::custom(format!("[IY-C136] fin_size must be \"auto\" or a size in metres, got \"{t}\""))),
         }
     }
 }
@@ -262,7 +262,7 @@ fn finite_size<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<f6
     if v.is_finite() {
         Ok(v)
     } else {
-        Err(serde::de::Error::custom(format!("wall_size = {v} is not a finite length; leave it out to use the default of the model")))
+        Err(serde::de::Error::custom(format!("[IY-C137] wall_size = {v} is not a finite length; leave it out to use the default of the model")))
     }
 }
 
@@ -557,60 +557,60 @@ impl CfdOptions {
 
     pub fn validate(&self) -> Result<()> {
         if self.machs.is_empty() || self.machs.iter().any(|&m| !(m.is_finite() && m > 0.0)) {
-            bail!("aero.cfd.machs must be a non-empty list of positive Mach numbers");
+            bail!("[IY-C100] aero.cfd.machs must be a non-empty list of positive Mach numbers");
         }
         if !strictly_increasing(&self.machs) {
-            bail!("aero.cfd.machs must be sorted in increasing order without duplicates");
+            bail!("[IY-C101] aero.cfd.machs must be sorted in increasing order without duplicates");
         }
         if self.alphas_deg.is_empty() || self.alphas_deg.iter().any(|&a| !(a.is_finite() && a >= 0.0)) {
-            bail!("aero.cfd.alphas_deg must be a non-empty list of angles >= 0");
+            bail!("[IY-C102] aero.cfd.alphas_deg must be a non-empty list of angles >= 0");
         }
         if !strictly_increasing(&self.alphas_deg) {
-            bail!("aero.cfd.alphas_deg must be sorted in increasing order without duplicates");
+            bail!("[IY-C103] aero.cfd.alphas_deg must be sorted in increasing order without duplicates");
         }
         if self.alphas_deg[0] != 0.0 {
-            bail!("aero.cfd.alphas_deg must include 0 (the zero-lift axial force and the small-angle slopes)");
+            bail!("[IY-C104] aero.cfd.alphas_deg must include 0 (the zero-lift axial force and the small-angle slopes)");
         }
         if self.alphas_deg.len() < 2 {
-            bail!("aero.cfd.alphas_deg needs at least one angle above 0");
+            bail!("[IY-C105] aero.cfd.alphas_deg needs at least one angle above 0");
         }
         for (name, v) in [("farfield", self.farfield), ("wall_size", self.wall_size), ("yplus", self.yplus), ("cfl", self.cfl)] {
             if !(v.is_finite() && v > 0.0) {
-                bail!("aero.cfd.{name} must be positive");
+                bail!("[IY-C106] aero.cfd.{name} must be positive");
             }
         }
         if let FinSize::Size(v) = self.fin_size {
             if !(v.is_finite() && v > 0.0) {
-                bail!("aero.cfd.fin_size must be \"auto\" or a positive size in metres");
+                bail!("[IY-C107] aero.cfd.fin_size must be \"auto\" or a positive size in metres");
             }
             if v > self.wall_size {
-                bail!("aero.cfd.fin_size = {v} is larger than wall_size = {}: the fin faces are never meshed coarser than the wall", self.wall_size);
+                bail!("[IY-C108] aero.cfd.fin_size = {v} is larger than wall_size = {}: the fin faces are never meshed coarser than the wall", self.wall_size);
             }
             if v < self.wall_size / 50.0 {
-                bail!("aero.cfd.fin_size = {v} is below wall_size / 50 = {}: the mesh would be impractically large", self.wall_size / 50.0);
+                bail!("[IY-C109] aero.cfd.fin_size = {v} is below wall_size / 50 = {}: the mesh would be impractically large", self.wall_size / 50.0);
             }
         }
         if self.betas_deg.is_empty() || self.betas_deg.iter().any(|&b| !(b.is_finite() && (0.0..=90.0).contains(&b))) {
-            bail!("aero.cfd.betas_deg must be a non-empty list of sideslip angles in [0, 90] deg");
+            bail!("[IY-C110] aero.cfd.betas_deg must be a non-empty list of sideslip angles in [0, 90] deg");
         }
         if !strictly_increasing(&self.betas_deg) {
-            bail!("aero.cfd.betas_deg must be sorted in increasing order without duplicates");
+            bail!("[IY-C111] aero.cfd.betas_deg must be sorted in increasing order without duplicates");
         }
         if self.betas_deg[0] != 0.0 {
-            bail!("aero.cfd.betas_deg must start with 0");
+            bail!("[IY-C112] aero.cfd.betas_deg must start with 0");
         }
         if !(self.roll_rate_hat.is_finite() && self.roll_rate_hat > 0.0 && self.roll_rate_hat <= 0.05) {
-            bail!("aero.cfd.roll_rate_hat must be in (0, 0.05] (p d / 2V of the roll-damping runs)");
+            bail!("[IY-C113] aero.cfd.roll_rate_hat must be in (0, 0.05] (p d / 2V of the roll-damping runs)");
         }
         if !(self.general_mach_step.is_finite() && self.general_mach_step >= 0.0) {
-            bail!("aero.cfd.general_mach_step must be >= 0 (0 = the [aero] mach_step)");
+            bail!("[IY-C114] aero.cfd.general_mach_step must be >= 0 (0 = the [aero] mach_step)");
         }
         if self.max_geometry_error.is_some_and(|e| !(e.is_finite() && e > 0.0)) {
-            bail!("aero.cfd.max_geometry_error must be positive");
+            bail!("[IY-C115] aero.cfd.max_geometry_error must be positive");
         }
         if self.surface == SurfaceKind::Stl && self.model == FlowModel::Euler && self.base_treatment.is_none() {
             bail!(
-                "aero.cfd.surface = \"stl\" with model = \"euler\" needs base_treatment: the inviscid flow behind a flat base does not converge \
+                "[IY-C116] aero.cfd.surface = \"stl\" with model = \"euler\" needs base_treatment: the inviscid flow behind a flat base does not converge \
                  (the residual stalls and the normal force flips sign).\n  \
                  base_treatment = \"fairing\": a closed cone (tail_fairing x base radius long) is united with the body behind the base; \
                  this MODIFIES the input STL and the base drag comes from the empirical base term.\n  \
@@ -620,18 +620,18 @@ impl CfdOptions {
         }
         if self.surface == SurfaceKind::Step {
             if self.step_file.as_os_str().is_empty() {
-                bail!("aero.cfd.surface = \"step\" needs step_file = \"<path>\" (the CAD model as STEP, IGES or BREP, relative to the configuration file)");
+                bail!("[IY-C117] aero.cfd.surface = \"step\" needs step_file = \"<path>\" (the CAD model as STEP, IGES or BREP, relative to the configuration file)");
             }
             let ext = self.step_file.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase).unwrap_or_default();
             if !STEP_EXTENSIONS.contains(&ext.as_str()) {
                 bail!(
-                    "aero.cfd.step_file = \"{}\": not a CAD file OpenCASCADE reads; use a STEP (.step, .stp), IGES (.iges, .igs) or BREP (.brep, .brp) file",
+                    "[IY-C118] aero.cfd.step_file = \"{}\": not a CAD file OpenCASCADE reads; use a STEP (.step, .stp), IGES (.iges, .igs) or BREP (.brep, .brp) file",
                     self.step_file.display()
                 );
             }
             if self.model == FlowModel::Euler && self.base_treatment.is_none() {
                 bail!(
-                    "aero.cfd.surface = \"step\" with model = \"euler\" needs base_treatment: the inviscid flow behind a flat base does not converge \
+                    "[IY-C119] aero.cfd.surface = \"step\" with model = \"euler\" needs base_treatment: the inviscid flow behind a flat base does not converge \
                      (the residual stalls and the normal force flips sign).\n  \
                      base_treatment = \"fairing\": an exact cone (tail_fairing x base radius long) is fused with the CAD solid behind its flat base; \
                      this MODIFIES the CAD shape and the base drag comes from the empirical base term.\n  \
@@ -640,63 +640,63 @@ impl CfdOptions {
                 );
             }
         } else if !self.step_file.as_os_str().is_empty() || self.step_unit != StepUnit::Auto {
-            bail!("aero.cfd.step_file and aero.cfd.step_unit are only used with surface = \"step\"");
+            bail!("[IY-C120] aero.cfd.step_file and aero.cfd.step_unit are only used with surface = \"step\"");
         }
         if self.base_treatment == Some(BaseTreatment::Fairing)
             && matches!(self.surface, SurfaceKind::Stl | SurfaceKind::Step)
             && self.model == FlowModel::Euler
             && self.tail_fairing <= 0.0
         {
-            bail!("aero.cfd.base_treatment = \"fairing\" needs tail_fairing > 0 (cone length in base radii)");
+            bail!("[IY-C121] aero.cfd.base_treatment = \"fairing\" needs tail_fairing > 0 (cone length in base radii)");
         }
         if self.surface == SurfaceKind::Stl && self.model == FlowModel::Rans {
             bail!(
-                "aero.cfd.surface = \"stl\" with model = \"rans\": RANS needs the boundary-layer mesh, which is built only for the CAD surface \
+                "[IY-C122] aero.cfd.surface = \"stl\" with model = \"rans\": RANS needs the boundary-layer mesh, which is built only for the CAD surface \
                  (surface = \"cad\") and the CAD B-rep (surface = \"step\")"
             );
         }
         if self.model == FlowModel::Rans && !(self.yplus <= RANS_YPLUS_RESOLVED_MAX || RANS_YPLUS_WALL_FUNCTION.contains(&self.yplus)) {
             bail!(
-                "aero.cfd.yplus = {} lies in the buffer layer, where neither a resolved wall nor a wall function is valid: \
+                "[IY-C123] aero.cfd.yplus = {} lies in the buffer layer, where neither a resolved wall nor a wall function is valid: \
                  use yplus <= 5 (resolved wall, recommended 1) or 30..150 (standard wall function)",
                 self.yplus
             );
         }
         if self.rans_base == RansBase::Cfd && self.model != FlowModel::Rans {
-            bail!("aero.cfd.rans_base = \"cfd\" needs model = \"rans\" (the inviscid base pressure is not used)");
+            bail!("[IY-C124] aero.cfd.rans_base = \"cfd\" needs model = \"rans\" (the inviscid base pressure is not used)");
         }
         if self.roll_damping && self.model == FlowModel::Rans {
-            bail!("aero.cfd.roll_damping is only implemented for model = \"euler\"");
+            bail!("[IY-C125] aero.cfd.roll_damping is only implemented for model = \"euler\"");
         }
         if !(self.fin_roll_deg.is_finite() && self.fin_roll_deg.abs() <= 360.0) {
-            bail!("aero.cfd.fin_roll_deg must be a finite angle");
+            bail!("[IY-C126] aero.cfd.fin_roll_deg must be a finite angle");
         }
         if !(self.tail_fairing.is_finite() && self.tail_fairing >= 0.0) {
-            bail!("aero.cfd.tail_fairing must be >= 0");
+            bail!("[IY-C127] aero.cfd.tail_fairing must be >= 0");
         }
         if self.farfield < 5.0 {
-            bail!("aero.cfd.farfield must be at least 5 body lengths");
+            bail!("[IY-C128] aero.cfd.farfield must be at least 5 body lengths");
         }
         if !(self.convergence > 0.0 && self.convergence < 1.0) {
-            bail!("aero.cfd.convergence must be in (0, 1), e.g. 1e-6");
+            bail!("[IY-C129] aero.cfd.convergence must be in (0, 1), e.g. 1e-6");
         }
         if self.iterations == 0 {
-            bail!("aero.cfd.iterations must be at least 1");
+            bail!("[IY-C130] aero.cfd.iterations must be at least 1");
         }
         if self.multigrid.is_some_and(|m| m > 4) {
-            bail!("aero.cfd.multigrid must be in 0..=4 (agglomeration multigrid levels)");
+            bail!("[IY-C131] aero.cfd.multigrid must be in 0..=4 (agglomeration multigrid levels)");
         }
         if self.stable_window < 10 {
-            bail!("aero.cfd.stable_window must be at least 10 iterations");
+            bail!("[IY-C132] aero.cfd.stable_window must be at least 10 iterations");
         }
         if self.min_iterations < self.stable_window {
-            bail!("aero.cfd.min_iterations ({}) must not be smaller than stable_window ({})", self.min_iterations, self.stable_window);
+            bail!("[IY-C133] aero.cfd.min_iterations ({}) must not be smaller than stable_window ({})", self.min_iterations, self.stable_window);
         }
         if !(self.timeout_minutes.is_finite() && self.timeout_minutes >= 0.0) {
-            bail!("aero.cfd.timeout_minutes must be >= 0");
+            bail!("[IY-C134] aero.cfd.timeout_minutes must be >= 0");
         }
         if self.su2.trim().is_empty() {
-            bail!("aero.cfd.su2 must name the SU2_CFD executable");
+            bail!("[IY-C135] aero.cfd.su2 must name the SU2_CFD executable");
         }
         Ok(())
     }
@@ -710,11 +710,11 @@ impl CfdOptions {
         let mut w = Vec::new();
         let need = self.ranks_per_case * self.parallel_cases;
         if self.ranks_per_case > 0 && self.parallel_cases > 0 && need > available {
-            w.push(format!("aero.cfd: ranks_per_case x parallel_cases = {need} exceeds the {available} available cores; cases will be slowed down"));
+            w.push(format!("[IY-C510] aero.cfd: ranks_per_case x parallel_cases = {need} exceeds the {available} available cores; cases will be slowed down"));
         }
         if self.model == FlowModel::Rans && self.wall_size < RANS_FINE_WALL_SIZE {
             w.push(format!(
-                "aero.cfd: model = \"rans\" with wall_size = {} m, finer than the RANS default {RANS_DEFAULT_WALL_SIZE} m: a half-model case of the \
+                "[IY-C511] aero.cfd: model = \"rans\" with wall_size = {} m, finer than the RANS default {RANS_DEFAULT_WALL_SIZE} m: a half-model case of the \
                  sample rocket needs about 7.5 GB at 5 mm and 19 GB at 3 mm, and more on a finer mesh; check the estimate with \
                  `ignisyeet cfd-check <config> --mesh` (an explicit wall_size overrides the RANS default)",
                 self.wall_size
@@ -722,7 +722,7 @@ impl CfdOptions {
         }
         if self.wall_function() {
             w.push(format!(
-                "aero.cfd: yplus = {} selects the standard wall function (30..150), which is not verified (the RANS verification uses \
+                "[IY-C512] aero.cfd: yplus = {} selects the standard wall function (30..150), which is not verified (the RANS verification uses \
                  a resolved wall, yplus = 1); use yplus <= 5 unless you check the results yourself",
                 self.yplus
             ));
@@ -1038,5 +1038,18 @@ mod tests {
         let e = CfdOptions { rans_base: RansBase::Cfd, ..Default::default() }.validate().unwrap_err().to_string();
         assert!(e.contains("rans_base"), "{e}");
         assert!(serde_json::from_str::<CfdOptions>(r#"{"rans_base":"wake"}"#).is_err());
+    }
+
+    #[test]
+    fn validation_errors_and_warnings_start_with_their_code() {
+        let err = |o: CfdOptions| o.validate().unwrap_err().to_string();
+        assert!(err(CfdOptions { machs: vec![], ..Default::default() }).starts_with("[IY-C100] aero.cfd.machs"));
+        assert!(err(CfdOptions { farfield: 3.0, ..Default::default() }).starts_with("[IY-C128] aero.cfd.farfield"));
+        assert!(err(CfdOptions { iterations: 0, ..Default::default() }).starts_with("[IY-C130] "));
+        assert!(err(CfdOptions { su2: " ".into(), ..Default::default() }).starts_with("[IY-C135] "));
+        let w = CfdOptions { yplus: 50.0, ..CfdOptions::rans() }.warnings_for(64);
+        assert!(w.len() == 1 && w[0].starts_with("[IY-C512] aero.cfd: yplus"), "{w:?}");
+        let w = CfdOptions { ranks_per_case: 8, parallel_cases: 8, ..Default::default() }.warnings_for(4);
+        assert!(w[0].starts_with("[IY-C510] "), "{w:?}");
     }
 }

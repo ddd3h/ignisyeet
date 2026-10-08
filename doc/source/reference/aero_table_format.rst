@@ -281,7 +281,7 @@ Mach 数の刻みは、作り方で異なる。
 形状を抽出できないときは遅れの和を 0 のまま飛ばし、``the external aero table has no lag/Magnus columns and the geometry is unavailable: the flight has no apparent-mass (lag) terms, Magnus force or induced roll`` の警告を出す。
 どちらの場合も Magnus 力とモーメント、誘導ロールは 0 で、回転による法線力（減衰の和から求める。:eq:`eq-cnq-force`）は働く。
 
-**実測や CFD のピッチ減衰を使う表**：強制振動の風洞試験や CFD、実射の同定で得たピッチ減衰 :math:`C_{mq}+C_{m\dot\alpha}` は、局所的な迎角の項だけでなく、見かけの質量の遅れと対流の回転の項（:eq:`eq-lag-section`）をすでに含む。
+**実測や CFD のピッチ減衰を使う表**：強制振動の風洞試験や CFD、実射の同定で得たピッチ減衰 :math:`C_{mq}+C_{m\dot\alpha}` は、局所的な迎角の項だけでなく、見かけの質量の遅れと対流の回転の項（:eq:`eq-lag-dyn-section`）をすでに含む。
 この値を使う表では ``lag_l0`` と ``lag_l1`` を 0 にし、減衰を減衰の和に入れる。
 0 は列を持つ形式（バージョン 3 以降）に明示して書く。明示した 0 の列は補わないが、列のない形式では形状から遅れの和が補われ、見かけの質量の項を二重に数える（そのときの警告はこの点を示す）。
 基準の重心 :math:`x_{\mathrm{ref}}` で測った :math:`C_{mq}+C_{m\dot\alpha}`\ （:math:`qd/(2V)` あたり）から、重心まわりの和 :math:`K=-(C_{mq}+C_{m\dot\alpha})\,d^2/4` を作り、

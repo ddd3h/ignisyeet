@@ -244,8 +244,6 @@
 切るときは、公称の頂点のすぐ上ではなく、格子とモンテカルロ解析で予想される最も高い頂点（たとえば公称の頂点 + 3σ）より上まで残す（:ref:`sec-wind-profile`）。:math:`W` は ``ignisyeet sim`` の ``summary.json`` の ``wind_speed`` に出る。
 平均風速がほぼ 0 の表はこの拡大ができないので、エラーにする。
 
-.. _sec-wind-grid-failed:
-
 .. _sec-mc:
 
 モンテカルロ解析（monte_carlo）

@@ -493,7 +493,7 @@ CAD ソフトの多くは慣性乗積を :math:`+\int xy\,\mathrm{d}m` の符号
 ノーズ先端から後方へ :math:`x`、重心からの距離を :math:`l=x-x_{cg}` とし、ピッチ面で書くと、断面の横向きの対気速度は :math:`w_c=u_z+\omega_y\,l` で（:math:`\omega_y>0` で機尾は :math:`+z_b` へ動く）、断面に働く力は
 
 .. math::
-   :label: eq-lag-section
+   :label: eq-lag-dyn-section
 
    f(x)=-\rho\,\frac{D}{Dt}\bigl[A\,w_c\bigr],\qquad \frac{D}{Dt}=\frac{\partial}{\partial t}+V\frac{\partial}{\partial x},\qquad
    \frac{D}{Dt}\bigl[A\,w_c\bigr]=A\,(\dot u_z+l\,\dot\omega_y)+V A'\,(u_z+\omega_y\,l)+V A\,\omega_y
@@ -509,7 +509,7 @@ CAD ソフトの多くは慣性乗積を :math:`+\int xy\,\mathrm{d}m` の符号
 :math:`A\dot u_z` と :math:`VA\omega_y` の項は、どちらも :math:`A` に比例する。係数表には、これを基準面積で無次元化した遅れの和
 
 .. math::
-   :label: eq-lag-sums
+   :label: eq-lag-dyn-sums
 
    L_0=\frac{2}{S}\int A\,\mathrm{d}x\ [\mathrm{m}],\qquad L_1=\frac{2}{S}\int A\,x\,\mathrm{d}x\ [\mathrm{m^2}]
 

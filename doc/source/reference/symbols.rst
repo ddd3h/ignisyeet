@@ -79,8 +79,6 @@
    * - :math:`\hat p`
      - 無次元ロール角速度 :math:`pd/(2V)`。
 
-.. _tbl-aero-coeff-map:
-
 .. list-table:: 軸対称表と一般表の係数の対応
    :header-rows: 1
    :widths: 24 24 52

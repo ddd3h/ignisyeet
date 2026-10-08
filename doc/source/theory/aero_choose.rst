@@ -264,7 +264,7 @@ CFD（``method = "cfd"``、:ref:`page-theory-cfd-choose`）
 
 次の点は、どの手法を選んでも共通である。
 
-* 係数表の Mach 数と迎角の範囲は、設定 ``aero.mach_max`` と ``aero.alpha_max_deg``\ （:ref:`cfg-aero-mach_max`、:ref:`cfg-aero-alpha_max_deg`）で決まる。飛翔がこの範囲の外の条件を引くと、結果は使えないものとして終了ステータス 3 で終わる（:ref:`IY-O022`、:ref:`IY-O024`。:ref:`sec-aero-interp`）。
+* 係数表の Mach 数と迎角の範囲は、設定 ``aero.mach_max`` と ``aero.alpha_max_deg``\ （:ref:`cfg-aero-mach_max`、:ref:`cfg-aero-alpha_max_deg`）で決まる。飛翔がこの範囲の外の条件を引くと、結果は使えないものとして終了ステータス 3 で終わる（:ref:`IY-O022`、:ref:`IY-O024`。:ref:`sec-aero-out-of-range`）。
 * 頂点のあとの弾道落下は機体が横向き（迎角 90° 近く）になるので、``aero.alpha_max_deg`` は既定の 90 のままにする。
 * 遷音速の補間は、遷音速の物理（衝撃波の発生、:math:`C_{N\alpha}` のピーク位置）を計算しない。パネル法はとくにピークを過大にしうる（サンプル機体の :math:`M=1.2` で、:math:`C_{N\alpha}` が Euler の CFD より 18.5 % 大きい）。
 * 実測で確かめた Mach 数の範囲は 1.08 から 4.30 だけで、亜音速には実測との比較がない（:ref:`sec-aero-accuracy-measured`）。

@@ -13,7 +13,7 @@
   \node[q] (q1) at (0,0)    {\textbf{Q1} 手法は \texttt{table} か};
   \node[q] (q2) at (0,-3.0) {\textbf{Q2} 手法は \texttt{cfd} で、形状に非対称な\\要素があるか、横滑りを解くか};
   \node[res] (rt) at (8.6,0)    {表の形式に合わせる\\{\footnotesize 軸対称表は \texttt{general} へ展開できる}};
-  \node[res] (rg) at (8.6,-3.0) {\texttt{general}};
+  \node[res] (rg) at (8.6,-3.0) {\texttt{general}\\{\footnotesize \texttt{surface}・\texttt{shape\_symmetry} から決まる}};
   \node[res] (ra) at (8.6,-6.0) {\texttt{axisymmetric}};
   \draw[arr] (q1) -- node[yes, above]{はい} (rt);
   \draw[arr] (q1) -- node[no, left]{いいえ} (q2);

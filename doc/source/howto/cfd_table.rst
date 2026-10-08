@@ -161,7 +161,7 @@ Euler の設定を ``model = "rans"`` に替えるだけで始められるが、
 * ``wall_size``、``iterations`` などを設定しないと、RANS 用の既定値（壁面 5 mm、``yplus`` 1）が使われる。
 * 使える形状と設定は限られる。``surface = "stl"``、``y=0`` について対称でないフィン配置の ``panel_mesh``、``roll_damping = true``、``yplus`` が 5 より大きく 30 より小さい場合は、計算を始める前にエラーで止まる。
   条件と理由は :ref:`sec-cfd-rans-use` にある。
-* 1 ケースのメモリは Euler よりずっと大きい。サンプル機体の半モデルで ``wall_size`` 5 mm のとき、``cfd-check --mesh`` の見積もりは約 9.0 GB（73.5 万節点）で、実測のピークは約 7.8 GB だった。3 mm では見積もりが 22.3 GB になる（``doc/data/cfd/rans_mesh_sweep.csv``）。
+* 1 ケースのメモリは Euler よりずっと大きい。サンプル機体の半モデルで ``wall_size`` 5 mm のとき、``cfd-check --mesh`` の見積もりは約 9.0 GB（73.5 万節点）で、``wall_size`` 4.8 mm（78.7 万節点）の実測のピークは 7804 MiB だった。3 mm では見積もりが 22.3 GB になる（``doc/data/cfd/rans_mesh_sweep.csv``）。
   4 mm より細かくすると、メモリの目安を示す警告が出る。
 * ``sample_rans.toml`` の 20 ケース（:math:`M=0.3, 0.8, 1.2, 2`、:math:`\alpha=0, \pm4, \pm8^\circ`）を 4 ランク、2 ケースずつ同時に解くと約 4.4 時間かかり、15 ケースが ``converged``、5 ケースが ``unconverged`` だった（``doc/data/cfd/rans_table_run.json``。測定の条件は同ファイルの ``machine`` 欄）。
   ``unconverged`` が出たら、実行の最後の警告 ``warning[IY-F508]`` と、``cfd_cases.csv`` の ``rans_verdict`` と ``residual_drop`` を読む（:ref:`IY-F508`）。

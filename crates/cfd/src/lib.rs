@@ -302,8 +302,9 @@ pub fn estimate_nodes(cells: usize) -> usize {
 
 pub const EULER_BYTES_PER_CELL: f64 = 3.3e3;
 /// RANS bytes per mesh node (summed over ranks). Measured (SU2 8.3, SA, Roe + MUSCL, accurate Jacobians,
-/// FGMRES/ILU, prism boundary layer + tetrahedra, peak RSS minus 40 MB per rank): 10.28 kB at 406 k nodes
-/// (3 ranks), 10.32 kB at 571 k nodes (4 ranks), 10.26 kB at 323 k nodes (4 ranks); 12 kB keeps a 15 % margin.
+/// FGMRES/ILU, prism boundary layer + tetrahedra, peak RSS minus 40 MB per rank): 10.50 kB at 348 k nodes,
+/// 10.10 kB at 580 k, 10.19 kB at 787 k and 10.22 kB at 1.05 M nodes (4 ranks each; doc/data/cfd/rans_memory.csv);
+/// 12 kB keeps a margin of about 14 % over the largest.
 pub const RANS_BYTES_PER_NODE: f64 = 12e3;
 
 /// Resolves `ranks_per_case` / `parallel_cases` (0 = auto) against the budget.

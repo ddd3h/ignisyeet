@@ -113,7 +113,10 @@ IY-C005
 
 メッセージ::
 
-    error[IY-C005]: --set <KEY=VALUE>: <TOML の読み込みエラー>
+    error[IY-C005]: invalid config <ファイル> with the --set overrides
+
+    Caused by:
+        --set <KEY=VALUE>: <TOML の読み込みエラー>
 
 意味
     ``--set`` を適用した結果、設定を読めなくなった。この上書きを名指しして知らせる。

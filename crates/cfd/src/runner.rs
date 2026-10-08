@@ -1693,7 +1693,7 @@ exit 0
         assert_eq!(head.len(), row.len());
         assert_eq!((col("residual_first"), col("residual_reference"), col("rans_verdict")), ("-2.00000000e0", "-1.00000000e0", "limit_cycle"), "{csv}");
         assert!(col("residual_drop").parse::<f64>().unwrap() > 2.0, "{csv}");
-        assert_eq!(csv.lines().nth(2).unwrap().split(',').last(), Some("converged"));
+        assert_eq!(csv.lines().nth(2).unwrap().split(',').next_back(), Some("converged"));
         let e = env_rans("rans_thick", "thick");
         let out = run_all(&e.setup(), &|_| {}).unwrap();
         let r = out[0].result.as_ref().unwrap();

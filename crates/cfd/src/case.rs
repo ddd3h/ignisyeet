@@ -1,6 +1,29 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Case matrix, directory names, input hashes and the `done.json` status file.
+//!
+//! # `done.json`
+//!
+//! Written in a case directory (`<workdir>/m0.800_a04.00/`) when the case has finished; the same input hash makes the
+//! case a no-op on the next run. Fields:
+//!
+//! * `input_hash`: hash of the SU2 configuration (warm-start lines excluded) and of the mesh hash.
+//! * `mach`, `alpha_deg`, `beta_deg`, `roll_hat`: the case.
+//! * `coeffs` (`cn`, `ca`, `mom`) and `coeffs6` (`cx`, `cy`, `cz`, `cl`, `cm`, `cn`): body-axis coefficients; for a
+//!   half-model case `cy`, `cl`, `cn` are 0.
+//! * `iterations`, `converged`, `residual_first`, `residual_last`, `wall_seconds`: as the columns of
+//!   `cfd_cases.csv`. `converged` is true for Euler when the residual target was reached and the coefficient trend
+//!   settled, for RANS when the verdict is `Converged`.
+//! * `reference_peak` (RANS): the residual peak the acceptance is measured against (`rho` density, `nu` SA, log10),
+//!   passed on to the warm successors.
+//! * `limit_cycle` (RANS, only when true): accepted as a limit cycle or a stall (window average).
+//! * `stalled`, `residual_drop` (RANS): `stalled` only when true (then `limit_cycle` is true too); `residual_drop`
+//!   the density-residual drop [orders] the verdict was based on (the column of the same name in `cfd_cases.csv`).
+//! * `yplus_p95` (RANS): 95th percentile of the wall `y+`, base nodes excluded.
+//! * `axial` (RANS): `wall_cfx`, `base_cfx`, `base_in_cfx` (whether the axial force of `coeffs` contains the base
+//!   force), `markers_missing` (the history had no per-marker columns).
+//! * `warnings`: warnings of an accepted case (wall `y+`, limit cycle or stall, restart after a warm-start failure or a
+//!   divergence), each starting with its code (`[IY-F5nn] ...`); absent when empty.
 
 use crate::config::{AlphaMode, CfdOptions, ShapeSymmetry};
 use crate::forces::BodyCoeffs;

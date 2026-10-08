@@ -105,7 +105,9 @@ say() { printf '%s\n' "$*"; }
 logf() { [ "$LOG_READY" = 1 ] && printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" >>"$LOG_FILE" || true; }
 
 ok()   { say "  ${GREEN}${G_OK}${RESET} $*"; logf "ok: $*"; }
-warn() { say "  ${YELLOW}${G_WARN}${RESET} $*"; logf "warn: $*"; }
+# warn CODE MESSAGE: "warning[IY-Innn]: MESSAGE"; warn_more continues the same warning on a further line.
+warn() { local code="$1"; shift; say "  ${YELLOW}${G_WARN}${RESET} warning[${code}]: $*"; logf "warn[${code}]: $*"; }
+warn_more() { say "    $*"; logf "warn: $*"; }
 note() { say "  ${GREY}${G_DOT} $*${RESET}"; }
 skip() { say "  ${GREY}${G_SKIP}${RESET} $*"; }
 info() { say "  ${BLUE}${G_INFO}${RESET} $*"; logf "info: $*"; }
@@ -341,12 +343,14 @@ first_version() { grep -Eo '[0-9]+(\.[0-9]+)+' | head -n 1; }
 tool_version() { # tool_version CMD [FLAG]
   "$1" "${2:---version}" </dev/null 2>&1 | head -n 3 | first_version || true
 }
+# die CODE MESSAGE: "error[IY-Innn]: MESSAGE", then exit 1.
 die() {
+  local code="$1"; shift
   ERR_REPORTED=1
   say ""
-  say "  ${RED}${G_ERR} error:${RESET} $*"
+  say "  ${RED}${G_ERR} error[${code}]:${RESET} $*"
   [ "$LOG_READY" = 1 ] && say "  ${GREY}log: $LOG_FILE${RESET}"
-  logf "FATAL: $*"
+  logf "FATAL[${code}]: $*"
   exit 1
 }
 
@@ -355,7 +359,7 @@ on_err() {
   [ "$ERR_REPORTED" = 1 ] && exit "$rc"
   ERR_REPORTED=1
   say ""
-  say "  ${RED}${G_ERR} unexpected error${RESET} (line $line, status $rc)"
+  say "  ${RED}${G_ERR} error[IY-I090]:${RESET} unexpected error (line $line, status $rc)"
   [ "$LOG_READY" = 1 ] && say "  ${GREY}details: $LOG_FILE${RESET}"
   exit "$rc"
 }
@@ -364,12 +368,12 @@ on_exit() {
 }
 on_int() {
   printf '%s\n' "${SHOW_CUR:-}"
-  say "  ${YELLOW}${G_WARN} interrupted${RESET}"
+  say "  ${YELLOW}${G_WARN} warning[IY-I501]:${RESET} interrupted"
   exit 130
 }
 
 validate_version() {
-  [[ "$1" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "version must match vX.Y.Z (got '$1')"
+  [[ "$1" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die IY-I003 "version must match vX.Y.Z (got '$1')"
 }
 
 sha256_of() {
@@ -414,6 +418,8 @@ Environment variables:
   IGNISYEET_DOWNLOAD_BASE (release download base URL), IGNISYEET_REPO_URL (git URL)
 
 Supported platforms: Linux x86_64 / aarch64, macOS Intel / Apple Silicon.
+
+Errors and warnings are printed as error[IY-Innn] / warning[IY-Innn]; the codes are explained in the documentation (errors/install).
 EOF
 }
 
@@ -426,11 +432,11 @@ parse_args() {
       --no-cfd) WANT_CFD=0 ;;
       --su2-binary) WANT_SU2_SRC=0 ;;
       --su2-native) WANT_SU2_SRC=1 ;; # the default; accepted so that existing command lines keep working
-      --version) shift; [ $# -gt 0 ] || die "--version needs a value"; VERSION="$1"; validate_version "$VERSION" ;;
+      --version) shift; [ $# -gt 0 ] || die IY-I002 "--version needs a value"; VERSION="$1"; validate_version "$VERSION" ;;
       --version=*) VERSION="${1#*=}"; validate_version "$VERSION" ;;
-      --prefix) shift; [ $# -gt 0 ] || die "--prefix needs a value"; PREFIX="$1" ;;
+      --prefix) shift; [ $# -gt 0 ] || die IY-I002 "--prefix needs a value"; PREFIX="$1" ;;
       --prefix=*) PREFIX="${1#*=}" ;;
-      --dir) shift; [ $# -gt 0 ] || die "--dir needs a value"; DEV_DIR="$1" ;;
+      --dir) shift; [ $# -gt 0 ] || die IY-I002 "--dir needs a value"; DEV_DIR="$1" ;;
       --dir=*) DEV_DIR="${1#*=}" ;;
       --no-test) WANT_TEST=0 ;;
       --add-path) ADD_PATH=1 ;;
@@ -441,12 +447,12 @@ parse_args() {
       --uninstall) ACTION=uninstall ;;
       --purge) PURGE=1 ;;
       -h | --help) HELP=1 ;;
-      *) die "unknown option: $1 (see --help)" ;;
+      *) die IY-I001 "unknown option: $1 (see --help)" ;;
     esac
     shift
   done
-  case "$ROLE" in "" | user | developer) ;; *) die "role must be 'user' or 'developer' (got '$ROLE')" ;; esac
-  case "$WANT_CFD" in "" | 0 | 1) ;; *) die "IGNISYEET_CFD must be 1 or 0" ;; esac
+  case "$ROLE" in "" | user | developer) ;; *) die IY-I004 "role must be 'user' or 'developer' (got '$ROLE')" ;; esac
+  case "$WANT_CFD" in "" | 0 | 1) ;; *) die IY-I005 "IGNISYEET_CFD must be 1 or 0" ;; esac
   [ -n "$VERSION" ] && validate_version "$VERSION"
   # Relative paths would give broken symlinks (they are resolved against the link's own directory).
   PREFIX=$(abs_path "$PREFIX")
@@ -479,7 +485,7 @@ detect_platform() {
         TARGET=x86_64-apple-darwin; MM_PLAT=osx-64; OS_NAME="macOS Intel"
       fi ;;
     Darwin/arm64) TARGET=aarch64-apple-darwin; MM_PLAT=osx-arm64; OS_NAME="macOS Apple Silicon" ;;
-    *) die "unsupported platform: $OS/$ARCH (supported: Linux x86_64/aarch64, macOS Intel/Apple Silicon)" ;;
+    *) die IY-I010 "unsupported platform: $OS/$ARCH (supported: Linux x86_64/aarch64, macOS Intel/Apple Silicon)" ;;
   esac
   [ -n "${IGNISYEET_TARGET:-}" ] && TARGET="$IGNISYEET_TARGET"
   return 0
@@ -620,7 +626,7 @@ show_environment() {
   fi
   if [ -n "$CFD_PREFIX" ]; then
     row_found "CFD env" "$CFD_ENV_NAME  su2 ${CFD_SU2_VER:-?}  $(tilde "$CFD_PREFIX")"
-    [ "$CFD_SU2_BAD" = 1 ] && warn "su2 $CFD_SU2_VER needs AVX-512, which this CPU lacks (SU2_CFD will crash); recreate the env with su2=8.3.0"
+    [ "$CFD_SU2_BAD" = 1 ] && warn IY-I510 "su2 $CFD_SU2_VER needs AVX-512, which this CPU lacks (SU2_CFD will crash); recreate the env with su2=8.3.0"
   elif [ -n "$SU2_PATH" ]; then
     row_found "SU2_CFD" "$SU2_PATH"
   else
@@ -657,8 +663,8 @@ init_paths() {
   STATE_FILE="$DATA_ROOT/state"
   VENV_DIR="$DATA_ROOT/venv"
   if [ "$DRY_RUN" = 1 ]; then LOG_FILE=/dev/null; return 0; fi
-  mkdir -p "$DATA_ROOT" 2>/dev/null || die "cannot create $DATA_ROOT"
-  : >>"$LOG_FILE" || die "cannot write $LOG_FILE"
+  mkdir -p "$DATA_ROOT" 2>/dev/null || die IY-I011 "cannot create $DATA_ROOT"
+  : >>"$LOG_FILE" || die IY-I012 "cannot write $LOG_FILE"
   LOG_READY=1
   printf '\n===== install.sh %s  %s  args: %s =====\n' "$(date '+%F %T')" "$(uname -a)" "${ORIG_ARGS:-}" >>"$LOG_FILE"
 }
@@ -688,13 +694,13 @@ decide() {
   # release version (user role: required; developer: only when pinned)
   if [ "$ROLE" = user ] && [ -z "$VERSION" ]; then
     if [ -n "${IGNISYEET_DOWNLOAD_BASE:-}" ]; then
-      die "IGNISYEET_DOWNLOAD_BASE is set; also give --version vX.Y.Z"
+      die IY-I020 "IGNISYEET_DOWNLOAD_BASE is set; also give --version vX.Y.Z"
     fi
     VERSION=$(resolve_latest_version)
     [ -z "$VERSION" ] || validate_version "$VERSION"
     if [ -z "$VERSION" ]; then
       if [ "$DRY_RUN" = 1 ]; then VERSION="(latest)"; else
-        die "could not determine the latest release of $REPO (no release published yet, or no network). Use --version vX.Y.Z or --developer."
+        die IY-I021 "could not determine the latest release of $REPO (no release published yet, or no network). Use --version vX.Y.Z or --developer."
       fi
     fi
   fi
@@ -709,7 +715,7 @@ decide() {
     if ask_yn "uv (fast Python manager) is not installed. Install it from astral.sh? (No: use python3 -m venv + pip)" y; then USE_UV=1; INSTALL_UV=1; fi
   fi
   if [ "$USE_UV" = 0 ] && [ "$PY_OK" != 1 ]; then
-    die "Python >= 3.10 is required for plotting; install python3 (>= 3.10) or allow uv to be installed."
+    die IY-I022 "Python >= 3.10 is required for plotting; install python3 (>= 3.10) or allow uv to be installed."
   fi
 
   # rust
@@ -804,10 +810,10 @@ show_plan() {
 # ----------------------------------------------------------------------------------------------
 ensure_uv() {
   [ "$INSTALL_UV" = 1 ] || return 0
-  step "Installing uv" sh -c 'curl -LsSf https://astral.sh/uv/install.sh | sh' || die "uv installation failed"
+  step "Installing uv" sh -c 'curl -LsSf https://astral.sh/uv/install.sh | sh' || die IY-I030 "uv installation failed"
   UV_PATH=""
   for p in "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv"; do [ -x "$p" ] && UV_PATH="$p" && break; done
-  [ -n "$UV_PATH" ] || die "uv was installed but cannot be found"
+  [ -n "$UV_PATH" ] || die IY-I031 "uv was installed but cannot be found"
   UV_VER=$("$UV_PATH" --version | first_version || true)
 }
 
@@ -817,28 +823,28 @@ make_venv() { # DIR REQ LABEL
   local project constraints
   project=$(dirname "$req")
   if [ "$USE_UV" = 1 ] && [ -f "$project/uv.lock" ]; then
-    step "$label: syncing locked environment (uv)" env UV_PROJECT_ENVIRONMENT="$dir" "$UV_PATH" sync --frozen --project "$project" || die "uv sync failed"
+    step "$label: syncing locked environment (uv)" env UV_PROJECT_ENVIRONMENT="$dir" "$UV_PATH" sync --frozen --project "$project" || die IY-I032 "uv sync failed"
   elif [ "$USE_UV" = 1 ]; then
     # Releases up to v0.3.0 ship no uv.lock: unpinned requirements.
-    step "$label: creating environment (uv)" "$UV_PATH" venv --quiet --allow-existing --python '>=3.10' "$dir" || die "uv venv failed"
-    step "$label: installing numpy, pandas, matplotlib" "$UV_PATH" pip install --quiet --python "$dir/bin/python" -r "$req" || die "uv pip install failed"
+    step "$label: creating environment (uv)" "$UV_PATH" venv --quiet --allow-existing --python '>=3.10' "$dir" || die IY-I033 "uv venv failed"
+    step "$label: installing numpy, pandas, matplotlib" "$UV_PATH" pip install --quiet --python "$dir/bin/python" -r "$req" || die IY-I034 "uv pip install failed"
   else
     constraints="$project/plot-constraints.txt"
     [ -f "$constraints" ] || constraints="$project/../scripts/plot-constraints.txt"
-    step "$label: creating environment (venv)" python3 -m venv "$dir" || die "python3 -m venv failed (on Debian/Ubuntu: apt install python3-venv)"
+    step "$label: creating environment (venv)" python3 -m venv "$dir" || die IY-I035 "python3 -m venv failed (on Debian/Ubuntu: apt install python3-venv)"
     if [ -f "$constraints" ]; then
-      step "$label: installing locked plotting requirements" "$dir/bin/python" -m pip install --quiet -r "$req" -c "$constraints" || die "pip install failed"
+      step "$label: installing locked plotting requirements" "$dir/bin/python" -m pip install --quiet -r "$req" -c "$constraints" || die IY-I036 "pip install failed"
     else
       # Releases up to v0.3.0 ship no constraints file: unpinned requirements.
-      step "$label: installing numpy, pandas, matplotlib" "$dir/bin/python" -m pip install --quiet -r "$req" || die "pip install failed"
+      step "$label: installing numpy, pandas, matplotlib" "$dir/bin/python" -m pip install --quiet -r "$req" || die IY-I036 "pip install failed"
     fi
   fi
 }
 
 install_user() {
   section "Installing ignisyeet $VERSION"
-  [ "$HAVE_CURL" = 1 ] && [ "$HAVE_TAR" = 1 ] || die "curl and tar are required"
-  have sha256sum || have shasum || die "sha256sum or shasum is required to verify the download"
+  [ "$HAVE_CURL" = 1 ] && [ "$HAVE_TAR" = 1 ] || die IY-I040 "curl and tar are required"
+  have sha256sum || have shasum || die IY-I041 "sha256sum or shasum is required to verify the download"
   TMP=$(mktemp -d "${TMPDIR:-/tmp}/ignisyeet-install.XXXXXX")
   trap 'rm -rf "$TMP"; printf "%s" "${SHOW_CUR:-}"' EXIT
   local name="ignisyeet-$VERSION-$TARGET" url
@@ -847,18 +853,18 @@ install_user() {
     row_found "ignisyeet" "$VERSION already installed; skipping download"
   else
     download "$url" "$TMP/$name.tar.gz" "Downloading ignisyeet $VERSION" ||
-      die "download failed: $url (does release $VERSION exist for $TARGET?)"
-    download "$url.sha256" "$TMP/$name.tar.gz.sha256" "Downloading checksum" || die "checksum download failed"
+      die IY-I042 "download failed: $url (does release $VERSION exist for $TARGET?)"
+    download "$url.sha256" "$TMP/$name.tar.gz.sha256" "Downloading checksum" || die IY-I043 "checksum download failed"
     local want got
     want=$(awk '{print $1; exit}' "$TMP/$name.tar.gz.sha256")
     got=$(sha256_of "$TMP/$name.tar.gz")
     if [ -z "$want" ] || [ "$want" != "$got" ]; then
       say "  ${RED}${G_ERR}${RESET} checksum mismatch"
-      die "sha256 mismatch for $name.tar.gz (expected $want, got $got); refusing to install"
+      die IY-I044 "sha256 mismatch for $name.tar.gz (expected $want, got $got); refusing to install"
     fi
     ok "sha256 verified ${GREY}${got:0:16}...${RESET}"
-    step "Extracting" tar -xzf "$TMP/$name.tar.gz" -C "$TMP" || die "extraction failed"
-    [ -x "$TMP/$name/bin/ignisyeet" ] || die "archive has an unexpected layout (no $name/bin/ignisyeet)"
+    step "Extracting" tar -xzf "$TMP/$name.tar.gz" -C "$TMP" || die IY-I045 "extraction failed"
+    [ -x "$TMP/$name/bin/ignisyeet" ] || die IY-I046 "archive has an unexpected layout (no $name/bin/ignisyeet)"
     step "Installing files" sh -c '
       set -e
       rm -rf "$2/$3.new" "$2/$3"
@@ -867,7 +873,7 @@ install_user() {
       mv "$2/$3.new" "$2/$3"
       ln -sfn "$2/$3" "$2/current"
       ln -sfn "$2/current/bin/ignisyeet" "$1/ignisyeet"
-    ' sh "$BIN_DIR" "$DATA_ROOT" "$VERSION" "$TMP/$name" || die "installation failed"
+    ' sh "$BIN_DIR" "$DATA_ROOT" "$VERSION" "$TMP/$name" || die IY-I047 "installation failed"
   fi
   write_plot_wrapper
   ok "linked ${CYAN}$BIN_DIR/ignisyeet${RESET}"
@@ -893,34 +899,34 @@ EOF
 ensure_rust() {
   if [ "$INSTALL_RUST" = 1 ]; then
     step "Installing Rust (rustup, minimal profile)" sh -c 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal' ||
-      die "rustup installation failed"
+      die IY-I050 "rustup installation failed"
   fi
   # shellcheck disable=SC1091
   [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
-  have cargo || die "cargo not found after installing Rust"
+  have cargo || die IY-I051 "cargo not found after installing Rust"
   CARGO_PATH=$(command -v cargo)
   CARGO_VER=$(cargo --version | first_version || true)
 }
 
 install_developer() {
-  [ -n "$GIT_VER" ] || die "git is required for the developer install (apt install git / xcode-select --install)"
+  [ -n "$GIT_VER" ] || die IY-I052 "git is required for the developer install (apt install git / xcode-select --install)"
   section "Source tree"
   local dirty
   if [ -e "$DEV_DIR/.git" ]; then
     ok "reusing clone ${CYAN}$DEV_DIR${RESET}"
     dirty=$(git -C "$DEV_DIR" status --porcelain 2>/dev/null | head -n 1 || true)
     if [ -n "$dirty" ]; then
-      warn "working tree has local changes; not updating it"
+      warn IY-I520 "working tree has local changes; not updating it"
     elif git -C "$DEV_DIR" rev-parse --abbrev-ref '@{upstream}' >/dev/null 2>&1; then
-      step "git pull --ff-only" git -C "$DEV_DIR" pull --ff-only || warn "git pull failed; continuing with the current checkout"
+      step "git pull --ff-only" git -C "$DEV_DIR" pull --ff-only || warn IY-I521 "git pull failed; continuing with the current checkout"
     fi
   else
-    if [ -e "$DEV_DIR" ] && [ -n "$(ls -A "$DEV_DIR" 2>/dev/null)" ]; then die "$DEV_DIR exists and is not an IgnisYeet clone"; fi
-    step "git clone $REPO" git clone "$REPO_URL" "$DEV_DIR" || die "git clone failed"
+    if [ -e "$DEV_DIR" ] && [ -n "$(ls -A "$DEV_DIR" 2>/dev/null)" ]; then die IY-I053 "$DEV_DIR exists and is not an IgnisYeet clone"; fi
+    step "git clone $REPO" git clone "$REPO_URL" "$DEV_DIR" || die IY-I054 "git clone failed"
   fi
   if [ -n "$VERSION" ]; then
     step "Checking out $VERSION" sh -c 'git -C "$1" fetch --tags --quiet 2>/dev/null; git -C "$1" checkout --quiet "$2"' sh "$DEV_DIR" "$VERSION" ||
-      die "cannot check out $VERSION"
+      die IY-I055 "cannot check out $VERSION"
   fi
   state_set role developer
   state_set dev_dir "$DEV_DIR"
@@ -931,27 +937,27 @@ install_developer() {
   [ "$INSTALL_RUST" = 0 ] && row_found cargo "$CARGO_VER (reused)"
 
   section "Build"
-  step "cargo build --release" sh -c 'cd "$1" && cargo build --release' sh "$DEV_DIR" || die "build failed"
+  step "cargo build --release" sh -c 'cd "$1" && cargo build --release' sh "$DEV_DIR" || die IY-I056 "build failed"
   ok "binary: ${CYAN}$DEV_DIR/target/release/ignisyeet${RESET}"
   if [ "$WANT_TEST" = 1 ]; then
-    step "cargo test --release" sh -c 'cd "$1" && cargo test --release' sh "$DEV_DIR" || die "tests failed (see the log)"
+    step "cargo test --release" sh -c 'cd "$1" && cargo test --release' sh "$DEV_DIR" || die IY-I057 "tests failed (see the log)"
   fi
 
   section "Python environments"
   if [ "$USE_UV" = 1 ]; then
-    step "uv sync (python/ plotting)" "$UV_PATH" sync --frozen --project "$DEV_DIR/python" || die "uv sync python failed"
-    step "uv sync (doc/ Sphinx)" "$UV_PATH" sync --quiet --project "$DEV_DIR/doc" || die "uv sync doc failed"
+    step "uv sync (python/ plotting)" "$UV_PATH" sync --frozen --project "$DEV_DIR/python" || die IY-I032 "uv sync python failed"
+    step "uv sync (doc/ Sphinx)" "$UV_PATH" sync --quiet --project "$DEV_DIR/doc" || die IY-I032 "uv sync doc failed"
   else
     make_venv "$DEV_DIR/.venv" "$DEV_DIR/python/requirements.txt" "plotting"
     [ -f "$DEV_DIR/doc/requirements.txt" ] &&
-      { step "doc requirements (pip)" "$DEV_DIR/.venv/bin/python" -m pip install --quiet -r "$DEV_DIR/doc/requirements.txt" -c "$DEV_DIR/scripts/plot-constraints.txt" || warn "doc requirements failed"; }
+      { step "doc requirements (pip)" "$DEV_DIR/.venv/bin/python" -m pip install --quiet -r "$DEV_DIR/doc/requirements.txt" -c "$DEV_DIR/scripts/plot-constraints.txt" || warn IY-I522 "doc requirements failed"; }
   fi
 
   section "Documentation tools"
   if [ -z "$DOC_MISSING_NAMES" ]; then
     ok "TeX Live (luatexja, uplatex), dvisvgm, mutool, inkscape, IPAex fonts: all found"
   else
-    warn "missing: ${DOC_MISSING_NAMES}"
+    warn IY-I523 "missing: ${DOC_MISSING_NAMES}"
     if [ "$OS" = Darwin ]; then
       say "    ${GREY}install with Homebrew:${RESET}"
       say "      ${CYAN}brew install $(printf '%s' "$DOC_MISSING_BREW" | sed 's/mactex-no-gui/--cask mactex-no-gui/')${RESET}"
@@ -970,7 +976,7 @@ install_cfd() {
     reuse)
       if [ -n "$CFD_PREFIX" ]; then
         ok "reusing existing environment ${CYAN}$CFD_PREFIX${RESET} ${GREY}(su2 ${CFD_SU2_VER:-?})${RESET}"
-        [ "$CFD_SU2_BAD" = 1 ] && warn "su2 $CFD_SU2_VER needs AVX-512; recreate with: $CONDA_MGR create -y -n $CFD_ENV_NAME -c conda-forge --override-channels $CFD_PACKAGES"
+        [ "$CFD_SU2_BAD" = 1 ] && warn IY-I510 "su2 $CFD_SU2_VER needs AVX-512; recreate with: $CONDA_MGR create -y -n $CFD_ENV_NAME -c conda-forge --override-channels $CFD_PACKAGES"
         if [ -x "$CFD_PREFIX/bin/python" ] && ! "$CFD_PREFIX/bin/python" -c 'import manifold3d' >/dev/null 2>&1; then
           note "manifold3d is not installed in this environment (only needed for surface = \"stl\"): $CFD_PREFIX/bin/python -m pip install manifold3d==$MANIFOLD3D_VERSION"
         fi
@@ -990,7 +996,7 @@ install_cfd() {
       d=$(mktemp -d); trap "rm -rf $d" EXIT
       curl -fsSL "https://micro.mamba.pm/api/micromamba/$1/$3" | tar -xj -C "$d" bin/micromamba
       install -m 755 "$d/bin/micromamba" "$2"
-    ' sh "$MM_PLAT" "$mm" "$MICROMAMBA_VERSION" || { warn "micromamba installation failed; CFD skipped"; return 0; }
+    ' sh "$MM_PLAT" "$mm" "$MICROMAMBA_VERSION" || { warn IY-I530 "micromamba installation failed; CFD skipped"; return 0; }
     state_set micromamba "$mm"
   else
     ok "reusing $(basename "$mm") ${GREY}$mm${RESET}"
@@ -1001,21 +1007,21 @@ install_cfd() {
   note "this downloads about 3 GB; progress is in $LOG_FILE"
   # shellcheck disable=SC2086
   if ! step "Creating conda env $CFD_ENV_NAME (conda-forge)" "$mm" $root_args create -y -n "$CFD_ENV_NAME" -c conda-forge --override-channels $pkgs; then
-    warn "CFD environment could not be created (SU2 may be unavailable for $MM_PLAT); CFD skipped"
+    warn IY-I531 "CFD environment could not be created (SU2 may be unavailable for $MM_PLAT); CFD skipped"
     return 0
   fi
   CFD_PREFIX=$(find_cfd_env || true)
   if [ -z "$CFD_PREFIX" ] && [ -n "$root_args" ] && [ -x "$HOME/.local/share/micromamba/envs/$CFD_ENV_NAME/bin/SU2_CFD" ]; then
     CFD_PREFIX="$HOME/.local/share/micromamba/envs/$CFD_ENV_NAME"
   fi
-  if [ -z "$CFD_PREFIX" ]; then warn "environment created but SU2_CFD was not found in it"; return 0; fi
+  if [ -z "$CFD_PREFIX" ]; then warn IY-I532 "environment created but SU2_CFD was not found in it"; return 0; fi
   CFD_SU2_VER=$(conda_pkg_version "$CFD_PREFIX" su2)
   ok "SU2 ${CFD_SU2_VER:-?} installed in ${CYAN}$CFD_PREFIX${RESET}"
   state_set cfd_env "$CFD_PREFIX"
   # manifold3d (pip only): the exact union of the overlapping STL shells for surface = "stl". The environment is
   # removed as a whole by --uninstall --purge, so nothing else has to be tracked.
   if ! step "Installing manifold3d (pip)" "$CFD_PREFIX/bin/python" -m pip install --quiet "manifold3d==$MANIFOLD3D_VERSION"; then
-    warn "manifold3d could not be installed; surface = \"stl\" will not be available (retry: $CFD_PREFIX/bin/python -m pip install manifold3d==$MANIFOLD3D_VERSION)"
+    warn IY-I533 "manifold3d could not be installed; surface = \"stl\" will not be available (retry: $CFD_PREFIX/bin/python -m pip install manifold3d==$MANIFOLD3D_VERSION)"
   fi
 }
 
@@ -1050,9 +1056,9 @@ su2_conda_cxx() { # the conda-forge g++ of the CFD env, if present
 su2_build_failed() { # REASON
   SU2_BUILD_FAILED="$1"
   rmdir "$SU2_NATIVE_DIR" 2>/dev/null || true
-  warn "SU2 could not be compiled: $1"
-  warn "the portable conda-forge SU2 (no -march=native, no mixed precision) stays in use; the rest of the CFD tools are installed"
-  warn "details: $LOG_FILE; retry with: bash install.sh --cfd --force   (or keep the conda-forge SU2 for good with --su2-binary)"
+  warn IY-I540 "SU2 could not be compiled: $1"
+  warn_more "the portable conda-forge SU2 (no -march=native, no mixed precision) stays in use; the rest of the CFD tools are installed"
+  warn_more "details: $LOG_FILE; retry with: bash install.sh --cfd --force   (or keep the conda-forge SU2 for good with --su2-binary)"
   return 0
 }
 
@@ -1201,11 +1207,11 @@ summary() {
   fi
   if [ -n "${SU2_BUILD_FAILED:-}" ]; then
     say ""
-    warn "SU2 was not compiled ($SU2_BUILD_FAILED); the portable conda-forge SU2 is used"
+    warn IY-I541 "SU2 was not compiled ($SU2_BUILD_FAILED); the portable conda-forge SU2 is used"
   fi
   if [ "${PATH_MISSING:-0}" = 1 ]; then
     say ""
-    warn "$BIN_DIR is not in your PATH. Add this line to your shell rc file:"
+    warn IY-I542 "$BIN_DIR is not in your PATH. Add this line to your shell rc file:"
     say "    ${CYAN}export PATH=\"$BIN_DIR:\$PATH\"${RESET}"
   fi
   say ""
@@ -1280,7 +1286,7 @@ main() {
   HELP=0
   parse_args "$@"
   # Anchor relative paths before any directory changes; no mkdir in dry runs.
-  [ -n "$PREFIX" ] || die "--prefix must not be empty"
+  [ -n "$PREFIX" ] || die IY-I006 "--prefix must not be empty"
   case "$PREFIX" in /*) ;; *) PREFIX="$PWD/$PREFIX" ;; esac
   case "$DEV_DIR" in "" | /*) ;; *) DEV_DIR="$PWD/$DEV_DIR" ;; esac
   setup_ui

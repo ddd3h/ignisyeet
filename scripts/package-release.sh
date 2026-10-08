@@ -28,7 +28,7 @@ if [ -z "$binary" ]; then
     binary=$root/target/release/ignisyeet
   fi
 fi
-[ -x "$binary" ] || { echo "binary not found: $binary" >&2; exit 1; }
+[ -x "$binary" ] || { echo "error[IY-I060]: binary not found: $binary" >&2; exit 1; }
 
 name=ignisyeet-${version}-${target}
 stage=$(mktemp -d)
@@ -47,7 +47,7 @@ tarball=$out/$name.tar.gz
 # GNU tar is required (brew install gnu-tar on macOS).
 tar_cmd=tar
 if command -v gtar >/dev/null 2>&1; then tar_cmd=gtar; fi
-"$tar_cmd" --version | grep -q 'GNU tar' || { echo "GNU tar is required" >&2; exit 1; }
+"$tar_cmd" --version | grep -q 'GNU tar' || { echo "error[IY-I061]: GNU tar is required" >&2; exit 1; }
 "$tar_cmd" -C "$stage" --sort=name --mtime="@${SOURCE_DATE_EPOCH:-0}" \
   --owner=0 --group=0 --numeric-owner -cf - "$name" | gzip -n > "$tarball"
 

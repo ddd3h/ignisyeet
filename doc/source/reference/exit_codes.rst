@@ -123,4 +123,4 @@
 ``dispersion`` は、不安定なケースとサンプルを降下モードごとに数え、統計には入れたままにする（:ref:`sec-dispersion-unstable`）。
 ``RESULTS NOT USABLE`` の結果は、保安の判断に使わない。
 
-``make all`` は、``sim`` か ``dispersion`` が終了ステータス 3 で終わっても作図まで進み、最後にまとめて失敗する（:ref:`sec-cli-make`）。
+``make all`` での扱いは :ref:`sec-cli-make` にある。

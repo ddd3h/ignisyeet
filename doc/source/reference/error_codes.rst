@@ -35,7 +35,7 @@ IgnisYeet が出すエラーとワーニングには、安定したコードが�
 CFD のケースごとの行は、コードの後ろに範囲を示す文が続く
 （``error[IY-F118]: aero.cfd: case m0.500_a00.00 failed: …``、``warning[IY-F523]: aero.cfd: case m0.500_a00.00: …``）。
 別のコードのエラーを文中に含むメッセージ（風の格子のケースの失敗にその原因のコードが入るもの、HXT と Delaunay の両方が失敗したメッシュのエラー）では、先頭のコードが外側の状況を表し、文中のコードが原因を表す。
-コマンドラインの引数の誤り（``--set`` の形など）は、clap が組み立てる ``error: invalid value '…' for '--set <KEY=VALUE>': [IY-C002] …`` の形で、コードは文中に出る。
+コマンドラインの引数の誤り（``--set`` の形など）は ``error: invalid value '…' for '--set <KEY=VALUE>': [IY-C002] …`` の形で、コードは文中に出る。
 
 機械出力では、コードを ``[IY-Xnnn] …`` の形のまま文字列の先頭に書く。
 次のものがそうである。
@@ -43,8 +43,7 @@ CFD のケースごとの行は、コードの後ろに範囲を示す文が続�
 * ``summary.json``、``dispersion_meta.json``、``dispersion_summary.json``、``geometry.json`` の ``warnings`` の配列（:ref:`sec-file-summary`）。
 * 終了ステータス 3 の行 ``ignisyeet: RESULTS NOT USABLE: [IY-O020] …`` と ``ignisyeet: INCOMPLETE RESULTS: [IY-O0nn] …``\ （:ref:`sec-exit-status`）。
 
-ワーニングの数値のうち、しきい値と比べるものは、しきい値を破った側にあると読める桁数で示す。決まった桁数で丸めるとしきい値に等しく、あるいは反対側に見えるときは、そう見えなくなるまで桁を増やす
-（静安定余裕 1.4977 cal は ``1.50`` ではなく ``1.498``、ランチャ離脱速度 14.996 m/s は ``15.0`` ではなく ``14.996``、開傘の速さ 50.2 m/s は ``50`` ではなく ``50.2``）。
+ワーニングの数値のうち、しきい値と比べるものは、しきい値を破った側にあると読める桁数で示す（静安定余裕 1.4977 cal は ``1.498``、開傘の速さ 50.2 m/s は ``50.2``）。
 ワーニングは ``summary.json`` の ``warnings`` に、落下分散では ``dispersion_meta.json`` と ``dispersion_summary.json`` の ``warnings`` にも、同じ文を残す。設定の読み込み時のワーニング（``profile`` で使わない ``wind.speed`` と ``wind.direction_deg``、2 回以上指定した ``--set`` のキー）は、配列の先頭に入る。
 
 領域

@@ -254,13 +254,13 @@ Mach 数の刻みは、作り方で異なる。
    * - 表
      - 列数
      - 足りない列
-   * - 軸対称表（バージョン 1）
+   * - 軸対称表（``format_version`` 1）
      - 10（値 8 個）
      - ``cl_delta`` ``clp`` ``lag_l0`` ``lag_l1`` ``cl4`` ``cnpa`` ``cmpa``。付随ファイルに ``format_version`` がなくてもよい
-   * - 軸対称表（バージョン 2）
+   * - 軸対称表（``format_version`` 2）
      - 12（値 10 個）
      - ``lag_l0`` ``lag_l1`` ``cl4`` ``cnpa`` ``cmpa``
-   * - 軸対称表（バージョン 3）
+   * - 軸対称表（``format_version`` 3）
      - 16（値 14 個）
      - ``cmpa``
    * - 一般表（15 個の値）
@@ -270,20 +270,20 @@ Mach 数の刻みは、作り方で異なる。
      - 21
      - ``cmpa``
 
-見出しは、バージョン 4 の見出しの先頭から、その列数までと一致しなければならない。
+見出しは、``format_version`` 4 の見出しの先頭から、その列数までと一致しなければならない。
 
-``aero.method = "table"`` で読み込んだ表のロール項がすべて 0 のとき（バージョン 1 の表を含む）は、``aero``、``sim``、``dispersion`` のどれでも、現在の STL のフィンから部品積み上げ法のロール項（:math:`C_{l\delta}` と :math:`C_{lp}`）を求めて表に補う。
+``aero.method = "table"`` で読み込んだ表のロール項がすべて 0 のとき（``format_version`` 1 の表を含む）は、``aero``、``sim``、``dispersion`` のどれでも、現在の STL のフィンから部品積み上げ法のロール項（:math:`C_{l\delta}` と :math:`C_{lp}`）を求めて表に補う。
 補ったときは、端末に注意書きを表示する。形状を抽出できないときは、注意書きを表示してロール項を 0 のままにし、機体はロールしない。フィンがなければ補う値も 0 で、注意書きは出ない。
 ロール項を含む表は、そのまま使う。補った値は、読み込んだ表のメモリ上だけに入り、元のファイルは書き換えない。
 
-遅れと Magnus の列を持たない外部の表（上の表のバージョン 1、2 と 15 個の値の一般表）には、ロール項と同じく、現在の STL の形状から部品積み上げ法の遅れの和（胴体とフィンの見かけの質量。:ref:`sec-damping`）を求めて補い、
+遅れと Magnus の列を持たない外部の表（上の表の ``format_version`` 1、2 と 15 個の値の一般表）には、ロール項と同じく、現在の STL の形状から部品積み上げ法の遅れの和（胴体とフィンの見かけの質量。:ref:`sec-damping`）を求めて補い、
 ``the external aero table has no lag/Magnus columns: the apparent-mass (lag) sums were filled from the geometry (component build-up); Magnus force and induced roll are 0`` の警告を出す。
 形状を抽出できないときは遅れの和を 0 のまま飛ばし、``the external aero table has no lag/Magnus columns and the geometry is unavailable: the flight has no apparent-mass (lag) terms, Magnus force or induced roll`` の警告を出す。
 どちらの場合も Magnus 力とモーメント、誘導ロールは 0 で、回転による法線力（減衰の和から求める。:eq:`eq-cnq-force`）は働く。
 
 **実測や CFD のピッチ減衰を使う表**：強制振動の風洞試験や CFD、実射の同定で得たピッチ減衰 :math:`C_{mq}+C_{m\dot\alpha}` は、局所的な迎角の項だけでなく、見かけの質量の遅れと対流の回転の項（:eq:`eq-lag-dyn-section`）をすでに含む。
 この値を使う表では ``lag_l0`` と ``lag_l1`` を 0 にし、減衰を減衰の和に入れる。
-0 は列を持つ形式（バージョン 3 以降）に明示して書く。明示した 0 の列は補わないが、列のない形式では形状から遅れの和が補われ、見かけの質量の項を二重に数える（そのときの警告はこの点を示す）。
+0 は列を持つ形式（``format_version`` 3 以降）に明示して書く。明示した 0 の列は補わないが、列のない形式では形状から遅れの和が補われ、見かけの質量の項を二重に数える（そのときの警告はこの点を示す）。
 基準の重心 :math:`x_{\mathrm{ref}}` で測った :math:`C_{mq}+C_{m\dot\alpha}`\ （:math:`qd/(2V)` あたり）から、重心まわりの和 :math:`K=-(C_{mq}+C_{m\dot\alpha})\,d^2/4` を作り、
 法線力の傾きと圧力中心を表す :math:`S_0,S_1` はそのままに :math:`S_2=K+2x_{\mathrm{ref}}S_1-x_{\mathrm{ref}}^2S_0` とする（:eq:`eq-damping`）。こうすると、重心が動いたときの減衰の変化は局所的な迎角の和の形で近似される。
 :math:`C_{mq}` と :math:`C_{m\dot\alpha}` が別々に分かっているときは、:math:`C_{m\dot\alpha}` を遅れの和で表してもよい。

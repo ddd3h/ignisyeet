@@ -44,10 +44,8 @@
 
    * - オプション
      - 内容
-   * - ``-q`` ``--quiet``
-     - エラー、警告、書き出したファイルのパスだけを表示する（:ref:`sec-ui-modes`）。
-   * - ``--no-progress``
-     - 進捗バーとスピナーを出さない。枠付きの要約は表示する。
+   * - ``-q`` ``--quiet`` ``--no-progress``
+     - 出力の量を減らす（:ref:`sec-ui-modes`）。
    * - ``--set KEY=VALUE``
      - ``geom`` ``aero`` ``sim`` ``dispersion``。設定のキーを上書きする（:ref:`sec-cli-overrides`）。
    * - ``--out DIR``
@@ -141,7 +139,7 @@ make のターゲットと変数
    * - ターゲット
      - 内容
    * - ``all``
-     - ``aero`` ``sim`` ``dispersion`` ``plot`` を順に実行する。``sim`` か ``dispersion`` が終了ステータス 3 で終わっても作図まで進み、最後に ``make: results are INCOMPLETE or NOT USABLE (exit status 3): see the lines above`` を出して失敗する。ほかの失敗ではその場で止まる。
+     - ``aero`` ``sim`` ``dispersion`` ``plot`` を順に実行する。``sim`` か ``dispersion`` が終了ステータス 3 で終わっても作図まで進み、最後に ``make: results are INCOMPLETE or NOT USABLE (exit status 3): see the lines above`` を出して失敗する（終了ステータスは :ref:`sec-exit-status`）。ほかの失敗ではその場で止まる。
    * - ``geom`` ``aero`` ``sim`` ``dispersion``
      - ビルドしてから同名のサブコマンドを ``CONFIG`` で実行する。
    * - ``plot``

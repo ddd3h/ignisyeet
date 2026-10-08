@@ -191,6 +191,8 @@ The installer asks whether you are a **user** or a **developer**, shows which to
 
 Both roles can additionally install the CFD tools (SU2, gmsh, Open MPI from conda-forge, about 3 GB, plus manifold3d 3.5.4 from pip for `surface = "stl"`) into a conda environment named `ignisyeet-cfd`. The versions are pinned on all platforms (SU2 8.3.0, gmsh 4.15.2, Open MPI 5, Python 3.10; micromamba 2.9.0 when it has to be installed) because the SU2 8.5.0 package crashes on CPUs without AVX-512. An existing micromamba/mamba/conda and an existing environment are reused. The plotting environment is installed from the locked versions (`uv.lock`, or `scripts/plot-constraints.txt` with pip). The installer prints the `[aero.cfd] prefix` value to put in your configuration (or `IGNISYEET_CFD_PREFIX`).
 
+Optionally, `--su2-native` builds an SU2 with `-march=native` and mixed precision (`-Denable-mixedprec=true`) for ~20% faster iterations and ~25% lower memory use on the build CPU. The native binary is not portable to other CPUs. Select the native build via `[aero.cfd] su2 = "native"` or `IGNISYEET_SU2_CFD=native` at runtime; the default remains the conda version (`"conda"`).
+
 Options are given after `bash -s --`:
 
 ```sh
@@ -201,6 +203,7 @@ curl -fsSL https://raw.githubusercontent.com/ddd3h/ignisyeet/main/install.sh | b
 |---|---|
 | `--user` / `--developer` | Choose the role without asking |
 | `--cfd` / `--no-cfd` | Install or skip the optional CFD tools |
+| `--su2-native` | Build SU2 with `-march=native` and mixed precision (CPU-specific, not portable; requires `--cfd`) |
 | `--version vX.Y.Z` | Release to install (default: the latest GitHub release); developer: tag to check out. Only the form `vX.Y.Z` is accepted |
 | `--prefix DIR` | Install prefix (default `~/.local`) |
 | `--dir DIR` | Developer clone location |

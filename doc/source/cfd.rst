@@ -86,6 +86,25 @@ IgnisYeet は、設定の ``prefix`` で指す環境の ``bin`` にある実行�
 CFD モードで ``aero`` を実行したときも、先に同じ検査を行い、ツールが足りなければ計算を始める前にエラーで止まる。
 SU2 のバージョンが 8.3.x でないときは、``cfd-check`` も CFD の係数表の作成も、検証した版が 8.3.0 であることを警告として表示する。
 
+SU2 の高速化ビルド（オプション）
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+conda-forge の SU2  8.3.0 は、汎用 CPU に対応した ``-march=generic`` で構築されている。それより新しい CPU で、より速く計算したいときは、``install.sh --su2-native`` でネイティブ最適化版を構築できる。
+ネイティブ版は、実行 CPU 固有の命令集合とメモリレイアウトに最適化されるが、別の CPU には移植できない。
+
+ネイティブ版は、``-march=native`` と ``-mtune=native`` を指定して gcc でビルドし、``-Denable-mixedprec=true`` で単精度と倍精度を混合してメモリを削減する。
+
+サンプル機体（Mach 0.8, 2）の Euler と RANS で、共有ノード上の conda 版と比較したところ、以下のとおりである。
+
+.. csv-table:: SU2 ネイティブ版の速度と精度
+   :file: data/cfd/su2_native_benchmark.csv
+   :header-rows: 4
+
+ネイティブ版は、秒/反復で約 20 % 削減、メモリは約 25 % 削減される。係数 :math:`C_N, C_A, x_{cp}` は 0.05 % 以内の差で一致する。
+
+ネイティブ版を選ぶには、``install.sh --su2-native`` を実行するか、環境変数 ``IGNISYEET_SU2_CFD=native`` を設定する。
+設定ファイル ``[aero.cfd]`` の ``su2`` キーで ``"native"`` を指定することもできる。
+既定は conda 版（``"conda"``）のままである。``-march=native`` ビルドのバイナリは生成元の CPU に固有であり、他の CPU では実行できない。
 
 .. _sec-cfd-surface:
 

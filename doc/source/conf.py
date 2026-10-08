@@ -106,5 +106,9 @@ latex_elements = {
   \sloppy\clubpenalty4000\@clubpenalty\clubpenalty\widowpenalty4000\sfcode`\.\@m}%
   {\def\@noitemerr{\@latex@warning{Empty `thebibliography' environment}}\endlist}
 \makeatother
+% A definition list in a table cell (the key cells of the configuration chapter) starts on the first line of the
+% row: drop the list skips and the empty line that the cell label leaves in front of the list.
+\usepackage{etoolbox}
+\AtBeginEnvironment{description}{\ifinner\setlength{\topsep}{0pt}\setlength{\partopsep}{0pt}\setlength{\parsep}{0pt}\par\nointerlineskip\vskip-\baselineskip\fi}
 """,
 }

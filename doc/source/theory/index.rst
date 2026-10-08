@@ -55,13 +55,13 @@
      - 流れ図 :numref:`fig-choose-earth-model`、表 :numref:`tbl-choose-earth`、平面地球が使える範囲 :numref:`fig-enu-error`
    * - ``atmosphere.model``、``temperature_offset``
      - :ref:`page-theory-atmosphere-gravity`
-     - 表 :numref:`tbl-choose-atmosphere`、結果への効き方 :numref:`tbl-atmosphere-effect`
+     - 表 :numref:`tbl-choose-environment`、結果への効き方 :numref:`tbl-atmosphere-effect`
    * - ``earth.gravity``
      - :ref:`page-theory-atmosphere-gravity`
-     - 表 :numref:`tbl-choose-gravity`、結果への効き方 :numref:`tbl-gravity-effect`
+     - 表 :numref:`tbl-choose-environment`、結果への効き方 :numref:`tbl-gravity-effect`
    * - ``wind.model``、``ref_height``、``exponent``、``roughness_length``
      - :ref:`page-theory-wind`
-     - 流れ図 :numref:`fig-choose-wind-model`、表 :numref:`tbl-choose-wind`、風速の比 :numref:`tbl-wind-ratio`、結果への効き方 :numref:`tbl-wind-effect`
+     - 流れ図 :numref:`fig-choose-wind-model`、風速の比 :numref:`tbl-wind-ratio`、結果への効き方 :numref:`tbl-wind-effect`
    * - ``wind.profile_mean_speed``、``profile_mean_direction_deg``、``ground_blend_height``、``dispersion.wind_speeds``、``dispersion.directions``
      - :ref:`page-theory-wind`
      - 平均風速の拡大と着地点 :numref:`tbl-wind-profile-scale`、風速格子の値の意味（``profile`` と他のモデル）
@@ -116,8 +116,6 @@
    overview
    geometry
    coordinates
-   atmosphere_gravity
-   wind
    propulsion
    aero_choose
    aero_coefficients

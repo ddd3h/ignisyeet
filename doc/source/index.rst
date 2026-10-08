@@ -64,6 +64,8 @@ IgnisYeet ドキュメント
    howto/index
    reference/index
    theory/index
+   environment
+   config
    vv/index
    dev/index
 

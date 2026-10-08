@@ -299,7 +299,7 @@ fn run() -> Result<()> {
 fn begin(cfg: &Config, config_path: &Path, sub: Sub) {
     if ui().plain() {
         let r = cfg.resources.resolve();
-        let mem = r.memory_bytes.map(|b| format!("{:.1} GB", b as f64 / 1e9)).unwrap_or_else(|| "no limit".into());
+        let mem = r.memory_bytes.map(|b| format!("{:.1} GB", b as f64 / 1e9)).unwrap_or_else(|| "available memory".into());
         println!("Resources: threads {} of {} available, memory {mem}, nice {}", r.threads, r.available, r.nice);
     }
     if !ui().rich() {
@@ -1336,6 +1336,22 @@ fn cfd_table(cfg: &Config, g: Geometry, hash: String, path: &Path, start: std::t
     Ok(table)
 }
 
+/// `cfd-check --mesh`: the resolved parallelism and the memory estimate against the budget.
+fn cfd_plan_line(plan: &cfd::RunPlan) -> String {
+    let gb = |b: u64| b as f64 / 1e9;
+    let budget = match &plan.memory {
+        Some((b, source)) => format!("memory budget {:.1} GB ({source})", gb(*b)),
+        None => "memory budget unknown (not checked)".to_string(),
+    };
+    format!(
+        "Resources: {} ranks x {} concurrent cases, about {:.1} GB per case ({:.1} GB together), {budget}",
+        plan.ranks,
+        plan.parallel,
+        gb(plan.bytes_per_case),
+        gb(plan.bytes_per_case * plan.parallel as u64)
+    )
+}
+
 /// `cfd-check`: report the CFD tools and their versions; with `mesh`, also build the volume mesh.
 fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
     let opt = &cfg.aero.cfd;
@@ -1378,7 +1394,9 @@ fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
         let g = geometry(cfg)?;
         let raw = if opt.surface_is_user_shape() { Some(raw_stl(cfg)?) } else { None };
         let t = std::time::Instant::now();
-        let m = cfd::mesh_only(&g, &cfg.cfd_options(), &aero_options(cfg)?, &cfg.out_dir(), &cfd_budget(cfg), raw.as_deref())?;
+        let opt = cfg.cfd_options();
+        let budget = cfd_budget(cfg);
+        let m = cfd::mesh_only(&g, &opt, &aero_options(cfg)?, &cfg.out_dir(), &budget, raw.as_deref())?;
         let s = &m.stats;
         println!(
             "Mesh {} ({}): {} nodes, {} cells, {} wall triangles, {:.1?}",
@@ -1407,6 +1425,14 @@ fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
         if let Some(info) = &m.step {
             println!("CAD surface (surface = \"step\", base treatment: {}):", info.base_treatment);
             println!("{}", info.summary());
+        }
+        let plan = cfd::plan_resources_mesh(&opt, &budget, s.cells, s.nodes, cfd::case::case_list(&opt).len());
+        println!("{}", cfd_plan_line(&plan));
+        for n in &plan.notes {
+            println!("  note: {n}");
+        }
+        if let Some(why) = plan.over_budget {
+            anyhow::bail!("aero.cfd: {why}");
         }
     }
     Ok(())
@@ -2918,6 +2944,23 @@ mod tests {
         write_failure_marker(&cfg, &anyhow::anyhow!("state diverged"));
         let j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.join("summary.json")).unwrap()).unwrap();
         assert_eq!(j, serde_json::json!({ "failed": true, "error": "state diverged" }));
+    }
+
+    #[test]
+    fn cfd_check_shows_the_memory_plan() {
+        let p = cfd::RunPlan {
+            ranks: 4,
+            parallel: 3,
+            bytes_per_case: 9_000_000_000,
+            notes: vec![],
+            memory: Some((30_000_000_000, "MemAvailable".into())),
+            over_budget: None,
+        };
+        assert_eq!(
+            cfd_plan_line(&p),
+            "Resources: 4 ranks x 3 concurrent cases, about 9.0 GB per case (27.0 GB together), memory budget 30.0 GB (MemAvailable)"
+        );
+        assert!(cfd_plan_line(&cfd::RunPlan { memory: None, ..p }).ends_with("memory budget unknown (not checked)"));
     }
 
     #[test]

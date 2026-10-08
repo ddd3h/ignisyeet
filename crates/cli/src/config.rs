@@ -355,7 +355,8 @@ impl Default for SimCfg {
 pub struct ResourcesCfg {
     /// Maximum number of CPU threads for everything; 0 = all available.
     pub threads: usize,
-    /// Memory budget in GB for heavy steps (CFD cases, the panel dense matrix); 0 = no limit.
+    /// Memory budget in GB for heavy steps (CFD cases, the panel dense matrix); 0 = the memory available to the
+    /// process (available memory, cgroup limit, address-space limit; see `panel::memory`).
     pub memory_gb: f64,
     /// Process priority lowering, 0..=19 (0 = unchanged).
     pub nice: i32,
@@ -375,7 +376,7 @@ pub struct Resolved {
 impl ResourcesCfg {
     pub fn validate(&self) -> Result<()> {
         if !self.memory_gb.is_finite() || self.memory_gb < 0.0 {
-            bail!("resources.memory_gb must be 0 (no limit) or positive");
+            bail!("resources.memory_gb must be 0 (use the available memory) or positive");
         }
         if !(0..=19).contains(&self.nice) {
             bail!("resources.nice must be between 0 and 19");

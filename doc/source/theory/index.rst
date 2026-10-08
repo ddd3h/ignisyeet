@@ -71,9 +71,9 @@
    * - ``rocket.cg_lateral_dry``、``ixy_dry`` など
      - :ref:`page-theory-propulsion`、:ref:`page-theory-dynamics`
      - 質量特性の表 :numref:`tbl-choose-propulsion`、重心の横ずれと静的余裕 :numref:`tbl-choose-margin`
-   * - ``rocket.fin_le``、``fin_te``、``fin_cant_deg``、``roughness``、``extra_cd``
+   * - ``rocket.fin_le``、``fin_te``、``fin_cant_deg``、``roughness``、``extra_cd``、``fin_override``
      - :ref:`page-theory-barrowman`
-     - 部品積み上げ法の各項（フィン、摩擦、抗力）の式と適用範囲（:ref:`page-theory-barrowman`）。方法の比較は :numref:`tbl-aero-methods`
+     - 入力を変えたときの頂点高度・着地点・静的余裕の変化 :numref:`tbl-choose-barrowman-sens`
    * - ``aero.method``
      - :ref:`page-theory-aero-choose`
      - 流れ図 :numref:`fig-choose-aero-method`、状況別 :numref:`tbl-choose-aero-situation`、手法の比較 :numref:`tbl-aero-methods`、範囲 :numref:`tbl-choose-aero-range`、根拠 :numref:`tbl-choose-aero-evidence`

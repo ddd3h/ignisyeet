@@ -87,7 +87,7 @@ fn documented() -> (Docs, Vec<String>) {
             let sect = lines[*start..end].join("\n");
             let sev = ["エラー", "ワーニング"]
                 .into_iter()
-                .filter_map(|w| ["重大度: ", "重大度：", "種類：", "種別\n   "].iter().find_map(|p| sect.find(&format!("{p}{w}")).map(|_| w)))
+                .filter_map(|w| ["重大度: ", "重大度\n   "].iter().find_map(|p| sect.find(&format!("{p}{w}")).map(|_| w)))
                 .next();
             match sev {
                 Some(w) => m.entry(code.clone()).or_default().push((name.to_string(), w.to_string())),

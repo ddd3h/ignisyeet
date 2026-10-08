@@ -247,7 +247,7 @@ STL と CAD のモデル（``surface = "step"``）を Euler で解くときは�
    円すいの前面は、胴体の底面の縁の多角形と同じ形で、底面と同一平面に重なるので、和に段差や細長い三角形が残らない。
    **入力の STL を変更する** ので、警告を出す。底面の抗力は経験式（部品積み上げ法の底面抗力）で補う（:ref:`sec-cfd-trust`）。
    ``surface = "step"`` では、OpenCASCADE の厳密な円すい（同じ傾きで、底面半径の 10 % で切る）を、最も大きい平らな底面の後ろに CAD の立体と融合する。**CAD の形状を変更する** ので、同じく警告を出す。
-   フィンの後縁が底面と同一平面にあるとき（Basic Finner）は、フィンの後縁も底面の面の一部になるので、円すいは底面の面の広がりではなく、胴体の底面の円の縁の 98 % の半径から始める（縁に重ねると CAD の融合が失敗する）。フィンの後縁の面は底面と同じ面なので、``base`` のマーカーに入り、Euler の軸力には積分しない（その抗力は、部品積み上げ法のフィンの後縁の底面抗力で補う）。
+   フィンの後縁が底面と同一平面にあるとき（Basic Finner）は、フィンの後縁も底面の面の一部になるので、円すいは底面の面の広がりではなく、胴体の底面の円の縁の 98 % の半径から始める（縁に重ねると CAD の融合が失敗する）。フィンの後縁の面は底面と同じ面なので、``base`` のマーカーに入り、Euler の軸力には積分しない（その抗力は、部品積み上げ法のフィンの後縁の底面抗力で補う。後縁が底面の平面から全長の :math:`10^{-4}` 倍以内にあるときだけで、式は :ref:`sec-cfd-post` にある）。モデルは抽出した平均のフィンの厚さを使うので、後縁が鈍いくさび形のときは抗力を過小に見積もる。
 
 ``"flat"``
    STL の形状を変えず、平らな底面を残す。ただし、この Euler の解は収束しないことがある。
@@ -605,6 +605,16 @@ RANS で解く
 ``wall_size`` 5 mm、``iterations`` 4000（2 次精度の段の反復数）、``min_iterations`` 400、``stable_window`` 200 である。
 ``yplus`` の既定は 1 で、壁面まで境界層を解像する。``z_mirror_mesh`` は効かず、``alpha_mode = "mirror"`` では負の迎角も解く（メッシュが :math:`z` について厳密に対称でないため）。
 底面は常に平らで、尾部フェアリングは置かない。
+``wall_size``\ 、``iterations``\ 、``min_iterations``\ 、``stable_window`` を明示したときは、RANS の既定ではなくその値を使う。
+Euler の設定ファイルの ``model`` だけを ``"rans"`` に変えたときは、設定ファイルにある ``wall_size`` と ``iterations`` がそのまま効く。
+``examples/sample_rans.toml`` は、これらを設定せず RANS の既定のままにしたサンプル機体の設定である（半モデル、:math:`M=0.3,0.8,1.2,2`\ 、:math:`\alpha=0,\pm4,\pm8^\circ` の 20 ケース、``alpha_mode = "mirror"``\ 、``yplus = 1``）。
+ファイルのコメントによると、1 ケースのメモリは ``wall_size`` 5 mm で実測約 7.5 GB（``cfd-check`` の見積もりは約 9 GB）、3 mm で 18 GB であり、20 ケースを 4 ランク、2 ケースずつ同時で解くのに約 4.4 時間（1 ケース 14 から 61 分）かかった。
+
+**警告**\ 。次の場合は、計算を止めずに警告を出す。
+
+* ``wall_size`` が 4 mm より小さい：``aero.cfd: model = "rans" with wall_size = … m, finer than the RANS default 0.005 m: a half-model case of the sample rocket needs about 7.5 GB at 5 mm and 18 GB at 3 mm, and more on a finer mesh; check the estimate with `ignisyeet cfd-check <config> --mesh` (an explicit wall_size overrides the RANS default)``
+* ``yplus`` が 30 から 150（壁関数）：``aero.cfd: yplus = … selects the standard wall function (30..150), which is not verified (the RANS verification uses a resolved wall, yplus = 1); use yplus <= 5 unless you check the results yourself``
+
 ``surface = "step"`` で使うときの注意（鋭い縁、狭いすき間、確かめた範囲）は :ref:`sec-cfd-step` にある。
 
 **メッシュの大きさ**\ 。境界層の層数と厚さは ``wall_size`` と ``yplus``\ 、解く Mach 数で決まる（:ref:`sec-cfd-prism`）。
@@ -675,7 +685,7 @@ RANS で解く
      - 31.1 GB
 
 ``wall_size`` 5 mm のケースを 4 ランクで解いたときの実測のピークは、ランクの合計で約 7.8 GB であった。
-全領域は節点数もメモリも約 2 倍になる。メモリの予算（``[resources]`` の ``memory_gb``）に合わせて ``parallel_cases`` が減るので、同時に解けるケースは Euler よりずっと少ない。
+全領域は節点数もメモリも約 2 倍になる。メモリの予算（``[resources]`` の ``memory_gb``。既定は使えるメモリ。:ref:`メモリの予算 <sec-cfd-resources>`）に合わせて ``parallel_cases`` が減るので、同時に解けるケースは Euler よりずっと少ない。
 ``ignisyeet cfd-check 設定ファイル --mesh`` は、境界層の層数、最初の層の高さ、厚さ、不正なプリズムの数（常に 0）も表示する。
 
 **抗力の内訳**\ 。軸力は、壁面（``wall``）の力の積分（圧力と摩擦）に、底面の項、追加抗力、二つの増分を足したものである。
@@ -704,8 +714,19 @@ RANS の壁は滑らかなので、設定の粗さの効果を部品積み上げ
 どちらも 0 にすると自動になり、ランク数は 4 とスレッド数の小さいほう、同時ケース数は ``スレッド数 / ランク数`` になる。
 積が使えるスレッド数を超えるときは、まず同時ケース数を、次にランク数を減らす。
 
+.. _sec-cfd-resources:
+
 ``[resources]`` の ``threads`` はスレッド数の上限（MPI ランクの総数と gmsh のスレッド数に効く）で、``memory_gb`` は同時に動かすケースのメモリの予算である。
-予算に収まるまで同時ケース数を減らし（最低でも 1 ケースは動かす）、1 ケースでも予算を超えるときは警告を出す。
+``memory_gb = 0``\ （既定）のときの予算は、このプロセスが使えるメモリ（Linux の ``MemAvailable``、cgroup の上限、``ulimit -v`` の上限の最小。macOS では物理メモリ）で、正の値を指定するとそれを使う。
+予算に収まるまで同時ケース数を減らす（``note: aero.cfd: parallel_cases reduced from … to … (memory budget … GB from …, about … GB per case)``）。
+1 ケースの見積もりが予算を超えるときは、メッシュを作ったあと、計算の前にエラーで止まる。
+メッセージは ``aero.cfd: a single CFD case needs about … GB (… on … cells / … nodes, … ranks), more than the memory budget of … GB (…); use a coarser mesh (a larger wall_size…) or fewer ranks_per_case (about 40 MB each)…`` で、末尾は ``memory_gb`` を指定していれば ``or raise resources.memory_gb``、既定の予算なら ``or set resources.memory_gb when more memory can be freed for the run`` である。
+``ignisyeet cfd-check 設定ファイル --mesh`` は、解決した並列度と見積もりを次の 1 行で表示する（予算が分からない環境では ``memory budget unknown (not checked)``）。
+
+.. code-block:: text
+
+   Resources: 4 ranks x 3 concurrent cases, about 9.0 GB per case (27.0 GB together), memory budget 30.0 GB (available memory, MemAvailable in /proc/meminfo)
+
 1 ケースのメモリは、ランク数 :math:`n_r`、セル数 :math:`N` に対して
 
 .. math::
@@ -734,13 +755,15 @@ RANS は、SU2 が解と勾配と線形系を節点ごとに持つので、節�
 
 Euler のケースの結果は、次のいずれかで扱う。
 
-* **収束**\ ：残差が目標に達した。
+* **収束**\ ：残差が目標に達し、係数も落ち着いた。
 * **早期終了**\ ：反復の途中で残差が十分に下がり、力とモーメントが落ち着いたので、止めて受け入れた（``status`` は ``accepted``）。
   落ち着きの判定は、軸力・法線力・ピッチングモーメントに加えて、ロール減衰のケースでは転がりモーメントの係数 CMx を、横滑りのケースでは横力 CFy とヨーイングモーメント CMz も見る（:ref:`sec-cfd-int-convergence`）。
-* **受け入れ**\ ：反復の上限か時間の上限に達したが、残差がある程度下がり、最後の窓で力とモーメントがほぼ一定のとき、窓の平均を係数として受け入れる。「収束」には数えず、``cfd_report.json`` の ``unconverged`` に載る。
+* **受け入れ**\ ：反復の上限か時間の上限に達したが、残差がある程度下がり、最後の窓で力とモーメントがほぼ一定のとき、窓の平均を係数として受け入れる。残差が目標に達していても、係数がまだ傾いているか振動している状態で上限に達したときも、窓の平均を使う（警告は ``… coefficients averaged over the last N iterations`` で終わる）。「収束」には数えず、``cfd_report.json`` の ``unconverged`` に載る。
+  早期終了で止めたケースは、止めると決めた時点の履歴と判定で扱う。
 * **失敗**\ ：SU2 のエラー、発散、収束も安定もしていない場合。表の作成では、失敗したケースを飛ばして補間する。
 
 RANS のケースは、``converged``、``unconverged``\ （振動や残差の停滞のまま係数が一定で、窓の平均を受け入れた）、失敗のいずれかになる（:ref:`sec-cfd-rans-use`）。
+停滞のケースは ``cfd_report.json`` の ``stalled_cases`` に残差の下がりとともに載り、実行の最後に警告を出す。``cfd_cases.csv`` の ``rans_verdict`` と ``residual_drop`` で確かめる。
 発散したケースは、反復の上限を待たずに止め、一度だけ控えめな設定で解き直す。
 
 判定の条件は :ref:`sec-cfd-int-convergence` と :ref:`sec-cfd-int-rans-accept` にある。平らな底面の Euler（STL と CAD のモデルの ``base_treatment = "flat"``）は収束しないことがあり、そのときは失敗として扱う。
@@ -844,8 +867,8 @@ CFD が与える値
 
 次の値は CFD が直接与えるものではなく、部品積み上げ法（またはパネル法）のモデルで補う。
 
-* Euler では、摩擦抗力、底面抗力、フィン縁とボートテールの抗力（Euler は粘性を含まないため）。ただし ``surface = "stl"`` と ``"step"`` では、フィンの前縁と後縁の面が CFD の壁面にあり、その圧力抗力が CFD の軸力にすでに入っているので、フィン縁の項は加えない。``panel_mesh`` では加える（:ref:`sec-cfd-post`）。
-  RANS では、追加抗力、``rans_base = "model"``\ （既定）のときの底面抗力、設定の粗さによる摩擦の増分、``panel_mesh`` のときの設定のフィンの縁による増分を足す（:eq:`eq-cfd-ca-rans`）。
+* Euler では、摩擦抗力、底面抗力、フィン縁とボートテールの抗力（Euler は粘性を含まないため）。ただし ``surface = "stl"`` と ``"step"`` では、フィンの前縁と後縁の面が CFD の壁面にあり、その圧力抗力が CFD の軸力にすでに入っているので、フィン縁の項は加えない。ただし後縁が底面と同一平面にそろっているときは、後縁の面が ``base`` のマーカーに入って力の積分から外れるので、その底面抗力を抽出した平均のフィンの厚さからモデルで足す（厚さを使うので、鈍いくさび形の後縁は過小になる）。``panel_mesh`` ではフィン縁の項を加える（:ref:`sec-cfd-post`）。
+  RANS では、追加抗力、``rans_base = "model"``\ （既定）のときの底面抗力（``surface = "stl"`` と ``"step"`` でフィンの後縁がそろっているときは後縁の底面抗力も）、設定の粗さによる摩擦の増分、``panel_mesh`` のときの設定のフィンの縁による増分を足す（:eq:`eq-cfd-ca-rans`）。
 * ピッチとヨーの減衰 :math:`C_{mq}`、:math:`C_{nr}`。定常な計算は与えないので、モデルの和のばらつきを残し、CFD の傾きと重心に合わせて取り替える（:ref:`sec-aero-damping`）。
 * ロールのカント強制 :math:`C_{l\delta}`。
 * ロールとピッチ・ヨーの交差する微係数は、どの手法でもモデルにない。

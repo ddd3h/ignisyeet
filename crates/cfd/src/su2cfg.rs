@@ -68,6 +68,9 @@ pub const RANS_STARTUP_DROP: f64 = 2.0;
 pub const RANS_STARTUP_MIN_ITER: usize = 100;
 /// RANS final stage: `CONV_RESIDUAL_MINVAL` (a floor far below any acceptance level; the runner stops the case).
 pub const RANS_RESIDUAL_FLOOR: f64 = -14.0;
+/// Euler: `CONV_RESIDUAL_MINVAL` is at least this many orders below the target `convergence` (and at most
+/// [`RANS_RESIDUAL_FLOOR`]).
+pub const EULER_FLOOR_MARGIN: f64 = 2.0;
 /// RANS: upper CFL limit in units of `cfl`.
 pub const RANS_CFL_MAX_FACTOR: f64 = 40.0;
 /// `OUTPUT_WRT_FREQ` (iterations): SU2 exits on SIGTERM without writing, so the runner's early stop waits for the
@@ -322,7 +325,9 @@ pub fn su2_config_case(opt: &CfdOptions, spec: &CaseSpec, dims: &RefDims, atm: &
     } else {
         c.kv("ITER", opt.iterations);
         c.kv("CONV_FIELD", "RMS_DENSITY");
-        c.kv("CONV_RESIDUAL_MINVAL", opt.residual_minval());
+        // A floor below the target: the runner stops the case once the target is reached and the coefficient trend has
+        // settled (SU2 stopping by itself at the target left CN at M 0.8 up to 1.4 % short of its converged value).
+        c.kv("CONV_RESIDUAL_MINVAL", (opt.residual_minval() - EULER_FLOOR_MARGIN).min(RANS_RESIDUAL_FLOOR));
         c.kv("CONV_STARTITER", "10");
     }
     c.blank();
@@ -393,7 +398,7 @@ mod tests {
             "CFL_NUMBER= 5",
             "ITER= 3000",
             "CONV_FIELD= RMS_DENSITY",
-            "CONV_RESIDUAL_MINVAL= -6",
+            "CONV_RESIDUAL_MINVAL= -14",
             "MESH_FILENAME= mesh.su2",
             "RESTART_SOL= NO",
             "OUTPUT_FILES= ( RESTART, SURFACE_CSV, SURFACE_PARAVIEW_ASCII )",
@@ -405,6 +410,9 @@ mod tests {
         let area = 0.5 * std::f64::consts::PI * 0.05 * 0.05;
         assert!(has(&s, &format!("REF_AREA= {area:.10}")), "{s}");
         assert!(!s.contains("KIND_TURB_MODEL") && !s.contains("MARKER_HEATFLUX"));
+        // The residual floor stays below a deep convergence target.
+        let deep = su2_config(&CfdOptions { convergence: 1e-13, ..o.clone() }, 2.0, 4.0, &dims(), &atm(), &CaseFiles::default());
+        assert!(has(&deep, "CONV_RESIDUAL_MINVAL= -15"), "{deep}");
         // Periodic output that the early stop waits for (restart file of the warm starts).
         assert!(has(&s, "OUTPUT_WRT_FREQ= 50"), "{s}");
     }
@@ -602,6 +610,6 @@ mod tests {
             all += &su2_config_case(o, &CaseSpec { mach: 1.1, alpha_deg: 2.0, beta_deg: 4.0, roll_hat: 0.0 }, &dims(), &atm(), &files);
         }
         all += &su2_config_case(&CfdOptions { symmetry: false, ..Default::default() }, &CaseSpec::roll(0.8, 0.01), &dims(), &atm(), &files);
-        assert_eq!(crate::case::hash_parts(&[all.as_bytes()]), "b38200e2f5706094", "{all}");
+        assert_eq!(crate::case::hash_parts(&[all.as_bytes()]), "a0dd109b9e2fd44e", "{all}");
     }
 }

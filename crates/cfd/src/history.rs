@@ -103,6 +103,11 @@ pub const DIVERGENCE_RHO_RISE: f64 = 2.0;
 pub const DIVERGENCE_NU_RISE: f64 = 3.0;
 /// ... and largest plausible force coefficient magnitude.
 pub const ABSURD_FORCE: f64 = 100.0;
+/// Euler trend tolerances ([`History::euler_trend_settled`]): remaining change of the forces, as a fraction of the
+/// force scale ...
+pub const EULER_TREND_FORCE: f64 = 0.002;
+/// ... and of the centre of pressure, in body lengths.
+pub const EULER_TREND_XCP: f64 = 0.002;
 /// Limit cycle: largest inter-quartile range of the forces, as a fraction of the force scale.
 pub const LIMIT_CYCLE_SPREAD: f64 = 0.01;
 
@@ -231,6 +236,66 @@ impl History {
     /// The flatness check alone stopped a flat-plate case whose drag still crept by 1.9 % (TMR 273 x 193 grid,
     /// M 0.2): over a window of 200 iterations the drift of a slowly converging coefficient stays below 0.5 %.
     pub fn rans_trend_settled(&self, window: usize, kind: StabilityKind, length_ratio: f64, budget: usize) -> bool {
+        self.trend_settled(window, kind, length_ratio, budget, RANS_FORCE_DRIFT, RANS_XCP_DRIFT)
+    }
+
+    /// Euler: the coefficients have settled over the last `window` rows: their range
+    /// ([`History::coefficients_tight`]) and their extrapolated remaining change ([`History::trend_settled`]) are
+    /// within [`EULER_TREND_FORCE`] of the force scale and [`EULER_TREND_XCP`] body lengths.
+    ///
+    /// Sample rocket, Euler, 2 mm mesh, M 0.8, alpha 4 deg from the freestream: the residual passed 1e-6 at iteration
+    /// 103 with CN 0.56 % below its value at 1e-9.5 (a damped oscillation of about 0.8 %); this check accepts it at
+    /// iteration 220, 0.002 % from that value.
+    pub fn euler_trend_settled(&self, window: usize, kind: StabilityKind, length_ratio: f64, budget: usize) -> bool {
+        self.coefficients_tight(window, kind, length_ratio, EULER_TREND_FORCE, EULER_TREND_XCP)
+            && self.trend_settled(window, kind, length_ratio, budget, EULER_TREND_FORCE, EULER_TREND_XCP)
+    }
+
+    /// The forces (`CFx`, `CFz`; with sideslip `CFy`) vary over the last `window` rows (largest minus smallest value) by
+    /// at most `force_tol` of the force scale (plus 1e-5), and the centre of pressure by at most `xcp_tol` body lengths
+    /// (the moment when the normal force is near zero). Catches the slowly damped oscillation of an Euler solution
+    /// whose residual already reached the target (sample rocket, M 0.8: CN swinging by 0.8 % with a period of about
+    /// 35 iterations when the residual passed 1e-6).
+    pub fn coefficients_tight(&self, window: usize, kind: StabilityKind, length_ratio: f64, force_tol: f64, xcp_tol: f64) -> bool {
+        if self.rows.len() < window.max(4) {
+            return false;
+        }
+        let side = kind == StabilityKind::Sideslip;
+        let fx = self.tail(&["CFx", "CD"], window);
+        let fz = self.tail(&["CFz", "CL"], window);
+        let fy = if side { self.tail(&["CFy"], window) } else { None };
+        if fx.is_none() && fz.is_none() {
+            return false;
+        }
+        let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
+        let range = |v: &[f64]| {
+            if v.iter().any(|x| !x.is_finite()) {
+                return f64::INFINITY;
+            }
+            v.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b)) - v.iter().fold(f64::INFINITY, |a, &b| a.min(b))
+        };
+        let scale = [&fx, &fz, &fy].iter().filter_map(|v| v.as_ref()).map(|v| mean(v).abs()).fold(0.0, f64::max);
+        let tol = force_tol * scale + 1e-5;
+        let mut ok = [&fx, &fz, &fy].iter().filter_map(|v| v.as_ref()).all(|v| range(v) <= tol);
+        let mut moment = |force: &[&str], mom: &[&str], sign: f64| {
+            let (Some(f), Some(m)) = (self.tail(force, window), self.tail(mom, window)) else { return };
+            if mean(&f).abs() > 20.0 * tol {
+                let x: Vec<f64> = f.iter().zip(&m).map(|(f, m)| sign * m / f).collect();
+                ok = ok && range(&x) <= xcp_tol * length_ratio;
+            } else {
+                ok = ok && range(&m) <= tol * length_ratio;
+            }
+        };
+        moment(&["CFz", "CL"], &["CMy"], -1.0);
+        if side {
+            moment(&["CFy"], &["CMz"], 1.0);
+        }
+        ok
+    }
+
+    /// The trend check of [`History::rans_trend_settled`] with the force tolerance `force_tol` (fraction of the force
+    /// scale, plus 1e-5) and the centre-of-pressure tolerance `xcp_tol` (body lengths).
+    pub fn trend_settled(&self, window: usize, kind: StabilityKind, length_ratio: f64, budget: usize, force_tol: f64, xcp_tol: f64) -> bool {
         if self.rows.len() < window.max(4) {
             return false;
         }
@@ -245,14 +310,14 @@ impl History {
         }
         let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
         let scale = [&fx, &fz, &fy].iter().filter_map(|v| v.as_ref()).map(|v| mean(v).abs()).fold(0.0, f64::max);
-        let tol = RANS_FORCE_DRIFT * scale + 1e-5;
+        let tol = force_tol * scale + 1e-5;
         let change = |v: &[f64]| (slope(v) * tau).abs();
         let mut ok = [&fx, &fz, &fy].iter().filter_map(|v| v.as_ref()).all(|v| change(v) <= tol);
         let mut moment = |force: &[&str], mom: &[&str], sign: f64| {
             let (Some(f), Some(m)) = (self.tail(force, window), self.tail(mom, window)) else { return };
             if mean(&f).abs() > 20.0 * tol {
                 let x: Vec<f64> = f.iter().zip(&m).map(|(f, m)| sign * m / f).collect();
-                ok = ok && change(&x) <= RANS_XCP_DRIFT * length_ratio;
+                ok = ok && change(&x) <= xcp_tol * length_ratio;
             } else {
                 ok = ok && change(&m) <= tol * length_ratio;
             }
@@ -574,5 +639,26 @@ mod tests {
         assert!(mk(&nan).rans_divergence().unwrap().contains("not finite"));
         // Too short to judge.
         assert_eq!(mk(&blow[..12]).rans_divergence(), None);
+    }
+
+    #[test]
+    fn euler_settled_rejects_a_damped_oscillation_until_it_has_decayed() {
+        // CN(4 deg) at M 0.8: 1.2023 with a damped oscillation of period 35, amplitude 0.008 decaying with 1/e per 40
+        // iterations; the residual falls by 0.03 orders per iteration (fast: the trend alone sees nothing).
+        let mut t = String::from("\"Inner_Iter\",\"rms[Rho]\",\"CFx\",\"CFz\",\"CMy\"\n");
+        for i in 0..400 {
+            let x = i as f64;
+            let cz = 1.2023 * (1.0 + 0.008 * (-x / 40.0).exp() * (2.0 * std::f64::consts::PI * x / 35.0).sin());
+            t += &format!("{i},{},-0.0221,{cz},{}\n", -3.0 - 0.03 * x, -11.6 * cz);
+        }
+        let full = History::parse(&t).unwrap();
+        let at = |n: usize| History { columns: full.columns.clone(), rows: full.rows[..n].to_vec() };
+        let k = StabilityKind::Pitch;
+        let first = (60..400).find(|&n| at(n).euler_trend_settled(60, k, 18.0, 3000)).unwrap();
+        let err = |n: usize| (full.rows[n - 1][3] / 1.2023 - 1.0).abs();
+        assert!(err(first) < 0.002, "settled at {first}, error {}", err(first));
+        // The trend check alone accepts early, inside the oscillation.
+        let early = (60..400).find(|&n| at(n).trend_settled(60, k, 18.0, 3000, EULER_TREND_FORCE, EULER_TREND_XCP)).unwrap();
+        assert!(early < first, "{early} {first}");
     }
 }

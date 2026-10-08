@@ -86,6 +86,99 @@ IgnisYeet は、設定の ``prefix`` で指す環境の ``bin`` にある実行�
 CFD モードで ``aero`` を実行したときも、先に同じ検査を行い、ツールが足りなければ計算を始める前にエラーで止まる。
 SU2 のバージョンが 8.3.x でないときは、``cfd-check`` も CFD の係数表の作成も、検証した版が 8.3.0 であることを警告として表示する。
 
+.. _sec-cfd-native:
+
+SU2 の高速化ビルド（オプション）
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+conda-forge の SU2 8.3.0 は、汎用の x86-64 向けに構築されており、実行する CPU 固有の命令（AVX など）をほとんど使わない。
+``install.sh --su2-native`` は、SU2 8.3.0 をソースから、その場の CPU 向けに構築する。
+構築は Linux で CFD 環境（``--cfd``）と git、gcc/g++ が必要で、約 10 分かかる。
+
+構築の設定は次のとおりである。
+
+- meson の ``--buildtype=release --optimization=3``。
+- C/C++ の引数に ``-march=native -mtune=native``\ （gcc 13 以降の CLI11 のために ``-include cstdint`` も加える）。
+- ``-Dwith-mpi=enabled -Dcustom-mpi=true``\ （CFD 環境の Open MPI を使う）、``-Dwith-omp=false``。
+- ``-Denable-mixedprec=true``\ （線形代数に単精度を混ぜて、メモリを減らす）。
+- ``-Denable-pywrapper=false -Denable-tests=false``。
+
+実行ファイルは ``PREFIX/share/ignisyeet-su2-native/bin/SU2_CFD`` に置かれ、インストーラの最後に ``export IGNISYEET_SU2_CFD=...`` の行としてそのパスが表示される。
+
+**使い方。** 環境変数 ``IGNISYEET_SU2_CFD`` に ``SU2_CFD`` 実行ファイルのパスを入れる。
+``[aero.cfd] su2`` が既定の ``"SU2_CFD"`` のままのとき、この環境変数のパスが使われる。
+``su2`` に明示的なパスを書いたときは、そちらが優先される。
+どちらの場合も、``mpirun``、gmsh、ライブラリは ``[aero.cfd] prefix`` の CFD 環境から取る。
+指定しなければ conda-forge の SU2 を使う。
+
+**性能と精度。** 同じ共有ノード（virgo02、EPYC 7742 2 基、16 ランク）で、同じメッシュと設定を冷たい状態から解き、二つのビルドを交互に対にして実行した。
+共有ノードなので絶対値は負荷で変わる。比較には対ごとの比（ネイティブ / conda）を使う。
+ネイティブ版は、1 反復あたりの時間が Euler で 0.70 〜 0.87 倍、RANS（壁面 5 mm、Mach 0.8、迎角 4°）で 0.75 〜 0.77 倍である。
+ピーク RSS（16 ランクの合計）は、Euler で 3.69 GB から約 2.75 GB に、RANS で 7.5 GB から約 5.1 GB に減る。
+収束までの反復数は、conda 版と 1 反復ほどしか違わない。
+
+.. list-table:: ネイティブ版 / conda 版の比（対ごと）
+   :header-rows: 1
+   :widths: 30 14 14 14 14 14
+
+   * - ケース（組）
+     - 秒/反復
+     - 全体の時間
+     - ピーク RSS
+     - 反復数（conda、native）
+     - 実行順
+   * - Euler Mach 0.8, 4°（1）
+     - 0.786
+     - 0.795
+     - 0.747
+     - 354、355
+     - conda が先
+   * - Euler Mach 0.8, 4°（2）
+     - 0.866
+     - 0.871
+     - 0.743
+     - 354、356
+     - native が先
+   * - Euler Mach 0.8, 4°（3）
+     - 0.704
+     - 0.710
+     - 0.742
+     - 354、354
+     - conda が先
+   * - Euler Mach 2, 4°（2）
+     - 0.709
+     - 0.737
+     - 0.742
+     - 153、155
+     - native が先
+   * - Euler Mach 2, 4°（3）
+     - 0.722
+     - 0.745
+     - 0.742
+     - 154、155
+     - conda が先
+   * - RANS Mach 0.8, 4°（1）
+     - 0.746
+     - 0.735
+     - 0.682
+     - 404、403
+     - native が先
+   * - RANS Mach 0.8, 4°（2）
+     - 0.766
+     - 0.740
+     - 0.685
+     - 403、404
+     - conda が先
+
+Euler の Mach 2 の 1 組目は、conda 版が誤って前のケースから初期化されたため除いた。RANS の 1 組目は、ノード負荷が実行の途中で大きく変わったため、参考値である。
+全ての値は ``data/cfd/su2_native_benchmark.csv`` にある。
+
+係数の差は、:math:`C_N` が 0.004 % 以内、:math:`x_{cp}` が 0.011 mm 以内である。
+:math:`C_A` は 0 に近い値なので相対差が大きく見え、最大で 0.12 % だが、絶対値では 1 〜 3e-5 である。
+残差は、Euler で両者がほぼ一致し、RANS ではネイティブ版の方が 400 反復で約 0.2 〜 0.35 桁高い。ただし、どちらも同じ反復で収束判定を満たす。
+
+-march=native のバイナリは構築した CPU の命令集合に依存し、別の CPU に移すと異常終了することがある。
+そのため、既定は conda-forge の SU2 のままで、ネイティブ版は利用者が環境変数で選ぶ。
 
 .. _sec-cfd-surface:
 
@@ -154,6 +247,7 @@ STL と CAD のモデル（``surface = "step"``）を Euler で解くときは�
    円すいの前面は、胴体の底面の縁の多角形と同じ形で、底面と同一平面に重なるので、和に段差や細長い三角形が残らない。
    **入力の STL を変更する** ので、警告を出す。底面の抗力は経験式（部品積み上げ法の底面抗力）で補う（:ref:`sec-cfd-trust`）。
    ``surface = "step"`` では、OpenCASCADE の厳密な円すい（同じ傾きで、底面半径の 10 % で切る）を、最も大きい平らな底面の後ろに CAD の立体と融合する。**CAD の形状を変更する** ので、同じく警告を出す。
+   フィンの後縁が底面と同一平面にあるとき（Basic Finner）は、フィンの後縁も底面の面の一部になるので、円すいは底面の面の広がりではなく、胴体の底面の円の縁の 98 % の半径から始める（縁に重ねると CAD の融合が失敗する）。フィンの後縁の面は底面と同じ面なので、``base`` のマーカーに入り、Euler の軸力には積分しない（その抗力は、部品積み上げ法のフィンの後縁の底面抗力で補う。後縁が底面の平面から全長の :math:`10^{-4}` 倍以内にあるときだけで、式は :ref:`sec-cfd-post` にある）。モデルは抽出した平均のフィンの厚さを使うので、後縁が鈍いくさび形のときは抗力を過小に見積もる。
 
 ``"flat"``
    STL の形状を変えず、平らな底面を残す。ただし、この Euler の解は収束しないことがある。
@@ -511,6 +605,16 @@ RANS で解く
 ``wall_size`` 5 mm、``iterations`` 4000（2 次精度の段の反復数）、``min_iterations`` 400、``stable_window`` 200 である。
 ``yplus`` の既定は 1 で、壁面まで境界層を解像する。``z_mirror_mesh`` は効かず、``alpha_mode = "mirror"`` では負の迎角も解く（メッシュが :math:`z` について厳密に対称でないため）。
 底面は常に平らで、尾部フェアリングは置かない。
+``wall_size``\ 、``iterations``\ 、``min_iterations``\ 、``stable_window`` を明示したときは、RANS の既定ではなくその値を使う。
+Euler の設定ファイルの ``model`` だけを ``"rans"`` に変えたときは、設定ファイルにある ``wall_size`` と ``iterations`` がそのまま効く。
+``examples/sample_rans.toml`` は、これらを設定せず RANS の既定のままにしたサンプル機体の設定である（半モデル、:math:`M=0.3,0.8,1.2,2`\ 、:math:`\alpha=0,\pm4,\pm8^\circ` の 20 ケース、``alpha_mode = "mirror"``\ 、``yplus = 1``）。
+ファイルのコメントによると、1 ケースのメモリは ``wall_size`` 5 mm で実測約 7.5 GB（``cfd-check`` の見積もりは約 9 GB）、3 mm で 18 GB であり、20 ケースを 4 ランク、2 ケースずつ同時で解くのに約 4.4 時間（1 ケース 14 から 61 分）かかった。
+
+**警告**\ 。次の場合は、計算を止めずに警告を出す。
+
+* ``wall_size`` が 4 mm より小さい：``aero.cfd: model = "rans" with wall_size = … m, finer than the RANS default 0.005 m: a half-model case of the sample rocket needs about 7.5 GB at 5 mm and 18 GB at 3 mm, and more on a finer mesh; check the estimate with `ignisyeet cfd-check <config> --mesh` (an explicit wall_size overrides the RANS default)``
+* ``yplus`` が 30 から 150（壁関数）：``aero.cfd: yplus = … selects the standard wall function (30..150), which is not verified (the RANS verification uses a resolved wall, yplus = 1); use yplus <= 5 unless you check the results yourself``
+
 ``surface = "step"`` で使うときの注意（鋭い縁、狭いすき間、確かめた範囲）は :ref:`sec-cfd-step` にある。
 
 **メッシュの大きさ**\ 。境界層の層数と厚さは ``wall_size`` と ``yplus``\ 、解く Mach 数で決まる（:ref:`sec-cfd-prism`）。
@@ -581,7 +685,7 @@ RANS で解く
      - 31.1 GB
 
 ``wall_size`` 5 mm のケースを 4 ランクで解いたときの実測のピークは、ランクの合計で約 7.8 GB であった。
-全領域は節点数もメモリも約 2 倍になる。メモリの予算（``[resources]`` の ``memory_gb``）に合わせて ``parallel_cases`` が減るので、同時に解けるケースは Euler よりずっと少ない。
+全領域は節点数もメモリも約 2 倍になる。メモリの予算（``[resources]`` の ``memory_gb``。既定は使えるメモリ。:ref:`メモリの予算 <sec-cfd-resources>`）に合わせて ``parallel_cases`` が減るので、同時に解けるケースは Euler よりずっと少ない。
 ``ignisyeet cfd-check 設定ファイル --mesh`` は、境界層の層数、最初の層の高さ、厚さ、不正なプリズムの数（常に 0）も表示する。
 
 **抗力の内訳**\ 。軸力は、壁面（``wall``）の力の積分（圧力と摩擦）に、底面の項、追加抗力、二つの増分を足したものである。
@@ -610,8 +714,19 @@ RANS の壁は滑らかなので、設定の粗さの効果を部品積み上げ
 どちらも 0 にすると自動になり、ランク数は 4 とスレッド数の小さいほう、同時ケース数は ``スレッド数 / ランク数`` になる。
 積が使えるスレッド数を超えるときは、まず同時ケース数を、次にランク数を減らす。
 
+.. _sec-cfd-resources:
+
 ``[resources]`` の ``threads`` はスレッド数の上限（MPI ランクの総数と gmsh のスレッド数に効く）で、``memory_gb`` は同時に動かすケースのメモリの予算である。
-予算に収まるまで同時ケース数を減らし（最低でも 1 ケースは動かす）、1 ケースでも予算を超えるときは警告を出す。
+``memory_gb = 0``\ （既定）のときの予算は、このプロセスが使えるメモリ（Linux の ``MemAvailable``、cgroup の上限、``ulimit -v`` の上限の最小。macOS では物理メモリ）で、正の値を指定するとそれを使う。
+予算に収まるまで同時ケース数を減らす（``note: aero.cfd: parallel_cases reduced from … to … (memory budget … GB from …, about … GB per case)``）。
+1 ケースの見積もりが予算を超えるときは、メッシュを作ったあと、計算の前にエラーで止まる。
+メッセージは ``aero.cfd: a single CFD case needs about … GB (… on … cells / … nodes, … ranks), more than the memory budget of … GB (…); use a coarser mesh (a larger wall_size…) or fewer ranks_per_case (about 40 MB each)…`` で、末尾は ``memory_gb`` を指定していれば ``or raise resources.memory_gb``、既定の予算なら ``or set resources.memory_gb when more memory can be freed for the run`` である。
+``ignisyeet cfd-check 設定ファイル --mesh`` は、解決した並列度と見積もりを次の 1 行で表示する（予算が分からない環境では ``memory budget unknown (not checked)``）。
+
+.. code-block:: text
+
+   Resources: 4 ranks x 3 concurrent cases, about 9.0 GB per case (27.0 GB together), memory budget 30.0 GB (available memory, MemAvailable in /proc/meminfo)
+
 1 ケースのメモリは、ランク数 :math:`n_r`、セル数 :math:`N` に対して
 
 .. math::
@@ -643,10 +758,12 @@ Euler のケースの結果は、次のいずれかで扱う。
 * **収束**\ ：残差が目標に達し、係数の変化が落ち着いた（直近 ``stable_window`` 反復の幅と、残差の減り方から見込んだこれから先の変化が、力の 0.2 % 以内、圧力中心は全長の 0.002 倍以内）。SU2 は目標より低い残差まで走らせ、ランナーが判定して止めるので、残差が目標に達しても係数が動いていれば続ける。反復の上限まで落ち着かなければ、窓の平均を受け入れて警告を出す（収束には数えない）。
 * **早期終了**\ ：残差の目標には達していないが、最大値から 3 桁以上下がり、力とモーメントが落ち着き、上と同じ係数の変化の判定も満たしたので、止めて受け入れた（``status`` は ``accepted``）。
   落ち着きの判定は、軸力・法線力・ピッチングモーメントに加えて、ロール減衰のケースでは転がりモーメントの係数 CMx を、横滑りのケースでは横力 CFy とヨーイングモーメント CMz も見る（:ref:`sec-cfd-int-convergence`）。
-* **受け入れ**\ ：反復の上限か時間の上限に達したが、残差がある程度下がり、最後の窓で力とモーメントがほぼ一定のとき、窓の平均を係数として受け入れる。「収束」には数えず、``cfd_report.json`` の ``unconverged`` に載る。
+* **受け入れ**\ ：反復の上限か時間の上限に達したが、残差がある程度下がり、最後の窓で力とモーメントがほぼ一定のとき、窓の平均を係数として受け入れる。残差が目標に達していても、係数がまだ傾いているか振動している状態で上限に達したときも、窓の平均を使う（警告は ``… coefficients averaged over the last N iterations`` で終わる）。「収束」には数えず、``cfd_report.json`` の ``unconverged`` に載る。
+  早期終了で止めたケースは、止めると決めた時点の履歴と判定で扱う。
 * **失敗**\ ：SU2 のエラー、発散、収束も安定もしていない場合。表の作成では、失敗したケースを飛ばして補間する。
 
 RANS のケースは、``converged``、``unconverged``\ （振動や残差の停滞のまま係数が一定で、窓の平均を受け入れた）、失敗のいずれかになる（:ref:`sec-cfd-rans-use`）。
+停滞のケースは ``cfd_report.json`` の ``stalled_cases`` に残差の下がりとともに載り、実行の最後に警告を出す。``cfd_cases.csv`` の ``rans_verdict`` と ``residual_drop`` で確かめる。
 発散したケースは、反復の上限を待たずに止め、一度だけ控えめな設定で解き直す。
 
 判定の条件は :ref:`sec-cfd-int-convergence` と :ref:`sec-cfd-int-rans-accept` にある。平らな底面の Euler（STL と CAD のモデルの ``base_treatment = "flat"``）は収束しないことがあり、そのときは失敗として扱う。
@@ -753,8 +870,8 @@ CFD が与える値
 
 次の値は CFD が直接与えるものではなく、部品積み上げ法（またはパネル法）のモデルで補う。
 
-* Euler では、摩擦抗力、底面抗力、フィン縁とボートテールの抗力（Euler は粘性を含まないため）。ただし ``surface = "stl"`` と ``"step"`` では、フィンの前縁と後縁の面が CFD の壁面にあり、その圧力抗力が CFD の軸力にすでに入っているので、フィン縁の項は加えない。``panel_mesh`` では加える（:ref:`sec-cfd-post`）。
-  RANS では、追加抗力、``rans_base = "model"``\ （既定）のときの底面抗力、設定の粗さによる摩擦の増分、``panel_mesh`` のときの設定のフィンの縁による増分を足す（:eq:`eq-cfd-ca-rans`）。
+* Euler では、摩擦抗力、底面抗力、フィン縁とボートテールの抗力（Euler は粘性を含まないため）。ただし ``surface = "stl"`` と ``"step"`` では、フィンの前縁と後縁の面が CFD の壁面にあり、その圧力抗力が CFD の軸力にすでに入っているので、フィン縁の項は加えない。ただし後縁が底面と同一平面にそろっているときは、後縁の面が ``base`` のマーカーに入って力の積分から外れるので、その底面抗力を抽出した平均のフィンの厚さからモデルで足す（厚さを使うので、鈍いくさび形の後縁は過小になる）。``panel_mesh`` ではフィン縁の項を加える（:ref:`sec-cfd-post`）。
+  RANS では、追加抗力、``rans_base = "model"``\ （既定）のときの底面抗力（``surface = "stl"`` と ``"step"`` でフィンの後縁がそろっているときは後縁の底面抗力も）、設定の粗さによる摩擦の増分、``panel_mesh`` のときの設定のフィンの縁による増分を足す（:eq:`eq-cfd-ca-rans`）。
 * ピッチとヨーの減衰 :math:`C_{mq}`、:math:`C_{nr}`。定常な計算は与えないので、モデルの和のばらつきを残し、CFD の傾きと重心に合わせて取り替える（:ref:`sec-aero-damping`）。
 * ロールのカント強制 :math:`C_{l\delta}`。
 * ロールとピッチ・ヨーの交差する微係数は、どの手法でもモデルにない。
@@ -782,7 +899,7 @@ RANS の壁は滑らかで、設定の粗さは部品積み上げ法の摩擦の
 メッシュ収束（:ref:`sec-vaero-cfd-mesh`）：フィンの面を 1 mm にしたまま ``wall_size`` を変えると :math:`C_N` は単調に増え、既定の 2 mm は最も細かい 1.8 mm より 0.1 %、外挿値より 0.3〜0.6 % 低い。
 外挿値は当てはめに使うメッシュで 0.3 % 変わる目安で、フィンの面を 1 mm より細かくした計算はない。
 STL のメッシュは作成のたびに少し変わるので、:math:`C_N` には、この差を超える不確かさがありうる。
-実際の機体の測定との比較（妥当性確認）は行っていない。部品積み上げ法やパネル法との相互比較は :ref:`sec-vaero-compare` に示す。
+実測との比較（妥当性確認）は Basic Finner の超音速の射場試験との比較だけで（:doc:`validation`）、Euler の :math:`C_{N\alpha}` は実測より 2–10 % 小さく、:math:`x_{cp}` は 0.2 口径以内で合う。部品積み上げ法やパネル法との相互比較は :ref:`sec-vaero-compare` に示す。
 
 確認済み
 --------

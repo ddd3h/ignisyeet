@@ -383,7 +383,8 @@ pub struct CfdOptions {
     /// Empty: use the `IGNISYEET_CFD_PREFIX` environment variable, else look in `PATH`.
     /// A leading `~` is expanded.
     pub prefix: String,
-    /// SU2 executable name (or path).
+    /// SU2 executable name (or path). Left at the default `SU2_CFD`, the `IGNISYEET_SU2_CFD` environment variable
+    /// (if set) names it instead (see [`crate::tools::resolve_su2`]).
     pub su2: String,
     /// MPI launcher (only needed when `ranks_per_case > 1`).
     pub mpi: String,
@@ -434,7 +435,7 @@ impl Default for CfdOptions {
             rans_base: RansBase::Model,
             scheme: Scheme::Roe,
             prefix: String::new(),
-            su2: "SU2_CFD".into(),
+            su2: crate::tools::DEFAULT_SU2.into(),
             mpi: "mpirun".into(),
             ranks_per_case: 4,
             parallel_cases: 4,

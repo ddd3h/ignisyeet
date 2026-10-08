@@ -756,6 +756,8 @@ Euler のケースの結果は、次のいずれかで扱う（RANS は :ref:`se
   ``min_iterations`` は ``stable_window`` 以上でなければならない。Euler の Roe の制限関数は ``min_iterations`` 反復で固定する（``LIMITER_ITER``）。既定値の根拠の測定は :ref:`早期終了の測定 <sec-cfd-early-stop>` に示す。
 * **受け入れ**\ ：反復の上限か時間の上限（``timeout_minutes``、既定 0 で無制限）に達したが、残差が最大値から 3 桁以上下がり、
   最後の窓（反復数の 1/4、2 から 100 反復）で早期終了と同じ落ち着きの判定を満たすとき、係数を窓の平均として受け入れる。どちらの場合も「収束」には数えず、``cfd_report.json`` の ``unconverged`` に載る。
+  残差が目標に達していても、その時点で係数がまだ傾いているか振動している（上限に達した）ときも、同じ窓の平均を使い、``the coefficients still trend or oscillate at the end (… iterations): … coefficients averaged over the last N iterations`` を警告に記録して未収束とする（:math:`N` は窓の反復数）。
+  早期終了で止めたケースは、止めると決めた時点までの履歴と判定で扱う。止めてから SU2 が次の書き出しまで進めた行は、判定を変えない（RANS も同じ）。
   残差は下がりきらなくても係数が平らになる状況（例えば底面の後流が振動する場合）を、結果として使うための扱いである。
 * **失敗**\ ：SU2 のエラー、発散、履歴なし、あるいは収束も安定もしていない場合。``done.json`` は作らない。
   表の作成では、失敗したケースを飛ばして補間する（:ref:`sec-cfd-post`）。
@@ -779,9 +781,14 @@ RANS のケースを自由流から始めるとき（冷えた起動。各 Mach 
 * 残差か係数が有限でない。
 * 力の係数の大きさが 100 を超える。
 
-冷えた起動のケースが発散したときは、``restart_startup.dat`` から、CFL 数の上限を :math:`4\,\mathrm{cfl}` に下げて 2 次精度の段を一度だけ解き直す（制限関数は固定しない）。
-そのとき ``the second-order stage diverged (…); repeated from the first-order solution with CFL <= 20 and the limiter not frozen``\ （``cfl`` = 5 のとき）を警告として記録する。
+1 次精度の段が発散したとき（SU2 が残差 1e20 超で止まった場合を含む）は、その段を一度だけ、適応 CFL 数の上限を :math:`4\,\mathrm{cfl}` に下げて（通常は :math:`40\,\mathrm{cfl}`）解き直す。SA の方程式の CFL 数は流れの 0.2 倍にする（通常は 1 倍）。
+このとき ``the first-order startup diverged (…); repeated once with the adaptive CFL capped at 20 instead of 200 (the SA equation stays at 0.2 of the flow CFL); the second-order stage keeps these settings``\ （``cfl`` = 5 のとき）を警告として記録し、2 次精度の段にもこの設定を使う。
+解き直しも発散すれば、``the first-order startup diverged twice (the second time with conservative settings): …`` で失敗とする。
+
+冷えた起動のケースの 2 次精度の段が発散したときは、``restart_startup.dat`` から、同じ保守的な設定（適応 CFL 数の上限 :math:`4\,\mathrm{cfl}`、SA の CFL 数は流れの 0.2 倍）で 2 次精度の段を一度だけ解き直す（制限関数は固定しない）。
+そのとき ``the second-order stage diverged (…); repeated once from the first-order solution with the adaptive CFL capped at 20 instead of 200 and the SA equation at 0.2 of the flow CFL instead of 1``\ （``cfl`` = 5 のとき）を警告として記録する。
 解き直しも発散すれば、``diverged twice (the second time with conservative settings): …`` で失敗とする。
+解き直した 1 次精度の段のあとで発散したときは、``the second-order stage diverged with the conservative settings of the repeated first-order startup: …`` で失敗とする。
 暖機起動のケースが発散したとき、シグナルによらずに SU2 が異常終了したとき、反復の上限で受け入れの判定を満たさなかったときは、``the warm start failed (…); solved again from the freestream`` を記録して、冷えた起動で解き直す。
 
 .. _sec-cfd-int-rans-accept:
@@ -823,6 +830,14 @@ NASA TMR の平板（格子 69×49、137×97、273×193、:math:`M=0.2` と 2）
 :math:`y^+` が分布に含まれなければ ``wall y+ not checked: no Y_Plus in surface_flow.vtk`` を警告にする。
 ケースの警告は ``warning: aero.cfd: case m0.800_a04.00: …`` の形で標準エラー出力にも表示する。
 ``done.json`` の ``converged`` は、収束で真、停滞と振動で偽になり、偽のケースは ``cfd_report.json`` の ``unconverged`` に載る。
+停滞のケースは ``done.json`` の ``stalled`` が真になり、判定の根拠にした密度の残差の下がり（停滞では直近の窓の中央値）を ``residual_drop`` に記録する。
+``cfd_cases.csv`` には、基準の最大値の密度の値（``residual_reference``）、この下がり（``residual_drop``）、判定（``rans_verdict``：``converged``、``limit_cycle``、``stalled``）が入る。Euler では空である。
+``residual_first`` と ``residual_last`` は 2 次精度の段の履歴の最初と最後の行の密度の残差である。
+``cfd_report.json`` の ``stalled_cases`` に停滞のケースと下がりを挙げ、実行の最後に次の警告を出す。
+
+.. code-block:: text
+
+   N RANS case(s) accepted with a stalled residual, not converged (coefficients averaged over two windows; a stalled residual needs only 0.5 orders below the reference, convergence 3): <ケース> (<下がり> orders below the reference), …; check them in cfd_cases.csv (rans_verdict, residual_drop)
 
 
 .. _sec-cfd-post:
@@ -889,6 +904,17 @@ CFD の座標は機体座標を :math:`y` まわりに 180 度回したもの（
   である。足すのは摩擦、底面、フィン縁（丸い前縁と四角い後縁）、ボートテール、追加抗力で、ノーズの圧力抗力 :math:`C_{D,\mathrm{nose}}` は **含めない**\ （CFD が与えるため）。
   ただし ``surface = "stl"`` と ``"step"`` では、フィンの前縁と後縁の面が CFD の壁面にあり、その圧力抗力は :math:`C_A^{\mathrm{CFD}}` にすでに入っているので、フィン縁の項 :math:`C_{D,\mathrm{fin}}` を足さない（足すと二重に数える）。
   ``panel_mesh`` の形状は、抽出した厚みのフィンを再構成するので、この項を足す。
+  ``surface = "stl"`` と ``"step"`` では、フィンの後縁が底面にそろっていると、後縁の面は ``base`` のマーカーに入って力に積分されないので（上の底面の規則）、その底面抗力を次の項で足す。
+  後縁がそろっているとは、根元と翼端の後縁がどちらも底面の平面 :math:`x=L` から :math:`10^{-4}L` 以内にあることをいう。
+
+  .. math::
+     :label: eq-cfd-te-flush
+
+     C_{D,\mathrm{TE,flush}}=\frac{C_{D,\mathrm{base}}(M)\,n\,b\,t}{S_{\mathrm{ref}}}
+
+  ここで :math:`C_{D,\mathrm{base}}(M)` は部品積み上げ法の底面抗力係数、:math:`n` はフィンの枚数、:math:`b` は span、:math:`t` は抽出した平均のフィンの厚さである。
+  この項は :eq:`eq-cfd-ca` の和に入れ、``fin_te_square = false`` のとき、後縁が底面から内側にある（後縁の面が ``wall`` にある）とき、``panel_mesh`` のときは 0 である（``panel_mesh`` ではフィン縁の項全体 :math:`C_{D,\mathrm{fin}}` を足す）。
+  平均の厚さを使うので、後縁が鈍いくさび形のとき、実際の底面抗力より小さい。
   燃焼中の値では、底面の項に、ノズル出口の面積を除いた底面積を使う。
 * **RANS**\ ：SU2 の履歴のマーカごとの列（``CFx(wall)``、``CFx(base)``）を使う。壁面の軸力 :math:`C_{Fx}(\mathrm{wall})` は、圧力と摩擦、フィンの縁とボートテールの力を含む。
   底面の項は ``rans_base`` で選び、
@@ -900,6 +926,7 @@ CFD の座標は機体座標を :math:`y` まわりに 180 度回したもの（
      C_{A,\mathrm{base}}=\begin{cases}f(\alpha)\,C_{D,\mathrm{base}} & (\text{rans\_base = model})\\ C_{Fx}(\mathrm{base}) & (\text{rans\_base = cfd})\end{cases}
 
   とする。``"model"``\ （既定）は部品積み上げ法の底面抗力（燃焼中はノズル出口の面積を除いた底面積）、``"cfd"`` は RANS が平らな底面に積分した力である。
+  ``"model"`` で ``surface = "stl"`` と ``"step"`` のとき、フィンの後縁がそろっていれば、:eq:`eq-cfd-te-flush` の :math:`C_{D,\mathrm{TE,flush}}` を :math:`f(\alpha)` をかけて足す。``"cfd"`` では足さない（後縁の面は ``base`` のマーカーの力に入っている）。
   ``"cfd"`` の燃焼中の値は、ノズル出口の面積にかかる底面圧力の寄与（部品積み上げ法の燃焼後と燃焼中の底面抗力の差）を引く。
   RANS の壁は滑らかなので、設定の粗さの効果を、部品積み上げ法の粗い壁と滑らかな壁の摩擦の差として足す。
   :math:`C_{D,f}` は粗さ :math:`k_s` の摩擦（:eq:`eq-cd0`）、:math:`c_f` は摩擦係数の式で、同じ Reynolds 数での比を使い、
@@ -921,7 +948,7 @@ CFD の座標は機体座標を :math:`y` まわりに 180 度回したもの（
   を足す。``surface = "stl"`` と ``"step"`` では縁の面が CFD の壁面にあるので、:math:`\Delta C_{D,\mathrm{fin}}=0` である。
   どちらの増分もモデルによる補正で、CFD の解ではない。部品積み上げ法の摩擦とボートテールの項と、Euler の項は足さない。
   履歴にマーカごとの列がないときは、監視する力の合計（``wall`` と ``base``\ 。底面を含む）を使い、表全体を ``rans_base = "cfd"`` と同じに作って、``cfd_report.json`` の ``warnings`` に記録する。
-  ケースごとの :math:`C_{Fx}(\mathrm{wall})`、:math:`C_{Fx}(\mathrm{base})`、部品積み上げ法の摩擦と底面の値、二つの増分は、``cfd_report.json`` の ``axial_breakdown`` に並べて記録する（部品積み上げ法の摩擦は比べるための値で、表に足さない）。
+  ケースごとの :math:`C_{Fx}(\mathrm{wall})`、:math:`C_{Fx}(\mathrm{base})`、部品積み上げ法の摩擦と底面の値、増分（粗さ、フィン縁、そろった後縁の底面 ``fin_te_base_increment``）は、``cfd_report.json`` の ``axial_breakdown`` に並べて記録する（部品積み上げ法の摩擦は比べるための値で、表に足さない）。
 
 亜音速の Euler では、CFD の軸力の理論値は 0（d'Alembert のパラドックス）である。実際の値は小さな負の数（サンプル機体の迎角 0〜8° で :math:`-0.01` から :math:`-0.05`）になり、そのまま合計に入る。
 

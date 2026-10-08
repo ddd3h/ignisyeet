@@ -366,7 +366,7 @@ CFD の出力
 
 .. code-block:: text
 
-   mach,alpha_deg,status,iterations,residual_first,residual_last,cn_raw,ca_cfd,nose_moment_raw,xcp_raw_m,cn,nose_moment,xcp_m,wall_seconds,warm_start,beta_deg,roll_hat,cx,cy,cz,cl,cm,cn_yaw
+   mach,alpha_deg,status,iterations,residual_first,residual_last,cn_raw,ca_cfd,nose_moment_raw,xcp_raw_m,cn,nose_moment,xcp_m,wall_seconds,warm_start,beta_deg,roll_hat,cx,cy,cz,cl,cm,cn_yaw,residual_reference,residual_drop,rans_verdict
 
 .. list-table::
    :header-rows: 1
@@ -382,7 +382,7 @@ CFD の出力
    * - ``iterations``
      - 反復数（失敗したケースは 0。RANS は 2 次精度の段の反復数）
    * - ``residual_first`` / ``residual_last``
-     - 最初と最後の反復の密度残差（対数）。RANS の ``residual_first`` は、受け入れの基準にした密度の残差の最大値（冷えた起動の値、またはそれより大きければその段の最大値）
+     - 履歴の最初と最後の行の密度残差（対数）。RANS では 2 次精度の段の履歴の値である
    * - ``cn_raw`` / ``ca_cfd``
      - SU2 の生の法線力係数 :math:`C_N` と軸力係数 :math:`C_A`\ （RANS の :math:`C_A` は壁面の ``CFx(wall)``、``rans_base = "cfd"`` では底面の ``CFx(base)`` を足した値。:ref:`sec-cfd-post`）
    * - ``nose_moment_raw`` / ``xcp_raw_m``
@@ -397,6 +397,8 @@ CFD の出力
      - ロール減衰のケースの無次元ロール角速度 :math:`\hat p`\ （それ以外は 0）
    * - ``cx`` ``cy`` ``cz`` ``cl`` ``cm`` ``cn_yaw``
      - 機体軸の 6 成分 :math:`C_X,C_Y,C_Z,C_l,C_m,C_n`\ （``cn_yaw`` が :math:`C_n`。法線力係数の ``cn`` と区別する）。結果のないケースは空
+   * - ``residual_reference`` / ``residual_drop`` / ``rans_verdict``
+     - RANS の受け入れの記録（:ref:`sec-cfd-int-rans-accept`）。``residual_reference`` は基準の最大値（密度の残差。対数）、``residual_drop`` は判定の根拠にした密度の残差の下がり [桁]、``rans_verdict`` は ``converged``、``limit_cycle``、``stalled`` のいずれか。Euler のケース、失敗したケース、``combined`` の行では空
 
 ``cfd_report.json``
 ~~~~~~~~~~~~~~~~~~~
@@ -416,6 +418,10 @@ CFD の実行の要約である。項目は次のとおりである。
      - 失敗したケース、未収束のケースの ``[Mach 数, 迎角]`` の一覧
    * - ``failed_cases``
      - 失敗したケースのディレクトリ
+   * - ``unconverged_cases``
+     - 未収束のケースのディレクトリ
+   * - ``stalled_cases``
+     - RANS で残差が停滞したまま受け入れたケース。``case``\ （ディレクトリ名）と ``residual_drop``\ （密度の残差の下がり [桁]）の組の一覧
    * - ``filled``
      - 失敗して補間で埋めたケースの一覧
    * - ``wall_seconds`` / ``case_seconds``
@@ -473,7 +479,7 @@ CFD の実行の要約である。項目は次のとおりである。
    * - ``axial_breakdown``
      - RANS のとき、ロール減衰でないケースごとの軸力の内訳。``mach``、``alpha_deg``、``cfd_wall_ca`` と ``cfd_base_ca``\ （壁面と底面の ``CFx``。履歴に列がなければ ``null``）、
        ``barrowman_friction`` と ``barrowman_base``\ （その Mach 数の部品積み上げ法の摩擦と底面の抗力。比べるための値で、摩擦は表に足さない）、
-       ``roughness_increment``\ （表に足す、設定の粗さによる摩擦の増分。:eq:`eq-cfd-rans-rough`）、``fin_edge_increment``\ （表に足す、設定のフィンの縁の増分。:eq:`eq-cfd-rans-fin`。``stl`` と ``step`` では 0）、``base_from_cfd``\ （表の底面の項が CFD の値か）を持つ。Euler では空
+       ``roughness_increment``\ （表に足す、設定の粗さによる摩擦の増分。:eq:`eq-cfd-rans-rough`）、``fin_edge_increment``\ （表に足す、設定のフィンの縁の増分。:eq:`eq-cfd-rans-fin`。``stl`` と ``step`` では 0）、``fin_te_base_increment``\ （表に足す、底面にそろったフィンの後縁の底面抗力。:eq:`eq-cfd-te-flush`。``stl`` と ``step`` で底面をモデルから取るときだけ。それ以外は 0）、``base_from_cfd``\ （表の底面の項が CFD の値か）を持つ。Euler では空
 
 ``done.json``
 ~~~~~~~~~~~~~
@@ -494,11 +500,13 @@ CFD の実行の要約である。項目は次のとおりである。
    * - ``coeffs`` / ``coeffs6``
      - 機体軸の係数（``cn``、``ca``、``mom``）と 6 成分（``cx`` ``cy`` ``cz`` ``cl`` ``cm`` ``cn``）。半領域のケースでは、``cy``、``cl``、``cn`` は 0
    * - ``iterations`` / ``converged`` / ``residual_first`` / ``residual_last`` / ``wall_seconds``
-     - ``cfd_cases.csv`` の同じ名前の列と同じ。``converged`` は、Euler では残差が目標に達したとき、RANS では収束の判定（:ref:`sec-cfd-int-rans-accept`）を満たしたとき真
+     - ``cfd_cases.csv`` の同じ名前の列と同じ。``converged`` は、Euler では残差が目標に達し、係数の傾きも落ち着いたとき、RANS では収束の判定（:ref:`sec-cfd-int-rans-accept`）を満たしたとき真
    * - ``reference_peak``
      - RANS のとき、受け入れの基準にした残差の最大値（``rho`` が密度、``nu`` が SA の残差。対数）。暖機起動の次のケースに受け継ぐ
    * - ``limit_cycle``
      - RANS で、振動または停滞として窓の平均を受け入れたとき ``true``\ （``false`` のときは書かない）
+   * - ``stalled`` / ``residual_drop``
+     - RANS で、残差が停滞したまま受け入れたとき ``stalled`` が ``true``\ （``false`` のときは書かない。``limit_cycle`` も ``true``）。``residual_drop`` は判定の根拠にした密度の残差の下がり [桁]（``cfd_cases.csv`` の同じ名前の列と同じ）
    * - ``yplus_p95``
      - RANS のとき、壁面の :math:`y^+` の 95 パーセンタイル（底面を除く）
    * - ``axial``

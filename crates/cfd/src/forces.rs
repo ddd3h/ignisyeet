@@ -260,7 +260,8 @@ pub fn hybrid_axial(flow: FlowModel, fin_edges_in_cfd: bool, base_from_cfd: bool
     let (add_on, add_off) = match flow {
         FlowModel::Euler => {
             let fins = |b: &aero::model::DragBreakdown| if fin_edges_in_cfd { 0.0 } else { b.fins };
-            let t = |b: &aero::model::DragBreakdown| b.friction + b.base + fins(b) + b.boattail + b.extra;
+            let te = fin_te_base_increment(model, mach, fin_edges_in_cfd);
+            let t = |b: &aero::model::DragBreakdown| b.friction + b.base + fins(b) + te + b.boattail + b.extra;
             (t(&on), t(&off))
         }
         FlowModel::Rans if base_from_cfd => {
@@ -270,7 +271,7 @@ pub fn hybrid_axial(flow: FlowModel, fin_edges_in_cfd: bool, base_from_cfd: bool
             (off.extra + rough - removed, off.extra + rough)
         }
         FlowModel::Rans => {
-            let rough = rough + fin_edge_increment(model, mach, fin_edges_in_cfd);
+            let rough = rough + fin_edge_increment(model, mach, fin_edges_in_cfd) + fin_te_base_increment(model, mach, fin_edges_in_cfd);
             (on.base + on.extra + rough, off.base + off.extra + rough)
         }
     };
@@ -316,6 +317,30 @@ pub fn fin_edge_increment(model: &AeroModel, mach: f64, fin_edges_in_cfd: bool) 
     model.cd0(mach, false).fins * (1.0 - rebuilt_lens_edge_fraction())
 }
 
+/// The fin trailing edges lie flush with the base plane: both the root and the tip trailing edge are within
+/// `1e-4 length` (the mesh `base_tol`) of `x = length`, so the unswept trailing-edge faces are planar aft-facing faces
+/// at the base and the STL / STEP base rule puts them into the `base` marker.
+pub fn fin_te_flush(model: &AeroModel) -> bool {
+    let g = &model.geom;
+    let Some(f) = &g.fins else { return false };
+    let tol = 1e-4 * g.length;
+    let (root, tip) = (f.x_le_root + f.root_chord, f.x_le_root + f.sweep + f.tip_chord);
+    f.count > 0 && (root - g.length).abs() <= tol && (tip - g.length).abs() <= tol
+}
+
+/// Trailing-edge base drag of fins flush with the base (the Barrowman square trailing edge, `base_cd(M) n b t / S`).
+/// On an STL / STEP surface (`fin_edges_in_cfd`) the leading edges are in the CFD wall, but flush trailing-edge faces
+/// are in the `base` marker, whose force is replaced by the model (Euler, RANS `rans_base = "model"`), so this term
+/// stands in for them; it is added together with the body base term. 0 for inset trailing edges (their faces are in
+/// the wall marker), for `fin_te_square = false`, and on the rebuilt surface (the full fin-edge term is added there).
+pub fn fin_te_base_increment(model: &AeroModel, mach: f64, fin_edges_in_cfd: bool) -> f64 {
+    if !fin_edges_in_cfd || !model.opt.fin_te_square || !fin_te_flush(model) {
+        return 0.0;
+    }
+    let (g, f) = (&model.geom, model.geom.fins.as_ref().expect("flush implies fins"));
+    aero::model::base_cd(mach) * f.count as f64 * f.span * f.thickness / g.ref_area
+}
+
 /// Axial breakdown of one RANS case for `cfd_report.json` (all coefficients positive aft).
 #[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -332,6 +357,8 @@ pub struct AxialReportEntry {
     pub roughness_increment: f64,
     /// Fin-edge increment added on the rebuilt surface ([`fin_edge_increment`]); 0 for STL / STEP.
     pub fin_edge_increment: f64,
+    /// Trailing-edge base drag of fins flush with the base, added on STL / STEP with the model base ([`fin_te_base_increment`]).
+    pub fin_te_base_increment: f64,
     /// The base term of the table comes from CFD (`base_from_cfd`, or the per-marker columns were absent).
     pub base_from_cfd: bool,
 }
@@ -339,6 +366,7 @@ pub struct AxialReportEntry {
 impl AxialReportEntry {
     pub fn new(model: &AeroModel, mach: f64, alpha_deg: f64, markers: &MarkerCoeffs, base_from_cfd: bool, fin_edges_in_cfd: bool) -> Self {
         let b = model.cd0(mach, false);
+        let in_cfx = markers.axial(0.0, base_from_cfd).base_in_cfx;
         Self {
             mach,
             alpha_deg,
@@ -348,7 +376,8 @@ impl AxialReportEntry {
             barrowman_base: b.base,
             roughness_increment: roughness_increment(model, mach),
             fin_edge_increment: fin_edge_increment(model, mach, fin_edges_in_cfd),
-            base_from_cfd: markers.axial(0.0, base_from_cfd).base_in_cfx,
+            fin_te_base_increment: if in_cfx { 0.0 } else { fin_te_base_increment(model, mach, fin_edges_in_cfd) },
+            base_from_cfd: in_cfx,
         }
     }
 }
@@ -574,6 +603,62 @@ mod tests {
         let g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
         let plain = AeroModel::new(g, AeroOptions { fin_le_rounded: false, fin_te_square: false, ..Default::default() });
         assert_eq!(fin_edge_increment(&plain, 1.2, false), 0.0);
+    }
+
+    /// Sample rocket with the fin trailing edges `inset` metres ahead of the base (0 = flush, unswept trailing edge).
+    fn finned(inset: f64, te_square: bool) -> AeroModel {
+        let mut g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
+        let l = g.length;
+        let f = g.fins.as_mut().unwrap();
+        f.x_le_root = l - inset - f.root_chord;
+        f.sweep = f.root_chord - f.tip_chord;
+        AeroModel::new(g, AeroOptions { fin_te_square: te_square, extra_cd: 0.0, ..Default::default() })
+    }
+
+    #[test]
+    fn flush_fin_trailing_edges_add_the_base_drag_on_step_and_stl() {
+        let flush = finned(0.0, true);
+        let inset = finned(0.05, true);
+        assert!(fin_te_flush(&flush) && !fin_te_flush(&inset));
+        assert!(!fin_te_flush(&finned(2e-4 * flush.geom.length, true)), "outside the mesh base_tol");
+        for mach in [0.5, 1.2, 2.4] {
+            let f = flush.geom.fins.as_ref().unwrap();
+            let want = aero::model::base_cd(mach) * f.count as f64 * f.span * f.thickness / flush.geom.ref_area;
+            assert!(want > 0.0);
+            let inc = fin_te_base_increment(&flush, mach, true);
+            assert!((inc - want).abs() < 1e-15);
+            // Only where the CFD wall holds the edges; the rebuilt surface keeps the full Barrowman fin-edge term.
+            assert_eq!(fin_te_base_increment(&flush, mach, false), 0.0);
+            assert_eq!(fin_te_base_increment(&inset, mach, true), 0.0);
+            assert_eq!(fin_te_base_increment(&finned(0.0, false), mach, true), 0.0);
+            // Euler: the term is on top of the CFD value, the model base and friction (STEP / STL).
+            let b = flush.cd0(mach, false);
+            let e = hybrid_axial(FlowModel::Euler, true, false, &flush, mach, 0.0, 0.2).1;
+            assert!((e - (0.2 + b.friction + b.base + inc + b.boattail + b.extra)).abs() < 1e-12);
+            let e_inset = hybrid_axial(FlowModel::Euler, true, false, &inset, mach, 0.0, 0.2).1;
+            let bi = inset.cd0(mach, false);
+            assert!((e_inset - (0.2 + bi.friction + bi.base + bi.boattail + bi.extra)).abs() < 1e-12);
+            // CAD (rebuilt) surface: unchanged, the whole fin term.
+            let cad = hybrid_axial(FlowModel::Euler, false, false, &flush, mach, 0.0, 0.2).1;
+            assert!((cad - (0.2 + b.friction + b.base + b.fins + b.boattail + b.extra)).abs() < 1e-12);
+            // RANS rans_base = "model": added; rans_base = "cfd": the CFD base marker holds the faces, nothing is added.
+            let r_model = hybrid_axial(FlowModel::Rans, true, false, &flush, mach, 0.0, 0.3).1;
+            assert!((r_model - (0.3 + b.base + b.extra + inc + roughness_increment(&flush, mach))).abs() < 1e-12);
+            let r_cfd = hybrid_axial(FlowModel::Rans, true, true, &flush, mach, 0.0, 0.3).1;
+            assert!((r_cfd - (0.3 + roughness_increment(&flush, mach))).abs() < 1e-12);
+            // The alpha factor scales it like the other additions.
+            let a = 8f64.to_radians();
+            let ea = hybrid_axial(FlowModel::Euler, true, false, &flush, mach, a, 0.2).1;
+            let k = axial_alpha_factor(a);
+            assert!((ea - (0.2 + k * (b.friction + b.base + inc + b.boattail + b.extra))).abs() < 1e-12);
+        }
+        // Report entry: the increment is shown when the model supplies the base, 0 when the base is in the CFD value.
+        let none = MarkerCoeffs::default();
+        let both = MarkerCoeffs { wall_cfx: Some(0.2), base_cfx: Some(0.1), ..Default::default() };
+        assert!(AxialReportEntry::new(&flush, 2.4, 0.0, &both, false, true).fin_te_base_increment > 0.0);
+        assert_eq!(AxialReportEntry::new(&flush, 2.4, 0.0, &both, true, true).fin_te_base_increment, 0.0);
+        assert_eq!(AxialReportEntry::new(&flush, 2.4, 0.0, &none, false, true).fin_te_base_increment, 0.0);
+        assert_eq!(AxialReportEntry::new(&flush, 2.4, 0.0, &both, false, false).fin_te_base_increment, 0.0);
     }
 
     #[test]

@@ -1094,6 +1094,46 @@ def stl_mesh(f):
     print("plot  stl_mesh.svg")
 
 
+def basic_finner_validation(f, vdir):
+    """Basic Finner: model vs the free-flight data of DREV-TM-9703 (doc/data/validation/basic_finner)."""
+    t = pd.read_csv(vdir / "summary_vs_measured.csv", comment="#")
+    meas = pd.read_csv(vdir / "measured.csv", comment="#")
+    regan = meas[(meas.table == "2 (converted)") & (meas.quantity == "Clp")]
+    sty = [("barrowman", "部品積み上げ法", SERIES[0], "-", None), ("panel", "パネル法", SERIES[2], "--", None),
+           ("euler", "CFD（Euler）", SERIES[1], "none", "o"), ("rans", "CFD（RANS）", SERIES[6], "none", "s")]
+    panels = [("CNa", "$C_{N\\alpha}$ [1/rad]"), ("Cma", "$C_{m\\alpha}$（5.5 口径まわり）[1/rad]"),
+              ("CX0", "$C_{X0}$"), ("Clp", "$C_{lp}$（$pd/(2V)$ あたり）")]
+    fig, axs = plt.subplots(2, 2, figsize=(9.6, 7.0))
+    for ax, (q, label) in zip(axs.flat, panels):
+        d = t[t.q == q].sort_values("mach")
+        pe = pd.to_numeric(d.probable_error_pct, errors="coerce").fillna(0.0)
+        ax.errorbar(d.mach, d.measured, yerr=d.measured.abs() * pe / 100, fmt="D", color=INK, mfc=INK, ms=5,
+                    capsize=3, lw=1.2, label="実測（DREV 射場、Table IX）", zorder=5)
+        if q == "Clp":
+            ax.errorbar(regan.mach, regan.value, yerr=regan.value.abs() * regan.probable_error_pct / 100, fmt="D",
+                        color=INK2, mfc="white", ms=5, capsize=3, lw=1.0, label="実測（NOL 風洞、換算）", zorder=4)
+        for key, name, col, ls, mk in sty:
+            v = pd.to_numeric(d[key], errors="coerce")
+            if v.notna().sum() == 0:
+                continue
+            if mk is None:
+                ax.plot(d.mach, v, ls=ls, marker=".", ms=6, color=col, lw=1.6, label=name)
+            else:
+                ax.plot(d.mach, v, marker=mk, ls="none", color=col, ms=7, mfc=col if key == "euler" else "white",
+                        mew=1.6, label=name)
+        ax.set_xlabel("Mach 数")
+        ax.set_ylabel(label)
+    handles, labels = [], []
+    for ax in axs.flat:
+        for h, lab in zip(*ax.get_legend_handles_labels()):
+            if lab not in labels:
+                handles.append(h)
+                labels.append(lab)
+    fig.legend(handles, labels, loc="lower center", ncol=3, bbox_to_anchor=(0.5, -0.06), fontsize=9)
+    fig.tight_layout()
+    f.save(fig, "validation_basic_finner")
+
+
 def main():
     out, figdir = Path(sys.argv[1]), Path(sys.argv[2])
     f = Figs(figdir)
@@ -1115,6 +1155,9 @@ def main():
         rans_study(f, data)
     if (data / "fields" / "mesh_symmetry.npz").exists():
         cfd_fields(f, data / "fields")
+    vdir = data.parent / "validation" / "basic_finner"
+    if (vdir / "summary_vs_measured.csv").exists():
+        basic_finner_validation(f, vdir)
 
 
 if __name__ == "__main__":

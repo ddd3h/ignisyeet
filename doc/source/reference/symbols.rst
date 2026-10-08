@@ -81,7 +81,8 @@
    * - :math:`C_{Np\alpha}^{*},\ C_{mp\alpha}^{*}`
      - Magnus 力と、静的な圧力中心まわりの Magnus モーメントの傾き [1/rad]。無次元ロール角速度 :math:`\hat p` で無次元化する。
    * - :math:`\omega_x`
-     - 機体座標のロール角速度 [rad/s]。   * - :math:`C_{l\delta}`
+     - 機体座標のロール角速度 [rad/s]。
+   * - :math:`C_{l\delta}`
      - フィンのカント 1 rad あたりのロールモーメント係数 [1/rad]。
    * - :math:`d`, :math:`S`
      - 基準直径 [m] と基準面積 [m\ :sup:`2`]（``aero_table.json`` の ``ref_diameter`` と ``ref_area``）。

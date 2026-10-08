@@ -1420,6 +1420,27 @@ mod tests {
     }
 
     #[test]
+    fn rans_sample_uses_the_rans_defaults() {
+        let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+        let c = Config::load_with(&examples.join("sample_rans.toml"), &Overrides::default()).unwrap();
+        let o = c.cfd_options();
+        assert_eq!(o.model, cfd::FlowModel::Rans);
+        assert_eq!((o.wall_size, o.iterations, o.min_iterations, o.stable_window), (0.005, 4000, 400, 200));
+        assert!(o.warnings_for(64).is_empty(), "{:?}", o.warnings_for(64));
+        // The Euler sample sets wall_size and iterations explicitly: switched to RANS it keeps them and warns.
+        let text = std::fs::read_to_string(examples.join("sample_cfd.toml")).unwrap().replace("model = \"euler\"", "model = \"rans\"");
+        let dir = TempDir::new("cfg_rans");
+        std::fs::create_dir_all(&dir).unwrap();
+        for f in ["sample_rocket.stl", "sample_motor.eng"] {
+            std::fs::copy(examples.join(f), dir.join(f)).unwrap();
+        }
+        std::fs::write(dir.join("c.toml"), text).unwrap();
+        let o = Config::load_with(&dir.join("c.toml"), &Overrides::default()).unwrap().cfd_options();
+        assert_eq!((o.model, o.wall_size, o.iterations), (cfd::FlowModel::Rans, 0.002, 3000));
+        assert!(o.warnings_for(64).iter().any(|w| w.contains("wall_size = 0.002 m")), "{:?}", o.warnings_for(64));
+    }
+
+    #[test]
     fn step_sample_resolves_the_cad_file_next_to_the_config() {
         let examples = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
         let c = Config::load_with(&examples.join("sample_step.toml"), &Overrides::default()).unwrap();

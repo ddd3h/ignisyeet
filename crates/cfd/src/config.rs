@@ -241,6 +241,8 @@ pub const RANS_DEFAULT_ITERATIONS: usize = 4000;
 pub const RANS_DEFAULT_MIN_ITERATIONS: usize = 400;
 pub const RANS_DEFAULT_STABLE_WINDOW: usize = 200;
 pub const RANS_DEFAULT_WALL_SIZE: f64 = 0.005;
+/// RANS `wall_size` below which [`CfdOptions::warnings`] warns about the memory of a case.
+pub const RANS_FINE_WALL_SIZE: f64 = 0.004;
 /// RANS `yplus` ranges: resolved wall (no wall function) up to this value ...
 pub const RANS_YPLUS_RESOLVED_MAX: f64 = 5.0;
 /// ... or the log layer of the standard wall function.
@@ -699,6 +701,14 @@ impl CfdOptions {
         if self.ranks_per_case > 0 && self.parallel_cases > 0 && need > available {
             w.push(format!("aero.cfd: ranks_per_case x parallel_cases = {need} exceeds the {available} available cores; cases will be slowed down"));
         }
+        if self.model == FlowModel::Rans && self.wall_size < RANS_FINE_WALL_SIZE {
+            w.push(format!(
+                "aero.cfd: model = \"rans\" with wall_size = {} m, finer than the RANS default {RANS_DEFAULT_WALL_SIZE} m: a half-model case of the \
+                 sample rocket needs about 7.5 GB at 5 mm and 18 GB at 3 mm, and more on a finer mesh; check the estimate with \
+                 `ignisyeet cfd-check <config> --mesh` (an explicit wall_size overrides the RANS default)",
+                self.wall_size
+            ));
+        }
         w
     }
 
@@ -873,6 +883,12 @@ mod tests {
         let o = CfdOptions::default();
         assert!(o.warnings_for(20).is_empty());
         assert_eq!(o.warnings_for(8).len(), 1);
+        // A fine RANS mesh warns about the memory per case; the same wall_size for Euler does not.
+        let fine = CfdOptions { wall_size: 0.002, ..CfdOptions::rans() };
+        let w = fine.warnings_for(64);
+        assert!(w.len() == 1 && w[0].contains("wall_size = 0.002 m") && w[0].contains("18 GB at 3 mm") && w[0].contains("cfd-check"), "{w:?}");
+        assert!(CfdOptions { wall_size: 0.004, ..CfdOptions::rans() }.warnings_for(64).is_empty());
+        assert!(CfdOptions { wall_size: 0.002, ..Default::default() }.warnings_for(64).is_empty());
         o.validate().unwrap();
     }
 

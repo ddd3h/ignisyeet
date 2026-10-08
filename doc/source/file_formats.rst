@@ -382,7 +382,7 @@ CFD の出力
    * - ``iterations``
      - 反復数（失敗したケースは 0。RANS は 2 次精度の段の反復数）
    * - ``residual_first`` / ``residual_last``
-     - 履歴の最初と最後の行の密度残差（対数）。RANS では 2 次精度の段の履歴の値である
+     - 履歴の最初の行と、判定した行の密度残差（対数）。判定した行は、ランナーが収束を見て SU2 を止めたときはその時点の行、止めなかったときは最後の行で、SU2 が止まるまでに書き足した行は含めない（``iterations`` は書き足した行も数える）。RANS では 2 次精度の段の履歴の値である
    * - ``cn_raw`` / ``ca_cfd``
      - SU2 の生の法線力係数 :math:`C_N` と軸力係数 :math:`C_A`\ （RANS の :math:`C_A` は壁面の ``CFx(wall)``、``rans_base = "cfd"`` では底面の ``CFx(base)`` を足した値。:ref:`sec-cfd-post`）
    * - ``nose_moment_raw`` / ``xcp_raw_m``

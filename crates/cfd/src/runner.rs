@@ -848,7 +848,7 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: Option
         iterations: summarize(&full, 1).map_or(s.iterations, |f| f.iterations),
         converged: reached && settled,
         residual_first: first,
-        residual_last: full.last_residual(),
+        residual_last: h.last_residual(),
         wall_seconds: wall,
         reference_peak: None,
         limit_cycle: false,
@@ -1057,7 +1057,7 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
             iterations: summarize(&full, 1).map_or(s.iterations, |f| f.iterations),
             converged: !limit_cycle,
             residual_first: h.col(&["rms[Rho]", "Res_Flow[0]", "rms[P]"]).map(|c| h.rows[0][c]),
-            residual_last: full.last_residual(),
+            residual_last: h.last_residual(),
             wall_seconds: t0.elapsed().as_secs_f64(),
             reference_peak: Some(effective_reference(reference, &h)),
             limit_cycle,
@@ -1196,7 +1196,7 @@ fn rans_verdict_name(r: Option<&CaseResult>) -> &'static str {
 /// (`status = combined`, `corrected` are the points of [`crate::table::apply_alpha_mode`]).
 /// `cn`, `nose_moment`, `xcp_m` are the values the table uses: offset-corrected in `offset` mode,
 /// equal to the raw ones in `single` mode, empty on raw `mirror` rows. `residual_first` / `residual_last` are the
-/// first and last density residual of the (RANS: second-order) history; RANS rows add the reference peak of the
+/// first density residual and the one at the judged row (the stop decision, else the last row) of the (RANS: second-order) history; RANS rows add the reference peak of the
 /// acceptance (`residual_reference`), the drop below it the verdict rests on (`residual_drop`) and the verdict
 /// (`rans_verdict`: `converged`, `limit_cycle`, `stalled`), which are empty for Euler.
 pub fn write_cases_csv(path: &Path, outcomes: &[CaseOutcome], corrected: &[SolvedPoint], mode: AlphaMode) -> Result<()> {
@@ -2038,7 +2038,7 @@ exit 0
         let out = run_all(&e.setup(), &|_| {}).unwrap();
         let r = out[0].result.as_ref().unwrap_or_else(|| panic!("{:?}", out[0].error));
         assert!(r.converged && r.warnings.is_empty(), "{r:?}");
-        assert!((r.coeffs.cn - 0.2).abs() < 1e-9 && r.iterations == 100 && r.residual_last == Some(-3.0), "{r:?}");
+        assert!((r.coeffs.cn - 0.2).abs() < 1e-9 && r.iterations == 100 && r.residual_last == Some(-17.9), "residual_last is the residual at the judged row, not of the rows written after the stop: {r:?}");
     }
 
     #[test]

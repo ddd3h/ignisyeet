@@ -147,10 +147,10 @@
      - 頂点のあとの弾道落下で、全迎角が 60° から 120° の間で飛んだ時間 [s]（パラシュート降下では 0）と、それが 10 s を超えたか（真偽値）。``true`` のときは警告を出す（:ref:`sec-lim-aero`）
    * - ``roll_resonance``
      - ロール角速度がピッチの固有振動数を横切ったときだけ書く（トリムの強制がある飛翔で、頂点より前の自由飛行。:ref:`sec-roll-resonance`）。
-       最初の交差の時刻 ``t`` [s]、Mach 数 ``mach``、そのときのロール角速度（＝固有振動数）``frequency`` [rad/s]、上昇中の交差の回数 ``crossings`` を持つ。警告も出す（:ref:`sec-config-checks`）
+       最初の交差の時刻 ``t`` [s]、Mach 数 ``mach``、そのときのロール角速度（＝固有振動数）``frequency`` [rad/s]、上昇中の交差の回数 ``crossings`` を持つ。警告も出す（:ref:`IY-O510`）
    * - ``drogue_deploy_speed`` / ``drogue_deploy_q``
      - パラシュート（二段開傘ではドローグ）が開いたときの対気速度 [m/s]\ （風に対する速さ）と動圧 [Pa]。``drogue_deploy_time`` と同じく、開傘しなかった飛翔では書かない。
-       対気速度が 50 m/s を超えるか動圧が 2 kPa を超えると警告する（:ref:`sec-config-checks`）
+       対気速度が 50 m/s を超えるか動圧が 2 kPa を超えると警告する（:ref:`IY-O518`）
    * - ``main_deploy_speed`` / ``main_deploy_q``
      - 二段開傘のメインが開いたときの対気速度 [m/s] と動圧 [Pa]。メインが開かなかった飛翔では書かない
    * - ``earth_model``
@@ -167,7 +167,7 @@
    * - ``config_hash``
      - この結果を計算した設定の識別子（16 桁の 16 進数）。出力先、計算資源（``[output]`` と ``[resources]``）、``[dispersion]`` を除く設定と、入力ファイル（STL、モータ、風のプロファイル、外部の係数表）の内容で決まる。結果が現在の設定で計算されたものかの照合に使い、KML は現在の設定と同じ識別子の結果だけをまとめる（:ref:`sec-kml`）。落下分散の出力にある ``config_hash`` と ``flight_config_hash`` も同じ目的の識別子である（:ref:`sec-file-dispersion`）
    * - ``warnings``
-     - 警告の文字列の配列（空のこともある。:ref:`sec-config-checks`）。各文字列は、画面の ``warning[IY-O514]: …`` の形ではなく、コードを角括弧のまま先頭に付けた ``[IY-O514] …`` の形で書く（:ref:`errors`）。設定の読み込み時の警告（``profile`` で使わない ``wind.speed`` と ``wind.direction_deg``、2 回以上指定した ``--set`` のキー）が先頭で、計算中の警告が続く。``dispersion_meta.json`` と ``dispersion_summary.json`` の ``warnings`` も同じ順である
+     - 警告の文字列の配列（空のこともある）。各文字列は、画面の ``warning[IY-O514]: …`` の形ではなく、コードを角括弧のまま先頭に付けた ``[IY-O514] …`` の形で書く（:ref:`errors`）。設定の読み込み時の警告（``profile`` で使わない ``wind.speed`` と ``wind.direction_deg``、2 回以上指定した ``--set`` のキー）が先頭で、計算中の警告が続く。``dispersion_meta.json`` と ``dispersion_summary.json`` の ``warnings`` も同じ順である
    * - ``aero_table_range``
      - 係数表の範囲外の引き出しの集計。全引き出しの回数 ``lookups``、Mach 数が表の最小値未満・最大値超の回数 ``mach_below`` ``mach_above``、迎角または横滑り角が格子の外の回数 ``angle_beyond``、要求された最大の Mach 数 ``max_mach`` と最大の迎角 ``max_abs_alpha_deg`` [deg]（軸対称表では引いた全迎角、一般表では :math:`\alpha` と :math:`\beta` から求めた全迎角 :math:`\arccos(\cos\alpha\cos\beta)`）、範囲外が 1 回でもあったか ``out_of_range``\ （真偽値）、迎角の範囲外がなかったか ``angles_in_range`` と Mach 数の範囲外がなかったか ``machs_in_range``\ （真偽値。どちらかが ``false`` のときは結果を使えず、終了ステータス 3 で終わる。:ref:`sec-exit-status`）
 

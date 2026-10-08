@@ -845,7 +845,7 @@ RANS は、5 mm（73.5 万節点）の 1 ケースが暖機起動で約 15〜30 
 
 と見積もる。同じメッシュの Euler の見積もりを下回ることはない。
 実測との比較の例として、Euler の 142 万セルは見積もりが 4.8 GB で、実測の最大ランクのピークの 4 倍は 4.6 GB であった。
-RANS の ``wall_size`` 4.8 mm（78.7 万節点）の半モデルは、実測のピークがランクの合計で 7.8 GB であった（``doc/data/cfd/rans_memory.csv``）。
+RANS の ``wall_size`` 4.8 mm（78.7 万節点）の半モデルは、実測のピークがランクの合計で 7804 MiB であった（``doc/data/cfd/rans_memory.csv``）。節点あたり 12 kB の根拠は :ref:`sec-vperf-rans-memory` にある。
 式の求め方と測定の詳細は :ref:`page-vv-performance` にある。
 
 .. _sec-cfd-parallel:

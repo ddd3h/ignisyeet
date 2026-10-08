@@ -743,9 +743,11 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: Option
     if (reached || accepted) && !settled {
         warnings.push(format!(
             "the coefficients still trend or oscillate at the end ({} iterations): their range over the last \
-             stable_window iterations or their change extrapolated from the residual decay exceeds {} % of the force scale",
+             stable_window iterations or their change extrapolated from the residual decay exceeds {} % of the force scale \
+             (centre of pressure: {} body lengths); coefficients averaged over the last {window} iterations",
             n,
-            100.0 * crate::history::EULER_TREND_FORCE
+            100.0 * crate::history::EULER_TREND_FORCE,
+            crate::history::EULER_TREND_XCP
         ));
     }
     if !reached && !accepted {
@@ -757,7 +759,7 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: Option
             if h.coefficients_stable(window, kind) { "stable" } else { "still changing" }
         )));
     }
-    let (s, coeffs, coeffs6, axial) = match coefficients_from_history(setup, &spec, &h, if reached { 1 } else { window }) {
+    let (s, coeffs, coeffs6, axial) = match coefficients_from_history(setup, &spec, &h, if reached && settled { 1 } else { window }) {
         Ok(c) => c,
         Err(e) => return Ok(fail(e)),
     };
@@ -1995,7 +1997,9 @@ exit 0
         let out = run_all(&e.setup(), &|_| {}).unwrap();
         let r = out[1].result.as_ref().unwrap_or_else(|| panic!("{:?}", out[1].error));
         assert!(!r.converged && r.iterations == 600, "{r:?}");
-        assert!(r.warnings.iter().any(|w| w.contains("still trend")), "{r:?}");
+        assert!(r.warnings.iter().any(|w| w.contains("still trend") && w.contains("averaged over the last 100 iterations")), "{r:?}");
+        // Not settled: the window average (rows 500..599, CFz = 0.2 + 3e-5 (700 - i)), not the last row (0.20303).
+        assert!((r.coeffs.cn - (0.2 + 3e-5 * 150.5)).abs() < 1e-6, "{}", r.coeffs.cn);
         let _ = std::fs::remove_dir_all(&e.dir);
     }
 }

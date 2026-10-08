@@ -358,7 +358,7 @@ fn wind_grid_folder(cases: &[Case], results: &[Summary], doc: &mut Vec<String>) 
 }
 
 /// Closed ring (n + 1 vertices, first repeated) of the ellipse around a landing-point mean, as (lat, lon).
-/// `mean_east`/`mean_north` are ENU offsets [m] from the launch site `origin`; the major axis points
+/// `mean_east`/`mean_north` are ENU offsets \[m\] from the launch site `origin`; the major axis points
 /// along `bearing` (clockwise from north).
 pub fn ellipse_ring(origin: (f64, f64, f64), mean_east: f64, mean_north: f64, e: &Ellipse, n: usize) -> Vec<(f64, f64)> {
     let b = e.major_axis_bearing_deg.to_radians();

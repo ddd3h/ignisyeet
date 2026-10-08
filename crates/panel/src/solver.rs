@@ -226,7 +226,7 @@ pub fn coefficients(real: &Mesh, pot: &Potential, beta: f64, s_ref: f64) -> Pote
     c
 }
 
-/// Pressure coefficient at every panel for angle of attack `alpha` [rad] in incompressible flow.
+/// Pressure coefficient at every panel for angle of attack `alpha` \[rad\] in incompressible flow.
 pub fn cp_at_alpha(pot: &Potential, alpha: f64) -> Vec<f64> {
     let (sa, ca) = alpha.sin_cos();
     pot.vel[0].iter().zip(&pot.vel[1]).map(|(vx, vz)| 1.0 - (*vx * ca + *vz * sa).dot(*vx * ca + *vz * sa)).collect()

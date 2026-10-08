@@ -11,7 +11,7 @@ fn e2() -> f64 {
     F * (2.0 - F)
 }
 
-/// Geodetic (deg, deg, m) to ECEF [m].
+/// Geodetic (deg, deg, m) to ECEF \[m\].
 pub fn lla_to_ecef(lat: f64, lon: f64, alt: f64) -> Vec3 {
     let (sl, cl) = lat.to_radians().sin_cos();
     let (so, co) = lon.to_radians().sin_cos();
@@ -32,7 +32,7 @@ pub fn ecef_to_lla(p: Vec3) -> (f64, f64, f64) {
     (lat.to_degrees(), lon.to_degrees(), alt)
 }
 
-/// East, north and up unit vectors (in ECEF) at a geodetic latitude/longitude [deg].
+/// East, north and up unit vectors (in ECEF) at a geodetic latitude/longitude \[deg\].
 pub fn enu_basis(lat: f64, lon: f64) -> [Vec3; 3] {
     let (sl, cl) = lat.to_radians().sin_cos();
     let (so, co) = lon.to_radians().sin_cos();

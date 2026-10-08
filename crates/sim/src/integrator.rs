@@ -94,7 +94,7 @@ pub fn dopri5_tableau() -> RkTableau {
 pub const SAFETY: f64 = 0.9;
 pub const MIN_FACTOR: f64 = 0.2;
 pub const MAX_FACTOR: f64 = 5.0;
-/// Smallest step the adaptive integrator will take before giving up [s].
+/// Smallest step the adaptive integrator will take before giving up \[s\].
 pub const MIN_STEP: f64 = 1e-6;
 
 pub struct Dopri5Step<A> {

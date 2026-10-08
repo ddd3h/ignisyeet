@@ -60,7 +60,7 @@ pub struct Panel {
     /// Largest corner-to-corner distance.
     pub diameter: f64,
     pub part: Part,
-    /// Running length from the leading point (nose tip / fin leading edge) for friction [m].
+    /// Running length from the leading point (nose tip / fin leading edge) for friction \[m\].
     pub run: f64,
 }
 
@@ -183,7 +183,7 @@ impl Mesh {
         (open, over)
     }
 
-    /// Copy rotated by `angle` [rad] about the x axis (used to align fins with the flow in tests).
+    /// Copy rotated by `angle` \[rad\] about the x axis (used to align fins with the flow in tests).
     pub fn rotated_about_x(&self, angle: f64) -> Mesh {
         let (s, c) = angle.sin_cos();
         let rot = |v: Vec3| Vec3::new(v.x, c * v.y - s * v.z, s * v.y + c * v.z);

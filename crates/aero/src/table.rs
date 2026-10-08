@@ -60,7 +60,7 @@ pub struct OutOfRangeStats {
     pub angle_beyond: u64,
     /// Largest Mach requested.
     pub max_mach: f64,
-    /// Largest |alpha| requested [deg].
+    /// Largest |alpha| requested \[deg\].
     pub max_abs_alpha_deg: f64,
 }
 
@@ -121,7 +121,7 @@ pub struct TableMeta {
     /// General tables only: sideslip beta = asin(v / V), -90..90.
     #[serde(default)]
     pub betas_deg: Vec<f64>,
-    /// Fin cant [deg] already contained in the tabulated roll moment; the flight adds
+    /// Fin cant \[deg\] already contained in the tabulated roll moment; the flight adds
     /// `cl_delta * (cant - fin_cant_ref)`.
     #[serde(default)]
     pub fin_cant_ref_deg: f64,
@@ -129,7 +129,7 @@ pub struct TableMeta {
     #[serde(default = "nose_tip")]
     pub moment_ref: String,
     pub extrapolation: Extrapolation,
-    /// Roll angle of one fin [deg], from +y_b towards +z_b: the fin plane the induced roll `cl4`
+    /// Roll angle of one fin \[deg\], from +y_b towards +z_b: the fin plane the induced roll `cl4`
     /// of an axisymmetric table is referred to (`Cl = cl4 alpha^2 sin(4 phi_w)`, `phi_w` the roll
     /// angle of the crossflow from this fin).
     #[serde(default)]
@@ -225,7 +225,7 @@ pub struct AeroCoeffs {
     pub cn: f64,
     pub ca_on: f64,
     pub ca_off: f64,
-    /// Centre of pressure aft of the nose tip [m].
+    /// Centre of pressure aft of the nose tip \[m\].
     pub xcp: f64,
     /// Normal-force slope at zero alpha [1/rad].
     pub cna: f64,
@@ -235,11 +235,11 @@ pub struct AeroCoeffs {
     pub cl_delta: f64,
     /// Roll-damping derivative d Cl / d p_hat with p_hat = p d / (2 V) (negative).
     pub clp: f64,
-    /// Lag (alpha-dot) sums [m] and [m^2]: the lateral force `-(rho S / 2) lag_l0 du_perp/dt` of the
+    /// Lag (alpha-dot) sums \[m\] and [m^2]: the lateral force `-(rho S / 2) lag_l0 du_perp/dt` of the
     /// air the body carries along (apparent mass), acting at `lag_l1 / lag_l0` aft of the nose tip.
     pub lag_l0: f64,
     pub lag_l1: f64,
-    /// Induced roll: `Cl = cl4 alpha^2 sin(4 phi_w)` (alpha the total angle of attack [rad],
+    /// Induced roll: `Cl = cl4 alpha^2 sin(4 phi_w)` (alpha the total angle of attack \[rad\],
     /// `phi_w` the roll angle of the crossflow from a fin, see [`TableMeta::fin_roll_deg`]).
     pub cl4: f64,
     /// Magnus force slope [1/rad] (per radian of angle of attack; `p_hat = p d / (2 V)` is
@@ -260,7 +260,7 @@ pub struct AeroCoeffs {
 
 /// Six body-axis coefficients and the rate-damping terms at one flight condition.
 ///
-/// Body axes: x forward (nose), y and z from [`geom::Frame::body_basis`]. Forces are normalised by
+/// Body axes: x forward (nose), y and z from `geom::Frame::body_basis`. Forces are normalised by
 /// q S, moments by q S d and taken about the nose tip.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Coeffs6 {
@@ -348,13 +348,13 @@ pub struct AeroTable {
     lag_columns: bool,
 }
 
-/// Unit vector of the vehicle velocity relative to the air in body axes for alpha and beta [rad]:
+/// Unit vector of the vehicle velocity relative to the air in body axes for alpha and beta \[rad\]:
 /// (cos b cos a, sin b, cos b sin a).
 pub fn airspeed_direction(alpha: f64, beta: f64) -> [f64; 3] {
     [beta.cos() * alpha.cos(), beta.sin(), beta.cos() * alpha.sin()]
 }
 
-/// alpha = atan2(w, u) and beta = asin(v / V) of a body-axis airspeed (u, v, w) [rad].
+/// alpha = atan2(w, u) and beta = asin(v / V) of a body-axis airspeed (u, v, w) \[rad\].
 pub fn aero_angles(u: f64, v: f64, w: f64) -> (f64, f64) {
     let speed = (u * u + v * v + w * w).sqrt();
     if speed <= 0.0 {
@@ -363,7 +363,7 @@ pub fn aero_angles(u: f64, v: f64, w: f64) -> (f64, f64) {
     (w.atan2(u), (v / speed).clamp(-1.0, 1.0).asin())
 }
 
-/// Six-component coefficients of an axisymmetric data point at angles (alpha, beta) [rad].
+/// Six-component coefficients of an axisymmetric data point at angles (alpha, beta) \[rad\].
 ///
 /// The total angle is the angle between the airspeed and the body axis; the normal force acts
 /// against the crossflow at the centre of pressure, the axial force along the axis (reversed in
@@ -399,10 +399,10 @@ pub fn expand_axisymmetric(c: &AeroCoeffs, alpha: f64, beta: f64, ref_diameter: 
 }
 
 /// Induced roll coefficient `cl4 alpha^2 sin(4 phi_w)` of a cruciform fin set at the effective total
-/// angle of attack `alpha` [rad] (nose-first flow; the caller reverses it in tail-first flow, as the
+/// angle of attack `alpha` \[rad\] (nose-first flow; the caller reverses it in tail-first flow, as the
 /// cant forcing). `phi_w = atan2(w, v) - fin_roll` is the roll angle of the crossflow (the
 /// lateral airspeed `(v, w)` of the body in body axes) from the plane of a fin at roll angle
-/// `fin_roll` [rad] from +y_b towards +z_b: zero with the crossflow in a fin plane (`+` and `x`
+/// `fin_roll` \[rad\] from +y_b towards +z_b: zero with the crossflow in a fin plane (`+` and `x`
 /// configurations are symmetric), largest at 22.5 deg.
 pub fn induced_roll(cl4: f64, alpha: f64, v: f64, w: f64, fin_roll: f64) -> f64 {
     if cl4 == 0.0 || v.hypot(w) <= 1e-12 {
@@ -411,7 +411,7 @@ pub fn induced_roll(cl4: f64, alpha: f64, v: f64, w: f64, fin_roll: f64) -> f64 
     cl4 * alpha * alpha * (4.0 * (w.atan2(v) - fin_roll)).sin()
 }
 
-/// Non-uniform symmetric angle axis: `fine_step` up to +-`fine_limit`, then `coarse_step` up to +-`limit` [deg].
+/// Non-uniform symmetric angle axis: `fine_step` up to +-`fine_limit`, then `coarse_step` up to +-`limit` \[deg\].
 pub fn angle_axis(limit: f64, fine_limit: f64, fine_step: f64, coarse_step: f64) -> Vec<f64> {
     let fine_limit = fine_limit.min(limit);
     let mut pos = grid(0.0, fine_limit, fine_step);
@@ -472,7 +472,7 @@ impl AeroTable {
         Self { meta, data: TableData::Axisymmetric(data), counters: Default::default(), lag_columns: true }
     }
 
-    /// Axisymmetric table from an arbitrary function of (Mach, alpha [deg]); used for tests and custom data.
+    /// Axisymmetric table from an arbitrary function of (Mach, alpha \[deg\]); used for tests and custom data.
     pub fn from_fn(meta: TableMeta, f: impl Fn(f64, f64) -> AeroCoeffs) -> Self {
         let mut data = Vec::new();
         for &m in &meta.machs {
@@ -487,7 +487,7 @@ impl AeroTable {
         Self { meta, data: TableData::Axisymmetric(data), counters: Default::default(), lag_columns: true }
     }
 
-    /// General table from a function of (Mach, alpha [deg], beta [deg]) on `meta`'s grid.
+    /// General table from a function of (Mach, alpha \[deg\], beta \[deg\]) on `meta`'s grid.
     pub fn general_from_fn(meta: TableMeta, f: impl Fn(f64, f64, f64) -> Coeffs6) -> Self {
         let mut data = Vec::with_capacity(meta.machs.len() * meta.alphas_deg.len() * meta.betas_deg.len());
         for &m in &meta.machs {
@@ -505,7 +505,7 @@ impl AeroTable {
         self.meta.kind
     }
 
-    /// General table with the same Mach grid on (alphas, betas) [deg], expanded from this
+    /// General table with the same Mach grid on (alphas, betas) \[deg\], expanded from this
     /// axisymmetric table (a general table is returned unchanged).
     pub fn to_general(&self, alphas_deg: Vec<f64>, betas_deg: Vec<f64>) -> AeroTable {
         if self.meta.kind == TableKind::General {
@@ -833,7 +833,7 @@ impl AeroTable {
         }
     }
 
-    /// Coefficients at Mach `m` and total angle of attack `alpha` [rad] (≥ 0) of an axisymmetric table.
+    /// Coefficients at Mach `m` and total angle of attack `alpha` \[rad\] (≥ 0) of an axisymmetric table.
     ///
     /// The fields are interpolated bilinearly; the centre of pressure is not interpolated itself:
     /// the normal force CN and the nose moment CN x_cp are, and `xcp` = moment / CN, so the
@@ -934,7 +934,7 @@ impl AeroTable {
         }
     }
 
-    /// Six-component coefficients at Mach `m`, alpha = atan2(w, u) and beta = asin(v / V) [rad].
+    /// Six-component coefficients at Mach `m`, alpha = atan2(w, u) and beta = asin(v / V) \[rad\].
     ///
     /// General tables are interpolated trilinearly (Mach held at the grid edge; with
     /// [`Extrapolation::Linear`] the angles continue linearly, every coefficient except `clp`
@@ -1011,7 +1011,7 @@ impl AeroTable {
         Coeffs6::from_arr(out)
     }
 
-    /// Static margins [cal] in pitch and yaw at Mach `m` for a CG `x_cg` aft of the nose tip [m];
+    /// Static margins \[cal\] in pitch and yaw at Mach `m` for a CG `x_cg` aft of the nose tip \[m\];
     /// positive is stable.
     ///
     /// Sign convention (see [`expand_axisymmetric`]): a positive alpha gives `Cz = -CN < 0`, a positive
@@ -1155,7 +1155,7 @@ impl AeroTable {
     }
 }
 
-/// Static margins of [`AeroTable::static_margins`] [cal]; positive is stable.
+/// Static margins of [`AeroTable::static_margins`] \[cal\]; positive is stable.
 #[derive(Debug, Clone, PartialEq)]
 pub struct StaticMargins {
     pub pitch: f64,

@@ -39,23 +39,23 @@ pub struct WindConfig {
     /// Speed at the reference height [m/s] (constant, power and log models; ignored by the
     /// profile model, whose speeds come from the CSV).
     pub speed: f64,
-    /// Direction the wind blows FROM, clockwise from north [deg] (ignored by the profile model).
+    /// Direction the wind blows FROM, clockwise from north \[deg\] (ignored by the profile model).
     pub direction_deg: f64,
     pub ref_height: f64,
     /// Profile model: mean speed [m/s] the profile is scaled to (`k = v / W`, see
     /// [`Wind::with_speed_direction`]). None keeps the CSV speeds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile_mean_speed: Option<f64>,
-    /// Profile model: direction [deg] the profile's mean wind vector is rotated to (every row is
+    /// Profile model: direction \[deg\] the profile's mean wind vector is rotated to (every row is
     /// rotated by `psi - Psi`). None keeps the CSV directions.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub profile_mean_direction_deg: Option<f64>,
     /// Power-law exponent n (power model).
     pub exponent: f64,
-    /// Surface roughness length [m] (log model).
+    /// Surface roughness length \[m\] (log model).
     pub roughness_length: f64,
     /// Height below which the power/log speed profile is blended to zero with a cubic Hermite
-    /// polynomial [m]. Must be positive and smaller than `ref_height`.
+    /// polynomial \[m\]. Must be positive and smaller than `ref_height`.
     ///
     /// The blend removes the infinite (power) or discontinuous (log) derivative of the profile at
     /// the ground, which would otherwise force the adaptive integrators to take vanishingly small
@@ -84,7 +84,7 @@ impl Default for WindConfig {
     }
 }
 
-/// One row of a wind profile: height above ground [m], speed [m/s], direction the wind blows FROM [deg].
+/// One row of a wind profile: height above ground \[m\], speed [m/s], direction the wind blows FROM \[deg\].
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ProfilePoint {
     pub height: f64,
@@ -113,14 +113,14 @@ pub struct Wind {
     pub model: WindModel,
     /// Speed at the reference height [m/s].
     pub speed: f64,
-    /// Direction the wind blows FROM, clockwise from north [deg].
+    /// Direction the wind blows FROM, clockwise from north \[deg\].
     pub direction_deg: f64,
     pub ref_height: f64,
     /// Power-law exponent n in v = v_ref (h / h_ref)^(1/n).
     pub exponent: f64,
-    /// Roughness length z0 of the logarithmic profile [m].
+    /// Roughness length z0 of the logarithmic profile \[m\].
     pub roughness_length: f64,
-    /// Cubic Hermite ground blend height [m] (power and log models); effective log value is
+    /// Cubic Hermite ground blend height \[m\] (power and log models); effective log value is
     /// `max(configured, 2 z0)`.
     pub ground_blend_height: f64,
     profile: Vec<ProfilePoint>,
@@ -266,7 +266,7 @@ impl Wind {
     /// Representative wind of the profile: `(W, Psi)` with `W` the mean speed over the profile's
     /// altitude range (trapezoidal average of the interpolated vector magnitude `|w(h)|` from the
     /// lowest to the highest row; the speed of the row for a single-row profile) and `Psi` the
-    /// direction the altitude-averaged wind vector blows FROM [deg]. If that mean vector is ~0 the
+    /// direction the altitude-averaged wind vector blows FROM \[deg\]. If that mean vector is ~0 the
     /// direction at `ref_height` is used (0 when that wind is calm too). Other models:
     /// `(speed, direction_deg)`.
     pub fn profile_mean(&self) -> (f64, f64) {
@@ -489,7 +489,7 @@ pub enum AtmosphereKind {
 #[serde(deny_unknown_fields, default)]
 pub struct AtmosphereConfig {
     pub model: AtmosphereKind,
-    /// Temperature offset from the standard atmosphere [K] (us1976 only).
+    /// Temperature offset from the standard atmosphere \[K\] (us1976 only).
     pub temperature_offset: f64,
     /// Density [kg/m^3] (constant only).
     pub density: f64,
@@ -547,7 +547,7 @@ pub struct EarthConfig {
 pub const GM: f64 = 3.986_004_418e14;
 /// WGS84 second zonal harmonic.
 pub const J2: f64 = 1.082_626_68e-3;
-/// WGS84 equatorial radius [m].
+/// WGS84 equatorial radius \[m\].
 pub const A_EQ: f64 = 6_378_137.0;
 /// Earth rotation rate [rad/s].
 pub const OMEGA_EARTH: f64 = 7.292_115e-5;

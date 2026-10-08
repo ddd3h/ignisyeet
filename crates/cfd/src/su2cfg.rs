@@ -142,7 +142,7 @@ pub enum Stage {
 /// Reference dimensions of the full (not halved) rocket.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RefDims {
-    /// Reference length: body diameter [m].
+    /// Reference length: body diameter \[m\].
     pub length: f64,
     /// Reference area: body cross-section [m^2].
     pub area: f64,

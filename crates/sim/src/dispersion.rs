@@ -59,13 +59,13 @@ pub struct MonteCarloConfig {
     pub burn_time_scale: f64,
     /// Relative: dry mass (the dry inertias scale with it).
     pub dry_mass: f64,
-    /// Absolute [m]: shift of the dry centre of gravity (+ = aft).
+    /// Absolute \[m\]: shift of the dry centre of gravity (+ = aft).
     pub cg: f64,
     /// Relative: normal-force coefficient, its slope and the pitch damping (all proportional to CN_alpha).
     pub cn_scale: f64,
     /// Relative: axial-force (drag) coefficient, power on and off.
     pub ca_scale: f64,
-    /// Absolute [deg]: rail pointing error. The rail axis is tilted away from its nominal
+    /// Absolute \[deg\]: rail pointing error. The rail axis is tilted away from its nominal
     /// direction by two independent normal angles with this sigma, one in the vertical plane of
     /// the rail (+ = towards higher elevation) and one perpendicular to it (+ = towards higher
     /// azimuth), so the tilt is isotropic about the nominal axis at any elevation, vertical
@@ -73,24 +73,24 @@ pub struct MonteCarloConfig {
     /// with this sigma. The rocket turns with the rail, so its body axes stay within the tilt
     /// angle of their nominal directions (see [`tilt_launch`]).
     pub elevation_deg: f64,
-    /// Absolute [deg]: azimuth setting error, a rotation of the (tilted) rail, with the rocket on
+    /// Absolute \[deg\]: azimuth setting error, a rotation of the (tilted) rail, with the rocket on
     /// it, about the vertical. It moves the axis sideways by sigma * cos(elevation); a vertical
     /// rail keeps its axis and only the rocket's roll about it changes.
     pub azimuth_deg: f64,
     /// Absolute [m/s]: reference wind speed around the configured `[wind]` speed (clamped at 0).
     pub wind_speed: f64,
-    /// Absolute [deg]: wind direction around the configured `[wind]` direction.
+    /// Absolute \[deg\]: wind direction around the configured `[wind]` direction.
     pub wind_direction_deg: f64,
     /// Relative: parachute drag area Cd*S.
     pub parachute_cd_s_scale: f64,
-    /// Absolute [deg]: thrust misalignment; two orthogonal normals (y_b, z_b tilt components) are added
+    /// Absolute \[deg\]: thrust misalignment; two orthogonal normals (y_b, z_b tilt components) are added
     /// to the nominal tilt vector, which gives the misalignment angle and its azimuth.
     pub thrust_misalignment_deg: f64,
-    /// Absolute [m]: nozzle-exit point of the thrust line, one normal draw per body axis y and z.
+    /// Absolute \[m\]: nozzle-exit point of the thrust line, one normal draw per body axis y and z.
     pub thrust_offset: f64,
-    /// Absolute [deg]: fin cant added to the configured cant (the tabulated roll moment stays at the reference cant).
+    /// Absolute \[deg\]: fin cant added to the configured cant (the tabulated roll moment stays at the reference cant).
     pub fin_cant_deg: f64,
-    /// Absolute [m]: lateral dry CG offset, one normal draw per body axis y and z.
+    /// Absolute \[m\]: lateral dry CG offset, one normal draw per body axis y and z.
     pub cg_lateral: f64,
     /// Relative: roll-moment coefficient Cl and its cant slope Cl_delta.
     pub cl_scale: f64,
@@ -198,7 +198,7 @@ pub struct Perturbation {
     pub cg: f64,
     pub cn_scale: f64,
     pub ca_scale: f64,
-    /// Change of the rail elevation [deg], of the rail azimuth [deg, in (-180, 180]] and of the
+    /// Change of the rail elevation \[deg\], of the rail azimuth [deg, in (-180, 180]] and of the
     /// body roll about the rail [deg, in (-180, 180]] that the rail draws produce (see
     /// [`MonteCarloConfig::elevation_deg`] and [`tilt_launch`]): the perturbed launch has
     /// elevation `nominal + elevation_deg`, azimuth `nominal + azimuth_deg` and roll
@@ -210,15 +210,15 @@ pub struct Perturbation {
     pub wind_speed: f64,
     pub wind_direction_deg: f64,
     pub parachute_cd_s_scale: f64,
-    /// Thrust tilt added along y_b and z_b [deg].
+    /// Thrust tilt added along y_b and z_b \[deg\].
     pub misalignment_y_deg: f64,
     pub misalignment_z_deg: f64,
-    /// Nozzle-exit offset added along y_b and z_b [m].
+    /// Nozzle-exit offset added along y_b and z_b \[m\].
     pub offset_y: f64,
     pub offset_z: f64,
-    /// Fin cant added [deg].
+    /// Fin cant added \[deg\].
     pub fin_cant_deg: f64,
-    /// Lateral dry CG offset added along y_b and z_b [m].
+    /// Lateral dry CG offset added along y_b and z_b \[m\].
     pub cg_lateral_y: f64,
     pub cg_lateral_z: f64,
     pub cl_scale: f64,
@@ -355,12 +355,12 @@ impl Perturbation {
     }
 }
 
-/// Rail elevation, azimuth and body roll [deg] (see [`Launch`]) of the launch attitude of
+/// Rail elevation, azimuth and body roll \[deg\] (see [`Launch`]) of the launch attitude of
 /// `launch` after rotating the whole body: first a tilt of the rail axis by `d_in` in its
 /// vertical plane (+ = up; past the zenith the azimuth flips) and by `d_cross` perpendicular to
-/// that plane (+ = towards increasing azimuth), both [deg], as one rotation by
+/// that plane (+ = towards increasing azimuth), both \[deg\], as one rotation by
 /// `hypot(d_in, d_cross)` about the nominal axis' normal, then a rotation about the vertical by
-/// `d_az` [deg] (clockwise seen from above). For small angles the axis moves to `el + d_in`,
+/// `d_az` \[deg\] (clockwise seen from above). For small angles the axis moves to `el + d_in`,
 /// `az + d_cross / cos(el) + d_az`; for a vertical rail the in-plane direction is that of the
 /// nominal azimuth. The body axes turn with the rail, so they stay within the rotation angle of
 /// their nominal directions: a tiny tilt of a vertical rail that flips the azimuth by 180 deg
@@ -415,14 +415,14 @@ pub struct McRow {
     pub result: std::result::Result<Summary, String>,
 }
 
-/// Landing-point statistics (east/north relative to the launch site [m]).
+/// Landing-point statistics (east/north relative to the launch site \[m\]).
 #[derive(Debug, Clone, Copy, Serialize)]
 pub struct Ellipse {
-    /// Semi-major axis [m].
+    /// Semi-major axis \[m\].
     pub semi_major: f64,
-    /// Semi-minor axis [m].
+    /// Semi-minor axis \[m\].
     pub semi_minor: f64,
-    /// Direction of the major axis, clockwise from north, in [0, 180) [deg].
+    /// Direction of the major axis, clockwise from north, in [0, 180) \[deg\].
     pub major_axis_bearing_deg: f64,
 }
 
@@ -476,11 +476,11 @@ pub struct DescentStats {
     pub complete: bool,
     /// The maximum landing distance is only a lower bound (some samples did not land).
     pub max_landing_distance_is_lower_bound: bool,
-    /// Empirical percentiles of the landing distance of the landed samples [m] (linear interpolation).
+    /// Empirical percentiles of the landing distance of the landed samples \[m\] (linear interpolation).
     pub landing_distance_p50: f64,
     pub landing_distance_p90: f64,
     pub landing_distance_p99: f64,
-    /// P99.9 of the landing distance [m]; None (null) with fewer than [`P999_MIN_SAMPLES`] landed samples.
+    /// P99.9 of the landing distance \[m\]; None (null) with fewer than [`P999_MIN_SAMPLES`] landed samples.
     pub landing_distance_p999: Option<f64>,
     #[serde(flatten)]
     pub landing: PointStats,

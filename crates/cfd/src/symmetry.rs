@@ -42,7 +42,7 @@ pub struct PlaneCheck {
     /// `y` (the pitch plane `y = 0`) or `z` (`z = 0`).
     pub plane: String,
     pub symmetric: bool,
-    /// Largest distance of a mirrored point from the surface (vertices, edge midpoints and centroids) [m].
+    /// Largest distance of a mirrored point from the surface (vertices, edge midpoints and centroids) \[m\].
     pub max_mismatch: f64,
     /// Welded vertices, and how many of them have a vertex at their mirror image.
     pub vertices: usize,

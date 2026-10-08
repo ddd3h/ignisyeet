@@ -389,7 +389,7 @@ fn range_reason(s: &aero::table::OutOfRangeStats, t: &aero::AeroTable) -> Option
     (!parts.is_empty()).then(|| parts.join("; "))
 }
 
-/// The exit-status-3 message when aero lookups went beyond the table's angle range (`alpha_max` [deg], the
+/// The exit-status-3 message when aero lookups went beyond the table's angle range (`alpha_max` \[deg\], the
 /// last angle of the table): those coefficients are extrapolated, which can create an artificial trim at a
 /// large angle of attack and change a ballistic descent completely.
 fn angle_range_reason(s: &aero::table::OutOfRangeStats, alpha_max: f64) -> Option<String> {
@@ -402,7 +402,7 @@ fn angle_range_reason(s: &aero::table::OutOfRangeStats, alpha_max: f64) -> Optio
     })
 }
 
-/// Largest angle of attack [deg] of a table.
+/// Largest angle of attack \[deg\] of a table.
 fn table_alpha_max(t: &aero::AeroTable) -> f64 {
     t.meta.alphas_deg.last().copied().unwrap_or(0.0)
 }
@@ -429,7 +429,7 @@ const LENGTH_RANGE: (f64, f64) = (0.1, 20.0);
 const DIAMETER_RANGE: (f64, f64) = (0.005, 3.0);
 
 /// Warnings about the size of the body (`length`, `diameter` in metres).
-/// Mach step [-] and angle-of-attack step [deg] of the aero table above which the grid is reported as coarse.
+/// Mach step [-] and angle-of-attack step \[deg\] of the aero table above which the grid is reported as coarse.
 const COARSE_MACH_STEP: f64 = 0.1;
 const COARSE_ALPHA_STEP_DEG: f64 = 5.0;
 
@@ -474,11 +474,11 @@ fn size_warnings(cfg: &Config, length: f64, diameter: f64) -> Vec<String> {
     w
 }
 
-/// Height above ground up to which the power-law and log wind profiles are meaningful [m].
+/// Height above ground up to which the power-law and log wind profiles are meaningful \[m\].
 const WIND_VALID_HEIGHT: f64 = 1000.0;
 
 /// Warnings about the flight itself: static margin, centre of pressure, wind-model validity, no landing.
-/// Smallest static margin of the flight including the rail-exit value [cal] (NaN when none is finite).
+/// Smallest static margin of the flight including the rail-exit value \[cal\] (NaN when none is finite).
 pub(crate) fn static_margin_min(s: &Summary) -> f64 {
     s.static_margin_min()
 }
@@ -567,7 +567,7 @@ fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: Option<f64>) -> Vec
 
 /// Rail exit speed [m/s] below which the launch is reported as too slow.
 const MIN_RAIL_EXIT_SPEED: f64 = 15.0;
-/// Wind angle of attack [deg] at rail exit above which the launch is reported as wind-sensitive.
+/// Wind angle of attack \[deg\] at rail exit above which the launch is reported as wind-sensitive.
 const MAX_RAIL_EXIT_WIND_ALPHA_DEG: f64 = 15.0;
 
 /// Warnings about the rail exit of a flight: a speed below 15 m/s, or a wind angle of attack
@@ -577,7 +577,7 @@ fn rail_exit_warnings(cfg: &Config, s: &Summary) -> Vec<String> {
     rail_exit_warnings_at(cfg, s, None)
 }
 
-/// [`rail_exit_warnings`] for the reference wind speed `wind_speed` [m/s] (the largest wind-grid speed, or the
+/// `rail_exit_warnings` for the reference wind speed `wind_speed` [m/s] (the largest wind-grid speed, or the
 /// nominal speed plus two sigma for Monte Carlo, see [`reference_wind_speed`]); None: the configured wind as flown.
 /// The reference wind is the configured wind with that speed as the dispersion cases fly it
 /// ([`sim::Wind::with_speed_direction`]): a wind profile is scaled to that mean speed.
@@ -651,7 +651,7 @@ fn parachute_warnings(cfg: &Config, s: &Summary) -> Vec<String> {
     w
 }
 
-/// Airspeed [m/s] and dynamic pressure [Pa] at a parachute deployment above which the canopy is unlikely to
+/// Airspeed [m/s] and dynamic pressure \[Pa\] at a parachute deployment above which the canopy is unlikely to
 /// survive the opening (a typical hobby canopy is built for deployment near apogee, at a few hundred Pa).
 const MAX_DEPLOY_SPEED: f64 = 50.0;
 const MAX_DEPLOY_Q: f64 = 2000.0;
@@ -1594,7 +1594,7 @@ fn default_descent(cfg: &Config) -> Descent {
     cfg.sim.descent.unwrap_or(if cfg.recovery.enabled { Descent::Parachute } else { Descent::Ballistic })
 }
 
-/// Rough terminal speed [m/s] of a rocket of `mass` [kg] under a canopy of drag area `cd_s` [m^2] (sea-level
+/// Rough terminal speed [m/s] of a rocket of `mass` \[kg\] under a canopy of drag area `cd_s` [m^2] (sea-level
 /// density 1.225 kg/m^3 as the progress estimate and the plain summary use).
 pub(crate) fn chute_speed(mass: f64, cd_s: f64) -> f64 {
     (2.0 * mass * 9.80665 / (1.225 * cd_s.max(1e-3))).sqrt()
@@ -2030,7 +2030,7 @@ struct Instability {
     unknown: usize,
     /// The reason of the first run with unknown stability.
     first_unknown: Option<String>,
-    /// Smallest static margin over the runs [cal] (NaN when none has one).
+    /// Smallest static margin over the runs \[cal\] (NaN when none has one).
     worst: f64,
     /// Ballistic runs that fell broadside, see [`Summary::fell_broadside`].
     broadside: usize,
@@ -2103,7 +2103,7 @@ fn unknown_clauses(v: &[Instability], what: &str) -> Vec<String> {
         .collect()
 }
 
-/// One clause per descent mode with unstable runs: "N of M <what> (mode) are statically UNSTABLE (min static margin down to X cal)".
+/// One clause per descent mode with unstable runs: "N of M \<what\> (mode) are statically UNSTABLE (min static margin down to X cal)".
 fn instability_clauses(v: &[Instability], what: &str) -> Vec<String> {
     v.iter()
         .filter(|x| x.unstable > 0)

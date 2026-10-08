@@ -355,9 +355,9 @@ impl<'a> InsideTest<'a> {
 /// Comparison of the STEP tessellation with the STL, both in the CFD frame (see the module documentation).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Registration {
-    /// Allowed largest distance of the STL from the STEP surface [m] ([`registration_threshold`]).
+    /// Allowed largest distance of the STL from the STEP surface \[m\] ([`registration_threshold`]).
     pub threshold: f64,
-    /// [`detail_threshold`] [m].
+    /// [`detail_threshold`] \[m\].
     pub detail_threshold: f64,
     /// STL samples -> STEP surface, without the buried ones.
     pub stl_to_step: Distances,
@@ -369,7 +369,7 @@ pub struct Registration {
     /// their area [m^2].
     pub step_only_regions: usize,
     pub step_only_area: f64,
-    /// Bounding boxes `[xmin, ymin, zmin, xmax, ymax, zmax]` [m] and `STEP - STL`.
+    /// Bounding boxes `[xmin, ymin, zmin, xmax, ymax, zmax]` \[m\] and `STEP - STL`.
     pub stl_bbox: [f64; 6],
     pub step_bbox: [f64; 6],
     pub bbox_offsets: [f64; 6],
@@ -600,7 +600,7 @@ fn regions(tris: &[Triangle], sel: &[usize], tol: f64) -> usize {
 pub struct FairingParams {
     /// Cone length in base radii.
     pub tail_fairing: f64,
-    /// Base radius of the body [m] (`Geometry::base_radius` of `rocket.stl`). The cone starts at the extent of the flat
+    /// Base radius of the body \[m\] (`Geometry::base_radius` of `rocket.stl`). The cone starts at the extent of the flat
     /// CAD base face when that is within 2 % of this radius; otherwise (fin trailing edges flush with the base belong to
     /// the face, whose extent reaches the fin tips) at 98 % of the circular body edge of the face (of this radius when
     /// the face has no such edge).
@@ -718,7 +718,7 @@ pub struct FaceInfo {
     pub centroid: [f64; 3],
     pub normal: [f64; 3],
     pub planar: bool,
-    /// `2 area / perimeter` [m] (the width of a strip, the radius of a disc).
+    /// `2 area / perimeter` \[m\] (the width of a strip, the radius of a disc).
     pub width: f64,
     pub bbox: [f64; 6],
     pub base: bool,
@@ -773,7 +773,7 @@ pub struct StepMeshInfo {
     /// `fairing`, `flat` or `none` (RANS).
     pub base_treatment: String,
     pub fairing: Option<serde_json::Value>,
-    /// Smallest face width [m] and the smallest mesh size it gives ([`min_size`]).
+    /// Smallest face width \[m\] and the smallest mesh size it gives ([`min_size`]).
     pub smallest_feature: f64,
     pub min_size: f64,
     pub warnings: Vec<String>,

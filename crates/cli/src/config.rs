@@ -186,10 +186,10 @@ pub struct RocketCfg {
     pub ixz_dry: f64,
     #[serde(default)]
     pub iyz_dry: f64,
-    /// Lateral offset (y, z) of the dry CG from the axis in body axes [m].
+    /// Lateral offset (y, z) of the dry CG from the axis in body axes \[m\].
     #[serde(default)]
     pub cg_lateral_dry: [f64; 2],
-    /// Fin cant angle [deg]; rolls the rocket (positive = positive roll about +x_b). `fin_override.cant_deg` takes precedence.
+    /// Fin cant angle \[deg\]; rolls the rocket (positive = positive roll about +x_b). `fin_override.cant_deg` takes precedence.
     #[serde(default)]
     pub fin_cant_deg: f64,
     #[serde(default = "default_roughness")]
@@ -216,12 +216,12 @@ pub struct FinOverride {
     pub sweep: Option<f64>,
     pub thickness: Option<f64>,
     pub x_le_root: Option<f64>,
-    /// Fin cant [deg]; replaces `rocket.fin_cant_deg`.
+    /// Fin cant \[deg\]; replaces `rocket.fin_cant_deg`.
     pub cant_deg: Option<f64>,
 }
 
 impl RocketCfg {
-    /// Configured fin cant [deg].
+    /// Configured fin cant \[deg\].
     pub fn cant_deg(&self) -> f64 {
         self.fin_override.as_ref().and_then(|o| o.cant_deg).unwrap_or(self.fin_cant_deg)
     }
@@ -245,19 +245,19 @@ impl RocketCfg {
 #[serde(deny_unknown_fields)]
 pub struct MotorCfg {
     pub eng: PathBuf,
-    /// Aft end of the motor, aft of the nose tip [m]. Defaults to the body length.
+    /// Aft end of the motor, aft of the nose tip \[m\]. Defaults to the body length.
     pub aft_x: Option<f64>,
     #[serde(default)]
     pub nozzle_exit_diameter: f64,
-    /// Overrides the propellant mass in the .eng header [kg].
+    /// Overrides the propellant mass in the .eng header \[kg\].
     pub propellant_mass: Option<f64>,
-    /// Angle between the thrust line and the body axis [deg].
+    /// Angle between the thrust line and the body axis \[deg\].
     #[serde(default)]
     pub misalignment_deg: f64,
-    /// Direction of the misalignment, measured from +y_b towards +z_b [deg].
+    /// Direction of the misalignment, measured from +y_b towards +z_b \[deg\].
     #[serde(default)]
     pub misalignment_azimuth_deg: f64,
-    /// Nozzle-exit point (y, z) of the thrust line in body axes [m].
+    /// Nozzle-exit point (y, z) of the thrust line in body axes \[m\].
     #[serde(default)]
     pub misalignment_offset: [f64; 2],
 }
@@ -290,7 +290,7 @@ pub struct AeroCfg {
     pub mach_min: f64,
     pub mach_max: f64,
     pub mach_step: f64,
-    /// Largest angle of attack of the table [deg]. Default 90: a ballistic descent turns broadside, and
+    /// Largest angle of attack of the table \[deg\]. Default 90: a ballistic descent turns broadside, and
     /// lookups beyond the table make the results unusable.
     pub alpha_max_deg: f64,
     pub alpha_step_deg: f64,
@@ -338,10 +338,10 @@ pub struct SimCfg {
     /// Tolerances of the adaptive integrators (rk45, dop853).
     pub rtol: f64,
     pub atol: f64,
-    /// Flight time limit [s] (default 3600). A flight still airborne at this time did not land: `sim`
+    /// Flight time limit \[s\] (default 3600). A flight still airborne at this time did not land: `sim`
     /// warns, writes `landed = false` to summary.json and exits with status 3.
     pub max_time: f64,
-    /// Interval between trajectory samples [s].
+    /// Interval between trajectory samples \[s\].
     pub output_interval: f64,
     /// Descent mode for `sim`: "parachute" or "ballistic". Defaults to parachute when recovery is enabled.
     pub descent: Option<sim::Descent>,
@@ -918,7 +918,7 @@ fn model_name(m: sim::WindModel) -> String {
     serde_json::to_value(m).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default()
 }
 
-/// Largest accepted `sim.dt` [s].
+/// Largest accepted `sim.dt` \[s\].
 const MAX_DT: f64 = 0.05;
 /// Largest accepted `sim.rtol` and `sim.atol`.
 const MAX_TOL: f64 = 1e-3;
@@ -929,9 +929,9 @@ const MACH_LIMIT: f64 = 10.0;
 const PANEL_TRANSONIC_HI_MIN_CAP: f64 = 1.2;
 /// Largest accepted number of aero table grid points.
 const MAX_AERO_GRID_POINTS: f64 = 1e6;
-/// Smallest sim.output_interval [s] and largest number of output rows (max_time / output_interval).
+/// Smallest sim.output_interval \[s\] and largest number of output rows (max_time / output_interval).
 const MIN_OUTPUT_INTERVAL: f64 = 1e-4;
-/// Smallest sim.dt [s] and largest number of steps (max_time / dt).
+/// Smallest sim.dt \[s\] and largest number of steps (max_time / dt).
 const MIN_DT: f64 = 1e-5;
 const MAX_STEPS: f64 = 1e8;
 const MAX_OUTPUT_ROWS: f64 = 1e7;

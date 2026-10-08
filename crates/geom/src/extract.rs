@@ -54,11 +54,11 @@ impl Default for ExtractOptions {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfilePoint {
-    /// Distance aft of the nose tip [m].
+    /// Distance aft of the nose tip \[m\].
     pub x: f64,
-    /// Body radius [m].
+    /// Body radius \[m\].
     pub r: f64,
-    /// Fin tip radius minus body radius at this station (0 = no fin) [m].
+    /// Fin tip radius minus body radius at this station (0 = no fin) \[m\].
     pub fin_span: f64,
 }
 
@@ -66,7 +66,7 @@ pub struct ProfilePoint {
 pub struct Nose {
     pub length: f64,
     pub base_radius: f64,
-    /// Half angle of the profile at the nose/body joint [deg] (cone: atan(R/L), tangent ogive: ~0).
+    /// Half angle of the profile at the nose/body joint \[deg\] (cone: atan(R/L), tangent ogive: ~0).
     pub joint_half_angle_deg: f64,
     /// Nose volume divided by the enclosing cylinder volume (cone 1/3, tangent ogive ~0.5+).
     pub volume_ratio: f64,
@@ -92,7 +92,7 @@ pub struct FinSet {
     pub x_le_root: f64,
     /// Body radius at the fin root.
     pub body_radius: f64,
-    /// Fin cant angle [deg]; positive cant produces a positive roll moment about the forward body x axis.
+    /// Fin cant angle \[deg\]; positive cant produces a positive roll moment about the forward body x axis.
     #[serde(default)]
     pub cant_deg: f64,
 }
@@ -118,11 +118,11 @@ impl FinSet {
         }
         self.sweep * (a + 2.0 * b) / (3.0 * (a + b))
     }
-    /// Sweep angle of the mid-chord line [rad].
+    /// Sweep angle of the mid-chord line \[rad\].
     pub fn midchord_sweep(&self) -> f64 {
         ((self.sweep + 0.5 * self.tip_chord - 0.5 * self.root_chord) / self.span).atan()
     }
-    /// Sweep angle of the leading edge [rad].
+    /// Sweep angle of the leading edge \[rad\].
     pub fn le_sweep(&self) -> f64 {
         (self.sweep / self.span).atan()
     }

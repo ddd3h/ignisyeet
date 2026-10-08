@@ -4,7 +4,7 @@
 //! described in S. Niskanen, "Development of an Open Source model rocket simulation
 //! software", 2009 — the basis of OpenRocket).
 //!
-//! Coordinates: x is measured aft from the nose tip [m]. Coefficients use the maximum
+//! Coordinates: x is measured aft from the nose tip \[m\]. Coefficients use the maximum
 //! body cross-section as reference area.
 
 use crate::atmosphere::AtmosphereModel;
@@ -24,7 +24,7 @@ pub struct AeroOptions {
     pub reference_altitude: f64,
     /// Atmosphere used for the Reynolds number of the skin-friction model.
     pub atmosphere: AtmosphereModel,
-    /// Equivalent sand roughness [m].
+    /// Equivalent sand roughness \[m\].
     pub roughness: f64,
     /// Rounded (true) or sharp (false) fin leading edges.
     pub fin_le_rounded: bool,
@@ -73,7 +73,7 @@ pub struct AeroModel {
 const TRANSONIC_LO: f64 = 0.9;
 const TRANSONIC_HI: f64 = 1.5;
 
-/// Upper angle of attack [rad] of the attached-flow fin theory (Barrowman linear, Busemann cubic).
+/// Upper angle of attack \[rad\] of the attached-flow fin theory (Barrowman linear, Busemann cubic).
 ///
 /// Linear fin theory assumes small angles; OpenRocket's fin model (FinSetCalc, after Niskanen 2009) caps the
 /// fin angle of attack at a 20° stall angle. 15° keeps a margin below that and
@@ -255,9 +255,9 @@ impl AeroModel {
         kfb * Self::fin_count_factor(f.count)
     }
 
-    /// Fin-set normal force (including body interference) at Mach `m`, angle `a` [rad].
+    /// Fin-set normal force (including body interference) at Mach `m`, angle `a` \[rad\].
     ///
-    /// Up to [`FIN_ALPHA_LINEAR`] this is the attached-flow theory of [`fin_cn_attached`](Self::fin_cn_attached)
+    /// Up to [`FIN_ALPHA_LINEAR`] this is the attached-flow theory of `fin_cn_attached`
     /// (Barrowman linear subsonic, Busemann linear + cubic supersonic). Beyond it the fins are treated as
     /// flat plates in crossflow: the normal force rises monotonically, C1 at the validity angle, to the
     /// flat-plate value at 90°,
@@ -274,7 +274,7 @@ impl AeroModel {
     /// with `t = alpha - alpha_1`, `T = 90° - alpha_1`; `k` is chosen so that the slope at `alpha_1` equals the
     /// attached-flow slope there, and `tau` makes the slope zero at 90° (flat plate symmetric about 90°).
     /// When `CN_1` approaches or exceeds `CN_90` the curve turns continuously into a cubic Hermite with
-    /// a bounded overshoot (see [`crossflow_blend`]), so the force stays continuous in Mach and geometry.
+    /// a bounded overshoot (see `crossflow_blend`), so the force stays continuous in Mach and geometry.
     /// The resulting shape — a knee above the validity angle levelling off to the crossflow value — follows
     /// the measured normal force of low-aspect-ratio flat plates, which per unit plate area reaches about
     /// 1.0 at 30° and 1.1–1.2 between 45° and 90° (Hoerner, Fluid-Dynamic Drag, 1965, ch. 3; Fluid-Dynamic
@@ -359,7 +359,7 @@ impl AeroModel {
         f.x_le_root + f.mac_le_offset() + frac * f.mac()
     }
 
-    /// Fin centre of pressure at Mach `m` and angle `a` [rad].
+    /// Fin centre of pressure at Mach `m` and angle `a` \[rad\].
     ///
     /// Equal to [`fin_xcp`](Self::fin_xcp) up to [`FIN_ALPHA_LINEAR`]; beyond it the chordwise position
     /// moves with a C1 smoothstep to the planform centroid at 90°, where the crossflow pressure of a flat
@@ -386,7 +386,7 @@ impl AeroModel {
         base + if rev { 1.0 - frac } else { frac } * mac
     }
 
-    /// Total normal force coefficient and centre of pressure at Mach `m`, angle `a` [rad].
+    /// Total normal force coefficient and centre of pressure at Mach `m`, angle `a` \[rad\].
     pub fn normal(&self, m: f64, a: f64) -> (f64, f64) {
         let a = a.max(1e-6);
         let (sa, ca) = a.sin_cos();

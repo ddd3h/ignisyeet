@@ -153,12 +153,12 @@ pub fn wall_yplus(opt: &CfdOptions, length: f64, atm: &Atmosphere) -> f64 {
 /// Prism boundary layer (RANS), `bl` in `params.json`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BlParams {
-    /// First layer height [m].
+    /// First layer height \[m\].
     pub first_height: f64,
     pub layers: usize,
     /// Geometric growth ratio of the layer heights.
     pub ratio: f64,
-    /// Total thickness [m].
+    /// Total thickness \[m\].
     pub thickness: f64,
     /// Fin edge bluntness (fraction of the chord, see [`BL_EDGE_BLUNT`]).
     pub edge_blunt: f64,
@@ -170,9 +170,9 @@ pub struct BlParams {
     pub junction: f64,
     /// Largest widening of the layer top over diverging columns, in wall sizes ([`BL_FAN`]).
     pub fan: f64,
-    /// Thickness cap of the columns on the base [m] ([`BL_BASE_FRACTION`]).
+    /// Thickness cap of the columns on the base \[m\] ([`BL_BASE_FRACTION`]).
     pub base_thickness: f64,
-    /// Size of the tetrahedra at the layer top [m]: the smaller of `wall_size` and the last layer height; they grow
+    /// Size of the tetrahedra at the layer top \[m\]: the smaller of `wall_size` and the last layer height; they grow
     /// by 1.2 per element row from there.
     pub top_size: f64,
     /// Parameters of the next attempt after an invalid layer (`None` = mesh error).
@@ -277,10 +277,10 @@ pub struct MeshParams {
     pub growth: f64,
     pub curvature_elements: usize,
     pub min_size_divisor: f64,
-    /// Length of the conical tail fairing behind the base [m]; 0 = flat base.
+    /// Length of the conical tail fairing behind the base \[m\]; 0 = flat base.
     pub tail_length: f64,
     pub threads: usize,
-    /// Roll of the fin set about the body axis [deg].
+    /// Roll of the fin set about the body axis \[deg\].
     pub fin_roll_deg: f64,
     /// Mesh the quarter domain and mirror it about z = 0 (exactly z-symmetric half-model mesh).
     pub z_mirror: bool,
@@ -436,7 +436,7 @@ pub struct MeshStats {
     pub seconds_setup: f64,
     #[serde(default)]
     pub seconds_mesh: f64,
-    /// Prism layer (RANS): number of layers, first height and total thickness [m] (0 without a layer).
+    /// Prism layer (RANS): number of layers, first height and total thickness \[m\] (0 without a layer).
     #[serde(default)]
     pub bl_layers: usize,
     #[serde(default)]

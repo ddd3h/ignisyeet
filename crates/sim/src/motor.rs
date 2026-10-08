@@ -8,14 +8,14 @@ use std::path::Path;
 #[derive(Debug, Clone)]
 pub struct Motor {
     pub name: String,
-    /// Casing diameter [m].
+    /// Casing diameter \[m\].
     pub diameter: f64,
-    /// Casing length [m].
+    /// Casing length \[m\].
     pub length: f64,
     pub propellant_mass: f64,
-    /// Loaded mass from the .eng header [kg] (equals the propellant mass when built with `new`). Informational: the flight model uses dry mass + propellant mass.
+    /// Loaded mass from the .eng header \[kg\] (equals the propellant mass when built with `new`). Informational: the flight model uses dry mass + propellant mass.
     pub total_mass: f64,
-    /// (time [s], thrust [N]) starting at t = 0.
+    /// (time \[s\], thrust \[N\]) starting at t = 0.
     pub curve: Vec<(f64, f64)>,
     cumulative: Vec<f64>,
 }
@@ -141,7 +141,7 @@ impl Motor {
         self.curve.last().unwrap().0
     }
 
-    /// End of the thrust [s]: the last thrust-curve knot after which the thrust stays zero (the
+    /// End of the thrust \[s\]: the last thrust-curve knot after which the thrust stays zero (the
     /// curve end when it ends with thrust; a trailing zero-thrust stretch does not count).
     pub fn thrust_end(&self) -> f64 {
         let c = &self.curve;

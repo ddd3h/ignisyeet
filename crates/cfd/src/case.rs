@@ -258,7 +258,7 @@ pub struct CaseResult {
     /// RANS: accepted with a stalled residual (`limit_cycle` is set as well: the coefficients are averaged).
     #[serde(default, skip_serializing_if = "is_false")]
     pub stalled: bool,
-    /// RANS: the drop of the density residual below the reference peak that the verdict rests on [orders] (the
+    /// RANS: the drop of the density residual below the reference peak that the verdict rests on \[orders\] (the
     /// median of the window for a stalled residual, else the largest residual of the last rows; see
     /// `runner::rans_verdict_drop`).
     #[serde(default, skip_serializing_if = "Option::is_none")]

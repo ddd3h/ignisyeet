@@ -540,8 +540,8 @@ ECEF 座標での積分
   遅れのモーメントが\ :eq:`eq-lag-moment` と :math:`10^{-9}` で一致する。加速度は遅れの項の入り切りで変わらない（力を加えない）。
   :math:`\dot{\bm W}` を除いた式とは 20 % 以上違い、風のシアの項が効いていることを確かめる。
 * **迎角による消え方**\ （``lag_fade_is_smooth_and_vanishes_beyond_30_deg``）：:eq:`eq-lag-fade` が 0° で 1、15° で :math:`\cos15^\circ`、30° 以上で 0 で、0.1° 刻みで単調に減り、1 刻みの変化が 0.02 未満である。
-* **準定常のモデルとの一致**\ （``quasi_steady_switch_reproduces_the_quasi_steady_trajectory_bit_for_bit``）：遅れ、Magnus 力、回転による法線力を切った飛翔（カント 1°、重心の横ずれ 1 mm、横風 5 m/s の弾道落下）が、
-  これらの項を持たないモデルの頂点、着地点、最大 Mach 数と **ビット単位で** 一致する（軸対称表と展開した一般表）。項を入れると頂点は変わり、差は 2 m 未満である。
+* **準定常の飛翔の固定**\ （``quasi_steady_switch_reproduces_the_quasi_steady_trajectory_bit_for_bit``）：遅れ、Magnus 力、回転による法線力を切った飛翔（カント 1°、重心の横ずれ 1 mm、横風 5 m/s の弾道落下）が、
+  テストに固定した頂点、着地点、最大 Mach 数のビット列と **ビット単位で** 一致する（軸対称表と展開した一般表）。これは実装の回帰を見張る固定であり、独立した検査ではない。項を入れると頂点は変わり、差は 2 m 未満である。
 * **誘導ロール**\ （``induced_roll_follows_the_crossflow_roll_angle_from_the_fin_plane``）：横流れがフィンの面にあるとき 0、22.5° ずれたとき :math:`C_{l4}\alpha^2`、フィンを 45° 回すと符号が反転する。展開した一般表の :math:`C_l` にこの項が入り、後ろ向きの飛行では反転する。
 * **誘導ロールとフィンの枚数**\ （``induced_roll_applies_to_four_fins_only``）：付随ファイルの ``fin_count`` が 4 か記録なしなら :math:`C_{l4}` を使い、3 なら軸対称表でも展開した一般表でも 0 である。
 * **ロール共振**\ （``roll_resonance_is_reported_for_a_canted_rocket_with_a_lateral_cg_offset``、``a_general_table_with_a_zero_angle_moment_is_a_trim_forcing``）：トリムの強制のない機体では記録しない。カント 2° だけ（ロールはするが非対称がない）でも記録しない。

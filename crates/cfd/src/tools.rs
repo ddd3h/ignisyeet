@@ -101,6 +101,24 @@ pub fn resolve_prefix(opt: &CfdOptions) -> Option<PathBuf> {
     std::env::var("IGNISYEET_CFD_PREFIX").ok().filter(|s| !s.trim().is_empty()).map(|s| expand(s.trim()))
 }
 
+/// Default of `[aero.cfd] su2`.
+pub const DEFAULT_SU2: &str = "SU2_CFD";
+
+/// SU2 executable (name or path): `[aero.cfd] su2` when it differs from the default `SU2_CFD`, else the
+/// `IGNISYEET_SU2_CFD` environment variable (e.g. a native build of SU2 next to the conda environment), else `SU2_CFD`.
+/// The prefix still supplies `mpirun`, the gmsh python and `<prefix>/lib`.
+pub fn resolve_su2(opt: &CfdOptions) -> String {
+    su2_choice(&opt.su2, std::env::var("IGNISYEET_SU2_CFD").ok().as_deref())
+}
+
+fn su2_choice(opt: &str, env: Option<&str>) -> String {
+    let opt = opt.trim();
+    if opt != DEFAULT_SU2 {
+        return opt.to_string();
+    }
+    env.map(str::trim).filter(|s| !s.is_empty()).unwrap_or(DEFAULT_SU2).to_string()
+}
+
 #[cfg(unix)]
 fn is_exec(p: &Path) -> bool {
     use std::os::unix::fs::PermissionsExt;
@@ -192,7 +210,7 @@ pub fn check_tools(opt: &CfdOptions, roots: &[PathBuf]) -> ToolReport {
     let prefix = resolve_prefix(opt);
     let pre = prefix.as_deref();
     // `SU2_CFD --help` prints the banner `SU2 v8.x.y "Name", ...` first.
-    let su2 = probe("SU2_CFD", &opt.su2, pre, &["--help"], HINT);
+    let su2 = probe("SU2_CFD", &resolve_su2(opt), pre, &["--help"], HINT);
     let mpi = probe("mpirun", &opt.mpi, pre, &["--version"], HINT);
     let mut gmsh = ToolInfo { name: "gmsh (python)", path: None, version: None, problem: Some(format!("no python with the gmsh module found ({HINT})")) };
     for py in gmsh_python(pre, roots) {
@@ -285,6 +303,19 @@ mod tests {
         let o = CfdOptions { su2: "sh".into(), mpi: "definitely_not_mpirun".into(), ranks_per_case: 1, ..Default::default() };
         let r = check_tools(&o, &[]);
         assert!(r.missing(&o).iter().all(|t| t.name != "mpirun"));
+    }
+
+    #[test]
+    fn su2_from_option_then_environment() {
+        assert_eq!(su2_choice("SU2_CFD", None), "SU2_CFD");
+        assert_eq!(su2_choice("SU2_CFD", Some("  ")), "SU2_CFD");
+        assert_eq!(su2_choice("SU2_CFD", Some("/opt/su2-native/bin/SU2_CFD")), "/opt/su2-native/bin/SU2_CFD");
+        // An explicit [aero.cfd] su2 wins over the environment.
+        assert_eq!(su2_choice("~/su2/bin/SU2_CFD", Some("/opt/su2-native/bin/SU2_CFD")), "~/su2/bin/SU2_CFD");
+        // A path is found directly, also with a prefix set (the prefix supplies mpirun and lib only).
+        let sh = find_exe("sh", None).unwrap();
+        let o = CfdOptions { su2: sh.display().to_string(), prefix: "/nonexistent".into(), ..Default::default() };
+        assert_eq!(check_tools(&o, &[]).su2.path.as_deref(), Some(sh.as_path()));
     }
 
     #[test]

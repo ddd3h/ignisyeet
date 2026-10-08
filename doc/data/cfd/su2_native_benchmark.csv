@@ -1,0 +1,15 @@
+# SU2 native build vs conda-forge build, paired runs on a shared node.
+# Node: virgo02, 2x EPYC 7742, shared with other jobs (mean load over each run is recorded in node_load_*). 16 MPI ranks, cold starts, identical mesh and configuration.
+# conda: SU2 v8.3.0 from conda-forge. native: SU2 v8.3.0 built from source with meson --buildtype=release --optimization=3 -Dwith-mpi=enabled -Dcustom-mpi=true -Dwith-omp=false -Denable-mixedprec=true -Denable-pywrapper=false -Denable-tests=false,
+# c_args/cpp_args "-march=native -mtune=native" (plus "-include cstdint" for CLI11 with gcc >= 13), gcc/g++ 14.4 from conda-forge (sysroot 2.17); -march resolved to znver2. Driver: ignisyeet 2f31ab9.
+# order: which build ran first within the pair. ratio_* = native / conda. s_per_iter is the slope of wall time over iterations from the solver history trace (start-up excluded).
+# rss_gb is the peak resident set size summed over the 16 ranks (1 GB = 1000 MB). dCN_pct and dCA_pct are relative to the conda value; dxcp_mm is the centre-of-pressure difference. residual_last is the final log10 residual.
+# Excluded: Euler M2 alpha4 pair 1 (the conda run was accidentally warm-started). RANS pair 1 is confounded by node load (native 26-82, conda 82-48).
+case,model,pair,order,s_per_iter_conda,s_per_iter_native,ratio_s_per_iter,wall_conda,wall_native,ratio_wall,iterations_conda,iterations_native,rss_gb_conda,rss_gb_native,ratio_rss,dCN_pct,dCA_pct,dxcp_mm,node_load_conda,node_load_native,residual_last_conda,residual_last_native
+m0.800_a04.00,euler,1,conda_first,0.469,0.369,0.786,171.0,135.9,0.795,354,355,3.69,2.76,0.747,0.0023,-0.0514,0.0006,94.8,94.4,-7.32,-7.30
+m0.800_a04.00,euler,2,native_first,0.448,0.388,0.866,163.0,141.9,0.871,354,356,3.69,2.74,0.743,0.0044,-0.1178,-0.0003,98.7,96.4,-7.32,-7.30
+m0.800_a04.00,euler,3,conda_first,0.624,0.439,0.704,228.2,162.0,0.710,354,354,3.69,2.74,0.742,0.0000,0.0004,-0.0003,48.0,47.3,-7.32,-7.32
+m2.000_a04.00,euler,2,native_first,0.493,0.350,0.709,79.8,58.8,0.737,153,155,3.69,2.74,0.742,-0.0001,0.0006,0.0003,98.7,96.4,-8.38,-8.84
+m2.000_a04.00,euler,3,conda_first,0.621,0.448,0.722,101.8,75.8,0.745,154,155,3.69,2.74,0.742,-0.0001,0.0006,0.0003,48.0,47.3,-8.58,-8.84
+m0.800_a04.00,rans,1,native_first,1.041,0.777,0.746,471.6,346.4,0.735,404,403,7.54,5.14,0.682,-0.0010,-0.0044,-0.0067,64.7,54.0,-7.65,-7.29
+m0.800_a04.00,rans,2,conda_first,1.078,0.825,0.766,497.0,367.7,0.740,403,404,7.56,5.18,0.685,-0.0032,-0.0036,-0.0109,41.5,47.8,-7.60,-7.25

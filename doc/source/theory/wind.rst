@@ -70,11 +70,11 @@
      - 表の範囲。ゾンデ・数値予報の風
      - 観測や予報があるとき。頂点が 1 km を超える飛翔、パラシュート降下の落下分散。表は予想される最高の頂点より上まで続ける
 
-地表の状態の目安を :numref:`tbl-wind-terrain` に示す。
+地表の状態の目安を :numref:`tbl-wind-terrain` に示す :cite:`counihan,stull`。
 
 .. _tbl-wind-terrain:
 
-.. list-table:: 地表の状態と指数・粗度長の目安 :cite:`counihan,stull`
+.. list-table:: 地表の状態と指数・粗度長の目安
    :header-rows: 1
    :widths: 40 30 30
 

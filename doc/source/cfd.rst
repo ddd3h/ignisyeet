@@ -63,6 +63,7 @@ manifold3d は、同じ環境の Python に pip で入れる。版は 3.5.4 に�
 
 インストーラ（``install.sh --cfd``）は、上の版に固定した環境を作ったあとに、これを実行する。インストーラの計画の表示、失敗したときの再実行の案内、入っていないときの案内も、この版を示す。
 ツールが見つからないときのエラーにも、``install.sh --cfd`` で入れられることを示す。
+Linux ではこのあとに、SU2 をソースから構築する（:ref:`sec-cfd-native`）。
 ``cfd-check`` が manifold3d を検査するのは ``surface = "stl"`` のときだけで、それ以外では入っていなくてもよい。
 
 IgnisYeet は、設定の ``prefix`` で指す環境の ``bin`` にある実行ファイルを探す。
@@ -88,12 +89,12 @@ SU2 のバージョンが 8.3.x でないときは、``cfd-check`` も CFD の�
 
 .. _sec-cfd-native:
 
-SU2 の高速化ビルド（オプション）
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+SU2 のソース構築（既定）
+~~~~~~~~~~~~~~~~~~~~~~~~
 
 conda-forge の SU2 8.3.0 は、汎用の x86-64 向けに構築されており、実行する CPU 固有の命令（AVX など）をほとんど使わない。
-``install.sh --su2-native`` は、SU2 8.3.0 をソースから、その場の CPU 向けに構築する。
-構築は Linux で CFD 環境（``--cfd``）と git、gcc/g++ が必要で、約 10 分かかる。
+Linux では ``install.sh --cfd`` が、SU2 8.3.0 をソースから、その場の CPU 向けに構築する。
+conda-forge のバイナリを使いたいときは ``--su2-binary``\ （環境変数 ``IGNISYEET_SU2_BINARY=1``）を付ける。
 
 構築の設定は次のとおりである。
 
@@ -103,13 +104,33 @@ conda-forge の SU2 8.3.0 は、汎用の x86-64 向けに構築されており�
 - ``-Denable-mixedprec=true``\ （線形代数に単精度を混ぜて、メモリを減らす）。
 - ``-Denable-pywrapper=false -Denable-tests=false``。
 
-実行ファイルは ``PREFIX/share/ignisyeet-su2-native/bin/SU2_CFD`` に置かれ、インストーラの最後に ``export IGNISYEET_SU2_CFD=...`` の行としてそのパスが表示される。
+コンパイラは CFD 環境の conda-forge の gcc/g++（``cxx-compiler``）である。
+新しく作る環境にはあらかじめ含め、既存の環境に無ければインストーラが追加する。
+conda のコンパイラを入れられないときだけ、システムの gcc/g++ を使う。
+SU2 のソースはタグ ``v8.3.0`` の tar ファイルを GitHub から取得し、CoDiPack と MeDiPack のヘッダは SU2 の ``meson.py`` が取得する。したがって構築には GitHub への接続が要る。
 
-**使い方。** 環境変数 ``IGNISYEET_SU2_CFD`` に ``SU2_CFD`` 実行ファイルのパスを入れる。
-``[aero.cfd] su2`` が既定の ``"SU2_CFD"`` のままのとき、この環境変数のパスが使われる。
-``su2`` に明示的なパスを書いたときは、そちらが優先される。
-どちらの場合も、``mpirun``、gmsh、ライブラリは ``[aero.cfd] prefix`` の CFD 環境から取る。
-指定しなければ conda-forge の SU2 を使う。
+**所要時間と容量。** 12 コアのデスクトップ CPU（Core i7-12700）で 8 ジョブ、設定が 57 秒、コンパイルが 1 分 40 秒、全体で 2 分 40 秒だった。
+共有サーバーのノードで 6 ジョブのときは、設定に約 2 分、コンパイルに約 4 分かかる。
+ジョブ数は環境変数 ``IGNISYEET_SU2_JOBS`` で指定し、既定は全コア（空きメモリ 2 GB につき 1 ジョブまで）である。
+構築中のディスク使用量は約 0.5 GB で、ソースと構築用のファイルは終了時に消え、``PREFIX/share/ignisyeet-su2-native`` に約 70 MB が残る。
+
+実行ファイルは ``PREFIX/share/ignisyeet-su2-native/bin/SU2_CFD`` に置かれ、同じ場所の ``build-info.txt`` にコンパイラの版、フラグ、Open MPI の版、構築した CPU の型番が記録される。
+
+**使い方。** ``ignisyeet`` は ``[aero.cfd] su2`` が既定の ``"SU2_CFD"`` のとき、次の順で最初に見つかったものを使う。
+
+1. 環境変数 ``IGNISYEET_SU2_CFD``\ （``SU2_CFD`` のパス）。
+2. インストーラが構築した ``share/ignisyeet-su2-native/bin/SU2_CFD``。インストールされた ``ignisyeet`` の接頭辞、環境変数 ``IGNISYEET_PREFIX``、``~/.local`` の順に探す。
+3. ``[aero.cfd] prefix`` と ``PATH`` の ``SU2_CFD``\ （conda-forge のバイナリ）。
+
+``su2`` に明示的なパスを書いたときは、それが最優先である。
+どの場合も、``mpirun``、gmsh、ライブラリは ``[aero.cfd] prefix`` の CFD 環境から取る。
+``cfd-check`` が表示する ``SU2_CFD`` のパスで、どの SU2 が選ばれたかが分かる。
+カスタムの ``--prefix`` で入れた開発者向けの実行ファイルは接頭辞の外にあるので、``IGNISYEET_PREFIX`` にその接頭辞を入れる。
+
+**構築が失敗したとき。** ネットワークがない、コンパイルがエラーになった、などでソースから構築できなかったときは、インストーラは警告を表示して終了し、conda-forge の SU2 がそのまま使われる。
+CFD 環境のほかのツールは入っているので、``install.sh --cfd --force`` で再試行するか、``--su2-binary`` でバイナリを使うことを選べる。
+``--su2-binary`` を付けて実行すると、既にある ``share/ignisyeet-su2-native`` は削除される（``ignisyeet`` が自動で選ばないようにするため）。
+``--uninstall`` は、このディレクトリを削除するか尋ね、``--purge`` なら尋ねずに削除する。
 
 **性能と精度。** 同じ共有ノード（virgo02、EPYC 7742 2 基、16 ランク）で、同じメッシュと設定を冷たい状態から解き、二つのビルドを交互に対にして実行した。
 共有ノードなので絶対値は負荷で変わる。比較には対ごとの比（ネイティブ / conda）を使う。
@@ -177,8 +198,11 @@ Euler の Mach 2 の 1 組目は、conda 版が誤って前のケースから初
 :math:`C_A` は 0 に近い値なので相対差が大きく見え、最大で 0.12 % だが、絶対値では 1 〜 3e-5 である。
 最終反復の残差（log10）は、Euler の Mach 0.8 で両者が 0.02 桁以内で一致し、Mach 2 ではネイティブ版の方が 0.26 〜 0.46 桁低い（−8.84 に対して −8.38 と −8.58）。RANS ではネイティブ版の方が 400 反復で約 0.35 桁高い。ただし、どちらも同じ反復で収束判定を満たす。
 
--march=native のバイナリは構築した CPU の命令集合に依存し、別の CPU に移すと異常終了することがある。
-そのため、既定は conda-forge の SU2 のままで、ネイティブ版は利用者が環境変数で選ぶ。
+**制限。** ``-march=native`` のバイナリは構築した CPU の命令集合に依存し、別の CPU に移すと不正命令で異常終了することがある。
+``cfd-check`` は、``build-info.txt`` に記録された CPU の型番が実行中の CPU と異なるときに警告を出す。
+別の CPU に移したら、その上で ``install.sh --cfd --force`` を実行して作り直す。
+CPU の世代が混在する共有クラスタ、コンテナのイメージ、配布用の環境では ``--su2-binary`` を使う。
+ソース構築は Linux のみで、macOS では conda-forge の SU2 を使う。
 
 .. _sec-cfd-surface:
 

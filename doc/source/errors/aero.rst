@@ -27,7 +27,7 @@ IY-A001
     有限の値 [K] を指定する。
 
 関連
-    :doc:`../environment`
+    :ref:`page-theory-atmosphere-gravity`
 
 .. _IY-A002:
 
@@ -50,7 +50,7 @@ IY-A002
     オフセットを表示された下限より大きくする。
 
 関連
-    :doc:`../environment`
+    :ref:`page-theory-atmosphere-gravity`
 
 .. _IY-A003:
 
@@ -73,7 +73,7 @@ IY-A003
     表示された項目に正の値を指定する。
 
 関連
-    :doc:`../environment`
+    :ref:`page-theory-atmosphere-gravity`
 
 .. _IY-A010:
 
@@ -96,7 +96,7 @@ IY-A010
     6 以上の整数にする。
 
 関連
-    :doc:`../panel`
+    :ref:`page-theory-panel`
 
 .. _IY-A011:
 
@@ -119,7 +119,7 @@ IY-A011
     8 以上の整数にする。
 
 関連
-    :doc:`../panel`
+    :ref:`page-theory-panel`
 
 .. _IY-A012:
 
@@ -142,7 +142,7 @@ IY-A012
     2 以上 ``body_axial - 4`` 以下にする。コード方向のパネルは胴体の軸方向の分割に含まれる。
 
 関連
-    :doc:`../panel`
+    :ref:`page-theory-panel`
 
 .. _IY-A013:
 
@@ -165,7 +165,7 @@ IY-A013
     2 以上の整数にする。
 
 関連
-    :doc:`../panel`
+    :ref:`page-theory-panel`
 
 .. _IY-A014:
 
@@ -188,7 +188,7 @@ IY-A014
     全長を単位とする正の数にする。
 
 関連
-    :doc:`../panel`
+    :ref:`page-theory-panel`
 
 .. _IY-A015:
 
@@ -211,7 +211,7 @@ IY-A015
     0 以上の数にする（0 は底面を開いたままにする）。
 
 関連
-    :doc:`../panel`
+    :ref:`page-theory-panel`
 
 .. _IY-A016:
 
@@ -234,7 +234,7 @@ IY-A016
     0 以上 1 未満の Mach 数を 1 つ以上並べる。
 
 関連
-    :doc:`../panel`
+    :ref:`page-theory-panel`
 
 .. _IY-A017:
 
@@ -257,7 +257,7 @@ IY-A017
     ``0 < lo < hi`` かつ ``hi > 1`` にする。``hi`` は完全に超音速とみなす最初の Mach 数である。
 
 関連
-    :doc:`../panel`
+    :ref:`page-theory-panel`
 
 .. _IY-A018:
 
@@ -280,7 +280,7 @@ IY-A018
     ``body_axial``、``body_circ``、``fin_chord``、``fin_span`` を小さくするか、メモリを空ける。どの出所も読めない環境ではこの検査をしない。
 
 関連
-    :doc:`../panel`
+    :ref:`page-theory-panel`
 
 .. _IY-A019:
 
@@ -303,7 +303,7 @@ IY-A019
     パネルの設定を粗くするか、``resources.memory_gb`` を上げる。
 
 関連
-    :doc:`../panel`
+    :ref:`page-theory-panel`
 
 .. _IY-A020:
 
@@ -326,7 +326,7 @@ IY-A020
     パネルの設定を粗くするか、メモリを空ける。
 
 関連
-    :doc:`../panel`
+    :ref:`page-theory-panel`
 
 .. _IY-A021:
 
@@ -349,7 +349,7 @@ IY-A021
     ``body_axial`` を 6 以上、``body_circ`` を 8 以上にする。
 
 関連
-    :doc:`../panel`
+    :ref:`page-theory-panel`
 
 .. _IY-A022:
 
@@ -372,7 +372,7 @@ IY-A022
     両凸の断面にする。
 
 関連
-    :doc:`../panel`
+    :ref:`page-theory-panel`
 
 .. _IY-A023:
 
@@ -395,7 +395,7 @@ IY-A023
     フィンの抽出結果と ``rocket.fin_override`` を確認する。
 
 関連
-    :doc:`../panel`
+    :ref:`page-theory-panel`
 
 .. _IY-A030:
 
@@ -625,7 +625,7 @@ IY-A040
     出力先のパス、権限、空き容量を確認する。
 
 関連
-    :doc:`../file_formats`
+    :ref:`page-reference-aero-table-format`
 
 .. _IY-A041:
 
@@ -694,7 +694,7 @@ IY-A043
     パスと権限を確認する。
 
 関連
-    :doc:`../file_formats`
+    :ref:`page-reference-aero-table-format`
 
 .. _IY-A044:
 
@@ -717,7 +717,7 @@ IY-A044
     表示された見出しに合わせる。
 
 関連
-    :doc:`../file_formats`
+    :ref:`page-reference-aero-table-format`
 
 .. _IY-A045:
 
@@ -740,7 +740,7 @@ IY-A045
     該当の行を直す。
 
 関連
-    :doc:`../file_formats`
+    :ref:`page-reference-aero-table-format`
 
 .. _IY-A046:
 
@@ -763,7 +763,7 @@ IY-A046
     該当の行を直す。
 
 関連
-    :doc:`../file_formats`
+    :ref:`page-reference-aero-table-format`
 
 .. _IY-A047:
 
@@ -786,7 +786,7 @@ IY-A047
     値を有限の数にする。表を作った計算を確かめる。
 
 関連
-    :doc:`../file_formats`
+    :ref:`page-reference-aero-table-format`
 
 .. _IY-A048:
 
@@ -809,7 +809,7 @@ IY-A048
     メタデータの軸と CSV の座標を一致させ、行を所定の順に並べる。
 
 関連
-    :doc:`../file_formats`
+    :ref:`page-reference-aero-table-format`
 
 .. _IY-A049:
 
@@ -832,7 +832,7 @@ IY-A049
     行数をメタデータの軸の積に合わせる。
 
 関連
-    :doc:`../file_formats`
+    :ref:`page-reference-aero-table-format`
 
 .. _IY-A050:
 
@@ -855,7 +855,7 @@ IY-A050
     欠けた行を補うか、表を作り直す。
 
 関連
-    :doc:`../file_formats`
+    :ref:`page-reference-aero-table-format`
 
 .. _IY-A501:
 
@@ -878,5 +878,5 @@ IY-A501
     表の符号規約と値を確認する。
 
 関連
-    :doc:`../file_formats`
+    :ref:`page-reference-aero-table-format`
 

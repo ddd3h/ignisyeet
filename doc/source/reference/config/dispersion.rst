@@ -52,6 +52,76 @@
 
 各ばらつきは互いに独立な正規分布 :math:`N(0,\sigma^2)` から引き、このキーの値は標準偏差 :math:`\sigma` である。0 はそのばらつきを無効にする。負の値や有限でない値はエラーである。"相対" は公称値に対する割合（0.03 は 3 %。公称値に :math:`1+\text{乱数}` を掛け、下限は 0.05）、"絶対" は公称値に加える量である。
 
+.. _tbl-mc-perturb:
+
+.. list-table:: モンテカルロ解析のばらつきの項目（引く順）
+   :header-rows: 1
+   :widths: 30 20 50
+
+   * - キー
+     - 種別と単位
+     - 対象
+   * - :ref:`dispersion.monte_carlo.thrust_scale <cfg-dispersion-monte_carlo-thrust_scale>`
+     - 相対
+     - 推力
+   * - :ref:`dispersion.monte_carlo.burn_time_scale <cfg-dispersion-monte_carlo-burn_time_scale>`
+     - 相対
+     - 燃焼時間
+   * - :ref:`dispersion.monte_carlo.dry_mass <cfg-dispersion-monte_carlo-dry_mass>`
+     - 相対
+     - 乾燥質量と乾燥慣性テンソル
+   * - :ref:`dispersion.monte_carlo.cg <cfg-dispersion-monte_carlo-cg>`
+     - 絶対 [m]
+     - 乾燥重心の位置
+   * - :ref:`dispersion.monte_carlo.cn_scale <cfg-dispersion-monte_carlo-cn_scale>`
+     - 相対
+     - 法線力係数、ピッチ減衰
+   * - :ref:`dispersion.monte_carlo.ca_scale <cfg-dispersion-monte_carlo-ca_scale>`
+     - 相対
+     - 軸力係数
+   * - :ref:`dispersion.monte_carlo.elevation_deg <cfg-dispersion-monte_carlo-elevation_deg>`
+     - 絶対 [deg]
+     - レールの向きの設置誤差（2 方向）
+   * - :ref:`dispersion.monte_carlo.azimuth_deg <cfg-dispersion-monte_carlo-azimuth_deg>`
+     - 絶対 [deg]
+     - 射方位の設定誤差
+   * - :ref:`dispersion.monte_carlo.wind_speed <cfg-dispersion-monte_carlo-wind_speed>`
+     - 絶対 [m/s]
+     - 基準風速
+   * - :ref:`dispersion.monte_carlo.wind_direction_deg <cfg-dispersion-monte_carlo-wind_direction_deg>`
+     - 絶対 [deg]
+     - 風向
+   * - :ref:`dispersion.monte_carlo.parachute_cd_s_scale <cfg-dispersion-monte_carlo-parachute_cd_s_scale>`
+     - 相対
+     - パラシュートの抗力面積
+   * - :ref:`dispersion.monte_carlo.thrust_misalignment_deg <cfg-dispersion-monte_carlo-thrust_misalignment_deg>`
+     - 絶対 [deg]
+     - 推力の傾き（2 方向）
+   * - :ref:`dispersion.monte_carlo.thrust_offset <cfg-dispersion-monte_carlo-thrust_offset>`
+     - 絶対 [m]
+     - ノズル出口の点（2 方向）
+   * - :ref:`dispersion.monte_carlo.fin_cant_deg <cfg-dispersion-monte_carlo-fin_cant_deg>`
+     - 絶対 [deg]
+     - フィンのカント
+   * - :ref:`dispersion.monte_carlo.cg_lateral <cfg-dispersion-monte_carlo-cg_lateral>`
+     - 絶対 [m]
+     - 乾燥重心の横ずれ（2 方向）
+   * - :ref:`dispersion.monte_carlo.cl_scale <cfg-dispersion-monte_carlo-cl_scale>`
+     - 相対
+     - ロールのモーメント係数とカントの傾き
+   * - :ref:`dispersion.monte_carlo.clp_scale <cfg-dispersion-monte_carlo-clp_scale>`
+     - 相対
+     - ロール減衰微係数
+   * - :ref:`dispersion.monte_carlo.lag_scale <cfg-dispersion-monte_carlo-lag_scale>`
+     - 相対
+     - 見かけの質量の遅れの和
+   * - :ref:`dispersion.monte_carlo.magnus_scale <cfg-dispersion-monte_carlo-magnus_scale>`
+     - 相対
+     - Magnus 力とモーメントの傾き
+   * - :ref:`dispersion.monte_carlo.cmq_scale <cfg-dispersion-monte_carlo-cmq_scale>`
+     - 相対
+     - ピッチ・ヨーの減衰の和
+
 .. _cfg-dispersion-monte_carlo-samples:
 
 ``dispersion.monte_carlo.samples``

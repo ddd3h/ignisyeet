@@ -132,7 +132,7 @@
    * - ``static_margin_min_t`` / ``static_margin_min_mach``
      - 最小の静安定余裕をとった状態の時刻 [s] と Mach 数（:ref:`sec-static-margin-general`）。余裕を一度も求めなかった飛翔では ``null``
    * - ``stable``
-     - 静的に安定なら ``true``、不安定なら ``false``、判定できないなら ``null``（定義は :ref:`sec-exit-definitions`）。
+     - 静的に安定なら ``true``、不安定なら ``false``、判定できないなら ``null``\ （定義は :ref:`sec-exit-definitions`）。
        ``false`` と ``null`` のとき、``sim`` は着地したかどうかにかかわらず終了ステータス 3 で終わる（:ref:`sec-exit-status`）
    * - ``stability_unknown``
      - ``stable`` が ``null`` のときだけ書く。判定できない理由（``at t = 0.50 s: the yaw normal-force slope dCy/dbeta is zero at Mach 0.10`` の形で、最初に余裕が求まらなかった時刻と理由。:ref:`sec-static-margin-general`）
@@ -200,7 +200,7 @@
      - 点火からの時刻
    * - ``phase``
      - 
-     - ``rail``（ランチャ上）、``free``（自由飛行）、``parachute``（パラシュート降下）のいずれか
+     - ``rail``\ （ランチャ上）、``free``\ （自由飛行）、``parachute``\ （パラシュート降下）のいずれか
    * - ``east`` ``north`` ``up``
      - m
      - 射点からの位置。``up`` は上向きが正
@@ -393,7 +393,7 @@
    * - ``max_landing_distance``
      - 最大着地距離とそのサンプル番号
    * - ``landing_distance_p50`` ``_p90`` ``_p99`` ``_p999``
-     - 着地距離のパーセンタイル。着地したサンプルについて線形補間で求める。P99.9 は、着地したサンプルが 1000 未満の降下モードでは ``null``（:ref:`P99.9 の条件 <sec-mc-percentile>`）
+     - 着地距離のパーセンタイル。着地したサンプルについて線形補間で求める。P99.9 は、着地したサンプルが 1000 未満の降下モードでは ``null``\ （:ref:`P99.9 の条件 <sec-mc-percentile>`）
    * - 頂点高度
      - 平均と標準偏差（:ref:`sec-mc`）
 

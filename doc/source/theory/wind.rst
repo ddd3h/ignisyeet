@@ -221,6 +221,50 @@
    * - ``profile``
      - 表の平均風速 :math:`W`\ （:eq:`eq-wind-profile-mean`）に対する値。表の形（高度ごとの風速比と風向のねじれ）を保って拡大する。地上風の測定値をそのまま格子に使ってはならない
 
+:numref:`tbl-wind-profile-scale` は、``examples/wind_profile_example.csv``\ （平均風速 :math:`W=11.89` m/s）を ``profile_mean_speed`` で拡大したときの倍率と着地点である（サンプル機体、``sim``。データは ``doc/data/sim/wind_keys.csv``）。
+風速格子の ``wind_speeds`` の値も、``profile`` ではこの平均風速 :math:`W'` として同じ倍率 :math:`k=W'/W` で表に掛かる。
+着地の北向きの距離は、拡大率にほぼ比例して増える。頂点はほとんど変わらない。
+
+.. _tbl-wind-profile-scale:
+
+.. list-table:: ``profile_mean_speed`` と着地点（``wind_profile_example.csv``、:math:`W=11.89` m/s）
+   :header-rows: 1
+   :widths: 24 16 20 20 20
+
+   * - ``profile_mean_speed`` [m/s]
+     - 倍率 :math:`k`
+     - 頂点 [m]
+     - 着地点 東 [m]
+     - 着地点 北 [m]
+   * - 3
+     - 0.25
+     - 4479.1
+     - :math:`-565.2`
+     - 1107.7
+   * - 6
+     - 0.50
+     - 4479.6
+     - :math:`-465.7`
+     - 2215.2
+   * - 9
+     - 0.76
+     - 4479.3
+     - :math:`-366.5`
+     - 3321.6
+   * - 11.89（指定なし）
+     - 1.00
+     - 4478.3
+     - :math:`-272.4`
+     - 4384.1
+   * - 15
+     - 1.26
+     - 4476.4
+     - :math:`-173.4`
+     - 5528.8
+
+``ground_blend_height``\ （``power`` と ``log`` の地面近くのなめらかな接続の高さ）は、既定の 1 m から 0.25〜1.5 m に変えても、サンプルの着地点は 0.03 m しか動かない（``doc/data/sim/wind_keys.csv``）。
+値を変える理由は通常ない。変えるのは、設定値が ``ref_height`` 以上か ``log`` の粗度長以下になってエラーや読み替えが出るときだけである。
+
 ``profile`` で最も遠くなる風を機体のばらつきと合わせて調べたいときは、平均風の目標 ``profile_mean_speed`` と ``profile_mean_direction_deg`` で表を拡大・回転して公称の風にする（:ref:`sec-wind-scaling`）。
 
 モデル

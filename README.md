@@ -485,6 +485,7 @@ Detailed equations and derivations are in the chapters of the documentation (in 
 | Coordinates and environment | Flat ENU and ECEF, atmosphere, wind, gravity | [Coordinate systems and attitude](https://www.ddd3h.com/ignisyeet/coordinates.html), [Environment models](https://www.ddd3h.com/ignisyeet/environment.html) |
 | Landing dispersion | Wind grid and Monte Carlo method, error ellipses | [Landing dispersion](https://www.ddd3h.com/ignisyeet/dispersion.html) |
 | Verification of the aerodynamic models | Checks, cross-comparisons between the methods, and computation times | [Verification of the aerodynamic models](https://www.ddd3h.com/ignisyeet/verification_aero.html) |
+| Validation (Basic Finner) | Comparison of the Barrowman, panel and CFD (Euler, RANS) coefficients with the measured Basic Finner data (supersonic range data, roll damping) | [Aerodynamic validation (Basic Finner)](https://www.ddd3h.com/ignisyeet/validation.html) |
 | File formats | Columns and keys of the coefficient tables, the CFD reports, and the other output files | [File format reference](https://www.ddd3h.com/ignisyeet/file_formats.html) |
 | Applicability | Limits of the methods | [Limitations and future work](https://www.ddd3h.com/ignisyeet/limitations.html) |
 | References | Bibliography | [References](https://www.ddd3h.com/ignisyeet/references.html) |

@@ -65,9 +65,11 @@ fn used_in_sources() -> BTreeMap<String, usize> {
 }
 
 /// code -> (file stem, severity word found in its section)
-fn documented() -> (BTreeMap<String, Vec<(String, String)>>, Vec<String>) {
+type Docs = BTreeMap<String, Vec<(String, String)>>;
+
+fn documented() -> (Docs, Vec<String>) {
     let dir = root().join("doc/source/errors");
-    let mut m: BTreeMap<String, Vec<(String, String)>> = BTreeMap::new();
+    let mut m = Docs::new();
     let mut problems = Vec::new();
     for (_, name) in AREAS {
         let text = std::fs::read_to_string(dir.join(format!("{name}.rst"))).unwrap_or_else(|e| panic!("{name}.rst: {e}"));
@@ -85,9 +87,7 @@ fn documented() -> (BTreeMap<String, Vec<(String, String)>>, Vec<String>) {
             let sect = lines[*start..end].join("\n");
             let sev = ["エラー", "ワーニング"]
                 .into_iter()
-                .filter_map(|w| {
-                    ["重大度: ", "重大度：", "種類：", "種別\n   "].iter().find_map(|p| sect.find(&format!("{p}{w}")).map(|_| w))
-                })
+                .filter_map(|w| ["重大度: ", "重大度：", "種類：", "種別\n   "].iter().find_map(|p| sect.find(&format!("{p}{w}")).map(|_| w)))
                 .next();
             match sev {
                 Some(w) => m.entry(code.clone()).or_default().push((name.to_string(), w.to_string())),

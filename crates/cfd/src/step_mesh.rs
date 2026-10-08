@@ -1287,7 +1287,10 @@ print(f(float(sys.argv[2]), float(sys.argv[3])))
         // Parameters do.
         assert_ne!(h, step_mesh_hash(&StepParams { unit_scale: 0.001, ..p.clone() }, b"ISO-10303-21; one"));
         assert_ne!(h, step_mesh_hash(&StepParams { meshed: "half".into(), ..p.clone() }, b"ISO-10303-21; one"));
-        assert_ne!(prepare_hash(&p, b"a"), prepare_hash(&StepParams { fairing: Some(FairingParams { tail_fairing: 6.0, base_radius: 0.05 }), ..p.clone() }, b"a"));
+        assert_ne!(
+            prepare_hash(&p, b"a"),
+            prepare_hash(&StepParams { fairing: Some(FairingParams { tail_fairing: 6.0, base_radius: 0.05 }), ..p.clone() }, b"a")
+        );
         // The mesh parameters do not invalidate the prepared shape.
         assert_eq!(prepare_hash(&p, b"a"), prepare_hash(&StepParams { min_size: 1e-4, meshed: "half".into(), ..p.clone() }, b"a"));
     }

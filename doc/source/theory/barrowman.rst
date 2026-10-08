@@ -495,7 +495,7 @@ OpenRocket のフィンのモデルも、フィンの迎角を失速角 20° で
 細長い物体の理論 :cite:`munk,nielsenbook` では、断面は単位長さあたり :math:`\rho A(x)` の空気を動かし、
 
 .. math::
-   :label: eq-lag-sums-def
+   :label: eq-lag-sums
 
    L_0=\frac{2}{S}\int A\,\mathrm{d}x,\qquad L_1=\frac{2}{S}\int A\,x\,\mathrm{d}x
 
@@ -515,7 +515,7 @@ OpenRocket のフィンのモデルも、フィンの迎角を失速角 20° で
   胴体の :math:`\pi r^2` を除いた増分
 
   .. math::
-     :label: eq-lag-fin-section
+     :label: eq-lag-section
 
      A_f(x)=\pi\left(s-\frac{r^2}{s}\right)^2
 

@@ -741,7 +741,7 @@ RANS の冷えた起動では、1 次精度の段の設定、ログ、履歴（`
 
 Euler のケースの結果は、次のいずれかで扱う（RANS は :ref:`sec-cfd-int-rans-accept`）。
 
-* **収束**\ ：残差の目標に達した。最後の反復の係数を使う。
+* **収束**\ ：残差の目標に達し、直近 ``stable_window`` 反復の係数の範囲と、残差の減り方から外挿した係数の変化も、許容（力の大きさの一定の割合）以内に落ち着いた。最後の反復の係数を使う。
 * **早期終了**\ ：``min_iterations``\ （既定 100）反復を過ぎて、残差が最大値から 3 桁以上下がり、直近 ``stable_window``\ （既定 60）反復の力とモーメントが落ち着いたとき（前半と後半の平均の差が力の大きさの 2 % 未満など）、ケースを止めて受け入れる（``status`` は ``accepted``）。
   落ち着きの判定は、どの場合も軸力 CFx、法線力 CFz、ピッチングモーメント CMy（許容は力の大きさの 2 %＋5e-4、CMy は 25 %＋5e-3）で行い、ケースの種類に応じて次を加える。
   横滑りのケース（:math:`\beta\ne0`）は横力 CFy（力と同じ許容）とヨーイングモーメント CMz（CMy と同じ許容）、ロール減衰のケースは転がりモーメント CMx（自身の平均の 3 %＋2e-5。転がりモーメントは力に比べてはるかに小さいので、自分の大きさで測る）である。
@@ -749,6 +749,8 @@ Euler のケースの結果は、次のいずれかで扱う（RANS は :ref:`se
   ``min_iterations`` は ``stable_window`` 以上でなければならない。Euler の Roe の制限関数は ``min_iterations`` 反復で固定する（``LIMITER_ITER``）。既定値の根拠の測定は :ref:`早期終了の測定 <sec-cfd-early-stop>` に示す。
 * **受け入れ**\ ：反復の上限か時間の上限（``timeout_minutes``、既定 0 で無制限）に達したが、残差が最大値から 3 桁以上下がり、
   最後の窓（反復数の 1/4、2 から 100 反復）で早期終了と同じ落ち着きの判定を満たすとき、係数を窓の平均として受け入れる。どちらの場合も「収束」には数えず、``cfd_report.json`` の ``unconverged`` に載る。
+  残差が目標に達していても、その時点で係数がまだ傾いているか振動している（上限に達した）ときも、同じ窓の平均を使い、``the coefficients still trend or oscillate at the end (… iterations): … coefficients averaged over the last N iterations`` を警告に記録して未収束とする（:math:`N` は窓の反復数）。
+  早期終了で止めたケースは、止めると決めた時点までの履歴と判定で扱う。止めてから SU2 が次の書き出しまで進めた行は、判定を変えない（RANS も同じ）。
   残差は下がりきらなくても係数が平らになる状況（例えば底面の後流が振動する場合）を、結果として使うための扱いである。
 * **失敗**\ ：SU2 のエラー、発散、履歴なし、あるいは収束も安定もしていない場合。``done.json`` は作らない。
   表の作成では、失敗したケースを飛ばして補間する（:ref:`sec-cfd-post`）。
@@ -772,9 +774,14 @@ RANS のケースを自由流から始めるとき（冷えた起動。各 Mach 
 * 残差か係数が有限でない。
 * 力の係数の大きさが 100 を超える。
 
-冷えた起動のケースが発散したときは、``restart_startup.dat`` から、CFL 数の上限を :math:`4\,\mathrm{cfl}` に下げて 2 次精度の段を一度だけ解き直す（制限関数は固定しない）。
-そのとき ``the second-order stage diverged (…); repeated from the first-order solution with CFL <= 20 and the limiter not frozen``\ （``cfl`` = 5 のとき）を警告として記録する。
+1 次精度の段が発散したとき（SU2 が残差 1e20 超で止まった場合を含む）は、その段を一度だけ、適応 CFL 数の上限を :math:`4\,\mathrm{cfl}` に下げて（通常は :math:`40\,\mathrm{cfl}`）解き直す。SA の方程式の CFL 数は流れの 0.2 倍にする（通常は 1 倍）。
+このとき ``the first-order startup diverged (…); repeated once with the adaptive CFL capped at 20 instead of 200 (the SA equation stays at 0.2 of the flow CFL); the second-order stage keeps these settings``\ （``cfl`` = 5 のとき）を警告として記録し、2 次精度の段にもこの設定を使う。
+解き直しも発散すれば、``the first-order startup diverged twice (the second time with conservative settings): …`` で失敗とする。
+
+冷えた起動のケースの 2 次精度の段が発散したときは、``restart_startup.dat`` から、同じ保守的な設定（適応 CFL 数の上限 :math:`4\,\mathrm{cfl}`、SA の CFL 数は流れの 0.2 倍）で 2 次精度の段を一度だけ解き直す（制限関数は固定しない）。
+そのとき ``the second-order stage diverged (…); repeated once from the first-order solution with the adaptive CFL capped at 20 instead of 200 and the SA equation at 0.2 of the flow CFL instead of 1``\ （``cfl`` = 5 のとき）を警告として記録する。
 解き直しも発散すれば、``diverged twice (the second time with conservative settings): …`` で失敗とする。
+解き直した 1 次精度の段のあとで発散したときは、``the second-order stage diverged with the conservative settings of the repeated first-order startup: …`` で失敗とする。
 暖機起動のケースが発散したとき、シグナルによらずに SU2 が異常終了したとき、反復の上限で受け入れの判定を満たさなかったときは、``the warm start failed (…); solved again from the freestream`` を記録して、冷えた起動で解き直す。
 
 .. _sec-cfd-int-rans-accept:
@@ -816,6 +823,14 @@ NASA TMR の平板（格子 69×49、137×97、273×193、:math:`M=0.2` と 2）
 :math:`y^+` が分布に含まれなければ ``wall y+ not checked: no Y_Plus in surface_flow.vtk`` を警告にする。
 ケースの警告は ``warning: aero.cfd: case m0.800_a04.00: …`` の形で標準エラー出力にも表示する。
 ``done.json`` の ``converged`` は、収束で真、停滞と振動で偽になり、偽のケースは ``cfd_report.json`` の ``unconverged`` に載る。
+停滞のケースは ``done.json`` の ``stalled`` が真になり、判定の根拠にした密度の残差の下がり（停滞では直近の窓の中央値）を ``residual_drop`` に記録する。
+``cfd_cases.csv`` には、基準の最大値の密度の値（``residual_reference``）、この下がり（``residual_drop``）、判定（``rans_verdict``：``converged``、``limit_cycle``、``stalled``）が入る。Euler では空である。
+``residual_first`` と ``residual_last`` は 2 次精度の段の履歴の最初と最後の行の密度の残差である。
+``cfd_report.json`` の ``stalled_cases`` に停滞のケースと下がりを挙げ、実行の最後に次の警告を出す。
+
+.. code-block:: text
+
+   N RANS case(s) accepted with a stalled residual, not converged (coefficients averaged over two windows; a stalled residual needs only 0.5 orders below the reference, convergence 3): <ケース> (<下がり> orders below the reference), …; check them in cfd_cases.csv (rans_verdict, residual_drop)
 
 
 .. _sec-cfd-post:

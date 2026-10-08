@@ -67,6 +67,31 @@ pub enum CfdStage {
     Done,
 }
 
+/// A RANS case accepted with a stalled residual (see [`runner::RansVerdict::Stalled`]).
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct StalledCase {
+    pub case: String,
+    pub residual_drop: Option<f64>,
+}
+
+/// The warning about the RANS cases accepted with a stalled residual (`None` when there is none).
+pub fn stalled_warning(stalled: &[StalledCase]) -> Option<String> {
+    if stalled.is_empty() {
+        return None;
+    }
+    let list: Vec<String> =
+        stalled.iter().map(|c| format!("{} ({} orders below the reference)", c.case, c.residual_drop.map_or("?".to_string(), |d| format!("{d:.1}")))).collect();
+    Some(format!(
+        "{} RANS case{} accepted with a stalled residual, not converged (coefficients averaged over two windows; a stalled residual needs only \
+         {} orders below the reference, convergence {}): {}; check them in cfd_cases.csv (rans_verdict, residual_drop)",
+        stalled.len(),
+        if stalled.len() == 1 { "" } else { "s" },
+        runner::RANS_STALL_RHO_DROP,
+        runner::RANS_RHO_DROP,
+        list.join(", ")
+    ))
+}
+
 /// Summary written to `cfd_report.json`.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct CfdReport {
@@ -76,6 +101,8 @@ pub struct CfdReport {
     /// sideslip and roll).
     pub unconverged: Vec<(f64, f64)>,
     pub unconverged_cases: Vec<String>,
+    /// RANS cases accepted with a stalled residual and the drop of their density residual below the reference [orders].
+    pub stalled_cases: Vec<StalledCase>,
     pub wall_seconds: f64,
     pub mesh_nodes: usize,
     pub mesh_cells: usize,
@@ -511,6 +538,10 @@ pub fn build_table_with_progress(
         failed_cases: results.iter().filter(|r| r.result.is_none()).map(|r| r.spec.dir_name()).collect(),
         unconverged: results.iter().filter(|r| r.result.as_ref().is_some_and(|x| !x.converged)).map(|r| (r.spec.mach, r.spec.alpha_deg)).collect(),
         unconverged_cases: results.iter().filter(|r| r.result.as_ref().is_some_and(|x| !x.converged)).map(|r| r.spec.dir_name()).collect(),
+        stalled_cases: results
+            .iter()
+            .filter_map(|r| r.result.as_ref().filter(|x| x.stalled).map(|x| StalledCase { case: r.spec.dir_name(), residual_drop: x.residual_drop }))
+            .collect(),
         wall_seconds: t0.elapsed().as_secs_f64(),
         mesh_nodes: mesh.stats.nodes,
         mesh_cells: mesh.stats.cells,
@@ -639,6 +670,7 @@ pub fn build_table_with_progress(
             report.warnings.push(format!("the table is held at its M = {m} values below M = {m} (no Mach extrapolation of the CFD data)"));
         }
     }
+    report.warnings.extend(stalled_warning(&report.stalled_cases));
     progress(CfdStage::Done);
     Ok((tab, report))
 }
@@ -695,6 +727,14 @@ mod tests {
         assert_eq!(p.parallel, 4, "{p:?}");
         assert!(p.over_budget.is_none() && p.notes.iter().any(|n| n.contains("parallel_cases reduced from 8 to 4 (memory budget 2.2 GB")), "{p:?}");
         assert!(case_memory_bytes(FlowModel::Rans, 100_000, 4) >= case_memory_bytes(FlowModel::Euler, 100_000, 4));
+    }
+
+    #[test]
+    fn stalled_cases_are_named_with_their_residual_drop() {
+        assert_eq!(stalled_warning(&[]), None);
+        let w = stalled_warning(&[StalledCase { case: "m2.000_a00.00".into(), residual_drop: Some(0.94) }]).unwrap();
+        assert!(w.starts_with("1 RANS case accepted with a stalled residual, not converged"), "{w}");
+        assert!(w.contains("needs only 0.5 orders below the reference, convergence 3") && w.contains("m2.000_a00.00 (0.9 orders below the reference)"), "{w}");
     }
 
     #[test]

@@ -1332,6 +1332,7 @@ fn cfd_table(cfg: &Config, g: Geometry, hash: String, path: &Path, start: std::t
         );
     }
     u.done_line("CFD", &format!("{} cases, {} failed, {} cells", report.cases, report.failed.len(), report.mesh_cells), start.elapsed());
+    print_warnings(&cfd::stalled_warning(&report.stalled_cases).into_iter().collect::<Vec<_>>());
     show_table(&table, Some(start.elapsed()), sub);
     Ok(table)
 }

@@ -498,8 +498,9 @@ fn spread_text(name: &str, values: impl Iterator<Item = f64>) -> Option<String> 
     Some(format!("{name} {mean:.5} (inter-quartile range {:.2e})", v[3 * v.len() / 4] - v[v.len() / 4]))
 }
 
-/// [`RansVerdict::Stalled`] check; the text gives the residual level and the spread of the forces.
-fn rans_stalled(h: &History, reference: ResidualPeak, window: usize, kind: StabilityKind, length_ratio: f64, budget: usize) -> Option<String> {
+/// Density residual of a stalled RANS run: the drop of the median over the last `window` rows below the reference
+/// (orders) and the progress of that median from the window before (`None` with fewer than two windows of rows).
+fn rans_stall_levels(h: &History, reference: ResidualPeak, window: usize) -> Option<(f64, f64)> {
     let n = h.rows.len();
     if window < 2 || n < 2 * window {
         return None;
@@ -507,8 +508,37 @@ fn rans_stalled(h: &History, reference: ResidualPeak, window: usize, kind: Stabi
     let rho = ["rms[Rho]", "Res_Flow[0]", "rms[P]"];
     let now = median_rows(h, &rho, n - window, n)?;
     let before = median_rows(h, &rho, n - 2 * window, n - window)?;
-    let drop = effective_reference(reference, h).rho - now;
-    if drop < RANS_STALL_RHO_DROP || before - now > RANS_STALL_PROGRESS {
+    Some((effective_reference(reference, h).rho - now, before - now))
+}
+
+/// Density-residual drop of a RANS run below the reference (orders), from the largest residual of the last
+/// [`RANS_RESIDUAL_ROWS`] rows: the drop [`RansVerdict::Converged`] and [`RansVerdict::LimitCycle`] are judged on.
+pub fn rans_density_drop(h: &History, reference: ResidualPeak) -> Option<f64> {
+    rans_worst_drop(h, effective_reference(reference, h).rho, &["rms[Rho]", "Res_Flow[0]", "rms[P]"])
+}
+
+/// `peak` minus the largest value of the column `names` over the last [`RANS_RESIDUAL_ROWS`] rows: a dip of a
+/// chattering residual (e.g. while the CFL is cut) is no drop.
+fn rans_worst_drop(h: &History, peak: f64, names: &[&str]) -> Option<f64> {
+    let c = h.col(names)?;
+    let v = h.rows[h.rows.len().saturating_sub(RANS_RESIDUAL_ROWS)..].iter().map(|r| r[c]).fold(f64::NEG_INFINITY, f64::max);
+    v.is_finite().then_some(peak - v)
+}
+
+/// The density-residual drop the verdict of a RANS case rests on: the median drop of [`RansVerdict::Stalled`], else
+/// [`rans_density_drop`].
+pub fn rans_verdict_drop(h: &History, reference: ResidualPeak, window: usize, verdict: &RansVerdict) -> Option<f64> {
+    match verdict {
+        RansVerdict::Stalled(_) => rans_stall_levels(h, reference, window).map(|(d, _)| d),
+        _ => rans_density_drop(h, reference),
+    }
+}
+
+/// [`RansVerdict::Stalled`] check; the text gives the residual level and the spread of the forces.
+fn rans_stalled(h: &History, reference: ResidualPeak, window: usize, kind: StabilityKind, length_ratio: f64, budget: usize) -> Option<String> {
+    let n = h.rows.len();
+    let (drop, progress) = rans_stall_levels(h, reference, window)?;
+    if drop < RANS_STALL_RHO_DROP || progress > RANS_STALL_PROGRESS {
         return None;
     }
     if !(h.rans_coefficients_stable(2 * window, kind, length_ratio) && h.rans_trend_settled(2 * window, kind, length_ratio, budget)) {
@@ -530,14 +560,8 @@ fn rans_stalled(h: &History, reference: ResidualPeak, window: usize, kind: Stabi
 /// the iteration limit of the stage (the longest trend extrapolation, see [`History::rans_trend_settled`]).
 pub fn rans_verdict(h: &History, reference: ResidualPeak, window: usize, kind: StabilityKind, length_ratio: f64, budget: usize) -> RansVerdict {
     let r = effective_reference(reference, h);
-    // The largest residual of the last rows: a dip of a chattering residual (e.g. while the CFL is cut) is no drop.
-    let worst = |names: &[&str]| -> Option<f64> {
-        let c = h.col(names)?;
-        let v = h.rows[h.rows.len().saturating_sub(RANS_RESIDUAL_ROWS)..].iter().map(|r| r[c]).fold(f64::NEG_INFINITY, f64::max);
-        v.is_finite().then_some(v)
-    };
-    let rho = worst(&["rms[Rho]", "Res_Flow[0]", "rms[P]"]).map(|x| r.rho - x);
-    let nu = worst(&["rms[nu]", "rms[Nu_Tilde]", "rms[nu_tilde]"]).map(|x| r.nu - x);
+    let rho = rans_density_drop(h, reference);
+    let nu = rans_worst_drop(h, r.nu, &["rms[nu]", "rms[Nu_Tilde]", "rms[nu_tilde]"]);
     let flat = h.rans_coefficients_stable(window, kind, length_ratio);
     let stable = flat && h.rans_trend_settled(window, kind, length_ratio, budget);
     if rho.is_some_and(|d| d >= RANS_RHO_DROP) && nu.is_some_and(|d| d >= RANS_NU_DROP) && stable {
@@ -800,6 +824,8 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: Option
         wall_seconds: wall,
         reference_peak: None,
         limit_cycle: false,
+        stalled: false,
+        residual_drop: None,
         yplus_p95: None,
         axial,
         warnings,
@@ -946,6 +972,7 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
         let judge = |h: &History| rans_verdict(h, reference, opt.stable_window.min(h.rows.len()).max(2), kind, ratio, opt.iterations);
         let (h, verdict) = judged_at_stop(&full, decision.take(), judge);
         let window = opt.stable_window.min(h.rows.len()).max(2);
+        let drop = rans_verdict_drop(&h, reference, window, &verdict);
         let mut stalled: Option<String> = None;
         let limit_cycle = match verdict {
             RansVerdict::Converged => false,
@@ -997,11 +1024,13 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
             coeffs6,
             iterations: summarize(&full, 1).map_or(s.iterations, |f| f.iterations),
             converged: !limit_cycle,
-            residual_first: Some(effective_reference(reference, &h).rho),
+            residual_first: h.col(&["rms[Rho]", "Res_Flow[0]", "rms[P]"]).map(|c| h.rows[0][c]),
             residual_last: full.last_residual(),
             wall_seconds: t0.elapsed().as_secs_f64(),
             reference_peak: Some(effective_reference(reference, &h)),
             limit_cycle,
+            stalled: stalled.is_some(),
+            residual_drop: drop,
             yplus_p95: yplus,
             axial,
             warnings,
@@ -1119,14 +1148,31 @@ pub fn failure_summary(outcomes: &[CaseOutcome]) -> Vec<String> {
         .collect()
 }
 
+/// `rans_verdict` column of `cfd_cases.csv`: `converged`, `limit_cycle` or `stalled` for a RANS result, empty otherwise.
+fn rans_verdict_name(r: Option<&CaseResult>) -> &'static str {
+    match r {
+        Some(r) if r.reference_peak.is_none() => "",
+        Some(r) if r.stalled => "stalled",
+        Some(r) if r.limit_cycle => "limit_cycle",
+        Some(_) => "converged",
+        None => "",
+    }
+}
+
 /// Writes `cfd_cases.csv`: every solved case (raw, including the negative angles of `mirror` mode)
 /// with its convergence information, followed in `mirror` mode by the combined odd/even rows
 /// (`status = combined`, `corrected` are the points of [`crate::table::apply_alpha_mode`]).
 /// `cn`, `nose_moment`, `xcp_m` are the values the table uses: offset-corrected in `offset` mode,
-/// equal to the raw ones in `single` mode, empty on raw `mirror` rows.
+/// equal to the raw ones in `single` mode, empty on raw `mirror` rows. `residual_first` / `residual_last` are the
+/// first and last density residual of the (RANS: second-order) history; RANS rows add the reference peak of the
+/// acceptance (`residual_reference`), the drop below it the verdict rests on (`residual_drop`) and the verdict
+/// (`rans_verdict`: `converged`, `limit_cycle`, `stalled`), which are empty for Euler.
 pub fn write_cases_csv(path: &Path, outcomes: &[CaseOutcome], corrected: &[SolvedPoint], mode: AlphaMode) -> Result<()> {
     use std::fmt::Write;
-    let mut s = String::from("mach,alpha_deg,status,iterations,residual_first,residual_last,cn_raw,ca_cfd,nose_moment_raw,xcp_raw_m,cn,nose_moment,xcp_m,wall_seconds,warm_start,beta_deg,roll_hat,cx,cy,cz,cl,cm,cn_yaw\n");
+    let mut s = String::from(
+        "mach,alpha_deg,status,iterations,residual_first,residual_last,cn_raw,ca_cfd,nose_moment_raw,xcp_raw_m,cn,nose_moment,xcp_m,wall_seconds,warm_start,beta_deg,roll_hat,cx,cy,cz,cl,cm,cn_yaw,\
+         residual_reference,residual_drop,rans_verdict\n",
+    );
     let f = |v: Option<f64>| v.map_or(String::new(), |x| format!("{x:.8e}"));
     let corr = |o: &CaseOutcome| {
         if o.spec.beta_deg != 0.0 || o.spec.is_roll() {
@@ -1147,7 +1193,7 @@ pub fn write_cases_csv(path: &Path, outcomes: &[CaseOutcome], corrected: &[Solve
         let (cn, mom, xcp) = if mode == AlphaMode::Mirror { (None, None, None) } else { corr(o).as_ref().map_or((None, None, None), used) };
         let _ = writeln!(
             s,
-            "{},{},{},{},{},{},{},{},{},{},{},{},{},{:.1},{},{},{},{},{},{},{},{},{}",
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{:.1},{},{},{},{},{},{},{},{},{},{},{},{}",
             o.spec.mach,
             o.spec.alpha_deg,
             status,
@@ -1170,13 +1216,16 @@ pub fn write_cases_csv(path: &Path, outcomes: &[CaseOutcome], corrected: &[Solve
             f(c6.map(|c| c.cz)),
             f(c6.map(|c| c.cl)),
             f(c6.map(|c| c.cm)),
-            f(c6.map(|c| c.cn))
+            f(c6.map(|c| c.cn)),
+            f(r.and_then(|r| r.reference_peak).map(|p| p.rho)),
+            f(r.and_then(|r| r.residual_drop)),
+            rans_verdict_name(r)
         );
     }
     if mode == AlphaMode::Mirror {
         for p in corrected.iter().filter(|p| p.alpha_deg > 0.0) {
             let (cn, mom, xcp) = p.coeffs.as_ref().map_or((None, None, None), used);
-            let _ = writeln!(s, "{},{},combined,,,,,{},,,{},{},{},,,,,,,,,,", p.mach, p.alpha_deg, f(p.coeffs.map(|c| c.ca)), f(cn), f(mom), f(xcp));
+            let _ = writeln!(s, "{},{},combined,,,,,{},,,{},{},{},,,,,,,,,,,,,", p.mach, p.alpha_deg, f(p.coeffs.map(|c| c.ca)), f(cn), f(mom), f(xcp));
         }
     }
     std::fs::write(path, s).with_context(|| format!("cannot write {}", path.display()))
@@ -1609,6 +1658,15 @@ exit 0
         write_cases_csv(&e.dir.join("cases.csv"), &out, &[], AlphaMode::Single).unwrap();
         let csv = std::fs::read_to_string(e.dir.join("cases.csv")).unwrap();
         assert_eq!(csv.lines().filter(|l| l.contains(",unconverged,")).count(), 2, "{csv}");
+        // RANS columns: residual_first is the first row of the second-order history (cold: -2.0), the reference is
+        // the startup peak (-1.0), then the drop and the verdict.
+        let head: Vec<&str> = csv.lines().next().unwrap().split(',').collect();
+        let row: Vec<&str> = csv.lines().nth(1).unwrap().split(',').collect();
+        let col = |name: &str| row[head.iter().position(|h| *h == name).unwrap()];
+        assert_eq!(head.len(), row.len());
+        assert_eq!((col("residual_first"), col("residual_reference"), col("rans_verdict")), ("-2.00000000e0", "-1.00000000e0", "limit_cycle"), "{csv}");
+        assert!(col("residual_drop").parse::<f64>().unwrap() > 2.0, "{csv}");
+        assert_eq!(csv.lines().nth(2).unwrap().split(',').last(), Some("converged"));
         let e = env_rans("rans_thick", "thick");
         let out = run_all(&e.setup(), &|_| {}).unwrap();
         let r = out[0].result.as_ref().unwrap();
@@ -1904,6 +1962,10 @@ exit 0
         let RansVerdict::Stalled(why) = &v else { panic!("{v:?}") };
         assert!(why.contains("residual stalled 0.9 orders"), "{why}");
         assert!(why.contains("CFx 0.39") && why.contains("inter-quartile range"), "{why}");
+        // The drop recorded with the verdict is the median one (-3.5 - -4.4), not the worst of the last rows.
+        assert!((rans_verdict_drop(&mk(800, 0.0, 0.0), reference, 200, &v).unwrap() - 0.9).abs() < 1e-9);
+        assert!((rans_verdict_drop(&mk(800, 0.0, 0.0), reference, 200, &RansVerdict::Converged).unwrap() - 0.9).abs() < 1e-9);
+        assert!((rans_density_drop(&ramp(50, (-1.0, -4.1), (-6.0, -7.0), 0.0), reference).unwrap() - 3.1).abs() < 1e-9, "own peak -1 above the reference");
         // Too few rows for two windows: not yet.
         assert!(!matches!(rans_verdict(&mk(350, 0.0, 0.0), reference, 200, k, 18.0, 4000), RansVerdict::Stalled(_)));
         // A force that still drifts (1e-6 per iteration, 1 % over the budget) is not stationary.

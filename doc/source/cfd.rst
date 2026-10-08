@@ -115,7 +115,7 @@ conda-forge の SU2 8.3.0 は、汎用の x86-64 向けに構築されており�
 共有ノードなので絶対値は負荷で変わる。比較には対ごとの比（ネイティブ / conda）を使う。
 ネイティブ版は、1 反復あたりの時間が Euler で 0.70 〜 0.87 倍、RANS（壁面 5 mm、Mach 0.8、迎角 4°）で 0.75 〜 0.77 倍である。
 ピーク RSS（16 ランクの合計）は、Euler で 3.69 GB から約 2.75 GB に、RANS で 7.5 GB から約 5.1 GB に減る。
-収束までの反復数は、conda 版と 1 反復ほどしか違わない。
+収束までの反復数は、conda 版と最大 2 反復しか違わない。
 
 .. list-table:: ネイティブ版 / conda 版の比（対ごと）
    :header-rows: 1
@@ -173,9 +173,9 @@ conda-forge の SU2 8.3.0 は、汎用の x86-64 向けに構築されており�
 Euler の Mach 2 の 1 組目は、conda 版が誤って前のケースから初期化されたため除いた。RANS の 1 組目は、ノード負荷が実行の途中で大きく変わったため、参考値である。
 全ての値は ``data/cfd/su2_native_benchmark.csv`` にある。
 
-係数の差は、:math:`C_N` が 0.004 % 以内、:math:`x_{cp}` が 0.011 mm 以内である。
+係数の差は、:math:`C_N` が 0.005 % 以内、:math:`x_{cp}` が 0.011 mm 以内である。
 :math:`C_A` は 0 に近い値なので相対差が大きく見え、最大で 0.12 % だが、絶対値では 1 〜 3e-5 である。
-残差は、Euler で両者がほぼ一致し、RANS ではネイティブ版の方が 400 反復で約 0.2 〜 0.35 桁高い。ただし、どちらも同じ反復で収束判定を満たす。
+最終反復の残差（log10）は、Euler の Mach 0.8 で両者が 0.02 桁以内で一致し、Mach 2 ではネイティブ版の方が 0.26 〜 0.46 桁低い（−8.84 に対して −8.38 と −8.58）。RANS ではネイティブ版の方が 400 反復で約 0.35 桁高い。ただし、どちらも同じ反復で収束判定を満たす。
 
 -march=native のバイナリは構築した CPU の命令集合に依存し、別の CPU に移すと異常終了することがある。
 そのため、既定は conda-forge の SU2 のままで、ネイティブ版は利用者が環境変数で選ぶ。
@@ -608,11 +608,11 @@ RANS で解く
 ``wall_size``\ 、``iterations``\ 、``min_iterations``\ 、``stable_window`` を明示したときは、RANS の既定ではなくその値を使う。
 Euler の設定ファイルの ``model`` だけを ``"rans"`` に変えたときは、設定ファイルにある ``wall_size`` と ``iterations`` がそのまま効く。
 ``examples/sample_rans.toml`` は、これらを設定せず RANS の既定のままにしたサンプル機体の設定である（半モデル、:math:`M=0.3,0.8,1.2,2`\ 、:math:`\alpha=0,\pm4,\pm8^\circ` の 20 ケース、``alpha_mode = "mirror"``\ 、``yplus = 1``）。
-ファイルのコメントによると、1 ケースのメモリは ``wall_size`` 5 mm で実測約 7.5 GB（``cfd-check`` の見積もりは約 9 GB）、3 mm で 18 GB であり、20 ケースを 4 ランク、2 ケースずつ同時で解くのに約 4.4 時間（1 ケース 14 から 61 分）かかった。
+ファイルのコメントによると、1 ケースのメモリは ``wall_size`` 4.8 mm（787,490 節点）で実測 7.8 GB（``data/cfd/rans_memory.csv``）、1 節点あたり 10.2 kB から外挿すると 5 mm（735,366 節点）で約 7.5 GB（``cfd-check`` の見積もりは約 9 GB）、3 mm（184 万節点）で約 19 GB である。20 ケースを 4 ランク、2 ケースずつ同時で解くのに約 4.4 時間（1 ケース 14 から 61 分）かかった。
 
 **警告**\ 。次の場合は、計算を止めずに警告を出す。
 
-* ``wall_size`` が 4 mm より小さい：``aero.cfd: model = "rans" with wall_size = … m, finer than the RANS default 0.005 m: a half-model case of the sample rocket needs about 7.5 GB at 5 mm and 18 GB at 3 mm, and more on a finer mesh; check the estimate with `ignisyeet cfd-check <config> --mesh` (an explicit wall_size overrides the RANS default)``
+* ``wall_size`` が 4 mm より小さい：``aero.cfd: model = "rans" with wall_size = … m, finer than the RANS default 0.005 m: a half-model case of the sample rocket needs about 7.5 GB at 5 mm and 19 GB at 3 mm, and more on a finer mesh; check the estimate with `ignisyeet cfd-check <config> --mesh` (an explicit wall_size overrides the RANS default)``
 * ``yplus`` が 30 から 150（壁関数）：``aero.cfd: yplus = … selects the standard wall function (30..150), which is not verified (the RANS verification uses a resolved wall, yplus = 1); use yplus <= 5 unless you check the results yourself``
 
 ``surface = "step"`` で使うときの注意（鋭い縁、狭いすき間、確かめた範囲）は :ref:`sec-cfd-step` にある。
@@ -899,7 +899,7 @@ RANS の壁は滑らかで、設定の粗さは部品積み上げ法の摩擦の
 メッシュ収束（:ref:`sec-vaero-cfd-mesh`）：フィンの面を 1 mm にしたまま ``wall_size`` を変えると :math:`C_N` は単調に増え、既定の 2 mm は最も細かい 1.8 mm より 0.1 %、外挿値より 0.3〜0.6 % 低い。
 外挿値は当てはめに使うメッシュで 0.3 % 変わる目安で、フィンの面を 1 mm より細かくした計算はない。
 STL のメッシュは作成のたびに少し変わるので、:math:`C_N` には、この差を超える不確かさがありうる。
-実測との比較（妥当性確認）は Basic Finner の超音速の射場試験との比較だけで（:doc:`validation`）、Euler の :math:`C_{N\alpha}` は実測より 2–10 % 小さく、:math:`x_{cp}` は 0.2 口径以内で合う。部品積み上げ法やパネル法との相互比較は :ref:`sec-vaero-compare` に示す。
+実測との比較（妥当性確認）は Basic Finner の超音速の射場試験との比較だけで（:doc:`validation`）、Euler の :math:`C_{N\alpha}` は実測より 3–11 % 小さく、:math:`x_{cp}` は 0.2 口径以内で合う。部品積み上げ法やパネル法との相互比較は :ref:`sec-vaero-compare` に示す。
 
 確認済み
 --------

@@ -61,9 +61,11 @@ extrapolation = "linear"   # "linear" | "clamp"
 # see `ignisyeet cfd-check examples/sample_rans.toml --mesh` (it also prints the memory per case against the budget).
 # wall_size, iterations, min_iterations and stable_window are not set here, so the RANS defaults apply: 5 mm surface
 # mesh (about 0.74 M nodes for the sample), 4000 iterations, early stop from 400 iterations over a 200-iteration window.
-# Setting any of them explicitly overrides the RANS default (e.g. a 2 mm wall_size needs far more than 18 GB per case).
-# Memory: about 7.5 GB per half-model case at 5 mm (measured; the estimate printed by cfd-check is about 9 GB) and
-# 18 GB at 3 mm. The concurrent cases are reduced to fit [resources] memory_gb, by default the available memory.
+# Setting any of them explicitly overrides the RANS default (e.g. a 2 mm wall_size needs far more than 19 GB per case).
+# Memory: measured 7.8 GB per half-model case at 4.8 mm (787,490 nodes, doc/data/cfd/rans_memory.csv); from 10.2 kB per
+# node that is about 7.5 GB at 5 mm (735,366 nodes; the estimate printed by cfd-check is about 9 GB) and about 19 GB at
+# 3 mm (1.84 M nodes), both extrapolated. The concurrent cases are reduced to fit [resources] memory_gb, by default the
+# available memory.
 # Time: the 20 cases of this matrix (alpha 0, +-4, +-8 deg at 4 Mach numbers) took about 4.4 hours on 4 ranks x 2
 # concurrent cases (14 to 61 minutes per case). Cases are cached in out_rans/cfd/ and re-used when nothing changed.
 [aero.cfd]

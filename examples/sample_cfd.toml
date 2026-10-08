@@ -68,7 +68,7 @@ extrapolation = "linear"   # "linear" | "clamp"
 prefix = "~/.local/share/micromamba/envs/ignisyeet-cfd"  # <prefix>/bin/SU2_CFD, mpirun, python (with gmsh)
 model = "euler"            # "euler" | "rans" (Spalart-Allmaras). For RANS start from examples/sample_rans.toml: the explicit
                            # wall_size = 0.002 and iterations = 3000 below override the RANS defaults (5 mm, 4000), and a
-                           # 2 mm RANS mesh needs far more than the 18 GB per case of 3 mm
+                           # 2 mm RANS mesh needs far more than the 19 GB per case of 3 mm
 machs = [0.3, 0.8, 1.2, 2.0]   # solved Mach numbers (increasing)
 alphas_deg = [0, 4, 8]         # solved angles of attack (must contain 0)
 surface = "cad"            # "cad" (alias "panel_mesh"): geometry rebuilt from the extracted profile + fins as one fused solid;

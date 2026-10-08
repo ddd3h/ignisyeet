@@ -257,13 +257,13 @@ CFD の表の、解いた迎角より大きい行は、この外挿ではなく�
      - 終了と記録
      - 理由と対処
    * - Mach 数が表の最大値を超える
-     - ``RESULTS NOT USABLE``（:ref:`IY-O022`）。``aero_table_range`` の ``machs_in_range`` が ``false``
+     - ``RESULTS NOT USABLE``\ （:ref:`IY-O022`）。``aero_table_range`` の ``machs_in_range`` が ``false``
      - 表が飛翔の Mach 数より手前で終わると、端の値で一定とした係数で上昇全体の抗力と安定が変わる。``aero.mach_max`` を上げて作り直す
    * - Mach 数が表の最小値を下回る
-     - ``RESULTS NOT USABLE``（:ref:`IY-O023`）
+     - ``RESULTS NOT USABLE``\ （:ref:`IY-O023`）
      - 外部の表が Mach 0 から始まらないときに起こる。表を Mach 0 まで広げる
    * - 迎角（一般表では迎角または横滑り角）が格子の外
-     - ``RESULTS NOT USABLE``（:ref:`IY-O024`）。``angles_in_range`` が ``false``
+     - ``RESULTS NOT USABLE``\ （:ref:`IY-O024`）。``angles_in_range`` が ``false``
      - 外挿した係数は、圧力中心を重心より前へ動かして見かけの釣り合い（トリム）を作るなど、弾道落下の経路を変えうる。外挿の結果が範囲内の結果に近いかどうかは、機体と条件で決まり、事前には分からない。表の上限を 90° 以上にして作り直す
 
 軸対称表では、飛翔計算が全迎角を 90° 以下に折り返して引くので、``alpha_max_deg`` が 90 以上なら迎角の範囲外は起こらない。

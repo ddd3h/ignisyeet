@@ -571,6 +571,11 @@ fn regions(tris: &[Triangle], sel: &[usize], tol: f64) -> usize {
 pub struct FairingParams {
     /// Cone length in base radii.
     pub tail_fairing: f64,
+    /// Base radius of the body [m] (`Geometry::base_radius` of `rocket.stl`). The cone starts at the extent of the flat
+    /// CAD base face when that is within 2 % of this radius; otherwise (fin trailing edges flush with the base belong to
+    /// the face, whose extent reaches the fin tips) at 98 % of the circular body edge of the face (of this radius when
+    /// the face has no such edge).
+    pub base_radius: f64,
 }
 
 /// `fin_refine` in `params.json`: the fin faces (centre of mass outside the body profile by more than a tenth of the
@@ -827,7 +832,7 @@ fn base_params(opt: &CfdOptions, geom: &Geometry, dir: &Path, threads: usize, un
         tess_size: (2.0 * opt.wall_size).clamp(l / 1000.0, l / 300.0),
         sym_tol: symmetry::SYMMETRY_TOL * l,
         sym_points: SYMMETRY_POINTS,
-        fairing: (treatment == "fairing").then_some(FairingParams { tail_fairing: opt.tail_fairing }),
+        fairing: (treatment == "fairing").then_some(FairingParams { tail_fairing: opt.tail_fairing, base_radius: geom.base_radius }),
         prepared_brep: p("step_prepared.brep"),
         tess_stl: p("step_surface.stl"),
         report_json: p("step_report.json"),
@@ -1282,7 +1287,7 @@ print(f(float(sys.argv[2]), float(sys.argv[3])))
         // Parameters do.
         assert_ne!(h, step_mesh_hash(&StepParams { unit_scale: 0.001, ..p.clone() }, b"ISO-10303-21; one"));
         assert_ne!(h, step_mesh_hash(&StepParams { meshed: "half".into(), ..p.clone() }, b"ISO-10303-21; one"));
-        assert_ne!(prepare_hash(&p, b"a"), prepare_hash(&StepParams { fairing: Some(FairingParams { tail_fairing: 6.0 }), ..p.clone() }, b"a"));
+        assert_ne!(prepare_hash(&p, b"a"), prepare_hash(&StepParams { fairing: Some(FairingParams { tail_fairing: 6.0, base_radius: 0.05 }), ..p.clone() }, b"a"));
         // The mesh parameters do not invalidate the prepared shape.
         assert_eq!(prepare_hash(&p, b"a"), prepare_hash(&StepParams { min_size: 1e-4, meshed: "half".into(), ..p.clone() }, b"a"));
     }

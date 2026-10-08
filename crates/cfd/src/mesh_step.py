@@ -159,6 +159,22 @@ def symmetry_tolerance(tol, self_err):
     return max(tol, SYM_SELF_FACTOR * self_err)
 
 
+def base_circle_radius(face, r_stl, tol):
+    """Radius of the body edge of the flat base face: the median radius of the boundary curves that are arcs about the
+    x axis (distance from the axis constant within tol; B-spline arcs of a STEP vary by about 1e-5 of the radius) within
+    2 % of the STL base radius r_stl; r_stl when there are none. The face's
+    extent is not used, because fin trailing edges flush with the base belong to the face and reach the fin tips."""
+    radii = []
+    for _, c in gmsh.model.getBoundary([(2, face)], oriented=False, combined=False):
+        lo, hi = gmsh.model.getParametrizationBounds(1, abs(c))
+        ts = [lo[0] + (hi[0] - lo[0]) * k / 6.0 for k in range(7)]
+        xyz = gmsh.model.getValue(1, abs(c), ts)
+        r = [math.hypot(xyz[3 * k + 1], xyz[3 * k + 2]) for k in range(len(ts))]
+        if max(r) - min(r) <= tol and abs(r[0] - r_stl) <= 0.02 * r_stl:
+            radii.append(sum(r) / len(r))
+    return sorted(radii)[len(radii) // 2] if radii else r_stl
+
+
 def symmetry_check(axis, faces, nodes_of, tol, max_points):
     """Mirror check of the shape about y = 0 (axis 1) or z = 0 (axis 2): interior surface nodes (on the exact surface)
     are mirrored and must lie on a face of the shape within `tol` (closest point on the face's surface, inside the
@@ -291,7 +307,10 @@ def prepare():
     # Euler tail fairing: the cone of tail_fairing base radii to a point on the axis (the slope of the fairing of the CAD
     # and STL surfaces), cut at 10 % of the base radius with a flat cap like the STL fairing (surface::fairing_cone), behind
     # the largest flat base face and fused with the body. The full cone leaves a duplicated or degenerate triangle at the
-    # apex of the OpenCASCADE cone face with every surface algorithm of gmsh.
+    # apex of the OpenCASCADE cone face with every surface algorithm of gmsh. The cone starts at the extent of the face
+    # when that is the body base radius; fin trailing edges flush with the base are part of the face, and a cone as wide
+    # as the face would reach the fin tips and leave a forward-facing step on the body, so then it starts just inside the
+    # circular body edge of the face (base_circle_radius).
     fair = p.get("fairing")
     report["fairing"] = None
     if fair:
@@ -305,13 +324,21 @@ def prepare():
         big = max(flat, key=lambda i: i["area"])
         xb = big["centroid"][0]
         bb = big["bbox"]
-        rb = max(abs(bb[1]), abs(bb[2]), abs(bb[4]), abs(bb[5]))
+        face_extent = max(abs(bb[1]), abs(bb[2]), abs(bb[4]), abs(bb[5]))
+        if abs(face_extent - fair["base_radius"]) <= 0.02 * fair["base_radius"]:
+            rb = face_extent
+        else:
+            # Fins flush with the base: 98 % of the body edge radius (like the STL fairing without a base ring). A cone
+            # edge on the B-spline arcs of the body edge makes the fusion fail (self-intersections, open 1D loops), and
+            # one a few micrometres inside leaves sliver cells.
+            rb = 0.98 * base_circle_radius(big["tag"], fair["base_radius"], 1e-3 * fair["base_radius"])
         tl = fair["tail_fairing"] * rb
         cone = occ.addCone(xb, 0, 0, 0.9 * tl, 0, 0, rb, 0.1 * rb)
         out, _ = occ.fuse(vols, [(3, cone)])
         occ.synchronize()
         vols = [v for v in out if v[0] == 3]
-        report["fairing"] = {"x": xb, "radius": rb, "length": tl, "cut_at": 0.9 * tl, "base_face_area": big["area"]}
+        report["fairing"] = {"x": xb, "radius": rb, "length": tl, "cut_at": 0.9 * tl, "base_face_area": big["area"],
+                             "base_face_extent": face_extent}
     gmsh.write(p["prepared_brep"])
     report["seconds"] = time.time() - t0
     json.dump(report, open(p["report_json"], "w"), indent=1)

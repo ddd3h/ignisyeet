@@ -1,0 +1,32 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+\begin{tikzpicture}[font=\small, x=1cm, y=1cm,
+  ax/.style={->, thick, cink2}, lab/.style={font=\footnotesize, text=cink2}]
+  \draw[ax] (0,0) -- (13.4,0) node[right] {時刻 $t$};
+  \draw[ax] (0,0) -- (0,5.6) node[above] {高さ $h$};
+  \draw[cink, very thick] (0,0) .. controls (1.2,4.4) and (2.3,5.0) .. (3.2,5.0) coordinate (apo);
+  \fill[cink] (apo) circle (2pt);
+  \node[lab, anchor=south east] at (3.1,5.12) {頂点 $t_{\mathrm{apo}}$};
+  % ballistic
+  \draw[corange, very thick] (apo) .. controls (4.4,5.0) and (5.0,3.0) .. (5.4,0) coordinate (b_end);
+  \fill[corange] (b_end) circle (2pt);
+  \node[lab, text=corange, anchor=north] at (5.4,-0.05) {着地};
+  \node[lab, text=corange, anchor=east, align=right] at (4.55,3.2) {弾道落下\\{\footnotesize 約 1 分}};
+  % single parachute
+  \coordinate (dep) at (4.0,4.95);
+  \draw[cblue, very thick] (apo) -- (dep);
+  \draw[cblue, very thick] (dep) -- (10.3,0) coordinate (s_end);
+  \fill[cblue] (dep) circle (2pt); \fill[cblue] (s_end) circle (2pt);
+  \node[lab, text=cblue, anchor=south west, align=left] at (7.0,2.9) {単一パラシュート\\{\footnotesize $v_t=\sqrt{2mg/(\rho\,C_DS)}$}};
+  \draw[<->, thick, cblue] (3.2,5.4) -- node[above, lab] {$\Delta t$（\texttt{delay}）} (4.0,5.4);
+  \node[lab, text=cblue, anchor=north] at (10.3,-0.05) {着地};
+  % dual deploy
+  \draw[caqua, very thick] (dep) -- (6.4,2.0) coordinate (hm) -- (12.7,0) coordinate (d_end);
+  \fill[caqua] (hm) circle (2pt); \fill[caqua] (d_end) circle (2pt);
+  \draw[dashed, cgrid, thick] (0,2.0) -- (6.4,2.0);
+  \node[lab, anchor=east] at (0,2.0) {$h_m$};
+  \node[lab, text=caqua, anchor=north east, align=right] at (6.3,1.9) {メイン開傘 $h\le h_m$\\{\footnotesize （\texttt{main\_altitude}）}};
+  \node[lab, text=caqua, anchor=north] at (12.7,-0.05) {着地};
+  \node[lab, text=caqua, anchor=south, align=center] at (10.6,1.0) {二段開傘};
+  \node[lab, anchor=north west, align=left] at (0,-0.9) {時間軸は縮めた概念図である。サンプル機体（頂点約 4.4 km）では、弾道落下が約 1 分、パラシュート降下が約 11 分で着地する。};
+\end{tikzpicture}

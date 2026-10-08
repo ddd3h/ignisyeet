@@ -128,7 +128,7 @@
 標準正規乱数 :math:`z` は、既定では切らない（裾に上限のない）正規分布から引く。``truncate_sigma``\ （:math:`k`。省略時はなし）を指定すると、各 :math:`z` を :math:`[-k,k]` に切り詰め（:math:`z\leftarrow\max(-k,\min(k,z))`）、それから標準偏差を掛ける。
 相対のばらつきにも絶対のばらつきにも同じく効き、どのばらつきも標準偏差の :math:`k` 倍を超えない。
 引き直すのではなく端の値に切り詰めるので、引く数と順序は変わらず、:math:`[-k,k]` の内側の値と、ほかのサンプルの値はそのまま保たれる。:math:`k` の外側の値はちょうど :math:`\pm k` になるので、分布は端に点の重みを持つ。
-:math:`k` は有限で正の数でなければならず、設定の読み込みだけでなく、モンテカルロ解析を始めるときにも確かめる（ライブラリとして直接呼んだときも、``dispersion.monte_carlo.truncate_sigma must be a finite number > 0 (the bound of the clipped draws in sigma, e.g. 3.0), found …`` のエラーで止まる）。
+:math:`k` は有限で正の数でなければならず、設定の読み込みだけでなく、モンテカルロ解析を始めるときにも確かめる（ライブラリとして直接呼んだときも、``error[IY-S063]: dispersion.monte_carlo.truncate_sigma must be a finite number > 0 (the bound of the clipped draws in sigma, e.g. 3.0), found …`` のエラーで止まる）。
 使った値は ``dispersion_summary.json`` の ``truncate_sigma`` に残る（切らないときは ``null``）。統計を求める関数（``summarize``）が受け取った値をそのまま記録する。
 
 ばらつきの与え方
@@ -374,7 +374,7 @@
 
 * 警告に、降下モードごとに ``N of M Monte Carlo samples (ballistic) are statically UNSTABLE (min static margin down to X cal): they are kept in the statistics (conservative), so the landing distances include tumbling flights`` の形の文を書く。
   風の格子では ``Monte Carlo samples`` が ``wind-grid cases`` になる。:math:`M` は、失敗したものを含む、その降下モードのケース（サンプル）の数である。
-* 終了ステータス 3 で終わり、標準エラー出力に ``RESULTS NOT USABLE: N of M Monte Carlo samples (ballistic) are statically UNSTABLE (min static margin down to X cal): increase the static margin or reduce the CG/aero sigmas`` の形の行を書く。
+* 終了ステータス 3 で終わり、標準エラー出力に ``RESULTS NOT USABLE: [IY-O025] N of M Monte Carlo samples (ballistic) are statically UNSTABLE (min static margin down to X cal): increase the static margin or reduce the CG/aero sigmas`` の形の行を書く。
   風の格子の末尾は ``increase the static margin`` である。降下モードが複数あるときは、モードごとの節を ``;`` でつなぐ。公称の飛翔が不安定なときは、その文のほうを優先する（:ref:`sec-exit-status`）。
 * ``dispersion_meta.json``\ （風の格子）と ``dispersion_summary.json``\ （モンテカルロ）の ``unstable``\ （降下モードごとの数）と ``unstable_min_static_margin_cal``\ （降下モードごとの最小の余裕）に残す。
 * ``dispersion.csv`` と ``dispersion_mc.csv`` の最後の列 ``stable`` は、その行の飛翔が静的に安定なら ``true``、不安定なら ``false``、判定できない行と失敗した行では空である。
@@ -398,7 +398,7 @@
 サンプルでは、部品積み上げ法とパネル法のどちらの表でも大きな迎角の圧力中心が燃焼後の重心より後ろにあり、:ref:`sec-dispersion-safety` の計算例のどの風の格子とモンテカルロ解析でも、横向きに落ちた弾道落下はない。
 この検出は、大きな迎角の係数が粗い表や外部の表（``method = "table"``）、重心が後ろにある機体に備える確認である。
 
-* 警告に、``1 of 56 ballistic wind-grid cases fell broadside (angle of attack 60 to 120 deg for more than 10 s): the landing depends on the large-angle aerodynamics, which are not validated`` の形の文を書く（モンテカルロ解析では ``Monte Carlo samples``）。
+* 警告に、``warning[IY-O536]: 1 of 56 ballistic wind-grid cases fell broadside (angle of attack 60 to 120 deg for more than 10 s): the landing depends on the large-angle aerodynamics, which are not validated`` の形の文を書く（モンテカルロ解析では ``Monte Carlo samples``）。
 * ``dispersion_meta.json`` と ``dispersion_summary.json`` の ``broadside_runs`` に、弾道落下の数を残す。
 * ``dispersion.csv`` と ``dispersion_mc.csv`` の最後の列 ``broadside_time`` に、その行の飛翔が横向きで飛んだ時間 [s] を書く。
 * 図では、その着地点に紫のひし形を重ね、見出し ``CAUTION`` の帯を描く（:ref:`sec-plots`）。
@@ -642,7 +642,7 @@ zsh などのほかのシェルを使っているときは、先に ``bash`` を
 
 高度別の風の表は ``wind.profile`` で与える。例の ``examples/wind_profile_example.csv`` は書式を示す架空の表なので、実際には当日の予報や観測の表に置き換える。
 ``profile`` では ``[wind]`` の ``speed`` と ``direction_deg`` は使われない。表の風を変えるときは、``wind.profile_mean_speed`` と ``wind.profile_mean_direction_deg`` で表全体を拡大・回転する（:ref:`sec-wind-scaling`）。
-サンプルの設定ファイルは ``speed`` と ``direction_deg`` を書いているので、以下のコマンドでは、使わないことを知らせる警告（``wind.speed is ignored for wind.model = "profile"; …``）が毎回出る。結果には影響しない。
+サンプルの設定ファイルは ``speed`` と ``direction_deg`` を書いているので、以下のコマンドでは、使わないことを知らせる警告（``warning[IY-C502]: wind.speed is ignored for wind.model = "profile"; …``）が毎回出る。結果には影響しない。
 自分の設定ファイルで ``profile`` を使うときは、``[wind]`` からこの 2 つを消しておく。
 
 すべての計算に共通の ``--set`` を配列 ``P`` に、二段開傘（:ref:`sec-dual-deploy`）の正常な開傘の 2 項目を配列 ``N`` に入れる。

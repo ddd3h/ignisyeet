@@ -328,7 +328,7 @@ Green の恒等式を外部領域に適用すると、:math:`\Phi` は表面 :ma
 行の順に組み立てた行列を列の順に読むと :math:`A^\top` になるので、:math:`A^\top` を分解し、転置した因子で :math:`A\bm x=\bm b` を解く。
 解く前に、必要な量を、このプロセスが使えるメモリの最小の値と比べる。Linux では ``/proc/meminfo`` の ``MemAvailable``、cgroup の上限（v2 の ``memory.max`` から ``memory.current`` を引いた値、v1 の ``memory.limit_in_bytes`` から ``memory.usage_in_bytes`` を引いた値）、
 アドレス空間の上限 ``RLIMIT_AS``\ （``ulimit -v``）から確保済みのアドレス空間（``/proc/self/status`` の ``VmSize``）を引いた値、macOS では物理メモリ（``sysctl hw.memsize``）である。
-超えるときは ``the panel method needs about … GB for … panels (dense matrix), more than the … GB of memory available to this process (…); use coarser panel settings (body_axial, body_circ, fin_chord, fin_span)`` のエラーで止まる（括弧内は値を取った出所）。
+超えるときは ``error[IY-A018]: the panel method needs about … GB for … panels (dense matrix), more than the … GB of memory available to this process (…); use coarser panel settings (body_axial, body_circ, fin_chord, fin_span)`` のエラーで止まる（括弧内は値を取った出所）。
 どれも得られない環境では確かめない。行列の確保も失敗をエラーとして扱い（作業領域の余裕として行列の 1/16 と 256 MB を足して先に確かめる）、
 確保できなければ ``could not allocate the dense panel matrix: about … GB for … panels; use coarser panel settings (body_axial, body_circ, fin_chord, fin_span) or free memory`` のエラーになる。
 メモリの予算 ``resources.memory_gb`` を指定したときは、それも超えてはならない（:doc:`usage` の ``[resources]``）。

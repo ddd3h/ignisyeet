@@ -310,12 +310,12 @@ STL を任意に回転・平行移動しても同じ結果になることを自�
 辺の数え方では、バウンディングボックスの対角線の :math:`10^{-7}` 倍より近い頂点を同じ点とみなし、2 つの頂点が重なってつぶれた三角形は除く。
 表面が閉じていない（穴がある、殻だけの面である）ときは、警告ではなくエラーにする。判定は次の 2 つで、どちらかに当たればエラーである。
 
-* 開いた辺が辺の 1 % を超える（``the STL surface is not closed: … open edges of … (… %): the geometry extraction needs a closed (watertight) surface; repair the mesh (close the holes) or export the rocket as a solid``）。
+* 開いた辺が辺の 1 % を超える（``error[IY-G010]: the STL surface is not closed: … open edges of … (… %): the geometry extraction needs a closed (watertight) surface; repair the mesh (close the holes) or export the rocket as a solid``）。
 * 穴の幅が、基準直径（基準半径の 2 倍）の 0.1 倍を超える。つながった開いた辺の輪を 1 つの穴とし、輪が囲む面積（ベクトル面積の大きさ）を差し渡し（輪の頂点どうしの最大距離の推定値）で割った平均の幅で判定する。
   細長い三角形が 1 枚欠けた穴は長くても幅が小さく、端面が丸ごと欠けた穴は直径の約 0.39 倍、フィンの側面が欠けた穴は直径の数割になる。
   細かいメッシュでは端面が欠けても開いた辺が 1 % に届かないことがあるので、この判定で見つける。
   メッセージは穴の差し渡しと、その基準直径（``body diameter``）に対する割合を示す
-  （``the STL surface is not closed: a hole bounded by 72 open edges is 0.100 m across (100 % of the body diameter 0.100 m): the geometry extraction needs a closed (watertight) surface; repair the mesh (close the holes) or export the rocket as a solid``。サンプルの STL から底面の 72 枚の三角形を除いた例。開いた辺は約 2 万本の辺の 0.3 % で、1 % の判定には掛からない）。
+  （``error[IY-G011]: the STL surface is not closed: a hole bounded by 72 open edges is 0.100 m across (100 % of the body diameter 0.100 m): the geometry extraction needs a closed (watertight) surface; repair the mesh (close the holes) or export the rocket as a solid``。サンプルの STL から底面の 72 枚の三角形を除いた例。開いた辺は約 2 万本の辺の 0.3 % で、1 % の判定には掛からない）。
 
 形状の抽出は閉じた表面を前提とするので、穴をふさぐか、ソリッドとして書き出し直す。
 

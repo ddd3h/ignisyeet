@@ -312,7 +312,7 @@ Mach 数の刻みは、作り方で異なる。
 * 軸対称表の誘導ロール ``cl4`` は、付随ファイルの ``fin_roll_deg`` のフィンの面を基準にした値で、フィンが 4 枚の機体（``fin_count``）にだけ使う。
   ``cl4`` を書くときは ``fin_count`` も書く。ないときは 4 枚とみなして警告を出す（``the aero table has an induced roll cl4 but no fin_count in its sidecar: the sin(4 phi) form of four fins is assumed``）。
   Magnus 力の ``cnpa`` は :math:`\hat p=pd/(2V)` についての傾き（McCoy の :math:`C_{Np\alpha}` の 2 倍）で、正の向きは :math:`\bm{u}\times\bm{e}_x` である（:eq:`eq-magnus`）。``cmpa`` は静的な圧力中心まわりの Magnus のモーメント（McCoy の :math:`C_{Mp\alpha}` の向き。:eq:`eq-magnus-moment`）である。
-* CSV の見出しは、列の名前と順序が前節の見出しと一致していなければならない（大文字小文字と前後の空白は無視する）。名前や順序が違うと、読み込みで ``unexpected CSV header`` を含むエラーにする。
+* CSV の見出しは、列の名前と順序が前節の見出しと一致していなければならない（大文字小文字と前後の空白は無視する）。名前や順序が違うと、読み込みで ``error[IY-A044]: aero table <path>: unexpected CSV header …`` のエラーにする。
 
 .. _sec-file-drag:
 

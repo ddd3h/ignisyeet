@@ -192,7 +192,7 @@ ECEF 座標での扱いの違いは :ref:`sec-ecef-gravity` で述べる。
 :math:`h` は **地上高度**\ （射点標高からの高さ :math:`z_U`、:math:`h<0` では 0 として扱う）である。
 
 基準風速 ``wind.speed`` は有限で 0 以上、風向 ``wind.direction_deg`` は有限でなければならない。設定の読み込みの検査（:ref:`sec-config-checks`）のほか、風モデルを直接作るライブラリの呼び出しでも、
-``wind.speed must be a finite number >= 0, found …`` と ``wind.direction_deg must be a finite number, found …`` のエラーにする。
+``error[IY-S039]: wind.speed must be a finite number >= 0, found …`` と ``error[IY-S040]: wind.direction_deg must be a finite number, found …`` のエラーにする。
 風の格子とモンテカルロ法がケースごとに風速と風向を与えるときも、有限でない値は ``wind speed and direction must be finite numbers, found … m/s from … deg`` のエラーにする。
 
 風速の高度分布

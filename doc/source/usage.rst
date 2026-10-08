@@ -680,11 +680,11 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
    * **キー**：TOML のキーを ``.`` でつないだもの（``wind.profile_mean_speed``、``aero.panel.body_axial``）で、ない表は作る。
    * **値**：TOML の値として読む（``15.6``、``true``、``[5.0, 10.0]``、``"monte_carlo"``）。TOML の値として読めない語は文字列とみなすので、``wind.model=profile`` に引用符はいらない。数や真偽値に読める文字列は ``'"..."'`` のように引用符で囲む。
      値の中の相対パス（``wind.profile`` など）は、ファイルの中と同じく設定ファイルのディレクトリから解釈する。
-   * **重複**：同じキーを 2 回以上指定すると、最後の値を使い、``--set wind.speed given more than once; the last value (8) is used`` の形の警告を出す（数は例）。
-   * **検査のエラー**：メッセージは ``invalid config <ファイル> with the --set overrides`` で始まる。
+   * **重複**：同じキーを 2 回以上指定すると、最後の値を使い、``warning[IY-C500]: --set wind.speed given more than once; the last value (8) is used`` の形の警告を出す（数は例）。
+   * **検査のエラー**：メッセージは ``error[IY-Cnnn]: invalid config <ファイル> with the --set overrides`` で始まる（nnn は検査の種類による）。
      型の誤りと未知のキーでは、原因の行が、その ``--set`` で始まる（``--set rocket.dry_mass=abc: invalid type: string "abc", expected f64``、``--set wind.nope=1: unknown field `nope`, expected one of …``）。
      範囲の誤りは、ファイルの場合と同じ、キーの名前を含むメッセージになる。
-   * **形の誤り**：``KEY=VALUE`` の形でない引数と、キーに空の部分がある引数は、コマンドラインの使い方の誤りとして、設定を読む前に終了ステータス 2 で止める（``error: invalid value 'wind.speed' for '--set <KEY=VALUE>': expected KEY=VALUE, got "wind.speed"``、``… invalid key "wind..speed" (expected a dotted path such as wind.speed)``）。
+   * **形の誤り**：``KEY=VALUE`` の形でない引数と、キーに空の部分がある引数は、コマンドラインの使い方の誤りとして、設定を読む前に終了ステータス 2 で止める（``error: invalid value 'wind.speed' for '--set <KEY=VALUE>': [IY-C002] expected KEY=VALUE, got "wind.speed"``、``… [IY-C001] invalid key "wind..speed" (expected a dotted path such as wind.speed)``）。
      表でない項目の下にキーを作ろうとすると ``--set …: wind.model is not a table``、TOML の整数の範囲（64 ビット符号付き）を超える整数を与えると ``--set dispersion.monte_carlo.seed=18446744073709551615: integer out of range (TOML integers are at most 9223372036854775807)`` の形のエラー（終了ステータス 1）になる。
    * **ハッシュ**：``--set`` で変えた値は設定のハッシュ（``config_hash`` と係数表のキャッシュのキー）に入る。同じ値をファイルに書いた場合と同じハッシュになる。
    * **項目の削除**：``--set`` は項目を消せない。省略した場合と同じにしたい項目（二段開傘の ``recovery.main_cd_s`` と ``main_altitude`` など）は、元の設定ファイルに書かず、必要な計算でだけ ``--set`` で加える（保安距離の手順での使い方は :ref:`sec-dispersion-safety`）。
@@ -715,7 +715,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
 1 つの出力先で同時に動かせる実行は 1 つである。
 ``geom``、``aero``、``sim``、``dispersion`` は、実行の間、出力先（``output.dir`` または ``--out``）に印のファイル ``.ignisyeet.lock``\ （中身は実行中のプロセスの番号）を置き、終わると消す。
 同じ出力先で別の実行が動いているときは、何も書かずに
-``another ignisyeet run is using runs/x (lock file runs/x/.ignisyeet.lock, pid 12345); wait for it or use a different --out (if no other run is active, delete runs/x/.ignisyeet.lock)``
+``error[IY-O031]: another ignisyeet run is using runs/x (lock file runs/x/.ignisyeet.lock, pid 12345); wait for it or use a different --out (if no other run is active, delete runs/x/.ignisyeet.lock)``
 のエラー（終了ステータス 1。パスと番号は例）で止まる。同時に計算するときは、``--out`` で出力先を分ける。
 印のファイルに書かれたプロセスがもう動いていない（前の実行が強制終了された）ときは、その印を消して実行する。
 ほかの実行が動いていないのにこのエラーが出るとき（印のプロセス番号を別のプロセスが使っている場合など）は、文の末尾にあるとおり、印のファイルを手で消す。
@@ -750,7 +750,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
    * - ``recovery.main_cd_s`` と ``recovery.main_altitude``
      - 両方を指定するか、両方とも省略する。指定するときは、どちらも有限で正
    * - ``sim.descent = "parachute"``
-     - ``recovery.enabled = true`` のときだけ（``sim.descent = "parachute" needs recovery.enabled = true``）。
+     - ``recovery.enabled = true`` のときだけ（``error[IY-C016]: sim.descent = "parachute" needs recovery.enabled = true``）。
        コマンドラインの ``sim --descent parachute`` も同じで、回収系が無効なら ``--descent parachute needs recovery.enabled = true`` のエラーにする
    * - ``aero.mach_min`` と ``aero.mach_max``
      - ``mach_min`` は 0 以上、``mach_max`` は ``mach_min`` より大きい
@@ -772,14 +772,14 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
    * - ``wind.exponent``、``wind.roughness_length``、``wind.ground_blend_height``
      - 正。そのモデルが使う項目だけを検査する（``exponent`` は ``power``、``roughness_length`` は ``log``、``ground_blend_height`` は ``power`` と ``log``）。使わないモデルでは、どの値でもエラーにしない
    * - ``wind.profile_mean_speed`` / ``wind.profile_mean_direction_deg``
-     - ``model = "profile"`` のときだけ指定できる（ほかのモデルでは ``wind.profile_mean_speed only applies to wind.model = "profile" (the model is "power"); set wind.speed / wind.direction_deg instead`` の形のエラー）。
-       ``profile_mean_speed`` は有限で 0 以上（``wind.profile_mean_speed must be a finite number >= 0, found …``）、``profile_mean_direction_deg`` は 0 以上 360 以下（``wind.profile_mean_direction_deg must be between 0 and 360, found …``）
+     - ``model = "profile"`` のときだけ指定できる（ほかのモデルでは ``error[IY-C056]: wind.profile_mean_speed only applies to wind.model = "profile" (the model is "power"); set wind.speed / wind.direction_deg instead`` の形のエラー）。
+       ``profile_mean_speed`` は有限で 0 以上（``error[IY-C057]: wind.profile_mean_speed must be a finite number >= 0, found …``）、``profile_mean_direction_deg`` は 0 以上 360 以下（``error[IY-C058]: wind.profile_mean_direction_deg must be between 0 and 360, found …``）
    * - ``wind.roughness_length``\ （``model = "log"``）
      - ``wind.ref_height`` の半分より小さい
    * - ``sim.dt``、``sim.max_time``、``sim.output_interval``、``sim.rtol``、``sim.atol``
      - 正
    * - ``sim.dt``
-     - 10\ :sup:`-5` s 以上 0.05 s 以下（0.002 s が標準）。小さすぎると ``sim.dt = … s is too small (>= 1e-5 s): the run would take days; 0.002 s is typical`` のエラー。
+     - 10\ :sup:`-5` s 以上 0.05 s 以下（0.002 s が標準）。小さすぎると ``error[IY-C026]: sim.dt = … s is too small (>= 1e-5 s): the run would take days; 0.002 s is typical`` のエラー。
        ``integrator = "rk4"`` では、さらに ``sim.max_time / sim.dt`` が 10\ :sup:`8` 以下（超えると ``sim.max_time / sim.dt = 3.600e8 steps is too many (at most 1e8): increase sim.dt or reduce sim.max_time``）。``rk45`` と ``dop853`` は ``dt`` で刻まないので、この 2 つの検査はしない
    * - ``sim.rtol``、``sim.atol``
      - 10\ :sup:`-3` 以下（10\ :sup:`-8` が標準）
@@ -796,7 +796,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
    * - 風の格子のケース数（``wind_speeds`` の数 × ``directions``）
      - 100000 以下（降下モードを数えない）
    * - ``dispersion.monte_carlo.samples``
-     - 1 以上 10\ :sup:`6` 以下（0 は ``dispersion.monte_carlo.samples must be at least 1``）
+     - 1 以上 10\ :sup:`6` 以下（0 は ``error[IY-C045]: dispersion.monte_carlo.samples must be at least 1``）
    * - ``dispersion.monte_carlo.truncate_sigma``
      - 指定するときは有限で正
    * - ``rocket.fin_override.thickness``
@@ -828,7 +828,7 @@ STL の表面が閉じていない（開いた辺が辺の 1 % を超えるか�
 全長と乾燥重心の検査のエラーでは、形状の抽出の警告（:ref:`sec-geometry-warnings`）を、メッセージの後に 1 行ずつ ``geometry warning: …`` の形で続ける。
 検査に掛かった原因（STL の欠陥や尺度の誤り）が、警告に出ていることが多いからである。
 
-積分が発散して状態に有限でない値が現れたときも、エラーにする（``integration diverged at t = … s; reduce sim.dt or tighten rtol/atol, or check the aero table and mass properties``。:ref:`sec-integrators`）。外部の係数表や質量特性の誤りでも発散するので、メッセージはそれらの確認も促す。
+積分が発散して状態に有限でない値が現れたときも、エラーにする（``error[IY-S081]: integration diverged at t = … s; reduce sim.dt or tighten rtol/atol, or check the aero table and mass properties``。:ref:`sec-integrators`）。外部の係数表や質量特性の誤りでも発散するので、メッセージはそれらの確認も促す。
 値が有限でも、速さが 8 km/s を超えるか高さが 1000 km を超えたときは、発散とみなして同じ形のエラーにする。
 モンテカルロ解析では、そのサンプルを失敗として数える。風の格子では、そのケースだけを失敗として記録し、ほかのケースの計算は続ける（:ref:`sec-wind-grid-failed`）。
 
@@ -861,23 +861,23 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 * 風のモデルが ``profile`` で、表の最下行が地上 0 m より上にある（``the wind profile starts at … m: the wind below is held at the lowest row``）。
 * 風のモデルが ``profile`` なのに、設定ファイル（または ``--set``）に ``wind.speed`` や ``wind.direction_deg`` が書いてある。``profile`` ではこれらを使わない（:ref:`sec-wind-scaling`）。
 
-  * 文は ``wind.speed is ignored for wind.model = "profile"; use wind.profile_mean_speed to scale the profile`` と ``wind.direction_deg is ignored for wind.model = "profile"; use wind.profile_mean_direction_deg to rotate the profile`` である。
+  * 文は ``warning[IY-C502]: wind.speed is ignored for wind.model = "profile"; use wind.profile_mean_speed to scale the profile`` と ``warning[IY-C503]: wind.direction_deg is ignored for wind.model = "profile"; use wind.profile_mean_direction_deg to rotate the profile`` である。
   * 書いていない（既定値のままの）ときは出さない。
   * 設定の読み込み時に表示する警告で、``summary.json`` などの ``warnings`` の先頭にも入る。
 
-* 同じキーの ``--set`` を 2 回以上指定した（``--set wind.speed given more than once; the last value (8) is used`` の形。:ref:`sec-cli-overrides`）。設定の読み込み時に表示し、``warnings`` の先頭にも入る。
+* 同じキーの ``--set`` を 2 回以上指定した（``warning[IY-C500]: --set wind.speed given more than once; the last value (8) is used`` の形。:ref:`sec-cli-overrides`）。設定の読み込み時に表示し、``warnings`` の先頭にも入る。
 * 風のモデルが ``profile`` の風の格子またはモンテカルロ解析で、表の拡大率 :math:`k`\ （:ref:`sec-wind-scaling`）が 3 を超えるか 1/3 を下回るケースがある。最も極端なケースの拡大率と、表の風速の最大値を拡大した値を示す（``wind profile scaled by a factor of … (wind grid … m/s vs profile mean … m/s): winds aloft up to … m/s``。倍率は、3 を超えるときは小数 1 桁、1/3 を下回るときは小数 2 桁を基本とし、下の規則でしきい値の外と読める桁数にする。モンテカルロ解析では ``wind grid`` が ``Monte Carlo sample`` になる）。
 * パラシュート降下が着地した飛翔（``sim`` と、``dispersion`` の公称の飛翔）で、開傘しないまま着地した（``parachute descent landed at … m/s: the parachute did not deploy before landing (recovery.delay = … s)``）か、着地速度が 15 m/s を超える（``… which is above 15 m/s: check recovery.cd_s``）。
 * パラシュート降下の飛翔（``sim`` と、``dispersion`` の公称の飛翔。着地しなかった飛翔も含む）で、パラシュートが開いたときの対気速度が 50 m/s を超えるか、動圧が 2 kPa を超える。
 
-  * 文は ``the parachute opens at 129 m/s (q = 7.2 kPa): a canopy is unlikely to survive; the landing point assumes it does - check recovery.delay`` の形である（数は例）。
+  * 文は ``warning[IY-O518]: the parachute opens at 129 m/s (q = 7.2 kPa): a canopy is unlikely to survive; the landing point assumes it does - check recovery.delay`` の形である（数は例）。
   * 一般の模型ロケットのパラシュートは頂点付近での開傘（動圧は数百 Pa）を前提に作られているので、この速さでは壊れるおそれがある。着地点はパラシュートが壊れないものとして計算している。
   * 二段開傘では ``the parachute`` の代わりに ``the drogue`` と ``the main`` について判定し、メインの文の末尾は ``check recovery.main_altitude`` である。
   * 開傘時の対気速度と動圧は ``summary.json`` に残る（:ref:`sec-file-summary`）。
 
 * ``sim.max_time`` までに着地しない。
-* 弾道落下が横向きに落ちた（頂点のあと全迎角 60° から 120° の間で 10 s を超えて飛んだ。``the ballistic descent fell broadside (angle of attack 60 to 120 deg for 146 s): the landing depends on the large-angle aerodynamics, which are not validated``。数は例）。
-  ``dispersion`` では、横向きに落ちた弾道落下のケースやサンプルの数を ``1 of 56 ballistic wind-grid cases fell broadside (angle of attack 60 to 120 deg for more than 10 s): the landing depends on the large-angle aerodynamics, which are not validated`` の形（モンテカルロ解析では ``Monte Carlo samples``）で示す。
+* 弾道落下が横向きに落ちた（頂点のあと全迎角 60° から 120° の間で 10 s を超えて飛んだ。``warning[IY-O509]: the ballistic descent fell broadside (angle of attack 60 to 120 deg for 146 s): the landing depends on the large-angle aerodynamics, which are not validated``。数は例）。
+  ``dispersion`` では、横向きに落ちた弾道落下のケースやサンプルの数を ``warning[IY-O536]: 1 of 56 ballistic wind-grid cases fell broadside (angle of attack 60 to 120 deg for more than 10 s): the landing depends on the large-angle aerodynamics, which are not validated`` の形（モンテカルロ解析では ``Monte Carlo samples``）で示す。
   着地点は検証していない大迎角の空力係数で決まる（:ref:`sec-lim-aero`）。結果を使えないものとはせず、終了ステータスは変えない。
 * パラシュート降下で、頂点 + ``recovery.delay`` にモータがまだ燃えていて、開傘を推力の終わりまで遅らせた（``the motor still burns at apogee + recovery.delay (t = 11.25 s, thrust 42.0 N): the parachute deployment is delayed to burnout at 12.50 s``。数は例。二段開傘では ``the drogue deployment``。:ref:`sec-parachute`）。
 * 二段開傘で、メインの開傘高度 ``recovery.main_altitude`` が頂点の高度以上である（``recovery.main_altitude = … m is above the apogee (… m): the main opens together with the drogue``）。
@@ -889,8 +889,8 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 * モータの推力曲線の疑わしい点。最後の点が 0 N でない（``thrust curve ends at … N instead of 0 N: the motor is cut off abruptly``）、点が 1 つだけ（``the thrust curve has a single point: the thrust ramps linearly from 0 N at t = 0``）、燃焼時間が 0.05 s より短い（``burn time … s is shorter than 0.05 s: the motor is an impulse; check the time column``）。
 * 係数表の格子が粗い。
 
-  * Mach 数の刻みが 0.1 を超える（``aero.mach_step = … is coarse (> 0.1): the coefficients are interpolated linearly between the Mach rows, which smooths over the transonic drag rise and shifts the apogee (0.02 is typical)``。部品積み上げ法の一般表では ``aero.general_mach_step``）。
-  * 迎角の刻みが 5° を超える（``aero.alpha_step_deg = … is coarse (> 5 deg): the normal force and centre of pressure are interpolated linearly between the rows (1 deg is typical)``）。
+  * Mach 数の刻みが 0.1 を超える（``warning[IY-O500]: aero.mach_step = … is coarse (> 0.1): the coefficients are interpolated linearly between the Mach rows, which smooths over the transonic drag rise and shifts the apogee (0.02 is typical)``。部品積み上げ法の一般表では ``aero.general_mach_step``）。
+  * 迎角の刻みが 5° を超える（``warning[IY-O501]: aero.alpha_step_deg = … is coarse (> 5 deg): the normal force and centre of pressure are interpolated linearly between the rows (1 deg is typical)``）。
 
   ``aero``、``sim``、``dispersion`` で表示する。外部の係数表（``method = "table"``）は、表そのものの格子なので対象外である。
 * 外部の係数表（``method = "table"``）が遅れと Magnus の列（``lag_l0``、``lag_l1``、``cl4``、``cnpa``。一般表では ``cl4`` を除く 3 列）を持たない古い形式である。
@@ -901,11 +901,11 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 * モンテカルロ解析で、``magnus_scale`` が正なのに表に Magnus の値（``cnpa``、``cmpa``）がない（``dispersion.monte_carlo.magnus_scale = … has no effect: the aero table has no Magnus slopes (cnpa = cmpa = 0; no built-in method estimates them, supply them in an external table)``）、
   または ``lag_scale`` が正なのに遅れの和がない（``dispersion.monte_carlo.lag_scale = … has no effect: the aero table has no lag sums (lag_l0 = lag_l1 = 0)``）。
 * トリムの強制（乾燥重心の横ずれ、推力線の傾きかオフセット、迎角 0 のモーメントを持つ一般表）がある飛翔（``sim`` と、``dispersion`` の公称の飛翔）で、上昇中にロール角速度が共振のロール角速度を横切った
-  （``roll resonance: the roll rate crosses the resonance rate of the pitch oscillation (10.2 rad/s) at t = 0.61 s, Mach 0.36; the lateral CG offset, thrust misalignment or asymmetric aero moment can amplify the angle of attack there``。
+  （``warning[IY-O510]: roll resonance: the roll rate crosses the resonance rate of the pitch oscillation (10.2 rad/s) at t = 0.61 s, Mach 0.36; the lateral CG offset, thrust misalignment or asymmetric aero moment can amplify the angle of attack there``。
   数はサンプルにカント 1° と乾燥重心の横ずれ 1 mm を与えた例。2 回以上横切ったときは ``(2 crossings)`` の形で回数を添える）。
   対称なカントはロールを起こすだけで、トリムの強制ではない。
   結果パネルにも ``roll resonance`` の行が出る。終了ステータスは変えない（:ref:`sec-roll-resonance`）。
-* 外部の係数表（``method = "table"``）で、迎角 0 の軸力係数 ``ca_on`` または ``ca_off`` が負である（``aero table: ca_off at Mach …, alpha 0 is … (negative axial force / thrust-like drag)``）。列ごとに、最初の Mach 数を示す。
+* 外部の係数表（``method = "table"``）で、迎角 0 の軸力係数 ``ca_on`` または ``ca_off`` が負である（``warning[IY-A501]: aero table: ca_off at Mach …, alpha 0 is … (negative axial force / thrust-like drag)``）。列ごとに、最初の Mach 数を示す。
 * ``dispersion`` で、静的に不安定なケースまたはサンプル、静的な安定を判定できないケースまたはサンプルがある。降下モードごとに数と最小の静安定余裕（判定できないものは数と最初の理由）を示す（:ref:`sec-dispersion-unstable`）。
 * モンテカルロ解析で、着地したサンプルが 30 未満の降下モードがある（``only … landed samples: the statistics are rough``）。
 * ``dispersion`` の風の格子で、積分がエラーで止まったケースがある。最初の 3 ケースをエラーの文とともに表示し、残りは数だけを表示する（:ref:`sec-wind-grid-failed`）。
@@ -943,10 +943,10 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 静的に不安定とは、静安定余裕の最小値が 0 cal 未満のことである。
 最小値は、自由飛行中の最小値とランチャ離脱時の値の小さいほうで、結果パネルの ``min margin`` と同じである（:ref:`sec-config-checks`）。
 余裕は迎角 0 の極限の小迎角の余裕で（:ref:`sec-static-margin-general`）、``trajectory.csv`` の ``stability_cal``\ （その状態の迎角での表示）が負になっても、それだけでは不安定としない。
-``sim`` は、着地したかどうかにかかわらず、不安定なら終了ステータス 3 で終わり、標準エラー出力に ``RESULTS NOT USABLE: the rocket is statically UNSTABLE (min static margin -0.23 cal at t = 1.00 s, Mach 0.30)`` の形の行を書く（数は例。最小の余裕をとった時刻と Mach 数を添える）。
+``sim`` は、着地したかどうかにかかわらず、不安定なら終了ステータス 3 で終わり、標準エラー出力に ``RESULTS NOT USABLE: [IY-O020] the rocket is statically UNSTABLE (min static margin -0.23 cal at t = 1.00 s, Mach 0.30)`` の形の行を書く（数は例。最小の余裕をとった時刻と Mach 数を添える）。
 ``dispersion`` は、公称の飛翔（設定した風での弾道落下）が不安定なときに、風の格子でもモンテカルロ法でも、出力を書いたうえで終了ステータス 3 で終わる。
 公称の飛翔が安定でも、風の格子のケースやモンテカルロのサンプルに静的に不安定なものがあれば、同じく終了ステータス 3 で終わり、
-``RESULTS NOT USABLE: N of M Monte Carlo samples (ballistic) are statically UNSTABLE (min static margin down to X cal): …`` の形の行を書く（風の格子では ``wind-grid cases``）。
+``RESULTS NOT USABLE: [IY-O025] N of M Monte Carlo samples (ballistic) are statically UNSTABLE (min static margin down to X cal): …`` の形の行を書く（風の格子では ``wind-grid cases``）。
 不安定なケースとサンプルは、降下モードごとに数え、統計には入れたままにする（:ref:`sec-dispersion-unstable`）。
 ``summary.json``、``dispersion_meta.json``、``dispersion_summary.json`` の ``stable`` と ``static_margin_min_cal`` に、公称の飛翔の判定に使った値を残す。
 ``dispersion_meta.json`` と ``dispersion_summary.json`` の ``unstable`` と ``unstable_min_static_margin_cal`` には、降下モードごとの不安定なケースの数と最小の余裕を残す（:ref:`sec-file-summary`、:ref:`sec-file-dispersion`）。
@@ -955,9 +955,9 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 静的な安定は、安定・不安定・判定できない、の 3 通りである。
 ある面の法線力の傾きが 0 か、横流れと同じ向きの力（物理的でない符号）と復元するモーメントの組合せで余裕を cal で表せないとき、その面の余裕は求まらない（一般表の各面と、軸対称表の :math:`C_{N\alpha}`。:ref:`sec-static-margin-general`）。
 求まった余裕に負のものがあれば不安定とし、そうでなく求まらない余裕があれば「判定できない」とする。どの時刻でも余裕を求めなかった飛翔（ランチャを離れなかった飛翔。ランチャを離れれば、離脱時の値は対気速度によらず求める）も判定できない。
-``sim`` は、判定できないとき ``RESULTS NOT USABLE: static stability could not be evaluated (at t = 0.50 s: the yaw normal-force slope dCy/dbeta is zero at Mach 0.10)`` の形の行（括弧内は理由の例）を書いて終了ステータス 3 で終わる。
+``sim`` は、判定できないとき ``RESULTS NOT USABLE: [IY-O021] static stability could not be evaluated (at t = 0.50 s: the yaw normal-force slope dCy/dbeta is zero at Mach 0.10)`` の形の行（括弧内は理由の例）を書いて終了ステータス 3 で終わる。
 ``summary.json`` の ``stable`` は ``null`` になり、``stability_unknown`` に理由を書く。
-``dispersion`` では、公称の飛翔が判定できないときに同じ行を書き、判定できないケースやサンプルがあると ``RESULTS NOT USABLE: 1 of 3 wind-grid cases (ballistic): static stability could not be evaluated (first: …)`` の形の行を書く。
+``dispersion`` では、公称の飛翔が判定できないときに同じ行を書き、判定できないケースやサンプルがあると ``RESULTS NOT USABLE: [IY-O026] 1 of 3 wind-grid cases (ballistic): static stability could not be evaluated (first: …)`` の形の行を書く。
 不安定なケースと判定できないケースが両方あるときは、両方の節を ``;`` でつなぐ。
 判定できないケースとサンプルの数は、降下モードごとに ``stability_unknown_runs`` に残す（:ref:`sec-file-dispersion`）。
 
@@ -971,7 +971,7 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 係数表の Mach 数の範囲を超えた引き出しも、結果を使えないものとする。Mach 数は外挿せず、表の端の値で一定とするので（:ref:`sec-aero-interp`）、表が飛翔の Mach 数より手前で終わると、上昇全体の抗力と安定が変わる。
 ``sim`` と ``dispersion`` は、そのような引き出しが 1 回でもあれば、``RESULTS NOT USABLE: 4426 of 53877 lookups beyond the aero table's Mach range (max Mach 1.53 > mach_max 1.20): coefficients are held at the edge; build the table up to at least Mach 1.6`` の形の行を書いて終了ステータス 3 で終わる。
 これは、サンプルを ``aero.mach_max = 1.2`` にしたときの ``sim`` の表示である。末尾の Mach 数は、要求された最大の Mach 数を 0.1 単位で切り上げた値である。
-表の最小の Mach 数より小さい引き出し（外部の表が Mach 0 から始まらないとき）では、``RESULTS NOT USABLE: … lookups below the aero table's Mach range (first Mach …): coefficients are held at the edge; build the table down to Mach 0`` の形になる。
+表の最小の Mach 数より小さい引き出し（外部の表が Mach 0 から始まらないとき）では、``RESULTS NOT USABLE: [IY-O023] … lookups below the aero table's Mach range (first Mach …): coefficients are held at the edge; build the table down to Mach 0`` の形になる。
 このとき ``aero_table_range`` の ``machs_in_range`` が ``false`` になる（:ref:`sec-file-summary`）。迎角の範囲外と重なったときは、両方の文を ``;`` でつなぐ。
 書く行は 1 つで、理由が重なったときは、（公称の）飛翔が不安定か判定できないこと、迎角の範囲外、ケースやサンプルの不安定と判定できないこと、着地しなかったことの順に優先する。
 
@@ -1027,7 +1027,7 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 * パネル法は、密行列に必要な量（パネル数 :math:`n` に対して :math:`8n^2+64n` バイト。行列は 1 つで、その場で LU 分解する）が予算を超えると、計算を始める前にエラーで止まる。
   見積もりは、桁あふれしないように上限で頭打ちにするので、パネル数がどれほど大きくても比べられる。
 * 予算にかかわらず、必要な量がこのプロセスの使えるメモリ（Linux の ``MemAvailable``、cgroup の上限、``ulimit -v`` の上限の最小。macOS では物理メモリ）を超えるときも、同じく計算の前にエラーで止まる
-  （``the panel method needs about … GB for … panels (dense matrix), more than the … GB of memory available to this process (…)``。括弧内は値の出所）。パネルの設定を粗くする。どれも読めない環境では確かめない（:doc:`panel`）。
+  （``error[IY-A018]: the panel method needs about … GB for … panels (dense matrix), more than the … GB of memory available to this process (…)``。括弧内は値の出所）。パネルの設定を粗くする。どれも読めない環境では確かめない（:doc:`panel`）。
 * CFD は、予算に収まるよう同時実行ケース数を減らす。``memory_gb = 0`` のときの予算は、このプロセスが使えるメモリである。
   1 ケースの見積もりが予算を超えるときは、メッシュを作ったあと、計算の前にエラーで止まる（:ref:`メモリの予算 <sec-cfd-resources>`）。
 
@@ -1653,7 +1653,7 @@ CFD の準備は ``ignisyeet cfd-check 設定ファイル [--mesh]`` で確か�
      - 相対。ピッチ・ヨーの減衰の和（減衰のモーメントと回転による法線力）。``cn_scale`` の倍率に重ねて掛ける。見かけの質量の項には掛からない。危険区域の計算には 0.1 を勧める（:ref:`sec-quasi-steady`）
    * - ``truncate_sigma``
      - なし
-     - 指定すると、引いたすべての標準正規乱数 :math:`z` を :math:`[-k,k]`\ （:math:`k` はこの値）に切ってから標準偏差を掛ける。有限で正（``dispersion.monte_carlo.truncate_sigma must be a finite number > 0 (the bound of the clipped draws in sigma, e.g. 3.0), found …``）。省略すると切らない正規分布（:ref:`sec-mc`）
+     - 指定すると、引いたすべての標準正規乱数 :math:`z` を :math:`[-k,k]`\ （:math:`k` はこの値）に切ってから標準偏差を掛ける。有限で正（``error[IY-C032]: dispersion.monte_carlo.truncate_sigma must be a finite number > 0 (the bound of the clipped draws in sigma, e.g. 3.0), found …``）。省略すると切らない正規分布（:ref:`sec-mc`）
 
 ``truncate_sigma`` の前の 9 項目（``thrust_misalignment_deg`` から ``cmq_scale``）は既定で無効である。標準偏差は有限で 0 以上でなければならない（負、``nan``、``inf`` はエラー）。
 乱数は、ロールと非対称の 6 項目を最初の 11 項目のあとに、空力の 3 項目（``lag_scale``、``magnus_scale``、``cmq_scale``）をさらにそのあとの最後に引く。

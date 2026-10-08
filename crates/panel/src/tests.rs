@@ -324,16 +324,16 @@ fn memory_estimate_and_check() {
     assert!(check_memory(1000, None).is_ok());
     assert!(check_memory(1000, Some(17_000_000)).is_ok());
     let e = check_memory(20_000, Some(1_000_000_000)).unwrap_err().to_string();
-    assert!(e.contains("coarser") && e.contains("resources.memory_gb"), "{e}");
+    assert!(e.contains("coarser") && e.contains("resources.memory_gb") && e.starts_with("[IY-A019] "), "{e}");
     // Without a budget, a solve larger than the available memory (10^7 panels: 1.6 PB) fails cleanly.
     if std::path::Path::new("/proc/meminfo").exists() {
         let e = check_memory(10_000_000, None).unwrap_err().to_string();
-        assert!(e.contains("memory available to this process"), "{e}");
+        assert!(e.contains("memory available to this process") && e.starts_with("[IY-A018] "), "{e}");
     }
     // The available memory applies with a budget too, and the error names its source.
     let a = memory::Available { bytes: 1_000_000, source: "cgroup memory.max minus memory.current".into() };
     let e = check_memory_with(1000, Some(1 << 40), Some(a.clone())).unwrap_err().to_string();
-    assert!(e.contains("0.01 GB for 1000 panels") && e.contains("cgroup memory.max"), "{e}");
+    assert!(e.starts_with("[IY-A018] ") && e.contains("0.01 GB for 1000 panels") && e.contains("cgroup memory.max"), "{e}");
     assert!(check_memory_with(100, None, Some(a)).is_ok());
     assert!(check_memory_with(1000, None, None).is_ok());
 }
@@ -342,7 +342,7 @@ fn memory_estimate_and_check() {
 #[test]
 fn dense_allocation_failure_is_an_error() {
     let e = solver::reserve_dense(1 << 31).unwrap_err().to_string();
-    assert!(e.contains("could not allocate the dense panel matrix") && e.contains("2147483648 panels"), "{e}");
+    assert!(e.starts_with("[IY-A020] could not allocate the dense panel matrix") && e.contains("2147483648 panels"), "{e}");
     assert_eq!(solver::reserve_dense(10).unwrap().len(), 100);
 }
 
@@ -470,6 +470,7 @@ fn panel_options_are_validated() {
     for (o, key) in bad {
         let e = o.validate().unwrap_err().to_string();
         assert!(e.contains(&format!("aero.panel.{key}")), "{key}: {e}");
+        assert!(e.starts_with("[IY-A01"), "{key}: {e}");
     }
     assert!(PanelOptions { transonic: [0.7, 1.2], ..ok.clone() }.validate().is_ok());
     // build_table reports the error instead of panicking in the sort

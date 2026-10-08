@@ -9,7 +9,7 @@ use std::path::Path;
 pub type Triangle = [Vec3; 3];
 
 pub fn read_stl(path: &Path) -> Result<Vec<Triangle>> {
-    let bytes = std::fs::read(path).with_context(|| format!("cannot read STL {}", path.display()))?;
+    let bytes = std::fs::read(path).with_context(|| format!("[IY-G001] cannot read STL {}", path.display()))?;
     parse_stl(&bytes).with_context(|| format!("cannot parse STL {}", path.display()))
 }
 
@@ -29,15 +29,15 @@ pub fn parse_stl(bytes: &[u8]) -> Result<Vec<Triangle>> {
     } else if bytes.len() >= 84 {
         let n = u32::from_le_bytes(bytes[80..84].try_into().unwrap()) as usize;
         bail!(
-            "binary STL declares {n} triangles (needs {} bytes) but the file has {} bytes: the file is truncated or corrupt",
+            "[IY-G002] binary STL declares {n} triangles (needs {} bytes) but the file has {} bytes: the file is truncated or corrupt",
             84usize.saturating_add(50usize.saturating_mul(n)),
             bytes.len()
         )
     } else {
-        bail!("unrecognised STL format")
+        bail!("[IY-G003] unrecognised STL format")
     };
     if tris.is_empty() {
-        bail!("STL contains no triangles");
+        bail!("[IY-G004] STL contains no triangles");
     }
     check_finite(&tris)?;
     Ok(tris)
@@ -46,7 +46,7 @@ pub fn parse_stl(bytes: &[u8]) -> Result<Vec<Triangle>> {
 fn check_finite(tris: &[Triangle]) -> Result<()> {
     for (i, t) in tris.iter().enumerate() {
         if t.iter().any(|v| !(v.x.is_finite() && v.y.is_finite() && v.z.is_finite())) {
-            bail!("triangle {i} has a non-finite (NaN or infinite) vertex coordinate");
+            bail!("[IY-G005] triangle {i} has a non-finite (NaN or infinite) vertex coordinate");
         }
     }
     Ok(())
@@ -65,15 +65,16 @@ fn parse_binary(bytes: &[u8]) -> Result<Vec<Triangle>> {
 }
 
 fn parse_ascii(bytes: &[u8]) -> Result<Vec<Triangle>> {
-    let text = std::str::from_utf8(bytes).context("ASCII STL is not valid UTF-8")?;
+    let text = std::str::from_utf8(bytes).context("[IY-G007] ASCII STL is not valid UTF-8")?;
     let mut tris = Vec::new();
     let mut cur: Vec<Vec3> = Vec::with_capacity(3);
     for line in text.lines() {
         let mut it = line.split_whitespace();
         if it.next() == Some("vertex") {
-            let c: Vec<f64> = it.take(3).map(|s| s.parse::<f64>()).collect::<Result<_, _>>()?;
+            let c: Vec<f64> =
+                it.take(3).map(|s| s.parse::<f64>()).collect::<Result<_, _>>().with_context(|| format!("[IY-G008] invalid number in vertex line: {line}"))?;
             if c.len() != 3 {
-                bail!("malformed vertex line: {line}");
+                bail!("[IY-G006] malformed vertex line: {line}");
             }
             cur.push(Vec3::new(c[0], c[1], c[2]));
             if cur.len() == 3 {
@@ -101,7 +102,7 @@ pub fn write_stl_binary(path: &Path, tris: &[Triangle]) -> Result<()> {
         }
         out.extend_from_slice(&[0, 0]);
     }
-    std::fs::write(path, out).with_context(|| format!("cannot write STL {}", path.display()))
+    std::fs::write(path, out).with_context(|| format!("[IY-G009] cannot write STL {}", path.display()))
 }
 
 #[cfg(test)]
@@ -154,7 +155,27 @@ mod tests {
         b.extend_from_slice(&3u32.to_le_bytes());
         b.extend(vec![0u8; 50 * 2 + 7]);
         let e = parse_stl(&b).unwrap_err().to_string();
-        assert!(e.contains("declares 3 triangles (needs 234 bytes) but the file has 191 bytes") && e.contains("truncated or corrupt"), "{e}");
+        assert!(
+            e.starts_with("[IY-G002] ")
+                && e.contains("declares 3 triangles (needs 234 bytes) but the file has 191 bytes")
+                && e.contains("truncated or corrupt"),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn every_stl_error_carries_one_code() {
+        let once = |e: anyhow::Error, code: &str| {
+            let t = format!("{e:#}");
+            assert!(t.contains(code) && t.matches("IY-").count() == 1, "{code}: {t}");
+        };
+        once(read_stl(Path::new("/nonexistent/ignisyeet_no_such.stl")).unwrap_err(), "[IY-G001]");
+        once(parse_stl(b"").unwrap_err(), "[IY-G003]");
+        once(parse_stl(b"solid x\nendsolid x\n").unwrap_err(), "[IY-G004]");
+        once(parse_stl(b"solid x\nvertex 1 2\nendsolid x\n").unwrap_err(), "[IY-G006]");
+        once(parse_stl(b"solid x\nvertex 1 2 abc\nendsolid x\n").unwrap_err(), "[IY-G008]");
+        let td = TempDir::new("stl_write_err");
+        once(write_stl_binary(&td.join("no_such_dir").join("a.stl"), &[]).unwrap_err(), "[IY-G009]");
     }
 
     #[test]
@@ -163,6 +184,6 @@ mod tests {
         let p = td.join("ignisyeet_stl_garbage_test.stl");
         std::fs::write(&p, b"garbage").unwrap();
         let e = format!("{:#}", read_stl(&p).unwrap_err());
-        assert!(e.contains("ignisyeet_stl_garbage_test.stl") && e.contains("unrecognised"), "{e}");
+        assert!(e.contains("ignisyeet_stl_garbage_test.stl") && e.contains("[IY-G003] unrecognised") && e.matches("IY-").count() == 1, "{e}");
     }
 }

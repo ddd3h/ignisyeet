@@ -1353,6 +1353,15 @@ fn cfd_plan_line(plan: &cfd::RunPlan) -> String {
     )
 }
 
+/// Number of SU2 cases the run solves: the case list of the options after the run's own resolution (RANS solves the
+/// -alpha cases instead of mirroring them). If the geometry cannot be built, the unresolved count is the fallback.
+fn cfd_case_count(cfg: &Config, opt: &cfd::CfdOptions) -> usize {
+    match geometry(cfg) {
+        Ok(g) => cfd::case::case_list(&cfd::resolve_options(&g, opt)).len(),
+        Err(_) => cfd::case::case_list(opt).len(),
+    }
+}
+
 /// `cfd-check`: report the CFD tools and their versions; with `mesh`, also build the volume mesh.
 fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
     let opt = &cfg.aero.cfd;
@@ -1378,7 +1387,7 @@ fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
         println!("  warning: {w}");
     }
     if r.ready(opt) {
-        let n = cfd::case::case_list(opt).len();
+        let n = cfd_case_count(cfg, opt);
         if opt.surface_is_user_shape() && matches!(opt.shape_symmetry, None | Some(cfd::config::ShapeSymmetry::Auto)) {
             // The mirror symmetry of an STL or STEP shape is only known after its check (`--mesh`); without it the count
             // is the full-domain upper bound.
@@ -1427,7 +1436,7 @@ fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
             println!("CAD surface (surface = \"step\", base treatment: {}):", info.base_treatment);
             println!("{}", info.summary());
         }
-        let plan = cfd::plan_resources_mesh(&opt, &budget, s.cells, s.nodes, cfd::case::case_list(&opt).len());
+        let plan = cfd::plan_resources_mesh(&opt, &budget, s.cells, s.nodes, cfd_case_count(cfg, &opt));
         println!("{}", cfd_plan_line(&plan));
         for n in &plan.notes {
             println!("  note: {n}");
@@ -2557,6 +2566,18 @@ thrust_misalignment_y_deg,thrust_misalignment_z_deg,thrust_offset_y,thrust_offse
 mod tests {
     use super::*;
     use crate::test_tmp::TempDir;
+
+    #[test]
+    fn cfd_check_counts_the_cases_the_rans_run_solves() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples");
+        let text = include_str!("../../../examples/sample_rans.toml");
+        let cfg = Config::from_value(toml::from_str(text).unwrap(), Some(&dir)).unwrap();
+        assert!(geometry(&cfg).is_ok());
+        let opt = &cfg.aero.cfd;
+        let n = cfd_case_count(&cfg, opt);
+        assert_eq!(n, 20);
+        assert!(cfd::case::case_list(opt).len() < n, "the unresolved list still mirrors z");
+    }
 
     #[test]
     fn makefile_reads_indented_and_quoted_output_dirs() {

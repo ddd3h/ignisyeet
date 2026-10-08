@@ -1,0 +1,46 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+% alpha_mode: how mirror, offset and single treat the alpha = 0 offset c0 of a computed normal force.
+\begin{tikzpicture}[
+  font=\footnotesize,
+  ax/.style={->, thick, cink2},
+  ln/.style={cblue, thick},
+  dot/.style={circle, fill=cblue, inner sep=1.6pt},
+  odot/.style={circle, fill=corange, inner sep=1.6pt},
+  lab/.style={font=\scriptsize, cink2}]
+  % common curve: f(a) = 0.45 a + 0.5 (odd part 0.45 a, offset c0 = 0.5), a in [-2.4, 2.4]
+  \foreach \i/\name/\xs in {0/mirror/0, 1/offset/6.2, 2/single/12.4}{
+    \begin{scope}[xshift=\xs cm]
+      \draw[ax] (-2.7,0) -- (2.9,0) node[right, lab] {$\alpha$};
+      \draw[ax] (0,-1.5) -- (0,2.4) node[above, lab] {$C_N$};
+      \draw[ln, dash pattern=on 3pt off 2pt] (-2.4,-0.58) -- (2.4,1.58);
+      \draw[cgrid, dashed] (-2.4,0.5) -- (2.4,0.5);
+      \node[lab, anchor=east] at (-2.45,0.62) {$c_0$};
+    \end{scope}
+  }
+  % (a) mirror
+  \node[font=\small\bfseries] at (0,-2.0) {(a) \texttt{mirror}};
+  \node[dot] at (-1.8,-0.31) {};
+  \node[dot] at (1.8,1.31) {};
+  \node[lab, anchor=north east] at (-1.8,-0.4) {$f(-\alpha)$};
+  \node[lab, anchor=south west] at (1.8,1.4) {$f(+\alpha)$};
+  \node[corange, align=center, font=\scriptsize] at (0.2,-2.9) {奇関数部分 $C_N=\dfrac{f(+\alpha)-f(-\alpha)}{2}$\\偶関数部分 $c_0$ は打ち消される};
+  % (b) offset
+  \begin{scope}[xshift=6.2cm]
+    \node[font=\small\bfseries] at (0,-2.0) {(b) \texttt{offset}};
+    \node[odot] at (0,0.5) {};
+    \node[dot] at (1.8,1.31) {};
+    \node[lab, anchor=north west] at (0.1,0.45) {$f(0)$};
+    \node[lab, anchor=south west] at (1.8,1.4) {$f(\alpha)$};
+    \draw[corange, <->, thick] (2.15,0.5) -- (2.15,1.31);
+    \node[corange, align=center, font=\scriptsize] at (0.2,-2.9) {$C_N=f(\alpha)-f(0)$\\$\alpha=0$ の解を全迎角から引く};
+  \end{scope}
+  % (c) single
+  \begin{scope}[xshift=12.4cm]
+    \node[font=\small\bfseries] at (0,-2.0) {(c) \texttt{single}};
+    \node[dot] at (1.8,1.31) {};
+    \node[lab, anchor=south west] at (1.8,1.4) {$f(\alpha)$};
+    \draw[corange, <->, thick] (2.15,0) -- (2.15,1.31);
+    \node[corange, align=center, font=\scriptsize] at (0.2,-2.9) {$C_N=f(\alpha)$\\$c_0$ がそのまま残る};
+  \end{scope}
+\end{tikzpicture}

@@ -1,0 +1,62 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+% Mesh size parameters: (a) wall-normal section with the first layer (yplus), the boundary layer thickness and the growth to the farfield,
+% (b) cross section of a fin with fin_size and wall_size.
+\begin{tikzpicture}[
+  font=\footnotesize,
+  dim/.style={<->, thick, corange},
+  lab/.style={font=\scriptsize, cink2}]
+  % ---------------- (a) wall-normal section
+  \begin{scope}
+    \fill[cfillg] (0,-0.5) rectangle (6.4,0);
+    \draw[cink, very thick] (0,0) -- (6.4,0);
+    \node[cink2, anchor=east] at (-0.1,-0.25) {機体の壁面（\texttt{wall}）};
+    % prism layers (RANS): growth 1.2
+    \pgfmathsetmacro{\T}{0.03*((1.2^14)-1)/0.2}
+    \fill[cfill] (0,0) rectangle (3.0,\T);
+    \foreach \k in {0,...,13}{
+      \pgfmathsetmacro{\ya}{0.03*((1.2^\k)-1)/0.2}
+      \draw[cblue!70, thin] (0,\ya) -- (3.0,\ya);
+    }
+    \draw[cblue, thick] (0,\T) -- (3.0,\T);
+    \foreach \x in {0.5,1.0,...,2.5}{ \draw[cblue!70, thin] (\x,0) -- (\x,\T); }
+    % tetra region: sizes grow
+    \foreach \yq in {2.2, 2.9, 3.8, 4.9}{
+      \draw[cink2, thin] (0,\yq) -- (3.0,\yq);
+    }
+    \draw[cink2, thick, dash pattern=on 4pt off 2pt] (0,5.9) -- (6.4,5.9);
+    \node[cink2, anchor=west] at (6.5,5.9) {遠方境界（\texttt{farfield}）};
+    \node[lab, anchor=west] at (3.2,3.9) {四面体。壁から離れるほど\\大きくなる（約 1.2 倍ずつ）};
+    \node[lab, anchor=west, align=left] at (3.2,1.0) {プリズム層（RANS）\\層数 $n$、等比 1.2};
+    \draw[dim] (-0.5,0) -- node[left, corange] {$h_1$} (-0.5,0.03);
+    \draw[dim] (-1.2,0) -- node[left, corange] {$T$} (-1.2,\T);
+    \draw[corange, thin] (-0.55,0.03) -- (0,0.03);
+    \draw[dim] (6.0,0) -- node[right, corange] {$R_\infty=\texttt{farfield}\times L$} (6.0,5.9);
+    \node[lab, anchor=north west, align=left] at (0.1,-0.7) {$h_1$：最初の層の高さ（\texttt{yplus} から決まる）\\$T$：境界層の厚さ};
+    \node[cink, anchor=north] at (3.2,-1.6) {(a) 壁面に垂直な断面};
+  \end{scope}
+  % ---------------- (b) fin cross-section
+  \begin{scope}[xshift=11.4cm]
+    \def\t{0.5}
+    \fill[white, draw=cink, very thick] (-0.5,-\t) rectangle (4.0,\t);
+    \fill[cfillg] (-0.5,-\t) rectangle (4.0,\t);
+    \draw[cink, very thick] (-0.5,-\t) rectangle (4.0,\t);
+    \node[cink2] at (1.7,0) {フィン（厚さ $t$）};
+    % fine ticks on the fin faces (fin_size), coarse ticks on the body wall (wall_size)
+    \foreach \x in {-0.4,-0.3,...,3.9}{
+      \draw[corange, thin] (\x,\t) -- (\x,\t+0.12);
+      \draw[corange, thin] (\x,-\t) -- (\x,-\t-0.12);
+    }
+    \draw[cink, very thick] (-3.0,-1.7) -- (-0.5,-1.7) -- (-0.5,-\t);
+    \draw[cink, very thick] (-3.0,1.7) -- (-0.5,1.7) -- (-0.5,\t);
+    \draw[cink2, thin, dash pattern=on 2pt off 2pt] (-3.0,-1.7) -- (-3.0,1.7);
+    \foreach \x in {-3.0,-2.0,-1.0}{
+      \draw[cblue, thin] (\x,1.7) -- (\x,1.9);
+      \draw[cblue, thin] (\x,-1.7) -- (\x,-1.9);
+    }
+    \draw[dim] (4.3,-\t) -- node[right, corange] {$t$} (4.3,\t);
+    \node[corange, anchor=south west, align=left, font=\scriptsize] at (1.7,\t+0.18) {フィンの面：\\$h_f$（\texttt{fin\_size}、$\approx t/4$）};
+    \node[cblue, anchor=south, align=center, font=\scriptsize] at (-2.0,2.0) {胴体の面：$h_w$（\texttt{wall\_size}）};
+    \node[cink, anchor=north] at (0.6,-2.3) {(b) フィンの断面（機軸方向から見る）};
+  \end{scope}
+\end{tikzpicture}

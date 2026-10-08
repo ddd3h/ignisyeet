@@ -1,6 +1,6 @@
 % SPDX-License-Identifier: GPL-3.0-or-later
 % Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
-% CFD wall surface modes: panel_mesh (rebuilt body of revolution + trapezoidal fins) vs stl (repair in Rust, union and remesh of the input in Python).
+% CFD wall surface modes: panel_mesh (rebuilt body of revolution + trapezoidal fins), stl (repaired, united and remeshed input), step (CAD surfaces as they are).
 \begin{tikzpicture}[
   font=\footnotesize,
   box/.style={draw=cblue, fill=cfill, thick, rounded corners=3pt, minimum width=33mm, minimum height=12mm, align=center},
@@ -13,25 +13,31 @@
   \node[file] (a1) at (0,0) {入力の STL\\\scriptsize 形状の抽出};
   \node[box] (a2) at (4.4,0) {半径分布 $r(x)$\\\scriptsize とフィンの寸法};
   \node[boxo] (a3) at (8.8,0) {回転体と台形フィン\\\scriptsize として作り直す};
-  \node[font=\scriptsize, cink2, anchor=north, align=center] at (8.8,-0.9) {Euler では底面にフェアリング};
   \node[res] (a4) at (13.2,0) {CFD の壁面\\\scriptsize 回転体 + 台形フィン};
   \draw[arr] (a1) -- (a2);
   \draw[arr] (a2) -- (a3);
   \draw[arr] (a3) -- (a4);
+  \node[font=\scriptsize, cink2, anchor=north, align=center] at (8.8,-0.9) {Euler では底面にフェアリング};
   \node[font=\scriptsize, cink2, anchor=north, align=center] at (13.2,-0.9) {レールボタンなどは\\含まれない};
   % mode (b)
   \node[font=\small\bfseries, anchor=west] at (-2,-2.6) {(b) \texttt{stl}};
   \node[file] (b1) at (0,-4) {入力の STL\\\scriptsize 重なった閉じた殻};
-  \node[box] (b2) at (4.4,-4) {修復\\\scriptsize Euler では底面にフェアリング};
-  \node[boxo] (b3) at (8.8,-4) {和と再メッシュ\\\scriptsize \texttt{wall\_size} で作り直す};
+  \node[box] (b2) at (4.4,-4) {修復して一つの立体に\\\scriptsize Euler では底面にフェアリング};
+  \node[boxo] (b3) at (8.8,-4) {壁面を再メッシュ\\\scriptsize \texttt{wall\_size} で作り直す};
   \node[res] (b4) at (13.2,-4) {CFD の壁面\\\scriptsize 入力に近いが同一でない};
   \draw[arr] (b1) -- (b2);
   \draw[arr] (b2) -- (b3);
   \draw[arr] (b3) -- (b4);
   \node[font=\scriptsize, cink2, anchor=north, align=center] at (13.2,-4.9) {形状の忠実度の報告で\\ずれを確かめる};
-  % legend
-  \node[box, minimum width=8mm, minimum height=4mm, anchor=west] (l1) at (-2,-6.3) {};
-  \node[right=1mm of l1, font=\scriptsize] {Rust};
-  \node[boxo, minimum width=8mm, minimum height=4mm, right=14mm of l1] (l2) {};
-  \node[right=1mm of l2, font=\scriptsize] {Python（OpenCASCADE、manifold3d、gmsh）};
+  % mode (c)
+  \node[font=\small\bfseries, anchor=west] at (-2,-6.6) {(c) \texttt{step}};
+  \node[file] (c1) at (0,-8) {CAD のモデル\\\scriptsize STEP、IGES、BREP};
+  \node[box] (c2) at (4.4,-8) {\texttt{rocket.stl} と照合\\\scriptsize 同じ機体か確かめる};
+  \node[boxo] (c3) at (8.8,-8) {曲面をそのまま\\\scriptsize 厳密な曲面でメッシュ};
+  \node[res] (c4) at (13.2,-8) {CFD の壁面\\\scriptsize CAD の細部を含む};
+  \draw[arr] (c1) -- (c2);
+  \draw[arr] (c2) -- (c3);
+  \draw[arr] (c3) -- (c4);
+  \node[font=\scriptsize, cink2, anchor=north, align=center] at (8.8,-8.9) {Euler では底面にフェアリング\\（\texttt{"fairing"} のとき）};
+  \node[font=\scriptsize, cink2, anchor=north, align=center] at (13.2,-8.9) {再メッシュによる\\ずれはない};
 \end{tikzpicture}

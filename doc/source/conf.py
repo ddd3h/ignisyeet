@@ -13,31 +13,6 @@ bibtex_bibfiles = ["references.bib"]
 bibtex_default_style = "plain"
 bibtex_reference_style = "author_year"
 templates_path = []
-# Pages of the previous layout, kept in the tree until their content is moved into the new parts.
-exclude_patterns = [
-    "usage.rst",
-    "intro.rst",
-    "overview.rst",
-    "coordinates.rst",
-    "geometry.rst",
-    "aerodynamics.rst",
-    "aero_coefficients.rst",
-    "barrowman.rst",
-    "panel.rst",
-    "cfd.rst",
-    "cfd_internals.rst",
-    "environment.rst",
-    "propulsion.rst",
-    "dynamics.rst",
-    "dispersion.rst",
-    "verification.rst",
-    "verification_aero.rst",
-    "validation.rst",
-    "limitations.rst",
-    "file_formats.rst",
-    "safety.rst",
-]
-
 # Old page names redirect to the page that now holds the topic (sphinx-reredirects).
 redirects = {
     "usage": "howto/index.html",

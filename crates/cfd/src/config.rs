@@ -235,7 +235,7 @@ pub const DEFAULT_EULER_MULTIGRID: usize = 0;
 /// RANS defaults of `iterations`, `min_iterations`, `stable_window` and `wall_size`, used when the configuration
 /// selects `model = "rans"` and does not set the value (programmatic options: [`CfdOptions::rans`]). In the sample
 /// mesh study (8 / 4.8 / 3 mm, doc/data/cfd) the 4.8 mm level is within about 1 % (CN) and 1.3 % (CA) of the 3 mm
-/// one; a half-model case needs about 7.5 GB at 5 mm and 18 GB at 3 mm (measured; the eq-cfd-mem-rans estimate is about
+/// one; a half-model case needs about 7.5 GB at 5 mm and 19 GB at 3 mm (from 10.2 kB per node, doc/data/cfd/rans_memory.csv; the eq-cfd-mem-rans estimate is about
 /// 9 GB and 22 GB).
 pub const RANS_DEFAULT_ITERATIONS: usize = 4000;
 pub const RANS_DEFAULT_MIN_ITERATIONS: usize = 400;
@@ -705,7 +705,7 @@ impl CfdOptions {
         if self.model == FlowModel::Rans && self.wall_size < RANS_FINE_WALL_SIZE {
             w.push(format!(
                 "aero.cfd: model = \"rans\" with wall_size = {} m, finer than the RANS default {RANS_DEFAULT_WALL_SIZE} m: a half-model case of the \
-                 sample rocket needs about 7.5 GB at 5 mm and 18 GB at 3 mm, and more on a finer mesh; check the estimate with \
+                 sample rocket needs about 7.5 GB at 5 mm and 19 GB at 3 mm, and more on a finer mesh; check the estimate with \
                  `ignisyeet cfd-check <config> --mesh` (an explicit wall_size overrides the RANS default)",
                 self.wall_size
             ));
@@ -894,7 +894,7 @@ mod tests {
         // A fine RANS mesh warns about the memory per case; the same wall_size for Euler does not.
         let fine = CfdOptions { wall_size: 0.002, ..CfdOptions::rans() };
         let w = fine.warnings_for(64);
-        assert!(w.len() == 1 && w[0].contains("wall_size = 0.002 m") && w[0].contains("18 GB at 3 mm") && w[0].contains("cfd-check"), "{w:?}");
+        assert!(w.len() == 1 && w[0].contains("wall_size = 0.002 m") && w[0].contains("19 GB at 3 mm") && w[0].contains("cfd-check"), "{w:?}");
         assert!(CfdOptions { wall_size: 0.004, ..CfdOptions::rans() }.warnings_for(64).is_empty());
         assert!(CfdOptions { wall_size: 0.002, ..Default::default() }.warnings_for(64).is_empty());
         o.validate().unwrap();

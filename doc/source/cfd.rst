@@ -608,11 +608,11 @@ RANS で解く
 ``wall_size``\ 、``iterations``\ 、``min_iterations``\ 、``stable_window`` を明示したときは、RANS の既定ではなくその値を使う。
 Euler の設定ファイルの ``model`` だけを ``"rans"`` に変えたときは、設定ファイルにある ``wall_size`` と ``iterations`` がそのまま効く。
 ``examples/sample_rans.toml`` は、これらを設定せず RANS の既定のままにしたサンプル機体の設定である（半モデル、:math:`M=0.3,0.8,1.2,2`\ 、:math:`\alpha=0,\pm4,\pm8^\circ` の 20 ケース、``alpha_mode = "mirror"``\ 、``yplus = 1``）。
-ファイルのコメントによると、1 ケースのメモリは ``wall_size`` 5 mm で実測約 7.5 GB（``cfd-check`` の見積もりは約 9 GB）、3 mm で 18 GB であり、20 ケースを 4 ランク、2 ケースずつ同時で解くのに約 4.4 時間（1 ケース 14 から 61 分）かかった。
+ファイルのコメントによると、1 ケースのメモリは ``wall_size`` 4.8 mm（787,490 節点）で実測 7.8 GB（``data/cfd/rans_memory.csv``）、1 節点あたり 10.2 kB から外挿すると 5 mm（735,366 節点）で約 7.5 GB（``cfd-check`` の見積もりは約 9 GB）、3 mm（184 万節点）で約 19 GB である。20 ケースを 4 ランク、2 ケースずつ同時で解くのに約 4.4 時間（1 ケース 14 から 61 分）かかった。
 
 **警告**\ 。次の場合は、計算を止めずに警告を出す。
 
-* ``wall_size`` が 4 mm より小さい：``aero.cfd: model = "rans" with wall_size = … m, finer than the RANS default 0.005 m: a half-model case of the sample rocket needs about 7.5 GB at 5 mm and 18 GB at 3 mm, and more on a finer mesh; check the estimate with `ignisyeet cfd-check <config> --mesh` (an explicit wall_size overrides the RANS default)``
+* ``wall_size`` が 4 mm より小さい：``aero.cfd: model = "rans" with wall_size = … m, finer than the RANS default 0.005 m: a half-model case of the sample rocket needs about 7.5 GB at 5 mm and 19 GB at 3 mm, and more on a finer mesh; check the estimate with `ignisyeet cfd-check <config> --mesh` (an explicit wall_size overrides the RANS default)``
 * ``yplus`` が 30 から 150（壁関数）：``aero.cfd: yplus = … selects the standard wall function (30..150), which is not verified (the RANS verification uses a resolved wall, yplus = 1); use yplus <= 5 unless you check the results yourself``
 
 ``surface = "step"`` で使うときの注意（鋭い縁、狭いすき間、確かめた範囲）は :ref:`sec-cfd-step` にある。

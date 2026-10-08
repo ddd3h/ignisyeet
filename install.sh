@@ -727,7 +727,7 @@ decide() {
   if [ -z "$WANT_CFD" ]; then
     if [ -n "$CFD_PREFIX" ] || [ -n "$SU2_PATH" ]; then
       WANT_CFD=0 # already available; nothing to ask
-    elif ask_yn "Install the optional CFD tools (SU2, gmsh, Open MPI via conda-forge, ~3 GB; on Linux SU2 is compiled for this CPU, 3-10 min)?" n; then WANT_CFD=1; else WANT_CFD=0; fi
+    elif ask_yn "Install the optional CFD tools (SU2, gmsh, Open MPI; ~3 GB, SU2 built here 3-10 min)?" n; then WANT_CFD=1; else WANT_CFD=0; fi
   fi
   CFD_ACTION=none # none | reuse | create
   if [ "$CFD_DISABLED" = 1 ]; then

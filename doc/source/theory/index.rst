@@ -31,7 +31,7 @@
 .. figure:: /_generated/tikz/opt_map.*
    :width: 100%
 
-   設定ブロックと選択肢、それを説明する章の対応。見出しは設定ファイルの表（``[wind]`` など）、中の項目は選ぶキーと値、下の箱が読む章である。
+   設定ブロックと選択肢、それを説明する章の対応。見出しは設定ファイルの表（``[wind]`` など）、中の項目は選ぶキーと値、下の箱が読む章である。項目は主なキーだけで、全体は :numref:`tbl-theory-choose-map` にある。
 
 選び方の一覧
 ------------
@@ -62,7 +62,7 @@
    * - ``wind.model``、``ref_height``、``exponent``、``roughness_length``
      - :ref:`page-theory-wind`
      - 流れ図 :numref:`fig-choose-wind-model`、表 :numref:`tbl-choose-wind`、風速の比 :numref:`tbl-wind-ratio`、結果への効き方 :numref:`tbl-wind-effect`
-   * - ``wind.profile_mean_speed``、``profile_mean_direction_deg``、``ground_blend_height``、``dispersion.wind_speeds``、``wind_directions``
+   * - ``wind.profile_mean_speed``、``profile_mean_direction_deg``、``ground_blend_height``、``dispersion.wind_speeds``、``dispersion.directions``
      - :ref:`page-theory-wind`
      - 平均風速の拡大と着地点 :numref:`tbl-wind-profile-scale`、風速格子の値の意味（``profile`` と他のモデル）
    * - ``rocket.dry_mass``、``cg_dry``、``ixx_dry``、``iyy_dry``、``motor.*``

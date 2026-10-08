@@ -3,7 +3,7 @@
 図と KML で結果を見る
 =======================
 
-``python/plot.py``（インストーラで入れたときは ``ignisyeet-plot``）で計算結果の図を描き、``ignisyeet.kml`` を Google Earth で開いて飛翔経路と着地点を地図の上で確かめる。
+作図コマンド ``ignisyeet-plot`` で計算結果の図を描き、``ignisyeet.kml`` を Google Earth で開いて飛翔経路と着地点を地図の上で確かめる。
 
 目的
 ------
@@ -69,7 +69,7 @@
         - ``trajectory.csv``、``summary.json``
         - ``trajectory.png``：高度、対気速度、Mach 数、迎角、圧力中心と重心の距離、動圧、推力、質量、ピッチ角、横滑り角、ロール角速度の時間履歴。``trajectory_3d.png``：飛翔経路の 3 次元表示
       * - ``dispersion``
-        - ``dispersion.csv``、``dispersion_meta.json``（風の格子）、``dispersion_mc.csv``、``dispersion_summary.json``（モンテカルロ）
+        - ``dispersion.csv``、``dispersion_meta.json``\ （風の格子）、``dispersion_mc.csv``、``dispersion_summary.json``\ （モンテカルロ）
         - ``dispersion.png``：風速ごとの着地点の輪郭。``dispersion_mc.png``：モンテカルロの着地点と誤差楕円
 
    期待する結果：選んだ図の PNG が ``out/plots/`` に書かれる。

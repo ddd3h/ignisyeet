@@ -77,7 +77,7 @@
    cd ignisyeet-examples
    ignisyeet sim sample.toml
 
-空力係数表の作成から飛翔の計算まで、数秒で終わる。
+空力係数表の作成から飛翔の計算まで、数秒以内で終わる。
 
 期待する出力
    端末には枠付きの結果パネルが出る（:numref:`fig-screen-install-check-sim`）。

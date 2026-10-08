@@ -148,13 +148,13 @@
 
 ``error[IY-S034]: cannot load wind profile …``
    表の行に誤りがある。``Caused by:`` の最後の行に、原因と該当の行が出る。
-   たとえば風向が 400 だと ``wind profile direction must be between 0 and 360 degrees (row "100,6.0,400")``、高度が増えていないと ``wind profile altitudes must be strictly ascending (row "0,6.0,270")``（このときのコードは :ref:`IY-S036`）と出る。
+   たとえば風向が 400 だと ``wind profile direction must be between 0 and 360 degrees (row "100,6.0,400")``、高度が増えていないと ``wind profile altitudes must be strictly ascending (row "0,6.0,270")``\ （このときのコードは :ref:`IY-S036`）と出る。
    見出し、行の形、値の範囲、高度の順序の誤りは、それぞれ別のコード（:ref:`IY-S030` から :ref:`IY-S037`）になる。
 
 ``wind profile is calm``
    表の平均風速が小さすぎて拡大できない（:ref:`IY-S050`）。風のある表を使う。
 
-``wind.profile (CSV path) is required``（:ref:`IY-S045`）
+``wind.profile (CSV path) is required``\ （:ref:`IY-S045`）
    ``model = "profile"`` で ``profile`` を書いていない。
 
 エラーとワーニングの読み方は :ref:`page-howto-warnings-errors` にある。

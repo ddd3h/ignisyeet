@@ -23,6 +23,9 @@ CFD_ENV_NAME="ignisyeet-cfd"
 CFD_PACKAGES="python=3.10 su2=8.3.0 gmsh=4.15.2 python-gmsh=4.15.2 openmpi=5"
 MICROMAMBA_VERSION="2.9.0"
 MANIFOLD3D_VERSION="3.5.4"
+# --su2-native: SU2 built from source for this CPU (-march=native) with mixed-precision linear algebra
+SU2_NATIVE_TAG="v8.3.0"
+SU2_NATIVE_REPO="https://github.com/su2code/SU2.git"
 
 ROLE="${IGNISYEET_ROLE:-}"                 # user | developer | "" (ask)
 VERSION="${IGNISYEET_VERSION:-}"           # vX.Y.Z | "" (latest release)
@@ -30,6 +33,7 @@ PREFIX="${IGNISYEET_PREFIX:-$HOME/.local}"
 DEV_DIR="${IGNISYEET_DIR:-}"
 WANT_CFD="${IGNISYEET_CFD:-}"              # 1 | 0 | "" (ask; default no)
 WANT_TEST=""                               # 1 | 0 | "" (ask; default yes)
+WANT_SU2_NATIVE="${IGNISYEET_SU2_NATIVE:-0}" # 1 | 0: build SU2 from source for this CPU (Linux, with the CFD env)
 ASSUME_YES="${IGNISYEET_YES:-0}"
 NO_COLOR_FLAG="${IGNISYEET_NO_COLOR:-0}"
 DRY_RUN="${IGNISYEET_DRY_RUN:-0}"
@@ -384,6 +388,9 @@ Roles:
 
 Options:
   --cfd / --no-cfd     install (or skip) the optional CFD tools: SU2, gmsh, Open MPI (~3 GB, conda-forge) and manifold3d (pip)
+  --su2-native         also build SU2 $SU2_NATIVE_TAG from source for this CPU (-march=native, mixed precision) into
+                       PREFIX/share/ignisyeet-su2-native (Linux; needs the CFD env, git, gcc/g++, ~10 min); the
+                       binary runs only on CPUs like this one. Select it with IGNISYEET_SU2_CFD (printed at the end)
   --version vX.Y.Z     release to install (default: latest GitHub release); developer: tag to check out
   --prefix DIR         install prefix (default: ~/.local; binary in DIR/bin, data in DIR/share/ignisyeet)
   --dir DIR            developer clone location (default: current clone, else ~/ignisyeet)
@@ -394,11 +401,11 @@ Options:
   --no-color           plain output (also honours NO_COLOR)
   --dry-run            show what would be done and exit
   --uninstall          remove what this installer installed (asks before optional parts)
-  --purge              with --uninstall: also remove the plotting venv and the CFD environment
+  --purge              with --uninstall: also remove the plotting venv, the CFD environment and the native SU2
   -h, --help           this help
 
 Environment variables:
-  IGNISYEET_ROLE, IGNISYEET_VERSION, IGNISYEET_PREFIX, IGNISYEET_DIR, IGNISYEET_CFD (1/0),
+  IGNISYEET_ROLE, IGNISYEET_VERSION, IGNISYEET_PREFIX, IGNISYEET_DIR, IGNISYEET_CFD (1/0), IGNISYEET_SU2_NATIVE (1/0),
   IGNISYEET_YES, IGNISYEET_NO_COLOR, IGNISYEET_DRY_RUN, IGNISYEET_FORCE, IGNISYEET_ADD_PATH,
   IGNISYEET_DOWNLOAD_BASE (release download base URL), IGNISYEET_REPO_URL (git URL)
 
@@ -413,6 +420,7 @@ parse_args() {
       --developer | --dev) ROLE=developer ;;
       --cfd) WANT_CFD=1 ;;
       --no-cfd) WANT_CFD=0 ;;
+      --su2-native) WANT_SU2_NATIVE=1 ;;
       --version) shift; [ $# -gt 0 ] || die "--version needs a value"; VERSION="$1"; validate_version "$VERSION" ;;
       --version=*) VERSION="${1#*=}"; validate_version "$VERSION" ;;
       --prefix) shift; [ $# -gt 0 ] || die "--prefix needs a value"; PREFIX="$1" ;;
@@ -434,6 +442,8 @@ parse_args() {
   done
   case "$ROLE" in "" | user | developer) ;; *) die "role must be 'user' or 'developer' (got '$ROLE')" ;; esac
   case "$WANT_CFD" in "" | 0 | 1) ;; *) die "IGNISYEET_CFD must be 1 or 0" ;; esac
+  case "$WANT_SU2_NATIVE" in 0 | 1) ;; *) die "IGNISYEET_SU2_NATIVE must be 1 or 0" ;; esac
+  if [ "$WANT_SU2_NATIVE" = 1 ] && [ "$WANT_CFD" = 0 ]; then die "--su2-native needs the CFD tools (drop --no-cfd)"; fi
   [ -n "$VERSION" ] && validate_version "$VERSION"
   # Relative paths would give broken symlinks (they are resolved against the link's own directory).
   PREFIX=$(abs_path "$PREFIX")
@@ -726,6 +736,14 @@ decide() {
   fi
   CFD_NEED_MM=0
   [ "$CFD_ACTION" = create ] && [ -z "$CONDA_MGR" ] && CFD_NEED_MM=1
+  SU2_NATIVE_DIR="$PREFIX/share/ignisyeet-su2-native"
+  if [ "$WANT_SU2_NATIVE" = 1 ]; then
+    [ "$OS" = Linux ] || die "--su2-native is supported on Linux only"
+    [ "$CFD_ACTION" != none ] || [ -n "$CFD_PREFIX" ] || die "--su2-native needs the CFD environment (add --cfd)"
+    local t missing=""
+    for t in git gcc g++ python3; do have "$t" || missing="$missing $t"; done
+    [ -z "$missing" ] || die "--su2-native needs:$missing (e.g. sudo apt install build-essential git python3)"
+  fi
 
   # user: already installed?
   SAME_VERSION=0
@@ -772,6 +790,10 @@ show_plan() {
       note "SU2 is pinned to 8.3.0 on all platforms" ;;
     none) skip "CFD: not requested" ;;
   esac
+  if [ "$WANT_SU2_NATIVE" = 1 ]; then
+    p "SU2 native: build ${CYAN}SU2 $SU2_NATIVE_TAG${RESET} from source (-march=native, -Denable-mixedprec=true, MPI of the CFD env) into ${CYAN}$(tilde "$SU2_NATIVE_DIR")${RESET} ${GREY}(~10 min)${RESET}"
+    note "the native SU2 runs only on CPUs with the instruction set of this one; the conda SU2 stays the default"
+  fi
 }
 
 # ----------------------------------------------------------------------------------------------
@@ -992,6 +1014,44 @@ install_cfd() {
   fi
 }
 
+# --- SU2 built for this CPU (--su2-native) --------------------------------------------------------------
+# SU2's own meson.py / ninja (they download meson, ninja and the CoDiPack / MeDiPack headers into externals/).
+# The compiler wrappers of the CFD env (Open MPI 5) are pointed at the system gcc/g++, and the binary is linked
+# against the env's libmpi with an rpath, so it runs with the env's mpirun. `-include cstdint`: CLI11 in SU2 8.3.0
+# misses that header for gcc >= 13.
+install_su2_native() {
+  [ "$WANT_SU2_NATIVE" = 1 ] || return 0
+  section "SU2 $SU2_NATIVE_TAG for this CPU"
+  if [ -z "$CFD_PREFIX" ] || [ ! -x "$CFD_PREFIX/bin/mpicxx" ]; then warn "no CFD environment with mpicxx; native SU2 skipped"; return 0; fi
+  if [ -x "$SU2_NATIVE_DIR/bin/SU2_CFD" ] && [ "$FORCE" != 1 ]; then
+    ok "reusing ${CYAN}$SU2_NATIVE_DIR/bin/SU2_CFD${RESET} ${GREY}(--force rebuilds)${RESET}"
+    state_set su2_native "$SU2_NATIVE_DIR"
+    return 0
+  fi
+  local src="$SU2_NATIVE_DIR/src" jobs
+  jobs="${IGNISYEET_SU2_JOBS:-$(nproc 2>/dev/null || echo 4)}"
+  rm -rf "$src"
+  mkdir -p "$SU2_NATIVE_DIR"
+  step "Cloning SU2 $SU2_NATIVE_TAG" git clone --depth 1 --branch "$SU2_NATIVE_TAG" "$SU2_NATIVE_REPO" "$src" \
+    || { warn "SU2 could not be cloned; native SU2 skipped"; return 0; }
+  note "configure and compile with $jobs jobs (IGNISYEET_SU2_JOBS); progress is in $LOG_FILE"
+  if ! step "Configuring SU2 (meson)" env -C "$src" OMPI_CC=gcc OMPI_CXX=g++ CC="$CFD_PREFIX/bin/mpicc" CXX="$CFD_PREFIX/bin/mpicxx" \
+    python3 ./meson.py setup build --prefix="$SU2_NATIVE_DIR" --buildtype=release --optimization=3 \
+    -Dwith-mpi=enabled -Dcustom-mpi=true -Dwith-omp=false -Denable-mixedprec=true -Denable-pywrapper=false \
+    -Denable-tests=false "-Dc_args=-march=native -mtune=native" "-Dcpp_args=-march=native -mtune=native -include cstdint"; then
+    warn "SU2 configuration failed; native SU2 skipped (the conda SU2 is unaffected)"; return 0
+  fi
+  if ! step "Compiling SU2 (ninja, ~10 min)" env -C "$src" OMPI_CC=gcc OMPI_CXX=g++ ./ninja -j "$jobs" -C build install; then
+    warn "SU2 compilation failed; native SU2 skipped (the conda SU2 is unaffected)"; return 0
+  fi
+  if ! "$SU2_NATIVE_DIR/bin/SU2_CFD" --help </dev/null 2>&1 | grep -q 'SU2 v8\.3'; then
+    warn "the native SU2_CFD does not start; it is not used"; return 0
+  fi
+  rm -rf "$src"
+  ok "SU2 $SU2_NATIVE_TAG (native, mixed precision) installed in ${CYAN}$SU2_NATIVE_DIR${RESET}"
+  state_set su2_native "$SU2_NATIVE_DIR"
+}
+
 # --- PATH hint -------------------------------------------------------------------------------------
 shell_rc() {
   case "$(basename "${SHELL:-}")" in
@@ -1056,6 +1116,10 @@ summary() {
     say "    ${CYAN}prefix = \"$CFD_PREFIX\"${RESET}"
     say "  ${GREY}or: export IGNISYEET_CFD_PREFIX=\"$CFD_PREFIX\"${RESET}"
   fi
+  if [ "$WANT_SU2_NATIVE" = 1 ] && [ -x "$SU2_NATIVE_DIR/bin/SU2_CFD" ]; then
+    say "  ${BOLD}SU2 native${RESET} ${GREY}- use it instead of the conda SU2 (this CPU only):${RESET}"
+    say "    ${CYAN}export IGNISYEET_SU2_CFD=\"$SU2_NATIVE_DIR/bin/SU2_CFD\"${RESET}"
+  fi
   if [ "${PATH_MISSING:-0}" = 1 ]; then
     say ""
     warn "$BIN_DIR is not in your PATH. Add this line to your shell rc file:"
@@ -1071,14 +1135,16 @@ summary() {
 # ----------------------------------------------------------------------------------------------
 do_uninstall() {
   section "Uninstall"
-  local ver dev venv cfd mm
+  local ver dev venv cfd mm su2n
   ver=$(state_get version); dev=$(state_get dev_dir); venv=$(state_get venv); cfd=$(state_get cfd_env); mm=$(state_get micromamba)
+  su2n=$(state_get su2_native)
   [ -z "$venv" ] && [ -d "$VENV_DIR" ] && venv="$VENV_DIR"
   say "  ${GREY}prefix${RESET}  $PREFIX"
   [ -e "$BIN_DIR/ignisyeet" ] || [ -L "$BIN_DIR/ignisyeet" ] && say "  ${GREY}binary${RESET}  $BIN_DIR/ignisyeet"
   [ -d "$DATA_ROOT" ] && say "  ${GREY}data${RESET}    $DATA_ROOT ${GREY}(${ver:-no state file})${RESET}"
   [ -n "$venv" ] && say "  ${GREY}venv${RESET}    $venv"
   [ -n "$cfd" ] && say "  ${GREY}cfd env${RESET} $cfd"
+  [ -n "$su2n" ] && say "  ${GREY}su2 native${RESET} $su2n"
   [ -n "$dev" ] && say "  ${GREY}clone${RESET}   $dev"
   if [ "$DRY_RUN" = 1 ]; then say ""; say "  ${GREY}dry run: nothing removed${RESET}"; return 0; fi
   if ! ask_yn "Remove the installed binary, links and release data?" y && [ "$HAVE_TTY" = 1 ]; then say "  aborted"; return 0; fi
@@ -1104,6 +1170,9 @@ do_uninstall() {
       if [ -n "$mgr" ] && "$mgr" env remove -y -p "$cfd" >>"$LOG_FILE" 2>&1 </dev/null; then :; else rm -rf "$cfd"; fi
       ok "removed $cfd"
     fi
+  fi
+  if [ -n "$su2n" ] && [ -d "$su2n" ]; then
+    if [ "$PURGE" = 1 ] || ask_yn "Remove the native SU2 build ($su2n)?" n; then rm -rf "$su2n"; ok "removed $su2n"; fi
   fi
   if [ -n "$mm" ] && [ -x "$mm" ]; then note "micromamba ($mm) was installed by this installer and is kept; remove it manually if unused"; fi
   if [ -n "$dev" ] && [ -d "$dev" ]; then
@@ -1171,6 +1240,7 @@ main() {
   PATH_MISSING=0
   if [ "$ROLE" = user ]; then install_user; else install_developer; fi
   install_cfd
+  install_su2_native
   [ "$ROLE" = user ] && path_hint
   summary
 }

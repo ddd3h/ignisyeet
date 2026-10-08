@@ -412,7 +412,7 @@ CAD のモデルにあって STL にない部分（STL の面から :math:`\max(
      offsets STEP - STL [m]: min (…, …, …), max (…, …, …)
 
 ``file`` は単位の宣言と換算の倍率、``shape`` は融合の前後のソリッドの数と面の数、``details`` は CAD だけにある細部と最も細い面の幅、``domain`` は計算領域と対称性の判定、``base`` は底面の処理、``registration`` 以下は位置合わせの距離と包含箱である。
-読み込みで縫い合わせや形状の修復をしたときは ``note:`` の行に、離れたソリッドや ``"fairing"`` で形を変えたことは ``warning:`` の行に出る。
+読み込みで縫い合わせや形状の修復をしたときは ``note:`` の行に、離れたソリッドや ``"fairing"`` で形を変えたことは ``warning[IY-F5nn]:`` の行に出る。
 同じ内容は ``cfd_report.json`` の ``step`` に入る（:ref:`sec-file-cfd`）。
 
 **対称性と計算領域**\ 。CAD のモデルの鏡映対称は、``stl`` と同じく :math:`y=0` と :math:`z=0` の平面について検査する（方法は :ref:`sec-cfd-step-internals`）。
@@ -791,7 +791,7 @@ RANS のケースは、``converged``、``unconverged``\ （振動や残差の停
 発散したケースは、反復の上限を待たずに止め、一度だけ控えめな設定で解き直す。
 
 判定の条件は :ref:`sec-cfd-int-convergence` と :ref:`sec-cfd-int-rans-accept` にある。平らな底面の Euler（STL と CAD のモデルの ``base_treatment = "flat"``）は収束しないことがあり、そのときは失敗として扱う。
-失敗したケースは、実行の最後に ``error: aero.cfd: case m0.800_a04.00 failed: <理由>`` の形で 1 行ずつまとめて表示する。
+失敗したケースは、実行の最後に ``error[IY-F1nn]: aero.cfd: case m0.800_a04.00 failed: <理由>`` の形で 1 行ずつまとめて表示する。
 SU2 がシグナル 9 で止められたときは、理由に ``SU2 was killed by signal 9 (SIGKILL; most likely out of memory: about … GB per case with … ranks and … concurrent cases; lower parallel_cases or ranks_per_case)`` と、メモリ不足の可能性と 1 ケースのメモリの見積もりを示す。
 
 出力の見方

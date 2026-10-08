@@ -748,7 +748,7 @@ Euler のケースの結果は、次のいずれかで扱う（RANS は :ref:`se
   さらに、その窓の係数の傾きに、残差の減り方から求めた時定数 :math:`\tau=1/(r\ln10)`\ （:math:`r` は窓での残差の常用対数の減る速さ、上限は ``iterations``）をかけた、これから先の変化の見込みが同じ許容以内であること。
   残差が目標に達しても係数がゆっくり振動していることがあり（サンプル機体の :math:`M=0.8` で、残差が :math:`10^{-6}` に達した時点の :math:`C_N` は収束した値より 0.56 % 低かった）、残差だけでは止めない。
   反復の上限に達しても係数が落ち着かないときは、残差が目標に達していれば窓の平均を係数として受け入れ、「収束」には数えない（``converged`` は false で ``cfd_report.json`` の ``unconverged`` に載る）。
-  そのときは ``warning: aero.cfd: case m0.800_a04.00: the coefficients still trend or oscillate at the end (… iterations): their range over the last stable_window iterations or their change extrapolated from the residual decay exceeds 0.2 % of the force scale`` の形の警告を出す。
+  そのときは ``warning[IY-F5nn]: aero.cfd: case m0.800_a04.00: the coefficients still trend or oscillate at the end (… iterations): their range over the last stable_window iterations or their change extrapolated from the residual decay exceeds 0.2 % of the force scale`` の形の警告を出す。
 * **早期終了**\ ：``min_iterations``\ （既定 100）反復を過ぎて、残差が最大値から 3 桁以上下がり、直近 ``stable_window``\ （既定 60）反復の力とモーメントが落ち着き（前半と後半の平均の差が力の大きさの 2 % 未満など）、上の収束と同じ係数の変化の判定も満たしたとき、ケースを止めて受け入れる（``status`` は ``accepted``）。
   落ち着きの判定は、どの場合も軸力 CFx、法線力 CFz、ピッチングモーメント CMy（許容は力の大きさの 2 %＋5e-4、CMy は 25 %＋5e-3）で行い、ケースの種類に応じて次を加える。
   横滑りのケース（:math:`\beta\ne0`）は横力 CFy（力と同じ許容）とヨーイングモーメント CMz（CMy と同じ許容）、ロール減衰のケースは転がりモーメント CMx（自身の平均の 3 %＋2e-5。転がりモーメントは力に比べてはるかに小さいので、自分の大きさで測る）である。
@@ -828,7 +828,7 @@ NASA TMR の平板（格子 69×49、137×97、273×193、:math:`M=0.2` と 2）
 受け入れたケースでは、``surface_flow.vtk`` の壁面の :math:`y^+`\ （底面の節点を除く）の 95 パーセンタイルを ``done.json`` の ``yplus_p95`` に記録する。
 ``yplus`` が 5 以下（壁面を解像する設定）でこの値が 3 を超えるときは、``wall y+ P95 = … exceeds 3 (target yplus = …): the first cell is too thick for the resolved wall`` を警告にする。
 :math:`y^+` が分布に含まれなければ ``wall y+ not checked: no Y_Plus in surface_flow.vtk`` を警告にする。
-ケースの警告は ``warning: aero.cfd: case m0.800_a04.00: …`` の形で標準エラー出力にも表示する。
+ケースの警告は ``warning[IY-F5nn]: aero.cfd: case m0.800_a04.00: …`` の形で標準エラー出力にも表示する。
 ``done.json`` の ``converged`` は、収束で真、停滞と振動で偽になり、偽のケースは ``cfd_report.json`` の ``unconverged`` に載る。
 停滞のケースは ``done.json`` の ``stalled`` が真になり、判定の根拠にした密度の残差の下がり（停滞では直近の窓の中央値）を ``residual_drop`` に記録する。
 ``cfd_cases.csv`` には、基準の最大値の密度の値（``residual_reference``）、この下がり（``residual_drop``）、判定（``rans_verdict``：``converged``、``limit_cycle``、``stalled``）が入る。Euler では空である。

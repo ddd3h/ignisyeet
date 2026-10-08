@@ -458,7 +458,7 @@ CFD の実行の要約である。項目は次のとおりである。
    * - ``base_treatment``
      - 底面の扱い（``fairing``、``flat``）。壁面が STL か CAD のモデルのときと、Euler のときに入る。``surface = "step"`` の RANS では ``none``
    * - ``warnings``
-     - 警告の一覧
+     - 警告の一覧。各文字列の先頭にコード（``[IY-F5nn] …`` の形）が付く
    * - ``symmetry_check``
      - ``surface = "stl"`` と ``"step"`` の鏡映対称性の判定。``requested``\ （設定値）、``chosen``\ （採用した対称性）、平面ごとの検査 ``y`` と ``z``\ （``symmetric``、``max_mismatch`` [m]、``vertices``、``vertices_matched``、``triangulation_identical``、``tolerance``、``reason``）、メッシュの作り方 ``meshed``\ （``quarter``、``half``、``full``）、``reason``。
        ``step`` では、``vertices`` は鏡映した曲面上の点の数、``vertices_matched`` は曲面に一致した点の数、``tolerance`` は実際に使った許容（:ref:`sec-cfd-step-internals`）で、``triangulation_identical`` は常に ``false`` である
@@ -512,7 +512,7 @@ CFD の実行の要約である。項目は次のとおりである。
    * - ``axial``
      - RANS のとき、``wall_cfx`` と ``base_cfx``\ （壁面と底面の ``CFx``）、``base_in_cfx``\ （``coeffs`` の軸力が底面の力を含むか）、``markers_missing``\ （履歴にマーカごとの列がなかったか）
    * - ``warnings``
-     - 受け入れたケースについての警告（壁面の :math:`y^+`、振動や停滞、暖機起動や発散からの解き直しなど）。ないときは書かない
+     - 受け入れたケースについての警告（壁面の :math:`y^+`、振動や停滞、暖機起動や発散からの解き直しなど）。各文字列の先頭にコード（``[IY-F5nn] …`` の形）が付く。ないときは書かない
 
 .. _sec-file-mesh:
 
@@ -587,7 +587,7 @@ CFD のメッシュのキャッシュで、``mesh.su2``、メッシュを作っ�
 全長 ``length``、基準半径 ``ref_radius`` と基準面積 ``ref_area``、底面半径 ``base_radius``、ノーズ ``nose``、ボートテール ``boattail``、胴体のぬれ面積 ``wetted_area_body`` と体積 ``volume``、
 フィンの平面形の面積 ``planform_area`` と重心位置 ``planform_centroid``、フィン ``fins``、STL の座標との対応 ``frame``\ （``axis_point``、``aft_direction``、``nose_offset``）、断面ごとの ``profile`` を持つ。
 機体軸 :math:`x_b,y_b,z_b` を STL の座標で表した単位ベクトル ``body_x``、``body_y``、``body_z`` も書く（:ref:`sec-body-basis`）。
-抽出の妥当性についての所見は、文字列の配列 ``warnings`` に書く（疑わしい点がなければ空。:ref:`sec-geometry-warnings`）。
+抽出の妥当性についての所見は、文字列の配列 ``warnings`` に書く（疑わしい点がなければ空。:ref:`sec-geometry-warnings`）。各文字列は ``[IY-G5nn] …`` の形で、コードを角括弧のまま先頭に付ける（:ref:`errors`）。
 
 ``profile.csv``
 ~~~~~~~~~~~~~~~
@@ -668,7 +668,7 @@ CFD のメッシュのキャッシュで、``mesh.su2``、メッシュを作っ�
    * - ``config_hash``
      - この結果を計算した設定のハッシュ（16 桁の 16 進数）。出力先と計算資源（``[output]`` と ``[resources]``）、``[dispersion]`` を除く設定と、STL、モータ、風のプロファイル、外部の係数表（CSV と、基準面積・基準直径・全長などを持つ付属の JSON）の内容から計算する。KML は、現在の設定のハッシュと一致するものだけをまとめる（:ref:`sec-kml`）
    * - ``warnings``
-     - 警告の文字列の配列（空のこともある。:ref:`sec-config-checks`）。設定の読み込み時の警告（``profile`` で使わない ``wind.speed`` と ``wind.direction_deg``、2 回以上指定した ``--set`` のキー）が先頭で、計算中の警告が続く。``dispersion_meta.json`` と ``dispersion_summary.json`` の ``warnings`` も同じ順である
+     - 警告の文字列の配列（空のこともある。:ref:`sec-config-checks`）。各文字列は、画面の ``warning[IY-O514]: …`` の形ではなく、コードを角括弧のまま先頭に付けた ``[IY-O514] …`` の形で書く（:ref:`errors`）。設定の読み込み時の警告（``profile`` で使わない ``wind.speed`` と ``wind.direction_deg``、2 回以上指定した ``--set`` のキー）が先頭で、計算中の警告が続く。``dispersion_meta.json`` と ``dispersion_summary.json`` の ``warnings`` も同じ順である
    * - ``aero_table_range``
      - 係数表の範囲外の引き出しの集計。全引き出しの回数 ``lookups``、Mach 数が表の最小値未満・最大値超の回数 ``mach_below`` ``mach_above``、迎角または横滑り角が格子の外の回数 ``angle_beyond``、要求された最大の Mach 数 ``max_mach`` と最大の迎角 ``max_abs_alpha_deg`` [deg]（軸対称表では引いた全迎角、一般表では :math:`\alpha` と :math:`\beta` から求めた全迎角 :math:`\arccos(\cos\alpha\cos\beta)`）、範囲外が 1 回でもあったか ``out_of_range``\ （真偽値）、迎角の範囲外がなかったか ``angles_in_range`` と Mach 数の範囲外がなかったか ``machs_in_range``\ （真偽値。どちらかが ``false`` のときは結果を使えず、終了ステータス 3 で終わる。:ref:`sec-exit-status`）
 

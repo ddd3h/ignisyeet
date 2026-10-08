@@ -18,7 +18,7 @@
 //!   passed on to the warm successors.
 //! * `limit_cycle` (RANS, only when true): accepted as a limit cycle or a stall (window average).
 //! * `stalled`, `residual_drop` (RANS): `stalled` only when true (then `limit_cycle` is true too); `residual_drop`
-//!   the density-residual drop [orders] the verdict was based on (the column of the same name in `cfd_cases.csv`).
+//!   the density-residual drop (orders) the verdict was based on (the column of the same name in `cfd_cases.csv`).
 //! * `yplus_p95` (RANS): 95th percentile of the wall `y+`, base nodes excluded.
 //! * `axial` (RANS): `wall_cfx`, `base_cfx`, `base_in_cfx` (whether the axial force of `coeffs` contains the base
 //!   force), `markers_missing` (the history had no per-marker columns).

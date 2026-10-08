@@ -53,10 +53,10 @@
 //!   (OpenCASCADE BREP, metres); the volume mesh is made from it.
 //! * `step_surface.stl`: its triangulation (binary STL grouped by face, CFD frame, metres), used by the registration.
 //! * `step_report.json`: `solids_in_file`, `faces_in_file`, `notes` (sewing, healing, fusion), `solids`, `volume`,
-//!   `area`, `bbox`, `faces` (per face `tag`, `type`, `area`, `centroid`, `normal`, `planar`, `width` = `2A/P` [m],
+//!   `area`, `bbox`, `faces` (per face `tag`, `type`, `area`, `centroid`, `normal`, `planar`, `width` = `2A/P` (m),
 //!   `bbox`, `base`), `face_triangles`, `smallest_face_width` and `smallest_face`, `smallest_edge` and
 //!   `smallest_edge_tag`, `symmetry_y` and `symmetry_z` (the mirror check per plane), `fairing` (position and size of
-//!   the cone, or the reason `error` it could not be added), `seconds` and `seconds_symmetry` [s].
+//!   the cone, or the reason `error` it could not be added), `seconds` and `seconds_symmetry` (s).
 //! * `step_prepare.json`, `prepare_params.json`, `prepare.log`: hash of the prepare stage, its parameters and log; the
 //!   same hash skips the stage.
 //! * `step_quarter_failed.json`: the hash of the prepared shape when the quarter domain could not be cut; the same

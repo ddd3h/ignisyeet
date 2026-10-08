@@ -87,8 +87,8 @@
 //!
 //! `mesh.su2`, `params.json` (the settings the mesh was made with), `mesh.log` and `mesh_stats.json`: `nodes`, `cells`,
 //! `by_type`, `quality_sicn_min`, `quality_sicn_mean`, `cells_sicn_below_0.05` (tetrahedra only for a RANS mesh),
-//! `wall_triangles`, `seconds_setup`, `seconds_mesh`; a RANS mesh adds `bl_layers`, `bl_first_height` [m],
-//! `bl_thickness` [m] (thickest column), `bl_invalid` (invalid prisms in the written mesh; an invalid layer is a mesh
+//! `wall_triangles`, `seconds_setup`, `seconds_mesh`; a RANS mesh adds `bl_layers`, `bl_first_height` (m),
+//! `bl_thickness` (m) (thickest column), `bl_invalid` (invalid prisms in the written mesh; an invalid layer is a mesh
 //! error, so always 0), `bl_attempt` (1 or 2: the build that passed the check) and `bl_top_ratio_p99` /
 //! `bl_top_ratio_max` (ratio of the tetrahedron height at the layer top to the last layer height, larger over smaller).
 

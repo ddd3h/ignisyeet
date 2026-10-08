@@ -1,0 +1,29 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+\begin{tikzpicture}[
+  font=\small,
+  q/.style={draw=cyellow, fill=white, thick, rounded corners=3pt, text width=70mm, align=center, minimum height=13mm, inner sep=2mm},
+  res/.style={draw=cblue, fill=cfill, thick, rounded corners=3pt, text width=50mm, align=center, minimum height=14mm, inner sep=2mm},
+  warn/.style={draw=corange, fill=cfillo, thick, rounded corners=3pt, text width=50mm, align=center, minimum height=14mm, inner sep=2mm},
+  arr/.style={->, thick, cink2},
+  lab/.style={font=\footnotesize, cink2}]
+  \node[q] (q1) at (0,0) {飛翔の高度範囲を覆う風の観測値または予報値（ゾンデ、数値予報）があるか};
+  \node[q] (q2) at (0,-3.2) {高度によらない風で足りるか（他のコードとの比較、風の影響の切り分け）};
+  \node[q] (q3) at (0,-6.4) {頂点は地上 1 km 以下か};
+  \node[q] (q4) at (0,-9.6) {粗度長 $z_0$ が分かり、地表の風の高度分布を対数則で表したいか};
+
+  \node[res] (prof) at (8.3,0) {\texttt{"profile"}\\{\footnotesize 表は予想される最高の頂点より上まで\\基準風の拡大は \texttt{profile\_mean\_*}}};
+  \node[res] (const) at (8.3,-3.2) {\texttt{"constant"}\\{\footnotesize 風速は \texttt{speed} で一定}};
+  \node[warn] (pw) at (8.3,-6.4) {\texttt{"power"}（上空へ外挿）\\{\footnotesize 上空の風速を過大に見積もりやすい。警告が出る}};
+  \node[res] (log) at (8.3,-9.6) {\texttt{"log"}\\{\footnotesize $0<z_0<h_{\mathrm{ref}}/2$}};
+  \node[res] (pw2) at (0,-12.8) {\texttt{"power"}\\{\footnotesize \texttt{exponent} は地表の状態から選ぶ}};
+
+  \draw[arr] (q1) -- node[above, lab]{はい} (prof);
+  \draw[arr] (q1) -- node[right, lab]{いいえ} (q2);
+  \draw[arr] (q2) -- node[above, lab]{はい} (const);
+  \draw[arr] (q2) -- node[right, lab]{いいえ} (q3);
+  \draw[arr] (q3) -- node[above, lab]{いいえ} (pw);
+  \draw[arr] (q3) -- node[right, lab]{はい} (q4);
+  \draw[arr] (q4) -- node[above, lab]{はい} (log);
+  \draw[arr] (q4) -- node[right, lab]{いいえ} (pw2);
+\end{tikzpicture}

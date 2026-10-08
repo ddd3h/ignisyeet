@@ -21,14 +21,26 @@
 //!
 //! # Acceptance (Euler)
 //!
-//! * Residual target reached: `converged`, coefficients of the last row.
-//! * Early stop: after `min_iterations`, a drop of 3 orders and coefficients flat (see `History::coefficients_stable`) over the last
-//!   `stable_window` iterations stop the case gracefully and accept it (`converged = false`).
-//! * Iteration limit / timeout without reaching the target: accepted (`converged = false`) when the
-//!   density residual dropped at least 3 orders from its peak and `CFx`, `CFz`, `CMy` varied by less
-//!   than 1 % over the last window; the coefficients are averaged over that window.
-//! * Otherwise (SU2 error, divergence, no history, not converged and not stable) the case is
-//!   *failed*: no `done.json`, the table builder bridges it by interpolation.
+//! SU2 runs to a residual floor far below the target (`CONV_RESIDUAL_MINVAL = min(log10 convergence - 2, -14)`, see
+//! `su2cfg`); the runner decides. "Settled" is [`History::euler_trend_settled`]: over the last `stable_window` rows the
+//! range of `CFx`, `CFz` (`CFy` with sideslip) is within 0.2 % of the force scale and the centre of pressure within
+//! 0.002 body lengths, and so is their change still to come, extrapolated from the trend over the window with the
+//! residual decay rate.
+//!
+//! * Early stop, checked once a second: the residual target reached (and at least `stable_window` rows), or practically
+//!   converged (after `min_iterations`, the density residual 3 orders below its peak and the coefficients flat over
+//!   `stable_window`, see `History::coefficients_stable`), each with the coefficients settled. SU2 is stopped after
+//!   its next periodic output (restart file of the warm successor, surface file); the case is judged on the history
+//!   and the verdict of that decision (the rows written until the output cannot overturn it). Target reached:
+//!   `converged`, coefficients of the last row; practically converged: accepted, `converged = false`, coefficients
+//!   averaged over the last `n / 4` rows (2 to 100).
+//! * Iteration limit / timeout with the target reached but the coefficients not settled: accepted, `converged = false`,
+//!   coefficients averaged over the last `n / 4` rows (2 to 100), with a warning.
+//! * Iteration limit / timeout without the target: accepted (`converged = false`) when the density residual dropped at
+//!   least 3 orders from its peak and `CFx`, `CFz`, `CMy` varied by less than 1 % over the last `n / 4` rows (2 to
+//!   100); the coefficients are averaged over those rows (with a warning when they have not settled).
+//! * Otherwise (SU2 error, no history, not converged and not stable) the case is *failed*: no `done.json`, the table
+//!   builder bridges it by interpolation.
 //!
 //! # RANS
 //!
@@ -36,22 +48,33 @@
 //! warm start (alpha and beta chains of one Mach number; every Mach number starts cold, see
 //! [`crate::case::warm_start_source_for`]) runs the second-order stage only, from the neighbour's restart file,
 //! which must carry the SA variable (an Euler solution never seeds a RANS case). A warm start that fails is
-//! solved again cold. The reference of the acceptance is the residual peak of the cold startup stage
+//! solved again cold. A diverging startup or second-order stage of a cold case is repeated once with conservative
+//! settings (see `su2cfg`). The reference of the acceptance is the residual peak of the cold startup stage
 //! ([`ResidualPeak`], stored in `done.json` and passed along the warm chain), raised to the run's own peak when
-//! that is higher; a residual drop measured from a warm run's own (low) peak would accept it too early.
+//! that is higher; a residual drop measured from a warm run's own (low) peak would accept it too early. The drops
+//! are taken from the largest residual of the last [`RANS_RESIDUAL_ROWS`] rows. [`rans_verdict`] gives one of:
 //!
-//! * `converged`: density residual 3 and SA residual 2 orders below the reference, the coefficients flat
-//!   over `stable_window` iterations ([`History::rans_coefficients_stable`]: forces 0.5 % of the force scale,
+//! * [`RansVerdict::Converged`]: density residual 3 and SA residual 2 orders below the reference, the coefficients
+//!   flat over `stable_window` iterations ([`History::rans_coefficients_stable`]: forces 0.5 % of the force scale,
 //!   centre of pressure 0.002 body lengths), and their change still to come, extrapolated from the trend over the
-//!   window with the residual decay rate ([`History::rans_trend_settled`]), within the same tolerances. Checked
-//!   once a second after `min_iterations`; SU2 is then stopped. On the TMR flat plate (69 x 49 to 273 x 193, M 0.2
-//!   and M 2) the drag at the stop is then within 0.3 % of the value 8 orders down (flatness alone: up to 1.9 %),
-//!   at the cost of up to 950 more iterations on the finest grid.
-//! * Limit cycle: density residual 2 orders below the reference and the forces oscillating within 1 % of the
-//!   force scale ([`History::limit_cycle`]): accepted with the window average, `converged = false`, listed as
-//!   unconverged (`status = unconverged` in `cfd_cases.csv`).
-//! * Otherwise failed. After acceptance the wall y+ of `surface_flow.vtk` is checked: a 95th percentile above 3
-//!   (resolved wall) is recorded as a warning in `done.json`.
+//!   window with the residual decay rate ([`History::rans_trend_settled`]), within the same tolerances. On the TMR
+//!   flat plate (69 x 49 to 273 x 193, M 0.2 and M 2) the drag at the stop is then within 0.3 % of the value 8 orders
+//!   down (flatness alone: up to 1.9 %), at the cost of up to 950 more iterations on the finest grid.
+//! * [`RansVerdict::Stalled`]: the median density residual of the last `stable_window` rows at least
+//!   [`RANS_STALL_RHO_DROP`] orders below the reference and no more than [`RANS_STALL_PROGRESS`] below the median of
+//!   the window before, with the coefficients flat and settled over both windows: accepted, `converged = false`,
+//!   coefficients averaged over both windows, the residual level and the force spread in a warning; `done.json`
+//!   (`stalled`, `residual_drop`), `cfd_cases.csv` (`rans_verdict = stalled`) and `cfd_report.json`
+//!   (`stalled_cases`) record it.
+//! * [`RansVerdict::LimitCycle`]: density residual 2 orders below the reference and the forces oscillating within
+//!   1 % of the force scale ([`History::limit_cycle`]): accepted with the window average, `converged = false`.
+//! * [`RansVerdict::Rejected`]: failed (a warm start is solved again cold first).
+//!
+//! The runner checks the verdict once a second after `min_iterations` and stops SU2 at `Converged` or `Stalled`,
+//! after its next periodic output; the case is judged on the history and verdict of that decision. Without a stop the
+//! verdict is taken at the end. Stalled and limit-cycle cases are listed as unconverged (`status = unconverged` in
+//! `cfd_cases.csv`). After acceptance the wall y+ of `surface_flow.vtk` is checked: a 95th percentile above 3
+//! (resolved wall) is recorded as a warning in `done.json`.
 //!
 //! Children run in their own process group and are killed on Ctrl-C / SIGTERM; finished cases
 //! keep their `done.json`.

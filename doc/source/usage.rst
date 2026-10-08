@@ -268,9 +268,18 @@ CFD 環境のパッケージは、すべてのプラットフォームで SU2 8.
 SU2 8.5.0 のパッケージは AVX-512 のない CPU で異常終了するため、8.3.0 を使う。
 micromamba を新たに入れる場合は、版 2.9.0 を取得する。
 インストール後に、設定ファイルの ``[aero.cfd] prefix`` に書く値（または環境変数 ``IGNISYEET_CFD_PREFIX``）を表示する。
-``--su2-native`` を付けると、SU2 8.3.0 をその CPU 向け（``-march=native``、混合精度）にソースから構築し、``PREFIX/share/ignisyeet-su2-native`` に置く（構築時間は約 10 分、環境変数 ``IGNISYEET_SU2_NATIVE=1`` でも指定でき、並列数は ``IGNISYEET_SU2_JOBS``）。
-最後に表示される ``export IGNISYEET_SU2_CFD=...`` の行で、環境変数にその ``SU2_CFD`` のパスを設定すると、``[aero.cfd] su2`` が既定の ``"SU2_CFD"`` のとき、そのパスが使われる。``su2`` に明示的なパスを書いたときはそちらが優先される。
-指定しなければ conda-forge の SU2 を使う。ネイティブ版は構築した CPU に固有で、別の CPU では動かないことがある（:ref:`詳細 <sec-cfd-native>`）。
+Linux では ``--cfd`` により、SU2 8.3.0 をソースから、その CPU 向け（``-march=native``、混合精度）に構築して ``PREFIX/share/ignisyeet-su2-native`` に置く。
+コンパイラは CFD 環境の conda-forge の gcc/g++ を使うので、システムのコンパイラは要らない（既存の環境に無ければインストーラが追加する）。
+構築には GitHub への接続（SU2 のソースと CoDiPack、MeDiPack）が要り、コア数により 3 〜 10 分かかる（12 コアのデスクトップ CPU で 8 ジョブ、2 分 40 秒）。
+ディスクは構築中に約 0.5 GB、構築後は 70 MB である。
+並列数は環境変数 ``IGNISYEET_SU2_JOBS`` で指定する（既定は全コア。空きメモリ 2 GB につき 1 ジョブまで）。
+``ignisyeet`` はこの SU2 を、インストールされた実行ファイルの接頭辞、``IGNISYEET_PREFIX``、``~/.local`` の順に探して自動で使う。
+環境変数 ``IGNISYEET_SU2_CFD`` と、``[aero.cfd] su2`` に明示したパスはそれより優先される。
+実行ファイルの横の ``build-info.txt`` に、コンパイラ、フラグ、Open MPI の版、構築した CPU の型番が記録される。
+実行ファイルは構築した CPU に固有なので、``cfd-check`` は CPU の型番が記録と異なるときに警告する。別の CPU に移したら、その上で ``install.sh --cfd --force`` を実行し直す。
+ソースからの構築が失敗したとき（ネットワークがない、コンパイルエラー）は、警告を表示して conda-forge の SU2 を使い続ける。
+``--su2-binary``\ （環境変数 ``IGNISYEET_SU2_BINARY=1``）は構築を省き、移植できる conda-forge の SU2 を使う。CPU の世代が混在する共有クラスタやコンテナに向く。
+macOS では常に conda-forge の SU2 を使う（:ref:`詳細 <sec-cfd-native>`）。
 
 オプション
 ^^^^^^^^^^
@@ -292,8 +301,8 @@ micromamba を新たに入れる場合は、版 2.9.0 を取得する。
      - 役割を尋ねずに指定する
    * - ``--cfd`` ``--no-cfd``
      - CFD ツール（SU2、gmsh、Open MPI と manifold3d 3.5.4）を入れる、入れない
-   * - ``--su2-native``
-     - SU2 8.3.0 をその CPU 向けにソースから構築する（Linux のみ、CPU 固有で移植不可、約 10 分）。使うには ``IGNISYEET_SU2_CFD`` を設定する。``--cfd`` が必須
+   * - ``--su2-binary``
+     - ``--cfd`` と併せて、SU2 のソース構築を省いて移植できる conda-forge の SU2 を使う（既定は Linux で SU2 8.3.0 をその CPU 向けに構築）
    * - ``--version vX.Y.Z``
      - 入れるリリース（既定は最新）。developer ではチェックアウトするタグ。形式は ``vX.Y.Z`` に限り、``v`` のない値や他の形式はエラーにする
    * - ``--prefix DIR``
@@ -1395,7 +1404,7 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
      - CFD ツールの環境（``<prefix>/bin/SU2_CFD``、``mpirun``、gmsh を持つ ``python``）。空なら環境変数 ``IGNISYEET_CFD_PREFIX``、それも空なら ``PATH``。先頭の ``~`` は展開する
    * - ``su2``
      - ``"SU2_CFD"``
-     - SU2 の実行ファイル名（またはパス）。既定の ``"SU2_CFD"`` のままのときは、環境変数 ``IGNISYEET_SU2_CFD``（``SU2_CFD`` のパス。``install.sh --su2-native`` の構築物など）があればそれを使う。明示的に書いたパスが優先される
+     - SU2 の実行ファイル名（またはパス）。既定の ``"SU2_CFD"`` のままのときは、環境変数 ``IGNISYEET_SU2_CFD``（``SU2_CFD`` のパス）、なければ ``install.sh`` が構築した SU2、なければ ``prefix`` と ``PATH`` の ``SU2_CFD`` を使う。明示的に書いたパスが優先される
    * - ``mpi``
      - ``"mpirun"``
      - MPI の起動コマンド（``ranks_per_case`` が 2 以上のときだけ使う）

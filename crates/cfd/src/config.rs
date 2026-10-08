@@ -393,7 +393,8 @@ pub struct CfdOptions {
     /// A leading `~` is expanded.
     pub prefix: String,
     /// SU2 executable name (or path). Left at the default `SU2_CFD`, the `IGNISYEET_SU2_CFD` environment variable
-    /// (if set) names it instead (see [`crate::tools::resolve_su2`]).
+    /// (if set), else the SU2 compiled by `install.sh` below the install prefix, names it instead (see
+    /// [`crate::tools::resolve_su2`]).
     pub su2: String,
     /// MPI launcher (only needed when `ranks_per_case > 1`).
     pub mpi: String,

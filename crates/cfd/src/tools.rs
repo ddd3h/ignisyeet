@@ -46,7 +46,7 @@ impl ToolReport {
     }
 
     /// Non-fatal findings: an SU2 version other than the documented 8.3.x (the validation and the case set-up
-    /// are pinned to SU2 8.3.0).
+    /// are pinned to SU2 8.3.0), and an SU2 compiled by the installer for another CPU than the current one.
     pub fn warnings(&self) -> Vec<String> {
         let mut w = Vec::new();
         if let (true, Some(v)) = (self.su2.ok(), self.su2.version.as_deref()) {
@@ -54,6 +54,12 @@ impl ToolReport {
                 Some((8, 3, _)) => {}
                 Some((a, b, c)) => w.push(format!("SU2 {a}.{b}.{c} found; the documentation and validation are pinned to SU2 8.3.0, results may differ")),
                 None => w.push(format!("cannot read the SU2 version from \"{v}\"; the documentation and validation are pinned to SU2 8.3.0")),
+            }
+        }
+        if let Some(p) = self.su2.path.as_deref().filter(|_| self.su2.ok()) {
+            let info = p.parent().and_then(Path::parent).map(|d| d.join("build-info.txt"));
+            if let Some(text) = info.and_then(|f| std::fs::read_to_string(f).ok()) {
+                w.extend(cpu_mismatch(&text, cpu_model().as_deref(), p));
             }
         }
         w
@@ -104,19 +110,74 @@ pub fn resolve_prefix(opt: &CfdOptions) -> Option<PathBuf> {
 /// Default of `[aero.cfd] su2`.
 pub const DEFAULT_SU2: &str = "SU2_CFD";
 
-/// SU2 executable (name or path): `[aero.cfd] su2` when it differs from the default `SU2_CFD`, else the
-/// `IGNISYEET_SU2_CFD` environment variable (e.g. a native build of SU2 next to the conda environment), else `SU2_CFD`.
+/// Directory (below an install prefix) where `install.sh --cfd` puts the SU2 it compiles for this CPU.
+pub const NATIVE_SU2_DIR: &str = "share/ignisyeet-su2-native";
+
+/// SU2 executable (name or path), first match of:
+/// 1. `[aero.cfd] su2` when it differs from the default `SU2_CFD`;
+/// 2. the `IGNISYEET_SU2_CFD` environment variable;
+/// 3. the SU2 compiled by the installer ([`find_native_su2`]);
+/// 4. `SU2_CFD` (looked up in the prefix and `PATH`).
+///
 /// The prefix still supplies `mpirun`, the gmsh python and `<prefix>/lib`.
 pub fn resolve_su2(opt: &CfdOptions) -> String {
-    su2_choice(&opt.su2, std::env::var("IGNISYEET_SU2_CFD").ok().as_deref())
+    su2_choice(&opt.su2, std::env::var("IGNISYEET_SU2_CFD").ok().as_deref(), find_native_su2().as_deref())
 }
 
-fn su2_choice(opt: &str, env: Option<&str>) -> String {
+fn su2_choice(opt: &str, env: Option<&str>, native: Option<&Path>) -> String {
     let opt = opt.trim();
     if opt != DEFAULT_SU2 {
         return opt.to_string();
     }
-    env.map(str::trim).filter(|s| !s.is_empty()).unwrap_or(DEFAULT_SU2).to_string()
+    if let Some(e) = env.map(str::trim).filter(|s| !s.is_empty()) {
+        return e.to_string();
+    }
+    native.map(|p| p.display().to_string()).unwrap_or_else(|| DEFAULT_SU2.to_string())
+}
+
+/// `SU2_CFD` of the installer's source build: `<prefix>/share/ignisyeet-su2-native/bin/SU2_CFD` for the install
+/// prefix that holds this executable (any ancestor of its path, symlinks resolved or not), `IGNISYEET_PREFIX`, or
+/// `~/.local` (the installer's default prefix).
+pub fn find_native_su2() -> Option<PathBuf> {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    if let Ok(exe) = std::env::current_exe() {
+        let canon = exe.canonicalize().ok();
+        for e in std::iter::once(exe).chain(canon) {
+            roots.extend(e.ancestors().skip(1).map(Path::to_path_buf));
+        }
+    }
+    if let Some(p) = std::env::var_os("IGNISYEET_PREFIX").filter(|s| !s.is_empty()) {
+        roots.push(PathBuf::from(p));
+    }
+    if let Some(h) = std::env::var_os("HOME").filter(|s| !s.is_empty()) {
+        roots.push(Path::new(&h).join(".local"));
+    }
+    native_su2_in(&roots)
+}
+
+/// First `<root>/share/ignisyeet-su2-native/bin/SU2_CFD` that is executable.
+fn native_su2_in(roots: &[PathBuf]) -> Option<PathBuf> {
+    roots.iter().map(|r| r.join(NATIVE_SU2_DIR).join("bin/SU2_CFD")).find(|p| is_exec(p))
+}
+
+/// Model name of the first CPU in `/proc/cpuinfo` (Linux), else `None`.
+fn cpu_model() -> Option<String> {
+    let text = std::fs::read_to_string("/proc/cpuinfo").ok()?;
+    text.lines().find_map(|l| l.strip_prefix("model name")).and_then(|r| r.split_once(':')).map(|(_, v)| v.trim().to_string())
+}
+
+/// Warning when the build record next to a compiled SU2 (`build-info.txt`, line `cpu: <model>`) names another CPU
+/// than the current one. `None` when they agree or either is unknown.
+fn cpu_mismatch(build_info: &str, current: Option<&str>, su2: &Path) -> Option<String> {
+    let built = build_info.lines().find_map(|l| l.strip_prefix("cpu:")).map(str::trim).filter(|s| !s.is_empty())?;
+    let cur = current?.trim();
+    (!cur.is_empty() && built != cur).then(|| {
+        format!(
+            "{} was compiled for the CPU \"{built}\" but this machine has \"{cur}\"; it may stop with an illegal instruction. \
+             Run `install.sh --cfd --force` here to rebuild it, or `install.sh --cfd --su2-binary` for the portable conda-forge SU2",
+            su2.display()
+        )
+    })
 }
 
 #[cfg(unix)]
@@ -306,16 +367,60 @@ mod tests {
     }
 
     #[test]
-    fn su2_from_option_then_environment() {
-        assert_eq!(su2_choice("SU2_CFD", None), "SU2_CFD");
-        assert_eq!(su2_choice("SU2_CFD", Some("  ")), "SU2_CFD");
-        assert_eq!(su2_choice("SU2_CFD", Some("/opt/su2-native/bin/SU2_CFD")), "/opt/su2-native/bin/SU2_CFD");
-        // An explicit [aero.cfd] su2 wins over the environment.
-        assert_eq!(su2_choice("~/su2/bin/SU2_CFD", Some("/opt/su2-native/bin/SU2_CFD")), "~/su2/bin/SU2_CFD");
+    fn su2_from_option_then_environment_then_installed_build() {
+        let native = PathBuf::from("/home/u/.local/share/ignisyeet-su2-native/bin/SU2_CFD");
+        let n = Some(native.as_path());
+        assert_eq!(su2_choice("SU2_CFD", None, None), "SU2_CFD");
+        assert_eq!(su2_choice("SU2_CFD", Some("  "), None), "SU2_CFD");
+        assert_eq!(su2_choice("SU2_CFD", Some("/opt/su2-native/bin/SU2_CFD"), None), "/opt/su2-native/bin/SU2_CFD");
+        // The installer's build is used when nothing else is set ...
+        assert_eq!(su2_choice("SU2_CFD", None, n), native.display().to_string());
+        assert_eq!(su2_choice("SU2_CFD", Some(" "), n), native.display().to_string());
+        // ... the environment variable wins over it, and an explicit [aero.cfd] su2 wins over both.
+        assert_eq!(su2_choice("SU2_CFD", Some("/opt/su2/bin/SU2_CFD"), n), "/opt/su2/bin/SU2_CFD");
+        assert_eq!(su2_choice("~/su2/bin/SU2_CFD", Some("/opt/su2/bin/SU2_CFD"), n), "~/su2/bin/SU2_CFD");
+        assert_eq!(su2_choice("SU2_CFD ", None, n), native.display().to_string());
         // A path is found directly, also with a prefix set (the prefix supplies mpirun and lib only).
         let sh = find_exe("sh", None).unwrap();
         let o = CfdOptions { su2: sh.display().to_string(), prefix: "/nonexistent".into(), ..Default::default() };
         assert_eq!(check_tools(&o, &[]).su2.path.as_deref(), Some(sh.as_path()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn installed_build_is_found_below_the_install_prefix() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = std::env::temp_dir().join(format!("ignisyeet-native-su2-{}", std::process::id()));
+        let (a, b) = (tmp.join("a"), tmp.join("b"));
+        for r in [&a, &b] {
+            std::fs::create_dir_all(r.join(NATIVE_SU2_DIR).join("bin")).unwrap();
+        }
+        let exe = b.join(NATIVE_SU2_DIR).join("bin/SU2_CFD");
+        // Present but not executable: not a candidate.
+        std::fs::write(&exe, "#!/bin/sh\n").unwrap();
+        assert_eq!(native_su2_in(&[a.clone(), b.clone()]), None);
+        std::fs::set_permissions(&exe, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(native_su2_in(&[a.clone(), b.clone()]), Some(exe.clone()));
+        // The first root with the build wins.
+        let exe_a = a.join(NATIVE_SU2_DIR).join("bin/SU2_CFD");
+        std::fs::write(&exe_a, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&exe_a, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(native_su2_in(&[a.clone(), b]), Some(exe_a));
+        assert_eq!(native_su2_in(&[tmp.join("none")]), None);
+        std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn cpu_mismatch_warning() {
+        let p = Path::new("/x/bin/SU2_CFD");
+        let info = "su2: v8.3.0\ncpu: AMD EPYC 7742 64-Core Processor\nbuilt: today\n";
+        assert!(cpu_mismatch(info, Some("AMD EPYC 7742 64-Core Processor"), p).is_none());
+        let w = cpu_mismatch(info, Some("Intel(R) Xeon(R) Gold 6130"), p).unwrap();
+        assert!(w.contains("EPYC 7742") && w.contains("Xeon") && w.contains("install.sh --cfd --force"));
+        // Unknown on either side: no warning.
+        assert!(cpu_mismatch(info, None, p).is_none());
+        assert!(cpu_mismatch("su2: v8.3.0\n", Some("Intel"), p).is_none());
+        assert!(cpu_mismatch("cpu:\n", Some("Intel"), p).is_none());
     }
 
     #[test]

@@ -883,8 +883,10 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
                 if let Some(why) = diverged {
                     if !conservative {
                         notes.push(format!(
-                            "the first-order startup diverged ({why}); repeated with CFL <= {} and the turbulence CFL reduced to {}",
+                            "the first-order startup diverged ({why}); repeated once with the adaptive CFL capped at {} instead of {} \
+                             (the SA equation stays at {} of the flow CFL); the second-order stage keeps these settings",
                             crate::su2cfg::RANS_CONSERVATIVE_CFL_FACTOR * opt.cfl,
+                            crate::su2cfg::RANS_CFL_MAX_FACTOR * opt.cfl,
                             crate::su2cfg::RANS_CONSERVATIVE_TURB_CFL
                         ));
                         conservative = true;
@@ -944,8 +946,10 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
             }
             if !conservative {
                 notes.push(format!(
-                    "the second-order stage diverged ({why}); repeated from the first-order solution with CFL <= {} and the turbulence CFL reduced to {}",
+                    "the second-order stage diverged ({why}); repeated once from the first-order solution with the adaptive CFL capped at {} \
+                     instead of {} and the SA equation at {} of the flow CFL instead of 1",
                     crate::su2cfg::RANS_CONSERVATIVE_CFL_FACTOR * opt.cfl,
+                    crate::su2cfg::RANS_CFL_MAX_FACTOR * opt.cfl,
                     crate::su2cfg::RANS_CONSERVATIVE_TURB_CFL
                 ));
                 conservative = true;
@@ -1901,7 +1905,14 @@ exit 0
         e.opt.alphas_deg = vec![0.0, 4.0];
         let out = run_all(&e.setup(), &|_| {}).unwrap();
         let r = out[0].result.as_ref().unwrap_or_else(|| panic!("{:?} {}", out[0].error, stages(&e)));
-        assert!(r.converged && r.warnings.iter().any(|w| w.contains("diverged") && w.contains("SA residual rose") && w.contains("CFL <= 20")), "{r:?}");
+        assert!(
+            r.converged
+                && r.warnings.iter().any(|w| w.contains("second-order stage diverged")
+                    && w.contains("SA residual rose")
+                    && w.contains("capped at 20 instead of 200")
+                    && w.contains("SA equation at 0.2 of the flow CFL instead of 1")),
+            "{r:?}"
+        );
         let st = stages(&e);
         assert_eq!(
             st.lines().filter(|l| l.starts_with("0.500000 0.000000")).collect::<Vec<_>>(),
@@ -2093,7 +2104,12 @@ exit 0
             let out = run_all(&e.setup(), &|_| {}).unwrap();
             let r = out[0].result.as_ref().unwrap_or_else(|| panic!("{mode}: {:?} {}", out[0].error, stages(&e)));
             assert!(r.converged, "{mode}: {r:?}");
-            assert!(r.warnings.iter().any(|w| w.contains("first-order startup diverged") && w.contains("CFL <= 20")), "{mode}: {r:?}");
+            assert!(
+                r.warnings
+                    .iter()
+                    .any(|w| w.contains("first-order startup diverged") && w.contains("capped at 20 instead of 200 (the SA equation stays at 0.2")),
+                "{mode}: {r:?}"
+            );
             // startup, startup again (conservative), then the second-order stage with the conservative settings
             let st = stages(&e);
             let a0: Vec<&str> = st.lines().filter(|l| l.starts_with("2.000000 0.000000")).collect();

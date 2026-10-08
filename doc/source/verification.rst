@@ -381,7 +381,7 @@ ECEF 座標での積分
   観測した次数は ``rk4`` の表で 4.10、Dormand–Prince 5 次の表で 4.92 である。
   :math:`h=0.05` では、姿勢の誤差は RKMK 法が :math:`1.57\times10^{-7}` rad、RK4 と正規化が :math:`2.59\times10^{-7}` rad で、前者のほうが小さい（:numref:`fig-rigid-body-attitude`）。
 * **全組合せの一致**：3 つの積分法と 2 つの姿勢の更新法の 6 通りすべてで、サンプル機体の弾道とパラシュート降下を、``rk4``\ （:math:`\Delta t=0.5` ms）を参照として比べる。
-  頂点高度は 0.5 m 以内、着地点は 2 m 以内を要求し、観測した差はそれぞれ 0.001 m 以下、0.005 m 以下である。
+  頂点高度は 0.5 m 以内、着地点は 2 m 以内を要求し、観測した差はそれぞれ 0.001 m 以下、0.007 m 以下である。
   ECEF モードでも同じ検証をし、さらに ``dop853`` と ``lie_group`` の組合せで軌道が出力されることを確かめている。
   真空中の鉛直飛翔の頂点も、6 通りすべてで解析解と相対誤差 :math:`2\times10^{-3}` 以内で一致する。
 * **ノルムの保存**：``lie_group`` では、パラシュート降下を含む飛翔全体（平面地球と ECEF、3 つの積分法）で :math:`\bigl||\bm{q}|-1\bigr|\le8.9\times10^{-15}` である（テストは :math:`10^{-12}` 未満を要求）。
@@ -423,10 +423,10 @@ ECEF 座標での積分
   （:math:`10^{-9}` 以内）。ノズルは重心より後ろにあるので :math:`+y_b` まわりの角加速度が :math:`(x_{\mathrm{aft}}-x_{cg})T\sin\varepsilon/I_{yy}` になり、傾きが 0 なら 0 である
   （``misaligned_thrust_points_along_azimuth_and_pitches``）。
 * **ノズルのオフセット**：:math:`y_b` 方向に 0.01 m のオフセットを与えると、:math:`z_b` まわりの角加速度が :math:`-0.01\,T/I_{zz}` になる（``nozzle_offset_gives_moment_about_the_cg``）。
-* **一般表の飛翔**：サンプル機体の軸対称表と、それを展開した一般表で飛翔を比べる（無風と 5 m/s の風）。頂点高度の差は無風で 0.003 m、5 m/s の風で 0.08 m（要求は 0.5 m）である。
+* **一般表の飛翔**：サンプル機体の軸対称表と、それを展開した一般表で飛翔を比べる（無風と 5 m/s の風）。頂点高度の差は無風で 0.004 m、5 m/s の風で 0.04 m（要求は 0.5 m）である。
   一般表の最小静安定余裕は、軸対称表の飛翔の各時刻（頂点まで、対気速度 10 m/s 超）で一般表の余裕の定義（:ref:`sec-static-margin-general`）から求めた最小値と 0.02 cal 以内で一致し、迎角と横滑り角はすべて有限である（``general_table_flight_matches_axisymmetric_table``）。
   一般表の余裕は 0 から 2° の割線の傾きから求めるので、0 から 1° の割線から求める軸対称表の余裕より約 0.1 cal 小さい。
-  設定ファイルのサンプルを一般表で飛ばしても、頂点高度は 4439.9 m に 0.5 m 以内で一致する（``general_table_sample_matches_axisymmetric_apogee``）。
+  設定ファイルのサンプルを一般表で飛ばしても、頂点高度は 4440.5 m に 0.5 m 以内で一致する（``general_table_sample_matches_axisymmetric_apogee``）。
 * **ランチャ上のロール角**：仰角 80° で ``roll_deg`` を 90° にすると、:math:`+x_b` は変わらず、:math:`+y_b` が元の :math:`+z_b` に、:math:`+z_b` が元の :math:`-y_b` になる
   （``launch_roll_rotates_the_body_about_the_rail``）。
 * **サンプルでのカント**：``fin_cant_deg = 1.0`` を設定すると、係数表の ``fin_cant_ref_deg`` とシミュレーションのカントが 1° になり、最大ロール角速度が 1 rad/s を超える

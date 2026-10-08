@@ -220,6 +220,8 @@ pub struct CaseResult {
     /// Euler: the residual reached the target (`false`: accepted as practically converged). RANS: the residuals
     /// dropped far enough below the cold reference peak and the coefficients are flat (`false`: limit cycle). See `runner`.
     pub converged: bool,
+    /// log10 of the RMS density residual in the first and the last row of the history (RANS: of the second-order
+    /// stage; the reference of the acceptance is `reference_peak`).
     pub residual_first: Option<f64>,
     pub residual_last: Option<f64>,
     pub wall_seconds: f64,
@@ -230,6 +232,14 @@ pub struct CaseResult {
     /// RANS: accepted as a limit cycle (coefficients averaged over the window), listed as unconverged.
     #[serde(default, skip_serializing_if = "is_false")]
     pub limit_cycle: bool,
+    /// RANS: accepted with a stalled residual (`limit_cycle` is set as well: the coefficients are averaged).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub stalled: bool,
+    /// RANS: the drop of the density residual below the reference peak that the verdict rests on [orders] (the
+    /// median of the window for a stalled residual, else the largest residual of the last rows; see
+    /// `runner::rans_verdict_drop`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub residual_drop: Option<f64>,
     /// RANS: 95th percentile of the wall y+ of the final solution (base cap excluded).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub yplus_p95: Option<f64>,
@@ -367,6 +377,8 @@ mod tests {
             wall_seconds: 12.5,
             reference_peak: None,
             limit_cycle: false,
+            stalled: false,
+            residual_drop: None,
             yplus_p95: None,
             axial: None,
             warnings: vec![],
@@ -376,6 +388,8 @@ mod tests {
         assert!(
             !euler.contains("reference_peak")
                 && !euler.contains("limit_cycle")
+                && !euler.contains("stalled")
+                && !euler.contains("residual_drop")
                 && !euler.contains("yplus")
                 && !euler.contains("axial")
                 && !euler.contains("warnings")
@@ -388,6 +402,8 @@ mod tests {
         let rans = CaseResult {
             reference_peak: Some(ResidualPeak { rho: -2.1, nu: -5.0 }),
             limit_cycle: true,
+            stalled: true,
+            residual_drop: Some(0.9),
             yplus_p95: Some(1.2),
             axial: Some(AxialRecord { wall_cfx: Some(0.25), base_cfx: Some(0.05), base_in_cfx: false, markers_missing: false }),
             warnings: vec!["w".into()],
@@ -397,5 +413,6 @@ mod tests {
         let back = read_done(&dir, &h).unwrap();
         assert_eq!((back.reference_peak, back.limit_cycle, back.yplus_p95, back.warnings), (rans.reference_peak, true, Some(1.2), vec!["w".to_string()]));
         assert_eq!(back.axial, rans.axial);
+        assert!(back.stalled && back.residual_drop == Some(0.9));
     }
 }

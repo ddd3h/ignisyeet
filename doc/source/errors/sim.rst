@@ -1080,7 +1080,7 @@ IY-S075
     慣性モーメントと慣性乗積を確認する。
 
 関連
-    :ref:`sec-usage-inertia-estimate`
+    :ref:`慣性モーメントの推定 <sec-usage-inertia-estimate>`
 
 .. _IY-S076:
 

@@ -148,7 +148,7 @@ IY-C006
     0（使える分すべて）か正の値にする。
 
 関連
-    :ref:`sec-cfd-resources`
+    :ref:`[resources] の資源指定 <sec-cfd-resources>`
 
 .. _IY-C007:
 
@@ -171,7 +171,7 @@ IY-C007
     0 から 19 の整数にする。
 
 関連
-    :ref:`sec-cfd-resources`
+    :ref:`[resources] の資源指定 <sec-cfd-resources>`
 
 .. _IY-C008:
 
@@ -309,7 +309,7 @@ IY-C013
     機首先端から後ろ向きに測った距離（0 以上）を書く。
 
 関連
-    :ref:`sec-config-rocket`
+    :ref:`設定 [rocket] <sec-config-rocket>`
 
 .. _IY-C014:
 
@@ -332,7 +332,7 @@ IY-C014
     正の厚みを書く。Barrowman では 0 を書いてよい。
 
 関連
-    :ref:`sec-config-rocket`
+    :ref:`設定 [rocket] <sec-config-rocket>`
 
 .. _IY-C015:
 
@@ -355,7 +355,7 @@ IY-C015
     0 より大きく 90 以下の値にする。
 
 関連
-    :ref:`sec-config-sim`
+    :ref:`設定 [sim] <sec-config-sim>`
 
 .. _IY-C016:
 
@@ -401,7 +401,7 @@ IY-C017
     ``mach_max`` を ``mach_min`` より大きくする。
 
 関連
-    :ref:`sec-config-aero`
+    :ref:`設定 [aero] <sec-config-aero>`
 
 .. _IY-C018:
 
@@ -424,7 +424,7 @@ IY-C018
     上限以下の値にする。
 
 関連
-    :ref:`sec-config-aero`
+    :ref:`設定 [aero] <sec-config-aero>`
 
 .. _IY-C019:
 
@@ -447,7 +447,7 @@ IY-C019
     0 より大きく 180 以下の値にする。
 
 関連
-    :ref:`sec-config-aero`
+    :ref:`設定 [aero] <sec-config-aero>`
 
 .. _IY-C020:
 
@@ -470,7 +470,7 @@ IY-C020
     マッハ数または迎え角の刻みを大きくするか、範囲を狭める。
 
 関連
-    :ref:`sec-config-aero`
+    :ref:`設定 [aero] <sec-config-aero>`
 
 .. _IY-C021:
 
@@ -493,7 +493,7 @@ IY-C021
     示された数以上にする。
 
 関連
-    :ref:`sec-config-aero`
+    :ref:`設定 [aero] <sec-config-aero>`
 
 .. _IY-C022:
 
@@ -516,7 +516,7 @@ IY-C022
     示された数以下にする。
 
 関連
-    :ref:`sec-config-aero`
+    :ref:`設定 [aero] <sec-config-aero>`
 
 .. _IY-C023:
 
@@ -539,7 +539,7 @@ IY-C023
     ``transonic[1]`` を示された値以下にするか、``aero.mach_max`` を上げる。
 
 関連
-    :ref:`sec-config-aero`
+    :ref:`設定 [aero] <sec-config-aero>`
 
 .. _IY-C024:
 
@@ -585,7 +585,7 @@ IY-C025
     示された上限以下（標準は 0.002 s）にする。
 
 関連
-    :ref:`sec-config-sim`
+    :ref:`設定 [sim] <sec-config-sim>`
 
 .. _IY-C026:
 
@@ -608,7 +608,7 @@ IY-C026
     示された下限以上（標準は 0.002 s）にする。
 
 関連
-    :ref:`sec-config-sim`
+    :ref:`設定 [sim] <sec-config-sim>`
 
 .. _IY-C027:
 
@@ -631,7 +631,7 @@ IY-C027
     ``sim.dt`` を大きくするか ``sim.max_time`` を短くする。
 
 関連
-    :ref:`sec-config-sim`
+    :ref:`設定 [sim] <sec-config-sim>`
 
 .. _IY-C028:
 
@@ -654,7 +654,7 @@ IY-C028
     示された下限以上にする。
 
 関連
-    :ref:`sec-config-sim`
+    :ref:`設定 [sim] <sec-config-sim>`
 
 .. _IY-C029:
 
@@ -677,7 +677,7 @@ IY-C029
     ``sim.output_interval`` を大きくする。
 
 関連
-    :ref:`sec-config-sim`
+    :ref:`設定 [sim] <sec-config-sim>`
 
 .. _IY-C030:
 
@@ -700,7 +700,7 @@ IY-C030
     ``output_interval`` を ``max_time`` 以下にする。
 
 関連
-    :ref:`sec-config-sim`
+    :ref:`設定 [sim] <sec-config-sim>`
 
 .. _IY-C031:
 
@@ -723,7 +723,7 @@ IY-C031
     示された上限以下（標準は 1e-8）にする。
 
 関連
-    :ref:`sec-config-sim`
+    :ref:`設定 [sim] <sec-config-sim>`
 
 .. _IY-C032:
 
@@ -769,7 +769,7 @@ IY-C033
     ``"rounded"`` か ``"sharp"`` にする。
 
 関連
-    :ref:`sec-config-rocket`
+    :ref:`設定 [rocket] <sec-config-rocket>`
 
 .. _IY-C034:
 
@@ -792,7 +792,7 @@ IY-C034
     ``"square"`` か ``"tapered"`` にする。
 
 関連
-    :ref:`sec-config-rocket`
+    :ref:`設定 [rocket] <sec-config-rocket>`
 
 .. _IY-C035:
 
@@ -861,7 +861,7 @@ IY-C037
     有限の数値にする。
 
 関連
-    :ref:`sec-config-rocket`
+    :ref:`設定 [rocket] <sec-config-rocket>`
 
 .. _IY-C038:
 
@@ -884,7 +884,7 @@ IY-C038
     正の値にする。
 
 関連
-    :ref:`sec-config-aero`
+    :ref:`設定 [aero] <sec-config-aero>`
 
 .. _IY-C039:
 
@@ -907,7 +907,7 @@ IY-C039
     ``aero.mach_step``、``aero.alpha_step_deg``、``aero.mach_min`` / ``mach_max`` を見直す。
 
 関連
-    :ref:`sec-config-aero`
+    :ref:`設定 [aero] <sec-config-aero>`
 
 .. _IY-C040:
 
@@ -1252,7 +1252,7 @@ IY-C054
     正の値にする。
 
 関連
-    :ref:`sec-config-sim`
+    :ref:`設定 [sim] <sec-config-sim>`
 
 .. _IY-C055:
 
@@ -1847,7 +1847,7 @@ IY-C116
     ``base_treatment`` を書いていない。
 
 対処
-    ``base_treatment = "fairing"``（入力 STL を変更して円錐を付ける）か ``"flat"``（形を保つが収束しないことが多い）を書く。
+    ``base_treatment = "fairing"``\ （入力 STL を変更して円錐を付ける）か ``"flat"``\ （形を保つが収束しないことが多い）を書く。
 
 関連
     :ref:`sec-cfd-stl-base`
@@ -2195,7 +2195,7 @@ IY-C131
     0 から 4 にする。
 
 関連
-    :ref:`sec-cfd-resources`
+    :ref:`[resources] の資源指定 <sec-cfd-resources>`
 
 .. _IY-C132:
 
@@ -2264,7 +2264,7 @@ IY-C134
     0（制限なし）か正の値にする。
 
 関連
-    :ref:`sec-cfd-resources`
+    :ref:`[resources] の資源指定 <sec-cfd-resources>`
 
 .. _IY-C135:
 
@@ -2379,7 +2379,7 @@ IY-C501
     ``resources.threads`` を使えるスレッド数以下にするか、0（すべて使う）にする。
 
 関連
-    :ref:`sec-cfd-resources`
+    :ref:`[resources] の資源指定 <sec-cfd-resources>`
 
 .. _IY-C502:
 
@@ -2448,7 +2448,7 @@ IY-C510
     積を使えるコア数以下にする。
 
 関連
-    :ref:`sec-cfd-resources`
+    :ref:`[resources] の資源指定 <sec-cfd-resources>`
 
 .. _IY-C511:
 
@@ -2471,7 +2471,7 @@ IY-C511
     ``ignisyeet cfd-check <config> --mesh`` で見積もり、メモリに収まる ``wall_size`` にする。
 
 関連
-    :ref:`sec-cfd-resources`
+    :ref:`[resources] の資源指定 <sec-cfd-resources>`
 
 .. _IY-C512:
 

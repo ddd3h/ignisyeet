@@ -45,7 +45,7 @@ IY-F002
     error[IY-F002]: a single CFD case needs about <x> GB (<Euler|RANS> on <cells> cells / <nodes> nodes, <n> ranks), more than the memory budget of <y> GB (<source>); use a coarser mesh (a larger wall_size), fewer ranks_per_case (about 40 MB each), or raise resources.memory_gb
 
 意味
-    メッシュの規模から見積もった 1 ケース分のメモリが、使えるメモリ予算を超えています。1 ケースも実行できないため計算を始めません。メッセージは ``aero.cfd: `` に続いて表示されます。
+    メッシュの規模から見積もった 1 ケース分のメモリが、使えるメモリ予算を超えています。1 ケースも実行できないため計算を始めません。メッセージは ``aero.cfd:`` とそれに続く空白のあとに表示されます。
 
 主な原因
     wall_size が小さすぎる。RANS のメッシュが大きい。ranks_per_case が多い。他のプログラムがメモリを使っていて空きが少ない。
@@ -54,7 +54,7 @@ IY-F002
     wall_size を大きくする（RANS では既定値 0.005 m を目安にする）か、ranks_per_case を減らします。メモリを空けられるときは resources.memory_gb を指定します。
 
 関連
-    :ref:`sec-cfd-resources`
+    :ref:`[resources] の資源指定 <sec-cfd-resources>`
 
 .. _IY-F003:
 
@@ -217,7 +217,7 @@ IY-F011
     他のプログラムを閉じるか、wall_size を大きくします。
 
 関連
-    :ref:`sec-cfd-resources`
+    :ref:`[resources] の資源指定 <sec-cfd-resources>`
 
 .. _IY-F012:
 
@@ -1160,7 +1160,7 @@ IY-F071
     表示された原因を確認し、STEP と STL を同じモデルから書き出します。
 
 関連
-    :ref:`sec-cfd-step-report`
+    :ref:`読み込みと位置合わせの報告 <sec-cfd-step-report>`
 
 .. _IY-F072:
 
@@ -1904,7 +1904,7 @@ IY-F120
     parallel_cases または ranks_per_case を減らします。
 
 関連
-    :ref:`sec-cfd-resources`
+    :ref:`[resources] の資源指定 <sec-cfd-resources>`
 
 .. _IY-F121:
 

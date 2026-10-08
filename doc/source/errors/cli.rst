@@ -1438,7 +1438,7 @@ IY-O538
     サンプル数を増やす。
 
 関連
-    :ref:`sec-mc-percentile`
+    :ref:`着地距離のパーセンタイル <sec-mc-percentile>`
 
 .. _IY-O539:
 

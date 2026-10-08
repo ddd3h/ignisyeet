@@ -7,10 +7,10 @@
 エラーは番号 001 から 499、ワーニングは 500 から 999 である。
 CFD の設定（``[aero.cfd]``）は 100 番台と 510 番台にある。
 
-メッセージの先頭の ``[IY-Cxxx]`` が番号である。
-標準出力と標準エラー出力では、エラーの前に ``Error:`` が、ワーニングの前に ``warning:`` が付く。
-設定を読めないとき、終了ステータスは 2 である。
-検査のエラーは ``invalid config <ファイル>`` で始まる行の次の行（``Caused by:``）に出る。
+エラーは ``error[IY-Cnnn]: …``、ワーニングは ``warning[IY-Cnnn]: …`` の形で表示する。
+ワーニングを ``summary.json`` などの ``warnings`` 配列に書くときは、``[IY-Cnnn] …`` の文字列のままにする。
+設定の読み込みに失敗したときの終了ステータスは 1 である（``--set`` の形の誤りは、コマンドラインの使い方の誤りとして 2 である）。
+検査のエラーは ``invalid config <ファイル>`` を見出しとし、原因を ``Caused by:`` の下に出す。コードは先頭の ``error[…]:`` に 1 回だけ現れる。
 
 .. _IY-C001:
 
@@ -21,7 +21,7 @@ IY-C001
 
 メッセージ::
 
-    [IY-C001] --set <KEY=VALUE>: invalid key "<key>" (expected a dotted path such as wind.speed)
+    error[IY-C001]: --set <KEY=VALUE>: invalid key "<key>" (expected a dotted path such as wind.speed)
 
 意味
     ``--set`` のキーに空の部分がある。コマンドライン引数の検査で見つかったときは ``error: invalid value`` として終了ステータス 2 で止まる。
@@ -44,7 +44,7 @@ IY-C002
 
 メッセージ::
 
-    [IY-C002] --set <KEY=VALUE>: expected KEY=VALUE
+    error[IY-C002]: --set <KEY=VALUE>: expected KEY=VALUE
 
 意味
     ``--set`` の引数に ``=`` がない。
@@ -67,7 +67,7 @@ IY-C003
 
 メッセージ::
 
-    [IY-C003] --set <KEY=VALUE>: integer out of range (TOML integers are at most 9223372036854775807)
+    error[IY-C003]: --set <KEY=VALUE>: integer out of range (TOML integers are at most 9223372036854775807)
 
 意味
     整数の値が TOML で扱える範囲（64 ビット符号付き整数）を超えている。
@@ -90,7 +90,7 @@ IY-C004
 
 メッセージ::
 
-    [IY-C004] --set <KEY=VALUE>: <path> is not a table
+    error[IY-C004]: --set <KEY=VALUE>: <path> is not a table
 
 意味
     キーの途中の名前が、表ではなく値として設定ファイルにすでにある。
@@ -113,7 +113,7 @@ IY-C005
 
 メッセージ::
 
-    [IY-C005] --set <KEY=VALUE>: <TOML の読み込みエラー>
+    error[IY-C005]: --set <KEY=VALUE>: <TOML の読み込みエラー>
 
 意味
     ``--set`` を適用した結果、設定を読めなくなった。この上書きを名指しして知らせる。
@@ -136,7 +136,7 @@ IY-C006
 
 メッセージ::
 
-    [IY-C006] resources.memory_gb must be 0 (use the available memory) or positive
+    error[IY-C006]: resources.memory_gb must be 0 (use the available memory) or positive
 
 意味
     ``[resources]`` の ``memory_gb`` が負または有限でない。
@@ -159,7 +159,7 @@ IY-C007
 
 メッセージ::
 
-    [IY-C007] resources.nice must be between 0 and 19
+    error[IY-C007]: resources.nice must be between 0 and 19
 
 意味
     ``[resources]`` の ``nice`` が 0 から 19 の外にある。
@@ -182,7 +182,7 @@ IY-C008
 
 メッセージ::
 
-    [IY-C008] the [environment] section was removed: move wind_speed, wind_direction_deg, wind_ref_height and wind_exponent to [wind] as speed, direction_deg, ref_height and exponent
+    error[IY-C008]: the [environment] section was removed: move wind_speed, wind_direction_deg, wind_ref_height and wind_exponent to [wind] as speed, direction_deg, ref_height and exponent
 
 意味
     ``[environment]`` 表は読まない。風の設定は ``[wind]`` 表にある。
@@ -205,7 +205,7 @@ IY-C009
 
 メッセージ::
 
-    [IY-C009] <key> must be a finite number, found <value>
+    error[IY-C009]: <key> must be a finite number, found <value>
 
 意味
     数値の設定値が有限でない（NaN または無限大）。
@@ -228,7 +228,7 @@ IY-C010
 
 メッセージ::
 
-    [IY-C010] <key> must be a finite number > 0, found <value>
+    error[IY-C010]: <key> must be a finite number > 0, found <value>
 
 意味
     正の数でなければならない設定値が 0 以下、または有限でない。
@@ -251,7 +251,7 @@ IY-C011
 
 メッセージ::
 
-    [IY-C011] <key> must be a finite number >= 0, found <value>
+    error[IY-C011]: <key> must be a finite number >= 0, found <value>
 
 意味
     0 以上の数でなければならない設定値が負、または有限でない。
@@ -274,7 +274,7 @@ IY-C012
 
 メッセージ::
 
-    [IY-C012] <key> must be between <lo> and <hi>, found <value>
+    error[IY-C012]: <key> must be between <lo> and <hi>, found <value>
 
 意味
     設定値が許される範囲の外にある。
@@ -297,7 +297,7 @@ IY-C013
 
 メッセージ::
 
-    [IY-C013] rocket.cg_dry must be >= 0 (measured aft of the nose tip), found <value>
+    error[IY-C013]: rocket.cg_dry must be >= 0 (measured aft of the nose tip), found <value>
 
 意味
     ``rocket.cg_dry`` は機首先端から後ろ向きに測るので、負の値は使えない。
@@ -320,7 +320,7 @@ IY-C014
 
 メッセージ::
 
-    [IY-C014] rocket.fin_override.thickness must be > 0 for aero.method = "<panel|cfd>", found <value>: the fins are meshed as biconvex sections of this thickness and fins without thickness would be left out of the mesh
+    error[IY-C014]: rocket.fin_override.thickness must be > 0 for aero.method = "<panel|cfd>", found <value>: the fins are meshed as biconvex sections of this thickness and fins without thickness would be left out of the mesh
 
 意味
     パネル法と CFD の表面メッシュは、翼を両凸断面の厚みのある形で作る。厚み 0 の翼はメッシュから落ちる。
@@ -343,7 +343,7 @@ IY-C015
 
 メッセージ::
 
-    [IY-C015] launch.elevation_deg must be in (0, 90], found <value>
+    error[IY-C015]: launch.elevation_deg must be in (0, 90], found <value>
 
 意味
     発射角（仰角）が 0 より大きく 90° 以下でない。
@@ -366,7 +366,7 @@ IY-C016
 
 メッセージ::
 
-    [IY-C016] sim.descent = "parachute" needs recovery.enabled = true
+    error[IY-C016]: sim.descent = "parachute" needs recovery.enabled = true
 
 意味
     パラシュート降下を指定したが、回収系が無効。
@@ -389,7 +389,7 @@ IY-C017
 
 メッセージ::
 
-    [IY-C017] aero.mach_max (<value>) must be greater than aero.mach_min (<value>)
+    error[IY-C017]: aero.mach_max (<value>) must be greater than aero.mach_min (<value>)
 
 意味
     空力表のマッハ数の範囲が空。
@@ -412,7 +412,7 @@ IY-C018
 
 メッセージ::
 
-    [IY-C018] aero.mach_max = <value> is too large for a rocket flight (<= <limit>)
+    error[IY-C018]: aero.mach_max = <value> is too large for a rocket flight (<= <limit>)
 
 意味
     空力表の最大マッハ数がロケットの飛行として大きすぎる。
@@ -435,7 +435,7 @@ IY-C019
 
 メッセージ::
 
-    [IY-C019] aero.alpha_max_deg = <value> is outside (0, 180]
+    error[IY-C019]: aero.alpha_max_deg = <value> is outside (0, 180]
 
 意味
     空力表の最大迎え角が 0 より大きく 180° 以下でない。
@@ -458,7 +458,7 @@ IY-C020
 
 メッセージ::
 
-    [IY-C020] the aero table grid would have about <points> points (<内訳>; at most <limit>): increase <step_key> / aero.alpha_step_deg or reduce aero.mach_max / aero.alpha_max_deg
+    error[IY-C020]: the aero table grid would have about <points> points (<内訳>; at most <limit>): increase <step_key> / aero.alpha_step_deg or reduce aero.mach_max / aero.alpha_max_deg
 
 意味
     空力表の格子点が多すぎて、作成に時間とメモリがかかりすぎる。
@@ -481,7 +481,7 @@ IY-C021
 
 メッセージ::
 
-    [IY-C021] aero.n_slices = <value> is too small: the geometry extraction needs at least <n> slices
+    error[IY-C021]: aero.n_slices = <value> is too small: the geometry extraction needs at least <n> slices
 
 意味
     形状抽出の断面数が少なすぎる。
@@ -504,7 +504,7 @@ IY-C022
 
 メッセージ::
 
-    [IY-C022] aero.n_slices = <value> is too large (at most <n>)
+    error[IY-C022]: aero.n_slices = <value> is too large (at most <n>)
 
 意味
     形状抽出の断面数が多すぎる。
@@ -527,7 +527,7 @@ IY-C023
 
 メッセージ::
 
-    [IY-C023] aero.panel.transonic[1] = <value> is above the table's aero.mach_max (<value>): the transonic blend would run beyond the table; use at most <limit>
+    error[IY-C023]: aero.panel.transonic[1] = <value> is above the table's aero.mach_max (<value>): the transonic blend would run beyond the table; use at most <limit>
 
 意味
     パネル法の遷音速ブレンドの上端が、空力表の最大マッハ数を超えている。
@@ -550,7 +550,7 @@ IY-C024
 
 メッセージ::
 
-    [IY-C024] wind.roughness_length (<value>) must be smaller than half of wind.ref_height (<value>) for the log profile
+    error[IY-C024]: wind.roughness_length (<value>) must be smaller than half of wind.ref_height (<value>) for the log profile
 
 意味
     対数風速分布の粗さ長が、基準高さの半分以上ある。
@@ -573,7 +573,7 @@ IY-C025
 
 メッセージ::
 
-    [IY-C025] sim.dt = <value> s is too large for a rocket flight (<= <limit> s; 0.002 s is typical)
+    error[IY-C025]: sim.dt = <value> s is too large for a rocket flight (<= <limit> s; 0.002 s is typical)
 
 意味
     積分の刻み幅が大きすぎる。
@@ -596,7 +596,7 @@ IY-C026
 
 メッセージ::
 
-    [IY-C026] sim.dt = <value> s is too small (>= <limit> s): the run would take days; 0.002 s is typical
+    error[IY-C026]: sim.dt = <value> s is too small (>= <limit> s): the run would take days; 0.002 s is typical
 
 意味
     積分の刻み幅が小さすぎ、計算が何日もかかる。
@@ -619,7 +619,7 @@ IY-C027
 
 メッセージ::
 
-    [IY-C027] sim.max_time / sim.dt = <steps> steps is too many (at most <limit>): increase sim.dt or reduce sim.max_time
+    error[IY-C027]: sim.max_time / sim.dt = <steps> steps is too many (at most <limit>): increase sim.dt or reduce sim.max_time
 
 意味
     積分のステップ数が多すぎる。
@@ -642,7 +642,7 @@ IY-C028
 
 メッセージ::
 
-    [IY-C028] sim.output_interval = <value> s is too small (>= <limit> s): it would write an enormous trajectory and limit the adaptive step
+    error[IY-C028]: sim.output_interval = <value> s is too small (>= <limit> s): it would write an enormous trajectory and limit the adaptive step
 
 意味
     出力間隔が小さすぎる。巨大な軌道ファイルになり、適応刻みの上限にもなる。
@@ -665,7 +665,7 @@ IY-C029
 
 メッセージ::
 
-    [IY-C029] sim.max_time / sim.output_interval = <rows> output rows is too many (at most <limit>): increase sim.output_interval
+    error[IY-C029]: sim.max_time / sim.output_interval = <rows> output rows is too many (at most <limit>): increase sim.output_interval
 
 意味
     出力の行数が多すぎる。
@@ -688,7 +688,7 @@ IY-C030
 
 メッセージ::
 
-    [IY-C030] sim.output_interval = <value> s exceeds sim.max_time = <value> s
+    error[IY-C030]: sim.output_interval = <value> s exceeds sim.max_time = <value> s
 
 意味
     出力間隔が最大飛行時間より長い。
@@ -711,7 +711,7 @@ IY-C031
 
 メッセージ::
 
-    [IY-C031] sim.<rtol|atol> = <value> is too loose for a rocket flight (<= <limit>; 1e-8 is typical)
+    error[IY-C031]: sim.<rtol|atol> = <value> is too loose for a rocket flight (<= <limit>; 1e-8 is typical)
 
 意味
     適応積分器の許容誤差が緩すぎる。
@@ -734,7 +734,7 @@ IY-C032
 
 メッセージ::
 
-    [IY-C032] dispersion.monte_carlo.truncate_sigma must be a finite number > 0 (the bound of the clipped draws in sigma, e.g. 3.0), found <value>
+    error[IY-C032]: dispersion.monte_carlo.truncate_sigma must be a finite number > 0 (the bound of the clipped draws in sigma, e.g. 3.0), found <value>
 
 意味
     モンテカルロの打ち切り幅 :math:`k` が正の有限値でない。
@@ -757,7 +757,7 @@ IY-C033
 
 メッセージ::
 
-    [IY-C033] rocket.fin_le must be "rounded" or "sharp"
+    error[IY-C033]: rocket.fin_le must be "rounded" or "sharp"
 
 意味
     翼の前縁形状の指定が不正。
@@ -780,7 +780,7 @@ IY-C034
 
 メッセージ::
 
-    [IY-C034] rocket.fin_te must be "square" or "tapered"
+    error[IY-C034]: rocket.fin_te must be "square" or "tapered"
 
 意味
     翼の後縁形状の指定が不正。
@@ -803,7 +803,7 @@ IY-C035
 
 メッセージ::
 
-    [IY-C035] rocket mass and inertias must be positive
+    error[IY-C035]: rocket mass and inertias must be positive
 
 意味
     乾燥質量と慣性モーメント（ixx, iyy）が正でない。
@@ -826,7 +826,7 @@ IY-C036
 
 メッセージ::
 
-    [IY-C036] the inertia tensor of the rocket (ixx_dry, iyy_dry, izz_dry and the products) must be positive definite
+    error[IY-C036]: the inertia tensor of the rocket (ixx_dry, iyy_dry, izz_dry and the products) must be positive definite
 
 意味
     慣性テンソルが正定値でなく、物理的にありえない。
@@ -849,7 +849,7 @@ IY-C037
 
 メッセージ::
 
-    [IY-C037] rocket inertia products, CG offset, fin cant, motor misalignment and launch.roll_deg must be finite numbers
+    error[IY-C037]: rocket inertia products, CG offset, fin cant, motor misalignment and launch.roll_deg must be finite numbers
 
 意味
     慣性乗積、横方向の重心ずれ、翼の取り付け角、推力の取り付け誤差、ロール角のいずれかが有限でない。
@@ -872,7 +872,7 @@ IY-C038
 
 メッセージ::
 
-    [IY-C038] aero.general_mach_step must be positive
+    error[IY-C038]: aero.general_mach_step must be positive
 
 意味
     一般表（6 分力）のマッハ刻みが正でない。
@@ -895,7 +895,7 @@ IY-C039
 
 メッセージ::
 
-    [IY-C039] invalid aero grid
+    error[IY-C039]: invalid aero grid
 
 意味
     空力表の格子の指定が不正（マッハ刻み、迎え角刻み、マッハ範囲のいずれか）。
@@ -918,7 +918,7 @@ IY-C040
 
 メッセージ::
 
-    [IY-C040] dispersion.wind_speeds must list at least one speed
+    error[IY-C040]: dispersion.wind_speeds must list at least one speed
 
 意味
     風速格子の風速リストが空。
@@ -941,7 +941,7 @@ IY-C041
 
 メッセージ::
 
-    [IY-C041] dispersion.directions must be at least 1
+    error[IY-C041]: dispersion.directions must be at least 1
 
 意味
     風向格子の方向数が 0。
@@ -964,7 +964,7 @@ IY-C042
 
 メッセージ::
 
-    [IY-C042] dispersion.directions = <value> is too large (at most <limit>)
+    error[IY-C042]: dispersion.directions = <value> is too large (at most <limit>)
 
 意味
     風向の数が多すぎる。
@@ -987,7 +987,7 @@ IY-C043
 
 メッセージ::
 
-    [IY-C043] dispersion.wind_speeds lists <n> speeds (at most <limit>)
+    error[IY-C043]: dispersion.wind_speeds lists <n> speeds (at most <limit>)
 
 意味
     風速の数が多すぎる。
@@ -1010,7 +1010,7 @@ IY-C044
 
 メッセージ::
 
-    [IY-C044] the wind grid would have <n> cases (wind_speeds x directions; at most <limit>)
+    error[IY-C044]: the wind grid would have <n> cases (wind_speeds x directions; at most <limit>)
 
 意味
     風速格子の計算ケース数（風速数 × 方向数）が多すぎる。
@@ -1033,7 +1033,7 @@ IY-C045
 
 メッセージ::
 
-    [IY-C045] dispersion.monte_carlo.samples must be at least 1
+    error[IY-C045]: dispersion.monte_carlo.samples must be at least 1
 
 意味
     モンテカルロのサンプル数が 0。
@@ -1056,7 +1056,7 @@ IY-C046
 
 メッセージ::
 
-    [IY-C046] dispersion.monte_carlo.samples = <value> is too large (at most <limit>)
+    error[IY-C046]: dispersion.monte_carlo.samples = <value> is too large (at most <limit>)
 
 意味
     モンテカルロのサンプル数が多すぎる。
@@ -1079,7 +1079,7 @@ IY-C047
 
 メッセージ::
 
-    [IY-C047] aero.table is required when aero.method = "table"
+    error[IY-C047]: aero.table is required when aero.method = "table"
 
 意味
     ``aero.method = "table"`` なのに、外部空力表のパスがない。
@@ -1102,7 +1102,7 @@ IY-C048
 
 メッセージ::
 
-    [IY-C048] aero.cfd.step_file = "<path>": no such file (<解決したパス>; a relative path is relative to the configuration file)
+    error[IY-C048]: aero.cfd.step_file = "<path>": no such file (<解決したパス>; a relative path is relative to the configuration file)
 
 意味
     ``surface = "step"`` で指定した CAD ファイルがない。
@@ -1125,7 +1125,7 @@ IY-C049
 
 メッセージ::
 
-    [IY-C049] earth.gravity = "j2" requires earth.model = "ecef"
+    error[IY-C049]: earth.gravity = "j2" requires earth.model = "ecef"
 
 意味
     J2 重力は ECEF モデルでだけ使える。
@@ -1148,7 +1148,7 @@ IY-C050
 
 メッセージ::
 
-    [IY-C050] wind.profile (CSV path) is required when wind.model = "profile"
+    error[IY-C050]: wind.profile (CSV path) is required when wind.model = "profile"
 
 意味
     風のモデルが ``profile`` なのに、高度別風の CSV のパスがない。
@@ -1171,7 +1171,7 @@ IY-C051
 
 メッセージ::
 
-    [IY-C051] wind.ref_height must be positive
+    error[IY-C051]: wind.ref_height must be positive
 
 意味
     風の基準高さが正でない。
@@ -1194,7 +1194,7 @@ IY-C052
 
 メッセージ::
 
-    [IY-C052] wind.roughness_length must be positive and smaller than wind.ref_height
+    error[IY-C052]: wind.roughness_length must be positive and smaller than wind.ref_height
 
 意味
     対数風速分布の粗さ長が正でない、または基準高さ以上。
@@ -1217,7 +1217,7 @@ IY-C053
 
 メッセージ::
 
-    [IY-C053] wind.ground_blend_height must be positive and smaller than wind.ref_height
+    error[IY-C053]: wind.ground_blend_height must be positive and smaller than wind.ref_height
 
 意味
     地表付近のブレンド高さが正でない、または基準高さ以上。
@@ -1240,7 +1240,7 @@ IY-C054
 
 メッセージ::
 
-    [IY-C054] sim.dt and sim.output_interval must be positive
+    error[IY-C054]: sim.dt and sim.output_interval must be positive
 
 意味
     積分の刻み幅と出力間隔が正でない。
@@ -1263,7 +1263,7 @@ IY-C055
 
 メッセージ::
 
-    [IY-C055] sim.rtol and sim.atol must be positive for the adaptive integrators (rk45, dop853)
+    error[IY-C055]: sim.rtol and sim.atol must be positive for the adaptive integrators (rk45, dop853)
 
 意味
     適応積分器の相対・絶対許容誤差が正でない。
@@ -1286,7 +1286,7 @@ IY-C056
 
 メッセージ::
 
-    [IY-C056] <key> only applies to wind.model = "profile" (the model is "<model>"); set wind.speed / wind.direction_deg instead
+    error[IY-C056]: <key> only applies to wind.model = "profile" (the model is "<model>"); set wind.speed / wind.direction_deg instead
 
 意味
     ``profile_mean_speed`` と ``profile_mean_direction_deg`` は ``profile`` モデルでだけ使える。
@@ -1309,7 +1309,7 @@ IY-C057
 
 メッセージ::
 
-    [IY-C057] wind.profile_mean_speed must be a finite number >= 0, found <value>
+    error[IY-C057]: wind.profile_mean_speed must be a finite number >= 0, found <value>
 
 意味
     ``profile_mean_speed`` が負、または有限でない。
@@ -1332,7 +1332,7 @@ IY-C058
 
 メッセージ::
 
-    [IY-C058] wind.profile_mean_direction_deg must be between 0 and 360, found <value>
+    error[IY-C058]: wind.profile_mean_direction_deg must be between 0 and 360, found <value>
 
 意味
     ``profile_mean_direction_deg`` が 0 から 360° の外にある。
@@ -1355,7 +1355,7 @@ IY-C059
 
 メッセージ::
 
-    [IY-C059] rocket.nose_direction '<value>' is not one of auto, +x, -x, +y, -y, +z, -z
+    error[IY-C059]: rocket.nose_direction '<value>' is not one of auto, +x, -x, +y, -y, +z, -z
 
 意味
     機首方向の指定が不正。
@@ -1378,7 +1378,7 @@ IY-C060
 
 メッセージ::
 
-    [IY-C060] cannot read config <path>
+    error[IY-C060]: cannot read config <path>
 
 意味
     設定ファイルを読めない。
@@ -1401,7 +1401,7 @@ IY-C061
 
 メッセージ::
 
-    [IY-C061] invalid config <path>
+    error[IY-C061]: invalid config <path>
 
 意味
     設定ファイルが TOML として読めない。原因は続く行に出る。
@@ -1424,7 +1424,7 @@ IY-C062
 
 メッセージ::
 
-    [IY-C062] invalid config <path>[ with the --set overrides]
+    error[IY-C062]: invalid config <path>[ with the --set overrides]
 
 意味
     設定の内容を読み込めない。原因は続く行に出る。検査の誤り（範囲・組み合わせ）は、それぞれ別の番号で原因の行に出るので、この見出しには番号が付かない。
@@ -1447,7 +1447,7 @@ IY-C063
 
 メッセージ::
 
-    [IY-C063] cannot read the current directory
+    error[IY-C063]: cannot read the current directory
 
 意味
     ``--out`` の相対パスを解決するための、カレントディレクトリを取得できない。
@@ -1470,7 +1470,7 @@ IY-C100
 
 メッセージ::
 
-    [IY-C100] aero.cfd.machs must be a non-empty list of positive Mach numbers
+    error[IY-C100]: aero.cfd.machs must be a non-empty list of positive Mach numbers
 
 意味
     CFD で解くマッハ数のリストが空、または正でない値を含む。
@@ -1493,7 +1493,7 @@ IY-C101
 
 メッセージ::
 
-    [IY-C101] aero.cfd.machs must be sorted in increasing order without duplicates
+    error[IY-C101]: aero.cfd.machs must be sorted in increasing order without duplicates
 
 意味
     マッハ数のリストが昇順でない、または重複がある。
@@ -1516,7 +1516,7 @@ IY-C102
 
 メッセージ::
 
-    [IY-C102] aero.cfd.alphas_deg must be a non-empty list of angles >= 0
+    error[IY-C102]: aero.cfd.alphas_deg must be a non-empty list of angles >= 0
 
 意味
     迎え角のリストが空、または負の値を含む。
@@ -1539,7 +1539,7 @@ IY-C103
 
 メッセージ::
 
-    [IY-C103] aero.cfd.alphas_deg must be sorted in increasing order without duplicates
+    error[IY-C103]: aero.cfd.alphas_deg must be sorted in increasing order without duplicates
 
 意味
     迎え角のリストが昇順でない、または重複がある。
@@ -1562,7 +1562,7 @@ IY-C104
 
 メッセージ::
 
-    [IY-C104] aero.cfd.alphas_deg must include 0 (the zero-lift axial force and the small-angle slopes)
+    error[IY-C104]: aero.cfd.alphas_deg must include 0 (the zero-lift axial force and the small-angle slopes)
 
 意味
     迎え角のリストの先頭が 0 でない。0° は零揚力の軸力と小迎え角の傾きに必要。
@@ -1585,7 +1585,7 @@ IY-C105
 
 メッセージ::
 
-    [IY-C105] aero.cfd.alphas_deg needs at least one angle above 0
+    error[IY-C105]: aero.cfd.alphas_deg needs at least one angle above 0
 
 意味
     迎え角が 0 だけで、傾きを求める点がない。
@@ -1608,7 +1608,7 @@ IY-C106
 
 メッセージ::
 
-    [IY-C106] aero.cfd.<farfield|wall_size|yplus|cfl> must be positive
+    error[IY-C106]: aero.cfd.<farfield|wall_size|yplus|cfl> must be positive
 
 意味
     遠方境界、壁面格子サイズ、:math:`y^+`、CFL 数のいずれかが正でない。
@@ -1631,7 +1631,7 @@ IY-C107
 
 メッセージ::
 
-    [IY-C107] aero.cfd.fin_size must be "auto" or a positive size in metres
+    error[IY-C107]: aero.cfd.fin_size must be "auto" or a positive size in metres
 
 意味
     翼面の格子サイズが ``"auto"`` でも正の長さでもない。
@@ -1654,7 +1654,7 @@ IY-C108
 
 メッセージ::
 
-    [IY-C108] aero.cfd.fin_size = <value> is larger than wall_size = <value>: the fin faces are never meshed coarser than the wall
+    error[IY-C108]: aero.cfd.fin_size = <value> is larger than wall_size = <value>: the fin faces are never meshed coarser than the wall
 
 意味
     翼面の格子サイズが ``wall_size`` より大きい。翼面は壁面より粗くしない。
@@ -1677,7 +1677,7 @@ IY-C109
 
 メッセージ::
 
-    [IY-C109] aero.cfd.fin_size = <value> is below wall_size / 50 = <value>: the mesh would be impractically large
+    error[IY-C109]: aero.cfd.fin_size = <value> is below wall_size / 50 = <value>: the mesh would be impractically large
 
 意味
     翼面の格子サイズが ``wall_size`` の 1/50 より小さく、格子が非現実的に大きくなる。
@@ -1700,7 +1700,7 @@ IY-C110
 
 メッセージ::
 
-    [IY-C110] aero.cfd.betas_deg must be a non-empty list of sideslip angles in [0, 90] deg
+    error[IY-C110]: aero.cfd.betas_deg must be a non-empty list of sideslip angles in [0, 90] deg
 
 意味
     横滑り角のリストが空、または 0 から 90° の外の値を含む。
@@ -1723,7 +1723,7 @@ IY-C111
 
 メッセージ::
 
-    [IY-C111] aero.cfd.betas_deg must be sorted in increasing order without duplicates
+    error[IY-C111]: aero.cfd.betas_deg must be sorted in increasing order without duplicates
 
 意味
     横滑り角のリストが昇順でない、または重複がある。
@@ -1746,7 +1746,7 @@ IY-C112
 
 メッセージ::
 
-    [IY-C112] aero.cfd.betas_deg must start with 0
+    error[IY-C112]: aero.cfd.betas_deg must start with 0
 
 意味
     横滑り角のリストの先頭が 0 でない。
@@ -1769,7 +1769,7 @@ IY-C113
 
 メッセージ::
 
-    [IY-C113] aero.cfd.roll_rate_hat must be in (0, 0.05] (p d / 2V of the roll-damping runs)
+    error[IY-C113]: aero.cfd.roll_rate_hat must be in (0, 0.05] (p d / 2V of the roll-damping runs)
 
 意味
     ロール減衰ケースの無次元ロール角速度が 0 より大きく 0.05 以下でない。
@@ -1792,7 +1792,7 @@ IY-C114
 
 メッセージ::
 
-    [IY-C114] aero.cfd.general_mach_step must be >= 0 (0 = the [aero] mach_step)
+    error[IY-C114]: aero.cfd.general_mach_step must be >= 0 (0 = the [aero] mach_step)
 
 意味
     一般表のマッハ刻みが負、または有限でない。
@@ -1815,7 +1815,7 @@ IY-C115
 
 メッセージ::
 
-    [IY-C115] aero.cfd.max_geometry_error must be positive
+    error[IY-C115]: aero.cfd.max_geometry_error must be positive
 
 意味
     形状誤差の許容値が正でない。
@@ -1838,7 +1838,7 @@ IY-C116
 
 メッセージ::
 
-    [IY-C116] aero.cfd.surface = "stl" with model = "euler" needs base_treatment: the inviscid flow behind a flat base does not converge (…)
+    error[IY-C116]: aero.cfd.surface = "stl" with model = "euler" needs base_treatment: the inviscid flow behind a flat base does not converge (…)
 
 意味
     STL 表面でオイラー方程式を解くとき、平らな底面の後流は収束しないので、底面の扱いを選ぶ必要がある。メッセージには二つの選択肢（``fairing`` と ``flat``）の説明が続く。
@@ -1861,7 +1861,7 @@ IY-C117
 
 メッセージ::
 
-    [IY-C117] aero.cfd.surface = "step" needs step_file = "<path>" (the CAD model as STEP, IGES or BREP, relative to the configuration file)
+    error[IY-C117]: aero.cfd.surface = "step" needs step_file = "<path>" (the CAD model as STEP, IGES or BREP, relative to the configuration file)
 
 意味
     ``surface = "step"`` なのに ``step_file`` がない。
@@ -1884,7 +1884,7 @@ IY-C118
 
 メッセージ::
 
-    [IY-C118] aero.cfd.step_file = "<path>": not a CAD file OpenCASCADE reads; use a STEP (.step, .stp), IGES (.iges, .igs) or BREP (.brep, .brp) file
+    error[IY-C118]: aero.cfd.step_file = "<path>": not a CAD file OpenCASCADE reads; use a STEP (.step, .stp), IGES (.iges, .igs) or BREP (.brep, .brp) file
 
 意味
     ``step_file`` の拡張子が OpenCASCADE の読める形式でない。
@@ -1907,7 +1907,7 @@ IY-C119
 
 メッセージ::
 
-    [IY-C119] aero.cfd.surface = "step" with model = "euler" needs base_treatment: the inviscid flow behind a flat base does not converge (…)
+    error[IY-C119]: aero.cfd.surface = "step" with model = "euler" needs base_treatment: the inviscid flow behind a flat base does not converge (…)
 
 意味
     CAD 表面（STEP）でオイラー方程式を解くとき、底面の扱いを選ぶ必要がある（:ref:`IY-C116` と同じ理由）。
@@ -1930,7 +1930,7 @@ IY-C120
 
 メッセージ::
 
-    [IY-C120] aero.cfd.step_file and aero.cfd.step_unit are only used with surface = "step"
+    error[IY-C120]: aero.cfd.step_file and aero.cfd.step_unit are only used with surface = "step"
 
 意味
     ``step_file`` / ``step_unit`` は ``surface = "step"`` でだけ使う。
@@ -1953,7 +1953,7 @@ IY-C121
 
 メッセージ::
 
-    [IY-C121] aero.cfd.base_treatment = "fairing" needs tail_fairing > 0 (cone length in base radii)
+    error[IY-C121]: aero.cfd.base_treatment = "fairing" needs tail_fairing > 0 (cone length in base radii)
 
 意味
     底面にフェアリングを付ける指定だが、円錐の長さが 0。
@@ -1976,7 +1976,7 @@ IY-C122
 
 メッセージ::
 
-    [IY-C122] aero.cfd.surface = "stl" with model = "rans": RANS needs the boundary-layer mesh, which is built only for the CAD surface (surface = "cad") and the CAD B-rep (surface = "step")
+    error[IY-C122]: aero.cfd.surface = "stl" with model = "rans": RANS needs the boundary-layer mesh, which is built only for the CAD surface (surface = "cad") and the CAD B-rep (surface = "step")
 
 意味
     RANS の境界層格子は CAD 表面（``cad``）と STEP でだけ作る。STL 表面では使えない。
@@ -1999,7 +1999,7 @@ IY-C123
 
 メッセージ::
 
-    [IY-C123] aero.cfd.yplus = <value> lies in the buffer layer, where neither a resolved wall nor a wall function is valid: use yplus <= 5 (resolved wall, recommended 1) or 30..150 (standard wall function)
+    error[IY-C123]: aero.cfd.yplus = <value> lies in the buffer layer, where neither a resolved wall nor a wall function is valid: use yplus <= 5 (resolved wall, recommended 1) or 30..150 (standard wall function)
 
 意味
     :math:`y^+` が緩衝層にあり、壁面解像も壁関数も成り立たない。
@@ -2022,7 +2022,7 @@ IY-C124
 
 メッセージ::
 
-    [IY-C124] aero.cfd.rans_base = "cfd" needs model = "rans" (the inviscid base pressure is not used)
+    error[IY-C124]: aero.cfd.rans_base = "cfd" needs model = "rans" (the inviscid base pressure is not used)
 
 意味
     底面圧力を CFD から取る指定は RANS でだけ意味がある。
@@ -2045,7 +2045,7 @@ IY-C125
 
 メッセージ::
 
-    [IY-C125] aero.cfd.roll_damping is only implemented for model = "euler"
+    error[IY-C125]: aero.cfd.roll_damping is only implemented for model = "euler"
 
 意味
     ロール減衰ケースはオイラー方程式でだけ実装している。
@@ -2068,7 +2068,7 @@ IY-C126
 
 メッセージ::
 
-    [IY-C126] aero.cfd.fin_roll_deg must be a finite angle
+    error[IY-C126]: aero.cfd.fin_roll_deg must be a finite angle
 
 意味
     翼のロール方向の角が有限でない、または絶対値が 360° を超える。
@@ -2091,7 +2091,7 @@ IY-C127
 
 メッセージ::
 
-    [IY-C127] aero.cfd.tail_fairing must be >= 0
+    error[IY-C127]: aero.cfd.tail_fairing must be >= 0
 
 意味
     フェアリングの長さが負、または有限でない。
@@ -2114,7 +2114,7 @@ IY-C128
 
 メッセージ::
 
-    [IY-C128] aero.cfd.farfield must be at least 5 body lengths
+    error[IY-C128]: aero.cfd.farfield must be at least 5 body lengths
 
 意味
     遠方境界が機体長の 5 倍より近い。
@@ -2137,7 +2137,7 @@ IY-C129
 
 メッセージ::
 
-    [IY-C129] aero.cfd.convergence must be in (0, 1), e.g. 1e-6
+    error[IY-C129]: aero.cfd.convergence must be in (0, 1), e.g. 1e-6
 
 意味
     収束判定値が (0, 1) の外にある。
@@ -2160,7 +2160,7 @@ IY-C130
 
 メッセージ::
 
-    [IY-C130] aero.cfd.iterations must be at least 1
+    error[IY-C130]: aero.cfd.iterations must be at least 1
 
 意味
     反復回数の上限が 0。
@@ -2183,7 +2183,7 @@ IY-C131
 
 メッセージ::
 
-    [IY-C131] aero.cfd.multigrid must be in 0..=4 (agglomeration multigrid levels)
+    error[IY-C131]: aero.cfd.multigrid must be in 0..=4 (agglomeration multigrid levels)
 
 意味
     マルチグリッドの段数が 0 から 4 の外にある。
@@ -2206,7 +2206,7 @@ IY-C132
 
 メッセージ::
 
-    [IY-C132] aero.cfd.stable_window must be at least 10 iterations
+    error[IY-C132]: aero.cfd.stable_window must be at least 10 iterations
 
 意味
     収束判定の窓幅が 10 反復未満。
@@ -2229,7 +2229,7 @@ IY-C133
 
 メッセージ::
 
-    [IY-C133] aero.cfd.min_iterations (<value>) must not be smaller than stable_window (<value>)
+    error[IY-C133]: aero.cfd.min_iterations (<value>) must not be smaller than stable_window (<value>)
 
 意味
     最小反復回数が収束判定の窓幅より小さい。
@@ -2252,7 +2252,7 @@ IY-C134
 
 メッセージ::
 
-    [IY-C134] aero.cfd.timeout_minutes must be >= 0
+    error[IY-C134]: aero.cfd.timeout_minutes must be >= 0
 
 意味
     1 ケースの制限時間が負、または有限でない。
@@ -2275,7 +2275,7 @@ IY-C135
 
 メッセージ::
 
-    [IY-C135] aero.cfd.su2 must name the SU2_CFD executable
+    error[IY-C135]: aero.cfd.su2 must name the SU2_CFD executable
 
 意味
     SU2 の実行ファイル名が空。
@@ -2298,7 +2298,7 @@ IY-C136
 
 メッセージ::
 
-    [IY-C136] fin_size must be "auto" or a size in metres, got "<text>"
+    error[IY-C136]: fin_size must be "auto" or a size in metres, got "<text>"
 
 意味
     ``fin_size`` に ``"auto"`` 以外の文字列を書いた。設定ファイルを読む段階のエラー。
@@ -2321,7 +2321,7 @@ IY-C137
 
 メッセージ::
 
-    [IY-C137] wall_size = <value> is not a finite length; leave it out to use the default of the model
+    error[IY-C137]: wall_size = <value> is not a finite length; leave it out to use the default of the model
 
 意味
     ``wall_size`` が有限でない。設定ファイルを読む段階のエラー。
@@ -2344,7 +2344,7 @@ IY-C500
 
 メッセージ::
 
-    [IY-C500] --set <key> given more than once; the last value (<value>) is used
+    warning[IY-C500]: --set <key> given more than once; the last value (<value>) is used
 
 意味
     同じキーに ``--set`` を 2 回以上指定した。最後の値を使う。
@@ -2367,7 +2367,7 @@ IY-C501
 
 メッセージ::
 
-    [IY-C501] resources.threads = <n> exceeds the <m> available threads; using <m>
+    warning[IY-C501]: resources.threads = <n> exceeds the <m> available threads; using <m>
 
 意味
     指定したスレッド数が使えるスレッド数を超えている。使えるスレッド数に切り下げる。
@@ -2390,7 +2390,7 @@ IY-C502
 
 メッセージ::
 
-    [IY-C502] wind.speed is ignored for wind.model = "profile"; use wind.profile_mean_speed to scale the profile
+    warning[IY-C502]: wind.speed is ignored for wind.model = "profile"; use wind.profile_mean_speed to scale the profile
 
 意味
     ``profile`` モデルは ``wind.speed`` を使わない。
@@ -2413,7 +2413,7 @@ IY-C503
 
 メッセージ::
 
-    [IY-C503] wind.direction_deg is ignored for wind.model = "profile"; use wind.profile_mean_direction_deg to rotate the profile
+    warning[IY-C503]: wind.direction_deg is ignored for wind.model = "profile"; use wind.profile_mean_direction_deg to rotate the profile
 
 意味
     ``profile`` モデルは ``wind.direction_deg`` を使わない。
@@ -2436,7 +2436,7 @@ IY-C510
 
 メッセージ::
 
-    [IY-C510] aero.cfd: ranks_per_case x parallel_cases = <need> exceeds the <available> available cores; cases will be slowed down
+    warning[IY-C510]: aero.cfd: ranks_per_case x parallel_cases = <need> exceeds the <available> available cores; cases will be slowed down
 
 意味
     並列に動かす SU2 のプロセス数が、使える CPU コア数を超えている。計算は遅くなる。
@@ -2459,7 +2459,7 @@ IY-C511
 
 メッセージ::
 
-    [IY-C511] aero.cfd: model = "rans" with wall_size = <value> m, finer than the RANS default <value> m: a half-model case of the sample rocket needs about 7.5 GB at 5 mm and 19 GB at 3 mm, and more on a finer mesh; check the estimate with `ignisyeet cfd-check <config> --mesh` (an explicit wall_size overrides the RANS default)
+    warning[IY-C511]: aero.cfd: model = "rans" with wall_size = <value> m, finer than the RANS default <value> m: a half-model case of the sample rocket needs about 7.5 GB at 5 mm and 19 GB at 3 mm, and more on a finer mesh; check the estimate with `ignisyeet cfd-check <config> --mesh` (an explicit wall_size overrides the RANS default)
 
 意味
     RANS で壁面格子が細かく、1 ケースのメモリが大きくなる。
@@ -2482,7 +2482,7 @@ IY-C512
 
 メッセージ::
 
-    [IY-C512] aero.cfd: yplus = <value> selects the standard wall function (30..150), which is not verified (the RANS verification uses a resolved wall, yplus = 1); use yplus <= 5 unless you check the results yourself
+    warning[IY-C512]: aero.cfd: yplus = <value> selects the standard wall function (30..150), which is not verified (the RANS verification uses a resolved wall, yplus = 1); use yplus <= 5 unless you check the results yourself
 
 意味
     標準壁関数（:math:`y^+` が 30 から 150）は検証していない。RANS の検証は壁面解像（:math:`y^+ = 1`）で行っている。

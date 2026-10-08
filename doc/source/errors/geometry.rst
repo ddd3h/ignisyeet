@@ -1,8 +1,10 @@
-形状（IY-G）
-================
+.. _errors-geometry:
 
-形状の読み込みと抽出（``geom`` と、STL を読むその他のコマンド）が出力するエラーとワーニングの一覧である。エラーは先頭に ``[IY-Gnnn]`` を付けて表示し、ワーニングは ``warning:`` に続けて ``[IY-Gnnn]`` を付けて表示する。
-山括弧 ``<…>`` は実行時の値に置き換わる箇所である。ワーニングは ``geometry.json`` の ``warnings`` にも同じ文字列で書く。
+形状のエラーとワーニング
+========================
+
+形状の読み込みと抽出（``geom`` と、STL を読むその他のコマンド）が出力するエラーとワーニングの一覧である。エラーは ``error[IY-Gnnn]: …``、ワーニングは ``warning[IY-Gnnn]: …`` の形で表示する。
+山括弧 ``<…>`` は実行時の値に置き換わる箇所である。ワーニングは ``geometry.json`` の ``warnings`` にも書く。そこでは表示用の ``warning[…]:`` の形にせず、``[IY-Gnnn] …`` の文字列のままにする。
 
 .. _IY-G001:
 
@@ -13,7 +15,7 @@ IY-G001
 
 メッセージ::
 
-    [IY-G001] cannot read STL <path>
+    error[IY-G001]: cannot read STL <path>
 
 意味
     STL ファイルを開けない、または読めない。
@@ -36,7 +38,7 @@ IY-G002
 
 メッセージ::
 
-    [IY-G002] binary STL declares <n> triangles (needs <bytes> bytes) but the file has <size> bytes: the file is truncated or corrupt
+    error[IY-G002]: binary STL declares <n> triangles (needs <bytes> bytes) but the file has <size> bytes: the file is truncated or corrupt
 
 意味
     バイナリ STL の見出しが宣言する三角形数に対して、ファイルが短い。
@@ -59,7 +61,7 @@ IY-G003
 
 メッセージ::
 
-    [IY-G003] unrecognised STL format
+    error[IY-G003]: unrecognised STL format
 
 意味
     ASCII の STL にもバイナリの STL にも見えない。
@@ -82,7 +84,7 @@ IY-G004
 
 メッセージ::
 
-    [IY-G004] STL contains no triangles
+    error[IY-G004]: STL contains no triangles
 
 意味
     STL に三角形が 1 枚もない。
@@ -105,7 +107,7 @@ IY-G005
 
 メッセージ::
 
-    [IY-G005] triangle <i> has a non-finite (NaN or infinite) vertex coordinate
+    error[IY-G005]: triangle <i> has a non-finite (NaN or infinite) vertex coordinate
 
 意味
     ``<i>`` 番目の三角形の頂点座標が NaN または無限大である。
@@ -128,7 +130,7 @@ IY-G006
 
 メッセージ::
 
-    [IY-G006] malformed vertex line: <line>
+    error[IY-G006]: malformed vertex line: <line>
 
 意味
     ASCII STL の ``vertex`` 行に座標が 3 つない。
@@ -151,7 +153,7 @@ IY-G007
 
 メッセージ::
 
-    [IY-G007] ASCII STL is not valid UTF-8
+    error[IY-G007]: ASCII STL is not valid UTF-8
 
 意味
     ASCII STL の文字列を UTF-8 として読めない。
@@ -174,7 +176,7 @@ IY-G008
 
 メッセージ::
 
-    [IY-G008] invalid number in vertex line: <line>
+    error[IY-G008]: invalid number in vertex line: <line>
 
 意味
     ASCII STL の ``vertex`` 行に、数値として読めない値がある。
@@ -197,7 +199,7 @@ IY-G009
 
 メッセージ::
 
-    [IY-G009] cannot write STL <path>
+    error[IY-G009]: cannot write STL <path>
 
 意味
     STL ファイルを書けない。
@@ -220,7 +222,7 @@ IY-G010
 
 メッセージ::
 
-    [IY-G010] the STL surface is not closed: <open> open edges of <edges> (<percent> %): the geometry extraction needs a closed (watertight) surface; repair the mesh (close the holes) or export the rocket as a solid
+    error[IY-G010]: the STL surface is not closed: <open> open edges of <edges> (<percent> %): the geometry extraction needs a closed (watertight) surface; repair the mesh (close the holes) or export the rocket as a solid
 
 意味
     開いた辺（1 枚の三角形にしか属さない辺）が全体の辺の 1 % を超えており、形状抽出に使えない。
@@ -243,7 +245,7 @@ IY-G011
 
 メッセージ::
 
-    [IY-G011] the STL surface is not closed: a hole bounded by <n> open edges is <extent> m across (<percent> % of the body diameter <diameter> m): the geometry extraction needs a closed (watertight) surface; repair the mesh (close the holes) or export the rocket as a solid
+    error[IY-G011]: the STL surface is not closed: a hole bounded by <n> open edges is <extent> m across (<percent> % of the body diameter <diameter> m): the geometry extraction needs a closed (watertight) surface; repair the mesh (close the holes) or export the rocket as a solid
 
 意味
     開いた辺の割合は 1 % 以下だが、最も広い穴の幅が胴体直径の 0.1 倍を超えている。底面の蓋、フィンの面、胴体の一部が抜けていると、細かいメッシュでは割合だけでは検出できない。
@@ -266,7 +268,7 @@ IY-G012
 
 メッセージ::
 
-    [IY-G012] n_slices must be at least 20
+    error[IY-G012]: n_slices must be at least 20
 
 意味
     断面の数 ``aero.n_slices`` が 20 未満である。
@@ -289,7 +291,7 @@ IY-G013
 
 メッセージ::
 
-    [IY-G013] mesh has zero surface area
+    error[IY-G013]: mesh has zero surface area
 
 意味
     メッシュの表面積が 0 で、形状を抽出できない。
@@ -312,7 +314,7 @@ IY-G014
 
 メッセージ::
 
-    [IY-G014] degenerate mesh
+    error[IY-G014]: degenerate mesh
 
 意味
     メッシュの機軸方向の長さが 0 で、形状を抽出できない。
@@ -335,7 +337,7 @@ IY-G015
 
 メッセージ::
 
-    [IY-G015] could not determine body radius
+    error[IY-G015]: could not determine body radius
 
 意味
     胴体の半径を決められない（どの断面にも胴体の幅がない）。
@@ -358,7 +360,7 @@ IY-G501
 
 メッセージ::
 
-    warning: [IY-G501] the STL surface has <n> open and <m> non-manifold (shared by more than two triangles) edges of <edges>: small mesh defects, check the extracted geometry
+    warning[IY-G501]: the STL surface has <n> open and <m> non-manifold (shared by more than two triangles) edges of <edges>: small mesh defects, check the extracted geometry
 
 意味
     STL の表面に少数の開いた辺、または 3 枚以上の三角形が共有する辺（非多様体の辺）がある。開いた辺は 1 % 以下で、抽出は続行した。メッセージは該当する辺の種類だけを書く（開いた辺だけ、非多様体の辺だけ、または両方）。
@@ -381,7 +383,7 @@ IY-G502
 
 メッセージ::
 
-    warning: [IY-G502] a short feature with radius <max> m exceeds the typical body radius <p90> m and was ignored
+    warning[IY-G502]: a short feature with radius <max> m exceeds the typical body radius <p90> m and was ignored
 
 意味
     短い突起（リングやカラー）が胴体の代表半径を大きく超えるため、基準半径の決定から除いた。
@@ -404,7 +406,7 @@ IY-G503
 
 メッセージ::
 
-    warning: [IY-G503] the nose/tail shape and the fin position suggest opposite orientations; the fin position was used (set nose_direction to override)
+    warning[IY-G503]: the nose/tail shape and the fin position suggest opposite orientations; the fin position was used (set nose_direction to override)
 
 意味
     端の半径から見た向きと、フィンの位置から見た向きが食い違う。フィンの位置を採用した。
@@ -427,7 +429,7 @@ IY-G504
 
 メッセージ::
 
-    warning: [IY-G504] orientation decided from the end radii only (no clear fin set); check the extracted nose/tail or set nose_direction
+    warning[IY-G504]: orientation decided from the end radii only (no clear fin set); check the extracted nose/tail or set nose_direction
 
 意味
     フィンを判別できず、端の半径だけでノーズの向きを決めた。
@@ -450,7 +452,7 @@ IY-G505
 
 メッセージ::
 
-    warning: [IY-G505] length/diameter ratio <ratio> is unusual for a rocket (length <length> m, diameter <d> m); check the STL scale and units
+    warning[IY-G505]: length/diameter ratio <ratio> is unusual for a rocket (length <length> m, diameter <d> m); check the STL scale and units
 
 意味
     全長と基準直径の比が 3 未満または 40 を超える。
@@ -473,7 +475,7 @@ IY-G506
 
 メッセージ::
 
-    warning: [IY-G506] detected nose length <length> m (<calibers> calibers) is implausible
+    warning[IY-G506]: detected nose length <length> m (<calibers> calibers) is implausible
 
 意味
     検出したノーズ長が基準直径の 0.4 倍未満または 8 倍を超える。
@@ -496,7 +498,7 @@ IY-G507
 
 メッセージ::
 
-    warning: [IY-G507] the aft end of the mesh is wider than the body (radius <base> m vs <r_max> m): the fins probably extend behind the body base; Barrowman's fin-body interference assumes the body continues behind the fin root chord and base drag uses this radius (check the fins, or set rocket.fin_override)
+    warning[IY-G507]: the aft end of the mesh is wider than the body (radius <base> m vs <r_max> m): the fins probably extend behind the body base; Barrowman's fin-body interference assumes the body continues behind the fin root chord and base drag uses this radius (check the fins, or set rocket.fin_override)
 
 意味
     メッシュの後端が胴体より広い。フィンが胴体の底面より後ろに出ている可能性が高い。
@@ -519,7 +521,7 @@ IY-G508
 
 メッセージ::
 
-    warning: [IY-G508] the base radius is only <percent> % of the body radius (protruding nozzle or strong boattail); base drag uses this radius
+    warning[IY-G508]: the base radius is only <percent> % of the body radius (protruding nozzle or strong boattail); base drag uses this radius
 
 意味
     底面半径が胴体半径の 60 % 未満である。底面抗力はこの半径で計算する。
@@ -542,7 +544,7 @@ IY-G509
 
 メッセージ::
 
-    warning: [IY-G509] the fin root leading edge is at <percent> % of the length, in the forward half; the body may be reversed (nose_direction)
+    warning[IY-G509]: the fin root leading edge is at <percent> % of the length, in the forward half; the body may be reversed (nose_direction)
 
 意味
     フィンの根元前縁が全長の前半にある。
@@ -565,7 +567,7 @@ IY-G510
 
 メッセージ::
 
-    warning: [IY-G510] the fins are centred at <percent> % of the length, unusually far forward
+    warning[IY-G510]: the fins are centred at <percent> % of the length, unusually far forward
 
 意味
     フィン根元の中央が全長の 60 % より前にある。
@@ -588,7 +590,7 @@ IY-G511
 
 メッセージ::
 
-    warning: [IY-G511] the fin span <span> m exceeds two body diameters (<d> m)
+    warning[IY-G511]: the fin span <span> m exceeds two body diameters (<d> m)
 
 意味
     フィンのスパンが基準直径の 2 倍を超える。
@@ -611,7 +613,7 @@ IY-G512
 
 メッセージ::
 
-    warning: [IY-G512] the fin trailing edge at <te> m lies aft of the body end at <length> m: Barrowman's fin-body interference assumes that the body continues behind the fin root chord
+    warning[IY-G512]: the fin trailing edge at <te> m lies aft of the body end at <length> m: Barrowman's fin-body interference assumes that the body continues behind the fin root chord
 
 意味
     フィンの後縁（根元または先端）が胴体の後端より後ろにある。

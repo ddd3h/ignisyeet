@@ -47,6 +47,7 @@ IgnisYeet ドキュメント
    validation
    limitations
    file_formats
+   errors
 
 .. raw:: latex
 

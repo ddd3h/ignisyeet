@@ -1,8 +1,12 @@
+.. _errors-cfd:
+
 CFD のエラーとワーニング
 ========================
 
 CFD（SU2 によるテーブル作成、``cfd-check``）のエラーとワーニングのコードです。コードは ``IY-F`` に 3 桁の番号が続く形で、エラーは 001 から 499、ワーニングは 500 から 999 です。
 メッシャーのスクリプトが出すエラーはログの末尾に ``[IY-F0nn] mesh error: ...`` の形で現れ、:ref:`IY-F010` のコードは付きません。
+画面には ``error[IY-F118]: aero.cfd: case m0.500_a00.00 failed: …`` や ``warning[IY-F523]: aero.cfd: case m0.500_a00.00: …`` のように、コードの後ろに ``aero.cfd:`` とケース名が続く形で出ます。
+``cfd_cases.csv`` と ``cfd_report.json`` などの機械出力の文字列には、``[IY-F118] …`` のままコードを先頭に付けて書きます。
 CFD の設定値の検査で出るコード（``IY-C``）は設定のエラー一覧にあります。
 
 .. _IY-F001:
@@ -14,7 +18,7 @@ IY-F001
 
 メッセージ::
 
-    [IY-F001] SU2 is not installed (install with `install.sh --cfd`, see the CFD chapter of the documentation)
+    error[IY-F001]: SU2 is not installed (install with `install.sh --cfd`, see the CFD chapter of the documentation)
       - <tool>: <problem>
 
 意味
@@ -38,7 +42,7 @@ IY-F002
 
 メッセージ::
 
-    [IY-F002] a single CFD case needs about <x> GB (<Euler|RANS> on <cells> cells / <nodes> nodes, <n> ranks), more than the memory budget of <y> GB (<source>); use a coarser mesh (a larger wall_size), fewer ranks_per_case (about 40 MB each), or raise resources.memory_gb
+    error[IY-F002]: a single CFD case needs about <x> GB (<Euler|RANS> on <cells> cells / <nodes> nodes, <n> ranks), more than the memory budget of <y> GB (<source>); use a coarser mesh (a larger wall_size), fewer ranks_per_case (about 40 MB each), or raise resources.memory_gb
 
 意味
     メッシュの規模から見積もった 1 ケース分のメモリが、使えるメモリ予算を超えています。1 ケースも実行できないため計算を始めません。メッセージは ``aero.cfd: `` に続いて表示されます。
@@ -61,7 +65,7 @@ IY-F003
 
 メッセージ::
 
-    [IY-F003] no CFD cases to build a table from
+    error[IY-F003]: no CFD cases to build a table from
 
 意味
     空気力テーブルを組み立てる CFD ケースが 1 つもありません。
@@ -84,7 +88,7 @@ IY-F004
 
 メッセージ::
 
-    [IY-F004] all CFD cases at the <lowest|highest> Mach number (<M>) failed (or have no angle of attack above 0 | have no usable angles); the table cannot be bridged there
+    error[IY-F004]: all CFD cases at the <lowest|highest> Mach number (<M>) failed (or have no angle of attack above 0 | have no usable angles); the table cannot be bridged there
 
 意味
     テーブルの端にあたるマッハ数で、収束したケースが 1 つもありません。端の列は内挿で埋められないためテーブルを作れません。
@@ -107,7 +111,7 @@ IY-F005
 
 メッセージ::
 
-    [IY-F005] surface = "stl" needs the STL triangles
+    error[IY-F005]: surface = "stl" needs the STL triangles
 
 意味
     surface = "stl" の CFD に STL の三角形が渡されていません。
@@ -130,7 +134,7 @@ IY-F006
 
 メッセージ::
 
-    [IY-F006] surface = "step" needs the STL triangles (the registration reference)
+    error[IY-F006]: surface = "step" needs the STL triangles (the registration reference)
 
 意味
     surface = "step" では、STEP との位置合わせの基準になる STL が必要です。
@@ -153,7 +157,7 @@ IY-F007
 
 メッセージ::
 
-    [IY-F007] the python module manifold3d is missing (needed for surface = "stl"); install it with: <python> -m pip install manifold3d
+    error[IY-F007]: the python module manifold3d is missing (needed for surface = "stl"); install it with: <python> -m pip install manifold3d
 
 意味
     surface = "stl" の部品の和集合に使う manifold3d が、gmsh を含む Python にありません。
@@ -176,7 +180,7 @@ IY-F010
 
 メッセージ::
 
-    [IY-F010] <what> failed (log: <path>):
+    error[IY-F010]: <what> failed (log: <path>):
     <last lines of the log>
 
 意味
@@ -200,7 +204,7 @@ IY-F011
 
 メッセージ::
 
-    [IY-F011] <what> failed (killed by signal <n>[ (most likely out of memory: close other programs or use a larger wall_size)]) (log: <path>):
+    error[IY-F011]: <what> failed (killed by signal <n>[ (most likely out of memory: close other programs or use a larger wall_size)]) (log: <path>):
     <last lines of the log>
 
 意味
@@ -224,7 +228,7 @@ IY-F012
 
 メッセージ::
 
-    [IY-F012] aero.cfd: the RANS boundary-layer mesh needs a fin layout symmetric about the y = 0 plane (fin_roll_deg = <deg> with <n> fins is not): use a symmetric fin_roll_deg (for example 0 or 45 with 4 fins) or model = "euler"
+    error[IY-F012]: aero.cfd: the RANS boundary-layer mesh needs a fin layout symmetric about the y = 0 plane (fin_roll_deg = <deg> with <n> fins is not): use a symmetric fin_roll_deg (for example 0 or 45 with 4 fins) or model = "euler"
 
 意味
     RANS の境界層メッシュは半断面で作るため、フィン配置が y = 0 面について対称である必要があります。
@@ -247,7 +251,7 @@ IY-F020
 
 メッセージ::
 
-    [IY-F020] mesh error: the prismatic boundary layer needs the half model (a fin layout symmetric about y = 0) without z_mirror
+    error[IY-F020]: mesh error: the prismatic boundary layer needs the half model (a fin layout symmetric about y = 0) without z_mirror
 
 意味
     プリズム境界層は半断面モデルでのみ作れます。
@@ -270,7 +274,7 @@ IY-F021
 
 メッセージ::
 
-    [IY-F021] mesh error: boolean operations produced <n> volumes (expected 1); the geometry may be invalid
+    error[IY-F021]: mesh error: boolean operations produced <n> volumes (expected 1); the geometry may be invalid
 
 意味
     計算領域を作るブーリアン演算の結果が、1 つの体積になりませんでした。
@@ -293,7 +297,7 @@ IY-F022
 
 メッセージ::
 
-    [IY-F022] mesh error: could not classify the boundary faces[ (wall <n>, base <n>, cut <n>): the shape needs aft-facing faces at its base x = <x> m | facets]
+    error[IY-F022]: mesh error: could not classify the boundary faces[ (wall <n>, base <n>, cut <n>): the shape needs aft-facing faces at its base x = <x> m | facets]
 
 意味
     境界面を壁・底面・対称面などに分類できませんでした。
@@ -316,7 +320,7 @@ IY-F023
 
 メッセージ::
 
-    [IY-F023] mesh error: the volume mesh is empty (3D meshing failed)
+    error[IY-F023]: mesh error: the volume mesh is empty (3D meshing failed)
 
 意味
     体積メッシュに要素が 1 つもできませんでした。
@@ -339,7 +343,7 @@ IY-F024
 
 メッセージ::
 
-    [IY-F024] mesh error: 3D meshing failed (algorithm <n>): <gmsh message>
+    error[IY-F024]: mesh error: 3D meshing failed (algorithm <n>): <gmsh message>
 
 意味
     gmsh の 3 次元メッシングが失敗しました。HXT で失敗した Euler メッシュは Delaunay で 1 度やり直します。
@@ -362,7 +366,7 @@ IY-F030
 
 メッセージ::
 
-    [IY-F030] mesh error: the wall surface mesh is not manifold (<n> edges with more than two triangles)
+    error[IY-F030]: mesh error: the wall surface mesh is not manifold (<n> edges with more than two triangles)
 
 意味
     境界層を作る壁の表面メッシュに、3 枚以上の三角形が共有する辺があります。
@@ -385,7 +389,7 @@ IY-F031
 
 メッセージ::
 
-    [IY-F031] mesh error: the wall surface mesh is not orientable
+    error[IY-F031]: mesh error: the wall surface mesh is not orientable
 
 意味
     壁の表面メッシュの向きを揃えられません。
@@ -408,7 +412,7 @@ IY-F032
 
 メッセージ::
 
-    [IY-F032] mesh error: the wall surface mesh has non-triangular elements
+    error[IY-F032]: mesh error: the wall surface mesh has non-triangular elements
 
 意味
     壁の表面メッシュに三角形以外の要素があります。
@@ -431,7 +435,7 @@ IY-F033
 
 メッセージ::
 
-    [IY-F033] mesh error: the wall has <n> open edges (the shape is not closed)
+    error[IY-F033]: mesh error: the wall has <n> open edges (the shape is not closed)
 
 意味
     壁面に開いた辺があり、閉じた立体になっていません。
@@ -454,7 +458,7 @@ IY-F034
 
 メッセージ::
 
-    [IY-F034] mesh error: the wall has an open edge away from the symmetry plane
+    error[IY-F034]: mesh error: the wall has an open edge away from the symmetry plane
 
 意味
     対称面以外の場所に開いた辺があります。
@@ -477,7 +481,7 @@ IY-F035
 
 メッセージ::
 
-    [IY-F035] mesh error: unexpected element type <n> on the outer surfaces | outside the boundary layer
+    error[IY-F035]: mesh error: unexpected element type <n> on the outer surfaces | outside the boundary layer
 
 意味
     境界層メッシュの処理が想定外の要素種別に出会いました。
@@ -500,7 +504,7 @@ IY-F036
 
 メッセージ::
 
-    [IY-F036] mesh error: the tetrahedral mesh outside the boundary layer failed (<gmsh message>)<hint>
+    error[IY-F036]: mesh error: the tetrahedral mesh outside the boundary layer failed (<gmsh message>)<hint>
 
 意味
     境界層の外側の四面体メッシュが作れませんでした。
@@ -523,7 +527,7 @@ IY-F037
 
 メッセージ::
 
-    [IY-F037] mesh error: a tetrahedron uses an unknown node
+    error[IY-F037]: mesh error: a tetrahedron uses an unknown node
 
 意味
     四面体が未知の節点を参照しています。
@@ -546,7 +550,7 @@ IY-F038
 
 メッセージ::
 
-    [IY-F038] mesh error: the prismatic boundary layer is invalid: <inverted prisms, non-positive cells, ...><hint>
+    error[IY-F038]: mesh error: the prismatic boundary layer is invalid: <inverted prisms, non-positive cells, ...><hint>
 
 意味
     プリズム境界層に反転した要素などが残りました。平滑化を強めた再試行（BL_ATTEMPTS）でも直らなかった場合に出ます。
@@ -569,7 +573,7 @@ IY-F039
 
 メッセージ::
 
-    [IY-F039] mesh error: the volume mesh is invalid: <n> cells of non-positive volume, <n> boundary faces without marker, <n> marker faces inside
+    error[IY-F039]: mesh error: the volume mesh is invalid: <n> cells of non-positive volume, <n> boundary faces without marker, <n> marker faces inside
 
 意味
     書き出す前の体積メッシュの検査で不正が見つかりました。
@@ -592,7 +596,7 @@ IY-F040
 
 メッセージ::
 
-    [IY-F040] mesh error: <file> contains no closed solid (<n> faces could not be sewn into one); export the rocket as a solid body
+    error[IY-F040]: mesh error: <file> contains no closed solid (<n> faces could not be sewn into one); export the rocket as a solid body
 
 意味
     CAD ファイルに閉じたソリッドがありません。
@@ -615,7 +619,7 @@ IY-F041
 
 メッセージ::
 
-    [IY-F041] mesh error: gmsh cannot mesh the surface of <file>, even after shape healing (<detail>); repair the CAD model or export it again
+    error[IY-F041]: mesh error: gmsh cannot mesh the surface of <file>, even after shape healing (<detail>); repair the CAD model or export it again
 
 意味
     形状修復の後でも CAD 面の表面メッシュを作れません。
@@ -638,7 +642,7 @@ IY-F042
 
 メッセージ::
 
-    [IY-F042] mesh error: unknown mode <mode>
+    error[IY-F042]: mesh error: unknown mode <mode>
 
 意味
     mesh_step.py に未知のモードが渡されました。
@@ -658,7 +662,7 @@ IY-F043
 
 メッセージ::
 
-    [IY-F043] mesh error: the prepared shape has no solid
+    error[IY-F043]: mesh error: the prepared shape has no solid
 
 意味
     準備した形状にソリッドが残っていません。
@@ -681,7 +685,7 @@ IY-F044
 
 メッセージ::
 
-    [IY-F044] mesh error: the surface mesh of the CAD faces <faces> has duplicated or degenerate triangles with every surface algorithm
+    error[IY-F044]: mesh error: the surface mesh of the CAD faces <faces> has duplicated or degenerate triangles with every surface algorithm
 
 意味
     どの表面アルゴリズムでも、示した CAD 面のメッシュに重複または退化した三角形が残ります。
@@ -704,7 +708,7 @@ IY-F045
 
 メッセージ::
 
-    [IY-F045] mesh error: the prismatic boundary layer is not built on the quarter domain
+    error[IY-F045]: mesh error: the prismatic boundary layer is not built on the quarter domain
 
 意味
     プリズム境界層は 1/4 領域では作れません。
@@ -727,7 +731,7 @@ IY-F046
 
 メッセージ::
 
-    [IY-F046] mesh error: the quarter domain cannot be cut from the shape (no wall faces left); QUARTER_FAILED
+    error[IY-F046]: mesh error: the quarter domain cannot be cut from the shape (no wall faces left); QUARTER_FAILED
 
 意味
     形状から 1/4 領域を切り出せません。通常は半断面メッシュに切り替えて続行します。
@@ -750,7 +754,7 @@ IY-F047
 
 メッセージ::
 
-    [IY-F047] mesh error: no base faces (aft-facing faces at the base x = <x> m) found; the shape must end in a flat base or use base_treatment = "fairing"
+    error[IY-F047]: mesh error: no base faces (aft-facing faces at the base x = <x> m) found; the shape must end in a flat base or use base_treatment = "fairing"
 
 意味
     底面（x = 機体長さ にある後ろ向きの面）が見つかりません。
@@ -773,7 +777,7 @@ IY-F050
 
 メッセージ::
 
-    [IY-F050] mesh error: stl_remesh must be classify or none, got <value>
+    error[IY-F050]: mesh error: stl_remesh must be classify or none, got <value>
 
 意味
     stl_remesh の値が不正です。
@@ -796,7 +800,7 @@ IY-F051
 
 メッセージ::
 
-    [IY-F051] mesh error: gmsh cannot parametrise the united surface (<detail>). Sharp apexes and facets of very poor quality do that; stl_remesh = "none" meshes the triangles as they are (the fins are then under-resolved).
+    error[IY-F051]: mesh error: gmsh cannot parametrise the united surface (<detail>). Sharp apexes and facets of very poor quality do that; stl_remesh = "none" meshes the triangles as they are (the fins are then under-resolved).
 
 意味
     gmsh が和集合の表面を再パラメータ化できません。
@@ -819,7 +823,7 @@ IY-F052
 
 メッセージ::
 
-    [IY-F052] mesh error: the STL surface has no triangles
+    error[IY-F052]: mesh error: the STL surface has no triangles
 
 意味
     STL の表面に三角形がありません。
@@ -842,7 +846,7 @@ IY-F053
 
 メッセージ::
 
-    [IY-F053] mesh error: a boundary curve of the clipped surface (bounding box <bb>) lies in neither or both symmetry planes
+    error[IY-F053]: mesh error: a boundary curve of the clipped surface (bounding box <bb>) lies in neither or both symmetry planes
 
 意味
     対称面で切った表面の境界曲線が、どちらの対称面にも属さないか、両方に属しています。
@@ -865,7 +869,7 @@ IY-F054
 
 メッセージ::
 
-    [IY-F054] mesh error: the cut of the clipped surface is not a closed curve
+    error[IY-F054]: mesh error: the cut of the clipped surface is not a closed curve
 
 意味
     対称面での切り口が閉曲線になっていません。
@@ -888,7 +892,7 @@ IY-F055
 
 メッセージ::
 
-    [IY-F055] mesh error: the cut of the clipped surface is not one open curve between two points on the axis (end points <points>)
+    error[IY-F055]: mesh error: the cut of the clipped surface is not one open curve between two points on the axis (end points <points>)
 
 意味
     切り口が、軸上の 2 点を結ぶ 1 本の開曲線になっていません。
@@ -911,7 +915,7 @@ IY-F056
 
 メッセージ::
 
-    [IY-F056] mesh error: broken cut curve
+    error[IY-F056]: mesh error: broken cut curve
 
 意味
     切り口の曲線が途切れています。
@@ -934,7 +938,7 @@ IY-F057
 
 メッセージ::
 
-    [IY-F057] mesh error: unexpected cut curves of the clipped surface (y = 0: <n>, z = 0: <n>)
+    error[IY-F057]: mesh error: unexpected cut curves of the clipped surface (y = 0: <n>, z = 0: <n>)
 
 意味
     切り口の曲線の本数が想定と違います。
@@ -957,7 +961,7 @@ IY-F058
 
 メッセージ::
 
-    [IY-F058] mesh error: the cuts at y = 0 and z = 0 do not meet at the same points of the axis
+    error[IY-F058]: mesh error: the cuts at y = 0 and z = 0 do not meet at the same points of the axis
 
 意味
     y = 0 と z = 0 の切り口が軸上の同じ点で交わりません。
@@ -980,7 +984,7 @@ IY-F059
 
 メッセージ::
 
-    [IY-F059] mesh error: no base facets (aft-facing facets at x = length) found; the STL must end in a flat base or use base_treatment = fairing
+    error[IY-F059]: mesh error: no base facets (aft-facing facets at x = length) found; the STL must end in a flat base or use base_treatment = fairing
 
 意味
     STL に底面の三角形が見つかりません。
@@ -1003,7 +1007,7 @@ IY-F060
 
 メッセージ::
 
-    [IY-F060] union error: component <i> (<file>) is not a valid manifold: <status>
+    error[IY-F060]: union error: component <i> (<file>) is not a valid manifold: <status>
 
 意味
     和集合を取る前の検査で、STL の部品が有効な多様体ではありません。
@@ -1026,7 +1030,7 @@ IY-F061
 
 メッセージ::
 
-    [IY-F061] union error: component <i> has a non-positive volume <v> (inside-out?)
+    error[IY-F061]: union error: component <i> has a non-positive volume <v> (inside-out?)
 
 意味
     STL の部品の体積が 0 以下です。
@@ -1049,7 +1053,7 @@ IY-F062
 
 メッセージ::
 
-    [IY-F062] union error: manifold3d returned <status>
+    error[IY-F062]: union error: manifold3d returned <status>
 
 意味
     manifold3d の和集合演算がエラーを返しました。
@@ -1072,7 +1076,7 @@ IY-F063
 
 メッセージ::
 
-    [IY-F063] union error: the united solid has a non-positive volume <v>
+    error[IY-F063]: union error: the united solid has a non-positive volume <v>
 
 意味
     和集合の体積が 0 以下です。
@@ -1095,7 +1099,7 @@ IY-F064
 
 メッセージ::
 
-    [IY-F064] union error: the united surface consists of several detached bodies (genus <g>): a part of the STL (e.g. a fin) does not touch the rest
+    error[IY-F064]: union error: the united surface consists of several detached bodies (genus <g>): a part of the STL (e.g. a fin) does not touch the rest
 
 意味
     和集合が互いに離れた複数の物体になっています。
@@ -1118,7 +1122,7 @@ IY-F070
 
 メッセージ::
 
-    [IY-F070] aero.cfd.step_unit = "<unit>": the length unit of <file> cannot be read from the file, so it cannot be overridden; use step_unit = "auto"
+    error[IY-F070]: aero.cfd.step_unit = "<unit>": the length unit of <file> cannot be read from the file, so it cannot be overridden; use step_unit = "auto"
 
 意味
     ファイルから長さの単位を読めないため step_unit で上書きできません。
@@ -1141,7 +1145,7 @@ IY-F071
 
 メッセージ::
 
-    [IY-F071] aero.cfd.surface = "step": <file> does not describe the same rocket as rocket.stl (compared in the CFD frame, after the transform of the STL):
+    error[IY-F071]: aero.cfd.surface = "step": <file> does not describe the same rocket as rocket.stl (compared in the CFD frame, after the transform of the STL):
       - <problem>
       <registration summary>
       likely cause: <cause>
@@ -1167,7 +1171,7 @@ IY-F072
 
 メッセージ::
 
-    [IY-F072] aero.cfd.step_file <file>: not a STEP, IGES or BREP file
+    error[IY-F072]: aero.cfd.step_file <file>: not a STEP, IGES or BREP file
 
 意味
     ファイルの形式が STEP・IGES・BREP のどれでもありません。
@@ -1190,7 +1194,7 @@ IY-F073
 
 メッセージ::
 
-    [IY-F073] cannot read the CAD file aero.cfd.step_file = <file>
+    error[IY-F073]: cannot read the CAD file aero.cfd.step_file = <file>
 
 意味
     CAD ファイルを読み込めません。
@@ -1213,7 +1217,7 @@ IY-F074
 
 メッセージ::
 
-    [IY-F074] aero.cfd.surface = "step": <fairing error>
+    error[IY-F074]: aero.cfd.surface = "step": <fairing error>
 
 意味
     base_treatment = "fairing" の円錐を CAD 形状に融合できませんでした。
@@ -1236,7 +1240,7 @@ IY-F075
 
 メッセージ::
 
-    [IY-F075] aero.cfd.surface = "step": the shape has no base faces (aft-facing faces at the base x = <x> m of the STL geometry); the CAD model must end in a flat base
+    error[IY-F075]: aero.cfd.surface = "step": the shape has no base faces (aft-facing faces at the base x = <x> m of the STL geometry); the CAD model must end in a flat base
 
 意味
     CAD 形状に底面がありません。
@@ -1259,7 +1263,7 @@ IY-F076
 
 メッセージ::
 
-    [IY-F076] shape_symmetry = "axisymmetric" needs a surface that is mirror symmetric about y = 0 and z = 0, but the united STL is not:
+    error[IY-F076]: shape_symmetry = "axisymmetric" needs a surface that is mirror symmetric about y = 0 and z = 0, but the united STL is not:
       <y = 0 check>
       <z = 0 check>
       use shape_symmetry = "auto" (the planes that pass the check are used) or "none" (full domain)
@@ -1285,7 +1289,7 @@ IY-F077
 
 メッセージ::
 
-    [IY-F077] shape_symmetry = "pitch_plane" needs a surface that is mirror symmetric about y = 0, but the united STL is not:
+    error[IY-F077]: shape_symmetry = "pitch_plane" needs a surface that is mirror symmetric about y = 0, but the united STL is not:
       <y = 0 check>
       use shape_symmetry = "auto" or "none" (full domain)
 
@@ -1310,7 +1314,7 @@ IY-F078
 
 メッセージ::
 
-    [IY-F078] the mesh <file> has no wall facets
+    error[IY-F078]: the mesh <file> has no wall facets
 
 意味
     メッシュに壁面の要素がありません。
@@ -1333,7 +1337,7 @@ IY-F080
 
 メッセージ::
 
-    [IY-F080] the wall surface is not watertight: <n> edges belong to only one triangle (holes) and <n> edges to more than two (non-manifold); CFD needs a closed surface
+    error[IY-F080]: the wall surface is not watertight: <n> edges belong to only one triangle (holes) and <n> edges to more than two (non-manifold); CFD needs a closed surface
 
 意味
     壁面が閉じていません。STL では先頭に ``STL component <i> (...)`` の説明が付きます。
@@ -1356,7 +1360,7 @@ IY-F081
 
 メッセージ::
 
-    [IY-F081] the STL has no usable triangles
+    error[IY-F081]: the STL has no usable triangles
 
 意味
     STL に使える三角形がありません。
@@ -1379,7 +1383,7 @@ IY-F082
 
 メッセージ::
 
-    [IY-F082] STL component <i> is not a manifold surface: the edge (<a>, <b>) belongs to <n> facets
+    error[IY-F082]: STL component <i> is not a manifold surface: the edge (<a>, <b>) belongs to <n> facets
 
 意味
     STL の部品に 3 枚以上の面が共有する辺があります。
@@ -1402,7 +1406,7 @@ IY-F083
 
 メッセージ::
 
-    [IY-F083] clipping at the symmetry plane left <n> open edges off the plane and <m> non-manifold edges
+    error[IY-F083]: clipping at the symmetry plane left <n> open edges off the plane and <m> non-manifold edges
 
 意味
     対称面で切った表面が閉じません。先頭に "the united STL surface cannot be clipped at the symmetry plane; use shape_symmetry = \"none\"" が付きます。
@@ -1425,7 +1429,7 @@ IY-F084
 
 メッセージ::
 
-    [IY-F084] STL component <i> (<n> triangles) encloses no volume (<v> m^3)
+    error[IY-F084]: STL component <i> (<n> triangles) encloses no volume (<v> m^3)
 
 意味
     STL の部品が体積を囲んでいません。
@@ -1448,7 +1452,7 @@ IY-F086
 
 メッセージ::
 
-    [IY-F086] half model: clipping at y = 0 left <n> open edges off the symmetry plane and <m> non-manifold edges; use symmetry = false
+    error[IY-F086]: half model: clipping at y = 0 left <n> open edges off the symmetry plane and <m> non-manifold edges; use symmetry = false
 
 意味
     半断面モデルの切断で表面が閉じません。
@@ -1471,7 +1475,7 @@ IY-F087
 
 メッセージ::
 
-    [IY-F087] surface = "step": the wall is the CAD B-rep, which only the mesher tessellates (see step_mesh)
+    error[IY-F087]: surface = "step": the wall is the CAD B-rep, which only the mesher tessellates (see step_mesh)
 
 意味
     surface = "step" の壁面は三角形の形では取り出せません。
@@ -1494,7 +1498,7 @@ IY-F088
 
 メッセージ::
 
-    [IY-F088] STL geometry error <e> m (CFD wall vs union <u> m, wall vs input STL <i> m) exceeds max_geometry_error <m> m; use stl_remesh = "none", a smaller wall_size, or raise max_geometry_error
+    error[IY-F088]: STL geometry error <e> m (CFD wall vs union <u> m, wall vs input STL <i> m) exceeds max_geometry_error <m> m; use stl_remesh = "none", a smaller wall_size, or raise max_geometry_error
 
 意味
     CFD 壁面と入力 STL の形状誤差が max_geometry_error を超えました。
@@ -1517,7 +1521,7 @@ IY-F100
 
 メッセージ::
 
-    [IY-F100] empty history file
+    error[IY-F100]: empty history file
 
 意味
     SU2 の history.csv が空です。
@@ -1540,7 +1544,7 @@ IY-F101
 
 メッセージ::
 
-    [IY-F101] history header has no columns
+    error[IY-F101]: history header has no columns
 
 意味
     history.csv の見出し行に列がありません。
@@ -1563,7 +1567,7 @@ IY-F102
 
 メッセージ::
 
-    [IY-F102] cannot read <file>: <os error>
+    error[IY-F102]: cannot read <file>: <os error>
 
 意味
     history.csv を読めません。
@@ -1586,7 +1590,7 @@ IY-F103
 
 メッセージ::
 
-    [IY-F103] history has neither CFx nor CD and CL | CFz nor CD and CL
+    error[IY-F103]: history has neither CFx nor CD and CL | CFz nor CD and CL
 
 意味
     履歴に力係数の列がありません。
@@ -1609,7 +1613,7 @@ IY-F104
 
 メッセージ::
 
-    [IY-F104] history has no CMy | <column>
+    error[IY-F104]: history has no CMy | <column>
 
 意味
     履歴にモーメント係数などの必要な列がありません。
@@ -1632,7 +1636,7 @@ IY-F105
 
 メッセージ::
 
-    [IY-F105] non-finite coefficients in the history (diverged case)
+    error[IY-F105]: non-finite coefficients in the history (diverged case)
 
 意味
     履歴の係数が有限でありません。
@@ -1655,7 +1659,7 @@ IY-F110
 
 メッセージ::
 
-    [IY-F110] cannot start SU2: <os error>
+    error[IY-F110]: cannot start SU2: <os error>
 
 意味
     SU2 を起動できません。
@@ -1678,7 +1682,7 @@ IY-F111
 
 メッセージ::
 
-    [IY-F111] interrupted
+    error[IY-F111]: interrupted
 
 意味
     利用者の中断（Ctrl-C など）で CFD の実行を止めました。
@@ -1701,7 +1705,7 @@ IY-F112
 
 メッセージ::
 
-    [IY-F112] the history has no CFx, CFy, CFz, CMx, CMy, CMz columns (needed for sideslip, roll and general tables)
+    error[IY-F112]: the history has no CFx, CFy, CFz, CMx, CMy, CMz columns (needed for sideslip, roll and general tables)
 
 意味
     横滑り・ロール・一般形式のテーブルに必要な 6 分力の列が履歴にありません。
@@ -1724,7 +1728,7 @@ IY-F113
 
 メッセージ::
 
-    [IY-F113] SU2 produced no history.csv; end of su2.log:
+    error[IY-F113]: SU2 produced no history.csv; end of su2.log:
     <last lines>
 
 意味
@@ -1748,7 +1752,7 @@ IY-F114
 
 メッセージ::
 
-    [IY-F114] the first-order startup diverged twice (the second time with conservative settings): <reason>
+    error[IY-F114]: the first-order startup diverged twice (the second time with conservative settings): <reason>
 
 意味
     RANS の 1 次精度の立ち上げが、保守的な設定でやり直しても発散しました。
@@ -1771,7 +1775,7 @@ IY-F115
 
 メッセージ::
 
-    [IY-F115] the first-order startup produced no density and SA residuals; end of su2_startup.log:
+    error[IY-F115]: the first-order startup produced no density and SA residuals; end of su2_startup.log:
     <last lines>
 
 意味
@@ -1795,7 +1799,7 @@ IY-F116
 
 メッセージ::
 
-    [IY-F116] the first-order startup wrote no <restart file>
+    error[IY-F116]: the first-order startup wrote no <restart file>
 
 意味
     立ち上げがリスタートファイルを書きませんでした。
@@ -1818,7 +1822,7 @@ IY-F117
 
 メッセージ::
 
-    [IY-F117] the second-order stage diverged with the conservative settings of the repeated first-order startup: <reason>
+    error[IY-F117]: the second-order stage diverged with the conservative settings of the repeated first-order startup: <reason>
 
 意味
     2 次精度の段が、保守的に繰り返した立ち上げの後でも発散しました。
@@ -1841,7 +1845,7 @@ IY-F118
 
 メッセージ::
 
-    [IY-F118] diverged twice (the second time with conservative settings): <reason>
+    error[IY-F118]: diverged twice (the second time with conservative settings): <reason>
 
 意味
     ケースが保守的な設定でやり直しても発散しました。
@@ -1864,7 +1868,7 @@ IY-F119
 
 メッセージ::
 
-    [IY-F119] not converged (<timeout|iteration limit>): <reason>
+    error[IY-F119]: not converged (<timeout|iteration limit>): <reason>
 
 意味
     反復上限または時間切れまでに受け入れ基準を満たしませんでした。ケースは失敗扱いで、テーブルの穴は周囲から補われます。
@@ -1887,7 +1891,7 @@ IY-F120
 
 メッセージ::
 
-    [IY-F120] <SU2> was killed by signal 9 (SIGKILL; most likely out of memory: about <x> GB per case with <n> ranks and <m> concurrent cases; lower parallel_cases or ranks_per_case); end of <log>:
+    error[IY-F120]: <SU2> was killed by signal 9 (SIGKILL; most likely out of memory: about <x> GB per case with <n> ranks and <m> concurrent cases; lower parallel_cases or ranks_per_case); end of <log>:
     <last lines>
 
 意味
@@ -1911,7 +1915,7 @@ IY-F121
 
 メッセージ::
 
-    [IY-F121] <SU2> was killed by signal <n>; end of <log>:
+    error[IY-F121]: <SU2> was killed by signal <n>; end of <log>:
     <last lines>
 
 意味
@@ -1935,7 +1939,7 @@ IY-F122
 
 メッセージ::
 
-    [IY-F122] <SU2> exited with <status>; end of <log>:
+    error[IY-F122]: <SU2> exited with <status>; end of <log>:
     <last lines>
 
 意味
@@ -1959,7 +1963,7 @@ IY-F123
 
 メッセージ::
 
-    [IY-F123] the CFD mode needs a Unix-like system (Linux, macOS or WSL)
+    error[IY-F123]: the CFD mode needs a Unix-like system (Linux, macOS or WSL)
 
 意味
     CFD は Unix 系 OS でのみ動きます。
@@ -1982,7 +1986,7 @@ IY-F501
 
 メッセージ::
 
-    [IY-F501] SU2 <a>.<b>.<c> found; the documentation and validation are pinned to SU2 8.3.0, results may differ
+    warning[IY-F501]: SU2 <a>.<b>.<c> found; the documentation and validation are pinned to SU2 8.3.0, results may differ
 
 意味
     SU2 のバージョンが 8.3.x ではありません。
@@ -2005,7 +2009,7 @@ IY-F502
 
 メッセージ::
 
-    [IY-F502] cannot read the SU2 version from "<banner>"; the documentation and validation are pinned to SU2 8.3.0
+    warning[IY-F502]: cannot read the SU2 version from "<banner>"; the documentation and validation are pinned to SU2 8.3.0
 
 意味
     SU2 の出力からバージョンを読み取れません。
@@ -2028,7 +2032,7 @@ IY-F503
 
 メッセージ::
 
-    [IY-F503] <SU2_CFD> was compiled for the CPU "<built>" but this machine has "<current>"; it may stop with an illegal instruction. Run `install.sh --cfd --force` here to rebuild it, or `install.sh --cfd --su2-binary` for the portable conda-forge SU2
+    warning[IY-F503]: <SU2_CFD> was compiled for the CPU "<built>" but this machine has "<current>"; it may stop with an illegal instruction. Run `install.sh --cfd --force` here to rebuild it, or `install.sh --cfd --su2-binary` for the portable conda-forge SU2
 
 意味
     ソースからビルドした SU2 が、現在とは別の CPU 向けです。
@@ -2051,7 +2055,7 @@ IY-F504
 
 メッセージ::
 
-    [IY-F504] roll damping at M=<M>: using the Barrowman Clp (<value>): <reason>
+    warning[IY-F504]: roll damping at M=<M>: using the Barrowman Clp (<value>): <reason>
 
 意味
     そのマッハ数のロール減衰を CFD から得られず、Barrowman の値を使います。
@@ -2074,7 +2078,7 @@ IY-F505
 
 メッセージ::
 
-    [IY-F505] RANS: some cases have no per-marker CFx columns; the table takes the base from CFD for all of them
+    warning[IY-F505]: RANS: some cases have no per-marker CFx columns; the table takes the base from CFD for all of them
 
 意味
     一部のケースに境界ごとの CFx 列がないため、全ケースで底面抗力を CFD から取ります。
@@ -2097,7 +2101,7 @@ IY-F506
 
 メッセージ::
 
-    [IY-F506] RANS: the history has no per-marker CFx(wall) column; the axial force is the monitored total, which includes the base cap
+    warning[IY-F506]: RANS: the history has no per-marker CFx(wall) column; the axial force is the monitored total, which includes the base cap
 
 意味
     壁面の CFx 列がないため、軸力は底面を含む合計です。
@@ -2120,7 +2124,7 @@ IY-F507
 
 メッセージ::
 
-    [IY-F507] the table is held at its M = <M> values above | below M = <M> (no Mach extrapolation of the CFD data)
+    warning[IY-F507]: the table is held at its M = <M> values above | below M = <M> (no Mach extrapolation of the CFD data)
 
 意味
     CFD の最大（最小）マッハ数の外側では、端の値を保持します。
@@ -2143,7 +2147,7 @@ IY-F508
 
 メッセージ::
 
-    [IY-F508] <n> RANS case(s) accepted with a stalled residual, not converged (coefficients averaged over two windows; a stalled residual needs only <x> orders below the reference, convergence <y>): <cases>; check them in cfd_cases.csv (rans_verdict, residual_drop)
+    warning[IY-F508]: <n> RANS case(s) accepted with a stalled residual, not converged (coefficients averaged over two windows; a stalled residual needs only <x> orders below the reference, convergence <y>): <cases>; check them in cfd_cases.csv (rans_verdict, residual_drop)
 
 意味
     残差が止まったまま受け入れた RANS ケースがあります。
@@ -2166,7 +2170,7 @@ IY-F509
 
 メッセージ::
 
-    [IY-F509] zero-angle asymmetry at M=<M>: <force> at alpha = beta = 0 (<x> % of CN at <a> deg = <cn>)<hint>; <fate>
+    warning[IY-F509]: zero-angle asymmetry at M=<M>: <force> at alpha = beta = 0 (<x> % of CN at <a> deg = <cn>)<hint>; <fate>
 
 意味
     迎角 0 度で、対称な機体なら 0 になる横力が出ています。
@@ -2189,7 +2193,7 @@ IY-F510
 
 メッセージ::
 
-    [IY-F510] base_treatment = flat: the flat base is kept; the inviscid flow behind it is ill-posed, so the Euler solution is likely not to converge (cases that do not converge fail); the base is not integrated, the base drag comes from the empirical base term
+    warning[IY-F510]: base_treatment = flat: the flat base is kept; the inviscid flow behind it is ill-posed, so the Euler solution is likely not to converge (cases that do not converge fail); the base is not integrated, the base drag comes from the empirical base term
 
 意味
     Euler で平らな底面をそのまま使います。
@@ -2212,7 +2216,7 @@ IY-F511
 
 メッセージ::
 
-    [IY-F511] base_treatment = fairing: the <input STL|CAD shape> is MODIFIED, a closed cone of <n> base radii (cut at 10 % of the base radius) is united with the body behind the base; the base is not integrated, the base drag comes from the empirical base term
+    warning[IY-F511]: base_treatment = fairing: the <input STL|CAD shape> is MODIFIED, a closed cone of <n> base radii (cut at 10 % of the base radius) is united with the body behind the base; the base is not integrated, the base drag comes from the empirical base term
 
 意味
     底面の後ろに円錐を融合するため、形状を変更します。
@@ -2235,7 +2239,7 @@ IY-F512
 
 メッセージ::
 
-    [IY-F512] the CAD file holds <n> disjoint solids; all of them are walls of the CFD mesh
+    warning[IY-F512]: the CAD file holds <n> disjoint solids; all of them are walls of the CFD mesh
 
 意味
     CAD ファイルに離れた複数のソリッドがあり、すべてが壁になります。
@@ -2258,7 +2262,7 @@ IY-F513
 
 メッセージ::
 
-    [IY-F513] geometry error <e> m exceeds half the wall size (<w> m)
+    warning[IY-F513]: geometry error <e> m exceeds half the wall size (<w> m)
 
 意味
     壁面の形状誤差が wall_size の半分を超えています（失敗の閾値は max_geometry_error）。
@@ -2281,7 +2285,7 @@ IY-F520
 
 メッセージ::
 
-    [IY-F520] unconverged: <reason>; coefficients averaged over the last <n> iterations
+    warning[IY-F520]: unconverged: <reason>; coefficients averaged over the last <n> iterations
 
 意味
     残差が止まったままケースを受け入れました。
@@ -2304,7 +2308,7 @@ IY-F521
 
 メッセージ::
 
-    [IY-F521] limit cycle: coefficients averaged over the last <n> iterations
+    warning[IY-F521]: limit cycle: coefficients averaged over the last <n> iterations
 
 意味
     係数が周期的に振動するため、窓で平均しました。
@@ -2327,7 +2331,7 @@ IY-F522
 
 メッセージ::
 
-    [IY-F522] wall y+ P95 = <y> exceeds <max> (target yplus = <t>): the first cell is too thick for the resolved wall
+    warning[IY-F522]: wall y+ P95 = <y> exceeds <max> (target yplus = <t>): the first cell is too thick for the resolved wall
 
 意味
     壁面 y+ の 95 パーセンタイルが上限を超えています。
@@ -2350,7 +2354,7 @@ IY-F523
 
 メッセージ::
 
-    [IY-F523] wall y+ not checked: no Y_Plus in surface_flow.vtk
+    warning[IY-F523]: wall y+ not checked: no Y_Plus in surface_flow.vtk
 
 意味
     surface_flow.vtk に Y_Plus がなく y+ を確認していません。
@@ -2373,7 +2377,7 @@ IY-F524
 
 メッセージ::
 
-    [IY-F524] the coefficients still trend or oscillate at the end (<n> iterations): their range over the last stable_window iterations or their change extrapolated from the residual decay exceeds <x> % of the force scale (centre of pressure: <y> body lengths); coefficients averaged over the last <m> iterations
+    warning[IY-F524]: the coefficients still trend or oscillate at the end (<n> iterations): their range over the last stable_window iterations or their change extrapolated from the residual decay exceeds <x> % of the force scale (centre of pressure: <y> body lengths); coefficients averaged over the last <m> iterations
 
 意味
     Euler のケースを受け入れましたが、係数がまだ動いています。
@@ -2396,7 +2400,7 @@ IY-F525
 
 メッセージ::
 
-    [IY-F525] the warm start failed (<reason>); solved again from the freestream
+    warning[IY-F525]: the warm start failed (<reason>); solved again from the freestream
 
 意味
     前のケースからの暖機スタートが失敗し、一様流から計算し直しました。
@@ -2419,7 +2423,7 @@ IY-F526
 
 メッセージ::
 
-    [IY-F526] the first-order startup diverged (<reason>); repeated once with the adaptive CFL capped at <a> instead of <b> (the SA equation stays at <c> of the flow CFL); the second-order stage keeps these settings
+    warning[IY-F526]: the first-order startup diverged (<reason>); repeated once with the adaptive CFL capped at <a> instead of <b> (the SA equation stays at <c> of the flow CFL); the second-order stage keeps these settings
 
 意味
     1 次精度の立ち上げが発散したので、CFL を抑えてやり直しました。
@@ -2442,7 +2446,7 @@ IY-F527
 
 メッセージ::
 
-    [IY-F527] the second-order stage diverged (<reason>); repeated once from the first-order solution with the adaptive CFL capped at <a> instead of <b> and the SA equation at <c> of the flow CFL instead of 1
+    warning[IY-F527]: the second-order stage diverged (<reason>); repeated once from the first-order solution with the adaptive CFL capped at <a> instead of <b> and the SA equation at <c> of the flow CFL instead of 1
 
 意味
     2 次精度の段が発散したので、CFL を抑えてやり直しました。

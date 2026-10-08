@@ -178,7 +178,7 @@ pub fn ensure_mesh_stl(opt: &CfdOptions, geom: &Geometry, raw: &[Triangle], work
     std::fs::create_dir_all(&dir).with_context(|| format!("cannot create {}", dir.display()))?;
     let (treatment, warnings) = base_treatment_notes(opt);
     for w in &warnings {
-        eprintln!("warning: aero.cfd: {w}");
+        eprintln!("{}", crate::coded_line("warning", "aero.cfd:", w));
     }
     let prep = prepare(opt, geom, raw, treatment)?;
     ensure_union(opt, &dir, &prep)?;

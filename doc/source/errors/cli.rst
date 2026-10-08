@@ -1,5 +1,7 @@
-コマンドと出力（IY-O）
-==========================
+.. _errors-cli:
+
+コマンドと出力のエラーとワーニング
+==================================
 
 コマンドの引数、出力ディレクトリ、飛行・分散計算の警告と結果の使用可否が出力するエラーとワーニングの一覧である。エラーは ``error[IY-Onnn]: …``、ワーニングは ``warning[IY-Onnn]: …`` の形で表示する（クワイエットモードではワーニングも同じ形で標準エラーへ出す）。終了コード 3 の結果は ``ignisyeet: RESULTS NOT USABLE: [IY-Onnn] …`` または ``ignisyeet: INCOMPLETE RESULTS: [IY-Onnn] …`` の形で表示する。ワーニングの文字列は ``[IY-Onnn]`` を先頭に付けたまま ``summary.json`` などの ``warnings`` 配列にも書く。山括弧 ``<…>`` は実行時の値に置き換わる箇所である。
 
@@ -1487,7 +1489,7 @@ IY-O541
 
 メッセージ::
 
-    [IY-O541] ignisyeet.kml removed: it could not be rewritten without the flight (<k>)
+    warning[IY-O541]: ignisyeet.kml removed: it could not be rewritten without the flight (<k>)
 
 意味
     飛行を除いた KML を書き直せず、``ignisyeet.kml`` を削除した。
@@ -1547,7 +1549,7 @@ IY-O544
 
 メッセージ::
 
-    [IY-O544] failed: sample <value> (<value>): <value>
+    warning[IY-O544]: failed: sample <value> (<value>): <value>
 
 意味
     モンテカルロのサンプルが失敗した（最大 3 件を表示）。

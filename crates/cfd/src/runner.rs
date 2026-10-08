@@ -859,7 +859,7 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: Option
         warnings,
     };
     for w in &result.warnings {
-        eprintln!("warning: aero.cfd: case {}: {w}", spec.dir_name());
+        eprintln!("{}", crate::coded_line("warning", &format!("aero.cfd: case {}:", spec.dir_name()), w));
     }
     write_done(&dir, &result)?;
     Ok(CaseOutcome { spec, result: Some(result), error: None, cached: false, warm: warm_flag })
@@ -1049,7 +1049,7 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
             None => warnings.push("[IY-F523] wall y+ not checked: no Y_Plus in surface_flow.vtk".into()),
         }
         for w in &warnings {
-            eprintln!("warning: aero.cfd: case {}: {w}", spec.dir_name());
+            eprintln!("{}", crate::coded_line("warning", &format!("aero.cfd: case {}:", spec.dir_name()), w));
         }
         let result = CaseResult {
             input_hash: hash.to_string(),
@@ -1181,7 +1181,10 @@ pub fn failure_summary(outcomes: &[CaseOutcome]) -> Vec<String> {
     outcomes
         .iter()
         .filter(|o| o.result.is_none())
-        .map(|o| format!("error: aero.cfd: case {} failed: {}", o.spec.dir_name(), o.error.as_deref().unwrap_or("unknown reason").lines().next().unwrap_or("")))
+        .map(|o| {
+            let why = o.error.as_deref().unwrap_or("unknown reason").lines().next().unwrap_or("");
+            crate::coded_line("error", &format!("aero.cfd: case {} failed:", o.spec.dir_name()), why)
+        })
         .collect()
 }
 
@@ -1962,7 +1965,7 @@ exit 0
         let msg = out[0].error.as_ref().unwrap();
         assert!(out[0].result.is_none() && msg.contains("diverged twice") && msg.contains("SA residual rose"), "{msg}");
         assert_eq!(stages(&e).lines().filter(|l| l.starts_with("0.500000 0.000000 history ")).count(), 2);
-        assert!(failure_summary(&out)[0].starts_with("error: aero.cfd: case m0.500_a00.00 failed: [IY-F118] diverged twice"), "{:?}", failure_summary(&out));
+        assert!(failure_summary(&out)[0].starts_with("error[IY-F118]: aero.cfd: case m0.500_a00.00 failed: diverged twice"), "{:?}", failure_summary(&out));
     }
 
     #[test]
@@ -1977,7 +1980,7 @@ exit 0
         assert!(msg.starts_with("[IY-F120] SU2 was killed by signal 9 (SIGKILL; most likely out of memory: about ") && msg.contains("GB per case"), "{msg}");
         assert!(msg.contains("lower parallel_cases or ranks_per_case"), "{msg}");
         let sum = failure_summary(&out);
-        assert!(sum.iter().any(|l| l.contains("m0.500_a00.00 failed: [IY-F120] SU2 was killed by signal 9")), "{sum:?}");
+        assert!(sum.iter().any(|l| l.starts_with("error[IY-F120]: aero.cfd: case m0.500_a00.00 failed: SU2 was killed by signal 9")), "{sum:?}");
         // mpirun reports a killed rank in its log and exits with an ordinary code.
         use std::os::unix::process::ExitStatusExt;
         let st = std::process::ExitStatus::from_raw(1 << 8);

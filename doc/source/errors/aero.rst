@@ -1,7 +1,9 @@
-空力（IY-A）
-================
+.. _errors-aero:
 
-空力係数表の読み込み（``aero.method = "table"`` を含む）、大気モデル、パネル法の設定とメモリの検査が出力するエラーとワーニングの一覧である。エラーは先頭に ``[IY-Annn]`` を付けて表示し、ワーニングは ``warning:`` に続けて ``[IY-Annn]`` を付けて表示する。
+空力のエラーとワーニング
+========================
+
+空力係数表の読み込み（``aero.method = "table"`` を含む）、大気モデル、パネル法の設定とメモリの検査が出力するエラーとワーニングの一覧である。エラーは ``error[IY-Annn]: …``、ワーニングは ``warning[IY-Annn]: …`` の形で表示する。ワーニングを ``summary.json`` などの ``warnings`` 配列に書くときは、``[IY-Annn] …`` の文字列のままにする。
 山括弧 ``<…>`` は実行時の値に置き換わる箇所である。
 
 .. _IY-A001:
@@ -13,7 +15,7 @@ IY-A001
 
 メッセージ::
 
-    [IY-A001] atmosphere.temperature_offset must be finite, got <value>
+    error[IY-A001]: atmosphere.temperature_offset must be finite, got <value>
 
 意味
     ``atmosphere.temperature_offset`` が NaN または無限大である。
@@ -36,7 +38,7 @@ IY-A002
 
 メッセージ::
 
-    [IY-A002] atmosphere.temperature_offset = <value> K gives a non-positive absolute temperature (the standard profile reaches <t_min> K at the top of the supported altitude range); it must be greater than <limit> K
+    error[IY-A002]: atmosphere.temperature_offset = <value> K gives a non-positive absolute temperature (the standard profile reaches <t_min> K at the top of the supported altitude range); it must be greater than <limit> K
 
 意味
     温度のオフセットが大きな負の値で、標準大気のどこかで絶対温度が 0 以下になる。
@@ -59,7 +61,7 @@ IY-A003
 
 メッセージ::
 
-    [IY-A003] atmosphere.<name> must be finite and positive for the constant atmosphere, got <value>
+    error[IY-A003]: atmosphere.<name> must be finite and positive for the constant atmosphere, got <value>
 
 意味
     一定大気（``atmosphere.model = "constant"``）の ``density``、``sound_speed``、``viscosity`` のいずれかが有限の正の値でない。
@@ -82,7 +84,7 @@ IY-A010
 
 メッセージ::
 
-    [IY-A010] aero.panel.body_axial must be at least 6, found <value>
+    error[IY-A010]: aero.panel.body_axial must be at least 6, found <value>
 
 意味
     ``aero.panel.body_axial`` が許される範囲にない（6 未満）。
@@ -105,7 +107,7 @@ IY-A011
 
 メッセージ::
 
-    [IY-A011] aero.panel.body_circ must be at least 8, found <value>
+    error[IY-A011]: aero.panel.body_circ must be at least 8, found <value>
 
 意味
     ``aero.panel.body_circ`` が許される範囲にない（8 未満）。
@@ -128,7 +130,7 @@ IY-A012
 
 メッセージ::
 
-    [IY-A012] aero.panel.fin_chord must be between 2 and aero.panel.body_axial - 4 = <max> (the chord panels are part of the body stations), found <value>
+    error[IY-A012]: aero.panel.fin_chord must be between 2 and aero.panel.body_axial - 4 = <max> (the chord panels are part of the body stations), found <value>
 
 意味
     ``aero.panel.fin_chord`` が許される範囲にない（2 から ``body_axial - 4`` の範囲外）。
@@ -151,7 +153,7 @@ IY-A013
 
 メッセージ::
 
-    [IY-A013] aero.panel.fin_span must be at least 2, found <value>
+    error[IY-A013]: aero.panel.fin_span must be at least 2, found <value>
 
 意味
     ``aero.panel.fin_span`` が許される範囲にない（2 未満）。
@@ -174,7 +176,7 @@ IY-A014
 
 メッセージ::
 
-    [IY-A014] aero.panel.wake_length must be a finite number > 0 (body lengths), found <value>
+    error[IY-A014]: aero.panel.wake_length must be a finite number > 0 (body lengths), found <value>
 
 意味
     ``aero.panel.wake_length`` が許される範囲にない（有限の正の数でない）。
@@ -197,7 +199,7 @@ IY-A015
 
 メッセージ::
 
-    [IY-A015] aero.panel.tail_radii must be a finite number >= 0 (base radii; 0 = open base), found <value>
+    error[IY-A015]: aero.panel.tail_radii must be a finite number >= 0 (base radii; 0 = open base), found <value>
 
 意味
     ``aero.panel.tail_radii`` が許される範囲にない（有限の 0 以上の数でない）。
@@ -220,7 +222,7 @@ IY-A016
 
 メッセージ::
 
-    [IY-A016] aero.panel.subsonic_machs must be a non-empty list of finite Mach numbers in [0, 1), found <list>
+    error[IY-A016]: aero.panel.subsonic_machs must be a non-empty list of finite Mach numbers in [0, 1), found <list>
 
 意味
     ``aero.panel.subsonic_machs`` が許される範囲にない（空である、または 0 以上 1 未満の有限の数でない値を含む）。
@@ -243,7 +245,7 @@ IY-A017
 
 メッセージ::
 
-    [IY-A017] aero.panel.transonic = [<lo>, <hi>] must be finite and increasing, [lo, hi] with 0 < lo and hi > 1 (hi is the first fully supersonic Mach number)
+    error[IY-A017]: aero.panel.transonic = [<lo>, <hi>] must be finite and increasing, [lo, hi] with 0 < lo and hi > 1 (hi is the first fully supersonic Mach number)
 
 意味
     ``aero.panel.transonic`` が許される範囲にない（``[lo, hi]`` が有限で増加していない、``lo`` が 0 以下、または ``hi`` が 1 以下）。
@@ -266,7 +268,7 @@ IY-A018
 
 メッセージ::
 
-    [IY-A018] the panel method needs about <need> GB for <n> panels (dense matrix), more than the <available> GB of memory available to this process (<source>); use coarser panel settings (body_axial, body_circ, fin_chord, fin_span)
+    error[IY-A018]: the panel method needs about <need> GB for <n> panels (dense matrix), more than the <available> GB of memory available to this process (<source>); use coarser panel settings (body_axial, body_circ, fin_chord, fin_span)
 
 意味
     パネル法の密行列がこのプロセスで使えるメモリに入らない。括弧内は使えるメモリの値を取った出所である。
@@ -289,7 +291,7 @@ IY-A019
 
 メッセージ::
 
-    [IY-A019] the panel method needs about <need> GB for <n> panels (dense matrix), above resources.memory_gb = <limit>; use coarser panel settings (body_axial, body_circ, fin_chord, fin_span) or raise the budget
+    error[IY-A019]: the panel method needs about <need> GB for <n> panels (dense matrix), above resources.memory_gb = <limit>; use coarser panel settings (body_axial, body_circ, fin_chord, fin_span) or raise the budget
 
 意味
     パネル法の密行列が ``resources.memory_gb`` の予算を超える。
@@ -312,7 +314,7 @@ IY-A020
 
 メッセージ::
 
-    [IY-A020] could not allocate the dense panel matrix: about <need> GB for <n> panels; use coarser panel settings (body_axial, body_circ, fin_chord, fin_span) or free memory
+    error[IY-A020]: could not allocate the dense panel matrix: about <need> GB for <n> panels; use coarser panel settings (body_axial, body_circ, fin_chord, fin_span) or free memory
 
 意味
     密行列のメモリを確保できなかった。事前の見積もり（IY-A018、IY-A019）を通っても、実際の確保に失敗することがある。
@@ -335,7 +337,7 @@ IY-A021
 
 メッセージ::
 
-    [IY-A021] panel mesh too coarse (body_axial >= 6, body_circ >= 8 required)
+    error[IY-A021]: panel mesh too coarse (body_axial >= 6, body_circ >= 8 required)
 
 意味
     パネルメッシュを作る時点で、胴体の分割数が最小値に満たない。
@@ -358,7 +360,7 @@ IY-A022
 
 メッセージ::
 
-    [IY-A022] unsupported fin section
+    error[IY-A022]: unsupported fin section
 
 意味
     パネル法が扱えないフィン断面が指定された。
@@ -381,7 +383,7 @@ IY-A023
 
 メッセージ::
 
-    [IY-A023] fin root lies outside the body
+    error[IY-A023]: fin root lies outside the body
 
 意味
     フィンの根元の弦が胴体の範囲に収まらない（前縁が後縁以上の位置にある）。
@@ -404,7 +406,7 @@ IY-A030
 
 メッセージ::
 
-    [IY-A030] <axis> axis is empty
+    error[IY-A030]: <axis> axis is empty
 
 意味
     係数表のメタデータの軸（``machs``、``alphas_deg``、``betas_deg``）が空である。
@@ -427,7 +429,7 @@ IY-A031
 
 メッセージ::
 
-    [IY-A031] <axis>[<i>] is not finite: <value>
+    error[IY-A031]: <axis>[<i>] is not finite: <value>
 
 意味
     メタデータの軸に NaN または無限大がある。
@@ -450,7 +452,7 @@ IY-A032
 
 メッセージ::
 
-    [IY-A032] <axis> must be strictly increasing, but <axis>[<i+1>] = <value> follows <axis>[<i>] = <value>
+    error[IY-A032]: <axis> must be strictly increasing, but <axis>[<i+1>] = <value> follows <axis>[<i>] = <value>
 
 意味
     メタデータの軸が狭義の単調増加でない。
@@ -473,7 +475,7 @@ IY-A033
 
 メッセージ::
 
-    [IY-A033] <name> must be finite and positive, got <value>
+    error[IY-A033]: <name> must be finite and positive, got <value>
 
 意味
     メタデータの ``ref_area``、``ref_diameter``、``length`` のいずれかが有限の正の値でない。
@@ -496,7 +498,7 @@ IY-A034
 
 メッセージ::
 
-    [IY-A034] fin_cant_ref_deg must be finite, got <value>
+    error[IY-A034]: fin_cant_ref_deg must be finite, got <value>
 
 意味
     メタデータの ``fin_cant_ref_deg`` が有限でない。
@@ -519,7 +521,7 @@ IY-A035
 
 メッセージ::
 
-    [IY-A035] fin_roll_deg must be finite, got <value>
+    error[IY-A035]: fin_roll_deg must be finite, got <value>
 
 意味
     メタデータの ``fin_roll_deg`` が有限でない。
@@ -542,7 +544,7 @@ IY-A036
 
 メッセージ::
 
-    [IY-A036] moment_ref "<value>" is not supported: tabulated moments must be about the "nose_tip" (the simulator transfers them to the CG)
+    error[IY-A036]: moment_ref "<value>" is not supported: tabulated moments must be about the "nose_tip" (the simulator transfers them to the CG)
 
 意味
     メタデータの ``moment_ref`` が ``nose_tip`` でない。係数表のモーメントは機首先端まわりでなければならず、シミュレータが重心まわりに移す。
@@ -565,7 +567,7 @@ IY-A037
 
 メッセージ::
 
-    [IY-A037] alphas_deg of an axisymmetric table must start at 0 deg (the total angle of attack), found <value>: the small-angle coefficients would be extrapolated
+    error[IY-A037]: alphas_deg of an axisymmetric table must start at 0 deg (the total angle of attack), found <value>: the small-angle coefficients would be extrapolated
 
 意味
     軸対称の表の迎角の軸が 0 度から始まっていない。微小角の係数が外挿になってしまう。
@@ -588,7 +590,7 @@ IY-A038
 
 メッセージ::
 
-    [IY-A038] <axis> of a general table must include 0 deg between its first and last value, found <lo> to <hi>: the small-angle coefficients would be extrapolated
+    error[IY-A038]: <axis> of a general table must include 0 deg between its first and last value, found <lo> to <hi>: the small-angle coefficients would be extrapolated
 
 意味
     一般の表の迎角または横滑り角の軸が 0 度をまたいでいない。
@@ -611,7 +613,7 @@ IY-A040
 
 メッセージ::
 
-    [IY-A040] cannot write <path>
+    error[IY-A040]: cannot write <path>
 
 意味
     係数表の CSV またはメタデータの JSON を書けない。
@@ -634,7 +636,7 @@ IY-A041
 
 メッセージ::
 
-    [IY-A041] cannot read aero table metadata <path>
+    error[IY-A041]: cannot read aero table metadata <path>
 
 意味
     係数表のメタデータ（CSV と同じ名前の ``.json``）を読めない。
@@ -657,7 +659,7 @@ IY-A042
 
 メッセージ::
 
-    [IY-A042] bad aero table metadata <path>
+    error[IY-A042]: bad aero table metadata <path>
 
 意味
     メタデータが JSON として、または項目の型として不正である。
@@ -680,7 +682,7 @@ IY-A043
 
 メッセージ::
 
-    [IY-A043] cannot read aero table <path>
+    error[IY-A043]: cannot read aero table <path>
 
 意味
     係数表の CSV を読めない。
@@ -703,7 +705,7 @@ IY-A044
 
 メッセージ::
 
-    [IY-A044] aero table <path>: unexpected CSV header `<found>`; expected `<expected>`
+    error[IY-A044]: aero table <path>: unexpected CSV header `<found>`; expected `<expected>`
 
 意味
     CSV の見出しの列の名前、順序、列数が期待と一致しない（大文字小文字と前後の空白は区別しない）。
@@ -726,7 +728,7 @@ IY-A045
 
 メッセージ::
 
-    [IY-A045] bad row <line> in <path>: <row text>
+    error[IY-A045]: bad row <line> in <path>: <row text>
 
 意味
     行に数値として読めない値がある。
@@ -749,7 +751,7 @@ IY-A046
 
 メッセージ::
 
-    [IY-A046] bad row <line> in <path>: expected <n> values (as the header), found <m>
+    error[IY-A046]: bad row <line> in <path>: expected <n> values (as the header), found <m>
 
 意味
     行の値の数が見出しの列数と合わない。
@@ -772,7 +774,7 @@ IY-A047
 
 メッセージ::
 
-    [IY-A047] row <line> of <path>: column <k> (<name>) is not finite: <value>
+    error[IY-A047]: row <line> of <path>: column <k> (<name>) is not finite: <value>
 
 意味
     行に NaN または無限大がある（座標の列も含む）。
@@ -795,7 +797,7 @@ IY-A048
 
 メッセージ::
 
-    [IY-A048] row <line> of <path>: coordinates <found> do not match the grid point <expected> expected at this position (rows must follow the metadata axes in order: Mach outermost, then alpha[, then beta])
+    error[IY-A048]: row <line> of <path>: coordinates <found> do not match the grid point <expected> expected at this position (rows must follow the metadata axes in order: Mach outermost, then alpha[, then beta])
 
 意味
     行の座標が、メタデータの軸から決まるその位置の格子点と一致しない。行は Mach 数を最も外側にした順に並ぶ。
@@ -818,7 +820,7 @@ IY-A049
 
 メッセージ::
 
-    [IY-A049] aero table <path> has more rows than the <n> grid points of its metadata
+    error[IY-A049]: aero table <path> has more rows than the <n> grid points of its metadata
 
 意味
     CSV の行数がメタデータの格子点の数を超えている。
@@ -841,7 +843,7 @@ IY-A050
 
 メッセージ::
 
-    [IY-A050] aero table <path> has <found> rows but its metadata declares <n> grid points
+    error[IY-A050]: aero table <path> has <found> rows but its metadata declares <n> grid points
 
 意味
     CSV の行数がメタデータの格子点の数に足りない。
@@ -864,7 +866,7 @@ IY-A501
 
 メッセージ::
 
-    warning: [IY-A501] aero table: <ca_on|ca_off> at Mach <m>, alpha 0 is <value> (negative axial force / thrust-like drag[; <k> Mach values in all])
+    warning[IY-A501]: aero table: <ca_on|ca_off> at Mach <m>, alpha 0 is <value> (negative axial force / thrust-like drag[; <k> Mach values in all])
 
 意味
     外部の係数表で、迎角 0 の軸力係数 ``ca_on`` または ``ca_off`` が負である。推力のような抗力を意味し、物理的でない。列ごとに、最初の該当 Mach 数を示す。

@@ -1113,7 +1113,12 @@ fn aero_table_for(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
                     eprintln!("note: the external aero table has no roll terms; cant forcing and roll damping were filled from Barrowman for the current fins");
                 }
             }
-            Err(e) => eprintln!("note: [IY-O528] the external aero table has no roll terms and the geometry is unavailable ({e:#}); the rocket will not roll"),
+            Err(e) => eprintln!(
+                "{}",
+                ui::warning_line(&format!(
+                    "[IY-O528] the external aero table has no roll terms and the geometry is unavailable ({e:#}); the rocket will not roll"
+                ))
+            ),
         }
     }
     print_warnings(&fill_external_lag_terms(cfg, &mut t));
@@ -1409,7 +1414,12 @@ fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
             println!("CFD mode is ready ({n} cases for model {:?}).", opt.model);
         }
     } else {
-        println!("CFD mode is not available: {}", cfd::not_installed_message(&r, opt).lines().next().unwrap_or(""));
+        let msg = cfd::not_installed_message(&r, opt);
+        let first = msg.lines().next().unwrap_or("");
+        match ui::split_code(first) {
+            Some((code, rest)) => println!("error[{code}]: CFD mode is not available: {rest}"),
+            None => println!("error: CFD mode is not available: {first}"),
+        }
         anyhow::bail!("[IY-O009] CFD tools are missing");
     }
     if mesh {
@@ -1454,7 +1464,7 @@ fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
             println!("  note: {n}");
         }
         if let Some(why) = plan.over_budget {
-            anyhow::bail!("aero.cfd: {why}");
+            anyhow::bail!("{}", cfd::scoped("aero.cfd:", &why));
         }
     }
     Ok(())
@@ -1677,7 +1687,7 @@ fn sim_failed(cfg: &Config, e: &anyhow::Error) {
             // Do not leave the old flight behind when the file cannot be rewritten.
             let _ = std::fs::remove_file(cfg.out_dir().join(KML_FILE));
             if ui().mode != ui::Mode::Quiet {
-                eprintln!("[IY-O541] ignisyeet.kml removed: it could not be rewritten without the flight ({k:#})");
+                eprintln!("{}", ui::warning_line(&format!("[IY-O541] ignisyeet.kml removed: it could not be rewritten without the flight ({k:#})")));
             }
         } else if ui().mode != ui::Mode::Quiet {
             println!("  KML written without the flight layer: the simulation failed");
@@ -2488,9 +2498,9 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
     for row in r.rows.iter().filter(|x| x.result.is_err()).take(3) {
         let msg = format!("[IY-O544] failed: sample {} ({}): {}", row.sample, descent_name(row.descent), row.result.as_ref().unwrap_err());
         match u.mode {
-            ui::Mode::Plain => println!("  {msg}"),
+            ui::Mode::Plain => println!("{}", ui::warning_line(&msg)),
             ui::Mode::Rich => u.warn(msg),
-            ui::Mode::Quiet => eprintln!("{msg}"),
+            ui::Mode::Quiet => eprintln!("{}", ui::warning_line(&msg)),
         }
     }
     Ok(nominal_stability_reason(nominal)

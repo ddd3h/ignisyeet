@@ -1,0 +1,35 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+\begin{tikzpicture}[font=\small,
+  b/.style={draw=cblue, fill=cfill, thick, rounded corners=3pt, minimum height=8mm, align=center},
+  g/.style={draw=corange, fill=cfillo, thick, rounded corners=3pt, minimum width=62mm, minimum height=8mm, align=left, font=\footnotesize, inner sep=3pt},
+  arr/.style={->, thick, cink2}, lab/.style={font=\footnotesize, text=cink2, align=center}]
+  \node[b, minimum width=26mm] (seed) at (0,0) {\texttt{seed} $+\, i$};
+  \node[b, minimum width=26mm, below=8mm of seed] (z) {$z_k\sim N(0,1)$\\{\footnotesize $k=1,\dots,24$}};
+  \node[b, minimum width=26mm, below=8mm of z] (e) {$\epsilon_k=\sigma_k\,z_k$};
+  \draw[arr] (seed) -- (z); \draw[arr] (z) -- (e);
+  \node[lab, below=2mm of e, text width=34mm] (tr) {\texttt{truncate\_sigma} $=k$ のとき $z_k$ を $[-k,k]$ に切ってから $\sigma_k$ を掛ける};
+  \node[g] (g1) at (8.8,1.4)  {推力: \texttt{thrust\_scale}, \texttt{burn\_time\_scale},\\ \texttt{thrust\_misalignment\_deg}, \texttt{thrust\_offset}};
+  \node[g, below=3mm of g1] (g2) {質量・重心: \texttt{dry\_mass}, \texttt{cg}, \texttt{cg\_lateral}};
+  \node[g, below=3mm of g2] (g3) {空力: \texttt{cn\_scale}, \texttt{ca\_scale}, \texttt{cl\_scale},\\ \texttt{clp\_scale}, \texttt{fin\_cant\_deg}, \texttt{lag\_scale},\\ \texttt{magnus\_scale}, \texttt{cmq\_scale}};
+  \node[g, below=3mm of g3] (g4) {風・設置: \texttt{wind\_speed}, \texttt{wind\_direction\_deg},\\ \texttt{elevation\_deg}, \texttt{azimuth\_deg}};
+  \node[g, below=3mm of g4] (g5) {回収: \texttt{parachute\_cd\_s\_scale}};
+  \foreach \n in {g1,g2,g3,g4,g5} \draw[arr] (e.east) -- ++(5mm,0) |- (\n.west);
+  \node[b, minimum width=26mm, right=14mm of g3] (fl) {飛翔計算\\{\footnotesize 弾道・パラシュート}\\{\footnotesize 同じ乱数}};
+  \foreach \n in {g1,g2,g3,g4,g5} \draw[arr] (\n.east) -- ++(4mm,0) |- (fl.west);
+  \node[b, minimum width=26mm, below=10mm of fl] (lp) {着地点\\{\footnotesize 統計量}};
+  \draw[arr] (fl) -- (lp);
+  % truncated normal
+  \begin{scope}[shift={(0,-8.4)}, yscale=2.6]
+    \draw[->, cink2] (-4.6,0) -- (4.8,0) node[right] {$z$};
+    \draw[->, cink2] (0,0) -- (0,0.5) node[above] {密度};
+    \fill[cfill] plot[domain=-3:3, samples=60] (\x, {0.3989*exp(-\x*\x/2)}) -- (3,0) -- (-3,0) -- cycle;
+    \draw[cblue, very thick, domain=-4.2:4.2, samples=80] plot (\x, {0.3989*exp(-\x*\x/2)});
+    \draw[corange, very thick] (-3,0) -- (-3,0.30) (3,0) -- (3,0.30);
+    \fill[corange] (-3,0.30) circle (2pt) (3,0.30) circle (2pt);
+    \node[lab, text=corange, anchor=south east] at (-2.8,0.31) {端の点の重み};
+    \node[lab, text=corange, anchor=south west] at (2.8,0.31) {端の点の重み};
+    \node[lab, below] at (-3,0) {$-k$}; \node[lab, below] at (3,0) {$k$};
+    \node[lab, anchor=west, text width=40mm, text=cink] at (4.9,0.25) {青: 切らない正規分布\\橙: $k=3$ で切った分布（$[-k,k]$ の外の確率が両端の点に集まる）};
+  \end{scope}
+\end{tikzpicture}

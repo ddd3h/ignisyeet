@@ -1,0 +1,17 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+\begin{tikzpicture}[font=\small,
+  q/.style={draw=cblue, fill=cfill, thick, rounded corners=4pt, minimum width=48mm, minimum height=14mm, align=center},
+  r/.style={draw=caqua, fill=cfillg, thick, rounded corners=6pt, minimum width=50mm, minimum height=16mm, align=center},
+  arr/.style={->, thick, cink2}, lab/.style={font=\footnotesize, text=cink2, align=center}]
+  \node[q] (g) {落下分散で\\何を知りたいか};
+  \node[r, below left=24mm and 8mm of g] (r1) {\texttt{wind\_grid}\\{\footnotesize 風速 $\times$ 方位 $\times$ 2 降下モード}\\{\footnotesize 112 ケースで約 0.7 s}};
+  \node[r, below=24mm of g] (r2) {\texttt{monte\_carlo}\\{\footnotesize 20 項目のばらつき、$N$ サンプル}\\{\footnotesize $10^4$ サンプルで約 13 s}};
+  \node[r, below right=24mm and 8mm of g] (r3) {両方（手順に沿って）\\{\footnotesize 格子で最悪の風を決め}\\{\footnotesize その風でモンテカルロ}};
+  \draw[arr] (g.south west) -- node[left, lab, pos=0.5] {風の影響の見通し\\最悪の風向・風速} (r1.north);
+  \draw[arr] (g) -- node[right, lab, pos=0.5] {機体・設置の\\ばらつきを含む\\不確かさの定量} (r2);
+  \draw[arr] (g.south east) -- node[right, lab, pos=0.5] {保安距離の半径} (r3.north);
+  \node[lab, below=3mm of r1] {得られる量: 最大着地距離、\\多角形、風向ごとの着地点};
+  \node[lab, below=3mm of r2] {得られる量: 平均、誤差楕円、\\P50/P90/P99/P99.9、最大};
+  \node[lab, below=3mm of r3] {得られる量: 各手順の最大の最大\\+ 余裕 $\to$ 半径 $R$};
+\end{tikzpicture}

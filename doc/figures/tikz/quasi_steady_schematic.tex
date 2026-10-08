@@ -1,0 +1,28 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+\begin{tikzpicture}[font=\small,
+  c/.style={minimum width=30mm, minimum height=9mm, align=center, draw=cgrid, thick},
+  on/.style={c, fill=cfillg},
+  off/.style={c, fill=cfillo},
+  rowl/.style={minimum width=70mm, minimum height=9mm, align=left, anchor=east, inner sep=3pt},
+  hd/.style={font=\bfseries, align=center}]
+  \node[hd] at (3.4,0.9) {{\footnotesize\texttt{quasi\_steady = false}}\\{\footnotesize 既定}};
+  \node[hd] at (7.4,0.9) {{\footnotesize\texttt{quasi\_steady = true}}\\{\footnotesize 感度の確認}};
+  \node[hd, anchor=east] at (-0.2,0.9) {空気力と空力モーメントの項};
+  \foreach \i/\t in {
+    0/{静的な係数 $C_N,C_A$ と圧力中心},
+    1/{ピッチ・ヨーの減衰 $C_{mq}$},
+    2/{ロールの強制と減衰 $C_{l\delta},C_{lp}$},
+    3/{誘導ロール $C_{l4}$（\texttt{cl4}）},
+    4/{見かけの質量の遅れ（$\dot\alpha$）と対流の回転},
+    5/{回転による法線力 $C_{Nq}$},
+    6/{Magnus 力とモーメント（\texttt{cnpa}, \texttt{cmpa}）}} {
+    \node[rowl] at (0,-\i*0.9) {\t};
+    \node[on] at (3.4,-\i*0.9) {含む};
+    \ifnum\i>3 \node[off] at (7.4,-\i*0.9) {切る}; \else \node[on] at (7.4,-\i*0.9) {含む}; \fi
+  }
+  \draw[decorate, decoration={brace, amplitude=5pt, mirror}, cink2, thick] (9.5,0.4) -- (9.5,-2.7);
+  \node[anchor=west, font=\footnotesize, align=left, text=cink2] at (9.8,-1.15) {静的な係数と減衰、ロール\\（常に残す）};
+  \draw[decorate, decoration={brace, amplitude=5pt, mirror}, cink2, thick] (9.5,-3.1) -- (9.5,-5.8);
+  \node[anchor=west, font=\footnotesize, align=left, text=cink2] at (9.8,-4.45) {角速度・角加速度の項\\（準定常では切る）};
+\end{tikzpicture}

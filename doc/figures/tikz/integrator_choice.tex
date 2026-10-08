@@ -1,0 +1,27 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+\begin{tikzpicture}[font=\small,
+  q/.style={draw=cblue, fill=cfill, thick, rounded corners=4pt, minimum width=62mm, minimum height=11mm, align=center},
+  r/.style={draw=caqua, fill=cfillg, thick, rounded corners=6pt, minimum width=44mm, minimum height=11mm, align=center},
+  hd/.style={font=\bfseries, align=center, text=cink},
+  arr/.style={->, thick, cink2}, lab/.style={font=\footnotesize, text=cink2, inner sep=2pt}]
+  % left column: integrator
+  \node[hd] (h1) at (0,0) {積分法 \texttt{sim.integrator}};
+  \node[q, below=5mm of h1] (a1) {固定刻みで他の計算と\\突き合わせたい、または\\参照解を作りたいか};
+  \node[r, right=14mm of a1] (ra1) {\texttt{rk4}\\{\footnotesize \texttt{dt} $\le$ 2 ms}};
+  \node[q, below=14mm of a1] (a2) {許容誤差を \texttt{rtol} $\le 10^{-9}$ まで\\絞る検討か（評価回数より\\誤差の上限を優先するか）};
+  \node[r, right=14mm of a2] (ra2) {\texttt{dop853}\\{\footnotesize \texttt{rtol}, \texttt{atol} を指定}};
+  \node[r, below=14mm of a2] (ra3) {\texttt{rk45}（既定の許容誤差）\\{\footnotesize 通常の飛翔、落下分散}};
+  \draw[arr] (a1) -- node[above, lab] {はい} (ra1);
+  \draw[arr] (a1) -- node[left, lab] {いいえ} (a2);
+  \draw[arr] (a2) -- node[above, lab] {はい} (ra2);
+  \draw[arr] (a2) -- node[left, lab] {いいえ} (ra3);
+  % right column: attitude
+  \node[hd] (h2) at (11.5,0) {姿勢 \texttt{sim.attitude}};
+  \node[q, below=5mm of h2] (b1) {ロール角速度が大きいか\\（フィンのカント、ロール共振）\\または \texttt{rk4} の \texttt{dt} が 5 ms 以上か};
+  \node[r, below=14mm of b1] (rb1) {\texttt{lie\_group}};
+  \node[r, below=14mm of rb1] (rb2) {\texttt{normalize}（既定）};
+  \draw[arr] (b1) -- node[left, lab] {はい} (rb1);
+  \draw[arr] (b1.east) -- ++(6mm,0) |- node[pos=0.25, right, lab] {いいえ} (rb2.east);
+  \node[lab, below=4mm of rb2, align=center] {どの積分法とも組み合わせられる};
+\end{tikzpicture}

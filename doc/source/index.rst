@@ -21,6 +21,42 @@ IgnisYeet ドキュメント
 
 計算の重い部分は Rust、作図は Python で実装している。
 
+.. _page-index-entry:
+
+読者別の入口
+------------
+
+本書は、学ぶ・行う・引く・理解する・信頼するの五つの部でできている。
+各部の関係を :numref:`fig-doc-map` に、目的ごとの入口を次の表に示す。
+
+.. _fig-doc-map:
+
+.. figure:: /_generated/tikz/doc_map.*
+   :width: 90%
+
+   本書の五つの部と、読み進める向き。矢印は「次に読む先」を表す。
+
+.. list-table:: 目的と入口
+   :header-rows: 1
+   :widths: 46 54
+
+   * - したいこと
+     - 読む部
+   * - 初めて使う。まず動かす
+     - :ref:`page-tutorial`
+   * - 自分の機体、推力曲線、風、CFD、落下分散を設定して実行する
+     - :ref:`page-howto`
+   * - 設定キー、コマンド、出力ファイルの列、エラーコード、記号を引く
+     - :ref:`page-reference`
+   * - 設定の選択肢を選ぶ根拠、モデルの式、適用範囲を知る
+     - :ref:`page-theory`
+   * - 結果をどこまで信頼できるかを知る
+     - :ref:`page-vv`
+   * - ビルド、テスト、リリース、ソースの構成を知る
+     - :ref:`page-dev`
+   * - 開発の方針、ライセンス、記法と用語を知る
+     - :ref:`page-about`
+
 .. toctree::
    :maxdepth: 2
    :numbered:

@@ -386,6 +386,9 @@ fn axial_breakdown(results: &[runner::CaseOutcome], model: &aero::AeroModel, fin
             let m = forces::MarkerCoeffs { wall_cfx: a.wall_cfx, base_cfx: a.base_cfx, ..Default::default() };
             let mut e = forces::AxialReportEntry::new(model, r.spec.mach, r.spec.alpha_deg, &m, false, fin_edges_in_cfd);
             e.base_from_cfd = a.base_in_cfx;
+            if a.base_in_cfx {
+                e.fin_te_base_increment = 0.0;
+            }
             Some(e)
         })
         .collect()

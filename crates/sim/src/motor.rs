@@ -83,7 +83,8 @@ impl Motor {
             if fields.len() >= 7 && fields[0].parse::<f64>().is_err() {
                 bail!("[IY-S008] line {n}: multiple motors in this file (second header '{l}'): keep one motor per file");
             }
-            let v: Vec<f64> = l.split_whitespace().map(str::parse).collect::<Result<_, _>>().with_context(|| format!("[IY-S009] line {n}: bad thrust line '{l}'"))?;
+            let v: Vec<f64> =
+                l.split_whitespace().map(str::parse).collect::<Result<_, _>>().with_context(|| format!("[IY-S009] line {n}: bad thrust line '{l}'"))?;
             if v.len() < 2 {
                 bail!("[IY-S009] line {n}: bad thrust line '{l}'");
             }

@@ -144,8 +144,11 @@ pub fn parse_wind_profile(text: &str) -> Result<Vec<ProfilePoint>> {
     }
     let mut pts: Vec<ProfilePoint> = Vec::new();
     for l in lines {
-        let v: Vec<f64> =
-            l.split(',').map(|x| x.trim().parse::<f64>()).collect::<std::result::Result<_, _>>().with_context(|| format!("[IY-S032] bad wind profile row \"{l}\""))?;
+        let v: Vec<f64> = l
+            .split(',')
+            .map(|x| x.trim().parse::<f64>())
+            .collect::<std::result::Result<_, _>>()
+            .with_context(|| format!("[IY-S032] bad wind profile row \"{l}\""))?;
         if v.len() != 3 || v.iter().any(|x| !x.is_finite()) {
             bail!("[IY-S032] bad wind profile row \"{l}\": expected 3 finite numbers");
         }
@@ -203,7 +206,11 @@ impl Wind {
                 // The blend height is raised to at least 2 z0 (see `with_profile`) and must stay below
                 // ref_height, where the configured speed applies.
                 if 2.0 * c.roughness_length >= c.ref_height {
-                    bail!("[IY-S044] wind.roughness_length ({}) must be smaller than half of wind.ref_height ({}) for the log profile", c.roughness_length, c.ref_height);
+                    bail!(
+                        "[IY-S044] wind.roughness_length ({}) must be smaller than half of wind.ref_height ({}) for the log profile",
+                        c.roughness_length,
+                        c.ref_height
+                    );
                 }
             }
             WindModel::Profile => {
@@ -671,16 +678,16 @@ mod tests {
     fn non_finite_wind_speed_and_direction_are_rejected() {
         for (speed, dir) in [(f64::INFINITY, 0.0), (f64::NAN, 0.0), (-1.0, 0.0)] {
             let e = Wind::from_config(&WindConfig { speed, direction_deg: dir, ..cfg(WindModel::Power) }).unwrap_err().to_string();
-            assert!(e.starts_with("wind.speed must be a finite number >= 0, found"), "{e}");
+            assert!(e.starts_with("[IY-S039] wind.speed must be a finite number >= 0, found"), "{e}");
         }
         for dir in [f64::NAN, f64::INFINITY] {
             let e = Wind::from_config(&WindConfig { direction_deg: dir, ..cfg(WindModel::Constant) }).unwrap_err().to_string();
-            assert!(e.starts_with("wind.direction_deg must be a finite number, found"), "{e}");
+            assert!(e.starts_with("[IY-S040] wind.direction_deg must be a finite number, found"), "{e}");
         }
         let w = Wind::from_config(&cfg(WindModel::Power)).unwrap();
         for (speed, dir) in [(f64::NAN, 0.0), (f64::INFINITY, 0.0), (3.0, f64::NAN), (3.0, f64::NEG_INFINITY)] {
             let e = w.with_speed_direction(speed, dir).unwrap_err().to_string();
-            assert!(e.starts_with("wind speed and direction must be finite numbers"), "{e}");
+            assert!(e.starts_with("[IY-S053] wind speed and direction must be finite numbers"), "{e}");
         }
         let p = profile_wind("altitude_m,speed,direction_deg\n0,2,90\n1000,6,120\n", cfg(WindModel::Profile));
         assert!(p.with_speed_direction(f64::NAN, 0.0).is_err());

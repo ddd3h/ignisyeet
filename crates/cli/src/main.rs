@@ -205,7 +205,9 @@ fn margin_location(s: &Summary) -> String {
 fn stability_reason(s: &Summary) -> Option<String> {
     match s.stability() {
         Stability::Stable => None,
-        Stability::Unstable(m) => Some(format!("{NOT_USABLE}: [IY-O020] the rocket is statically UNSTABLE (min static margin {m:.2} cal{})", margin_location(s))),
+        Stability::Unstable(m) => {
+            Some(format!("{NOT_USABLE}: [IY-O020] the rocket is statically UNSTABLE (min static margin {m:.2} cal{})", margin_location(s)))
+        }
         Stability::Unknown(why) => Some(format!("{NOT_USABLE}: [IY-O021] static stability could not be evaluated ({why})")),
     }
 }
@@ -499,7 +501,10 @@ fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: Option<f64>) -> Vec
     if m.is_finite() {
         let at = margin_location(s);
         if m < 0.0 {
-            w.push(format!("[IY-O506] static margin {} cal{at} is negative: the centre of pressure is forward of the CG, the rocket is UNSTABLE", fmt_vs(m, 0.0, 2)));
+            w.push(format!(
+                "[IY-O506] static margin {} cal{at} is negative: the centre of pressure is forward of the CG, the rocket is UNSTABLE",
+                fmt_vs(m, 0.0, 2)
+            ));
         } else if m < 1.0 {
             w.push(format!("[IY-O507] minimum static margin {} cal{at} is below 1.0 cal: low static margin", fmt_vs(m, 1.0, 2)));
         } else if m < 1.5 {
@@ -525,7 +530,10 @@ fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: Option<f64>) -> Vec
     let rec = &cfg.recovery;
     if let (true, Some(_), Some(m)) = (rec.enabled, rec.main_cd_s, rec.main_altitude) {
         if s.apogee.is_finite() && m >= s.apogee {
-            w.push(format!("[IY-O511] recovery.main_altitude = {m} m is above the apogee ({} m): the main opens together with the drogue", fmt_vs(s.apogee, m, 0)));
+            w.push(format!(
+                "[IY-O511] recovery.main_altitude = {m} m is above the apogee ({} m): the main opens together with the drogue",
+                fmt_vs(s.apogee, m, 0)
+            ));
         }
     }
     let wind = &cfg.wind;
@@ -2857,7 +2865,9 @@ mod tests {
         );
         let w = instability_warnings(&v, "Monte Carlo samples");
         assert!(
-            w.len() == 1 && w[0].starts_with("[IY-O534] 2 of 4 Monte Carlo samples (ballistic) are statically UNSTABLE") && w[0].contains("kept in the statistics"),
+            w.len() == 1
+                && w[0].starts_with("[IY-O534] 2 of 4 Monte Carlo samples (ballistic) are statically UNSTABLE")
+                && w[0].contains("kept in the statistics"),
             "{w:?}"
         );
         assert!(instability_reason(&instability(vec![(Descent::Ballistic, Some(&ok))]), "x", "h").is_none());
@@ -3207,7 +3217,10 @@ mod tests {
         let (mut cfg, _g_cfg) = sample_config("chute_override");
         assert!(check_descent_override(&cfg, Some(Descent::Parachute)).is_ok());
         cfg.recovery.enabled = false;
-        assert_eq!(check_descent_override(&cfg, Some(Descent::Parachute)).unwrap_err().to_string(), "[IY-O001] --descent parachute needs recovery.enabled = true");
+        assert_eq!(
+            check_descent_override(&cfg, Some(Descent::Parachute)).unwrap_err().to_string(),
+            "[IY-O001] --descent parachute needs recovery.enabled = true"
+        );
         assert!(check_descent_override(&cfg, Some(Descent::Ballistic)).is_ok() && check_descent_override(&cfg, None).is_ok());
     }
 
@@ -3235,7 +3248,10 @@ mod tests {
         cfg.aero.alpha_step_deg = 89.0;
         let w = grid_warnings(&cfg);
         assert_eq!(w.len(), 2, "{w:?}");
-        assert!(w[0].starts_with("[IY-O500] aero.mach_step = 3 is coarse (> 0.1)") && w[1].starts_with("[IY-O501] aero.alpha_step_deg = 89 is coarse (> 5 deg)"), "{w:?}");
+        assert!(
+            w[0].starts_with("[IY-O500] aero.mach_step = 3 is coarse (> 0.1)") && w[1].starts_with("[IY-O501] aero.alpha_step_deg = 89 is coarse (> 5 deg)"),
+            "{w:?}"
+        );
         // A general Barrowman table is built with general_mach_step.
         cfg.aero.table_kind = aero::table::TableKind::General;
         cfg.aero.general_mach_step = 0.2;
@@ -3387,7 +3403,7 @@ mod tests {
         let msg = instability_reason(&v, "Monte Carlo samples", "hint").unwrap();
         assert!(
             msg.contains("1 of 2 Monte Carlo samples (ballistic) are statically UNSTABLE")
-                && msg.contains("hint; 1 of 2")
+                && msg.contains("hint; [IY-O026] 1 of 2")
                 && msg.contains("could not be evaluated"),
             "{msg}"
         );
@@ -3412,7 +3428,8 @@ mod tests {
         cfg.aero.table = Some(path);
         let why = run_sim(&cfg, Some(Descent::Ballistic)).unwrap().expect("unknown stability must make the run unusable");
         assert!(
-            why.starts_with("RESULTS NOT USABLE: [IY-O021] static stability could not be evaluated (at t = ") && why.contains("yaw normal-force slope dCy/dbeta is zero"),
+            why.starts_with("RESULTS NOT USABLE: [IY-O021] static stability could not be evaluated (at t = ")
+                && why.contains("yaw normal-force slope dCy/dbeta is zero"),
             "{why}"
         );
         let j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(cfg.out_dir().join("summary.json")).unwrap()).unwrap();
@@ -3430,7 +3447,10 @@ mod tests {
         assert!(!flight_warnings(&cfg, &ok).iter().any(|w| w.contains("main_altitude")));
         cfg.recovery.main_altitude = Some(500.0);
         let w = flight_warnings(&cfg, &ok);
-        assert!(w.iter().any(|w| w == "[IY-O511] recovery.main_altitude = 500 m is above the apogee (500 m): the main opens together with the drogue"), "{w:?}");
+        assert!(
+            w.iter().any(|w| w == "[IY-O511] recovery.main_altitude = 500 m is above the apogee (500 m): the main opens together with the drogue"),
+            "{w:?}"
+        );
     }
 
     #[test]
@@ -3480,7 +3500,7 @@ mod tests {
         cfg.atmosphere.model = sim::env::AtmosphereKind::Constant;
         cfg.atmosphere.density = 0.0;
         let e = aero_options(&cfg).unwrap_err().to_string();
-        assert!(e.starts_with("atmosphere.density must be finite and positive"), "{e}");
+        assert!(e.starts_with("[IY-A003] atmosphere.density must be finite and positive"), "{e}");
     }
 
     #[test]
@@ -3550,7 +3570,11 @@ mod tests {
         cfg.rocket.stl_scale = 1.0;
         cfg.rocket.cg_dry = 5.0;
         let e = geometry(&cfg).unwrap_err().to_string();
-        assert!(e.starts_with("[IY-O006] rocket.cg_dry = 5 m is outside the body") && e.contains("\n  geometry warning: the STL surface has 3 open edges of"), "{e}");
+        assert!(
+            e.starts_with("[IY-O006] rocket.cg_dry = 5 m is outside the body")
+                && e.contains("\n  geometry warning: [IY-G501] the STL surface has 3 open edges of"),
+            "{e}"
+        );
     }
 
     #[test]
@@ -3607,7 +3631,10 @@ mod tests {
         assert!(flight_warnings(&cfg, &low).is_empty());
         let high = sim::Summary { apogee: 7000.0, ..base };
         let w = flight_warnings(&cfg, &high);
-        assert_eq!(w, vec!["[IY-O512] apogee 7000 m is above the top of the wind profile (6000 m): the wind above 6000 m is held at the top value".to_string()]);
+        assert_eq!(
+            w,
+            vec!["[IY-O512] apogee 7000 m is above the top of the wind profile (6000 m): the wind above 6000 m is held at the top value".to_string()]
+        );
         // the extrapolation warning is gated on the effective speed of the table, not on wind.speed
         cfg.wind.model = sim::WindModel::Power;
         cfg.wind.speed = 0.0;
@@ -3668,13 +3695,17 @@ mod tests {
         let w = parachute_warnings(&cfg, &never);
         assert_eq!(w, vec!["[IY-O519] parachute descent landed at 178 m/s: the parachute did not deploy before landing (recovery.delay = 5000 s)".to_string()]);
         let fast = sim::Summary { drogue_deploy_time: Some(10.0), landing_speed: 22.04, ..base.clone() };
-        assert_eq!(parachute_warnings(&cfg, &fast), vec!["[IY-O520] parachute descent landed at 22.0 m/s, which is above 15 m/s: check recovery.cd_s".to_string()]);
+        assert_eq!(
+            parachute_warnings(&cfg, &fast),
+            vec!["[IY-O520] parachute descent landed at 22.0 m/s, which is above 15 m/s: check recovery.cd_s".to_string()]
+        );
         let ok =
             sim::Summary { drogue_deploy_time: Some(10.0), drogue_deploy_speed: Some(20.0), drogue_deploy_q: Some(200.0), landing_speed: 6.0, ..base.clone() };
         assert!(parachute_warnings(&cfg, &ok).is_empty());
         // A deployment at high speed or dynamic pressure (also when the run did not land).
         let hard = sim::Summary { drogue_deploy_speed: Some(129.0), drogue_deploy_q: Some(7200.0), ..ok.clone() };
-        let want = "[IY-O518] the parachute opens at 129 m/s (q = 7.2 kPa): a canopy is unlikely to survive; the landing point assumes it does - check recovery.delay";
+        let want =
+            "[IY-O518] the parachute opens at 129 m/s (q = 7.2 kPa): a canopy is unlikely to survive; the landing point assumes it does - check recovery.delay";
         assert_eq!(parachute_warnings(&cfg, &hard), vec![want.to_string()]);
         assert_eq!(parachute_warnings(&cfg, &unlanded(hard.clone())), vec![want.to_string()]);
         let thin_air = sim::Summary { drogue_deploy_speed: Some(45.0), drogue_deploy_q: Some(2100.0), ..ok.clone() };
@@ -3698,7 +3729,7 @@ mod tests {
             sim::Summary { drogue_deploy_time: Some(12.5), deploy_delayed: Some(sim::flight::DeployDelay { nominal_time: 11.25, thrust: 42.0 }), ..ok.clone() };
         assert_eq!(
             parachute_warnings(&cfg, &delayed),
-            vec!["the motor still burns at apogee + recovery.delay (t = 11.25 s, thrust 42.0 N): the parachute deployment is delayed to burnout at 12.50 s"
+            vec!["[IY-O517] the motor still burns at apogee + recovery.delay (t = 11.25 s, thrust 42.0 N): the parachute deployment is delayed to burnout at 12.50 s"
                 .to_string()]
         );
         // ballistic runs and disabled recovery are not judged, unlanded runs only for the deployment

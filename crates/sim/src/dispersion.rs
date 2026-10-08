@@ -618,12 +618,15 @@ pub fn run_monte_carlo_with_progress(
             modes
                 .iter()
                 .map(|&descent| {
-                    let result =
-                        match if invalid { Err(anyhow::anyhow!("[IY-S064] perturbed rail elevation {el:.3} deg is outside (0, 90]")) } else { sim.run(descent, false) } {
-                            Ok(r) if r.summary.landing_east.is_finite() && r.summary.landing_north.is_finite() => Ok(r.summary),
-                            Ok(_) => Err(NOT_LANDED.to_string()),
-                            Err(e) => Err(format!("{e:#}")),
-                        };
+                    let result = match if invalid {
+                        Err(anyhow::anyhow!("[IY-S064] perturbed rail elevation {el:.3} deg is outside (0, 90]"))
+                    } else {
+                        sim.run(descent, false)
+                    } {
+                        Ok(r) if r.summary.landing_east.is_finite() && r.summary.landing_north.is_finite() => Ok(r.summary),
+                        Ok(_) => Err(NOT_LANDED.to_string()),
+                        Err(e) => Err(format!("{e:#}")),
+                    };
                     let row = McRow { sample: i, descent, perturbation: p, result };
                     progress(&row);
                     row
@@ -1322,7 +1325,7 @@ azimuth_deg = 0.0"#;
         for x in &bad {
             let el = 2.0 + x.perturbation.elevation_deg;
             assert!(el <= 0.0, "{el}");
-            assert_eq!(x.result.as_ref().unwrap_err(), &format!("perturbed rail elevation {el:.3} deg is outside (0, 90]"));
+            assert_eq!(x.result.as_ref().unwrap_err(), &format!("[IY-S064] perturbed rail elevation {el:.3} deg is outside (0, 90]"));
         }
         assert!(r.rows.iter().any(|x| x.result.is_ok()));
         assert_eq!(r.summary.descents[0].failed, bad.len() / 2);

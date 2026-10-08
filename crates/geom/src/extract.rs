@@ -5,6 +5,30 @@
 //! The mesh is sliced perpendicular to its principal (longest) axis. In each slice the body
 //! radius is the median over angular bins of the outermost point, which ignores the thin
 //! fins. Points well outside the body radius are clustered by angle to find the fins.
+//!
+//! # Implementation notes
+//!
+//! * **Axis.** The axis is the eigenvector of the largest eigenvalue of the area-weighted vertex
+//!   covariance matrix (symmetric 3x3, cyclic Jacobi in [`crate::math::sym_eigen`]). Its sign is
+//!   fixed afterwards by the nose-orientation rules (fin position first, end radii second).
+//! * **Slicing.** There are `n_slices` planes at the mid-points of equal intervals along the axis.
+//!   An edge crosses a plane when its two end points fall on different sides of "x >= plane"
+//!   (a vertex lying exactly on a plane is thus counted once), so a triangle yields zero or one
+//!   segment per plane. A triangle only visits the planes inside its own x range. The distance
+//!   from the axis is convex along a segment, so its end points bound the outline.
+//! * **Body radius.** The outermost radius per 5 degree bin (72 bins) is taken per slice and the
+//!   slice radius is the median over the filled bins; fins fill only a few bins, interior parts
+//!   are hidden behind the outer points of the same bin.
+//! * **Fins.** Points beyond the body radius plus `fin_threshold * r_ref` are fin points. Per
+//!   slice they are clustered by angle (gap above 10 degrees, wrapping at 360 degrees). The
+//!   fin count is the most frequent cluster count; the fin run is the contiguous run of slices
+//!   with fin points whose summed span is largest; the root is the range of slices with a segment
+//!   crossing the body surface. Tip chord comes from the fin area (trapezoid of equal area),
+//!   sweep from the first slice reaching 97 % of the span, thickness from the circumferential
+//!   width of each cluster (median over slices and fins). The leading and trailing edge are
+//!   extrapolated linearly from the first two root slices (at most three slice intervals).
+//! * **Orientation.** Fin root centre more than 0.08 L from the middle decides the aft end;
+//!   otherwise the end with the smaller summed radius of its two end slices is the nose.
 
 use crate::math::{sym_eigen, Vec3};
 use crate::stl::Triangle;
@@ -566,6 +590,9 @@ fn reference_radius(slices: &[Slice]) -> (f64, Option<String>) {
     }
 }
 
+/// Cuts the mesh (in the axis frame, `xmin` the nose-side end) with `n` planes at the mid-points of
+/// equal intervals and returns, per plane, the cut segments as `(radius, angle)` end points and the
+/// body radius (median over the filled 5 degree bins of the per-bin maximum radius).
 fn slice_mesh(local: &[[Vec3; 3]], xmin: f64, length: f64, n: usize) -> Vec<Slice> {
     let dx = length / n as f64;
     let mut slices: Vec<Slice> = (0..n).map(|i| Slice { x: (i as f64 + 0.5) * dx, r_body: 0.0, segs: Vec::new() }).collect();
@@ -623,6 +650,9 @@ struct FinSlice {
     attached: bool,
 }
 
+/// Fin points of one slice: end points farther than the body radius plus `thr`, clustered by angle
+/// (gap above 10 degrees; the first and last cluster merge across 0/360 degrees). `attached` is set
+/// when a segment crosses the body surface (the fin root), `span` is the largest fin height.
 fn fin_slice(s: &Slice, thr: f64) -> FinSlice {
     let limit = s.r_body + thr;
     let mut out: Vec<(f64, f64)> = Vec::new();
@@ -662,6 +692,10 @@ fn fin_slice(s: &Slice, thr: f64) -> FinSlice {
     FinSlice { clusters, span, attached }
 }
 
+/// Builds the trapezoidal fin set from the per-slice fin points: picks the contiguous run of fin
+/// slices with the largest summed span (so a canard does not win over the main fins), takes the
+/// most frequent cluster count as the fin count and derives root chord, tip chord (equal-area
+/// trapezoid), span, sweep and thickness. Returns `None` when the run is shorter than three slices.
 fn detect_fins(slices: &[Slice], info: &[FinSlice], dx: f64) -> Option<FinSet> {
     // Largest contiguous run of slices containing fin points (weighted by span).
     let mut best: Option<(usize, usize, f64)> = None;

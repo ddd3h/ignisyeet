@@ -7,7 +7,7 @@ kml = true                 # also write ignisyeet.kml for Google Earth
 # Compute resources. They never change results (nor the aero-table cache).
 [resources]
 threads = 0                # max CPU threads for everything; 0 = all available
-memory_gb = 0              # memory budget [GB] for heavy steps (panel matrix, CFD cases); 0 = no limit
+memory_gb = 0              # memory budget [GB] for heavy steps (panel matrix, CFD cases); 0 = the memory available (MemAvailable, cgroup, ulimit -v)
 nice = 0                   # 0..19: lower the process priority for long runs (0 = unchanged)
 
 [rocket]

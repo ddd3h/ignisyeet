@@ -539,7 +539,7 @@ uv を使わずに ``pip`` で作図する場合は、仮想環境を作って�
    ``sim`` の完了画面。結果パネル、書き出したファイルの一覧、所要時間が並ぶ。
 
 二段開傘（``recovery.main_cd_s``）のときは、結果パネルにメインの開傘の高さと時刻の行（``main deploy``）を加え、設定パネルにはメインの抗力面積と開傘高度、ドローグとメインの終端降下速度（海面、乾燥質量）を示す。
-プレーンモードでは、パラシュート（二段開傘ではドローグ）が開いた時刻、そのときの対気速度と動圧を ``deploy          27.10 s, 28.6 m/s, q 0.32 kPa`` の形の行に示し（サンプルの値）、``main deploy`` の行にもメインが開いたときの対気速度と動圧を添える。どちらも ``summary.json`` に残る（:ref:`sec-file-summary`）。
+プレーンモードでは、パラシュート（二段開傘ではドローグ）が開いた時刻、そのときの対気速度と動圧を ``deploy          27.10 s, 28.5 m/s, q 0.32 kPa`` の形の行に示し（サンプルの値）、``main deploy`` の行にもメインが開いたときの対気速度と動圧を添える。どちらも ``summary.json`` に残る（:ref:`sec-file-summary`）。
 飛翔が推力曲線の終わりより前に終わったとき（``sim.max_time`` で打ち切ったときなど）は、燃焼終了の行（``burnout``）に ``not reached (the flight ended before the end of the thrust curve)`` と示し、``summary.json`` の ``burnout_time`` は ``null`` にする。
 ``wind.model = "profile"`` の設定パネルの風の行は、``wind.speed`` と ``wind.direction_deg``\ （``profile`` では使わない）ではなく、``mean 15.6 m/s from 270 deg`` の形で ``wind.profile_mean_speed`` と ``wind.profile_mean_direction_deg``\ （:ref:`sec-wind-scaling`）を示す。指定のない側は ``table speeds``、``table directions`` と書く（表のまま）。
 ``profile`` では、``sim`` と ``dispersion`` の結果のあとに、公称の表の風を ``wind.ref_height`` で求めた ``profile wind at wind.ref_height = 2 m: 3.04 m/s from 10 deg (mean wind 11.89 m/s)`` の形の行も出す（例の表の値。``-q`` では出さない）。同じ値が ``summary.json`` などの ``wind_at_ref_height`` に残る（:ref:`sec-file-summary`）。
@@ -948,8 +948,8 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 判定できないケースとサンプルの数は、降下モードごとに ``stability_unknown_runs`` に残す（:ref:`sec-file-dispersion`）。
 
 係数表の迎角の範囲を超えた引き出しは、表の端の区間からの外挿になる。外挿した係数は表にない大きな迎角の値で、見かけの釣り合い（トリム）を作るなど、弾道落下の経路を変えうる。外挿の結果が表の範囲内の結果に近いかどうかは、機体と条件によって決まり、事前には分からない。
-そのため ``sim`` と ``dispersion`` は、そのような引き出しが 1 回でもあれば、着地点にかかわらず、``RESULTS NOT USABLE: 9334 of 127454 lookups beyond the aero table's angle range (max |alpha| 90.0 deg > alpha_max 30.0 deg): the descent uses extrapolated coefficients; build the table up to 90 deg`` の形の行を書いて終了ステータス 3 で終わる。
-これは、サンプルを ``aero.alpha_max_deg = 30`` にして東風 4 m/s で弾道落下させたときの表示である。このときの着地距離は 822.4 m で、既定の 90° の表の 832.4 m と近いが、それは外挿がこの条件でたまたま近い値を与えたというだけで、結果を使える根拠にはならない。
+そのため ``sim`` と ``dispersion`` は、そのような引き出しが 1 回でもあれば、着地点にかかわらず、``RESULTS NOT USABLE: 9048 of 127182 lookups beyond the aero table's angle range (max |alpha| 90.0 deg > alpha_max 30.0 deg): the descent uses extrapolated coefficients; build the table up to 90 deg`` の形の行を書いて終了ステータス 3 で終わる。
+これは、サンプルを ``aero.alpha_max_deg = 30`` にして東風 4 m/s で弾道落下させたときの表示である。このときの着地距離は 823.3 m で、既定の 90° の表の 832.2 m と近いが、それは外挿がこの条件でたまたま近い値を与えたというだけで、結果を使える根拠にはならない。
 表の上限がすでに 90° 以上なら、末尾は ``build the table up to 180 deg (aero.alpha_max_deg)`` である。
 ``summary.json`` などの ``aero_table_range`` の ``angles_in_range`` は、このとき ``false`` になる（:ref:`sec-file-summary`）。
 飛翔計算は全迎角を :math:`\min(\alpha_t,\,180^\circ-\alpha_t)` に折り返して表を引くので（:ref:`sec-aero-table`）、軸対称表では既定の ``alpha_max_deg = 90`` で範囲を超えることはない。

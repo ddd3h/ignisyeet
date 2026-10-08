@@ -1,14 +1,14 @@
-# Post-hoc roughness correction of the RANS table comparison (doc/scripts/rans_v8_roughness.py, commit 03d055e): not a rerun. rans_ca_off_stored and euler_ca_off are the values of rans_table.csv (RANS 5 mm table solved without the roughness term; Euler 2 mm). roughness_increment = Barrowman friction with roughness 6e-05 m minus roughness 0 (ignisyeet aero, method barrowman, sample_cfd.toml; = cfd::forces::roughness_increment). rans_ca_off_corrected = stored + k_alpha * (roughness_increment + fin_edge_increment) (k_alpha = axial_alpha_factor). fin_edge_increment = barrowman_fins * (1 - 4 e (1 - e)), e = 0.02: the configured fin edges minus the share of the blunted rebuilt lens (= cfd::forces::fin_edge_increment). cfx_wall = stored - k_alpha (base + extra), the Barrowman base and extra_cd terms of the same configuration. barrowman_fins: the Barrowman fin-edge term (in the Euler ca_off).
+# Post-hoc roughness correction of the RANS table comparison (doc/scripts/rans_v8_roughness.py, commit 03d055e): not a rerun. rans_ca_off_stored and euler_ca_off are the values of rans_table.csv (RANS 5 mm table solved without the roughness term; Euler 2 mm). roughness_increment = Barrowman friction with roughness 6e-05 m minus roughness 0 (ignisyeet aero, method barrowman, sample_cfd.toml; = cfd::forces::roughness_increment). rans_ca_off_corrected = stored + k_alpha * (roughness_increment + fin_edge_increment) (k_alpha = axial_alpha_factor). fin_edge_increment = barrowman_fins * (1 - 4 e (1 - e)), e = 0.02: the configured fin edges minus the share of the blunted rebuilt lens (= cfd::forces::fin_edge_increment). cfx_wall = stored - k_alpha (base + extra), the Barrowman base and extra_cd terms of the same configuration. barrowman_fins: the Barrowman fin-edge term (in the Euler ca_off). Euler columns: sample_euler_vs_models.csv and mesh_convergence.csv of the current Euler default (fin_size auto, coefficient-trend acceptance; ignisyeet commit b6a9bf5, 2026-10-08); the RANS columns are unchanged.
 mach,alpha_deg,k_alpha,cfx_wall,base,extra,barrowman_fins,roughness_increment,fin_edge_increment,rans_ca_off_stored,rans_ca_off_corrected,euler_ca_off,diff_stored_percent,diff_corrected_percent
-0.3,0,1,0.25786,0.1317,0.02,0.0318205,0.0987172,0.0293257,0.40956,0.537603,0.4174,-1.87829,28.798
-0.3,4,1.04201,0.248497,0.1317,0.02,0.0318205,0.0987172,0.0293257,0.40657,0.539992,0.4312,-5.71197,25.2301
-0.3,8,1.13678,0.23155,0.1317,0.02,0.0318205,0.0987172,0.0293257,0.404,0.549557,0.4627,-12.6864,18.7717
-0.8,0,1,0.2122,0.2032,0.02,0.107443,0.12132,0.0990192,0.4354,0.655739,0.5714,-23.8012,14.7601
-0.8,4,1.04201,0.199353,0.2032,0.02,0.107443,0.12132,0.0990192,0.43193,0.661526,0.5901,-26.8039,12.104
-0.8,8,1.13678,0.182441,0.2032,0.02,0.107443,0.12132,0.0990192,0.43617,0.686647,0.6322,-31.0076,8.6123
-1.2,0,1,0.316787,0.208333,0.02,0.15661,0.0943419,0.144331,0.54512,0.783793,0.7158,-23.8446,9.49891
-1.2,4,1.04201,0.313574,0.208333,0.02,0.15661,0.0943419,0.144331,0.5515,0.8002,0.7415,-25.6237,7.9164
-1.2,8,1.13678,0.311975,0.208333,0.02,0.15661,0.0943419,0.144331,0.57154,0.842859,0.7982,-28.3964,5.59495
-2,0,1,0.25336,0.125,0.02,0.161656,0.0596793,0.148982,0.39836,0.607022,0.573,-30.4782,5.93745
-2,4,1.04201,0.255378,0.125,0.02,0.161656,0.0596793,0.148982,0.40647,0.623898,0.5934,-31.5015,5.13947
-2,8,1.13678,0.259557,0.125,0.02,0.161656,0.0596793,0.148982,0.42439,0.661592,0.6399,-33.6787,3.38995
+0.3,0,1,0.25786,0.1317,0.02,0.0318205,0.0987172,0.0293257,0.40956,0.537603,0.4618,-11.3123,16.4147
+0.3,4,1.04201,0.248497,0.1317,0.02,0.0318205,0.0987172,0.0293257,0.40657,0.539992,0.4756,-14.5143,13.5391
+0.3,8,1.13678,0.23155,0.1317,0.02,0.0318205,0.0987172,0.0293257,0.404,0.549557,0.5078,-20.4411,8.22312
+0.8,0,1,0.2122,0.2032,0.02,0.107443,0.12132,0.0990192,0.4354,0.655739,0.6093,-28.5409,7.6217
+0.8,4,1.04201,0.199353,0.2032,0.02,0.107443,0.12132,0.0990192,0.43193,0.661526,0.6272,-31.1336,5.4729
+0.8,8,1.13678,0.182441,0.2032,0.02,0.107443,0.12132,0.0990192,0.43617,0.686647,0.6672,-34.6268,2.91472
+1.2,0,1,0.316787,0.208333,0.02,0.15661,0.0943419,0.144331,0.54512,0.783793,0.7515,-27.4624,4.29714
+1.2,4,1.04201,0.313574,0.208333,0.02,0.15661,0.0943419,0.144331,0.5515,0.8002,0.777,-29.0219,2.98584
+1.2,8,1.13678,0.311975,0.208333,0.02,0.15661,0.0943419,0.144331,0.57154,0.842859,0.8349,-31.5439,0.953288
+2,0,1,0.25336,0.125,0.02,0.161656,0.0596793,0.148982,0.39836,0.607022,0.5992,-33.518,1.30541
+2,4,1.04201,0.255378,0.125,0.02,0.161656,0.0596793,0.148982,0.40647,0.623898,0.6205,-34.4932,0.547623
+2,8,1.13678,0.259557,0.125,0.02,0.161656,0.0596793,0.148982,0.42439,0.661592,0.6692,-36.5825,-1.13688

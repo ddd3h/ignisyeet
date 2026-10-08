@@ -926,6 +926,7 @@ def cfd_fields(f, fields):
             axs[1].plot(h["Inner_Iter"], h["CL"], color=SERIES[i // 2], lw=1.4, label=f"$M={mach:g}$")
     axs[0].set_xlabel("反復回数"); axs[0].set_ylabel("密度の残差 $\\log_{10}$ RMS")
     axs[1].set_xlabel("反復回数"); axs[1].set_ylabel("揚力係数 $C_L$（$\\alpha=4^\\circ$）")
+    axs[1].set_ylim(0.7, 1.4)
     axs[0].legend(); axs[1].legend()
     f.save(fig, "cfd_convergence")
 

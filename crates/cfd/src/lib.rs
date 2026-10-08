@@ -67,12 +67,42 @@ pub enum CfdStage {
     Done,
 }
 
+/// A RANS case accepted with a stalled residual (see [`runner::RansVerdict::Stalled`]).
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct StalledCase {
+    pub case: String,
+    pub residual_drop: Option<f64>,
+}
+
+/// The warning about the RANS cases accepted with a stalled residual (`None` when there is none).
+pub fn stalled_warning(stalled: &[StalledCase]) -> Option<String> {
+    if stalled.is_empty() {
+        return None;
+    }
+    let list: Vec<String> =
+        stalled.iter().map(|c| format!("{} ({} orders below the reference)", c.case, c.residual_drop.map_or("?".to_string(), |d| format!("{d:.1}")))).collect();
+    Some(format!(
+        "{} RANS case{} accepted with a stalled residual, not converged (coefficients averaged over two windows; a stalled residual needs only \
+         {} orders below the reference, convergence {}): {}; check them in cfd_cases.csv (rans_verdict, residual_drop)",
+        stalled.len(),
+        if stalled.len() == 1 { "" } else { "s" },
+        runner::RANS_STALL_RHO_DROP,
+        runner::RANS_RHO_DROP,
+        list.join(", ")
+    ))
+}
+
 /// Summary written to `cfd_report.json`.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct CfdReport {
     pub cases: usize,
     pub failed: Vec<(f64, f64)>,
+    /// (Mach, alpha) of the accepted cases that did not converge; `unconverged_cases` names their directories (with
+    /// sideslip and roll).
     pub unconverged: Vec<(f64, f64)>,
+    pub unconverged_cases: Vec<String>,
+    /// RANS cases accepted with a stalled residual and the drop of their density residual below the reference [orders].
+    pub stalled_cases: Vec<StalledCase>,
     pub wall_seconds: f64,
     pub mesh_nodes: usize,
     pub mesh_cells: usize,
@@ -195,7 +225,8 @@ pub fn ref_dims(geom: &Geometry) -> su2cfg::RefDims {
 pub struct ResourceBudget {
     /// Maximum number of CPU threads (MPI ranks across all concurrent cases, gmsh threads).
     pub threads: usize,
-    /// Memory budget for the concurrent SU2 runs; `None` = do not limit.
+    /// Memory budget for the concurrent SU2 runs (`resources.memory_gb`); `None` = the memory available to this
+    /// process ([`panel::memory::available`]: available memory, cgroup limit, address-space limit).
     pub memory_bytes: Option<u64>,
 }
 
@@ -214,6 +245,10 @@ pub struct RunPlan {
     pub bytes_per_case: u64,
     /// Adjustments made to the requested values.
     pub notes: Vec<String>,
+    /// Memory budget in effect [bytes] and its source (`None`: no budget known, the memory is not checked).
+    pub memory: Option<(u64, String)>,
+    /// Set when a single case is estimated to need more than the memory budget: the reason the run is refused.
+    pub over_budget: Option<String>,
 }
 
 /// Estimated SU2 memory of one case with `cells` volume cells on `ranks` ranks (Euler: per cell; RANS: per node
@@ -255,8 +290,9 @@ pub const RANS_BYTES_PER_NODE: f64 = 12e3;
 ///
 /// * auto ranks: `min(4, threads)`; auto parallel: `threads / ranks`.
 /// * `ranks x parallel` is capped to `threads`: `parallel` is reduced first, then `ranks`.
-/// * with a memory budget, `parallel` is reduced until the estimated memory of the concurrent cases
-///   fits (at least one case always runs; a note says when even one exceeds the budget).
+/// * memory budget: `memory_bytes`, or without it the memory available to this process
+///   ([`panel::memory::available`]); `parallel` is reduced until the estimated memory of the concurrent cases fits.
+///   When even one case exceeds the budget, [`RunPlan::over_budget`] says so and the run is refused.
 /// * `parallel` never exceeds the number of cases.
 pub fn plan_resources(opt: &CfdOptions, budget: &ResourceBudget, cells: usize, n_cases: usize) -> RunPlan {
     plan_resources_mesh(opt, budget, cells, 0, n_cases)
@@ -264,6 +300,20 @@ pub fn plan_resources(opt: &CfdOptions, budget: &ResourceBudget, cells: usize, n
 
 /// [`plan_resources`] with the node count of the mesh (0 = estimate from `cells`).
 pub fn plan_resources_mesh(opt: &CfdOptions, budget: &ResourceBudget, cells: usize, nodes: usize, n_cases: usize) -> RunPlan {
+    let available = if budget.memory_bytes.is_none() { panel::memory::available() } else { None };
+    plan_resources_with(opt, budget, cells, nodes, n_cases, available)
+}
+
+/// [`plan_resources_mesh`] with the memory available to this process given (used when `budget.memory_bytes` is
+/// `None`; `None` here as well: the memory is not checked).
+pub fn plan_resources_with(
+    opt: &CfdOptions,
+    budget: &ResourceBudget,
+    cells: usize,
+    nodes: usize,
+    n_cases: usize,
+    available: Option<panel::memory::Available>,
+) -> RunPlan {
     let threads = budget.threads.max(1);
     let mut notes = Vec::new();
     let mut ranks = if opt.ranks_per_case == 0 { threads.min(4) } else { opt.ranks_per_case };
@@ -279,17 +329,40 @@ pub fn plan_resources_mesh(opt: &CfdOptions, budget: &ResourceBudget, cells: usi
     }
     parallel = parallel.min(n_cases.max(1));
     let per = case_memory_bytes_mesh(opt.model, cells, nodes, ranks);
-    if let Some(mem) = budget.memory_bytes {
+    let memory = match budget.memory_bytes {
+        Some(b) => Some((b, "resources.memory_gb".to_string())),
+        None => available.map(|a| (a.bytes, a.source)),
+    };
+    let mut over_budget = None;
+    if let Some((mem, source)) = &memory {
+        let gb = |b: u64| b as f64 / 1e9;
         let fit = ((mem / per.max(1)) as usize).max(1);
         if fit < parallel {
-            notes.push(format!("parallel_cases reduced from {parallel} to {fit} (memory budget, about {:.1} GB per case)", per as f64 / 1e9));
+            notes.push(format!(
+                "parallel_cases reduced from {parallel} to {fit} (memory budget {:.1} GB from {source}, about {:.1} GB per case)",
+                gb(*mem),
+                gb(per)
+            ));
             parallel = fit;
         }
-        if per > mem {
-            notes.push(format!("a single case needs about {:.1} GB, more than the memory budget {:.1} GB", per as f64 / 1e9, mem as f64 / 1e9));
+        if per > *mem {
+            let nodes_text = if nodes > 0 { format!("{nodes} nodes") } else { format!("about {} nodes", estimate_nodes(cells)) };
+            over_budget = Some(format!(
+                "a single CFD case needs about {:.1} GB ({} on {cells} cells / {nodes_text}, {ranks} ranks), more than the memory budget \
+                 of {:.1} GB ({source}); use a coarser mesh (a larger wall_size{}) or fewer ranks_per_case (about 40 MB each){}",
+                gb(per),
+                if opt.model == FlowModel::Rans { "RANS" } else { "Euler" },
+                gb(*mem),
+                if opt.model == FlowModel::Rans { format!(", RANS default {} m", config::RANS_DEFAULT_WALL_SIZE) } else { String::new() },
+                if budget.memory_bytes.is_some() {
+                    ", or raise resources.memory_gb"
+                } else {
+                    ", or set resources.memory_gb when more memory can be freed for the run"
+                }
+            ));
         }
     }
-    RunPlan { ranks, parallel, bytes_per_case: per, notes }
+    RunPlan { ranks, parallel, bytes_per_case: per, notes, memory, over_budget }
 }
 
 /// Some RANS case has no per-marker `CFx` columns: its axial coefficient is the monitored total, base cap included.
@@ -406,6 +479,9 @@ pub fn build_table_with_progress(
     for n in &plan.notes {
         eprintln!("note: aero.cfd: {n}");
     }
+    if let Some(why) = &plan.over_budget {
+        bail!("aero.cfd: {why}");
+    }
     let run = runner::RunSetup {
         opt: cfd,
         dims,
@@ -461,6 +537,11 @@ pub fn build_table_with_progress(
         failed: results.iter().filter(|r| r.result.is_none()).map(|r| (r.spec.mach, r.spec.alpha_deg)).collect(),
         failed_cases: results.iter().filter(|r| r.result.is_none()).map(|r| r.spec.dir_name()).collect(),
         unconverged: results.iter().filter(|r| r.result.as_ref().is_some_and(|x| !x.converged)).map(|r| (r.spec.mach, r.spec.alpha_deg)).collect(),
+        unconverged_cases: results.iter().filter(|r| r.result.as_ref().is_some_and(|x| !x.converged)).map(|r| r.spec.dir_name()).collect(),
+        stalled_cases: results
+            .iter()
+            .filter_map(|r| r.result.as_ref().filter(|x| x.stalled).map(|x| StalledCase { case: r.spec.dir_name(), residual_drop: x.residual_drop }))
+            .collect(),
         wall_seconds: t0.elapsed().as_secs_f64(),
         mesh_nodes: mesh.stats.nodes,
         mesh_cells: mesh.stats.cells,
@@ -589,6 +670,7 @@ pub fn build_table_with_progress(
             report.warnings.push(format!("the table is held at its M = {m} values below M = {m} (no Mach extrapolation of the CFD data)"));
         }
     }
+    report.warnings.extend(stalled_warning(&report.stalled_cases));
     progress(CfdStage::Done);
     Ok((tab, report))
 }
@@ -603,37 +685,85 @@ mod tests {
         CfdOptions { ranks_per_case: r, parallel_cases: p, ..Default::default() }
     }
 
+    /// [`plan_resources_with`] without a detected memory limit (thread tests independent of the machine).
+    fn plan(o: &CfdOptions, b: &ResourceBudget, cells: usize, n: usize) -> RunPlan {
+        plan_resources_with(o, b, cells, 0, n, None)
+    }
+
     #[test]
     fn resource_plan_caps_threads_and_resolves_auto() {
         let b = |t, m| ResourceBudget { threads: t, memory_bytes: m };
-        let p = plan_resources(&opts(4, 4), &b(20, None), 100_000, 12);
+        let p = plan(&opts(4, 4), &b(20, None), 100_000, 12);
         assert_eq!((p.ranks, p.parallel), (4, 4));
-        assert!(p.notes.is_empty());
+        assert!(p.notes.is_empty() && p.memory.is_none() && p.over_budget.is_none());
         // parallel is reduced first, then ranks
-        let p = plan_resources(&opts(4, 4), &b(10, None), 100_000, 12);
+        let p = plan(&opts(4, 4), &b(10, None), 100_000, 12);
         assert_eq!((p.ranks, p.parallel), (4, 2));
-        let p = plan_resources(&opts(4, 4), &b(3, None), 100_000, 12);
+        let p = plan(&opts(4, 4), &b(3, None), 100_000, 12);
         assert_eq!((p.ranks, p.parallel), (3, 1));
         // auto
-        let p = plan_resources(&opts(0, 0), &b(20, None), 100_000, 12);
+        let p = plan(&opts(0, 0), &b(20, None), 100_000, 12);
         assert_eq!((p.ranks, p.parallel), (4, 5));
-        let p = plan_resources(&opts(0, 0), &b(2, None), 100_000, 12);
+        let p = plan(&opts(0, 0), &b(2, None), 100_000, 12);
         assert_eq!((p.ranks, p.parallel), (2, 1));
-        let p = plan_resources(&opts(2, 0), &b(8, None), 100_000, 3);
+        let p = plan(&opts(2, 0), &b(8, None), 100_000, 3);
         assert_eq!((p.ranks, p.parallel), (2, 3), "never more than the number of cases");
     }
 
     #[test]
     fn resource_plan_respects_memory() {
         let b = ResourceBudget { threads: 20, memory_bytes: Some(2_000_000_000) };
-        // 1 M cells, 4 ranks: about 2.9 GB per case -> one case, with a note.
+        // 1 M cells, 4 ranks: about 3.5 GB per case -> one case, refused.
         let p = plan_resources(&opts(4, 4), &b, 1_000_000, 12);
         assert_eq!(p.parallel, 1);
-        assert!(p.notes.iter().any(|n| n.contains("single case")));
+        let why = p.over_budget.as_deref().expect("over budget");
+        assert!(why.starts_with("a single CFD case needs about 3.5 GB (Euler on 1000000 cells") && why.contains("4 ranks"), "{why}");
+        assert!(
+            why.contains("memory budget of 2.0 GB (resources.memory_gb)") && why.contains("larger wall_size") && why.contains("raise resources.memory_gb"),
+            "{why}"
+        );
         // 100 k cells: about 0.49 GB per case -> 4 fit into 2.2 GB.
         let p = plan_resources(&opts(4, 8), &ResourceBudget { threads: 40, memory_bytes: Some(2_200_000_000) }, 100_000, 12);
         assert_eq!(p.parallel, 4, "{p:?}");
+        assert!(p.over_budget.is_none() && p.notes.iter().any(|n| n.contains("parallel_cases reduced from 8 to 4 (memory budget 2.2 GB")), "{p:?}");
         assert!(case_memory_bytes(FlowModel::Rans, 100_000, 4) >= case_memory_bytes(FlowModel::Euler, 100_000, 4));
+    }
+
+    #[test]
+    fn stalled_cases_are_named_with_their_residual_drop() {
+        assert_eq!(stalled_warning(&[]), None);
+        let w = stalled_warning(&[StalledCase { case: "m2.000_a00.00".into(), residual_drop: Some(0.94) }]).unwrap();
+        assert!(w.starts_with("1 RANS case accepted with a stalled residual, not converged"), "{w}");
+        assert!(w.contains("needs only 0.5 orders below the reference, convergence 3") && w.contains("m2.000_a00.00 (0.9 orders below the reference)"), "{w}");
+    }
+
+    #[test]
+    fn resource_plan_defaults_to_the_available_memory() {
+        // The default budget (resources.memory_gb = 0) is the memory available to the process: the default RANS
+        // setup (4 ranks x 4 cases, 735 k nodes at 5 mm: about 9 GB per case) on a machine with 30 GB available runs
+        // 3 cases at a time instead of 4.
+        let rans = CfdOptions { ranks_per_case: 4, parallel_cases: 4, ..CfdOptions::rans() };
+        let avail = |gb: f64| Some(panel::memory::Available { bytes: (gb * 1e9) as u64, source: "available memory, MemAvailable in /proc/meminfo".into() });
+        let b = ResourceBudget { threads: 16, memory_bytes: None };
+        let p = plan_resources_with(&rans, &b, 1_000_000, 735_366, 20, avail(30.0));
+        assert!((p.bytes_per_case as f64 / 1e9 - 8.98).abs() < 0.05, "{p:?}");
+        assert_eq!(p.parallel, 3, "{p:?}");
+        assert_eq!(p.memory.as_ref().map(|m| m.1.as_str()), Some("available memory, MemAvailable in /proc/meminfo"));
+        assert!(p.notes.iter().any(|n| n.contains("memory budget 30.0 GB from available memory")), "{p:?}");
+        // Less than one case: refused, with the estimate and what to change.
+        let p = plan_resources_with(&rans, &b, 1_000_000, 735_366, 20, avail(8.0));
+        let why = p.over_budget.expect("over budget");
+        assert!(why.contains("about 9.0 GB (RANS on 1000000 cells / 735366 nodes, 4 ranks)") && why.contains("RANS default 0.005 m"), "{why}");
+        assert!(why.contains("set resources.memory_gb") && why.contains("MemAvailable"), "{why}");
+        // An explicit budget overrides the detected memory.
+        let p = plan_resources_with(&rans, &ResourceBudget { memory_bytes: Some(40_000_000_000), ..b }, 1_000_000, 735_366, 20, avail(8.0));
+        assert!(p.over_budget.is_none() && p.parallel == 4 && p.memory.as_ref().unwrap().1 == "resources.memory_gb", "{p:?}");
+        // Nothing known (other systems): no memory check.
+        let p = plan_resources_with(&rans, &b, 1_000_000, 735_366, 20, None);
+        assert!(p.memory.is_none() && p.over_budget.is_none() && p.parallel == 4);
+        // plan_resources_mesh detects the memory itself when no budget is set.
+        let p = plan_resources_mesh(&rans, &b, 1_000_000, 735_366, 20);
+        assert_eq!(p.memory.is_some(), panel::memory::available().is_some());
     }
 
     #[test]

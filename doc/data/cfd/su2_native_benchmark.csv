@@ -1,0 +1,44 @@
+# SU2 native vs conda benchmark results
+# Node: virgo02 (2× EPYC 7742, shared, load recorded)
+# Configuration: 16 ranks, SU2 v8.3.0
+# Build: meson.py setup with -Dc_args/Dcpp_args "-march=native -mtune=native" plus "-include cstdint"
+# -march=native → znver2, -Denable-mixedprec=true, --optimization=3, gcc 14.4 from conda-forge
+# Git commit: 2f31ab9 (baseline); native builds: 4762fc3 IGNISYEET_SU2_CFD env var
+#
+case,pair,metric,value_native,value_conda,ratio_native_to_conda
+m0.800_a04.00,euler,1,s/iter,0.369,0.469,0.786
+m0.800_a04.00,euler,1,wall,135.9,171.0,0.795
+m0.800_a04.00,euler,1,iterations,355,354,1.003
+m0.800_a04.00,euler,1,dCN_pct,0.0023,0.0,0.0023
+m0.800_a04.00,euler,1,dCA_pct,-0.0514,0.0,-0.0514
+m0.800_a04.00,euler,1,dxcp_mm,0.001,0.0,0.001
+m0.800_a04.00,euler,2,s/iter,0.388,0.448,0.866
+m0.800_a04.00,euler,2,wall,141.9,163.0,0.871
+m0.800_a04.00,euler,2,iterations,356,354,1.006
+m0.800_a04.00,euler,2,dCN_pct,0.0044,0.0,0.0044
+m0.800_a04.00,euler,2,dCA_pct,-0.1178,0.0,-0.1178
+m0.800_a04.00,euler,2,dxcp_mm,-0.000,0.0,-0.000
+m2.000_a04.00,euler,1,s/iter,0.358,0.443,0.808
+m2.000_a04.00,euler,1,wall,59.7,72.8,0.820
+m2.000_a04.00,euler,1,iterations,154,154,1.000
+m2.000_a04.00,euler,1,dCN_pct,0.0010,0.0,0.0010
+m2.000_a04.00,euler,1,dCA_pct,0.0003,0.0,0.0003
+m2.000_a04.00,euler,1,dxcp_mm,0.003,0.0,0.003
+m2.000_a04.00,euler,2,s/iter,0.350,0.496,0.706
+m2.000_a04.00,euler,2,wall,58.8,79.8,0.737
+m2.000_a04.00,euler,2,iterations,155,153,1.013
+m2.000_a04.00,euler,2,dCN_pct,-0.0001,0.0,-0.0001
+m2.000_a04.00,euler,2,dCA_pct,0.0006,0.0,0.0006
+m2.000_a04.00,euler,2,dxcp_mm,0.000,0.0,0.000
+m0.800_a04.00,rans,1,s/iter,0.596,0.799,0.747
+m0.800_a04.00,rans,1,wall,346.4,471.6,0.735
+m0.800_a04.00,rans,1,iterations,403,404,0.998
+m0.800_a04.00,rans,1,dCN_pct,-0.0010,0.0,-0.0010
+m0.800_a04.00,rans,1,dCA_pct,-0.0044,0.0,-0.0044
+m0.800_a04.00,rans,1,dxcp_mm,-0.007,0.0,-0.007
+m0.800_a04.00,rans,2,s/iter,0.613,0.829,0.740
+m0.800_a04.00,rans,2,wall,367.7,497.0,0.740
+m0.800_a04.00,rans,2,iterations,404,403,1.002
+m0.800_a04.00,rans,2,dCN_pct,-0.0032,0.0,-0.0032
+m0.800_a04.00,rans,2,dCA_pct,-0.0036,0.0,-0.0036
+m0.800_a04.00,rans,2,dxcp_mm,-0.011,0.0,-0.011

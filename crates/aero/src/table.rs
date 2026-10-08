@@ -134,13 +134,13 @@ pub struct TableMeta {
 
 fn validate_axis(name: &str, axis: &[f64]) -> Result<()> {
     if axis.is_empty() {
-        bail!("{name} axis is empty");
+        bail!("[IY-A030] {name} axis is empty");
     }
     if let Some(i) = axis.iter().position(|x| !x.is_finite()) {
-        bail!("{name}[{i}] is not finite: {}", axis[i]);
+        bail!("[IY-A031] {name}[{i}] is not finite: {}", axis[i]);
     }
     if let Some(i) = axis.windows(2).position(|w| w[1] <= w[0]) {
-        bail!("{name} must be strictly increasing, but {name}[{}] = {} follows {name}[{i}] = {}", i + 1, axis[i + 1], axis[i]);
+        bail!("[IY-A032] {name} must be strictly increasing, but {name}[{}] = {} follows {name}[{i}] = {}", i + 1, axis[i + 1], axis[i]);
     }
     Ok(())
 }
@@ -148,17 +148,20 @@ fn validate_axis(name: &str, axis: &[f64]) -> Result<()> {
 fn validate_meta(m: &TableMeta) -> Result<()> {
     for (name, v) in [("ref_area", m.ref_area), ("ref_diameter", m.ref_diameter), ("length", m.length)] {
         if !(v.is_finite() && v > 0.0) {
-            bail!("{name} must be finite and positive, got {v}");
+            bail!("[IY-A033] {name} must be finite and positive, got {v}");
         }
     }
     if !m.fin_cant_ref_deg.is_finite() {
-        bail!("fin_cant_ref_deg must be finite, got {}", m.fin_cant_ref_deg);
+        bail!("[IY-A034] fin_cant_ref_deg must be finite, got {}", m.fin_cant_ref_deg);
     }
     if !m.fin_roll_deg.is_finite() {
-        bail!("fin_roll_deg must be finite, got {}", m.fin_roll_deg);
+        bail!("[IY-A035] fin_roll_deg must be finite, got {}", m.fin_roll_deg);
     }
     if m.moment_ref != "nose_tip" {
-        bail!("moment_ref \"{}\" is not supported: tabulated moments must be about the \"nose_tip\" (the simulator transfers them to the CG)", m.moment_ref);
+        bail!(
+            "[IY-A036] moment_ref \"{}\" is not supported: tabulated moments must be about the \"nose_tip\" (the simulator transfers them to the CG)",
+            m.moment_ref
+        );
     }
     validate_axis("machs", &m.machs)?;
     validate_axis("alphas_deg", &m.alphas_deg)?;
@@ -168,7 +171,7 @@ fn validate_meta(m: &TableMeta) -> Result<()> {
             // must be tabulated, not extrapolated from larger angles.
             if m.alphas_deg[0] != 0.0 {
                 bail!(
-                    "alphas_deg of an axisymmetric table must start at 0 deg (the total angle of attack), found {}: the small-angle coefficients would be extrapolated",
+                    "[IY-A037] alphas_deg of an axisymmetric table must start at 0 deg (the total angle of attack), found {}: the small-angle coefficients would be extrapolated",
                     m.alphas_deg[0]
                 );
             }
@@ -178,7 +181,7 @@ fn validate_meta(m: &TableMeta) -> Result<()> {
             for (name, axis) in [("alphas_deg", &m.alphas_deg), ("betas_deg", &m.betas_deg)] {
                 let (lo, hi) = (axis[0], axis[axis.len() - 1]);
                 if !(lo <= 0.0 && hi >= 0.0) {
-                    bail!("{name} of a general table must include 0 deg between its first and last value, found {lo} to {hi}: the small-angle coefficients would be extrapolated");
+                    bail!("[IY-A038] {name} of a general table must include 0 deg between its first and last value, found {lo} to {hi}: the small-angle coefficients would be extrapolated");
                 }
             }
         }
@@ -525,8 +528,8 @@ impl AeroTable {
         };
         let (csv_tmp, json_tmp) = (tmp(csv_path), tmp(&json_path));
         let result = self.save_to(&csv_tmp, &json_tmp).and_then(|()| {
-            std::fs::rename(&csv_tmp, csv_path).with_context(|| format!("cannot write {}", csv_path.display()))?;
-            std::fs::rename(&json_tmp, &json_path).with_context(|| format!("cannot write {}", json_path.display()))
+            std::fs::rename(&csv_tmp, csv_path).with_context(|| format!("[IY-A040] cannot write {}", csv_path.display()))?;
+            std::fs::rename(&json_tmp, &json_path).with_context(|| format!("[IY-A040] cannot write {}", json_path.display()))
         });
         if result.is_err() {
             let _ = std::fs::remove_file(&csv_tmp);
@@ -536,7 +539,7 @@ impl AeroTable {
     }
 
     fn save_to(&self, csv_path: &Path, json_path: &Path) -> Result<()> {
-        let mut f = std::io::BufWriter::new(std::fs::File::create(csv_path).with_context(|| format!("cannot write {}", csv_path.display()))?);
+        let mut f = std::io::BufWriter::new(std::fs::File::create(csv_path).with_context(|| format!("[IY-A040] cannot write {}", csv_path.display()))?);
         let na = self.meta.alphas_deg.len();
         match &self.data {
             TableData::Axisymmetric(data) => {
@@ -579,11 +582,11 @@ impl AeroTable {
     /// order.
     pub fn load(csv_path: &Path) -> Result<Self> {
         let json_path = csv_path.with_extension("json");
-        let json = std::fs::read_to_string(&json_path).with_context(|| format!("cannot read aero table metadata {}", json_path.display()))?;
+        let json = std::fs::read_to_string(&json_path).with_context(|| format!("[IY-A041] cannot read aero table metadata {}", json_path.display()))?;
         let json = json.strip_prefix('\u{feff}').unwrap_or(&json);
-        let mut meta: TableMeta = serde_json::from_str(json).with_context(|| format!("bad aero table metadata {}", json_path.display()))?;
+        let mut meta: TableMeta = serde_json::from_str(json).with_context(|| format!("[IY-A042] bad aero table metadata {}", json_path.display()))?;
         validate_meta(&meta).with_context(|| format!("invalid aero table metadata {}", json_path.display()))?;
-        let text = std::fs::read_to_string(csv_path).with_context(|| format!("cannot read aero table {}", csv_path.display()))?;
+        let text = std::fs::read_to_string(csv_path).with_context(|| format!("[IY-A043] cannot read aero table {}", csv_path.display()))?;
         let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
         let header: Vec<&str> = text.lines().next().unwrap_or("").split(',').map(str::trim).collect();
         let nc = if meta.kind == TableKind::General { 3 } else { 2 };
@@ -600,14 +603,14 @@ impl AeroTable {
         };
         let ok = widths.contains(&header.len());
         if !ok || !header.iter().zip(&expected).all(|(h, e)| h.eq_ignore_ascii_case(e)) {
-            bail!("aero table {}: unexpected CSV header `{}`; expected `{expected_header}`", csv_path.display(), header.join(","));
+            bail!("[IY-A044] aero table {}: unexpected CSV header `{}`; expected `{expected_header}`", csv_path.display(), header.join(","));
         }
         let rows = text.lines().enumerate().skip(1).filter(|(_, l)| !l.trim().is_empty()).map(|(ln, line)| {
             let v = line
                 .split(',')
                 .map(|s| s.trim().parse::<f64>())
                 .collect::<Result<Vec<f64>, _>>()
-                .with_context(|| format!("bad row {} in {}: {line}", ln + 1, csv_path.display()))?;
+                .with_context(|| format!("[IY-A045] bad row {} in {}: {line}", ln + 1, csv_path.display()))?;
             Ok::<_, anyhow::Error>((ln + 1, v))
         });
         let (na, nb) = (meta.alphas_deg.len(), meta.betas_deg.len());
@@ -622,13 +625,13 @@ impl AeroTable {
             // tolerance comparison below).
             for (k, x) in v.iter().enumerate() {
                 if !x.is_finite() {
-                    bail!("row {ln} of {}: column {} ({}) is not finite: {x}", csv_path.display(), k + 1, header.get(k).unwrap_or(&"?"));
+                    bail!("[IY-A047] row {ln} of {}: column {} ({}) is not finite: {x}", csv_path.display(), k + 1, header.get(k).unwrap_or(&"?"));
                 }
             }
             let want = expected_coords(idx);
             let near = |a: f64, b: f64| (a - b).abs() <= 1e-9 + 1e-6 * a.abs().max(b.abs());
             if !want.iter().zip(&v[..nc]).all(|(&w, &f)| near(w, f)) {
-                bail!("row {ln} of {}: coordinates {:?} do not match the grid point {:?} expected at this position (rows must follow the metadata axes in order: Mach outermost{})", csv_path.display(), &v[..nc], want, if nc == 3 { ", then alpha, then beta" } else { ", then alpha" });
+                bail!("[IY-A048] row {ln} of {}: coordinates {:?} do not match the grid point {:?} expected at this position (rows must follow the metadata axes in order: Mach outermost{})", csv_path.display(), &v[..nc], want, if nc == 3 { ", then alpha, then beta" } else { ", then alpha" });
             }
             Ok(())
         };
@@ -643,11 +646,11 @@ impl AeroTable {
                     let (ln, v) = item?;
                     let mut r = [0.0; N_FIELDS];
                     if v.len() != header.len() {
-                        bail!("bad row {ln} in {}: expected {} values (as the header), found {}", csv_path.display(), header.len(), v.len());
+                        bail!("[IY-A046] bad row {ln} in {}: expected {} values (as the header), found {}", csv_path.display(), header.len(), v.len());
                     }
                     r[..v.len() - 2].copy_from_slice(&v[2..]);
                     if data.len() >= n_expected {
-                        bail!("aero table {} has more rows than the {n_expected} grid points of its metadata", csv_path.display());
+                        bail!("[IY-A049] aero table {} has more rows than the {n_expected} grid points of its metadata", csv_path.display());
                     }
                     check_row(data.len(), ln, &v)?;
                     data.push(r);
@@ -659,10 +662,10 @@ impl AeroTable {
                 for item in rows {
                     let (ln, v) = item?;
                     if v.len() != header.len() {
-                        bail!("bad row {ln} in {}: expected {} values (as the header), found {}", csv_path.display(), header.len(), v.len());
+                        bail!("[IY-A046] bad row {ln} in {}: expected {} values (as the header), found {}", csv_path.display(), header.len(), v.len());
                     }
                     if data.len() >= n_expected {
-                        bail!("aero table {} has more rows than the {n_expected} grid points of its metadata", csv_path.display());
+                        bail!("[IY-A049] aero table {} has more rows than the {n_expected} grid points of its metadata", csv_path.display());
                     }
                     check_row(data.len(), ln, &v)?;
                     let mut r = [0.0; N_GEN];
@@ -677,7 +680,7 @@ impl AeroTable {
             TableData::General(d) => d.len(),
         };
         if found != n_expected {
-            bail!("aero table {} has {found} rows but its metadata declares {n_expected} grid points", csv_path.display());
+            bail!("[IY-A050] aero table {} has {found} rows but its metadata declares {n_expected} grid points", csv_path.display());
         }
         meta.format_version = FORMAT_VERSION;
         // The lag columns are there from version 3 (axisymmetric) / the 18-column general set on.
@@ -1125,7 +1128,7 @@ impl AeroTable {
                 .collect();
             if let Some(&(m, ca)) = values.first() {
                 let more = if values.len() > 1 { format!("; {} Mach values in all", values.len()) } else { String::new() };
-                out.push(format!("aero table: {name} at Mach {m}, alpha 0 is {ca:.2} (negative axial force / thrust-like drag{more})"));
+                out.push(format!("[IY-A501] aero table: {name} at Mach {m}, alpha 0 is {ca:.2} (negative axial force / thrust-like drag{more})"));
             }
         }
         out
@@ -1804,6 +1807,26 @@ mod tests {
     }
 
     #[test]
+    fn missing_and_malformed_files_carry_one_code() {
+        let (_dir, p, _t) = loadable_files("codes");
+        let once = |e: &str, code: &str| assert!(e.contains(code) && e.matches("IY-").count() == 1, "{code}: {e}");
+        let jp = p.with_extension("json");
+        let json = std::fs::read_to_string(&jp).unwrap();
+        std::fs::write(&jp, "{ not json").unwrap();
+        once(&load_err(&p), "[IY-A042]");
+        std::fs::write(&jp, json.replace("\"nose_tip\"", "\"cg\"")).unwrap();
+        once(&load_err(&p), "[IY-A036]");
+        std::fs::remove_file(&jp).unwrap();
+        once(&load_err(&p), "[IY-A041]");
+        std::fs::write(&jp, &json).unwrap();
+        let csv = std::fs::read_to_string(&p).unwrap();
+        std::fs::write(&p, csv.replacen("mach", "mash", 1)).unwrap();
+        once(&load_err(&p), "[IY-A044]");
+        std::fs::remove_file(&p).unwrap();
+        once(&load_err(&p), "[IY-A043]");
+    }
+
+    #[test]
     fn load_requires_angle_grids_through_zero() {
         let (_dir, p, t) = loadable_files("zero");
         let jp = p.with_extension("json");
@@ -1813,7 +1836,7 @@ mod tests {
         j["alphas_deg"] = serde_json::json!(shifted);
         std::fs::write(&jp, j.to_string()).unwrap();
         let e = load_err(&p);
-        assert!(e.contains("alphas_deg of an axisymmetric table must start at 0 deg") && e.contains("t.json"), "{e}");
+        assert!(e.contains("[IY-A037] alphas_deg of an axisymmetric table must start at 0 deg") && e.contains("t.json"), "{e}");
         // General tables: both axes must hold 0 between their ends.
         let g = t.to_general(vec![-10.0, 0.0, 10.0], vec![-10.0, 0.0, 10.0]);
         for (key, axis) in [("alphas_deg", vec![2.0, 10.0, 20.0]), ("betas_deg", vec![-20.0, -10.0, -2.0])] {
@@ -1899,7 +1922,7 @@ mod tests {
         std::fs::write(&jp, format!("\u{feff}{json}")).unwrap();
         let back = AeroTable::load(&p).unwrap();
         let w = back.sanity_warnings();
-        assert_eq!(w, vec!["aero table: ca_off at Mach 0.3, alpha 0 is -1.00 (negative axial force / thrust-like drag)".to_string()]);
+        assert_eq!(w, vec!["[IY-A501] aero table: ca_off at Mach 0.3, alpha 0 is -1.00 (negative axial force / thrust-like drag)".to_string()]);
     }
 
     fn two_cell_table() -> AeroTable {

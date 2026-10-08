@@ -94,34 +94,34 @@ impl PanelOptions {
     /// Checks every option; errors name the configuration key (`aero.panel.*`).
     pub fn validate(&self) -> Result<()> {
         if self.body_axial < 6 {
-            bail!("aero.panel.body_axial must be at least 6, found {}", self.body_axial);
+            bail!("[IY-A010] aero.panel.body_axial must be at least 6, found {}", self.body_axial);
         }
         if self.body_circ < 8 {
-            bail!("aero.panel.body_circ must be at least 8, found {}", self.body_circ);
+            bail!("[IY-A011] aero.panel.body_circ must be at least 8, found {}", self.body_circ);
         }
         if self.fin_chord < 2 || self.fin_chord > self.body_axial - 4 {
             bail!(
-                "aero.panel.fin_chord must be between 2 and aero.panel.body_axial - 4 = {} (the chord panels are part of the body stations), found {}",
+                "[IY-A012] aero.panel.fin_chord must be between 2 and aero.panel.body_axial - 4 = {} (the chord panels are part of the body stations), found {}",
                 self.body_axial - 4,
                 self.fin_chord
             );
         }
         if self.fin_span < 2 {
-            bail!("aero.panel.fin_span must be at least 2, found {}", self.fin_span);
+            bail!("[IY-A013] aero.panel.fin_span must be at least 2, found {}", self.fin_span);
         }
         if !(self.wake_length.is_finite() && self.wake_length > 0.0) {
-            bail!("aero.panel.wake_length must be a finite number > 0 (body lengths), found {}", self.wake_length);
+            bail!("[IY-A014] aero.panel.wake_length must be a finite number > 0 (body lengths), found {}", self.wake_length);
         }
         if !(self.tail_radii.is_finite() && self.tail_radii >= 0.0) {
-            bail!("aero.panel.tail_radii must be a finite number >= 0 (base radii; 0 = open base), found {}", self.tail_radii);
+            bail!("[IY-A015] aero.panel.tail_radii must be a finite number >= 0 (base radii; 0 = open base), found {}", self.tail_radii);
         }
         if self.subsonic_machs.is_empty() || self.subsonic_machs.iter().any(|m| !(m.is_finite() && (0.0..1.0).contains(m))) {
-            bail!("aero.panel.subsonic_machs must be a non-empty list of finite Mach numbers in [0, 1), found {:?}", self.subsonic_machs);
+            bail!("[IY-A016] aero.panel.subsonic_machs must be a non-empty list of finite Mach numbers in [0, 1), found {:?}", self.subsonic_machs);
         }
         let [lo, hi] = self.transonic;
         if !(lo.is_finite() && hi.is_finite() && lo > 0.0 && lo < hi && hi > 1.0) {
             bail!(
-                "aero.panel.transonic = [{lo}, {hi}] must be finite and increasing, [lo, hi] with 0 < lo and hi > 1 (hi is the first fully supersonic Mach number)"
+                "[IY-A017] aero.panel.transonic = [{lo}, {hi}] must be finite and increasing, [lo, hi] with 0 < lo and hi > 1 (hi is the first fully supersonic Mach number)"
             );
         }
         Ok(())
@@ -455,7 +455,7 @@ pub fn check_memory_with(n: usize, limit: Option<u64>, available: Option<memory:
         let need = dense_solve_bytes(n);
         if need > a.bytes {
             bail!(
-                "the panel method needs about {:.2} GB for {n} panels (dense matrix), more than the {:.2} GB of memory available to this process ({}); \
+                "[IY-A018] the panel method needs about {:.2} GB for {n} panels (dense matrix), more than the {:.2} GB of memory available to this process ({}); \
                  use coarser panel settings (body_axial, body_circ, fin_chord, fin_span)",
                 need as f64 / 1e9,
                 a.bytes as f64 / 1e9,
@@ -467,7 +467,7 @@ pub fn check_memory_with(n: usize, limit: Option<u64>, available: Option<memory:
         let need = dense_solve_bytes(n);
         if need > limit {
             bail!(
-                "the panel method needs about {:.2} GB for {n} panels (dense matrix), above resources.memory_gb = {:.3}; \
+                "[IY-A019] the panel method needs about {:.2} GB for {n} panels (dense matrix), above resources.memory_gb = {:.3}; \
                  use coarser panel settings (body_axial, body_circ, fin_chord, fin_span) or raise the budget",
                 need as f64 / 1e9,
                 limit as f64 / 1e9

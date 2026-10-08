@@ -106,7 +106,7 @@ Clp の無次元化と換算の根拠、表の読み取りの確認、注意点�
        Mach 数は Table IX の 8 点、迎角は 0、2、4°。底面は ``base_treatment = "fairing"``\ （比べるために ``"flat"`` も解いた）。
        CNα は :math:`\alpha=2^\circ` の :math:`C_N/\alpha`、:math:`x_{cp}` は同じケースの圧力中心
    * - CFD（RANS）
-     - ``model = "rans"``、``wall_size`` 1.5 mm、:math:`y^+=1`（プリズム層 45 層、約 131 万セル）、平らな底面、半領域、反復の上限 3000。Mach 1.832、2.375、3.147 の :math:`\alpha=0,2^\circ`\ （``alpha_mode = "single"``）。ケース間の初期値は共有しない
+     - ``model = "rans"``、``wall_size`` 1.5 mm、:math:`y^+=1`\ （プリズム層 45 層、約 131 万セル）、平らな底面、半領域、反復の上限 3000。Mach 1.832、2.375、3.147 の :math:`\alpha=0,2^\circ`\ （``alpha_mode = "single"``）。ケース間の初期値は共有しない
    * - ロール減衰（Euler）
      - ``roll_damping = true``、``base_treatment = "fairing"``、``wall_size`` 2.1 mm、``fin_size`` 0.47 mm、全領域（約 69 万セル）。Mach 数は Table IX の 8 点。
        Mach 数ごとに、:math:`\alpha=0` で無次元ロール角速度 :math:`\pm0.01` の 2 ケースと、ロールなしの :math:`\alpha=0,2^\circ` の 2 ケースを解く。:math:`C_{lp}` はロールありの 2 ケースの差から求める。

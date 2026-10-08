@@ -1,19 +1,20 @@
 {
- "description": "Sample STL: direct-STL Euler CFD vs rebuilt (CAD) geometry, M 0.8 and 2.0, alpha 0/4/8 deg, beta 0/4 deg (STL), roll pair p_hat = +-0.01, wall_size 2 mm, fin_size auto (fins at 1 mm), base_treatment fairing; ignisyeet commit 8d60708, 2026-10-07, 4 ranks, one case at a time on a 20-thread i7-12700",
+ "description": "Sample STL: direct-STL Euler CFD vs rebuilt (CAD) geometry, M 0.8 and 2.0, alpha 0/4/8 deg, beta 0/4 deg (STL), roll pair p_hat = +-0.01, wall_size 2 mm, fin_size auto (fins at 1 mm), base_treatment fairing; settled-trend acceptance; STL: ignisyeet merge 8efaabf, 2026-10-08, 4 ranks, one case at a time on a 20-thread i7-12700; CAD: commit 2f31ab9 on a 32-thread node (16 ranks x 2 cases, M 0.8 and M 2.0 as two runs)",
  "final": {
   "stl": {
    "cases": 16,
    "failed": 0,
-   "accepted": 6,
-   "cells": 2791052,
-   "seconds": 4393.1
+   "accepted": 2,
+   "cells": 2793280,
+   "seconds": 7582.1
   },
   "cad": {
    "cases": 10,
    "failed": 0,
-   "accepted": 3,
-   "cells": 2831008,
-   "seconds": 2866.0
+   "accepted": 0,
+   "cells": 2831184,
+   "seconds": 1662.4,
+   "note": "two runs on a 32-thread node (1098.4 s for M 0.8, 564.0 s for M 2.0), 16 ranks x 2 cases"
   }
  },
  "before_speedups": {

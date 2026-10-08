@@ -163,7 +163,7 @@ pub fn step_factor(err: f64) -> f64 {
 /// Checks that a rejected step may still be shrunk.
 pub fn check_min_step(h_new: f64, t: f64) -> Result<()> {
     if h_new < MIN_STEP {
-        bail!("adaptive integrator step size fell below {MIN_STEP:e} s at t = {t:.4} s; loosen sim.rtol/sim.atol or use rk4");
+        bail!("[IY-S020] adaptive integrator step size fell below {MIN_STEP:e} s at t = {t:.4} s; loosen sim.rtol/sim.atol or use rk4");
     }
     Ok(())
 }

@@ -48,7 +48,7 @@ fn unit_velocity(k: usize, c: Vec3) -> Vec3 {
 pub fn reserve_dense(n: usize) -> Result<Vec<f64>> {
     let fail = || {
         anyhow!(
-            "could not allocate the dense panel matrix: about {:.2} GB for {n} panels; \
+            "[IY-A020] could not allocate the dense panel matrix: about {:.2} GB for {n} panels; \
              use coarser panel settings (body_axial, body_circ, fin_chord, fin_span) or free memory",
             crate::dense_solve_bytes(n) as f64 / 1e9
         )

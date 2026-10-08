@@ -623,7 +623,7 @@ RANS で解く
   ``surface = "step"`` では、形状が対称でなければ全領域に直接プリズム層を積むので、この制約はない。
   エラーは ``aero.cfd: the RANS boundary-layer mesh needs a fin layout symmetric about the y = 0 plane (fin_roll_deg = 10 with 4 fins is not): use a symmetric fin_roll_deg (for example 0 or 45 with 4 fins) or model = "euler"`` である。
 * ``roll_damping = true``\ （``aero.cfd.roll_damping is only implemented for model = "euler"``）。
-* ``yplus`` が 5 より大きく 30 より小さい、または 150 より大きい（``aero.cfd.yplus = … lies in the buffer layer, where neither a resolved wall nor a wall function is valid: use yplus <= 5 (resolved wall, recommended 1) or 30..150 (standard wall function)``）。
+* ``yplus`` が 5 より大きく 30 より小さい、または 150 より大きい（``error[IY-C123]: aero.cfd.yplus = … lies in the buffer layer, where neither a resolved wall nor a wall function is valid: use yplus <= 5 (resolved wall, recommended 1) or 30..150 (standard wall function)``）。
 
 **既定値**\ 。``model = "rans"`` で次の項目を設定しないときは、Euler と異なる既定値を使う。
 ``wall_size`` 5 mm、``iterations`` 4000（2 次精度の段の反復数）、``min_iterations`` 400、``stable_window`` 200 である。

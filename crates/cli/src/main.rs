@@ -135,7 +135,7 @@ fn parse_descent(s: &str) -> Result<Descent, String> {
     match s {
         "ballistic" => Ok(Descent::Ballistic),
         "parachute" => Ok(Descent::Parachute),
-        _ => Err("expected 'ballistic' or 'parachute'".into()),
+        _ => Err("[IY-O040] expected 'ballistic' or 'parachute'".into()),
     }
 }
 
@@ -152,7 +152,7 @@ fn load_config(path: &Path, ov: &ConfigArgs, table: &TableArg) -> Result<Config>
 fn apply_resources(r: &config::Resolved) {
     if let Some(w) = &r.warning {
         match ui().mode {
-            ui::Mode::Quiet => eprintln!("warning: {w}"),
+            ui::Mode::Quiet => eprintln!("{}", ui::warning_line(w)),
             _ => ui().warn(w),
         }
     }
@@ -170,13 +170,13 @@ fn set_nice(nice: i32) {
     // SAFETY: plain syscall; children (SU2, mpirun, gmsh) inherit the priority.
     let rc = unsafe { libc::setpriority(libc::PRIO_PROCESS, 0, nice) };
     if rc != 0 {
-        ui().warn(format!("resources.nice = {nice} could not be applied: {}", std::io::Error::last_os_error()));
+        ui().warn(format!("[IY-O542] resources.nice = {nice} could not be applied: {}", std::io::Error::last_os_error()));
     }
 }
 
 #[cfg(not(unix))]
 fn set_nice(_nice: i32) {
-    ui().warn("resources.nice is ignored on this platform");
+    ui().warn("[IY-O543] resources.nice is ignored on this platform");
 }
 
 fn cfd_budget(cfg: &Config) -> cfd::ResourceBudget {
@@ -205,15 +205,20 @@ fn margin_location(s: &Summary) -> String {
 fn stability_reason(s: &Summary) -> Option<String> {
     match s.stability() {
         Stability::Stable => None,
-        Stability::Unstable(m) => Some(format!("{NOT_USABLE}: the rocket is statically UNSTABLE (min static margin {m:.2} cal{})", margin_location(s))),
-        Stability::Unknown(why) => Some(format!("{NOT_USABLE}: static stability could not be evaluated ({why})")),
+        Stability::Unstable(m) => {
+            Some(format!("{NOT_USABLE}: [IY-O020] the rocket is statically UNSTABLE (min static margin {m:.2} cal{})", margin_location(s)))
+        }
+        Stability::Unknown(why) => Some(format!("{NOT_USABLE}: [IY-O021] static stability could not be evaluated ({why})")),
     }
 }
 
-fn main() -> Result<()> {
+fn main() {
     let r = run();
     outfile::unlock_all();
-    r
+    if let Err(e) = r {
+        eprintln!("{}", ui::error_report(&e));
+        std::process::exit(1);
+    }
 }
 
 fn run() -> Result<()> {
@@ -327,7 +332,7 @@ fn fmt_vs(v: f64, limit: f64, decimals: usize) -> String {
 fn print_warnings(warnings: &[String]) {
     for w in warnings {
         match ui().mode {
-            ui::Mode::Quiet => eprintln!("warning: {w}"),
+            ui::Mode::Quiet => eprintln!("{}", ui::warning_line(w)),
             _ => ui().warn(w),
         }
     }
@@ -362,7 +367,7 @@ fn mach_range_reason(s: &aero::table::OutOfRangeStats, mach_min: f64, mach_max: 
     if s.mach_above > 0 {
         let need = (s.max_mach * 10.0).ceil() / 10.0;
         parts.push(format!(
-            "{NOT_USABLE}: {} of {} lookups beyond the aero table's Mach range (max Mach {} > mach_max {mach_max:.2}): coefficients are held at the edge; build the table up to at least Mach {need:.1}",
+            "{NOT_USABLE}: [IY-O022] {} of {} lookups beyond the aero table's Mach range (max Mach {} > mach_max {mach_max:.2}): coefficients are held at the edge; build the table up to at least Mach {need:.1}",
             s.mach_above,
             s.lookups,
             fmt_vs(s.max_mach, mach_max, 2)
@@ -370,7 +375,7 @@ fn mach_range_reason(s: &aero::table::OutOfRangeStats, mach_min: f64, mach_max: 
     }
     if s.mach_below > 0 {
         parts.push(format!(
-            "{NOT_USABLE}: {} of {} lookups below the aero table's Mach range (first Mach {mach_min:.2}): coefficients are held at the edge; build the table down to Mach 0",
+            "{NOT_USABLE}: [IY-O023] {} of {} lookups below the aero table's Mach range (first Mach {mach_min:.2}): coefficients are held at the edge; build the table down to Mach 0",
             s.mach_below, s.lookups
         ));
     }
@@ -391,7 +396,7 @@ fn angle_range_reason(s: &aero::table::OutOfRangeStats, alpha_max: f64) -> Optio
     (s.angle_beyond > 0).then(|| {
         let fix = if alpha_max < 90.0 { "build the table up to 90 deg" } else { "build the table up to 180 deg (aero.alpha_max_deg)" };
         format!(
-            "{NOT_USABLE}: {} of {} lookups beyond the aero table's angle range (max |alpha| {:.1} deg > alpha_max {alpha_max:.1} deg): the descent uses extrapolated coefficients; {fix}",
+            "{NOT_USABLE}: [IY-O024] {} of {} lookups beyond the aero table's angle range (max |alpha| {:.1} deg > alpha_max {alpha_max:.1} deg): the descent uses extrapolated coefficients; {fix}",
             s.angle_beyond, s.lookups, s.max_abs_alpha_deg
         )
     })
@@ -440,12 +445,12 @@ fn grid_warnings(cfg: &Config) -> Vec<String> {
     let (key, step) = if general_barrowman { ("aero.general_mach_step", a.general_mach_step) } else { ("aero.mach_step", a.mach_step) };
     if step > COARSE_MACH_STEP {
         w.push(format!(
-            "{key} = {step} is coarse (> {COARSE_MACH_STEP}): the coefficients are interpolated linearly between the Mach rows, which smooths over the transonic drag rise and shifts the apogee (0.02 is typical)"
+            "[IY-O500] {key} = {step} is coarse (> {COARSE_MACH_STEP}): the coefficients are interpolated linearly between the Mach rows, which smooths over the transonic drag rise and shifts the apogee (0.02 is typical)"
         ));
     }
     if a.alpha_step_deg > COARSE_ALPHA_STEP_DEG {
         w.push(format!(
-            "aero.alpha_step_deg = {} is coarse (> {COARSE_ALPHA_STEP_DEG} deg): the normal force and centre of pressure are interpolated linearly between the rows (1 deg is typical)",
+            "[IY-O501] aero.alpha_step_deg = {} is coarse (> {COARSE_ALPHA_STEP_DEG} deg): the normal force and centre of pressure are interpolated linearly between the rows (1 deg is typical)",
             a.alpha_step_deg
         ));
     }
@@ -456,13 +461,13 @@ fn size_warnings(cfg: &Config, length: f64, diameter: f64) -> Vec<String> {
     let mut w = Vec::new();
     if !(LENGTH_RANGE.0..=LENGTH_RANGE.1).contains(&length) {
         w.push(format!(
-            "body length {length:.4} m is outside the plausible {}-{} m range: check rocket.stl_scale (now {}; 0.001 converts millimetres to metres)",
+            "[IY-O502] body length {length:.4} m is outside the plausible {}-{} m range: check rocket.stl_scale (now {}; 0.001 converts millimetres to metres)",
             LENGTH_RANGE.0, LENGTH_RANGE.1, cfg.rocket.stl_scale
         ));
     }
     if !(DIAMETER_RANGE.0..=DIAMETER_RANGE.1).contains(&diameter) {
         w.push(format!(
-            "body diameter {diameter:.4} m is outside the plausible {}-{} m range: check rocket.stl_scale (now {})",
+            "[IY-O503] body diameter {diameter:.4} m is outside the plausible {}-{} m range: check rocket.stl_scale (now {})",
             DIAMETER_RANGE.0, DIAMETER_RANGE.1, cfg.rocket.stl_scale
         ));
     }
@@ -488,33 +493,36 @@ fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: Option<f64>) -> Vec
     let mut w = Vec::new();
     if !s.landed() {
         w.push(format!(
-            "THE FLIGHT DID NOT LAND within sim.max_time = {} s: there is no landing point; raise sim.max_time or check the descent (parachute, drag area, launch angle)",
+            "[IY-O504] THE FLIGHT DID NOT LAND within sim.max_time = {} s: there is no landing point; raise sim.max_time or check the descent (parachute, drag area, launch angle)",
             cfg.sim.max_time
         ));
     }
     if let Stability::Unknown(why) = s.stability() {
-        w.push(format!("static stability could not be evaluated ({why}): the results are not usable until it is"));
+        w.push(format!("[IY-O505] static stability could not be evaluated ({why}): the results are not usable until it is"));
     }
     let m = s.static_margin_min();
     if m.is_finite() {
         let at = margin_location(s);
         if m < 0.0 {
-            w.push(format!("static margin {} cal{at} is negative: the centre of pressure is forward of the CG, the rocket is UNSTABLE", fmt_vs(m, 0.0, 2)));
+            w.push(format!(
+                "[IY-O506] static margin {} cal{at} is negative: the centre of pressure is forward of the CG, the rocket is UNSTABLE",
+                fmt_vs(m, 0.0, 2)
+            ));
         } else if m < 1.0 {
-            w.push(format!("minimum static margin {} cal{at} is below 1.0 cal: low static margin", fmt_vs(m, 1.0, 2)));
+            w.push(format!("[IY-O507] minimum static margin {} cal{at} is below 1.0 cal: low static margin", fmt_vs(m, 1.0, 2)));
         } else if m < 1.5 {
-            w.push(format!("minimum static margin {} cal{at} is below the recommended 1.5 cal (marginal)", fmt_vs(m, 1.5, 2)));
+            w.push(format!("[IY-O508] minimum static margin {} cal{at} is below the recommended 1.5 cal (marginal)", fmt_vs(m, 1.5, 2)));
         }
     }
     if s.descent == Descent::Ballistic && s.fell_broadside() {
         w.push(format!(
-            "the ballistic descent fell broadside (angle of attack 60 to 120 deg for {:.0} s): the landing depends on the large-angle aerodynamics, which are not validated",
+            "[IY-O509] the ballistic descent fell broadside (angle of attack 60 to 120 deg for {:.0} s): the landing depends on the large-angle aerodynamics, which are not validated",
             s.broadside_time
         ));
     }
     if let Some(r) = &s.roll_resonance {
         w.push(format!(
-            "roll resonance: the roll rate crosses the resonance rate of the pitch oscillation ({:.1} rad/s) at t = {:.2} s, Mach {:.2}{}; the lateral CG offset, thrust misalignment or asymmetric aero moment can amplify the angle of attack there",
+            "[IY-O510] roll resonance: the roll rate crosses the resonance rate of the pitch oscillation ({:.1} rad/s) at t = {:.2} s, Mach {:.2}{}; the lateral CG offset, thrust misalignment or asymmetric aero moment can amplify the angle of attack there",
             r.frequency,
             r.t,
             r.mach,
@@ -525,7 +533,10 @@ fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: Option<f64>) -> Vec
     let rec = &cfg.recovery;
     if let (true, Some(_), Some(m)) = (rec.enabled, rec.main_cd_s, rec.main_altitude) {
         if s.apogee.is_finite() && m >= s.apogee {
-            w.push(format!("recovery.main_altitude = {m} m is above the apogee ({} m): the main opens together with the drogue", fmt_vs(s.apogee, m, 0)));
+            w.push(format!(
+                "[IY-O511] recovery.main_altitude = {m} m is above the apogee ({} m): the main opens together with the drogue",
+                fmt_vs(s.apogee, m, 0)
+            ));
         }
     }
     let wind = &cfg.wind;
@@ -533,12 +544,12 @@ fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: Option<f64>) -> Vec
         if let Some((bottom, top, _)) = wind_profile_extent(cfg) {
             if s.apogee > top {
                 w.push(format!(
-                    "apogee {} m is above the top of the wind profile ({top:.0} m): the wind above {top:.0} m is held at the top value",
+                    "[IY-O512] apogee {} m is above the top of the wind profile ({top:.0} m): the wind above {top:.0} m is held at the top value",
                     fmt_vs(s.apogee, top, 0)
                 ));
             }
             if bottom > 0.0 {
-                w.push(format!("the wind profile starts at {bottom:.0} m: the wind below is held at the lowest row"));
+                w.push(format!("[IY-O513] the wind profile starts at {bottom:.0} m: the wind below is held at the lowest row"));
             }
         }
     }
@@ -547,7 +558,7 @@ fn flight_warnings_at(cfg: &Config, s: &Summary, wind_speed: Option<f64>) -> Vec
     let wind_speed = if wind.model == sim::WindModel::Profile { s.wind_speed } else { wind_speed.unwrap_or(wind.speed) };
     if matches!(wind.model, sim::WindModel::Power | sim::WindModel::Log) && wind_speed != 0.0 && s.apogee > WIND_VALID_HEIGHT {
         w.push(format!(
-            "apogee {} m is above {WIND_VALID_HEIGHT:.0} m, the validity height of the {:?} wind profile: the profile is extrapolated there, and wind.speed = {} m/s is the speed at wind.ref_height = {} m, so the winds aloft and the landing point are model-dependent",
+            "[IY-O514] apogee {} m is above {WIND_VALID_HEIGHT:.0} m, the validity height of the {:?} wind profile: the profile is extrapolated there, and wind.speed = {} m/s is the speed at wind.ref_height = {} m, so the winds aloft and the landing point are model-dependent",
             fmt_vs(s.apogee, WIND_VALID_HEIGHT, 0), wind.model, wind.speed, wind.ref_height
         ));
     }
@@ -578,7 +589,7 @@ fn rail_exit_warnings_at(cfg: &Config, s: &Summary, wind_speed: Option<f64>) -> 
     }
     if v < MIN_RAIL_EXIT_SPEED {
         w.push(format!(
-            "rail exit speed {} m/s is below {MIN_RAIL_EXIT_SPEED:.0} m/s: the fins have little authority at rail exit and the rocket is easily blown off the rail line; use a longer rail or a higher thrust-to-weight ratio",
+            "[IY-O515] rail exit speed {} m/s is below {MIN_RAIL_EXIT_SPEED:.0} m/s: the fins have little authority at rail exit and the rocket is easily blown off the rail line; use a longer rail or a higher thrust-to-weight ratio",
             fmt_vs(v, MIN_RAIL_EXIT_SPEED, 1)
         ));
     }
@@ -593,7 +604,7 @@ fn rail_exit_warnings_at(cfg: &Config, s: &Summary, wind_speed: Option<f64>) -> 
         let alpha = wind_speed.atan2(v).to_degrees();
         if alpha > MAX_RAIL_EXIT_WIND_ALPHA_DEG {
             w.push(format!(
-                "the wind angle of attack at rail exit is {} deg (wind {wind_speed:.1} m/s at {h:.1} m, rail exit speed {v:.1} m/s), above {MAX_RAIL_EXIT_WIND_ALPHA_DEG:.0} deg: the rocket will weathercock strongly off the rail",
+                "[IY-O516] the wind angle of attack at rail exit is {} deg (wind {wind_speed:.1} m/s at {h:.1} m, rail exit speed {v:.1} m/s), above {MAX_RAIL_EXIT_WIND_ALPHA_DEG:.0} deg: the rocket will weathercock strongly off the rail",
                 fmt_vs(alpha, MAX_RAIL_EXIT_WIND_ALPHA_DEG, 1)
             ));
         }
@@ -615,7 +626,7 @@ fn parachute_warnings(cfg: &Config, s: &Summary) -> Vec<String> {
     let first = if dual { "drogue" } else { "parachute" };
     if let (Some(d), Some(t)) = (s.deploy_delayed, s.drogue_deploy_time) {
         w.push(format!(
-            "the motor still burns at apogee + recovery.delay (t = {:.2} s, thrust {:.1} N): the {first} deployment is delayed to burnout at {t:.2} s",
+            "[IY-O517] the motor still burns at apogee + recovery.delay (t = {:.2} s, thrust {:.1} N): the {first} deployment is delayed to burnout at {t:.2} s",
             d.nominal_time, d.thrust
         ));
     }
@@ -628,12 +639,12 @@ fn parachute_warnings(cfg: &Config, s: &Summary) -> Vec<String> {
     }
     if s.drogue_deploy_time.is_none() {
         w.push(format!(
-            "parachute descent landed at {:.0} m/s: the parachute did not deploy before landing (recovery.delay = {} s)",
+            "[IY-O519] parachute descent landed at {:.0} m/s: the parachute did not deploy before landing (recovery.delay = {} s)",
             s.landing_speed, cfg.recovery.delay
         ));
     } else if s.landing_speed > MAX_PARACHUTE_LANDING_SPEED {
         w.push(format!(
-            "parachute descent landed at {} m/s, which is above {MAX_PARACHUTE_LANDING_SPEED:.0} m/s: check recovery.cd_s",
+            "[IY-O520] parachute descent landed at {} m/s, which is above {MAX_PARACHUTE_LANDING_SPEED:.0} m/s: check recovery.cd_s",
             fmt_vs(s.landing_speed, MAX_PARACHUTE_LANDING_SPEED, 1)
         ));
     }
@@ -651,7 +662,7 @@ fn deploy_warning(what: &str, speed: Option<f64>, q: Option<f64>, key: &str) -> 
     let (v, q) = (speed?, q?);
     (v > MAX_DEPLOY_SPEED || q > MAX_DEPLOY_Q).then(|| {
         format!(
-            "the {what} opens at {} m/s (q = {} kPa): a canopy is unlikely to survive; the landing point assumes it does - check {key}",
+            "[IY-O518] the {what} opens at {} m/s (q = {} kPa): a canopy is unlikely to survive; the landing point assumes it does - check {key}",
             fmt_vs(v, MAX_DEPLOY_SPEED, 0),
             fmt_vs(q / 1000.0, MAX_DEPLOY_Q / 1000.0, 1)
         )
@@ -672,7 +683,7 @@ fn wind_scale_warning<'a>(cfg: &Config, what: &str, summaries: impl IntoIterator
     let aloft = wind_profile_extent(cfg).map_or(String::new(), |(_, _, vmax)| format!(": winds aloft up to {:.0} m/s", vmax * k));
     // The run with the largest deviation from the profile, up or down.
     let factor = if k >= 1.0 { fmt_vs(k, 3.0, 1) } else { fmt_vs(k, 1.0 / 3.0, 2) };
-    Some(format!("wind profile scaled by a factor of {factor} ({what} {v:.1} m/s vs profile mean {:.1} m/s){aloft}", v / k))
+    Some(format!("[IY-O521] wind profile scaled by a factor of {factor} ({what} {v:.1} m/s vs profile mean {:.1} m/s){aloft}", v / k))
 }
 
 /// Warning when flights of a wind-profile dispersion study (`what`: "wind-grid cases" or "Monte
@@ -693,7 +704,7 @@ fn profile_top_warning(cfg: &Config, what: &str, flights: impl IntoIterator<Item
     let highest = above.iter().copied().fold(f64::NAN, f64::max);
     (!above.is_empty()).then(|| {
         format!(
-            "{} of {} {what} reach above the top of the wind profile ({top:.0} m), up to {highest:.0} m: the wind above is held at the top value",
+            "[IY-O522] {} of {} {what} reach above the top of the wind profile ({top:.0} m), up to {highest:.0} m: the wind above is held at the top value",
             above.len(),
             apogee.len()
         )
@@ -717,7 +728,7 @@ pub(crate) fn strip_bom(text: &str) -> &str {
 fn check_length(cfg: &Config, length: f64) -> Result<()> {
     if !(LENGTH_RANGE.0..=LENGTH_RANGE.1).contains(&length) {
         anyhow::bail!(
-            "body length {length:.4} m is outside the plausible {}-{} m range: check the STL units and rocket.stl_scale (now {}; 0.001 converts millimetres to metres)",
+            "[IY-O005] body length {length:.4} m is outside the plausible {}-{} m range: check the STL units and rocket.stl_scale (now {}; 0.001 converts millimetres to metres)",
             LENGTH_RANGE.0, LENGTH_RANGE.1, cfg.rocket.stl_scale
         );
     }
@@ -728,7 +739,7 @@ fn check_length(cfg: &Config, length: f64) -> Result<()> {
 fn check_cg(cfg: &Config, length: f64) -> Result<()> {
     let cg = cfg.rocket.cg_dry;
     if cg > length {
-        anyhow::bail!("rocket.cg_dry = {cg} m is outside the body: it is measured aft of the nose tip and the body is {length:.4} m long (check rocket.stl_scale and the unit of cg_dry)");
+        anyhow::bail!("[IY-O006] rocket.cg_dry = {cg} m is outside the body: it is measured aft of the nose tip and the body is {length:.4} m long (check rocket.stl_scale and the unit of cg_dry)");
     }
     Ok(())
 }
@@ -739,13 +750,13 @@ fn check_motor_position(cfg: &Config, length: f64, motor_length: f64) -> Result<
     const TOL: f64 = 1e-3;
     if motor_length > length + TOL {
         anyhow::bail!(
-            "the motor ({motor_length:.4} m) is longer than the body ({length:.4} m): check motor.eng (the motor length in its header, in millimetres) and rocket.stl_scale"
+            "[IY-O007] the motor ({motor_length:.4} m) is longer than the body ({length:.4} m): check motor.eng (the motor length in its header, in millimetres) and rocket.stl_scale"
         );
     }
     let a = cfg.motor.aft_x.unwrap_or(length);
     if a - motor_length < -TOL || a > length + TOL {
         anyhow::bail!(
-            "{} puts the motor outside the body: the motor is {motor_length:.4} m long and the body {length:.4} m, so motor.aft_x (the motor's aft end, measured aft of the nose tip) must be between {motor_length:.4} and {length:.4} m",
+            "[IY-O008] {} puts the motor outside the body: the motor is {motor_length:.4} m long and the body {length:.4} m, so motor.aft_x (the motor's aft end, measured aft of the nose tip) must be between {motor_length:.4} and {length:.4} m",
             if cfg.motor.aft_x.is_some() { format!("motor.aft_x = {a} m") } else { format!("motor.aft_x (default: the body length {length:.4} m)") }
         );
     }
@@ -754,7 +765,8 @@ fn check_motor_position(cfg: &Config, length: f64, motor_length: f64) -> Result<
 
 fn load_motor(cfg: &Config) -> Result<Motor> {
     let eng = cfg.resolve(&cfg.motor.eng);
-    let mut motor = Motor::load(&eng).with_context(|| format!("cannot read motor file {}", eng.display()))?;
+    let text = std::fs::read_to_string(&eng).with_context(|| format!("[IY-O013] cannot read motor file {}", eng.display()))?;
+    let mut motor = Motor::parse(&text).with_context(|| format!("cannot read motor file {}", eng.display()))?;
     if let Some(m) = cfg.motor.propellant_mass {
         motor.propellant_mass = m;
     }
@@ -930,14 +942,14 @@ fn aero_inputs(cfg: &Config) -> Result<serde_json::Value> {
 fn source_hash(cfg: &Config) -> Result<String> {
     let mut h = 0xcbf2_9ce4_8422_2325u64;
     let stl = cfg.resolve(&cfg.rocket.stl);
-    fnv1a(&mut h, &std::fs::read(&stl).with_context(|| format!("cannot read STL {}", stl.display()))?);
+    fnv1a(&mut h, &std::fs::read(&stl).with_context(|| format!("[IY-G001] cannot read STL {}", stl.display()))?);
     // The extracted geometry (after scale, nose direction, fin override and cant) enters as well, so a change
     // of the extraction code invalidates cached tables without a MODEL_VERSION bump.
     fnv1a(&mut h, &serde_json::to_vec(&geometry(cfg)?)?);
     if cfg.aero.method == config::AeroMethod::Cfd && cfg.aero.cfd.surface == cfd::SurfaceKind::Step {
         // The CAD file is the CFD wall.
         let f = cfg.cfd_options().step_file;
-        fnv1a(&mut h, &std::fs::read(&f).with_context(|| format!("cannot read the CAD file {}", f.display()))?);
+        fnv1a(&mut h, &std::fs::read(&f).with_context(|| format!("[IY-O014] cannot read the CAD file {}", f.display()))?);
     }
     #[derive(Serialize)]
     struct Inputs<'a> {
@@ -1020,10 +1032,10 @@ fn run_hash(cfg: &Config, kind: RunKind) -> String {
 
 /// Warning for an external table without the lag and Magnus columns.
 const NO_LAG_COLUMNS_FILLED: &str =
-    "the external aero table has no lag/Magnus columns: the apparent-mass (lag) sums were filled from the geometry (component build-up); Magnus force and induced roll are 0. If its damping sums hold a measured or CFD Cmq + Cmalphadot (which already contains these terms), write lag_l0 and lag_l1 columns of 0 so they are not counted twice";
-const NO_FIN_COUNT: &str = "the aero table has an induced roll cl4 but no fin_count in its sidecar: the sin(4 phi) form of four fins is assumed";
+    "[IY-O525] the external aero table has no lag/Magnus columns: the apparent-mass (lag) sums were filled from the geometry (component build-up); Magnus force and induced roll are 0. If its damping sums hold a measured or CFD Cmq + Cmalphadot (which already contains these terms), write lag_l0 and lag_l1 columns of 0 so they are not counted twice";
+const NO_FIN_COUNT: &str = "[IY-O526] the aero table has an induced roll cl4 but no fin_count in its sidecar: the sin(4 phi) form of four fins is assumed";
 const NO_LAG_COLUMNS_NO_GEOMETRY: &str =
-    "the external aero table has no lag/Magnus columns and the geometry is unavailable: the flight has no apparent-mass (lag) terms, Magnus force or induced roll";
+    "[IY-O527] the external aero table has no lag/Magnus columns and the geometry is unavailable: the flight has no apparent-mass (lag) terms, Magnus force or induced roll";
 
 /// External table (`aero.method = "table"`) in an older column set without the lag (apparent-mass),
 /// induced-roll and Magnus columns: fills the lag sums from the component build-up model of the
@@ -1067,12 +1079,12 @@ fn aero_sigma_warnings(cfg: &Config, t: &AeroTable) -> Vec<String> {
     let mut w = Vec::new();
     if mc.magnus_scale > 0.0 && !t.has_magnus_terms() {
         w.push(format!(
-            "dispersion.monte_carlo.magnus_scale = {} has no effect: the aero table has no Magnus slopes (cnpa = cmpa = 0; no built-in method estimates them, supply them in an external table)",
+            "[IY-O523] dispersion.monte_carlo.magnus_scale = {} has no effect: the aero table has no Magnus slopes (cnpa = cmpa = 0; no built-in method estimates them, supply them in an external table)",
             mc.magnus_scale
         ));
     }
     if mc.lag_scale > 0.0 && !t.has_lag_terms() {
-        w.push(format!("dispersion.monte_carlo.lag_scale = {} has no effect: the aero table has no lag sums (lag_l0 = lag_l1 = 0)", mc.lag_scale));
+        w.push(format!("[IY-O524] dispersion.monte_carlo.lag_scale = {} has no effect: the aero table has no lag sums (lag_l0 = lag_l1 = 0)", mc.lag_scale));
     }
     w
 }
@@ -1101,7 +1113,7 @@ fn aero_table_for(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
                     eprintln!("note: the external aero table has no roll terms; cant forcing and roll damping were filled from Barrowman for the current fins");
                 }
             }
-            Err(e) => eprintln!("note: the external aero table has no roll terms and the geometry is unavailable ({e:#}); the rocket will not roll"),
+            Err(e) => eprintln!("note: [IY-O528] the external aero table has no roll terms and the geometry is unavailable ({e:#}); the rocket will not roll"),
         }
     }
     print_warnings(&fill_external_lag_terms(cfg, &mut t));
@@ -1132,9 +1144,9 @@ fn aero_table_inner(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
         config::AeroMethod::Barrowman | config::AeroMethod::Panel | config::AeroMethod::Cfd => {}
         config::AeroMethod::Table => {
             if cfg.aero_table_source.is_some() {
-                anyhow::bail!("--aero-table cannot be used with aero.method = \"table\": the table is aero.table");
+                anyhow::bail!("[IY-O002] --aero-table cannot be used with aero.method = \"table\": the table is aero.table");
             }
-            let path = cfg.resolve(cfg.aero.table.as_deref().context("aero.table is required when aero.method = \"table\"")?);
+            let path = cfg.resolve(cfg.aero.table.as_deref().context("[IY-O012] aero.table is required when aero.method = \"table\"")?);
             let t = AeroTable::load(&path).with_context(|| format!("cannot load aero table {}", path.display()))?;
             if u.plain() {
                 println!("Using external aero table {} ({} rows)", path.display(), t.rows());
@@ -1148,7 +1160,7 @@ fn aero_table_inner(cfg: &Config, force: bool, sub: Sub) -> Result<AeroTable> {
     let hash = source_hash(cfg)?;
     if let Some(src) = &cfg.aero_table_source {
         if force {
-            anyhow::bail!("--aero-table and --force cannot be used together");
+            anyhow::bail!("[IY-O003] --aero-table and --force cannot be used together");
         }
         let t = adopt_aero_table(src, &path, &hash)?;
         if u.plain() {
@@ -1243,7 +1255,7 @@ fn adopt_aero_table(src: &Path, dest: &Path, hash: &str) -> Result<AeroTable> {
     let t = AeroTable::load(&src).with_context(|| format!("--aero-table: cannot load aero table {}", src.display()))?;
     if t.meta.source_hash != hash {
         anyhow::bail!(
-            "--aero-table: {} was built for another rocket or other aero settings (cache key {} vs {hash} of this configuration); \
+            "[IY-O004] --aero-table: {} was built for another rocket or other aero settings (cache key {} vs {hash} of this configuration); \
              build it for this configuration with `ignisyeet aero` or leave out --aero-table",
             src.display(),
             t.meta.source_hash
@@ -1257,11 +1269,11 @@ fn adopt_aero_table(src: &Path, dest: &Path, hash: &str) -> Result<AeroTable> {
     let mut files: Vec<(PathBuf, PathBuf)> = vec![(src.with_extension("json"), dest.with_extension("json"))];
     files.extend(AERO_SIDE_FILES.iter().map(|n| (sdir.join(n), ddir.join(n))).filter(|(a, _)| a.exists()));
     for (a, b) in &files {
-        std::fs::copy(a, b).with_context(|| format!("cannot copy {} to {}", a.display(), b.display()))?;
+        std::fs::copy(a, b).with_context(|| format!("[IY-O016] cannot copy {} to {}", a.display(), b.display()))?;
         ui().record(b);
     }
     // The CSV last: a run that stops halfway leaves no table without its sidecar.
-    std::fs::copy(&src, dest).with_context(|| format!("cannot copy {} to {}", src.display(), dest.display()))?;
+    std::fs::copy(&src, dest).with_context(|| format!("[IY-O016] cannot copy {} to {}", src.display(), dest.display()))?;
     Ok(t)
 }
 
@@ -1384,7 +1396,7 @@ fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
         }
     }
     for w in opt.warnings().into_iter().chain(r.warnings()) {
-        println!("  warning: {w}");
+        println!("  {}", ui::warning_line(&w));
     }
     if r.ready(opt) {
         let n = cfd_case_count(cfg, opt);
@@ -1398,7 +1410,7 @@ fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
         }
     } else {
         println!("CFD mode is not available: {}", cfd::not_installed_message(&r, opt).lines().next().unwrap_or(""));
-        anyhow::bail!("CFD tools are missing");
+        anyhow::bail!("[IY-O009] CFD tools are missing");
     }
     if mesh {
         let g = geometry(cfg)?;
@@ -1563,7 +1575,7 @@ fn simulation<'a>(cfg: &Config, p: &'a Prepared) -> Result<Simulation<'a>> {
 /// An error for `--descent parachute` when the recovery is disabled.
 fn check_descent_override(cfg: &Config, descent: Option<Descent>) -> Result<()> {
     if descent == Some(Descent::Parachute) && !cfg.recovery.enabled {
-        anyhow::bail!("--descent parachute needs recovery.enabled = true");
+        anyhow::bail!("[IY-O001] --descent parachute needs recovery.enabled = true");
     }
     Ok(())
 }
@@ -1665,7 +1677,7 @@ fn sim_failed(cfg: &Config, e: &anyhow::Error) {
             // Do not leave the old flight behind when the file cannot be rewritten.
             let _ = std::fs::remove_file(cfg.out_dir().join(KML_FILE));
             if ui().mode != ui::Mode::Quiet {
-                eprintln!("ignisyeet.kml removed: it could not be rewritten without the flight ({k:#})");
+                eprintln!("[IY-O541] ignisyeet.kml removed: it could not be rewritten without the flight ({k:#})");
             }
         } else if ui().mode != ui::Mode::Quiet {
             println!("  KML written without the flight layer: the simulation failed");
@@ -1757,7 +1769,7 @@ fn run_sim(cfg: &Config, descent: Option<Descent>) -> Result<Option<String>> {
                 println!("  KML written without the flight layer: the flight has no landing point");
             }
         }
-        Ok(unstable.or_else(|| Some(format!("the flight did not land within sim.max_time = {} s", cfg.sim.max_time))))
+        Ok(unstable.or_else(|| Some(format!("[IY-O027] the flight did not land within sim.max_time = {} s", cfg.sim.max_time))))
     }
 }
 
@@ -1851,12 +1863,13 @@ fn write_kml(cfg: &Config, mut parts: kml::Parts, skip_flight: bool) -> Result<(
     // A file of an earlier run with a different configuration is stale: it is left out and always reported.
     let note = |what: &str, e: String| {
         let stale = e.starts_with(kml::STALE);
-        let msg = format!("KML: {what} left out ({e})");
+        let code = if stale { "IY-O539" } else { "IY-O540" };
+        let msg = format!("[{code}] KML: {what} left out ({e})");
         match u.mode {
             ui::Mode::Plain if stale => u.warn(msg),
             ui::Mode::Plain => println!("  {msg}"),
             ui::Mode::Rich => u.warn(msg),
-            ui::Mode::Quiet if stale => eprintln!("warning: {msg}"),
+            ui::Mode::Quiet if stale => eprintln!("{}", ui::warning_line(&msg)),
             ui::Mode::Quiet => {}
         }
     };
@@ -1968,7 +1981,7 @@ fn nominal_warnings(cfg: &Config, p: &Prepared, base: &Simulation) -> (Vec<Strin
             w.extend(flight_warnings_at(cfg, &r.summary, Some(ref_speed)));
             nominal = Some(r.summary);
         }
-        Err(e) => w.push(format!("the nominal flight could not be simulated ({e:#}): stability and wind-model checks were skipped")),
+        Err(e) => w.push(format!("[IY-O529] the nominal flight could not be simulated ({e:#}): stability and wind-model checks were skipped")),
     }
     if cfg.recovery.enabled {
         // The parachute descent is flown as well: it may never deploy or land too fast.
@@ -2095,11 +2108,11 @@ fn instability_clauses(v: &[Instability], what: &str) -> Vec<String> {
 fn instability_warnings(v: &[Instability], what: &str) -> Vec<String> {
     instability_clauses(v, what)
         .into_iter()
-        .map(|c| format!("{c}: they are kept in the statistics (conservative), so the landing distances include tumbling flights"))
-        .chain(unknown_clauses(v, what))
+        .map(|c| format!("[IY-O534] {c}: they are kept in the statistics (conservative), so the landing distances include tumbling flights"))
+        .chain(unknown_clauses(v, what).into_iter().map(|c| format!("[IY-O535] {c}")))
         .chain(v.iter().filter(|x| x.broadside > 0).map(|x| {
             format!(
-                "{} of {} ballistic {what} fell broadside (angle of attack 60 to 120 deg for more than {:.0} s): the landing depends on the large-angle aerodynamics, which are not validated",
+                "[IY-O536] {} of {} ballistic {what} fell broadside (angle of attack 60 to 120 deg for more than {:.0} s): the landing depends on the large-angle aerodynamics, which are not validated",
                 x.broadside,
                 x.total,
                 sim::flight::BROADSIDE_LIMIT
@@ -2114,10 +2127,10 @@ fn instability_reason(v: &[Instability], what: &str, hint: &str) -> Option<Strin
     let c = instability_clauses(v, what);
     let u = unknown_clauses(v, what);
     if !c.is_empty() {
-        let more = if u.is_empty() { String::new() } else { format!("; {}", u.join("; ")) };
-        Some(format!("{NOT_USABLE}: {}: {hint}{more}", c.join("; ")))
+        let more = if u.is_empty() { String::new() } else { format!("; [IY-O026] {}", u.join("; ")) };
+        Some(format!("{NOT_USABLE}: [IY-O025] {}: {hint}{more}", c.join("; ")))
     } else {
-        (!u.is_empty()).then(|| format!("{NOT_USABLE}: {}", u.join("; ")))
+        (!u.is_empty()).then(|| format!("{NOT_USABLE}: [IY-O026] {}", u.join("; ")))
     }
 }
 
@@ -2182,14 +2195,14 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
     let not_landed = failed - errored;
     if not_landed > 0 {
         warnings.push(format!(
-            "{not_landed} of {} wind-grid cases did not land within sim.max_time = {} s: they are excluded from the landing distances, so the maximum landing distance is only a lower bound",
+            "[IY-O530] {not_landed} of {} wind-grid cases did not land within sim.max_time = {} s: they are excluded from the landing distances, so the maximum landing distance is only a lower bound",
             results.len(),
             cfg.sim.max_time
         ));
     }
     if let Some(first) = errors.iter().flatten().next() {
         warnings.push(format!(
-            "{errored} of {} wind-grid cases failed with an error (e.g. {first}): they are excluded from the landing distances, so the maximum landing distance is only a lower bound",
+            "[IY-O531] {errored} of {} wind-grid cases failed with an error (e.g. {first}): they are excluded from the landing distances, so the maximum landing distance is only a lower bound",
             results.len()
         ));
     }
@@ -2237,10 +2250,10 @@ fn run_dispersion(cfg: &Config) -> Result<Option<String>> {
     let incomplete = nominal_stability_reason(nominal.as_ref())
         .or(angle)
         .or_else(|| instability_reason(&instab, "wind-grid cases", "increase the static margin"))
-        .or_else(|| (failed > 0).then(|| format!("{failed} of {} wind-grid cases did not land", results.len())));
+        .or_else(|| (failed > 0).then(|| format!("[IY-O028] {failed} of {} wind-grid cases did not land", results.len())));
     if errored == results.len() {
         anyhow::bail!(
-            "all {errored} wind-grid cases failed with an error (first: {}); the results are in {}",
+            "[IY-O011] all {errored} wind-grid cases failed with an error (first: {}); the results are in {}",
             errors.iter().flatten().next().map_or("", |e| e.as_str()),
             path.display()
         );
@@ -2276,10 +2289,10 @@ fn wind_grid_error_warnings(cases: &[sim::dispersion::Case], errors: &[Option<St
     let mut w: Vec<String> = failed
         .iter()
         .take(SHOWN)
-        .map(|(c, e)| format!("wind-grid case {} m/s from {:.0}\u{b0} ({}): {e}", c.wind_speed, c.wind_direction_deg, descent_name(c.descent)))
+        .map(|(c, e)| format!("[IY-O532] wind-grid case {} m/s from {:.0}\u{b0} ({}): {e}", c.wind_speed, c.wind_direction_deg, descent_name(c.descent)))
         .collect();
     if failed.len() > SHOWN {
-        w.push(format!("{} more wind-grid cases failed with an error (see the error column of dispersion.csv)", failed.len() - SHOWN));
+        w.push(format!("[IY-O533] {} more wind-grid cases failed with an error (see the error column of dispersion.csv)", failed.len() - SHOWN));
     }
     w
 }
@@ -2366,7 +2379,7 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
     let failed: usize = r.summary.descents.iter().map(|d| d.failed).sum();
     for d in r.summary.descents.iter().filter(|d| d.failed > 0) {
         warnings.push(format!(
-            "{:?}: {} of {} Monte Carlo samples did not land or failed ({} did not land within sim.max_time = {} s): the statistics are INCOMPLETE and the maximum landing distance is only a lower bound",
+            "[IY-O537] {:?}: {} of {} Monte Carlo samples did not land or failed ({} did not land within sim.max_time = {} s): the statistics are INCOMPLETE and the maximum landing distance is only a lower bound",
             d.descent, d.failed, r.summary.samples, d.not_landed, cfg.sim.max_time
         ));
     }
@@ -2392,7 +2405,7 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
     let instab = instability(r.rows.iter().map(|x| (x.descent, x.result.as_ref().ok())));
     warnings.extend(instability_warnings(&instab, "Monte Carlo samples"));
     for d in r.summary.descents.iter().filter(|d| d.landing.n > 0 && d.landing.n < MIN_LANDED_SAMPLES) {
-        warnings.push(format!("{:?}: only {} landed samples: the statistics are rough", d.descent, d.landing.n));
+        warnings.push(format!("[IY-O538] {:?}: only {} landed samples: the statistics are rough", d.descent, d.landing.n));
     }
     let range = p.table.out_of_range_stats();
     let angle = range_reason(&range, &p.table);
@@ -2473,7 +2486,7 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
         )?;
     }
     for row in r.rows.iter().filter(|x| x.result.is_err()).take(3) {
-        let msg = format!("failed: sample {} ({}): {}", row.sample, descent_name(row.descent), row.result.as_ref().unwrap_err());
+        let msg = format!("[IY-O544] failed: sample {} ({}): {}", row.sample, descent_name(row.descent), row.result.as_ref().unwrap_err());
         match u.mode {
             ui::Mode::Plain => println!("  {msg}"),
             ui::Mode::Rich => u.warn(msg),
@@ -2483,7 +2496,7 @@ fn run_monte_carlo(cfg: &Config, p: &Prepared, base: &Simulation, mut warnings: 
     Ok(nominal_stability_reason(nominal)
         .or(angle)
         .or_else(|| instability_reason(&instab, "Monte Carlo samples", "increase the static margin or reduce the CG/aero sigmas"))
-        .or_else(|| (failed > 0).then(|| format!("{failed} Monte Carlo runs did not land or failed; the statistics are incomplete"))))
+        .or_else(|| (failed > 0).then(|| format!("[IY-O029] {failed} Monte Carlo runs did not land or failed; the statistics are incomplete"))))
 }
 
 fn write_monte_carlo_csv(path: &Path, rows: &[sim::dispersion::McRow]) -> Result<()> {
@@ -2851,11 +2864,13 @@ mod tests {
         let msg = instability_reason(&v, "Monte Carlo samples", "increase the static margin or reduce the CG/aero sigmas").unwrap();
         assert_eq!(
             msg,
-            "RESULTS NOT USABLE: 2 of 4 Monte Carlo samples (ballistic) are statically UNSTABLE (min static margin down to -0.28 cal): increase the static margin or reduce the CG/aero sigmas"
+            "RESULTS NOT USABLE: [IY-O025] 2 of 4 Monte Carlo samples (ballistic) are statically UNSTABLE (min static margin down to -0.28 cal): increase the static margin or reduce the CG/aero sigmas"
         );
         let w = instability_warnings(&v, "Monte Carlo samples");
         assert!(
-            w.len() == 1 && w[0].starts_with("2 of 4 Monte Carlo samples (ballistic) are statically UNSTABLE") && w[0].contains("kept in the statistics"),
+            w.len() == 1
+                && w[0].starts_with("[IY-O534] 2 of 4 Monte Carlo samples (ballistic) are statically UNSTABLE")
+                && w[0].contains("kept in the statistics"),
             "{w:?}"
         );
         assert!(instability_reason(&instability(vec![(Descent::Ballistic, Some(&ok))]), "x", "h").is_none());
@@ -2928,7 +2943,7 @@ mod tests {
         assert!(cfg.motor.aft_x.is_none());
         check_motor_position(&cfg, 1.0, 0.5).unwrap();
         let e = check_motor_position(&cfg, 0.4, 0.5).unwrap_err().to_string();
-        assert!(e.starts_with("the motor (0.5000 m) is longer than the body (0.4000 m)"), "{e}");
+        assert!(e.starts_with("[IY-O007] the motor (0.5000 m) is longer than the body (0.4000 m)"), "{e}");
         assert!(!e.contains("must be between"), "{e}");
         let e = check_motor_position(&cfg, 0.8, 0.5).map(|_| ()).and_then(|_| {
             let mut c = load_sample(include_str!("../../../examples/sample.toml"));
@@ -2936,7 +2951,7 @@ mod tests {
             check_motor_position(&c, 0.8, 0.5)
         });
         let e = e.unwrap_err().to_string();
-        assert!(e.starts_with("motor.aft_x = 0.3 m puts the motor outside the body") && e.contains("must be between 0.5000 and 0.8000 m"), "{e}");
+        assert!(e.starts_with("[IY-O008] motor.aft_x = 0.3 m puts the motor outside the body") && e.contains("must be between 0.5000 and 0.8000 m"), "{e}");
     }
 
     #[test]
@@ -3109,7 +3124,7 @@ mod tests {
         let fast = sim::Summary { drogue_deploy_speed: Some(50.3), drogue_deploy_q: Some(1500.0), ..ok };
         assert_eq!(
             deploy_warning("drogue", fast.drogue_deploy_speed, fast.drogue_deploy_q, "recovery.delay").unwrap(),
-            "the drogue opens at 50.3 m/s (q = 1.5 kPa): a canopy is unlikely to survive; the landing point assumes it does - check recovery.delay"
+            "[IY-O518] the drogue opens at 50.3 m/s (q = 1.5 kPa): a canopy is unlikely to survive; the landing point assumes it does - check recovery.delay"
         );
     }
 
@@ -3121,7 +3136,7 @@ mod tests {
         let resonant = sim::Summary { roll_resonance: Some(sim::RollResonance { t: 0.65, mach: 0.155, frequency: 18.0, crossings: 2 }), ..ok.clone() };
         assert_eq!(
             flight_warnings(&cfg, &resonant),
-            ["roll resonance: the roll rate crosses the resonance rate of the pitch oscillation (18.0 rad/s) at t = 0.65 s, Mach 0.15 (2 crossings); the lateral CG offset, thrust misalignment or asymmetric aero moment can amplify the angle of attack there"]
+            ["[IY-O510] roll resonance: the roll rate crosses the resonance rate of the pitch oscillation (18.0 rad/s) at t = 0.65 s, Mach 0.15 (2 crossings); the lateral CG offset, thrust misalignment or asymmetric aero moment can amplify the angle of attack there"]
         );
         let marginal = sim::Summary { min_stability_cal: 1.2, ..ok.clone() };
         assert!(flight_warnings(&cfg, &marginal).iter().any(|w| w.contains("1.20 cal") && w.contains("marginal")));
@@ -3180,12 +3195,12 @@ mod tests {
         let reason = |m: f64| stability_reason(&summary_with_margin(m));
         assert!(reason(1.5).is_none() && reason(0.0).is_none());
         let m = reason(-0.234).unwrap();
-        assert_eq!(m, "RESULTS NOT USABLE: the rocket is statically UNSTABLE (min static margin -0.23 cal at t = 1.00 s, Mach 0.30)");
+        assert_eq!(m, "RESULTS NOT USABLE: [IY-O020] the rocket is statically UNSTABLE (min static margin -0.23 cal at t = 1.00 s, Mach 0.30)");
         // without a recorded location the message has none
         let s = sim::Summary { static_margin_min_t: f64::NAN, ..summary_with_margin(-0.234) };
-        assert_eq!(stability_reason(&s).unwrap(), "RESULTS NOT USABLE: the rocket is statically UNSTABLE (min static margin -0.23 cal)");
+        assert_eq!(stability_reason(&s).unwrap(), "RESULTS NOT USABLE: [IY-O020] the rocket is statically UNSTABLE (min static margin -0.23 cal)");
         let w = flight_warnings(&load_sample(include_str!("../../../examples/sample.toml")), &summary_with_margin(-0.234));
-        assert!(w.iter().any(|w| w.starts_with("static margin -0.23 cal at t = 1.00 s, Mach 0.30 is negative")), "{w:?}");
+        assert!(w.iter().any(|w| w.starts_with("[IY-O506] static margin -0.23 cal at t = 1.00 s, Mach 0.30 is negative")), "{w:?}");
         let j = stability_json(Some(&summary_with_margin(-0.5)));
         assert_eq!((j["stable"].as_bool(), j["static_margin_min_cal"].as_f64()), (Some(false), Some(-0.5)));
         assert_eq!(stability_json(Some(&summary_with_margin(2.0)))["stable"].as_bool(), Some(true));
@@ -3205,7 +3220,10 @@ mod tests {
         let (mut cfg, _g_cfg) = sample_config("chute_override");
         assert!(check_descent_override(&cfg, Some(Descent::Parachute)).is_ok());
         cfg.recovery.enabled = false;
-        assert_eq!(check_descent_override(&cfg, Some(Descent::Parachute)).unwrap_err().to_string(), "--descent parachute needs recovery.enabled = true");
+        assert_eq!(
+            check_descent_override(&cfg, Some(Descent::Parachute)).unwrap_err().to_string(),
+            "[IY-O001] --descent parachute needs recovery.enabled = true"
+        );
         assert!(check_descent_override(&cfg, Some(Descent::Ballistic)).is_ok() && check_descent_override(&cfg, None).is_ok());
     }
 
@@ -3233,11 +3251,14 @@ mod tests {
         cfg.aero.alpha_step_deg = 89.0;
         let w = grid_warnings(&cfg);
         assert_eq!(w.len(), 2, "{w:?}");
-        assert!(w[0].starts_with("aero.mach_step = 3 is coarse (> 0.1)") && w[1].starts_with("aero.alpha_step_deg = 89 is coarse (> 5 deg)"), "{w:?}");
+        assert!(
+            w[0].starts_with("[IY-O500] aero.mach_step = 3 is coarse (> 0.1)") && w[1].starts_with("[IY-O501] aero.alpha_step_deg = 89 is coarse (> 5 deg)"),
+            "{w:?}"
+        );
         // A general Barrowman table is built with general_mach_step.
         cfg.aero.table_kind = aero::table::TableKind::General;
         cfg.aero.general_mach_step = 0.2;
-        assert!(grid_warnings(&cfg)[0].starts_with("aero.general_mach_step = 0.2 is coarse"));
+        assert!(grid_warnings(&cfg)[0].starts_with("[IY-O500] aero.general_mach_step = 0.2 is coarse"));
         cfg.aero.general_mach_step = 0.05;
         cfg.aero.alpha_step_deg = 1.0;
         assert!(grid_warnings(&cfg).is_empty());
@@ -3330,7 +3351,7 @@ mod tests {
         assert!(broadside(&flat).is_empty() && broadside(&short).is_empty());
         assert_eq!(
             broadside(&fell),
-            ["the ballistic descent fell broadside (angle of attack 60 to 120 deg for 146 s): the landing depends on the large-angle aerodynamics, which are not validated"]
+            ["[IY-O509] the ballistic descent fell broadside (angle of attack 60 to 120 deg for 146 s): the landing depends on the large-angle aerodynamics, which are not validated"]
         );
         // the parachute descent is not checked
         assert!(broadside(&sim::Summary { descent: Descent::Parachute, ..fell.clone() }).is_empty());
@@ -3344,7 +3365,7 @@ mod tests {
         let w = instability_warnings(&v, "wind-grid cases");
         assert_eq!(
             w,
-            ["1 of 3 ballistic wind-grid cases fell broadside (angle of attack 60 to 120 deg for more than 10 s): the landing depends on the large-angle aerodynamics, which are not validated"]
+            ["[IY-O536] 1 of 3 ballistic wind-grid cases fell broadside (angle of attack 60 to 120 deg for more than 10 s): the landing depends on the large-angle aerodynamics, which are not validated"]
         );
         // it does not make the results unusable
         assert!(instability_reason(&v, "wind-grid cases", "h").is_none());
@@ -3357,12 +3378,12 @@ mod tests {
         let why = "at t = 0.50 s: the yaw normal-force slope dCy/dbeta is zero at Mach 0.10";
         let s = sim::Summary { stability_unknown: Some(why.into()), static_margin_yaw_min_cal: f64::NAN, ..sample_summary() };
         assert_eq!(s.stability(), Stability::Unknown(why.into()));
-        assert_eq!(stability_reason(&s).unwrap(), format!("RESULTS NOT USABLE: static stability could not be evaluated ({why})"));
+        assert_eq!(stability_reason(&s).unwrap(), format!("RESULTS NOT USABLE: [IY-O021] static stability could not be evaluated ({why})"));
         assert_eq!(stable_flag(&s), None);
         let cfg = load_sample(include_str!("../../../examples/sample.toml"));
         let j = summary_json(&cfg, &s, &[]).unwrap();
         assert!(j["stable"].is_null() && j["static_margin_yaw_min_cal"].is_null() && j["stability_unknown"] == why, "{j}");
-        assert!(flight_warnings(&cfg, &s).iter().any(|w| w.starts_with(&format!("static stability could not be evaluated ({why})"))));
+        assert!(flight_warnings(&cfg, &s).iter().any(|w| w.starts_with(&format!("[IY-O505] static stability could not be evaluated ({why})"))));
         let n = stability_json(Some(&s));
         assert!(n["stable"].is_null() && n["stability_unknown"] == why && n["static_margin_min_cal"] == 2.0, "{n}");
         // A known negative margin is unstable even when another margin is unknown.
@@ -3376,7 +3397,7 @@ mod tests {
         assert_eq!((j["stability_unknown_runs"]["ballistic"].as_u64(), j["stability_unknown_runs"]["parachute"].as_u64()), (Some(1), Some(0)));
         assert_eq!(
             instability_reason(&v, "wind-grid cases", "increase the static margin").unwrap(),
-            format!("RESULTS NOT USABLE: 1 of 3 wind-grid cases (ballistic): static stability could not be evaluated (first: {why})")
+            format!("RESULTS NOT USABLE: [IY-O026] 1 of 3 wind-grid cases (ballistic): static stability could not be evaluated (first: {why})")
         );
         assert!(instability_warnings(&v, "wind-grid cases").iter().any(|w| w.contains("static stability could not be evaluated")));
         // Unstable and unknown runs together: both clauses.
@@ -3385,7 +3406,7 @@ mod tests {
         let msg = instability_reason(&v, "Monte Carlo samples", "hint").unwrap();
         assert!(
             msg.contains("1 of 2 Monte Carlo samples (ballistic) are statically UNSTABLE")
-                && msg.contains("hint; 1 of 2")
+                && msg.contains("hint; [IY-O026] 1 of 2")
                 && msg.contains("could not be evaluated"),
             "{msg}"
         );
@@ -3410,7 +3431,8 @@ mod tests {
         cfg.aero.table = Some(path);
         let why = run_sim(&cfg, Some(Descent::Ballistic)).unwrap().expect("unknown stability must make the run unusable");
         assert!(
-            why.starts_with("RESULTS NOT USABLE: static stability could not be evaluated (at t = ") && why.contains("yaw normal-force slope dCy/dbeta is zero"),
+            why.starts_with("RESULTS NOT USABLE: [IY-O021] static stability could not be evaluated (at t = ")
+                && why.contains("yaw normal-force slope dCy/dbeta is zero"),
             "{why}"
         );
         let j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(cfg.out_dir().join("summary.json")).unwrap()).unwrap();
@@ -3428,7 +3450,10 @@ mod tests {
         assert!(!flight_warnings(&cfg, &ok).iter().any(|w| w.contains("main_altitude")));
         cfg.recovery.main_altitude = Some(500.0);
         let w = flight_warnings(&cfg, &ok);
-        assert!(w.iter().any(|w| w == "recovery.main_altitude = 500 m is above the apogee (500 m): the main opens together with the drogue"), "{w:?}");
+        assert!(
+            w.iter().any(|w| w == "[IY-O511] recovery.main_altitude = 500 m is above the apogee (500 m): the main opens together with the drogue"),
+            "{w:?}"
+        );
     }
 
     #[test]
@@ -3461,7 +3486,7 @@ mod tests {
         assert!(rail_exit_warnings(&cfg, &ok).is_empty());
         let slow = sim::Summary { rail_exit_speed: 12.0, ..ok.clone() };
         let w = rail_exit_warnings(&cfg, &slow);
-        assert!(w.iter().any(|w| w.starts_with("rail exit speed 12.0 m/s is below 15 m/s")), "{w:?}");
+        assert!(w.iter().any(|w| w.starts_with("[IY-O515] rail exit speed 12.0 m/s is below 15 m/s")), "{w:?}");
         // 8 m/s of wind at every height against 20 m/s: atan(0.4) = 21.8 deg
         cfg.wind.model = sim::WindModel::Constant;
         cfg.wind.speed = 8.0;
@@ -3478,7 +3503,7 @@ mod tests {
         cfg.atmosphere.model = sim::env::AtmosphereKind::Constant;
         cfg.atmosphere.density = 0.0;
         let e = aero_options(&cfg).unwrap_err().to_string();
-        assert!(e.starts_with("atmosphere.density must be finite and positive"), "{e}");
+        assert!(e.starts_with("[IY-A003] atmosphere.density must be finite and positive"), "{e}");
     }
 
     #[test]
@@ -3511,7 +3536,7 @@ mod tests {
         let w = mach_range_reason(&s, 0.0, 2.0).unwrap();
         assert_eq!(
             w,
-            "RESULTS NOT USABLE: 7 of 100 lookups beyond the aero table's Mach range (max Mach 2.50 > mach_max 2.00): coefficients are held at the edge; build the table up to at least Mach 2.5"
+            "RESULTS NOT USABLE: [IY-O022] 7 of 100 lookups beyond the aero table's Mach range (max Mach 2.50 > mach_max 2.00): coefficients are held at the edge; build the table up to at least Mach 2.5"
         );
         assert!(mach_range_reason(&none, 0.0, 2.0).is_none());
         let below = aero::table::OutOfRangeStats { lookups: 10, mach_below: 2, ..Default::default() };
@@ -3521,7 +3546,7 @@ mod tests {
         let r = angle_range_reason(&s, 30.0).unwrap();
         assert_eq!(
             r,
-            "RESULTS NOT USABLE: 3 of 100 lookups beyond the aero table's angle range (max |alpha| 31.0 deg > alpha_max 30.0 deg): the descent uses extrapolated coefficients; build the table up to 90 deg"
+            "RESULTS NOT USABLE: [IY-O024] 3 of 100 lookups beyond the aero table's angle range (max |alpha| 31.0 deg > alpha_max 30.0 deg): the descent uses extrapolated coefficients; build the table up to 90 deg"
         );
         assert!(r.starts_with(NOT_USABLE));
         assert!(mach_range_reason(&aero::table::OutOfRangeStats { mach_above: 0, ..s }, 0.0, 2.0).is_none());
@@ -3548,7 +3573,11 @@ mod tests {
         cfg.rocket.stl_scale = 1.0;
         cfg.rocket.cg_dry = 5.0;
         let e = geometry(&cfg).unwrap_err().to_string();
-        assert!(e.starts_with("rocket.cg_dry = 5 m is outside the body") && e.contains("\n  geometry warning: the STL surface has 3 open edges of"), "{e}");
+        assert!(
+            e.starts_with("[IY-O006] rocket.cg_dry = 5 m is outside the body")
+                && e.contains("\n  geometry warning: [IY-G501] the STL surface has 3 open edges of"),
+            "{e}"
+        );
     }
 
     #[test]
@@ -3590,7 +3619,7 @@ mod tests {
         let (_, top, _) = wind_profile_extent(&cfg).unwrap();
         assert_eq!(
             profile_top_warning(&cfg, "Monte Carlo samples", flights).unwrap(),
-            format!("2 of 4 Monte Carlo samples reach above the top of the wind profile ({top:.0} m), up to 7200 m: the wind above is held at the top value")
+            format!("[IY-O522] 2 of 4 Monte Carlo samples reach above the top of the wind profile ({top:.0} m), up to 7200 m: the wind above is held at the top value")
         );
         assert!(profile_top_warning(&cfg, "wind-grid cases", [((0, 0), 100.0)]).is_none());
     }
@@ -3605,7 +3634,10 @@ mod tests {
         assert!(flight_warnings(&cfg, &low).is_empty());
         let high = sim::Summary { apogee: 7000.0, ..base };
         let w = flight_warnings(&cfg, &high);
-        assert_eq!(w, vec!["apogee 7000 m is above the top of the wind profile (6000 m): the wind above 6000 m is held at the top value".to_string()]);
+        assert_eq!(
+            w,
+            vec!["[IY-O512] apogee 7000 m is above the top of the wind profile (6000 m): the wind above 6000 m is held at the top value".to_string()]
+        );
         // the extrapolation warning is gated on the effective speed of the table, not on wind.speed
         cfg.wind.model = sim::WindModel::Power;
         cfg.wind.speed = 0.0;
@@ -3623,7 +3655,7 @@ mod tests {
         cfg.wind.profile = Some(dir.join("w.csv"));
         let s = sim::Summary { min_stability_cal: 2.0, stability_at_rail_exit: 2.0, apogee: 500.0, ..sample_summary() };
         let w = flight_warnings(&cfg, &s);
-        assert_eq!(w, vec!["the wind profile starts at 150 m: the wind below is held at the lowest row".to_string()]);
+        assert_eq!(w, vec!["[IY-O513] the wind profile starts at 150 m: the wind below is held at the lowest row".to_string()]);
     }
 
     #[test]
@@ -3646,14 +3678,14 @@ mod tests {
         assert!(wind_scale_warning(&cfg, "wind grid", [&run(0.0, 0.0)]).is_none());
         // the largest deviation is named, with the winds aloft (largest row 5 m/s x k)
         let w = wind_scale_warning(&cfg, "wind grid", [&run(4.5, 9.0), &run(2.0, 4.0), &run(3.5, 7.0)]).unwrap();
-        assert_eq!(w, "wind profile scaled by a factor of 4.5 (wind grid 9.0 m/s vs profile mean 2.0 m/s): winds aloft up to 22 m/s");
+        assert_eq!(w, "[IY-O521] wind profile scaled by a factor of 4.5 (wind grid 9.0 m/s vs profile mean 2.0 m/s): winds aloft up to 22 m/s");
         // just above the limit: enough decimals to show it
         let w = wind_scale_warning(&cfg, "wind grid", [&run(3.014, 9.042)]).unwrap();
-        assert!(w.starts_with("wind profile scaled by a factor of 3.01 ("), "{w}");
+        assert!(w.starts_with("[IY-O521] wind profile scaled by a factor of 3.01 ("), "{w}");
         let w = wind_scale_warning(&cfg, "wind grid", [&run(3.0004, 9.0)]).unwrap();
-        assert!(w.starts_with("wind profile scaled by a factor of 3.0004 ("), "{w}");
+        assert!(w.starts_with("[IY-O521] wind profile scaled by a factor of 3.0004 ("), "{w}");
         let w = wind_scale_warning(&cfg, "Monte Carlo sample", [&run(0.1, 0.3)]).unwrap();
-        assert!(w.starts_with("wind profile scaled by a factor of 0.10 (Monte Carlo sample 0.3 m/s vs profile mean 3.0 m/s)"), "{w}");
+        assert!(w.starts_with("[IY-O521] wind profile scaled by a factor of 0.10 (Monte Carlo sample 0.3 m/s vs profile mean 3.0 m/s)"), "{w}");
     }
 
     #[test]
@@ -3664,15 +3696,19 @@ mod tests {
         let base = sim::Summary { descent: Descent::Parachute, landing_time: 100.0, landing_east: 1.0, landing_north: 1.0, ..sample_summary() };
         let never = sim::Summary { drogue_deploy_time: None, landing_speed: 178.0, ..base.clone() };
         let w = parachute_warnings(&cfg, &never);
-        assert_eq!(w, vec!["parachute descent landed at 178 m/s: the parachute did not deploy before landing (recovery.delay = 5000 s)".to_string()]);
+        assert_eq!(w, vec!["[IY-O519] parachute descent landed at 178 m/s: the parachute did not deploy before landing (recovery.delay = 5000 s)".to_string()]);
         let fast = sim::Summary { drogue_deploy_time: Some(10.0), landing_speed: 22.04, ..base.clone() };
-        assert_eq!(parachute_warnings(&cfg, &fast), vec!["parachute descent landed at 22.0 m/s, which is above 15 m/s: check recovery.cd_s".to_string()]);
+        assert_eq!(
+            parachute_warnings(&cfg, &fast),
+            vec!["[IY-O520] parachute descent landed at 22.0 m/s, which is above 15 m/s: check recovery.cd_s".to_string()]
+        );
         let ok =
             sim::Summary { drogue_deploy_time: Some(10.0), drogue_deploy_speed: Some(20.0), drogue_deploy_q: Some(200.0), landing_speed: 6.0, ..base.clone() };
         assert!(parachute_warnings(&cfg, &ok).is_empty());
         // A deployment at high speed or dynamic pressure (also when the run did not land).
         let hard = sim::Summary { drogue_deploy_speed: Some(129.0), drogue_deploy_q: Some(7200.0), ..ok.clone() };
-        let want = "the parachute opens at 129 m/s (q = 7.2 kPa): a canopy is unlikely to survive; the landing point assumes it does - check recovery.delay";
+        let want =
+            "[IY-O518] the parachute opens at 129 m/s (q = 7.2 kPa): a canopy is unlikely to survive; the landing point assumes it does - check recovery.delay";
         assert_eq!(parachute_warnings(&cfg, &hard), vec![want.to_string()]);
         assert_eq!(parachute_warnings(&cfg, &unlanded(hard.clone())), vec![want.to_string()]);
         let thin_air = sim::Summary { drogue_deploy_speed: Some(45.0), drogue_deploy_q: Some(2100.0), ..ok.clone() };
@@ -3685,7 +3721,7 @@ mod tests {
             parachute_warnings(&cfg, &main),
             vec![
                 want.replace("the parachute", "the drogue"),
-                "the main opens at 60 m/s (q = 2.3 kPa): a canopy is unlikely to survive; the landing point assumes it does - check recovery.main_altitude"
+                "[IY-O518] the main opens at 60 m/s (q = 2.3 kPa): a canopy is unlikely to survive; the landing point assumes it does - check recovery.main_altitude"
                     .to_string()
             ]
         );
@@ -3696,7 +3732,7 @@ mod tests {
             sim::Summary { drogue_deploy_time: Some(12.5), deploy_delayed: Some(sim::flight::DeployDelay { nominal_time: 11.25, thrust: 42.0 }), ..ok.clone() };
         assert_eq!(
             parachute_warnings(&cfg, &delayed),
-            vec!["the motor still burns at apogee + recovery.delay (t = 11.25 s, thrust 42.0 N): the parachute deployment is delayed to burnout at 12.50 s"
+            vec!["[IY-O517] the motor still burns at apogee + recovery.delay (t = 11.25 s, thrust 42.0 N): the parachute deployment is delayed to burnout at 12.50 s"
                 .to_string()]
         );
         // ballistic runs and disabled recovery are not judged, unlanded runs only for the deployment
@@ -3994,8 +4030,8 @@ mod tests {
         assert!(results[0].landed() && !results[1].landed() && results[1].wind_speed == 7.0 && results[1].wind_direction_deg == 90.0);
         let w = wind_grid_error_warnings(&cases, &errors);
         assert_eq!(w.len(), 4);
-        assert!(w[0].starts_with("wind-grid case 7 m/s from 90\u{b0} (parachute): integration diverged"), "{w:?}");
-        assert!(w[3].starts_with("1 more wind-grid cases failed") && w[3].contains("error column"), "{w:?}");
+        assert!(w[0].starts_with("[IY-O532] wind-grid case 7 m/s from 90\u{b0} (parachute): integration diverged"), "{w:?}");
+        assert!(w[3].starts_with("[IY-O533] 1 more wind-grid cases failed") && w[3].contains("error column"), "{w:?}");
         let path_td = TempDir::new("cli_gridcsv");
         let path = path_td.join("cli_gridcsv.csv");
         write_wind_grid_csv(&path, &results, &errors).unwrap();
@@ -4030,7 +4066,7 @@ mod tests {
         let e = out_path(&cfg, "trajectory.csv").unwrap_err().to_string();
         assert_eq!(
             e,
-            format!("another ignisyeet run is using {0} (lock file {0}/.ignisyeet.lock, pid 1); wait for it or use a different --out (if no other run is active, delete {0}/.ignisyeet.lock)", dir.display())
+            format!("[IY-O031] another ignisyeet run is using {0} (lock file {0}/.ignisyeet.lock, pid 1); wait for it or use a different --out (if no other run is active, delete {0}/.ignisyeet.lock)", dir.display())
         );
     }
 
@@ -4105,7 +4141,7 @@ mod tests {
         c.aero.mach_step = 0.04;
         c.aero_table_source = Some(a.output.dir.join("aero_table.csv"));
         let e = aero_table(&c, false).unwrap_err().to_string();
-        assert!(e.starts_with("--aero-table: ") && e.contains("was built for another rocket or other aero settings"), "{e}");
+        assert!(e.starts_with("[IY-O004] --aero-table: ") && e.contains("was built for another rocket or other aero settings"), "{e}");
         assert!(!c.output.dir.join("aero_table.csv").exists());
         c.aero.mach_step = 0.02;
         assert!(aero_table_for(&c, true, Sub::Aero).unwrap_err().to_string().contains("--aero-table and --force"));

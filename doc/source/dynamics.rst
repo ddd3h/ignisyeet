@@ -504,7 +504,7 @@ Magnus の係数は、部品積み上げ法、パネル法、CFD のどれも推
 トリムの強制がない機体（サンプルの既定の設定と、カントだけを付けた機体）では確かめない。
 
 例えば、サンプルのフィンに 1° のカントを付け、乾燥重心を 1 mm 横にずらすと、ロール角速度は上昇の初めに共振のロール角速度を横切り、
-``roll resonance: the roll rate crosses the resonance rate of the pitch oscillation (10.2 rad/s) at t = 0.61 s, Mach 0.36; the lateral CG offset, thrust misalignment or asymmetric aero moment can amplify the angle of attack there``
+``warning[IY-O510]: roll resonance: the roll rate crosses the resonance rate of the pitch oscillation (10.2 rad/s) at t = 0.61 s, Mach 0.36; the lateral CG offset, thrust misalignment or asymmetric aero moment can amplify the angle of attack there``
 の警告が出る。このあとロール角速度は約 88 rad/s まで上がり（:ref:`sec-vaero-barrowman-roll-flight`）、交差は 1 回である。
 この確認は交差を知らせるだけで、迎角の増え方の大きさは飛翔計算そのもの（``trajectory.csv`` の ``alpha_deg``）で見る。
 
@@ -649,7 +649,7 @@ R. T. Jones の有限翼の指示関数 :cite:`jones1940` は、迎角を急に�
 この時刻にランチャを離れ、自由飛行に移る。積分は、この離脱の時刻と状態から自由飛行の運動方程式で **やり直す**\ （レールを越えたステップの終端の状態は使わない）。
 離脱の状態の速さを **ランチャ離脱速度**、静安定余裕を離脱時の値として記録する。
 燃焼が終わったあとも飛翔が続く間は、機体はレール上を進み続ける（慣性で残りの距離を進んで離れうる）。
-燃焼終了後に機体のレールに沿った速度が 0 以下になった、つまりレールを離れずに滑り落ち始めた場合に限り、推力不足としてエラー（``rocket never left the launch rail``）にする。
+燃焼終了後に機体のレールに沿った速度が 0 以下になった、つまりレールを離れずに滑り落ち始めた場合に限り、推力不足としてエラー（``error[IY-S080]: rocket never left the launch rail``）にする。
 
 自由飛行
 ~~~~~~~~
@@ -659,7 +659,7 @@ R. T. Jones の有限翼の指示関数 :cite:`jones1940` は、迎角を急に�
 
 頂点のあとの弾道落下では、全迎角が 60° から 120° の間（流れに対して横向き）で飛んだ時間を ``summary.json`` の ``broadside_time`` [s] に積算する（ステップの始端の迎角で判定し、着地のステップは着地までの分だけ数える。パラシュート降下では 0）。
 これが 10 s を超えた落下を「横向きに落ちた」とし、``fell_broadside`` を ``true`` にして、
-``the ballistic descent fell broadside (angle of attack 60 to 120 deg for 146 s): the landing depends on the large-angle aerodynamics, which are not validated`` の形（数は例）の警告を出す。
+``warning[IY-O509]: the ballistic descent fell broadside (angle of attack 60 to 120 deg for 146 s): the landing depends on the large-angle aerodynamics, which are not validated`` の形（数は例）の警告を出す。
 横向きの落下は大迎角でのつり合い（トリム）で、その着地点は検証していない大迎角の空力係数で決まるからである（:ref:`sec-lim-aero`）。結果は使えないものとはせず、終了ステータスは変えない。
 
 .. _sec-parachute:
@@ -729,7 +729,7 @@ R. T. Jones の有限翼の指示関数 :cite:`jones1940` は、迎角を急に�
 状態方程式 :math:`\dot{\bm{y}}=\bm{f}(t,\bm{y})` を、設定 ``sim.integrator`` で選んだ方法で積分する。
 どの方法でも、1 ステップの後で（``attitude = "normalize"`` ではクォータニオンを正規化したうえで）、段階の切り替え（ランチャ離脱・頂点・開傘・着地）を判定する。
 ステップの途中で起きる事象（ランチャ離脱・頂点・開傘・メインの開傘・着地）は、そのステップ内の補間で時刻と状態を求めて、次の項のとおりに扱う。
-状態量に有限でない値が現れたときは、``integration diverged at t = … s; reduce sim.dt or tighten rtol/atol`` というエラーで止める（終了コード 1。モンテカルロ法ではそのサンプルを失敗として数え、風の格子ではそのケースを失敗として記録する）。
+状態量に有限でない値が現れたときは、``error[IY-S081]: integration diverged at t = … s; reduce sim.dt or tighten rtol/atol`` というエラーで止める（終了コード 1。モンテカルロ法ではそのサンプルを失敗として数え、風の格子ではそのケースを失敗として記録する）。
 値が有限でも、速さが 8 km/s を超えるか高さが 1000 km を超えた状態は、ロケットが到達しない数値的な発散とみなし、``(speed … m/s is not physical)`` または ``(altitude … m is not physical)`` を添えた同じ形のエラーで止める。
 
 .. _sec-step-events:

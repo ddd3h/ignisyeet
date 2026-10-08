@@ -310,10 +310,10 @@ CFD の表の、解いた迎角より大きい行は、この外挿ではなく�
 最大の迎角は、軸対称表では引いた全迎角、一般表では :math:`\alpha` と :math:`\beta` から求めた全迎角 :math:`\arccos(\cos\alpha\cos\beta)` で、ピッチ面の迎角だけではない
 （``AeroTable::out_of_range_stats``）。
 Mach 数の範囲外の引き出しは、結果を使えないものとする。表が飛翔の Mach 数より手前で終わると、端の値で一定とした係数で上昇全体の抗力と安定が変わるからである。
-1 回でもあれば ``sim`` と ``dispersion`` は ``RESULTS NOT USABLE: N of M lookups beyond the aero table's Mach range (max Mach … > mach_max …): coefficients are held at the edge; build the table up to at least Mach …`` の行を書いて終了ステータス 3 で終わり、``aero_table_range`` の ``machs_in_range`` を ``false`` にする（:ref:`sec-exit-status`）。
+1 回でもあれば ``sim`` と ``dispersion`` は ``RESULTS NOT USABLE: [IY-O022] N of M lookups beyond the aero table's Mach range (max Mach … > mach_max …): coefficients are held at the edge; build the table up to at least Mach …`` の行を書いて終了ステータス 3 で終わり、``aero_table_range`` の ``machs_in_range`` を ``false`` にする（:ref:`sec-exit-status`）。
 迎角（一般表では迎角または横滑り角）の範囲外の引き出しも、警告ではなく、結果を使えないものとする。
 端の区間からの外挿は、表にない大きな迎角の係数を端の区間の傾きから作るので、圧力中心を重心より前へ動かして見かけの釣り合い（トリム）を作るなど、弾道落下の経路を変えうる。外挿の結果が表の範囲内の結果に近いかどうかは、機体と条件によって決まり、事前には分からない（サンプルの例は :ref:`sec-exit-status`）。
-そのため、1 回でもあれば ``sim`` と ``dispersion`` は ``RESULTS NOT USABLE: … lookups beyond the aero table's angle range (max |alpha| … deg > alpha_max … deg): the descent uses extrapolated coefficients; build the table up to 90 deg`` の行を書いて終了ステータス 3 で終わり、``aero_table_range`` の ``angles_in_range`` を ``false`` にする。
+そのため、1 回でもあれば ``sim`` と ``dispersion`` は ``RESULTS NOT USABLE: [IY-O024] … lookups beyond the aero table's angle range (max |alpha| … deg > alpha_max … deg): the descent uses extrapolated coefficients; build the table up to 90 deg`` の行を書いて終了ステータス 3 で終わり、``aero_table_range`` の ``angles_in_range`` を ``false`` にする。
 表の上限を 90° 以上にして作り直せば、軸対称表では範囲外の引き出しは起きない（飛翔計算は全迎角を :math:`90^\circ` 以下に折り返して引く）。
 範囲外の引き出しがなくても、``summary.json``、``dispersion_meta.json``、``dispersion_summary.json`` の ``aero_table_range`` に、全引き出しの回数などを記録する（:ref:`sec-file-summary`）。
 

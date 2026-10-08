@@ -226,7 +226,7 @@ impl Mesh {
     /// Mesh for a rocket described by `geom`, with options from `opt`.
     pub fn from_geometry(geom: &Geometry, opt: &PanelOptions) -> Result<Mesh> {
         if opt.body_axial < 6 || opt.body_circ < 8 {
-            bail!("panel mesh too coarse (body_axial >= 6, body_circ >= 8 required)");
+            bail!("[IY-A021] panel mesh too coarse (body_axial >= 6, body_circ >= 8 required)");
         }
         let l = geom.length;
         let mut pts = vec![(0.0, 0.0)];
@@ -241,7 +241,7 @@ impl Mesh {
         let fin = match &geom.fins {
             Some(f) if f.count > 0 && f.span > 0.0 && f.root_chord > 0.0 && f.thickness > 0.0 => {
                 if opt.fin_section != FinSection::Biconvex {
-                    bail!("unsupported fin section");
+                    bail!("[IY-A022] unsupported fin section");
                 }
                 let mut x_le = f.x_le_root.max(0.0);
                 let mut x_te = f.x_le_root + f.root_chord;
@@ -249,7 +249,7 @@ impl Mesh {
                     x_te = l;
                 }
                 if x_le >= x_te - 1e-6 {
-                    bail!("fin root lies outside the body");
+                    bail!("[IY-A023] fin root lies outside the body");
                 }
                 x_le = x_le.min(x_te - 1e-6);
                 Some(FinSpec { set: f.clone(), x_le, x_te })

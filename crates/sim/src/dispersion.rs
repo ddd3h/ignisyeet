@@ -165,7 +165,7 @@ pub fn run_with_progress(
 ) -> Result<(Vec<Case>, Vec<Summary>)> {
     match cfg.mode {
         DispersionMode::WindGrid => run_wind_grid(cfg, base, recovery_enabled, progress),
-        DispersionMode::MonteCarlo => bail!("dispersion mode \"monte_carlo\" returns per-sample data: call run_monte_carlo"),
+        DispersionMode::MonteCarlo => bail!("[IY-S060] dispersion mode \"monte_carlo\" returns per-sample data: call run_monte_carlo"),
     }
 }
 
@@ -489,7 +489,7 @@ pub struct McResult {
 }
 
 /// Message of a sample that did not reach the ground within `sim.max_time`.
-pub const NOT_LANDED: &str = "did not land within sim.max_time";
+pub const NOT_LANDED: &str = "[IY-S090] did not land within sim.max_time";
 
 /// Empirical percentile `q` in [0, 100] of `sorted` (ascending) by linear interpolation; NaN when empty.
 pub fn percentile(sorted: &[f64], q: f64) -> f64 {
@@ -571,7 +571,7 @@ pub fn run_monte_carlo_with_progress(
     progress: &(dyn Fn(&McRow) + Sync),
 ) -> Result<McResult> {
     if cfg.samples == 0 {
-        bail!("dispersion.monte_carlo.samples must be at least 1");
+        bail!("[IY-S061] dispersion.monte_carlo.samples must be at least 1");
     }
     let sigmas = [
         ("thrust_misalignment_deg", cfg.thrust_misalignment_deg),
@@ -594,11 +594,11 @@ pub fn run_monte_carlo_with_progress(
     ];
     for (name, v) in sigmas {
         if !(v.is_finite() && v >= 0.0) {
-            bail!("dispersion.monte_carlo.{name} must be a finite number >= 0 (1-sigma), found {v}");
+            bail!("[IY-S062] dispersion.monte_carlo.{name} must be a finite number >= 0 (1-sigma), found {v}");
         }
     }
     if let Some(k) = cfg.truncate_sigma.filter(|k| !(k.is_finite() && *k > 0.0)) {
-        bail!("dispersion.monte_carlo.truncate_sigma must be a finite number > 0 (the bound of the clipped draws in sigma, e.g. 3.0), found {k}");
+        bail!("[IY-S063] dispersion.monte_carlo.truncate_sigma must be a finite number > 0 (the bound of the clipped draws in sigma, e.g. 3.0), found {k}");
     }
     if cfg.wind_speed != 0.0 || cfg.wind_direction_deg != 0.0 {
         base.wind.check_scalable_for(false)?;
@@ -618,12 +618,15 @@ pub fn run_monte_carlo_with_progress(
             modes
                 .iter()
                 .map(|&descent| {
-                    let result =
-                        match if invalid { Err(anyhow::anyhow!("perturbed rail elevation {el:.3} deg is outside (0, 90]")) } else { sim.run(descent, false) } {
-                            Ok(r) if r.summary.landing_east.is_finite() && r.summary.landing_north.is_finite() => Ok(r.summary),
-                            Ok(_) => Err(NOT_LANDED.to_string()),
-                            Err(e) => Err(format!("{e:#}")),
-                        };
+                    let result = match if invalid {
+                        Err(anyhow::anyhow!("[IY-S064] perturbed rail elevation {el:.3} deg is outside (0, 90]"))
+                    } else {
+                        sim.run(descent, false)
+                    } {
+                        Ok(r) if r.summary.landing_east.is_finite() && r.summary.landing_north.is_finite() => Ok(r.summary),
+                        Ok(_) => Err(NOT_LANDED.to_string()),
+                        Err(e) => Err(format!("{e:#}")),
+                    };
                     let row = McRow { sample: i, descent, perturbation: p, result };
                     progress(&row);
                     row
@@ -1322,7 +1325,7 @@ azimuth_deg = 0.0"#;
         for x in &bad {
             let el = 2.0 + x.perturbation.elevation_deg;
             assert!(el <= 0.0, "{el}");
-            assert_eq!(x.result.as_ref().unwrap_err(), &format!("perturbed rail elevation {el:.3} deg is outside (0, 90]"));
+            assert_eq!(x.result.as_ref().unwrap_err(), &format!("[IY-S064] perturbed rail elevation {el:.3} deg is outside (0, 90]"));
         }
         assert!(r.rows.iter().any(|x| x.result.is_ok()));
         assert_eq!(r.summary.descents[0].failed, bad.len() / 2);

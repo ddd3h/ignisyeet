@@ -107,7 +107,7 @@
 * ``protruding_nozzle_keeps_nose_detection_and_warns``：突き出したノズルがあってもノーズを検出でき、底面半径の警告が出る。
 * ``plausible_rocket_has_no_warnings_and_odd_proportions_warn``：標準的な機体には警告がなく、寸詰まりの機体には全長と直径の比の警告が出る。
 * ``explicit_nose_direction_is_respected_and_forward_fins_warn``：``nose_direction`` の指定は覆されず、フィンが前半にあれば警告が出る。
-* ``open_surfaces_are_rejected_and_small_defects_warned``：サンプル機体の閉じた表面には開いた辺も非多様体の辺もない。三角形 1 枚の面は ``the STL surface is not closed`` のエラーになり、三角形を 1 枚除いた表面は 3 本の開いた辺の警告、三角形を 1 枚重ねた表面は 3 本の非多様体の辺の警告になる。
+* ``open_surfaces_are_rejected_and_small_defects_warned``：サンプル機体の閉じた表面には開いた辺も非多様体の辺もない。三角形 1 枚の面は ``error[IY-G010]: the STL surface is not closed`` のエラーになり、三角形を 1 枚除いた表面は 3 本の開いた辺の警告、三角形を 1 枚重ねた表面は 3 本の非多様体の辺の警告になる。
   開いた辺が 1 % 未満でも、機体の半分だけの表面、底面を除いた表面（``a hole bounded by … open edges is 0.100 m across (100 % of the body diameter 0.100 m)``）、フィンの平らな側面を 1 枚除いた表面は、穴の幅の判定でエラーになる。
 * ``fins_behind_the_body_base_warn``：サンプル機体にはフィンの後縁の警告が出ない。根元の後縁または後退した翼端が機体の後端より後ろにあるフィンは ``the fin trailing edge at … lies aft of the body end at …`` の警告になり、フィンが底面より後ろへ突き出したメッシュは ``the aft end of the mesh is wider than the body`` の警告になる。
 
@@ -406,7 +406,7 @@ ECEF 座標での積分
   記録した点で求めた余裕より大きくならない（ヨーの圧力中心を 1 cal 前へ動かした一般表。ヨーの余裕がピッチより 0.05 cal 以内で 1 cal 小さい。``general_table_margins_are_evaluated_at_every_step_independent_of_recording``）。
   軸対称表では、面ごとの最小値がどちらも判定値 ``min(min_stability_cal, stability_at_rail_exit)`` に等しい。
   ヨーの圧力中心を 6 cal 前へ動かすとピッチは 1 cal 超、ヨーは負の余裕で不安定と判定され、横力を 0 にした一般表ではヨーの余裕が ``null``、理由が ``yaw normal-force slope dCy/dbeta is zero`` を含み、判定できない（``general_table_yaw_instability_and_unknown_stability_are_reported``）。
-  ``sim`` では、判定できない飛翔が ``RESULTS NOT USABLE: static stability could not be evaluated (at t = …`` で終わり、``stable`` が ``null``、ピッチの余裕は 1 cal を超える（``general_table_without_side_force_has_unknown_stability``）。
+  ``sim`` では、判定できない飛翔が ``RESULTS NOT USABLE: [IY-O021] static stability could not be evaluated (at t = …`` で終わり、``stable`` が ``null``、ピッチの余裕は 1 cal を超える（``general_table_without_side_force_has_unknown_stability``）。
   判定できない飛翔は風の格子とモンテカルロ解析で別に数え、不安定な飛翔と同時にあれば両方の節を書く（``unknown_static_stability_is_not_usable``）。
 * **余裕の符号**\ （``static_margins_follow_the_signed_cg_moment_derivative``）：線形の一般表（:math:`d=0.1` m、重心 0.9 m）で、法線力の傾きが物理的でない符号（:math:`\partial C_Z/\partial\alpha=+1`）でも、
   重心まわりのモーメントが角度を広げる向き（:math:`\partial C_m/\partial\alpha=12`）なら余裕は :math:`-3` cal（不安定）、物理的な符号の表ではピッチ :math:`+3`、ヨー :math:`-3` cal になる（:math:`10^{-9}` 以内）。
@@ -628,6 +628,6 @@ ECEF 座標での積分
 ``--out`` の相対パスは現在のディレクトリから解釈し（``load_with_applies_set_and_out``）、``--set`` の値は設定のハッシュに入り、ファイルに同じ値を書いた場合と同じハッシュになり、``--out`` はハッシュに入らない（``overrides_enter_the_run_hash_but_out_does_not``）。
 ``--aero-table`` は、キャッシュのキーが同じ表と付随ファイルをバイト単位で同じに写し、キーの違う表、読めない表、``--force`` との併用をエラーにする（``aero_table_is_reused_from_another_directory_when_the_key_matches``）。
 
-サンプルを東風 4 m/s で弾道落下させると、迎角 90° までの表では範囲外の引き出しがなく（``angles_in_range`` が ``true``）、30° までの表では ``RESULTS NOT USABLE: … lookups beyond the aero table's angle range`` で終わり、着地距離は 90° の表の 2 倍を超える（``ballistic_descent_beyond_the_table_angles_is_not_usable``）。
+サンプルを東風 4 m/s で弾道落下させると、迎角 90° までの表では範囲外の引き出しがなく（``angles_in_range`` が ``true``）、30° までの表では ``RESULTS NOT USABLE: [IY-O024] … lookups beyond the aero table's angle range`` で終わり、着地距離は 90° の表の 2 倍を超える（``ballistic_descent_beyond_the_table_angles_is_not_usable``）。
 飛翔が推力曲線の終わりより前に終わると ``burnout_time`` は ``null`` になり、ちょうど燃焼終了で終わる飛翔では燃焼終了の時刻になる（``burnout_time_is_reported_only_when_the_flight_reaches_it``）。
 ``sim`` が失敗すると、``summary.json`` が失敗の印になり、``ignisyeet.kml`` から前の飛翔の層が消える（``failed_sim_removes_the_previous_flight_from_the_kml``）。

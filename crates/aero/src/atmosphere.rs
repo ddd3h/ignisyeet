@@ -123,12 +123,12 @@ impl Default for AtmosphereModel {
 impl AtmosphereModel {
     pub fn us1976(temperature_offset: f64) -> Result<Self> {
         if !temperature_offset.is_finite() {
-            bail!("atmosphere.temperature_offset must be finite, got {temperature_offset}");
+            bail!("[IY-A001] atmosphere.temperature_offset must be finite, got {temperature_offset}");
         }
         let t_min = min_standard_temperature();
         if t_min + temperature_offset <= 0.0 {
             bail!(
-                "atmosphere.temperature_offset = {temperature_offset} K gives a non-positive absolute temperature \
+                "[IY-A002] atmosphere.temperature_offset = {temperature_offset} K gives a non-positive absolute temperature \
                  (the standard profile reaches {t_min:.3} K at the top of the supported altitude range); it must be greater than {:.3} K",
                 -t_min
             );
@@ -139,7 +139,7 @@ impl AtmosphereModel {
     pub fn constant(density: f64, sound_speed: f64, viscosity: f64) -> Result<Self> {
         for (name, v) in [("density", density), ("sound_speed", sound_speed), ("viscosity", viscosity)] {
             if !(v.is_finite() && v > 0.0) {
-                bail!("atmosphere.{name} must be finite and positive for the constant atmosphere, got {v}");
+                bail!("[IY-A003] atmosphere.{name} must be finite and positive for the constant atmosphere, got {v}");
             }
         }
         Ok(Self::Constant { density, sound_speed, viscosity })
@@ -228,6 +228,7 @@ mod tests {
         for bad in [f64::INFINITY, f64::NAN, -190.0, -200.0, -187.0] {
             let e = AtmosphereModel::us1976(bad).unwrap_err().to_string();
             assert!(e.contains("atmosphere.temperature_offset"), "{e}");
+            assert!(e.starts_with(if bad.is_finite() { "[IY-A002] " } else { "[IY-A001] " }), "{e}");
         }
         // the coldest standard point (about 186.9 K at 84.85 km) stays positive
         let m = AtmosphereModel::us1976(-180.0).unwrap();
@@ -237,7 +238,7 @@ mod tests {
         }
         for (d, c, v, name) in [(f64::INFINITY, 340.0, 1e-5, "density"), (1.2, f64::INFINITY, 1e-5, "sound_speed"), (1.2, 340.0, f64::NAN, "viscosity")] {
             let e = AtmosphereModel::constant(d, c, v).unwrap_err().to_string();
-            assert!(e.contains(name), "{e}");
+            assert!(e.contains(name) && e.starts_with("[IY-A003] "), "{e}");
         }
     }
 }

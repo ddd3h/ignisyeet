@@ -137,36 +137,39 @@ pub fn parse_wind_profile(text: &str) -> Result<Vec<ProfilePoint>> {
     // A UTF-8 byte order mark (Excel "CSV UTF-8") is not part of the header.
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let mut lines = text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#'));
-    let header = lines.next().context("wind profile is empty")?;
+    let header = lines.next().context("[IY-S030] wind profile is empty")?;
     let cols: Vec<String> = header.split(',').map(|c| c.trim().to_ascii_lowercase()).collect();
     if cols != ["altitude_m", "speed", "direction_deg"] {
-        bail!("wind profile header must be \"altitude_m,speed,direction_deg\", found \"{header}\"");
+        bail!("[IY-S031] wind profile header must be \"altitude_m,speed,direction_deg\", found \"{header}\"");
     }
     let mut pts: Vec<ProfilePoint> = Vec::new();
     for l in lines {
-        let v: Vec<f64> =
-            l.split(',').map(|x| x.trim().parse::<f64>()).collect::<std::result::Result<_, _>>().with_context(|| format!("bad wind profile row \"{l}\""))?;
+        let v: Vec<f64> = l
+            .split(',')
+            .map(|x| x.trim().parse::<f64>())
+            .collect::<std::result::Result<_, _>>()
+            .with_context(|| format!("[IY-S032] bad wind profile row \"{l}\""))?;
         if v.len() != 3 || v.iter().any(|x| !x.is_finite()) {
-            bail!("bad wind profile row \"{l}\": expected 3 finite numbers");
+            bail!("[IY-S032] bad wind profile row \"{l}\": expected 3 finite numbers");
         }
         if v[1] < 0.0 {
-            bail!("wind profile speed must not be negative (row \"{l}\")");
+            bail!("[IY-S033] wind profile speed must not be negative (row \"{l}\")");
         }
         if !(0.0..=360.0).contains(&v[2]) {
-            bail!("wind profile direction must be between 0 and 360 degrees (row \"{l}\")");
+            bail!("[IY-S034] wind profile direction must be between 0 and 360 degrees (row \"{l}\")");
         }
         if v[0] < 0.0 {
-            bail!("wind profile altitude must be ≥ 0 m above the launch site (row \"{l}\"): drop levels below the launch site and add a 0 m row");
+            bail!("[IY-S035] wind profile altitude must be ≥ 0 m above the launch site (row \"{l}\"): drop levels below the launch site and add a 0 m row");
         }
         if let Some(p) = pts.last() {
             if v[0] <= p.height {
-                bail!("wind profile altitudes must be strictly ascending (row \"{l}\")");
+                bail!("[IY-S036] wind profile altitudes must be strictly ascending (row \"{l}\")");
             }
         }
         pts.push(ProfilePoint { height: v[0], speed: v[1], direction_deg: v[2] });
     }
     if pts.is_empty() {
-        bail!("wind profile has no data rows");
+        bail!("[IY-S037] wind profile has no data rows");
     }
     Ok(pts)
 }
@@ -178,37 +181,41 @@ fn direction_from(e: f64, n: f64) -> f64 {
 impl Wind {
     pub fn from_config(c: &WindConfig) -> Result<Self> {
         if !is_pos(c.ref_height) {
-            bail!("wind.ref_height must be positive");
+            bail!("[IY-S038] wind.ref_height must be positive");
         }
         if !(c.speed.is_finite() && c.speed >= 0.0) {
-            bail!("wind.speed must be a finite number >= 0, found {}", c.speed);
+            bail!("[IY-S039] wind.speed must be a finite number >= 0, found {}", c.speed);
         }
         if !c.direction_deg.is_finite() {
-            bail!("wind.direction_deg must be a finite number, found {}", c.direction_deg);
+            bail!("[IY-S040] wind.direction_deg must be a finite number, found {}", c.direction_deg);
         }
         if matches!(c.model, WindModel::Power | WindModel::Log) && !(is_pos(c.ground_blend_height) && c.ground_blend_height < c.ref_height) {
-            bail!("wind.ground_blend_height must be positive and smaller than wind.ref_height");
+            bail!("[IY-S041] wind.ground_blend_height must be positive and smaller than wind.ref_height");
         }
         match c.model {
             WindModel::Constant => {}
             WindModel::Power => {
                 if !is_pos(c.exponent) {
-                    bail!("wind.exponent must be positive");
+                    bail!("[IY-S042] wind.exponent must be positive");
                 }
             }
             WindModel::Log => {
                 if !is_pos(c.roughness_length) {
-                    bail!("wind.roughness_length must be positive");
+                    bail!("[IY-S043] wind.roughness_length must be positive");
                 }
                 // The blend height is raised to at least 2 z0 (see `with_profile`) and must stay below
                 // ref_height, where the configured speed applies.
                 if 2.0 * c.roughness_length >= c.ref_height {
-                    bail!("wind.roughness_length ({}) must be smaller than half of wind.ref_height ({}) for the log profile", c.roughness_length, c.ref_height);
+                    bail!(
+                        "[IY-S044] wind.roughness_length ({}) must be smaller than half of wind.ref_height ({}) for the log profile",
+                        c.roughness_length,
+                        c.ref_height
+                    );
                 }
             }
             WindModel::Profile => {
-                let path = c.profile.as_deref().context("wind.profile (CSV path) is required when wind.model = \"profile\"")?;
-                let text = std::fs::read_to_string(path).with_context(|| format!("cannot read wind profile {}", path.display()))?;
+                let path = c.profile.as_deref().context("[IY-S045] wind.profile (CSV path) is required when wind.model = \"profile\"")?;
+                let text = std::fs::read_to_string(path).with_context(|| format!("[IY-S046] cannot read wind profile {}", path.display()))?;
                 let profile = parse_wind_profile(&text).with_context(|| format!("invalid wind profile {}", path.display()))?;
                 let mut w = Self::with_profile(c, profile);
                 let (speed, direction_deg) = w.profile_mean();
@@ -219,15 +226,15 @@ impl Wind {
                 }
                 let target = c.profile_mean_speed.unwrap_or(speed);
                 if !(target.is_finite() && target >= 0.0) {
-                    bail!("wind.profile_mean_speed must be a finite number >= 0, found {target}");
+                    bail!("[IY-S048] wind.profile_mean_speed must be a finite number >= 0, found {target}");
                 }
                 let dir = c.profile_mean_direction_deg.unwrap_or(direction_deg);
                 if !(dir.is_finite() && (0.0..=360.0).contains(&dir)) {
-                    bail!("wind.profile_mean_direction_deg must be between 0 and 360 degrees, found {dir}");
+                    bail!("[IY-S049] wind.profile_mean_direction_deg must be between 0 and 360 degrees, found {dir}");
                 }
                 if speed < CALM_PROFILE_SPEED {
                     bail!(
-                        "wind profile is calm (mean speed {speed:.3} m/s): it cannot be scaled to wind.profile_mean_speed / rotated to wind.profile_mean_direction_deg"
+                        "[IY-S050] wind profile is calm (mean speed {speed:.3} m/s): it cannot be scaled to wind.profile_mean_speed / rotated to wind.profile_mean_direction_deg"
                     );
                 }
                 // The same scaling and rotation as a wind-grid case with this speed and direction.
@@ -317,12 +324,12 @@ impl Wind {
         if self.model == WindModel::Profile && self.speed < CALM_PROFILE_SPEED {
             if grid {
                 bail!(
-                    "wind profile is calm (mean speed {:.3} m/s): it cannot be scaled for dispersion; use wind.model = \"constant\"/\"power\" for a wind grid",
+                    "[IY-S051] wind profile is calm (mean speed {:.3} m/s): it cannot be scaled for dispersion; use wind.model = \"constant\"/\"power\" for a wind grid",
                     self.speed
                 );
             }
             bail!(
-                "wind profile is calm (mean speed {:.3} m/s): the Monte Carlo wind perturbations cannot be applied to it; set dispersion.monte_carlo.wind_speed and wind_direction_deg to 0, or use a profile with wind",
+                "[IY-S052] wind profile is calm (mean speed {:.3} m/s): the Monte Carlo wind perturbations cannot be applied to it; set dispersion.monte_carlo.wind_speed and wind_direction_deg to 0, or use a profile with wind",
                 self.speed
             );
         }
@@ -342,7 +349,7 @@ impl Wind {
     /// (the values at `ref_height`).
     pub fn with_speed_direction(&self, speed: f64, direction_deg: f64) -> Result<Self> {
         if !(speed.is_finite() && direction_deg.is_finite()) {
-            bail!("wind speed and direction must be finite numbers, found {speed} m/s from {direction_deg} deg");
+            bail!("[IY-S053] wind speed and direction must be finite numbers, found {speed} m/s from {direction_deg} deg");
         }
         self.check_scalable()?;
         let mut w = self.clone();
@@ -557,7 +564,7 @@ pub struct Earth {
 impl Earth {
     pub fn from_config(c: &EarthConfig) -> Result<Self> {
         if c.model == EarthModel::Flat && c.gravity == GravityModel::J2 {
-            bail!("gravity model \"j2\" needs a spherical/ellipsoidal Earth: set earth.model = \"ecef\" (or use another gravity model with earth.model = \"flat\")");
+            bail!("[IY-S054] gravity model \"j2\" needs a spherical/ellipsoidal Earth: set earth.model = \"ecef\" (or use another gravity model with earth.model = \"flat\")");
         }
         Ok(Self { model: c.model, gravity: c.gravity, omega: OMEGA_EARTH })
     }
@@ -671,16 +678,16 @@ mod tests {
     fn non_finite_wind_speed_and_direction_are_rejected() {
         for (speed, dir) in [(f64::INFINITY, 0.0), (f64::NAN, 0.0), (-1.0, 0.0)] {
             let e = Wind::from_config(&WindConfig { speed, direction_deg: dir, ..cfg(WindModel::Power) }).unwrap_err().to_string();
-            assert!(e.starts_with("wind.speed must be a finite number >= 0, found"), "{e}");
+            assert!(e.starts_with("[IY-S039] wind.speed must be a finite number >= 0, found"), "{e}");
         }
         for dir in [f64::NAN, f64::INFINITY] {
             let e = Wind::from_config(&WindConfig { direction_deg: dir, ..cfg(WindModel::Constant) }).unwrap_err().to_string();
-            assert!(e.starts_with("wind.direction_deg must be a finite number, found"), "{e}");
+            assert!(e.starts_with("[IY-S040] wind.direction_deg must be a finite number, found"), "{e}");
         }
         let w = Wind::from_config(&cfg(WindModel::Power)).unwrap();
         for (speed, dir) in [(f64::NAN, 0.0), (f64::INFINITY, 0.0), (3.0, f64::NAN), (3.0, f64::NEG_INFINITY)] {
             let e = w.with_speed_direction(speed, dir).unwrap_err().to_string();
-            assert!(e.starts_with("wind speed and direction must be finite numbers"), "{e}");
+            assert!(e.starts_with("[IY-S053] wind speed and direction must be finite numbers"), "{e}");
         }
         let p = profile_wind("altitude_m,speed,direction_deg\n0,2,90\n1000,6,120\n", cfg(WindModel::Profile));
         assert!(p.with_speed_direction(f64::NAN, 0.0).is_err());

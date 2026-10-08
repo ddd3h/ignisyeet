@@ -297,7 +297,7 @@ fn widest_hole(open: &[(usize, usize)], pos: &[Vec3]) -> Option<Hole> {
 fn surface_findings(c: &SurfaceCheck) -> Result<Option<String>> {
     if c.open as f64 > MAX_OPEN_EDGE_FRACTION * c.edges as f64 {
         bail!(
-            "the STL surface is not closed: {} open edges of {} ({:.1} %): {CLOSED_SURFACE_HINT}",
+            "[IY-G010] the STL surface is not closed: {} open edges of {} ({:.1} %): {CLOSED_SURFACE_HINT}",
             c.open,
             c.edges,
             100.0 * c.open as f64 / c.edges.max(1) as f64
@@ -311,7 +311,7 @@ fn surface_findings(c: &SurfaceCheck) -> Result<Option<String>> {
         parts.push(format!("{} non-manifold (shared by more than two triangles)", c.non_manifold));
     }
     Ok((!parts.is_empty())
-        .then(|| format!("the STL surface has {} edges of {}: small mesh defects, check the extracted geometry", parts.join(" and "), c.edges)))
+        .then(|| format!("[IY-G501] the STL surface has {} edges of {}: small mesh defects, check the extracted geometry", parts.join(" and "), c.edges)))
 }
 
 const CLOSED_SURFACE_HINT: &str =
@@ -324,7 +324,7 @@ fn hole_finding(c: &SurfaceCheck, diameter: f64) -> Result<()> {
     if let Some(h) = c.widest_hole {
         if h.width() > MAX_HOLE_WIDTH * diameter {
             bail!(
-                "the STL surface is not closed: a hole bounded by {} open edges is {:.3} m across ({:.0} % of the body diameter {diameter:.3} m): {CLOSED_SURFACE_HINT}",
+                "[IY-G011] the STL surface is not closed: a hole bounded by {} open edges is {:.3} m across ({:.0} % of the body diameter {diameter:.3} m): {CLOSED_SURFACE_HINT}",
                 h.edges,
                 h.extent,
                 100.0 * h.extent / diameter
@@ -336,7 +336,7 @@ fn hole_finding(c: &SurfaceCheck, diameter: f64) -> Result<()> {
 
 pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
     if opt.n_slices < 20 {
-        bail!("n_slices must be at least 20");
+        bail!("[IY-G012] n_slices must be at least 20");
     }
     // Area-weighted centroid and covariance of triangle centroids.
     let mut area = 0.0;
@@ -347,7 +347,7 @@ pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
         c += (t[0] + t[1] + t[2]) / 3.0 * a;
     }
     if area <= 0.0 {
-        bail!("mesh has zero surface area");
+        bail!("[IY-G013] mesh has zero surface area");
     }
     let surface = surface_check(tris);
     let surface_note = surface_findings(&surface)?;
@@ -389,7 +389,7 @@ pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
     }
     let length = xmax - xmin;
     if length <= 0.0 {
-        bail!("degenerate mesh");
+        bail!("[IY-G014] degenerate mesh");
     }
 
     let mut slices = slice_mesh(&local, xmin, length, opt.n_slices);
@@ -397,7 +397,7 @@ pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
     let dx = length / n as f64;
     let (r_max, r_note) = reference_radius(&slices);
     if r_max <= 0.0 {
-        bail!("could not determine body radius");
+        bail!("[IY-G015] could not determine body radius");
     }
     hole_finding(&surface, 2.0 * r_max)?;
     let mut warnings: Vec<String> = Vec::new();
@@ -422,13 +422,14 @@ pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
             let by_fins = p < 0.5;
             if by_fins != shape_flip {
                 warnings.push(
-                    "the nose/tail shape and the fin position suggest opposite orientations; the fin position was used (set nose_direction to override)".into(),
+                    "[IY-G503] the nose/tail shape and the fin position suggest opposite orientations; the fin position was used (set nose_direction to override)".into(),
                 );
             }
             by_fins
         }
         (None, _) => {
-            warnings.push("orientation decided from the end radii only (no clear fin set); check the extracted nose/tail or set nose_direction".into());
+            warnings
+                .push("[IY-G504] orientation decided from the end radii only (no clear fin set); check the extracted nose/tail or set nose_direction".into());
             shape_flip
         }
     };
@@ -481,22 +482,22 @@ pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
     let d = 2.0 * r_max;
     if length / d < 3.0 || length / d > 40.0 {
         warnings.push(format!(
-            "length/diameter ratio {:.1} is unusual for a rocket (length {length:.3} m, diameter {d:.3} m); check the STL scale and units",
+            "[IY-G505] length/diameter ratio {:.1} is unusual for a rocket (length {length:.3} m, diameter {d:.3} m); check the STL scale and units",
             length / d
         ));
     }
     if nose_len < 0.4 * d || nose_len > 8.0 * d {
-        warnings.push(format!("detected nose length {nose_len:.3} m ({:.1} calibers) is implausible", nose_len / d));
+        warnings.push(format!("[IY-G506] detected nose length {nose_len:.3} m ({:.1} calibers) is implausible", nose_len / d));
     }
     if base_radius > 1.05 * r_max {
         warnings.push(format!(
-            "the aft end of the mesh is wider than the body (radius {base_radius:.4} m vs {r_max:.4} m): the fins probably extend behind the body base; \
+            "[IY-G507] the aft end of the mesh is wider than the body (radius {base_radius:.4} m vs {r_max:.4} m): the fins probably extend behind the body base; \
              Barrowman's fin-body interference assumes the body continues behind the fin root chord, and base drag uses this radius (check the fins, or set rocket.fin_override)"
         ));
     }
     if base_radius < 0.6 * r_max {
         warnings.push(format!(
-            "the base radius is only {:.0} % of the body radius (protruding nozzle or strong boattail); base drag uses this radius",
+            "[IY-G508] the base radius is only {:.0} % of the body radius (protruding nozzle or strong boattail); base drag uses this radius",
             100.0 * base_radius / r_max
         ));
     }
@@ -504,14 +505,14 @@ pub fn extract(tris: &[Triangle], opt: &ExtractOptions) -> Result<Geometry> {
         let xc = (f.x_le_root + 0.5 * f.root_chord) / length;
         if f.x_le_root < 0.5 * length {
             warnings.push(format!(
-                "the fin root leading edge is at {:.0} % of the length, in the forward half; the body may be reversed (nose_direction)",
+                "[IY-G509] the fin root leading edge is at {:.0} % of the length, in the forward half; the body may be reversed (nose_direction)",
                 100.0 * f.x_le_root / length
             ));
         } else if xc < 0.6 {
-            warnings.push(format!("the fins are centred at {:.0} % of the length, unusually far forward", 100.0 * xc));
+            warnings.push(format!("[IY-G510] the fins are centred at {:.0} % of the length, unusually far forward", 100.0 * xc));
         }
         if f.span > 2.0 * d {
-            warnings.push(format!("the fin span {:.3} m exceeds two body diameters ({d:.3} m)", f.span));
+            warnings.push(format!("[IY-G511] the fin span {:.3} m exceeds two body diameters ({d:.3} m)", f.span));
         }
     }
 
@@ -542,7 +543,7 @@ pub fn fin_overhang_warning(f: &FinSet, length: f64) -> Option<String> {
     let te = (f.x_le_root + f.root_chord).max(f.x_le_root + f.sweep + f.tip_chord);
     (f.count > 0 && f.span > 0.0 && te > length + 1e-3 * length.max(1.0)).then(|| {
         format!(
-            "the fin trailing edge at {te:.4} m lies aft of the body end at {length:.4} m: Barrowman's fin-body interference assumes that the body continues behind the fin root chord"
+            "[IY-G512] the fin trailing edge at {te:.4} m lies aft of the body end at {length:.4} m: Barrowman's fin-body interference assumes that the body continues behind the fin root chord"
         )
     })
 }
@@ -561,7 +562,7 @@ fn reference_radius(slices: &[Slice]) -> (f64, Option<String>) {
     if max <= 1.15 * p90 {
         (max, None)
     } else {
-        (p90, Some(format!("a short feature with radius {max:.4} m exceeds the typical body radius {p90:.4} m and was ignored")))
+        (p90, Some(format!("[IY-G502] a short feature with radius {max:.4} m exceeds the typical body radius {p90:.4} m and was ignored")))
     }
 }
 
@@ -772,21 +773,21 @@ mod tests {
         let e = extract(&one, &ExtractOptions::default()).unwrap_err().to_string();
         assert_eq!(
             e,
-            "the STL surface is not closed: 3 open edges of 3 (100.0 %): the geometry extraction needs a closed (watertight) surface; repair the mesh (close the holes) or export the rocket as a solid"
+            "[IY-G010] the STL surface is not closed: 3 open edges of 3 (100.0 %): the geometry extraction needs a closed (watertight) surface; repair the mesh (close the holes) or export the rocket as a solid"
         );
         // One missing triangle: a warning only.
         let holed = &mesh[1..];
         let c = surface_check(holed);
         assert_eq!((c.open, c.non_manifold), (3, 0));
         let g = extract(holed, &ExtractOptions::default()).unwrap();
-        assert!(g.warnings.iter().any(|w| w.starts_with("the STL surface has 3 open edges of")), "{:?}", g.warnings);
+        assert!(g.warnings.iter().any(|w| w.starts_with("[IY-G501] the STL surface has 3 open edges of")), "{:?}", g.warnings);
         // A missing end cap or half of the rocket is a hole about as wide as the body: an error even
         // though fewer than 1 % of the edges are open.
         let half = &mesh[..mesh.len() / 2];
         let c = surface_check(half);
         assert!((c.open as f64) < 0.01 * c.edges as f64, "{c:?}");
         let e = extract(half, &ExtractOptions::default()).unwrap_err().to_string();
-        assert!(e.starts_with("the STL surface is not closed: a hole bounded by ") && e.contains("% of the body diameter "), "{e}");
+        assert!(e.starts_with("[IY-G011] the STL surface is not closed: a hole bounded by ") && e.contains("% of the body diameter "), "{e}");
         let rk = SampleRocket { fin_count: 0, ..Default::default() };
         let full = rk.mesh();
         let no_base: Vec<Triangle> = full.iter().filter(|t| !t.iter().all(|v| close(v.x, rk.length, 1e-12))).copied().collect();
@@ -811,7 +812,7 @@ mod tests {
         assert!(fin_overhang_warning(&f, g.length).is_none());
         let back = FinSet { x_le_root: g.length - 0.1, ..f.clone() };
         let w = fin_overhang_warning(&back, g.length).unwrap();
-        assert!(w.starts_with("the fin trailing edge at 1.59") && w.contains("lies aft of the body end at 1.5000 m"), "{w}");
+        assert!(w.starts_with("[IY-G512] the fin trailing edge at 1.59") && w.contains("lies aft of the body end at 1.5000 m"), "{w}");
         // swept tip behind the base, root ending at it
         let swept = FinSet { x_le_root: g.length - f.root_chord, sweep: f.root_chord, ..f };
         assert!(fin_overhang_warning(&swept, g.length).is_some());
@@ -820,7 +821,8 @@ mod tests {
         assert!(
             g.warnings
                 .iter()
-                .any(|w| w.starts_with("the aft end of the mesh is wider than the body") && w.contains("the fins probably extend behind the body base")),
+                .any(|w| w.starts_with("[IY-G507] the aft end of the mesh is wider than the body")
+                    && w.contains("the fins probably extend behind the body base")),
             "{:?}",
             g.warnings
         );

@@ -12,6 +12,46 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime};
 
+/// Splits a leading `[IY-Xnnn] ` error code off a message: (code without brackets, rest).
+pub fn split_code(s: &str) -> Option<(&str, &str)> {
+    let body = s.strip_prefix("[IY-")?;
+    let (code, rest) = body.split_once("] ")?;
+    (!code.is_empty() && code.chars().all(|c| c.is_ascii_alphanumeric())).then_some((&s[1..4 + code.len()], rest))
+}
+
+/// The plain/quiet line of a warning: `warning[IY-Xnnn]: text` for a coded message, `warning: text` otherwise.
+pub fn warning_line(s: &str) -> String {
+    match split_code(s) {
+        Some((code, rest)) => format!("warning[{code}]: {rest}"),
+        None => format!("warning: {s}"),
+    }
+}
+
+/// The report of a fatal error: `error[IY-Xnnn]: headline` (the first coded message of the chain gives the code,
+/// shown once) followed by the causes; `Error: ...` in anyhow's layout when no message of the chain is coded.
+pub fn error_report(e: &anyhow::Error) -> String {
+    let chain: Vec<String> = e.chain().map(|c| c.to_string()).collect();
+    let Some(code) = chain.iter().find_map(|m| split_code(m).map(|(c, _)| c.to_string())) else {
+        return format!("Error: {e:?}");
+    };
+    let strip = |m: &str| match split_code(m) {
+        Some((c, rest)) if c == code => rest.to_string(),
+        _ => m.to_string(),
+    };
+    let mut out = format!("error[{code}]: {}", strip(&chain[0]));
+    if chain.len() > 1 {
+        out.push_str("\n\nCaused by:");
+        for (i, c) in chain[1..].iter().enumerate() {
+            if chain.len() > 2 {
+                out.push_str(&format!("\n    {i}: {}", strip(c)));
+            } else {
+                out.push_str(&format!("\n    {}", strip(c)));
+            }
+        }
+    }
+    out
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Mode {
     Quiet,
@@ -377,7 +417,7 @@ impl Ui {
             if self.rich() {
                 println!("  {} {}", style(self.g().warn).yellow().bold(), style(s).yellow());
             } else {
-                println!("warning: {s}");
+                println!("{}", warning_line(s));
             }
         }
     }
@@ -456,5 +496,21 @@ mod tests {
         assert_eq!(fmt_dur(Duration::from_secs(125)), "2m 05s");
         assert_eq!(fmt_size(2048), "2.0 KB");
         assert_eq!(pad("ab", 4), "ab  ");
+    }
+
+    #[test]
+    fn coded_messages_render_with_the_code_once() {
+        assert_eq!(split_code("[IY-O542] x y"), Some(("IY-O542", "x y")));
+        assert_eq!(split_code("plain"), None);
+        assert_eq!(warning_line("[IY-O500] aero.mach_step is coarse"), "warning[IY-O500]: aero.mach_step is coarse");
+        assert_eq!(warning_line("plain"), "warning: plain");
+        let inner = anyhow::anyhow!("[IY-S002] bad number");
+        let e = inner.context("cannot read motor file m.eng");
+        assert_eq!(error_report(&e), "error[IY-S002]: cannot read motor file m.eng\n\nCaused by:\n    bad number");
+        let e = anyhow::anyhow!("[IY-O001] --descent parachute needs recovery.enabled = true");
+        assert_eq!(error_report(&e), "error[IY-O001]: --descent parachute needs recovery.enabled = true");
+        let e = anyhow::anyhow!("[IY-G003] unrecognised").context("[IY-O013] cannot read").context("outer");
+        assert_eq!(error_report(&e), "error[IY-O013]: outer\n\nCaused by:\n    0: cannot read\n    1: [IY-G003] unrecognised");
+        assert!(error_report(&anyhow::anyhow!("boom")).starts_with("Error: boom"));
     }
 }

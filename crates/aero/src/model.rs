@@ -83,6 +83,8 @@ const TRANSONIC_HI: f64 = 1.5;
 /// 12° at M = 1.5, 23° at M = 2).
 pub const FIN_ALPHA_LINEAR: f64 = 15.0 * PI / 180.0;
 
+/// Compressibility factor `sqrt(|1 - M^2|)` of the fin formulas. The `1e-3` floor keeps the formulas
+/// finite at `M = 1`; the user documentation only states the formulas.
 fn beta(m: f64) -> f64 {
     (1.0 - m * m).abs().sqrt().max(1e-3)
 }
@@ -426,6 +428,7 @@ impl AeroModel {
         let prim = |xi: f64| (cr - k * r) * xi.powi(3) / 3.0 + k * xi.powi(4) / 4.0;
         let i2 = prim(r + s) - prim(r);
         // Single-fin normal-force slope (reference area A), blended like `fin_cn`.
+        // `CN_alpha` values in this file are finite differences over a small angle (1e-4 rad).
         let a = 1e-4;
         let cna1 = self.fin_cn(m, a) / (a * self.fin_scale(f));
         let cl_delta = n * (y_mac + r) * cna1 / d;

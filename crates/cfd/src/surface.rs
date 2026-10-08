@@ -75,7 +75,7 @@ pub fn check_watertight(tris: &[Triangle], tol: f64) -> Result<Watertight> {
     let over = cnt.values().filter(|&&c| c > 2).count();
     if open > 0 || over > 0 {
         bail!(
-            "the wall surface is not watertight: {open} edges belong to only one triangle (holes) and {over} edges to more than two \
+            "[IY-F080] the wall surface is not watertight: {open} edges belong to only one triangle (holes) and {over} edges to more than two \
              (non-manifold); CFD needs a closed surface"
         );
     }
@@ -251,7 +251,7 @@ pub fn repair(tris: &[Triangle], tol: f64) -> Result<Repaired> {
     }
     report.vertices = verts.len();
     if idx.is_empty() {
-        bail!("the STL has no usable triangles");
+        bail!("[IY-F081] the STL has no usable triangles");
     }
     // Connected components over shared vertices.
     let mut parent: Vec<usize> = (0..verts.len()).collect();
@@ -285,7 +285,7 @@ pub fn repair(tris: &[Triangle], tol: f64) -> Result<Repaired> {
             }
         }
         if let Some(((a, b), v)) = edges.iter().find(|(_, v)| v.len() > 2) {
-            bail!("STL component {ci} is not a manifold surface: the edge ({:?}, {:?}) belongs to {} facets", verts[*a], verts[*b], v.len());
+            bail!("[IY-F082] STL component {ci} is not a manifold surface: the edge ({:?}, {:?}) belongs to {} facets", verts[*a], verts[*b], v.len());
         }
         let mut flip: Vec<Option<bool>> = vec![None; members.len()];
         let mut reoriented = 0;
@@ -351,7 +351,7 @@ pub fn repair(tris: &[Triangle], tol: f64) -> Result<Repaired> {
             vol = -vol;
         }
         if vol < 1e-12 {
-            bail!("STL component {ci} ({} triangles) encloses no volume ({vol:.3e} m^3)", comp.len());
+            bail!("[IY-F084] STL component {ci} ({} triangles) encloses no volume ({vol:.3e} m^3)", comp.len());
         }
         report.components.push(ComponentInfo { triangles: comp.len(), volume: vol, flipped, reoriented_facets: reoriented, bbox_min: lo, bbox_max: hi });
         components.push(comp);
@@ -798,7 +798,7 @@ pub fn check_clipped(tris: &[Triangle], clip_y: bool, clip_z: bool, length: f64)
     let stray = cnt.iter().filter(|(k, &c)| c == 1 && !((clip_y && on_plane(k, 1)) || (clip_z && on_plane(k, 2)))).count();
     let over = cnt.values().filter(|&&c| c > 2).count();
     if stray > 0 || over > 0 {
-        bail!("clipping at the symmetry plane left {stray} open edges off the plane and {over} non-manifold edges");
+        bail!("[IY-F083] clipping at the symmetry plane left {stray} open edges off the plane and {over} non-manifold edges");
     }
     Ok(Watertight { triangles: tris.len(), vertices: nv, edges: cnt.len() })
 }
@@ -812,7 +812,7 @@ pub fn half_surface(s: &WallSurface, length: f64) -> Result<WallSurface> {
     let stray = cnt.iter().filter(|(k, &c)| c == 1 && !key_on_plane(k)).count();
     let over = cnt.values().filter(|&&c| c > 2).count();
     if stray > 0 || over > 0 {
-        bail!("half model: clipping at y = 0 left {stray} open edges off the symmetry plane and {over} non-manifold edges; use symmetry = false");
+        bail!("[IY-F086] half model: clipping at y = 0 left {stray} open edges off the symmetry plane and {over} non-manifold edges; use symmetry = false");
     }
     Ok(h)
 }
@@ -822,8 +822,8 @@ pub fn half_surface(s: &WallSurface, length: f64) -> Result<WallSurface> {
 pub fn build_surface(geom: &Geometry, opt: &CfdOptions, raw: Option<&[Triangle]>) -> Result<WallSurface> {
     match opt.surface {
         SurfaceKind::PanelMesh => panel_mesh_surface(geom, opt),
-        SurfaceKind::Stl => stl_surface(raw.context("surface = \"stl\" needs the STL triangles")?, geom),
-        SurfaceKind::Step => bail!("surface = \"step\": the wall is the CAD B-rep, which only the mesher tessellates (see step_mesh)"),
+        SurfaceKind::Stl => stl_surface(raw.context("[IY-F005] surface = \"stl\" needs the STL triangles")?, geom),
+        SurfaceKind::Step => bail!("[IY-F087] surface = \"step\": the wall is the CAD B-rep, which only the mesher tessellates (see step_mesh)"),
     }
 }
 
@@ -918,7 +918,7 @@ mod tests {
         let mut raw = SampleRocket::default().mesh();
         raw.truncate(raw.len() / 2);
         let e = stl_surface(&raw, &g).unwrap_err().to_string();
-        assert!(e.contains("not watertight") && e.contains("holes"), "{e}");
+        assert!(e.contains("not watertight") && e.contains("holes") && e.matches("IY-F080").count() == 1, "{e}");
     }
 
     fn area(t: &[Triangle]) -> f64 {

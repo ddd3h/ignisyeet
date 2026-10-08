@@ -52,8 +52,10 @@ impl ToolReport {
         if let (true, Some(v)) = (self.su2.ok(), self.su2.version.as_deref()) {
             match su2_version(v) {
                 Some((8, 3, _)) => {}
-                Some((a, b, c)) => w.push(format!("SU2 {a}.{b}.{c} found; the documentation and validation are pinned to SU2 8.3.0, results may differ")),
-                None => w.push(format!("cannot read the SU2 version from \"{v}\"; the documentation and validation are pinned to SU2 8.3.0")),
+                Some((a, b, c)) => {
+                    w.push(format!("[IY-F501] SU2 {a}.{b}.{c} found; the documentation and validation are pinned to SU2 8.3.0, results may differ"))
+                }
+                None => w.push(format!("[IY-F502] cannot read the SU2 version from \"{v}\"; the documentation and validation are pinned to SU2 8.3.0")),
             }
         }
         if let Some(p) = self.su2.path.as_deref().filter(|_| self.su2.ok()) {
@@ -173,7 +175,7 @@ fn cpu_mismatch(build_info: &str, current: Option<&str>, su2: &Path) -> Option<S
     let cur = current?.trim();
     (!cur.is_empty() && built != cur).then(|| {
         format!(
-            "{} was compiled for the CPU \"{built}\" but this machine has \"{cur}\"; it may stop with an illegal instruction. \
+            "[IY-F503] {} was compiled for the CPU \"{built}\" but this machine has \"{cur}\"; it may stop with an illegal instruction. \
              Run `install.sh --cfd --force` here to rebuild it, or `install.sh --cfd --su2-binary` for the portable conda-forge SU2",
             su2.display()
         )
@@ -349,8 +351,9 @@ mod tests {
         assert!(mk("SU2 v8.3.0 \"Harrier\"").warnings().is_empty());
         assert!(mk("SU2 v8.3.2 \"Harrier\"").warnings().is_empty());
         let w = mk("SU2 v8.1.0 \"Harrier\"").warnings();
-        assert!(w.len() == 1 && w[0].contains("8.3.0"), "{w:?}");
-        assert_eq!(mk("garbled").warnings().len(), 1);
+        assert!(w.len() == 1 && w[0].starts_with("[IY-F501] ") && w[0].contains("8.3.0"), "{w:?}");
+        let g = mk("garbled").warnings();
+        assert!(g.len() == 1 && g[0].starts_with("[IY-F502] "), "{g:?}");
     }
 
     #[test]
@@ -416,7 +419,7 @@ mod tests {
         let info = "su2: v8.3.0\ncpu: AMD EPYC 7742 64-Core Processor\nbuilt: today\n";
         assert!(cpu_mismatch(info, Some("AMD EPYC 7742 64-Core Processor"), p).is_none());
         let w = cpu_mismatch(info, Some("Intel(R) Xeon(R) Gold 6130"), p).unwrap();
-        assert!(w.contains("EPYC 7742") && w.contains("Xeon") && w.contains("install.sh --cfd --force"));
+        assert!(w.starts_with("[IY-F503] ") && w.contains("EPYC 7742") && w.contains("Xeon") && w.contains("install.sh --cfd --force"));
         // Unknown on either side: no warning.
         assert!(cpu_mismatch(info, None, p).is_none());
         assert!(cpu_mismatch("su2: v8.3.0\n", Some("Intel"), p).is_none());

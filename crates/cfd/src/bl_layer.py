@@ -21,8 +21,8 @@ import numpy as np
 import gmsh
 
 
-def _die(msg):
-    raise SystemExit("mesh error: " + msg)
+def _die(code, msg):
+    raise SystemExit("[%s] mesh error: %s" % (code, msg))
 
 
 def wall_normals(tri, xyz, passes, corner=0.0, corner_passes=0, half=True, plane_tol=0.0):
@@ -46,7 +46,7 @@ def wall_normals(tri, xyz, passes, corner=0.0, corner_passes=0, half=True, plane
     starts = np.flatnonzero(np.r_[True, srt[1:] != srt[:-1]])
     counts = np.diff(np.r_[starts, len(srt)])
     if (counts > 2).any():
-        raise SystemExit("mesh error: the wall surface mesh is not manifold (%d edges with more than two triangles)" % int((counts > 2).sum()))
+        raise SystemExit("[IY-F030] mesh error: the wall surface mesh is not manifold (%d edges with more than two triangles)" % int((counts > 2).sum()))
     pairs = starts[counts == 2]
     fwd = a < b
     same = fwd[order[pairs]] == fwd[order[pairs + 1]]
@@ -73,7 +73,7 @@ def wall_normals(tri, xyz, passes, corner=0.0, corner_passes=0, half=True, plane
                     comp[v] = ncomp
                     q.append(v)
                 elif flip[v] != want:
-                    raise SystemExit("mesh error: the wall surface mesh is not orientable")
+                    raise SystemExit("[IY-F031] mesh error: the wall surface mesh is not orientable")
         ncomp += 1
     tri[flip == 1] = tri[flip == 1][:, [0, 2, 1]]
     p0, p1, p2 = xyz[tri[:, 0]], xyz[tri[:, 1]], xyz[tri[:, 2]]
@@ -348,7 +348,7 @@ def build(p, wall, cap, half, t0, t1, invalid_hint=" (try a different wall_size 
         for t in ents:
             for e, n in zip(*gmsh.model.mesh.getElements(2, t)[::2]):
                 if e != 2:
-                    _die("the wall surface mesh has non-triangular elements")
+                    _die("IY-F032", "the wall surface mesh has non-triangular elements")
                 tris.append(idx[np.asarray(n, np.int64)].reshape(-1, 3))
                 kinds.append(np.full(len(tris[-1]), kind))
     tri, kinds = np.vstack(tris), np.concatenate(kinds)
@@ -442,9 +442,9 @@ def build(p, wall, cap, half, t0, t1, invalid_hint=" (try a different wall_size 
     single = np.isin(k_, uk[cnt == 1])
     ba, bb = a_[single], b_[single]
     if not half and len(ba):
-        _die("the wall has %d open edges (the shape is not closed)" % len(ba))
+        _die("IY-F033", "the wall has %d open edges (the shape is not closed)" % len(ba))
     if half and (not (np.abs(x0w[ba, 1]) < 1e-12).all() or not (np.abs(x0w[bb, 1]) < 1e-12).all()):
-        _die("the wall has an open edge away from the symmetry plane")
+        _die("IY-F034", "the wall has an open edge away from the symmetry plane")
     quads = np.concatenate([np.stack([ba + k * m, bb + k * m, bb + (k + 1) * m, ba + (k + 1) * m], axis=1) for k in range(n_lay)]) if len(ba) else np.zeros((0, 4), np.int64)
     nxt = dict(zip(ba.tolist(), bb.tolist()))
     loops, seen = [], set()
@@ -543,7 +543,7 @@ def build(p, wall, cap, half, t0, t1, invalid_hint=" (try a different wall_size 
         out = []
         for e_, n_ in zip(*gmsh.model.mesh.getElements(2, s_)[::2]):
             if e_ != 2:
-                _die("unexpected element type %d on the outer surfaces" % e_)
+                _die("IY-F035", "unexpected element type %d on the outer surfaces" % e_)
             out.append(np.array([gid[t_] for t_ in n_.tolist()], np.int64).reshape(-1, 3))
         return np.vstack(out)
 
@@ -624,7 +624,7 @@ def build(p, wall, cap, half, t0, t1, invalid_hint=" (try a different wall_size 
         gmsh.model.mesh.generate(3)
     except Exception as e:  # noqa: BLE001
         if int(p["algorithm3d"]) == 1:
-            _die("the tetrahedral mesh outside the boundary layer failed (%s)%s" % (e, tet_hint))
+            _die("IY-F036", "the tetrahedral mesh outside the boundary layer failed (%s)%s" % (e, tet_hint))
         rerun(dict(p, algorithm3d=1), "HXT failed (%s); retrying with Delaunay" % e)
     t2 = time.time()
     ntag, ncoord, _ = gmsh.model.mesh.getNodes()
@@ -641,11 +641,11 @@ def build(p, wall, cap, half, t0, t1, invalid_hint=" (try a different wall_size 
     tets = []
     for et, en in zip(*gmsh.model.mesh.getElements(3)[::2]):
         if et != 4:
-            _die("unexpected volume element type %d outside the boundary layer" % et)
+            _die("IY-F035", "unexpected volume element type %d outside the boundary layer" % et)
         tets.append(gmap[np.asarray(en, np.int64)].reshape(-1, 4))
     tets = np.vstack(tets)
     if (tets < 0).any():
-        _die("a tetrahedron uses an unknown node")
+        _die("IY-F037", "a tetrahedron uses an unknown node")
     q = gmsh.model.mesh.getElementQualities(gmsh.model.mesh.getElementsByType(4)[0].tolist(), "minSICN")
     q_min, q_mean, q_bad = float(np.min(q)), float(np.mean(q)), int((np.asarray(q) < 0.05).sum())
     del q, ntag, ncoord, npos, gmap, known
@@ -691,7 +691,7 @@ def build(p, wall, cap, half, t0, t1, invalid_hint=" (try a different wall_size 
             r = bl["retry"]
             rerun(dict(p, bl=r, bl_attempt=p.get("bl_attempt", 1) + 1),
                   "boundary layer invalid (%s); retrying with %d smoothing passes and junction factor %.2f" % (what, r["smoothing"], r["junction"]))
-        _die("the prismatic boundary layer is invalid: %s%s" % (what, invalid_hint))
+        _die("IY-F038", "the prismatic boundary layer is invalid: %s%s" % (what, invalid_hint))
 
     mult = 1
     if p["y_mirror"]:

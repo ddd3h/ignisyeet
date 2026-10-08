@@ -468,7 +468,8 @@ pub(crate) fn run_python(py: &Path, prefix: Option<&Path>, dir: &Path, script: &
         } else {
             format!(" ({})", failure_kind(&out.status).replacen("gmsh meshing was ", "", 1))
         };
-        bail!("{what} failed{killed} (log: {}):\n{}", dir.join(log).display(), tail.join("\n"));
+        let tail = tail.join("\n");
+        bail!("{}{what} failed{killed} (log: {}):\n{tail}", failure_code(&out.status, &tail), dir.join(log).display());
     }
     Ok(text)
 }
@@ -477,6 +478,18 @@ pub(crate) fn run_python(py: &Path, prefix: Option<&Path>, dir: &Path, script: &
 struct Stamp {
     hash: String,
     stats: MeshStats,
+}
+
+/// Code prefix of the headline of a failed mesher process: `IY-F011` when it was killed by a signal, none when the
+/// log tail already carries the code of the script's own error (`IY-F02x`..`IY-F06x`), else `IY-F010`.
+fn failure_code(status: &std::process::ExitStatus, tail: &str) -> &'static str {
+    if failure_kind(status).contains("was killed") {
+        "[IY-F011] "
+    } else if tail.contains("[IY-F") {
+        ""
+    } else {
+        "[IY-F010] "
+    }
 }
 
 /// What went wrong with the mesher process: killed by a signal (`SIGKILL`, 9, is the out-of-memory killer) or failed.
@@ -503,7 +516,7 @@ pub fn ensure_mesh(opt: &CfdOptions, geom: &Geometry, atm: &Atmosphere, workdir:
     let params = MeshParams::cad(opt, geom, atm, &dir, threads);
     if params.bl.is_some() && params.domain == "full_box" {
         bail!(
-            "aero.cfd: the RANS boundary-layer mesh needs a fin layout symmetric about the y = 0 plane (fin_roll_deg = {} with {} fins is not): \
+            "[IY-F012] aero.cfd: the RANS boundary-layer mesh needs a fin layout symmetric about the y = 0 plane (fin_roll_deg = {} with {} fins is not): \
              use a symmetric fin_roll_deg (for example 0 or 45 with 4 fins) or model = \"euler\"",
             opt.fin_roll_deg,
             cad_description(geom).1.map_or(0, |f| f.count)
@@ -540,7 +553,8 @@ pub fn ensure_mesh(opt: &CfdOptions, geom: &Geometry, atm: &Atmosphere, workdir:
     std::fs::write(dir.join("mesh.log"), &log)?;
     if !out.status.success() || !log.contains("MESH_OK") {
         let tail: Vec<&str> = log.lines().rev().take(15).collect::<Vec<_>>().into_iter().rev().collect();
-        bail!("{} (log: {}):\n{}", failure_kind(&out.status), dir.join("mesh.log").display(), tail.join("\n"));
+        let tail = tail.join("\n");
+        bail!("{}{} (log: {}):\n{tail}", failure_code(&out.status, &tail), failure_kind(&out.status), dir.join("mesh.log").display());
     }
     let stats: MeshStats = serde_json::from_str(&std::fs::read_to_string(&params.stats_json)?).context("bad mesh_stats.json")?;
     std::fs::write(&stamp_path, serde_json::to_string(&Stamp { hash: hash.clone(), stats: stats.clone() })?)?;
@@ -627,10 +641,17 @@ mod tests {
         std::fs::write(dir.join("die.sh"), "echo started\nkill -9 $$\n").unwrap();
         std::fs::write(dir.join("p.json"), "{}").unwrap();
         let e = run_python(Path::new("/bin/sh"), None, &dir, "die.sh", "p.json", "log.txt", "OK", "the test mesher").unwrap_err().to_string();
-        assert!(e.contains("the test mesher failed (killed by signal 9 (most likely out of memory") && e.contains("started"), "{e}");
+        assert!(
+            e.starts_with("[IY-F011] ") && e.contains("the test mesher failed (killed by signal 9 (most likely out of memory") && e.contains("started"),
+            "{e}"
+        );
         std::fs::write(dir.join("fail.sh"), "echo nope\nexit 1\n").unwrap();
         let e = run_python(Path::new("/bin/sh"), None, &dir, "fail.sh", "p.json", "log.txt", "OK", "the test mesher").unwrap_err().to_string();
-        assert!(e.starts_with("the test mesher failed (log:"), "{e}");
+        assert!(e.starts_with("[IY-F010] the test mesher failed (log:"), "{e}");
+        // The script's own coded error is the headline: the wrapper adds no second code.
+        std::fs::write(dir.join("coded.sh"), "echo '[IY-F023] mesh error: the volume mesh is empty'\nexit 1\n").unwrap();
+        let e = run_python(Path::new("/bin/sh"), None, &dir, "coded.sh", "p.json", "log.txt", "OK", "the test mesher").unwrap_err().to_string();
+        assert!(e.starts_with("the test mesher failed (log:") && e.matches("IY-F").count() == 1, "{e}");
     }
 
     #[cfg(unix)]

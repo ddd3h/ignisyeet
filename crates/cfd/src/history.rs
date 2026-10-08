@@ -22,10 +22,10 @@ fn clean(s: &str) -> String {
 impl History {
     pub fn parse(text: &str) -> Result<History> {
         let mut lines = text.lines().filter(|l| !l.trim().is_empty());
-        let Some(head) = lines.next() else { bail!("empty history file") };
+        let Some(head) = lines.next() else { bail!("[IY-F100] empty history file") };
         let columns: Vec<String> = head.split(',').map(clean).collect();
         if columns.len() < 2 {
-            bail!("history header has no columns");
+            bail!("[IY-F101] history header has no columns");
         }
         // A last line without its newline is still being written (or was cut off by a stopped solver): skipped,
         // since a cut number can still give the right column count.
@@ -47,7 +47,7 @@ impl History {
     }
 
     pub fn read(path: &std::path::Path) -> Result<History> {
-        Self::parse(&std::fs::read_to_string(path).map_err(|e| anyhow::anyhow!("cannot read {}: {e}", path.display()))?)
+        Self::parse(&std::fs::read_to_string(path).map_err(|e| anyhow::anyhow!("[IY-F102] cannot read {}: {e}", path.display()))?)
     }
 
     /// Column index by name (case-insensitive, first match among `names`).

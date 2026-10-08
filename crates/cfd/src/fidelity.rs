@@ -82,7 +82,7 @@ impl Fidelity {
     pub fn check(&self) -> Result<()> {
         if self.max_error() > self.fail_above {
             bail!(
-                "STL geometry error {:.3e} m (CFD wall vs union {:.3e} m, wall vs input STL {:.3e} m) exceeds max_geometry_error {:.3e} m; \
+                "[IY-F088] STL geometry error {:.3e} m (CFD wall vs union {:.3e} m, wall vs input STL {:.3e} m) exceeds max_geometry_error {:.3e} m; \
                  use stl_remesh = \"none\", a smaller wall_size, or raise max_geometry_error",
                 self.max_error(),
                 self.cfd_vs_union.max,
@@ -470,7 +470,7 @@ pub fn compute(inp: &FidelityInput) -> Fidelity {
         symmetry: None,
     };
     if f.max_error() > f.warn_above {
-        f.warnings.push(format!("geometry error {:.3e} m exceeds half the wall size ({:.3e} m)", f.max_error(), f.warn_above));
+        f.warnings.push(format!("[IY-F513] geometry error {:.3e} m exceeds half the wall size ({:.3e} m)", f.max_error(), f.warn_above));
     }
     f
 }

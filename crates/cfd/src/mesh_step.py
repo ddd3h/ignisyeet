@@ -56,8 +56,8 @@ base_tol = p["base_tol"]
 mode = p["mode"]
 
 
-def die(msg):
-    raise SystemExit("mesh error: " + msg)
+def die(code, msg):
+    raise SystemExit("[%s] mesh error: %s" % (code, msg))
 
 
 def face_plane(f):
@@ -104,7 +104,7 @@ def load(heal):
         occ.healShapes(dt, p["heal_tol"], True, True, True, True, True)
         occ.synchronize()
         if not gmsh.model.getEntities(3):
-            die("%s contains no closed solid (%d faces could not be sewn into one); export the rocket as a solid body"
+            die("IY-F040", "%s contains no closed solid (%d faces could not be sewn into one); export the rocket as a solid body"
                 % (os.path.basename(p["step_file"]), report["faces_in_file"]))
         notes.append("the file has no solid: its %d faces were sewn into a solid" % report["faces_in_file"])
     elif heal:
@@ -249,7 +249,7 @@ def prepare():
         try:
             tessellate()
         except Exception as e2:  # noqa: BLE001
-            die("gmsh cannot mesh the surface of %s, even after shape healing (%s); repair the CAD model or export it again"
+            die("IY-F041", "gmsh cannot mesh the surface of %s, even after shape healing (%s); repair the CAD model or export it again"
                 % (os.path.basename(p["step_file"]), e2))
     faces = [t for _, t in gmsh.model.getBoundary(vols, oriented=False, combined=True)]
     report["notes"] = notes
@@ -352,7 +352,7 @@ report = {}
 if mode == "prepare":
     prepare()
 if mode != "mesh":
-    die("unknown mode %s" % mode)
+    die("IY-F042", "unknown mode %s" % mode)
 
 # ---- mesh ------------------------------------------------------------------------------------------------------------
 gmsh.model.add("rocket_step")
@@ -373,7 +373,7 @@ dt = occ.importShapes(p["prepared_brep"], highestDimOnly=True)
 occ.synchronize()
 parts = gmsh.model.getEntities(3)
 if not parts:
-    die("the prepared shape has no solid")
+    die("IY-F043", "the prepared shape has no solid")
 
 
 def surface_mesh():
@@ -398,7 +398,7 @@ def surface_mesh():
                 bad.append(t)
         if not bad:
             return
-    die("the surface mesh of the CAD faces %s has duplicated or degenerate triangles with every surface algorithm" % bad)
+    die("IY-F044", "the surface mesh of the CAD faces %s has duplicated or degenerate triangles with every surface algorithm" % bad)
 
 
 
@@ -478,7 +478,7 @@ def boundary_layer_mesh(parts):
     import bl_layer
 
     if quarter:
-        die("the prismatic boundary layer is not built on the quarter domain")
+        die("IY-F045", "the prismatic boundary layer is not built on the quarter domain")
     tol = 1e-4 * L
     if half:
         box = occ.addBox(-L, 0.0, -2.0 * L, 3.0 * L, 2.0 * L, 4.0 * L)
@@ -486,7 +486,7 @@ def boundary_layer_mesh(parts):
         occ.synchronize()
     vols = gmsh.model.getEntities(3)
     if half and len(vols) != 1:
-        die("boolean operations produced %d volumes (expected 1); the geometry may be invalid" % len(vols))
+        die("IY-F021", "boolean operations produced %d volumes (expected 1); the geometry may be invalid" % len(vols))
     body, cut = [], []
     for _, t in gmsh.model.getBoundary(vols, oriented=False, combined=True):
         b = gmsh.model.getBoundingBox(2, t)
@@ -497,7 +497,7 @@ def boundary_layer_mesh(parts):
     wall, cap = classify_body_faces(body)
     print("faces: wall %d, base %d, cut %d" % (len(wall), len(cap), len(cut)))
     if not wall or not cap or (half and not cut):
-        die("could not classify the boundary faces (wall %d, base %d, cut %d): the shape needs aft-facing faces at its base x = %.4f m"
+        die("IY-F022", "could not classify the boundary faces (wall %d, base %d, cut %d): the shape needs aft-facing faces at its base x = %.4f m"
             % (len(wall), len(cap), len(cut), L))
     occ.remove(vols)
     if cut:
@@ -537,7 +537,7 @@ occ.cut(domain, parts)
 occ.synchronize()
 vols = [t for d, t in gmsh.model.getEntities(3)]
 if len(vols) != 1:
-    die("boolean operations produced %d volumes (expected 1); the geometry may be invalid" % len(vols))
+    die("IY-F021", "boolean operations produced %d volumes (expected 1); the geometry may be invalid" % len(vols))
 vol = vols[0]
 tol = 1e-4 * L
 symm, symz, far, body = [], [], [], []
@@ -555,11 +555,11 @@ wall, cap = classify_body_faces(body)
 print("faces: wall %d, base %d, farfield %d, symmetry %d, symz %d" % (len(wall), len(cap), len(far), len(symm), len(symz)))
 if quarter and not wall:
     # The cut with the edge y = z = 0 through the nose tip failed (the caller meshes the half domain instead).
-    die("the quarter domain cannot be cut from the shape (no wall faces left); QUARTER_FAILED")
+    die("IY-F046", "the quarter domain cannot be cut from the shape (no wall faces left); QUARTER_FAILED")
 if not wall or not far or (half and not symm) or (quarter and not symz):
-    die("could not classify the boundary faces")
+    die("IY-F022", "could not classify the boundary faces")
 if not cap:
-    die("no base faces (aft-facing faces at the base x = %.4f m) found; the shape must end in a flat base or use base_treatment = \"fairing\"" % L)
+    die("IY-F047", "no base faces (aft-facing faces at the base x = %.4f m) found; the shape must end in a flat base or use base_treatment = \"fairing\"" % L)
 size_field(wall + cap)
 t1 = time.time()
 gmsh.option.setNumber("Mesh.Algorithm3D", int(p["algorithm3d"]))
@@ -567,7 +567,7 @@ surface_mesh()
 try:
     gmsh.model.mesh.generate(3)
 except Exception as e:  # noqa: BLE001
-    die("3D meshing failed (algorithm %d): %s" % (int(p["algorithm3d"]), e))
+    die("IY-F024", "3D meshing failed (algorithm %d): %s" % (int(p["algorithm3d"]), e))
 t2 = time.time()
 
 tags, coord, _ = gmsh.model.mesh.getNodes()
@@ -577,7 +577,7 @@ look[tags] = np.arange(len(tags))
 etypes, etags, enodes = gmsh.model.mesh.getElements(3, vol)
 tets = np.concatenate([np.asarray(n, np.int64).reshape(-1, 4) for t, n in zip(etypes, enodes) if t == 4]) if len(etypes) else np.zeros((0, 4), np.int64)
 if not len(tets):
-    die("the volume mesh is empty (3D meshing failed)")
+    die("IY-F023", "the volume mesh is empty (3D meshing failed)")
 tets = look[tets]
 
 
@@ -608,7 +608,7 @@ missing, extra = sw.unmarked_faces(cells, markers)
 print("tetrahedra %d (%d reoriented), %d of non-positive volume, %d boundary faces without marker, %d marker faces inside"
       % (len(cells[sw.TET]), flipped, nonpos, missing, extra + orphans))
 if nonpos or missing or extra or orphans:
-    die("the volume mesh is invalid: %d cells of non-positive volume, %d boundary faces without marker, %d marker faces inside" % (nonpos, missing, extra + orphans))
+    die("IY-F039", "the volume mesh is invalid: %d cells of non-positive volume, %d boundary faces without marker, %d marker faces inside" % (nonpos, missing, extra + orphans))
 mult = 1
 if quarter:
     cells, markers, xyz = sw.mirror(cells, markers, xyz, 2, "symz", 1e-9 * L)

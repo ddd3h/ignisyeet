@@ -226,14 +226,14 @@ def boundary_layer_mesh(parts):
     import bl_layer
 
     if not half or zmirror:
-        raise SystemExit("mesh error: the prismatic boundary layer needs the half model (a fin layout symmetric about y = 0) without z_mirror")
+        raise SystemExit("[IY-F020] mesh error: the prismatic boundary layer needs the half model (a fin layout symmetric about y = 0) without z_mirror")
     tol = 1e-4 * L
     box = occ.addBox(-L, 0.0, -2.0 * L, 3.0 * L, 2.0 * L, 4.0 * L)
     occ.intersect(parts, [(3, box)])
     occ.synchronize()
     vols = gmsh.model.getEntities(3)
     if len(vols) != 1:
-        raise SystemExit("mesh error: boolean operations produced %d volumes (expected 1); the geometry may be invalid" % len(vols))
+        raise SystemExit("[IY-F021] mesh error: boolean operations produced %d volumes (expected 1); the geometry may be invalid" % len(vols))
     wall, cap, cut = [], [], []
     for _, t in gmsh.model.getBoundary(vols, oriented=False):
         b = gmsh.model.getBoundingBox(2, t)
@@ -245,7 +245,7 @@ def boundary_layer_mesh(parts):
             wall.append(t)
     print("faces: wall %d, base %d, cut %d" % (len(wall), len(cap), len(cut)))
     if not wall or not cap or not cut:
-        raise SystemExit("mesh error: could not classify the boundary faces")
+        raise SystemExit("[IY-F022] mesh error: could not classify the boundary faces")
     occ.remove(vols)
     occ.remove([(2, t) for t in cut])
     occ.synchronize()
@@ -269,7 +269,7 @@ fluid, _ = occ.cut(domain, parts)
 occ.synchronize()
 vols = [t for d, t in gmsh.model.getEntities(3)]
 if len(vols) != 1:
-    raise SystemExit("mesh error: boolean operations produced %d volumes (expected 1); the geometry may be invalid" % len(vols))
+    raise SystemExit("[IY-F021] mesh error: boolean operations produced %d volumes (expected 1); the geometry may be invalid" % len(vols))
 vol = vols[0]
 
 # ---- classify the boundary faces -------------------------------------------------------------------
@@ -289,7 +289,7 @@ for d, t in gmsh.model.getEntities(2):
         wallsurf.append(t)
 print("faces: wall %d, base %d, farfield %d, symmetry %d" % (len(wallsurf), len(cap), len(far), len(symm)))
 if not wallsurf or not far or not cap or (half and not symm):
-    raise SystemExit("mesh error: could not classify the boundary faces")
+    raise SystemExit("[IY-F022] mesh error: could not classify the boundary faces")
 
 # ---- size field (see size_field) -------------------------------------------------------------------
 size_field(wallsurf + cap, wallsurf)
@@ -414,7 +414,7 @@ if mirrored:
     stats["cells"], stats["nodes"], stats["wall_triangles"] = mirrored[0], mirrored[1], wall_mult * nwall
     stats["by_type"] = {"Tetrahedron 4": mirrored[0]}
 if stats["cells"] == 0:
-    raise SystemExit("mesh error: the volume mesh is empty (3D meshing failed)")
+    raise SystemExit("[IY-F023] mesh error: the volume mesh is empty (3D meshing failed)")
 json.dump(stats, open(p["stats_json"], "w"), indent=1)
 print("MESH_OK nodes=%d cells=%d minSICN=%.4f surface %.1fs volume %.1fs" % (stats["nodes"], stats["cells"], q_min, t_surf - t1, t2 - t_surf))
 gmsh.finalize()

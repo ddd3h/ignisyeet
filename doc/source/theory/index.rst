@@ -8,7 +8,7 @@
 この部の読み方
 --------------
 
-設定ファイルの値を決めるときに読む部である。各章は同じ六つの部分でできている。
+設定ファイルの値を決めるときに読む部である。:ref:`page-theory-limitations` を除く各章は、同じ六つの部分でできている。
 
 1. **この章で決めること**：対応する設定キーと値を最初に挙げる。
 2. **選び方**：判断表または流れ図。選択肢ごとに、表すもの、仮定、有効範囲、精度の根拠、計算コスト、選ぶとき・避けるときを比べる。
@@ -18,7 +18,7 @@
 6. **関連する設定キー**：キー、既定値、効果の向き。値の完全な定義は :ref:`page-reference-config` にある。
 
 数値を挙げた箇所には、条件（Mach 数、迎角、機体、メッシュ）を付けた。
-「検証」はモデルと基準解または別のモデルとの比較、「妥当性確認」は実測との比較を指す。
+「検証」はモデルと解析解、手計算、収束との比較、「相互比較」は手法どうしの比較、「妥当性確認」は実測との比較を指す。
 
 選択マップ
 ----------
@@ -59,21 +59,51 @@
    * - ``earth.gravity``
      - :ref:`page-theory-atmosphere-gravity`
      - 表 :numref:`tbl-choose-gravity`、結果への効き方 :numref:`tbl-gravity-effect`
-   * - ``wind.model``、``ref_height``、``exponent``、``roughness_length``、``profile_mean_*``
+   * - ``wind.model``、``ref_height``、``exponent``、``roughness_length``
      - :ref:`page-theory-wind`
      - 流れ図 :numref:`fig-choose-wind-model`、表 :numref:`tbl-choose-wind`、風速の比 :numref:`tbl-wind-ratio`、結果への効き方 :numref:`tbl-wind-effect`
+   * - ``wind.profile_mean_speed``、``profile_mean_direction_deg``、``ground_blend_height``、``dispersion.wind_speeds``、``wind_directions``
+     - :ref:`page-theory-wind`
+     - 平均風速の拡大と着地点 :numref:`tbl-wind-profile-scale`、風速格子の値の意味（``profile`` と他のモデル）
    * - ``rocket.dry_mass``、``cg_dry``、``ixx_dry``、``iyy_dry``、``motor.*``
      - :ref:`page-theory-propulsion`
      - 質量特性の入力を変えたときの結果の変化 :numref:`tbl-choose-propulsion`
-   * - ``aero.method``、``aero.table_kind``、``aero.panel.*``、``aero.cfd.*``
-     - :ref:`page-theory-aero-choose`、:ref:`page-theory-aero-tables`、:ref:`page-theory-panel`、:ref:`page-theory-cfd-choose`
-     - 各章の「選び方」
-   * - ``sim.integrator``、``sim.attitude``、``sim.quasi_steady``、``sim.descent``、``recovery.*``
-     - :ref:`page-theory-integrators`、:ref:`page-theory-dynamics`、:ref:`page-theory-descent`
-     - 各章の「選び方」
-   * - ``dispersion.mode``、``dispersion.monte_carlo.*``
+   * - ``rocket.cg_lateral_dry``、``ixy_dry`` など
+     - :ref:`page-theory-propulsion`、:ref:`page-theory-dynamics`
+     - 質量特性の表 :numref:`tbl-choose-propulsion`、重心の横ずれと静的余裕 :numref:`tbl-choose-margin`
+   * - ``rocket.fin_le``、``fin_te``、``fin_cant_deg``、``roughness``、``extra_cd``
+     - :ref:`page-theory-barrowman`
+     - 部品積み上げ法の各項（フィン、摩擦、抗力）の式と適用範囲（:ref:`page-theory-barrowman`）。方法の比較は :numref:`tbl-aero-methods`
+   * - ``aero.method``
+     - :ref:`page-theory-aero-choose`
+     - 流れ図 :numref:`fig-choose-aero-method`、状況別 :numref:`tbl-choose-aero-situation`、手法の比較 :numref:`tbl-aero-methods`、範囲 :numref:`tbl-choose-aero-range`、根拠 :numref:`tbl-choose-aero-evidence`
+   * - ``aero.table_kind``、``mach_step``、``alpha_step_deg``、``extrapolation``、``general_mach_step``
+     - :ref:`page-theory-aero-tables`
+     - 流れ図 :numref:`fig-choose-table-kind`、表 :numref:`tbl-choose-table-kind`、格子の刻み :numref:`tbl-choose-table-grid`
+   * - ``aero.panel.*``
+     - :ref:`page-theory-panel`
+     - メッシュ :numref:`tbl-choose-panel-mesh`、遷音速の帯 :numref:`tbl-choose-panel-transonic`。``fin_section`` は選べる値が 1 つ
+   * - ``aero.cfd.*``
+     - :ref:`page-theory-cfd-choose`
+     - 流れ図 :numref:`fig-choose-cfd-model`、:numref:`fig-choose-cfd-surface`、表 :numref:`tbl-choose-cfd-model`、:numref:`tbl-choose-cfd-surface`、:numref:`tbl-choose-cfd-other`、資源 :numref:`tbl-cfd-parallel`
+   * - ``sim.integrator``、``sim.attitude``、``sim.dt``、``rtol``、``atol``
+     - :ref:`page-theory-integrators`
+     - 流れ図 :numref:`fig-integrator-choice`、表 :numref:`tbl-choose-integrator`、:numref:`tbl-choose-attitude`
+   * - ``sim.output_interval``、``sim.max_time``
+     - :ref:`page-theory-integrators`
+     - 刻み幅と許容誤差の節（:numref:`tbl-integrator-accuracy`）。出力間隔は結果をほとんど変えない
+   * - ``sim.quasi_steady``
+     - :ref:`page-theory-dynamics`
+     - 図 :numref:`fig-quasi-steady-schematic`、表 :numref:`tbl-choose-quasi-steady`
+   * - ``sim.descent``、``recovery.*``
+     - :ref:`page-theory-descent`
+     - 図 :numref:`fig-descent-modes`、表 :numref:`tbl-choose-descent`
+   * - ``dispersion.mode``
      - :ref:`page-theory-dispersion`
-     - 各章の「選び方」
+     - 流れ図 :numref:`fig-dispersion-choice`、表 :numref:`tbl-choose-dispersion`
+   * - ``dispersion.monte_carlo.*``（``samples``、``seed``、``truncate_sigma``、標準偏差）
+     - :ref:`page-theory-dispersion`
+     - 表 :numref:`tbl-choose-samples`、:numref:`tbl-choose-truncate`、:numref:`tbl-choose-sigma`、:numref:`tbl-choose-statistic`
 
 結果を使う前に、仮定と適用範囲の一覧 :ref:`page-theory-limitations` を確かめる。
 

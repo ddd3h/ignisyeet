@@ -54,11 +54,13 @@
   \node[note] at ({4.65*\sx},\yc) {根拠なし};
   % legend
   \def\ly{-7.4}
-  \filldraw[draw=cblue, fill=cblue!65] (0,{\ly-0.2}) rectangle (0.8,{\ly+0.2});
-  \node[tick, anchor=west] at (0.9,\ly) {実測との比較あり};
-  \filldraw[draw=cblue, fill=cblue!25] (4.6,{\ly-0.2}) rectangle (5.4,{\ly+0.2});
-  \node[tick, anchor=west] at (5.5,\ly) {手法どうしの相互比較のみ};
-  \filldraw[draw=cblue, pattern=north east lines, pattern color=cink2] (10.4,{\ly-0.2}) rectangle (11.2,{\ly+0.2});
-  \draw[cblue, dashed] (14.8,{\ly-0.2}) rectangle (15.6,{\ly+0.2});
-  \node[tick, anchor=west] at (15.7,\ly) {比較の根拠なし};
+  \def\lw{0.6}
+  \filldraw[draw=cblue, fill=cblue!65] (-2,{\ly-0.2}) rectangle (-2+\lw,{\ly+0.2});
+  \node[tick, anchor=west] at (-1.3,\ly) {実測との比較あり};
+  \filldraw[draw=cblue, fill=cblue!25] (1.9,{\ly-0.2}) rectangle (1.9+\lw,{\ly+0.2});
+  \node[tick, anchor=west] at (2.6,\ly) {手法どうしの相互比較のみ};
+  \filldraw[draw=cblue, pattern=north east lines, pattern color=cink2] (7.1,{\ly-0.2}) rectangle (7.1+\lw,{\ly+0.2});
+  \node[tick, anchor=west] at (7.8,\ly) {補間（物理を解かない）};
+  \draw[cblue, dashed] (11.6,{\ly-0.2}) rectangle (11.6+\lw,{\ly+0.2});
+  \node[tick, anchor=west] at (12.3,\ly) {比較の根拠なし};
 \end{tikzpicture}

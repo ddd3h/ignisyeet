@@ -1156,8 +1156,12 @@ def aero_cost_accuracy(f, data):
         ax.text(times[key], 21.5, lab, ha="center", color=INK2, fontsize=9)
     from matplotlib.lines import Line2D
     h = [Line2D([], [], marker="o", linestyle="", color=c, markeredgecolor="white", markersize=8, label=f"$M={m:g}$") for c, m in zip(SERIES, machs)]
-    ax.legend(handles=h, loc="lower center", ncol=4, bbox_to_anchor=(0.5, 0.0), columnspacing=1.2, handletextpad=0.3)
-    fig.tight_layout()
+    leg_m = ax.legend(handles=h, title="色：Mach 数", loc="upper center", ncol=4, bbox_to_anchor=(0.5, -0.17), columnspacing=1.2, handletextpad=0.3)
+    ax.add_artist(leg_m)
+    hs = [Line2D([], [], marker=mk, linestyle="", color=INK2, markeredgecolor="white", markersize=8, label=lab)
+          for mk, lab in (("o", "部品積み上げ法"), ("s", "パネル法"), ("D", "CFD（Euler）"))]
+    ax.legend(handles=hs, title="記号：手法", loc="upper center", ncol=3, bbox_to_anchor=(0.5, -0.30), columnspacing=1.2, handletextpad=0.3)
+    fig.subplots_adjust(left=0.13, right=0.97, top=0.97, bottom=0.12)
     f.save(fig, "aero_cost_accuracy")
 
 

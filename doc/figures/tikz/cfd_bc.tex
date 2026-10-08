@@ -1,0 +1,43 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+% CFD boundaries and reference quantities in the y = 0 plane: the CFD axes (x rearward, z up), the free stream at angle of attack, the boundary names and the moment reference point.
+\begin{tikzpicture}[font=\small]
+  \def\L{8.0}\def\rr{0.6}
+  % far-field arc (part of the outer boundary)
+  \draw[cblue, very thick, dash pattern=on 6pt off 3pt] (-2.4,3.2) -- (10.8,3.2);
+  \draw[cblue, very thick, dash pattern=on 6pt off 3pt] (-2.4,-3.2) -- (10.8,-3.2);
+  \node[cblue, anchor=south east] at (10.8,3.25) {farfield（遠方境界）};
+  % body: nose + cylinder + base
+  \fill[cfillg, draw=cink, thick] (0,0) .. controls (1.2,0.15) and (2.2,\rr) .. (3.0,\rr) -- (\L,\rr) -- (\L,-\rr) -- (3.0,-\rr) .. controls (2.2,-\rr) and (1.2,-0.15) .. cycle;
+  % fins
+  \fill[cfillg, draw=cink, thick] (6.0,\rr) -- (7.4,\rr+1.2) -- (\L,\rr+1.2) -- (\L,\rr) -- cycle;
+  \fill[cfillg, draw=cink, thick] (6.0,-\rr) -- (7.4,-\rr-1.2) -- (\L,-\rr-1.2) -- (\L,-\rr) -- cycle;
+  % wall highlighted
+  \draw[corange, very thick] (0,0) .. controls (1.2,0.15) and (2.2,\rr) .. (3.0,\rr) -- (6.0,\rr) -- (7.4,\rr+1.2) -- (\L,\rr+1.2) -- (\L,\rr);
+  \draw[corange, very thick] (0,0) .. controls (1.2,-0.15) and (2.2,-\rr) .. (3.0,-\rr) -- (6.0,-\rr) -- (7.4,-\rr-1.2) -- (\L,-\rr-1.2) -- (\L,-\rr);
+  \draw[caqua, ultra thick] (\L,\rr) -- (\L,-\rr);
+  \node[corange, anchor=south] at (3.2,\rr+0.35) {wall（機体表面。力を積分する）};
+  \draw[corange, ->] (3.2,\rr+0.35) -- (3.2,\rr+0.03);
+  \node[caqua, anchor=west, align=left] at (\L+0.25,0) {base（底面）\\{\footnotesize 軸力への使用は \texttt{rans\_base}}};
+  % axes triad and moment reference point
+  \draw[cink, ->, thick] (-0.8,1.6) -- (0.6,1.6) node[anchor=west] {$x$（後方）};
+  \draw[cink, ->, thick] (-0.8,1.6) -- (-0.8,2.7) node[anchor=south] {$z$（上）};
+  \fill[cink] (0,0) circle (2.2pt);
+  \draw[cink, ->] (-0.9,0.9) -- (-0.08,0.06);
+  \node[cink, anchor=south east, align=right] at (-0.7,0.8) {モーメント基準点\\（ノーズ先端、原点）};
+  % free stream
+  \begin{scope}[rotate=12]
+    \foreach \yy in {-1.2,0,1.2}{
+      \draw[cink2, ->, thick] (-4.9,\yy) -- (-3.3,\yy);
+    }
+  \end{scope}
+  \node[cink2, anchor=east] at (-3.3,1.9) {自由流（$M$, $\alpha$）};
+  \draw[cink2, dash pattern=on 2pt off 2pt] (-4.54,-2.19) -- ++(2.4,0);
+  \draw[cink2] ($(-4.54,-2.19)+(1.9,0)$) arc (0:12:1.9);
+  \node[cink2, anchor=west] at ($(-4.54,-2.19)+(2.0,0.2)$) {$\alpha$};
+  % diameter and reference area
+  \draw[<->, cink2] (4.6,-\rr) -- (4.6,\rr) node[midway, right] {$d$};
+  \node[cink2, anchor=north, align=center] at (4.6,-\rr-0.4) {基準長さ $d$（直径）\\基準面積 $S=\pi d^2/4$\\{\footnotesize 半領域では $S/2$}};
+  % symmetry plane note
+  \node[cink, anchor=north, align=center] at (4.0,-2.35) {この断面は $y=0$ 面。半領域では\\この面が symmetry（対称の境界）};
+\end{tikzpicture}

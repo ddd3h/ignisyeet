@@ -477,6 +477,17 @@ fn median_rows(h: &History, names: &[&str], from: usize, to: usize) -> Option<f6
     Some(v[v.len() / 2])
 }
 
+/// "`name` mean (inter-quartile range ...)" of the finite `values` (`None` when there is none).
+fn spread_text(name: &str, values: impl Iterator<Item = f64>) -> Option<String> {
+    let mut v: Vec<f64> = values.filter(|x| x.is_finite()).collect();
+    if v.is_empty() {
+        return None;
+    }
+    v.sort_by(f64::total_cmp);
+    let mean = v.iter().sum::<f64>() / v.len() as f64;
+    Some(format!("{name} {mean:.5} (inter-quartile range {:.2e})", v[3 * v.len() / 4] - v[v.len() / 4]))
+}
+
 /// [`RansVerdict::Stalled`] check; the text gives the residual level and the spread of the forces.
 fn rans_stalled(h: &History, reference: ResidualPeak, window: usize, kind: StabilityKind, length_ratio: f64, budget: usize) -> Option<String> {
     let n = h.rows.len();
@@ -495,10 +506,7 @@ fn rans_stalled(h: &History, reference: ResidualPeak, window: usize, kind: Stabi
     }
     let spread = |names: &[&str]| -> Option<String> {
         let c = h.col(names)?;
-        let mut v: Vec<f64> = h.rows[n - 2 * window..].iter().map(|r| r[c]).collect();
-        v.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        let mean = v.iter().sum::<f64>() / v.len() as f64;
-        Some(format!("{} {mean:.5} (inter-quartile range {:.2e})", names[0], v[3 * v.len() / 4] - v[v.len() / 4]))
+        spread_text(names[0], h.rows[n - 2 * window..].iter().map(|r| r[c]))
     };
     let forces: Vec<String> = [&["CFx", "CD"][..], &["CFz", "CL"][..]].iter().filter_map(|c| spread(c)).collect();
     Some(format!(
@@ -1860,6 +1868,13 @@ exit 0
         // Stalled at the level of the reference (no drop): rejected.
         let high = ResidualPeak { rho: -4.6, nu: -7.0 };
         assert!(matches!(rans_verdict(&mk(800, 0.0, 0.0), high, 200, k, 18.0, 4000), RansVerdict::Rejected(_)));
+    }
+
+    #[test]
+    fn force_spread_ignores_non_finite_values() {
+        let v = [0.3, f64::NAN, 0.31, f64::INFINITY, 0.29, 0.3];
+        assert_eq!(spread_text("CFx", v.into_iter()).unwrap(), "CFx 0.30000 (inter-quartile range 1.00e-2)");
+        assert_eq!(spread_text("CFx", [f64::NAN].into_iter()), None);
     }
 
     #[test]

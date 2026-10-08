@@ -61,8 +61,8 @@ extrapolation = "linear"   # "linear" | "clamp"
 # pins 8.3.0). `surface = "stl"` also needs manifold3d, see `ignisyeet cfd-check examples/sample_cfd.toml`.
 # Each (Mach, alpha) case is a steady SU2 run on a half-model mesh (one fin in the pitch plane); the
 # solved points are interpolated onto the regular table grid above. This reduced default matrix
-# (4 Mach x 3 alpha, Euler, 2 mm surface mesh, 1.4 M cells) took about 50 minutes solved one case at a time on 4 ranks
-# of a 20-thread desktop (measured while another job shared the machine; 3.3 to 4.6 GB per case). Cases are cached in
+# (4 Mach x 3 alpha, Euler, 2 mm surface mesh, 1.4 M cells) took about 1.9 hours solved one case at a time on 4 ranks
+# of a 20-thread desktop (measured while other jobs shared the machine; 3.3 to 4.6 GB per case). Cases are cached in
 # out_cfd/cfd/ and re-used when nothing changed (delete the directory to start over).
 [aero.cfd]
 prefix = "~/.local/share/micromamba/envs/ignisyeet-cfd"  # <prefix>/bin/SU2_CFD, mpirun, python (with gmsh)

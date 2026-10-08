@@ -305,7 +305,7 @@ fn supersonic_comparison_with_barrowman() {
             assert!((c.xcp - xb).abs() < 0.06, "M=2 xcp {} vs {xb}", c.xcp);
         }
     }
-    // No unphysical transonic peak. Euler CFD of this rocket: 18.50 at Mach 1.2 against 15.83 at
+    // No unphysical transonic peak. Euler CFD of this rocket: 18.50 at Mach 1.2 against 16.51 at
     // Mach 0.8 (doc/data/cfd/sample_euler_vs_models.csv); the local-inclination methods at the band
     // edge, where the fin leading edges already sit past wedge detachment, give about 1.36 times (the
     // body upwash is faded out there, `upwash_weight`).

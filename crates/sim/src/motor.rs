@@ -32,13 +32,13 @@ impl Motor {
         let mut w = Vec::new();
         let last = self.curve.last().unwrap().1;
         if self.curve.len() == 2 && self.curve[0].1 == 0.0 {
-            w.push("the thrust curve has a single point: the thrust ramps linearly from 0 N at t = 0".to_string());
+            w.push("[IY-S500] the thrust curve has a single point: the thrust ramps linearly from 0 N at t = 0".to_string());
         }
         if last != 0.0 {
-            w.push(format!("thrust curve ends at {last} N instead of 0 N: the motor is cut off abruptly"));
+            w.push(format!("[IY-S501] thrust curve ends at {last} N instead of 0 N: the motor is cut off abruptly"));
         }
         if self.burn_time() < 0.05 {
-            w.push(format!("burn time {:.3} s is shorter than 0.05 s: the motor is an impulse; check the time column", self.burn_time()));
+            w.push(format!("[IY-S502] burn time {:.3} s is shorter than 0.05 s: the motor is an impulse; check the time column", self.burn_time()));
         }
         w
     }
@@ -51,15 +51,15 @@ impl Motor {
         // A UTF-8 byte order mark (Excel "CSV UTF-8", some Windows editors) is not part of the header.
         let text = text.strip_prefix('\u{feff}').unwrap_or(text);
         let mut lines = text.lines().enumerate().map(|(i, l)| (i + 1, l.trim())).filter(|(_, l)| !l.is_empty() && !l.starts_with(';'));
-        let (hn, hl) = lines.next().context("empty .eng file")?;
+        let (hn, hl) = lines.next().context("[IY-S001] empty .eng file")?;
         let header: Vec<&str> = hl.split_whitespace().collect();
         if header.len() < 7 {
-            bail!("line {hn}: malformed .eng header: expected 7 fields");
+            bail!("[IY-S003] line {hn}: malformed .eng header: expected 7 fields");
         }
         let num = |s: &str, what: &str| -> Result<f64> {
-            let v = s.parse::<f64>().with_context(|| format!("line {hn}: bad number '{s}' in .eng header ({what})"))?;
+            let v = s.parse::<f64>().with_context(|| format!("[IY-S002] line {hn}: bad number '{s}' in .eng header ({what})"))?;
             if !v.is_finite() {
-                bail!("line {hn}: {what} must be finite, got '{s}'");
+                bail!("[IY-S004] line {hn}: {what} must be finite, got '{s}'");
             }
             Ok(v)
         };
@@ -68,50 +68,50 @@ impl Motor {
         let propellant = num(header[4], "propellant mass")?;
         let total = num(header[5], "total mass")?;
         if diameter <= 0.0 || length <= 0.0 {
-            bail!("line {hn}: diameter and length must be positive");
+            bail!("[IY-S005] line {hn}: diameter and length must be positive");
         }
         if propellant < 0.0 {
-            bail!("line {hn}: propellant mass must be non-negative, got {propellant}");
+            bail!("[IY-S006] line {hn}: propellant mass must be non-negative, got {propellant}");
         }
         if total < propellant {
-            bail!("line {hn}: total mass {total} kg is smaller than the propellant mass {propellant} kg");
+            bail!("[IY-S007] line {hn}: total mass {total} kg is smaller than the propellant mass {propellant} kg");
         }
         let mut curve = vec![(0.0, 0.0)];
         for (n, l) in lines {
             // A second header (name, then at least 6 more fields) is a second motor in the file.
             let fields: Vec<&str> = l.split_whitespace().collect();
             if fields.len() >= 7 && fields[0].parse::<f64>().is_err() {
-                bail!("line {n}: multiple motors in this file (second header '{l}'): keep one motor per file");
+                bail!("[IY-S008] line {n}: multiple motors in this file (second header '{l}'): keep one motor per file");
             }
-            let v: Vec<f64> = l.split_whitespace().map(str::parse).collect::<Result<_, _>>().with_context(|| format!("line {n}: bad thrust line '{l}'"))?;
+            let v: Vec<f64> = l.split_whitespace().map(str::parse).collect::<Result<_, _>>().with_context(|| format!("[IY-S009] line {n}: bad thrust line '{l}'"))?;
             if v.len() < 2 {
-                bail!("line {n}: bad thrust line '{l}'");
+                bail!("[IY-S009] line {n}: bad thrust line '{l}'");
             }
             let (t, f) = (v[0], v[1]);
             if !t.is_finite() || !f.is_finite() {
-                bail!("line {n}: time and thrust must be finite, got '{l}'");
+                bail!("[IY-S010] line {n}: time and thrust must be finite, got '{l}'");
             }
             if t < 0.0 {
-                bail!("line {n}: time must be non-negative, got {t}");
+                bail!("[IY-S011] line {n}: time must be non-negative, got {t}");
             }
             if f < 0.0 {
-                bail!("line {n}: thrust must be non-negative, got {f}");
+                bail!("[IY-S012] line {n}: thrust must be non-negative, got {f}");
             }
             if t == 0.0 && curve.len() == 1 {
                 curve[0].1 = f;
                 continue;
             }
             if t <= curve.last().unwrap().0 {
-                bail!("line {n}: thrust curve times must strictly increase, got {t} after {}", curve.last().unwrap().0);
+                bail!("[IY-S013] line {n}: thrust curve times must strictly increase, got {t} after {}", curve.last().unwrap().0);
             }
             curve.push((t, f));
         }
         if curve.len() < 2 {
-            bail!("thrust curve has no points");
+            bail!("[IY-S014] thrust curve has no points");
         }
         let mut m = Self::new(header[0].to_string(), diameter, length, propellant, curve);
         if !(m.total_impulse().is_finite() && m.total_impulse() > 0.0) {
-            bail!("thrust curve must have a positive finite total impulse");
+            bail!("[IY-S015] thrust curve must have a positive finite total impulse");
         }
         m.total_mass = total;
         Ok(m)

@@ -19,10 +19,10 @@ pub fn write_with(path: &Path, f: impl FnOnce(&mut std::io::BufWriter<std::fs::F
     use std::io::Write;
     let tmp = temp_name(path);
     let res = (|| -> Result<()> {
-        let mut w = std::io::BufWriter::new(std::fs::File::create(&tmp).with_context(|| format!("cannot write {}", path.display()))?);
+        let mut w = std::io::BufWriter::new(std::fs::File::create(&tmp).with_context(|| format!("[IY-O033] cannot write {}", path.display()))?);
         f(&mut w)?;
         w.flush()?;
-        std::fs::rename(&tmp, path).with_context(|| format!("cannot write {}", path.display()))
+        std::fs::rename(&tmp, path).with_context(|| format!("[IY-O033] cannot write {}", path.display()))
     })();
     if res.is_err() {
         let _ = std::fs::remove_file(&tmp);
@@ -34,7 +34,7 @@ pub fn write_with(path: &Path, f: impl FnOnce(&mut std::io::BufWriter<std::fs::F
 /// renamed to `path`.
 pub fn write_via_path(path: &Path, f: impl FnOnce(&Path) -> Result<()>) -> Result<()> {
     let tmp = temp_name(path);
-    let res = f(&tmp).and_then(|()| std::fs::rename(&tmp, path).with_context(|| format!("cannot write {}", path.display())));
+    let res = f(&tmp).and_then(|()| std::fs::rename(&tmp, path).with_context(|| format!("[IY-O033] cannot write {}", path.display())));
     if res.is_err() {
         let _ = std::fs::remove_file(&tmp);
     }
@@ -68,7 +68,7 @@ fn pid_alive(pid: u32) -> bool {
 /// call for the same directory is a no-op. Fails when a live process holds it; a lock of a dead process is
 /// removed.
 pub fn lock_dir(dir: &Path) -> Result<()> {
-    std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
+    std::fs::create_dir_all(dir).with_context(|| format!("[IY-O030] cannot create {}", dir.display()))?;
     let key = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
     let mut held = HELD.lock().unwrap();
     if held.contains(&key) {
@@ -87,7 +87,7 @@ pub fn lock_dir(dir: &Path) -> Result<()> {
                 let pid = std::fs::read_to_string(&lock).ok().and_then(|t| t.trim().parse::<u32>().ok());
                 match pid {
                     Some(p) if pid_alive(p) => {
-                        bail!("another ignisyeet run is using {} (lock file {}, pid {p}); wait for it or use a different --out (if no other run is active, delete {})", dir.display(), lock.display(), lock.display())
+                        bail!("[IY-O031] another ignisyeet run is using {} (lock file {}, pid {p}); wait for it or use a different --out (if no other run is active, delete {})", dir.display(), lock.display(), lock.display())
                     }
                     Some(_) => {
                         let _ = std::fs::remove_file(&lock);
@@ -96,11 +96,11 @@ pub fn lock_dir(dir: &Path) -> Result<()> {
                     None => std::thread::sleep(std::time::Duration::from_millis(50)),
                 }
             }
-            Err(e) => return Err(e).with_context(|| format!("cannot create the lock file {}", lock.display())),
+            Err(e) => return Err(e).with_context(|| format!("[IY-O032] cannot create the lock file {}", lock.display())),
         }
     }
     bail!(
-        "another ignisyeet run is using {} (lock file {}); wait for it or use a different --out (if no other run is active, delete {})",
+        "[IY-O031] another ignisyeet run is using {} (lock file {}); wait for it or use a different --out (if no other run is active, delete {})",
         dir.display(),
         lock.display(),
         lock.display()
@@ -145,7 +145,7 @@ mod tests {
         // pid 1 is alive and not this process.
         std::fs::write(d.join(LOCK_FILE), "1\n").unwrap();
         let e = lock_dir(&d).unwrap_err().to_string();
-        assert!(e.starts_with("another ignisyeet run is using "), "{e}");
+        assert!(e.starts_with("[IY-O031] another ignisyeet run is using "), "{e}");
         assert!(e.contains("pid 1)") && e.contains("use a different --out"), "{e}");
         // A dead pid: spawn a child and reap it.
         let mut c = std::process::Command::new("true").spawn().unwrap();

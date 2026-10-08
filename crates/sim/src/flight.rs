@@ -175,23 +175,23 @@ impl Recovery {
             return Ok(());
         }
         if !(self.cd_s.is_finite() && self.cd_s > 0.0) {
-            bail!("recovery.cd_s must be positive and finite when recovery.enabled = true, got {}", self.cd_s);
+            bail!("[IY-S070] recovery.cd_s must be positive and finite when recovery.enabled = true, got {}", self.cd_s);
         }
         if !(self.delay.is_finite() && self.delay >= 0.0) {
-            bail!("recovery.delay must be non-negative and finite, got {}", self.delay);
+            bail!("[IY-S071] recovery.delay must be non-negative and finite, got {}", self.delay);
         }
         match (self.main_cd_s, self.main_altitude) {
             (None, None) => Ok(()),
             (Some(c), Some(a)) => {
                 if !(c.is_finite() && c > 0.0) {
-                    bail!("recovery.main_cd_s must be positive and finite, got {c}");
+                    bail!("[IY-S072] recovery.main_cd_s must be positive and finite, got {c}");
                 }
                 if !(a.is_finite() && a > 0.0) {
-                    bail!("recovery.main_altitude must be positive and finite, got {a}");
+                    bail!("[IY-S073] recovery.main_altitude must be positive and finite, got {a}");
                 }
                 Ok(())
             }
-            _ => bail!("recovery.main_cd_s and recovery.main_altitude must be given together (dual deploy) or both omitted"),
+            _ => bail!("[IY-S074] recovery.main_cd_s and recovery.main_altitude must be given together (dual deploy) or both omitted"),
         }
     }
 
@@ -777,7 +777,7 @@ impl<'a> Simulation<'a> {
             let (hi, lo) = (ev[0], ev[2]);
             if !(ev.iter().all(|e| e.is_finite()) && lo > 0.0 && hi <= lo * MAX_INERTIA_CONDITION) {
                 bail!(
-                    "inertia tensor is singular or ill-conditioned at t = {t:.3} s (principal moments {:.6e}, {:.6e}, {:.6e} kg m^2; the largest may be at most {MAX_INERTIA_CONDITION:.0e} times the smallest): check rocket.ixx_dry, iyy_dry, izz_dry and the products of inertia",
+                    "[IY-S075] inertia tensor is singular or ill-conditioned at t = {t:.3} s (principal moments {:.6e}, {:.6e}, {:.6e} kg m^2; the largest may be at most {MAX_INERTIA_CONDITION:.0e} times the smallest): check rocket.ixx_dry, iyy_dry, izz_dry and the products of inertia",
                     ev[0],
                     ev[1],
                     ev[2]
@@ -1121,21 +1121,21 @@ impl<'a> Simulation<'a> {
         let want_samples = record || observer.is_some();
         let dt = self.settings.dt;
         if !is_pos(dt) {
-            bail!("sim.dt must be positive");
+            bail!("[IY-S076] sim.dt must be positive");
         }
         let elev = self.launch.elevation_deg;
         if !(elev > 0.0 && elev <= 90.0) {
-            bail!("launch.elevation_deg must be in (0, 90], found {elev}");
+            bail!("[IY-S077] launch.elevation_deg must be in (0, 90], found {elev}");
         }
         if descent == Descent::Parachute && !self.recovery.enabled {
-            bail!("the parachute descent needs recovery.enabled = true (with recovery disabled there is no parachute to deploy); fly the ballistic descent or enable [recovery]");
+            bail!("[IY-S078] the parachute descent needs recovery.enabled = true (with recovery disabled there is no parachute to deploy); fly the ballistic descent or enable [recovery]");
         }
         self.recovery.validate()?;
         self.check_inertia()?;
         let stepper = Stepper::new(self.settings.integrator, self.settings.attitude);
         let adaptive = stepper.adaptive();
         if adaptive && !(is_pos(self.settings.rtol) && is_pos(self.settings.atol) && is_pos(self.settings.output_interval)) {
-            bail!("sim.rtol, sim.atol and sim.output_interval must be positive for the adaptive integrators (rk45, dop853)");
+            bail!("[IY-S079] sim.rtol, sim.atol and sim.output_interval must be positive for the adaptive integrators (rk45, dop853)");
         }
         let frame = Frame::new(&self.earth, &self.launch);
         let cx =
@@ -1259,7 +1259,7 @@ impl<'a> Simulation<'a> {
                 break;
             }
             if phase == Phase::Rail && t > burn && s.vel.dot(cx.rail) <= 0.0 {
-                bail!("rocket never left the launch rail (thrust too low?)");
+                bail!("[IY-S080] rocket never left the launch rail (thrust too low?)");
             }
 
             // Latest end of this step: sim.max_time, the next thrust-curve knot (burnout included)
@@ -1319,15 +1319,15 @@ impl<'a> Simulation<'a> {
                 sum.broadside_time += h;
             }
             if !finite_state(&s) {
-                bail!("integration diverged at t = {t:.4} s; reduce sim.dt or tighten rtol/atol, or check the aero table and mass properties");
+                bail!("[IY-S081] integration diverged at t = {t:.4} s; reduce sim.dt or tighten rtol/atol, or check the aero table and mass properties");
             }
             // A state no rocket reaches is a numerical blow-up as well, even when it is still finite.
             let (speed_now, alt_now) = (s.vel.norm(), frame.local(s.pos).height);
             if speed_now > MAX_SPEED {
-                bail!("integration diverged at t = {t:.4} s (speed {speed_now:.3e} m/s is not physical); reduce sim.dt or tighten rtol/atol, or check the aero table and mass properties");
+                bail!("[IY-S081] integration diverged at t = {t:.4} s (speed {speed_now:.3e} m/s is not physical); reduce sim.dt or tighten rtol/atol, or check the aero table and mass properties");
             }
             if alt_now > MAX_ALTITUDE {
-                bail!("integration diverged at t = {t:.4} s (altitude {alt_now:.3e} m is not physical); reduce sim.dt or tighten rtol/atol, or check the aero table and mass properties");
+                bail!("[IY-S081] integration diverged at t = {t:.4} s (altitude {alt_now:.3e} m is not physical); reduce sim.dt or tighten rtol/atol, or check the aero table and mass properties");
             }
             max_qerr = max_qerr.max((crate::lie::quat_norm(s.q) - 1.0).abs());
             let loc_prev = loc;

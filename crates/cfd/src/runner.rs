@@ -376,6 +376,11 @@ fn solve(
         }
         if last_poll.elapsed() >= Duration::from_secs(1) {
             last_poll = Instant::now();
+            // Checked before the history is read: the row count read next then includes the row of the output
+            // iteration (SU2 writes the history row before the output files), so "one more row" is a row SU2 wrote
+            // after finishing the files. Checked after the read, a rewrite that lands in between would be paired with
+            // the stale count, and the stop could come while the files are still being written.
+            let output_seen = matches!(pending, Some((t, _, _, None)) if written_after(t));
             if let Ok(h) = History::read(&dir.join(history)) {
                 if let Some(r) = h.last_residual() {
                     let _ = tx.send(Event::Progress { i, iter: h.last_iteration(), residual: r });
@@ -392,7 +397,7 @@ fn solve(
                     Some((t, rows, extra, seen)) => {
                         // One more history row after the rewrite was seen: the files are complete.
                         let done = seen.is_some_and(|r| h.rows.len() > r);
-                        if seen.is_none() && written_after(t) {
+                        if seen.is_none() && output_seen {
                             pending = Some((t, rows, extra, Some(h.rows.len())));
                         }
                         done || h.rows.len() > rows + extra

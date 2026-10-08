@@ -410,7 +410,7 @@ pub fn geometry_detail(g: &Geometry) -> String {
     format!("L {:.3} m {d} D {:.4} m {d} {fins}", g.length, 2.0 * g.ref_radius, d = ui().g().dot)
 }
 
-/// (CNa [/rad], Xcp [m], CA power-off, CA power-on) at `mach` for alpha -> 0. A general table has no
+/// (CNa [/rad], Xcp \[m\], CA power-off, CA power-on) at `mach` for alpha -> 0. A general table has no
 /// axisymmetric lookup, so CNa and Xcp come from its six-component coefficients at a small angle of attack.
 fn preview(t: &AeroTable, mach: f64) -> (f64, f64, f64, f64) {
     if t.kind() == aero::table::TableKind::Axisymmetric {

@@ -530,13 +530,13 @@ IY-F037
     error[IY-F037]: mesh error: a tetrahedron uses an unknown node
 
 意味
-    四面体が未知の節点を参照している。
+    生成したメッシュに、存在しない節点を指す要素がある。
 
 主な原因
-    内部エラー。
+    ソフトウェアの誤り。
 
 対処
-    ログを添えて報告する。
+    ログと設定ファイルを添えて報告する。
 
 関連
     :ref:`sec-cfd-prism`
@@ -645,13 +645,13 @@ IY-F042
     error[IY-F042]: mesh error: unknown mode <mode>
 
 意味
-    mesh_step.py に未知のモードが渡された。
+    メッシュ生成が未対応の動作モードを受け取った。
 
 主な原因
-    内部エラー。
+    ソフトウェアの誤り。
 
 対処
-    ログを添えて報告する。
+    ログと設定ファイルを添えて報告する。
 
 .. _IY-F043:
 
@@ -714,10 +714,10 @@ IY-F045
     プリズム境界層は 1/4 領域では作れない。
 
 主な原因
-    内部の組み合わせ違い。RANS では通常 1/4 メッシュにしない。
+    RANS で 1/4 領域のメッシュが選ばれた。通常は選ばれない組み合わせで、ソフトウェアの誤りである。
 
 対処
-    ログを添えて報告する。
+    ログと設定ファイルを添えて報告する。
 
 関連
     :ref:`sec-cfd-prism`
@@ -780,13 +780,13 @@ IY-F050
     error[IY-F050]: mesh error: stl_remesh must be classify or none, got <value>
 
 意味
-    stl_remesh の値が不正である。
+    ``aero.cfd.stl_remesh`` の値が不正である。
 
 主な原因
-    内部に渡された値が classify でも none でもない。
+    値が ``"classify"`` でも ``"none"`` でもない。
 
 対処
-    stl_remesh を classify か none にする。
+    ``aero.cfd.stl_remesh`` を ``"classify"`` か ``"none"`` にする。
 
 関連
     :ref:`sec-cfd-stl`
@@ -1152,6 +1152,16 @@ IY-F071
 
 意味
     STEP と STL の位置合わせ検査で、2 つが同じ機体でないと判定された。
+    検査は、CFD の座標で STL と CAD を比べ、次の条件をすべて満たすときに同じ機体とみなす。
+    :math:`L` は STL から抽出した全長、:math:`h_w` は ``wall_size`` である。
+
+    * STL の包含箱が、CAD の包含箱に :math:`0.01L` の余裕で収まる。
+    * ノーズの先端（:math:`x` の最小値）の差が :math:`0.01L` 以下である。
+    * CAD の包含箱が、どの軸でも STL の 1.25 倍を超えない。
+    * STL の面上の点が、ほぼすべて CAD の面から :math:`\max(2h_w,\,0.01L)` 以内にある。CAD の立体の内側に深く埋まった STL の面（胴体に差し込んだ箱で表したフィンなど）は除く。
+
+    STL の面から :math:`\max(h_w,\,0.002L)` より離れた CAD だけの部分は、細部として許される。
+    サンプル機体（:math:`L` = 1.5 m）を ``wall_size`` 2 mm で比べると、許容は 15 mm である。
 
 主な原因
     リビジョンの違う CAD モデル。単位の取り違え。座標系のずれ。
@@ -1478,13 +1488,13 @@ IY-F087
     error[IY-F087]: surface = "step": the wall is the CAD B-rep, which only the mesher tessellates (see step_mesh)
 
 意味
-    surface = "step" の壁面は三角形の形では取り出せない。
+    ``surface = "step"`` の壁面は、CAD の曲面のままメッシュにするので、三角形の形では取り出せない。
 
 主な原因
-    内部の呼び出しの組み合わせ違い。
+    ソフトウェアの誤り。
 
 対処
-    ログを添えて報告する。
+    ログと設定ファイルを添えて報告する。
 
 関連
     :ref:`sec-cfd-step`

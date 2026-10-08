@@ -1,0 +1,25 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+\begin{tikzpicture}[font=\small,
+  st/.style={draw=cblue, fill=cfill, thick, rounded corners=4pt, minimum width=40mm, minimum height=19mm, text width=37mm, align=center},
+  sk/.style={draw=corange, fill=cfillo, thick, rounded corners=4pt, minimum width=40mm, minimum height=19mm, text width=37mm, align=center},
+  en/.style={draw=cink, fill=cfillg, thick, rounded corners=6pt, minimum width=40mm, minimum height=19mm, text width=37mm, align=center},
+  arr/.style={->, thick, cink2}, lab/.style={font=\footnotesize, align=center, cink2}]
+  \node[st] (s0) {\textbf{手順 0}\\係数表を作り、\\表の平均風を確かめる};
+  \node[st, right=12mm of s0] (s1) {\textbf{手順 1}\\風の格子を上限の風速まで\\36 方位以上で計算};
+  \node[st, right=12mm of s1] (s2) {\textbf{手順 2}\\格子を細かくして\\最大値が変わらないか確かめる};
+  \node[st, right=12mm of s2] (s3) {\textbf{手順 3}\\最も遠い風で\\機体のばらつきを\\モンテカルロ解析};
+  \node[st, below=16mm of s3] (s4) {\textbf{手順 4}\\予報の風で\\モンテカルロ解析};
+  \node[sk, left=12mm of s4] (s5) {\textbf{手順 5}\\回収系の故障\\（二段開傘の機体のみ）};
+  \node[st, left=12mm of s5] (s6) {\textbf{手順 6}\\空力の手法を変えて\\手順 0〜5 を繰り返す};
+  \node[st, left=12mm of s6] (s7) {\textbf{手順 7}\\終了ステータスと\\警告を確かめる};
+  \node[en, below=16mm of s7] (r) {\textbf{半径}\\すべての最大値の最大\\$+$ 余裕};
+  \draw[arr] (s0) -- (s1);
+  \draw[arr] (s1) -- (s2);
+  \draw[arr] (s2) -- (s3);
+  \draw[arr] (s3) -- (s4);
+  \draw[arr] (s4) -- (s5);
+  \draw[arr] (s5) -- (s6);
+  \draw[arr] (s6) -- (s7);
+  \draw[arr] (s7) -- (r);
+\end{tikzpicture}

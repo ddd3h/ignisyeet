@@ -24,9 +24,9 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct MassProperties {
-    /// Mass without propellant (including the empty motor casing) [kg].
+    /// Mass without propellant (including the empty motor casing) \[kg\].
     pub dry_mass: f64,
-    /// Dry centre of gravity aft of the nose tip [m].
+    /// Dry centre of gravity aft of the nose tip \[m\].
     pub cg_dry: f64,
     /// Dry roll inertia about the axis [kg m^2].
     pub ixx_dry: f64,
@@ -37,7 +37,7 @@ pub struct MassProperties {
     pub ixy_dry: f64,
     pub ixz_dry: f64,
     pub iyz_dry: f64,
-    /// Lateral dry CG offset (y, z) in body axes [m].
+    /// Lateral dry CG offset (y, z) in body axes \[m\].
     pub cg_lateral_dry: [f64; 2],
 }
 
@@ -63,9 +63,9 @@ impl MassProperties {
 #[derive(Debug, Clone, Copy)]
 pub struct MassState {
     pub m: f64,
-    /// CG aft of the nose tip [m].
+    /// CG aft of the nose tip \[m\].
     pub x_cg: f64,
-    /// Lateral CG offset (y, z) in body axes [m].
+    /// Lateral CG offset (y, z) in body axes \[m\].
     pub cg_lat: [f64; 2],
     pub inertia: Mat3,
     /// Inverse of `inertia` (general case only).
@@ -83,7 +83,7 @@ pub struct MassState {
 pub struct ThrustLine {
     pub misalignment_deg: f64,
     pub misalignment_azimuth_deg: f64,
-    /// Nozzle-exit point (y, z) in body axes [m].
+    /// Nozzle-exit point (y, z) in body axes \[m\].
     pub offset: [f64; 2],
 }
 
@@ -104,14 +104,14 @@ impl ThrustLine {
 pub struct Launch {
     pub latitude: f64,
     pub longitude: f64,
-    /// Launch site altitude above mean sea level [m].
+    /// Launch site altitude above mean sea level \[m\].
     pub altitude: f64,
     pub rail_length: f64,
-    /// Rail elevation above the horizon [deg].
+    /// Rail elevation above the horizon \[deg\].
     pub elevation_deg: f64,
-    /// Rail azimuth, clockwise from north [deg].
+    /// Rail azimuth, clockwise from north \[deg\].
     pub azimuth_deg: f64,
-    /// Roll of the body about the rail axis [deg]; 0 puts +y_b horizontal.
+    /// Roll of the body about the rail axis \[deg\]; 0 puts +y_b horizontal.
     #[serde(default)]
     pub roll_deg: f64,
 }
@@ -153,7 +153,7 @@ pub struct Recovery {
     pub enabled: bool,
     /// Parachute drag area Cd*S [m^2].
     pub cd_s: f64,
-    /// Deployment delay after apogee [s].
+    /// Deployment delay after apogee \[s\].
     pub delay: f64,
     /// Dual deploy: drag area Cd*S of the main parachute [m^2]. The first parachute (`cd_s`, the
     /// drogue) deploys at apogee + `delay`; when the rocket descends through `main_altitude` the
@@ -161,7 +161,7 @@ pub struct Recovery {
     /// released or collapses behind the main; it is not added). Both fields or neither.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub main_cd_s: Option<f64>,
-    /// Dual deploy: main deployment altitude above the launch site [m].
+    /// Dual deploy: main deployment altitude above the launch site \[m\].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub main_altitude: Option<f64>,
 }
@@ -294,7 +294,7 @@ pub struct Simulation<'a> {
     pub table: &'a AeroTable,
     pub mass: MassProperties,
     pub motor: &'a Motor,
-    /// Aft end of the motor, aft of the nose tip [m].
+    /// Aft end of the motor, aft of the nose tip \[m\].
     pub motor_aft_x: f64,
     pub launch: Launch,
     pub recovery: Recovery,
@@ -306,7 +306,7 @@ pub struct Simulation<'a> {
     pub aero_scale: AeroScale,
     /// Thrust misalignment and nozzle offset.
     pub thrust_line: ThrustLine,
-    /// Fin cant [deg]; the roll forcing is `cl_delta * (cant - table.fin_cant_ref_deg)` on top of the table.
+    /// Fin cant \[deg\]; the roll forcing is `cl_delta * (cant - table.fin_cant_ref_deg)` on top of the table.
     pub fin_cant_deg: f64,
 }
 
@@ -332,7 +332,7 @@ pub struct Sample {
     /// Centre of pressure [m aft of the nose] at the state's current angle of attack (general table:
     /// of the transverse force at the current angles).
     pub x_cp: f64,
-    /// (x_cp - x_cg) / d [cal] at the state's current angle of attack: a display of where the
+    /// (x_cp - x_cg) / d \[cal\] at the state's current angle of attack: a display of where the
     /// normal force acts at that angle, not the static margin. The stability verdict uses the
     /// small-angle margin of [`Summary::min_stability_cal`].
     pub stability_cal: f64,
@@ -344,7 +344,7 @@ pub struct Sample {
     pub wx: f64,
     pub wy: f64,
     pub wz: f64,
-    /// Sideslip asin(v / V) in body axes [deg].
+    /// Sideslip asin(v / V) in body axes \[deg\].
     pub beta_deg: f64,
     /// Body roll rate [rad/s] (relative to the integration frame).
     pub roll_rate: f64,
@@ -361,17 +361,17 @@ pub struct Summary {
     pub wind_direction_deg: f64,
     pub rail_exit_time: f64,
     pub rail_exit_speed: f64,
-    /// End of the thrust curve [s]; NaN (`null` in JSON) when the flight ended before it.
+    /// End of the thrust curve \[s\]; NaN (`null` in JSON) when the flight ended before it.
     pub burnout_time: f64,
     pub max_speed: f64,
     pub max_mach: f64,
     pub max_dyn_pressure: f64,
     pub apogee_time: f64,
-    /// Apogee above the launch site [m].
+    /// Apogee above the launch site \[m\].
     pub apogee: f64,
     pub apogee_east: f64,
     pub apogee_north: f64,
-    /// Smallest static margin [cal], sampled once per integration step only while the rocket is in
+    /// Smallest static margin \[cal\], sampled once per integration step only while the rocket is in
     /// free flight (from the rail-exit state on) before apogee and its airspeed exceeds 10 m/s. The
     /// rail-exit state counts when its airspeed exceeds 10 m/s; the slow part near apogee and the
     /// descent (tumbling, parachute) are not included. NaN (`null` in JSON) when no state qualified,
@@ -388,18 +388,18 @@ pub struct Summary {
     /// count as instability; the margin at the current angle is only the `stability_cal` column of
     /// the trajectory ([`Sample::stability_cal`]).
     pub min_stability_cal: f64,
-    /// Small-angle static margin at the rail-exit state [cal] (general table: the smaller of pitch
+    /// Small-angle static margin at the rail-exit state \[cal\] (general table: the smaller of pitch
     /// and yaw), evaluated at any airspeed.
     pub stability_at_rail_exit: f64,
-    /// Smallest pitch-plane static margin [cal] over the steps of `min_stability_cal` and the rail
+    /// Smallest pitch-plane static margin \[cal\] over the steps of `min_stability_cal` and the rail
     /// exit. Axisymmetric table: the smaller of `min_stability_cal` and `stability_at_rail_exit`.
     /// NaN (`null` in JSON) when it could not be evaluated, see `stability_unknown`.
     #[serde(default = "nan")]
     pub static_margin_pitch_min_cal: f64,
-    /// Smallest yaw-plane static margin [cal], as `static_margin_pitch_min_cal`.
+    /// Smallest yaw-plane static margin \[cal\], as `static_margin_pitch_min_cal`.
     #[serde(default = "nan")]
     pub static_margin_yaw_min_cal: f64,
-    /// Time [s] of the state with the smallest static margin
+    /// Time \[s\] of the state with the smallest static margin
     /// ([`static_margin_min`](Self::static_margin_min)); NaN (`null` in JSON) when no margin was
     /// evaluated.
     #[serde(default = "nan")]
@@ -411,7 +411,7 @@ pub struct Summary {
     /// missing); None when every margin was evaluated.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stability_unknown: Option<String>,
-    /// Ballistic descent: time [s] after apogee the rocket flew with an angle of attack between 60
+    /// Ballistic descent: time \[s\] after apogee the rocket flew with an angle of attack between 60
     /// and 120 deg (broadside to the flow). A long broadside fall is a trim at large angles, whose
     /// aerodynamics (axisymmetric table: the nose-first coefficients mirrored at 180 deg - alpha)
     /// are not validated; see [`fell_broadside`](Self::fell_broadside). 0 for the parachute descent.
@@ -424,13 +424,13 @@ pub struct Summary {
     pub landing_lon: f64,
     pub landing_distance: f64,
     pub landing_speed: f64,
-    /// Dual deploy: time of the main parachute deployment [s] (None without a main parachute or when the flight ended before).
+    /// Dual deploy: time of the main parachute deployment \[s\] (None without a main parachute or when the flight ended before).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub main_deploy_time: Option<f64>,
-    /// Dual deploy: altitude of the main deployment above the launch site [m].
+    /// Dual deploy: altitude of the main deployment above the launch site \[m\].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub main_deploy_altitude: Option<f64>,
-    /// Time the (first) parachute deployed [s]; None for ballistic runs and when the flight
+    /// Time the (first) parachute deployed \[s\]; None for ballistic runs and when the flight
     /// landed (or ended) before apogee + `recovery.delay`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drogue_deploy_time: Option<f64>,
@@ -442,13 +442,13 @@ pub struct Summary {
     /// Airspeed [m/s] at the (first) parachute deployment.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drogue_deploy_speed: Option<f64>,
-    /// Dynamic pressure [Pa] at the (first) parachute deployment.
+    /// Dynamic pressure \[Pa\] at the (first) parachute deployment.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub drogue_deploy_q: Option<f64>,
     /// Dual deploy: airspeed [m/s] at the main deployment.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub main_deploy_speed: Option<f64>,
-    /// Dual deploy: dynamic pressure [Pa] at the main deployment.
+    /// Dual deploy: dynamic pressure \[Pa\] at the main deployment.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub main_deploy_q: Option<f64>,
     /// Wind profile model: factor the tabulated profile was scaled by in this run (1 = as in the
@@ -474,7 +474,7 @@ pub struct Summary {
 /// interpolated linearly between the two steps.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct RollResonance {
-    /// Time of the first crossing [s].
+    /// Time of the first crossing \[s\].
     pub t: f64,
     /// Mach number at the first crossing.
     pub mach: f64,
@@ -535,7 +535,7 @@ impl Summary {
         self.landing_time.is_finite() && self.landing_east.is_finite() && self.landing_north.is_finite()
     }
 
-    /// Smallest static margin of the flight including the rail exit [cal]: the smaller of
+    /// Smallest static margin of the flight including the rail exit \[cal\]: the smaller of
     /// `min_stability_cal` and `stability_at_rail_exit`, the rail-exit value alone when
     /// `min_stability_cal` is NaN (airspeed never above 10 m/s); NaN when neither is finite.
     pub fn static_margin_min(&self) -> f64 {
@@ -567,9 +567,9 @@ impl Summary {
 /// Parachute deployment moved from apogee + `recovery.delay` to burnout, see [`Summary::deploy_delayed`].
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct DeployDelay {
-    /// Apogee + `recovery.delay` [s], when the parachute would have deployed.
+    /// Apogee + `recovery.delay` \[s\], when the parachute would have deployed.
     pub nominal_time: f64,
-    /// Thrust [N] at `nominal_time`.
+    /// Thrust \[N\] at `nominal_time`.
     pub thrust: f64,
 }
 
@@ -577,7 +577,7 @@ pub struct DeployDelay {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stability {
     Stable,
-    /// The smallest static margin [cal], negative.
+    /// The smallest static margin \[cal\], negative.
     Unstable(f64),
     /// Why the static stability could not be evaluated.
     Unknown(String),
@@ -594,7 +594,7 @@ impl Stability {
     }
 }
 
-/// Broadside time [s] above which a ballistic descent counts as fallen broadside, see
+/// Broadside time \[s\] above which a ballistic descent counts as fallen broadside, see
 /// [`Summary::fell_broadside`].
 pub const BROADSIDE_LIMIT: f64 = 10.0;
 

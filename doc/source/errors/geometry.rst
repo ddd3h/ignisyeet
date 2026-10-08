@@ -27,7 +27,7 @@ IY-G001
     ``rocket.stl`` のパスと権限を確認する。
 
 関連
-    :doc:`../geometry`
+    :ref:`page-theory-geometry`
 
 .. _IY-G002:
 
@@ -50,7 +50,7 @@ IY-G002
     CAD から STL を書き出し直す。ファイルのサイズが転送前後で一致するか確かめる。
 
 関連
-    :doc:`../geometry`
+    :ref:`page-theory-geometry`
 
 .. _IY-G003:
 
@@ -73,7 +73,7 @@ IY-G003
     ``rocket.stl`` が STL ファイルを指しているか確認する。他の形式（STEP、OBJ など）は STL に変換する。
 
 関連
-    :doc:`../geometry`
+    :ref:`page-theory-geometry`
 
 .. _IY-G004:
 
@@ -96,7 +96,7 @@ IY-G004
     CAD で実体を選んで書き出し直す。
 
 関連
-    :doc:`../geometry`
+    :ref:`page-theory-geometry`
 
 .. _IY-G005:
 
@@ -119,7 +119,7 @@ IY-G005
     CAD で書き出し直す。壊れたメッシュを修復してから書き出す。
 
 関連
-    :doc:`../geometry`
+    :ref:`page-theory-geometry`
 
 .. _IY-G006:
 
@@ -142,7 +142,7 @@ IY-G006
     該当の行を直すか、STL を書き出し直す。
 
 関連
-    :doc:`../geometry`
+    :ref:`page-theory-geometry`
 
 .. _IY-G007:
 
@@ -165,7 +165,7 @@ IY-G007
     STL を書き出し直す（バイナリ形式を選んでもよい）。
 
 関連
-    :doc:`../geometry`
+    :ref:`page-theory-geometry`
 
 .. _IY-G008:
 
@@ -188,7 +188,7 @@ IY-G008
     該当の行を直すか、STL を書き出し直す。
 
 関連
-    :doc:`../geometry`
+    :ref:`page-theory-geometry`
 
 .. _IY-G009:
 
@@ -211,7 +211,7 @@ IY-G009
     出力先のパスと権限、空き容量を確認する。
 
 関連
-    :doc:`../geometry`
+    :ref:`page-theory-geometry`
 
 .. _IY-G010:
 
@@ -280,7 +280,7 @@ IY-G012
     ``aero.n_slices`` を 20 以上にする（既定値を使うなら指定しない）。
 
 関連
-    :doc:`../geometry`
+    :ref:`page-theory-geometry`
 
 .. _IY-G013:
 
@@ -303,7 +303,7 @@ IY-G013
     STL の内容と ``rocket.stl_scale`` を確認する。
 
 関連
-    :doc:`../geometry`
+    :ref:`page-theory-geometry`
 
 .. _IY-G014:
 
@@ -326,7 +326,7 @@ IY-G014
     STL の内容を確認する。
 
 関連
-    :doc:`../geometry`
+    :ref:`page-theory-geometry`
 
 .. _IY-G015:
 
@@ -349,7 +349,7 @@ IY-G015
     STL が機体全体を含むか、``rocket.stl_scale`` が正しいかを確認する。
 
 関連
-    :doc:`../geometry`
+    :ref:`page-theory-geometry`
 
 .. _IY-G501:
 

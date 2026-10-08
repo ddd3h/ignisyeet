@@ -41,11 +41,11 @@ pub struct SurfaceStats {
     pub bbox_max: [f64; 3],
 }
 
-/// Distance statistics [m].
+/// Distance statistics \[m\].
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 pub struct Distances {
     pub max: f64,
-    /// Where the maximum occurs (a point of the surface it was measured from) [m].
+    /// Where the maximum occurs (a point of the surface it was measured from) \[m\].
     pub max_at: [f64; 3],
     pub p99: f64,
     pub rms: f64,
@@ -62,7 +62,7 @@ pub struct Fidelity {
     pub cfd_vs_union: Distances,
     pub cfd_wall_vs_input: Distances,
     pub wall_size: f64,
-    /// Warning level (0.5 wall size) and error level (`max_geometry_error`) of the maximum distances [m].
+    /// Warning level (0.5 wall size) and error level (`max_geometry_error`) of the maximum distances \[m\].
     pub warn_above: f64,
     pub fail_above: f64,
     pub genus: Option<i64>,

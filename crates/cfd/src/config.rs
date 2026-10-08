@@ -141,13 +141,13 @@ fn is_default_general_mach_step(v: &f64) -> bool {
     *v == 0.1
 }
 
-/// Surface element size on the fins (`fin_size`): `"auto"` or a size [m].
+/// Surface element size on the fins (`fin_size`): `"auto"` or a size \[m\].
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum FinSize {
     /// Euler: `min(wall_size, fin thickness / 4)`; RANS: `wall_size` (see [`CfdOptions::fin_size_for`]).
     #[default]
     Auto,
-    /// This size [m] on the fin faces.
+    /// This size \[m\] on the fin faces.
     Size(f64),
 }
 
@@ -280,7 +280,7 @@ fn is_default_stable_window(v: &usize) -> bool {
 pub struct CfdOptions {
     /// Treatment of the angle-of-attack asymmetry, see [`AlphaMode`].
     pub alpha_mode: AlphaMode,
-    /// Roll of the fin set about the body axis [deg] (0: fins at +-y and +-z, so two fins lie in the
+    /// Roll of the fin set about the body axis \[deg\] (0: fins at +-y and +-z, so two fins lie in the
     /// y = 0 symmetry plane; 45: no fin in the symmetry plane). Only meaningful for symmetric layouts.
     pub fin_roll_deg: f64,
     /// Mesh a quarter of the domain and mirror it about the x-y plane, so the half-model mesh is exactly
@@ -292,7 +292,7 @@ pub struct CfdOptions {
     pub model: FlowModel,
     /// Solved Mach numbers (strictly increasing, positive).
     pub machs: Vec<f64>,
-    /// Solved angles of attack [deg] (strictly increasing, >= 0, must contain 0). In `mirror` mode each
+    /// Solved angles of attack \[deg\] (strictly increasing, >= 0, must contain 0). In `mirror` mode each
     /// angle above 0 is also solved at its negative.
     pub alphas_deg: Vec<f64>,
     pub surface: SurfaceKind,
@@ -302,7 +302,7 @@ pub struct CfdOptions {
     /// mirrored). `false` forces the full domain. `surface = "stl"`: the same rule, with the symmetry verified on the
     /// united surface (see `shape_symmetry`).
     pub symmetry: bool,
-    /// Solved sideslip angles [deg] (increasing, >= 0, starting with 0). For shapes with a y = 0 mirror
+    /// Solved sideslip angles \[deg\] (increasing, >= 0, starting with 0). For shapes with a y = 0 mirror
     /// symmetry only `beta >= 0` is solved (the negative side follows by reflection); `shape_symmetry = "none"`
     /// solves `+-beta`. Anything but `[0]` makes the table a general (six-component) table.
     #[serde(default = "default_betas", skip_serializing_if = "zero_betas")]
@@ -330,7 +330,7 @@ pub struct CfdOptions {
     /// `surface = "stl"`: preparation of the wall surface, see [`StlRemesh`].
     #[serde(skip_serializing_if = "is_default")]
     pub stl_remesh: StlRemesh,
-    /// `surface = "stl"`: the run fails when the CFD wall is farther than this [m] from the input STL or its
+    /// `surface = "stl"`: the run fails when the CFD wall is farther than this \[m\] from the input STL or its
     /// union (see `fidelity`); `None` = `wall_size`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_geometry_error: Option<f64>,
@@ -345,13 +345,13 @@ pub struct CfdOptions {
     pub tail_fairing: f64,
     /// Farfield radius in body lengths.
     pub farfield: f64,
-    /// Surface element size [m]. 2 mm gives about 1.4 M half-model cells for the 1.5 m sample rocket with the Euler
+    /// Surface element size \[m\]. 2 mm gives about 1.4 M half-model cells for the 1.5 m sample rocket with the Euler
     /// default `fin_size` (1 mm on the 4 mm fins; 0.9 M with the fins at 2 mm too) and a normal force within 0.1 % of
     /// the 1.8 mm mesh (mesh study with the fins at 1 mm, doc/data/cfd/mesh_convergence.csv).
     /// RANS default: 5 mm.
     #[serde(default = "unset_size", deserialize_with = "finite_size")]
     pub wall_size: f64,
-    /// Surface element size on the fin faces [m], see [`FinSize`] and [`CfdOptions::fin_size_for`]. Euler on fins
+    /// Surface element size on the fin faces \[m\], see [`FinSize`] and [`CfdOptions::fin_size_for`]. Euler on fins
     /// meshed at `wall_size` (thicker than the fin) carries a spurious steady fin lift at subsonic Mach numbers
     /// (`CN(0)` about 12 % of `CN(4 deg)` at 6 mm on the 4 mm fins of the sample); elements of a quarter of the fin
     /// thickness remove it (see [`crate::asymmetry`]).
@@ -402,7 +402,7 @@ pub struct CfdOptions {
     pub ranks_per_case: usize,
     /// Concurrent cases; 0 = automatic (as many as fit the thread and memory budget).
     pub parallel_cases: usize,
-    /// Wall-clock limit per case [minutes]; 0 disables it. A case hitting the limit is stopped and
+    /// Wall-clock limit per case \[minutes\]; 0 disables it. A case hitting the limit is stopped and
     /// accepted only if it is practically converged (see `runner`).
     pub timeout_minutes: f64,
     /// Working directory below `output.dir`; one sub-directory per case.
@@ -531,7 +531,7 @@ impl CfdOptions {
         }
     }
 
-    /// Surface element size on the fin faces for fins of `thickness` [m] (`None`: no fins): an explicit `fin_size`;
+    /// Surface element size on the fin faces for fins of `thickness` \[m\] (`None`: no fins): an explicit `fin_size`;
     /// `auto` is `min(wall_size, thickness / 4)` for Euler and `wall_size` for RANS (the prism layer on fins meshed at a
     /// quarter of their thickness is too large a mesh, and the zero-angle force of RANS is a base-wake effect). Never
     /// larger than `wall_size`; equal to it means no fin refinement.

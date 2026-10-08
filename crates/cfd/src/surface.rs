@@ -3,7 +3,7 @@
 //! Wall surface in the CFD frame, as binary STL.
 //!
 //! CFD frame: `x` aft from the nose tip (nose at the origin, base at `x = L`), `y` and `z` the body
-//! axes `y_b`, `-z_b` of [`geom::Frame::body_basis`] (`R_cb = diag(-1, 1, -1)`, a rotation by 180 deg
+//! axes `y_b`, `-z_b` of `geom::Frame::body_basis` (`R_cb = diag(-1, 1, -1)`, a rotation by 180 deg
 //! about y). A raw STL keeps its own roll about the axis ([`to_cfd_frame`]); the geometry rebuilt by the
 //! panel mesh generator is rolled so that **one fin points to +z**: with evenly spaced fins this makes
 //! it mirror-symmetric about the pitch plane `y = 0`, which the half model (`symmetry = true`) relies on.

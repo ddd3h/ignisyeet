@@ -1,0 +1,23 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+% Decision tree for aero.cfd.surface: panel_mesh, stl or step.
+\begin{tikzpicture}[
+  font=\footnotesize,
+  q/.style={draw=cblue, fill=cfill, thick, rounded corners=3pt, minimum width=66mm, minimum height=12mm, align=center, text width=62mm},
+  r/.style={draw=corange, fill=cfillo, thick, rounded corners=3pt, minimum width=62mm, minimum height=16mm, align=center, text width=58mm},
+  rr/.style={draw=caqua, fill=cfillg, thick, rounded corners=3pt, minimum width=62mm, minimum height=16mm, align=center, text width=58mm},
+  arr/.style={->, thick, cink2},
+  lab/.style={font=\scriptsize, cink2}]
+  \node[q] (q1) at (0,0) {機体は回転体と台形フィンで表せるか\\\scriptsize レールボタン・ランチラグ・ポッドなどが結果に効かない};
+  \node[q] (q2) at (0,-3.2) {CAD のモデル（STEP、IGES、BREP）があるか\\\scriptsize 機体を一つの閉じた立体として書き出せる};
+  \node[rr] (a) at (8.6,0) {\texttt{panel\_mesh}（既定）\\\scriptsize Euler・RANS とも可。対称なら 1/4 領域で最も軽い。\\\texttt{fin\_roll\_deg} は使える};
+  \node[rr] (b) at (8.6,-3.2) {\texttt{step}\\\scriptsize 細部を含む CAD の曲面をそのまま使う。Euler・RANS とも可。\\\texttt{rocket.stl} との位置合わせで同じ機体か確かめる};
+  \node[r] (c) at (0,-6.4) {\texttt{stl}\\\scriptsize 入力の STL を修復して使う。Euler のみ。\\壁面は再メッシュされ、入力と同一ではない。\\忠実度の報告でずれを確かめる};
+  \node[r] (n) at (8.6,-6.4) {\scriptsize \texttt{stl} と \texttt{step} は Euler のとき\\\texttt{base\_treatment} を必ず指定する\\（\texttt{"fairing"} か \texttt{"flat"}）};
+  \draw[arr] (q1.east) -- node[lab, above] {はい} (a.west);
+  \draw[arr] (q1) -- node[lab, right] {いいえ} (q2);
+  \draw[arr] (q2.east) -- node[lab, above] {ある} (b.west);
+  \draw[arr] (q2) -- node[lab, right] {ない} (c);
+  \draw[dashed, cink2, ->] (c.east) -- (n.west);
+  \draw[dashed, cink2, ->] (b.south) -- (n.north);
+\end{tikzpicture}

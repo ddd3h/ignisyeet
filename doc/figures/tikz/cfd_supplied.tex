@@ -1,0 +1,27 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+% Which table entries come from the CFD solution and which are filled by the model; the angle-of-attack axis of one Mach column.
+\begin{tikzpicture}[font=\small,
+  b/.style={draw=cblue, fill=cfill, thick, rounded corners=4pt, align=left, inner sep=6pt, text width=5.6cm},
+  m/.style={draw=corange, fill=cfillo, thick, rounded corners=4pt, align=left, inner sep=6pt, text width=5.6cm},
+  t/.style={draw=cink, fill=cfillg, thick, rounded corners=4pt, align=center, inner sep=8pt, minimum height=2cm}]
+  \node[b] (c) at (0,2.2) {\textbf{CFD の解から得る量}\\ $C_N$、$x_{cp}$\\ 圧力による軸力（RANS は摩擦も）\\ 横滑りを解けば $C_Y$、$C_n$\\ \texttt{roll\_damping} なら $C_{lp}$};
+  \node[m] (m) at (0,-1.1) {\textbf{モデルで補う量}\\ Euler の摩擦、底面、フィン縁の抗力\\ ピッチ・ヨー減衰、カント強制\\ 解いた範囲の外側};
+  \node[t] (t) at (8.2,0.55) {飛翔計算が\\読む係数表};
+  \draw[->, thick, cblue] (c.east) -- (t.north west);
+  \draw[->, thick, corange] (m.east) -- (t.south west);
+  % alpha axis
+  \def\s{0.5}
+  \begin{scope}[yshift=-4.6cm, xshift=-2.8cm]
+    \draw[->, cink2] (0,0) -- (13.5,0) node[anchor=north east] {$\alpha$};
+    \fill[cfill, draw=cblue, thick] (0,0.15) rectangle (4.5,0.65);
+    \fill[cfillg, draw=cink2, thick] (4.5,0.15) rectangle (9.0,0.65);
+    \fill[cfillo, draw=corange, thick] (9.0,0.15) rectangle (13.2,0.65);
+    \node at (2.25,0.4) {CFD の値};
+    \node at (6.75,0.4) {なめらかにつなぐ};
+    \node at (11.1,0.4) {モデルの値};
+    \node[anchor=north] at (4.5,-0.05) {$\alpha_e$（解いた最大の迎角）};
+    \node[anchor=north] at (9.0,-0.05) {$2\alpha_e$（上限 $90^\circ$）};
+    \node[anchor=north] at (0,-0.05) {0};
+  \end{scope}
+\end{tikzpicture}

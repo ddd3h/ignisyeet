@@ -143,7 +143,7 @@ pub struct BodyCoeffs {
     pub cn: f64,
     /// Axial force coefficient from CFD (positive aft).
     pub ca: f64,
-    /// Nose-tip moment of the normal force, `CN xcp` [m].
+    /// Nose-tip moment of the normal force, `CN xcp` \[m\].
     pub mom: f64,
 }
 
@@ -152,7 +152,7 @@ impl BodyCoeffs {
         Self { cn: c.cfz, ca: c.cfx, mom: -c.cmy * ref_length }
     }
 
-    /// Centre of pressure aft of the nose [m]; `None` when `|CN|` is negligible.
+    /// Centre of pressure aft of the nose \[m\]; `None` when `|CN|` is negligible.
     pub fn xcp(&self) -> Option<f64> {
         (self.cn.abs() > 1e-9).then(|| self.mom / self.cn)
     }

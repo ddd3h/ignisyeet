@@ -73,7 +73,7 @@ pub fn wedge_cp(m: f64, delta: f64) -> Option<f64> {
     Some(4.0 / (G + 1.0) * (b.sin().powi(2) - 1.0 / (m * m)))
 }
 
-/// Prandtl–Meyer function [rad].
+/// Prandtl–Meyer function \[rad\].
 pub fn prandtl_meyer(m: f64) -> f64 {
     let k = ((G + 1.0) / (G - 1.0)).sqrt();
     let s = (m * m - 1.0).max(0.0).sqrt();
@@ -204,6 +204,11 @@ fn taylor_maccoll(m1: f64, beta: f64) -> Option<(f64, f64)> {
     None
 }
 
+// Tangent-cone table: Mach 1.02 + 0.04 k (150 rows); each row integrates Taylor-Maccoll with the shock
+// angle sampled geometrically (600 points) towards the Mach angle and is resampled at 0.25 deg cone
+// half-angle steps up to the detachment limit. Inside the table the pressure coefficient is
+// interpolated linearly (below the first step as `cp ~ delta^2`); beyond a row's detachment angle the
+// Newtonian-shaped rise to `cp_max` is used and neighbouring rows are interpolated in Mach number.
 const CONE_M0: f64 = 1.02;
 const CONE_DM: f64 = 0.04;
 const CONE_NM: usize = 150;
@@ -353,7 +358,7 @@ pub fn body_cp(m: f64, delta: f64, delta0: f64) -> f64 {
     (cp0 + slope * (delta - delta0)).clamp(-2.0 / (G * m * m), cp_max(m))
 }
 
-/// Pressure coefficient of a fin panel at local inclination `delta` [rad].
+/// Pressure coefficient of a fin panel at local inclination `delta` \[rad\].
 pub fn panel_cp(m: f64, delta: f64, part: Part) -> f64 {
     if delta.abs() < 1e-12 {
         0.0

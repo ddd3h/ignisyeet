@@ -92,6 +92,12 @@ pub fn solve_potential(mesh: &Mesh) -> Result<Potential> {
         }
         *rh = b;
     });
+    // Cost and memory: one dense LU per subsonic Mach number, O(n^3) time; the matrix is factored in place,
+    // so the only n x n array is the matrix itself, 8 n^2 + 64 n bytes (computed in 128-bit integers and
+    // saturated at u64::MAX, so any panel count can be compared with the memory limit without overflow).
+    // The comparison with `memory::available_bytes` and `resources.memory_gb` happens before the allocation
+    // (errors IY-A018/IY-A019); a failed allocation is IY-A020 (a margin of 1/16 of the matrix and 256 MB
+    // is added for the work space).
     // The row-major matrix `a` read column-major is its transpose `B = A^T`. `B` is LU-factored in
     // place (`B = P^T L U`, partial pivoting) and `A x = B^T x = b` is solved with the transposed
     // factors, so the solve needs no second `n x n` matrix.
@@ -220,7 +226,7 @@ pub fn coefficients(real: &Mesh, pot: &Potential, beta: f64, s_ref: f64) -> Pote
     c
 }
 
-/// Pressure coefficient at every panel for angle of attack `alpha` [rad] in incompressible flow.
+/// Pressure coefficient at every panel for angle of attack `alpha` \[rad\] in incompressible flow.
 pub fn cp_at_alpha(pot: &Potential, alpha: f64) -> Vec<f64> {
     let (sa, ca) = alpha.sin_cos();
     pot.vel[0].iter().zip(&pot.vel[1]).map(|(vx, vz)| 1.0 - (*vx * ca + *vz * sa).dot(*vx * ca + *vz * sa)).collect()

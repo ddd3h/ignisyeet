@@ -53,7 +53,7 @@ pub fn remove_zero_offset(points: &mut [SolvedPoint]) -> Vec<(f64, f64, f64)> {
     removed
 }
 
-/// Measured zero-angle asymmetry of one Mach number: `CN` and nose moment [m] at `alpha = 0`.
+/// Measured zero-angle asymmetry of one Mach number: `CN` and nose moment \[m\] at `alpha = 0`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Asymmetry {
     pub mach: f64,
@@ -259,7 +259,7 @@ fn column(mach: f64, pts: &[(f64, BodyCoeffs)], alphas: &[f64], model: &AeroMode
 /// have relaxed to the Barrowman model (capped at 90°).
 pub const RELAX_FACTOR: f64 = 2.0;
 
-/// `(CN, xcp [m], CA)` at `a_deg` above the highest solved angle `a_e` [deg] of a Mach column, from the
+/// `(CN, xcp [m], CA)` at `a_deg` above the highest solved angle `a_e` \[deg\] of a Mach column, from the
 /// CFD values at `a_e` (`cn_e`, `xcp_e`, `ca_e`) and the Barrowman model.
 ///
 /// CFD gives no data beyond the solved angles, and continuing the end slope is not usable for a

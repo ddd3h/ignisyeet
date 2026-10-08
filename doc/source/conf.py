@@ -8,12 +8,36 @@ copyright = "2025-2026, 西濱大将 (NISHIHAMA Daisuke)"
 release = "0.4.0"
 language = "ja"
 
-extensions = ["sphinx.ext.mathjax", "sphinxcontrib.bibtex", "sphinxext.opengraph"]
+extensions = ["sphinx.ext.mathjax", "sphinxcontrib.bibtex", "sphinxext.opengraph", "sphinx_reredirects"]
 bibtex_bibfiles = ["references.bib"]
 bibtex_default_style = "plain"
 bibtex_reference_style = "author_year"
 templates_path = []
-exclude_patterns = []
+# Old page names redirect to the page that now holds the topic (sphinx-reredirects).
+redirects = {
+    "usage": "howto/index.html",
+    "intro": "about.html",
+    "overview": "theory/overview.html",
+    "coordinates": "theory/coordinates.html",
+    "geometry": "theory/geometry.html",
+    "aerodynamics": "theory/aero_choose.html",
+    "aero_coefficients": "theory/aero_coefficients.html",
+    "barrowman": "theory/barrowman.html",
+    "panel": "theory/panel.html",
+    "cfd": "theory/cfd_choose.html",
+    "cfd_internals": "theory/cfd_equations.html",
+    "environment": "theory/wind.html",
+    "propulsion": "theory/propulsion.html",
+    "dynamics": "theory/dynamics.html",
+    "dispersion": "theory/dispersion.html",
+    "verification": "vv/verification.html",
+    "verification_aero": "vv/aero_verification.html",
+    "validation": "vv/validation_basic_finner.html",
+    "limitations": "theory/limitations.html",
+    "file_formats": "reference/output_files.html",
+    "errors": "reference/error_codes.html",
+    "safety": "howto/keepout_zone.html",
+}
 
 numfig = True
 numfig_format = {"figure": "図 %s", "table": "表 %s", "code-block": "リスト %s", "section": "%s 節"}

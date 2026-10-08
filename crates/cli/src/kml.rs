@@ -4,6 +4,13 @@
 //!
 //! Parts that a command did not just compute are read back from the CSV/JSON files in the output directory.
 //!
+//! A part read back from disk is only taken when it belongs to the current configuration: the
+//! `config_hash` of `summary.json` and of the dispersion metadata must equal the hash of the
+//! configuration of the run; otherwise the layer is left out so that a KML never mixes results of
+//! different configurations. A failed `sim` rewrites the file without the flight layer. Landing points
+//! of runs that did not land are not included, and the Monte Carlo error ellipse needs at least two
+//! landed samples.
+//!
 //! Altitudes: `Sample::alt` is the geodetic height above the WGS84 ellipsoid in both earth models
 //! (flat: `geo::enu_to_lla` of the launch-site ENU offset; ecef: `ecef_to_lla`), starting from
 //! `launch.altitude`. KML `absolute` altitudes are nominally above mean sea level (EGM96); the geoid
@@ -351,7 +358,7 @@ fn wind_grid_folder(cases: &[Case], results: &[Summary], doc: &mut Vec<String>) 
 }
 
 /// Closed ring (n + 1 vertices, first repeated) of the ellipse around a landing-point mean, as (lat, lon).
-/// `mean_east`/`mean_north` are ENU offsets [m] from the launch site `origin`; the major axis points
+/// `mean_east`/`mean_north` are ENU offsets \[m\] from the launch site `origin`; the major axis points
 /// along `bearing` (clockwise from north).
 pub fn ellipse_ring(origin: (f64, f64, f64), mean_east: f64, mean_north: f64, e: &Ellipse, n: usize) -> Vec<(f64, f64)> {
     let b = e.major_axis_bearing_deg.to_radians();

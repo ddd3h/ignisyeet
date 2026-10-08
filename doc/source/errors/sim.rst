@@ -46,7 +46,7 @@ IY-S002
     見出し行を RASP 形式（名称、直径 mm、長さ mm、遅延、推進剤質量 kg、全質量 kg、製造者）に直す。
 
 関連
-    :doc:`../propulsion`
+    :ref:`page-theory-propulsion`
 
 .. _IY-S003:
 
@@ -69,7 +69,7 @@ IY-S003
     見出し行を 7 項目にする。
 
 関連
-    :doc:`../propulsion`
+    :ref:`page-theory-propulsion`
 
 .. _IY-S004:
 
@@ -192,7 +192,7 @@ IY-S009
     その行を「時刻 s 推力 N」の 2 列にする。
 
 関連
-    :doc:`../propulsion`
+    :ref:`page-theory-propulsion`
 
 .. _IY-S010:
 
@@ -335,7 +335,7 @@ IY-S020
     ``sim.rtol`` と ``sim.atol`` を緩める、``sim.integrator = "rk4"`` を使う、空力表と質量特性を確認する。
 
 関連
-    :doc:`../dynamics`
+    :ref:`page-theory-dynamics`
 
 .. _IY-S030:
 
@@ -358,7 +358,7 @@ IY-S030
     ``wind.profile`` のパスと内容を確認する。
 
 関連
-    :doc:`../environment`
+    :ref:`page-theory-wind`
 
 .. _IY-S031:
 
@@ -782,7 +782,7 @@ IY-S051
     ``wind.model = "constant"`` か ``"power"`` を使う。
 
 関連
-    :doc:`../dispersion`
+    :ref:`page-theory-dispersion`
 
 .. _IY-S052:
 
@@ -805,7 +805,7 @@ IY-S052
     ``dispersion.monte_carlo.wind_speed`` と ``wind_direction_deg`` を 0 にするか、風のあるプロファイルを使う。
 
 関連
-    :doc:`../dispersion`
+    :ref:`page-theory-dispersion`
 
 .. _IY-S053:
 
@@ -862,10 +862,10 @@ IY-S060
     error[IY-S060]: dispersion mode "monte_carlo" returns per-sample data: call run_monte_carlo
 
 意味
-    モンテカルロ用の関数を風速グリッドの経路で呼んだ。
+    ``dispersion.mode = "monte_carlo"`` の計算が、風の格子の計算として実行された。
 
 主な原因
-    内部の呼び出しの誤り。
+    ソフトウェアの誤り。
 
 対処
     ``dispersion.mode`` を確認する。通常は表示されない。
@@ -1203,7 +1203,7 @@ IY-S081
     ``sim.dt`` を小さくするか許容誤差を締める。空力表と質量特性を確認する。
 
 関連
-    :doc:`../dynamics`
+    :ref:`page-theory-dynamics`
 
 .. _IY-S090:
 

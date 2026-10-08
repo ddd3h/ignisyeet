@@ -37,7 +37,7 @@
 //! * `alpha_mode = "single"` keeps what the shape symmetry does not zero (all of it without mirror symmetry, `CZ`
 //!   of a pitch-plane shape, `CN` of the axisymmetric table): a steady trim force that the shape does not have.
 //!
-//! [`check`] reports it per Mach number relative to the normal force at [`REF_ALPHA_DEG`] and warns above
+//! `check` reports it per Mach number relative to the normal force at [`REF_ALPHA_DEG`] and warns above
 //! [`WARN_RATIO`].
 
 use crate::config::{AlphaMode, ShapeSymmetry};
@@ -45,7 +45,7 @@ use crate::general::{Slopes, SolvedPoint6};
 use crate::table::Asymmetry;
 use serde::{Deserialize, Serialize};
 
-/// Reference angle of the normal force the zero-angle force is compared with [deg].
+/// Reference angle of the normal force the zero-angle force is compared with \[deg\].
 pub const REF_ALPHA_DEG: f64 = 4.0;
 /// Warning threshold of `|F(0)| / CN(REF_ALPHA_DEG)`.
 pub const WARN_RATIO: f64 = 0.05;
@@ -109,7 +109,7 @@ pub fn from_axisymmetric(asym: &[Asymmetry], slopes: &[Slopes], mode: AlphaMode)
 }
 
 /// Warnings for the entries above [`WARN_RATIO`] (one line per Mach number). `fin` is `(wall_size, fin
-/// thickness)` [m] when the rocket has fins; `rans` names the RANS source (the base wake) instead.
+/// thickness)` \[m\] when the rocket has fins; `rans` names the RANS source (the base wake) instead.
 pub fn warnings(entries: &[ZeroAngle], fin: Option<(f64, f64)>, rans: bool) -> Vec<String> {
     let hint = match fin {
         _ if rans => "; a symmetric body has none: it is the asymmetric steady base wake of the mesh (force on the body \

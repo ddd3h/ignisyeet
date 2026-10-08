@@ -26,6 +26,21 @@
 //!
 //! The mesh hash contains the mesh options (with the chosen symmetry and domain), the hash of the repaired
 //! components (so a different STL or base treatment re-runs the union and the mesh) and both scripts.
+//!
+//! # Files written for `surface = "stl"` (below `<workdir>/mesh/`)
+//!
+//! * `repair_report.json`: `input_triangles`, `weld_tolerance`, `vertices` (after welding), `degenerate_dropped`,
+//!   `duplicate_dropped`, and per closed shell in `components`: `triangles`, `volume` (m^3), `flipped` (inside-out, all
+//!   facets reversed), `reoriented_facets`, `bbox_min`, `bbox_max`. Only topology is repaired; no vertex moves except
+//!   by welding. The repaired shells are written as `component_0.stl`, ...
+//! * `union.stl` and `union_report.json`: the boolean union of the shells and its report: `components` (`index`,
+//!   `status`, `volume`, `triangles`), `volume`, `surface_area`, `genus`, `triangles`, `vertices`,
+//!   `volume_sum_of_components`, `overlap_volume`, `bbox_min`, `bbox_max`.
+//! * `stl_fidelity.json`: `mesh_hash` and `fidelity`: `input` / `union` / `cfd` (`triangles`, `area`, `volume`: null for
+//!   the input, whose shells overlap, and for the union and the CFD wall when a half domain is solved as it is,
+//!   `bbox_min`, `bbox_max`), `cfd_wall_triangles`, `cfd_base_triangles`, `cfd_vs_union` and `cfd_wall_vs_input`
+//!   (distance statistics (m): `max`, `max_at`, `p99`, `rms`, `samples`), `wall_size`, `warn_above` (0.5 `wall_size`),
+//!   `fail_above` (`max_geometry_error`), `genus`, `warnings`, `symmetry` (as `symmetry_check` of `cfd_report.json`).
 
 use crate::case::hash_parts;
 use crate::config::{BaseTreatment, CfdOptions, FlowModel};

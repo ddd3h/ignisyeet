@@ -101,7 +101,7 @@ pub struct CfdReport {
     /// sideslip and roll).
     pub unconverged: Vec<(f64, f64)>,
     pub unconverged_cases: Vec<String>,
-    /// RANS cases accepted with a stalled residual and the drop of their density residual below the reference [orders].
+    /// RANS cases accepted with a stalled residual and the drop of their density residual below the reference \[orders\].
     pub stalled_cases: Vec<StalledCase>,
     pub wall_seconds: f64,
     pub mesh_nodes: usize,
@@ -112,12 +112,12 @@ pub struct CfdReport {
     pub filled: Vec<(f64, f64)>,
     /// `alpha_mode`: `mirror`, `offset` or `single`.
     pub alpha_mode: String,
-    /// Measured alpha = 0 asymmetry per Mach (`CN`, nose moment [m]; the body is symmetric, so the true
+    /// Measured alpha = 0 asymmetry per Mach (`CN`, nose moment \[m\]; the body is symmetric, so the true
     /// values are 0). Removed in `offset` mode, only reported in `mirror` mode.
     pub asymmetry: Vec<table::Asymmetry>,
     /// Lateral force at alpha = beta = 0 relative to CN at 4 deg per Mach (accuracy indicator, see [`asymmetry`]).
     pub zero_angle: Vec<asymmetry::ZeroAngle>,
-    /// Resolved MPI ranks per case, concurrent cases and the estimated memory per case [bytes].
+    /// Resolved MPI ranks per case, concurrent cases and the estimated memory per case \[bytes\].
     pub ranks_per_case: usize,
     pub parallel_cases: usize,
     pub bytes_per_case: u64,
@@ -143,7 +143,7 @@ pub struct CfdReport {
     pub diagnostics: Vec<general::Slopes>,
     /// General table without sideslip data: the yaw damping sums equal the pitch sums.
     pub yaw_damping_from_pitch: bool,
-    /// Fin cant [deg] contained in the CFD geometry (reference of the roll forcing).
+    /// Fin cant \[deg\] contained in the CFD geometry (reference of the roll forcing).
     pub fin_cant_ref_deg: f64,
     pub base_treatment: Option<String>,
     pub warnings: Vec<String>,
@@ -261,11 +261,11 @@ impl Default for ResourceBudget {
 pub struct RunPlan {
     pub ranks: usize,
     pub parallel: usize,
-    /// Estimated memory of one case [bytes].
+    /// Estimated memory of one case \[bytes\].
     pub bytes_per_case: u64,
     /// Adjustments made to the requested values.
     pub notes: Vec<String>,
-    /// Memory budget in effect [bytes] and its source (`None`: no budget known, the memory is not checked).
+    /// Memory budget in effect \[bytes\] and its source (`None`: no budget known, the memory is not checked).
     pub memory: Option<(u64, String)>,
     /// Set when a single case is estimated to need more than the memory budget: the reason the run is refused.
     pub over_budget: Option<String>,
@@ -302,8 +302,9 @@ pub fn estimate_nodes(cells: usize) -> usize {
 
 pub const EULER_BYTES_PER_CELL: f64 = 3.3e3;
 /// RANS bytes per mesh node (summed over ranks). Measured (SU2 8.3, SA, Roe + MUSCL, accurate Jacobians,
-/// FGMRES/ILU, prism boundary layer + tetrahedra, peak RSS minus 40 MB per rank): 10.28 kB at 406 k nodes
-/// (3 ranks), 10.32 kB at 571 k nodes (4 ranks), 10.26 kB at 323 k nodes (4 ranks); 12 kB keeps a 15 % margin.
+/// FGMRES/ILU, prism boundary layer + tetrahedra, peak RSS minus 40 MB per rank): 10.50 kB at 348 k nodes,
+/// 10.10 kB at 580 k, 10.19 kB at 787 k and 10.22 kB at 1.05 M nodes (4 ranks each; doc/data/cfd/rans_memory.csv);
+/// 12 kB keeps a margin of about 14 % over the largest.
 pub const RANS_BYTES_PER_NODE: f64 = 12e3;
 
 /// Resolves `ranks_per_case` / `parallel_cases` (0 = auto) against the budget.

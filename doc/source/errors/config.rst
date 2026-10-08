@@ -113,7 +113,10 @@ IY-C005
 
 メッセージ::
 
-    error[IY-C005]: --set <KEY=VALUE>: <TOML の読み込みエラー>
+    error[IY-C005]: invalid config <ファイル> with the --set overrides
+
+    Caused by:
+        --set <KEY=VALUE>: <TOML の読み込みエラー>
 
 意味
     ``--set`` を適用した結果、設定を読めなくなった。この上書きを名指しして知らせる。
@@ -1389,9 +1392,6 @@ IY-C060
 対処
     パスと権限を確かめる。
 
-関連
-    :ref:`sec-config-checks`
-
 .. _IY-C061:
 
 IY-C061
@@ -1411,9 +1411,6 @@ IY-C061
 
 対処
     続く行の位置の指摘に従って直す。
-
-関連
-    :ref:`sec-config-checks`
 
 .. _IY-C062:
 
@@ -1435,9 +1432,6 @@ IY-C062
 対処
     続く行のキー名を確かめる。
 
-関連
-    :ref:`sec-config-checks`
-
 .. _IY-C063:
 
 IY-C063
@@ -1457,9 +1451,6 @@ IY-C063
 
 対処
     存在するディレクトリに移って実行するか、``--out`` に絶対パスを指定する。
-
-関連
-    :ref:`sec-config-checks`
 
 .. _IY-C100:
 

@@ -50,6 +50,47 @@
 //!   SICN quality covers the tetrahedra only.
 //!
 //! The mesh is cached below `<workdir>/mesh/` keyed by a hash of the geometry and the settings.
+//!
+//! # Domain, markers and the z-mirrored mesh
+//!
+//! Farfield and domain by wall surface and symmetry: `panel_mesh` half model = half ball (`y >= 0`, `symmetry` on
+//! `y = 0`); `panel_mesh` full domain with a layout symmetric about `y = 0` = the half ball mirrored about `y = 0`
+//! (a full ball in one piece fails in HXT at the periodic seam; the `symmetry` marker is dropped); an asymmetric
+//! layout (three fins) = a box of side `2 farfield L` whose six faces share their edges (otherwise HXT reports a
+//! vertex on a segment). `stl` and `step` (Euler) mesh a quarter or half of a ball or box when the surface checks
+//! symmetric about `z = 0` and `y = 0` and mirror it; RANS meshes half a box and mirrors it for the full domain, or
+//! meshes a closed wall in a full box (`step`, asymmetric shape). Markers: `wall` (monitored surface), `base` (not
+//! monitored in Euler), `farfield` (characteristic non-reflecting), `symmetry` (`y = 0`, half domain only; also the
+//! quadrilateral layer sides in RANS), `symz` (`z = 0`, only while a quarter domain is meshed, dropped on mirroring).
+//! The `wall`/`base` split of a triangle uses its centroid and normal: `base` when the centroid lies behind the base
+//! plane `x = L` by more than `1e-4 L`, or inside that tolerance with the normal along `+x` (flat base and a fin
+//! trailing edge flush with the base).
+//!
+//! `z_mirror_mesh`: only the quarter `y >= 0, z >= 0` is meshed and mirrored about `z = 0` (cell vertex order
+//! swapped to keep the orientation, nodes on `z = 0` shared), which makes the half-model mesh exactly symmetric in
+//! `z`: `-alpha` is the mirror image of `+alpha`, the `alpha = 0` normal force vanishes and `alpha_mode = "mirror"`
+//! needs no `-alpha` runs. It is ignored for shapes that are not symmetric in `z` and in RANS.
+//!
+//! # Tail fairing and meshing threads
+//!
+//! The inviscid flow behind a flat base has no well-posed steady solution (an asymmetric wake), so Euler appends a
+//! cone of length `tail_fairing x` base radius (closed on a flat face at 10 % of the base radius). Its faces are
+//! `base`, not monitored; the Barrowman base term replaces the base drag. The mesh is generated on one thread: with
+//! several threads the mesh differs from run to run and the CFD result is not reproducible. The sample rocket at
+//! 2 mm / 1 mm fin faces has about 1.4 M half-model cells (0.23 M `wall`, 15 k `base`, 33 k `symmetry` triangles), 0.94 M
+//! with the fin faces at 2 mm too.
+//! Mesh quality: the invalid-layer retry uses 10 smoothing passes and a junction factor of 0.25; the attempt
+//! that passed is stored in `mesh_stats.json` (`bl_attempt`), with the layer-top size ratios `bl_top_ratio_p99` and
+//! `bl_top_ratio_max`.
+//!
+//! # Files below `<workdir>/mesh/`
+//!
+//! `mesh.su2`, `params.json` (the settings the mesh was made with), `mesh.log` and `mesh_stats.json`: `nodes`, `cells`,
+//! `by_type`, `quality_sicn_min`, `quality_sicn_mean`, `cells_sicn_below_0.05` (tetrahedra only for a RANS mesh),
+//! `wall_triangles`, `seconds_setup`, `seconds_mesh`; a RANS mesh adds `bl_layers`, `bl_first_height` (m),
+//! `bl_thickness` (m) (thickest column), `bl_invalid` (invalid prisms in the written mesh; an invalid layer is a mesh
+//! error, so always 0), `bl_attempt` (1 or 2: the build that passed the check) and `bl_top_ratio_p99` /
+//! `bl_top_ratio_max` (ratio of the tetrahedron height at the layer top to the last layer height, larger over smaller).
 
 use crate::case::hash_parts;
 use crate::config::{y_symmetric_layout, CfdOptions, FlowModel};
@@ -112,12 +153,12 @@ pub fn wall_yplus(opt: &CfdOptions, length: f64, atm: &Atmosphere) -> f64 {
 /// Prism boundary layer (RANS), `bl` in `params.json`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct BlParams {
-    /// First layer height [m].
+    /// First layer height \[m\].
     pub first_height: f64,
     pub layers: usize,
     /// Geometric growth ratio of the layer heights.
     pub ratio: f64,
-    /// Total thickness [m].
+    /// Total thickness \[m\].
     pub thickness: f64,
     /// Fin edge bluntness (fraction of the chord, see [`BL_EDGE_BLUNT`]).
     pub edge_blunt: f64,
@@ -129,9 +170,9 @@ pub struct BlParams {
     pub junction: f64,
     /// Largest widening of the layer top over diverging columns, in wall sizes ([`BL_FAN`]).
     pub fan: f64,
-    /// Thickness cap of the columns on the base [m] ([`BL_BASE_FRACTION`]).
+    /// Thickness cap of the columns on the base \[m\] ([`BL_BASE_FRACTION`]).
     pub base_thickness: f64,
-    /// Size of the tetrahedra at the layer top [m]: the smaller of `wall_size` and the last layer height; they grow
+    /// Size of the tetrahedra at the layer top \[m\]: the smaller of `wall_size` and the last layer height; they grow
     /// by 1.2 per element row from there.
     pub top_size: f64,
     /// Parameters of the next attempt after an invalid layer (`None` = mesh error).
@@ -236,10 +277,10 @@ pub struct MeshParams {
     pub growth: f64,
     pub curvature_elements: usize,
     pub min_size_divisor: f64,
-    /// Length of the conical tail fairing behind the base [m]; 0 = flat base.
+    /// Length of the conical tail fairing behind the base \[m\]; 0 = flat base.
     pub tail_length: f64,
     pub threads: usize,
-    /// Roll of the fin set about the body axis [deg].
+    /// Roll of the fin set about the body axis \[deg\].
     pub fin_roll_deg: f64,
     /// Mesh the quarter domain and mirror it about z = 0 (exactly z-symmetric half-model mesh).
     pub z_mirror: bool,
@@ -395,7 +436,7 @@ pub struct MeshStats {
     pub seconds_setup: f64,
     #[serde(default)]
     pub seconds_mesh: f64,
-    /// Prism layer (RANS): number of layers, first height and total thickness [m] (0 without a layer).
+    /// Prism layer (RANS): number of layers, first height and total thickness \[m\] (0 without a layer).
     #[serde(default)]
     pub bl_layers: usize,
     #[serde(default)]

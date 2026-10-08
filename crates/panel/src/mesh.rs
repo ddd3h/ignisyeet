@@ -11,6 +11,12 @@
 //!   chord the lens-shaped footprint of the fin is cut out of the body: the two root nodes of a
 //!   ring sit at the half-thickness `h(x)` of the biconvex section and merge into one node at the
 //!   leading and trailing edge, so the fin sides attach to the body without gaps.
+//! * Mesh design details kept out of the user documentation: stations are cosine-spaced; when the fin
+//!   root trailing edge lies within 0.5 % of the body length of the base it is snapped onto the base;
+//!   the fairing cylinder and hemisphere have 8 cosine-spaced divisions each; every wake column has 4
+//!   panels, the first `L / 4` long, the lengths growing geometrically up to `wake_length * L` (at
+//!   least `L / 2`); panel area is half the cross product of the diagonals and a skewed quad is
+//!   treated as the planar polygon projected on the plane normal to its normal.
 //! * Wakes: from the fin trailing edges straight aft along +x, with growing panel lengths. They
 //!   carry doublet only.
 //!
@@ -54,7 +60,7 @@ pub struct Panel {
     /// Largest corner-to-corner distance.
     pub diameter: f64,
     pub part: Part,
-    /// Running length from the leading point (nose tip / fin leading edge) for friction [m].
+    /// Running length from the leading point (nose tip / fin leading edge) for friction \[m\].
     pub run: f64,
 }
 
@@ -177,7 +183,7 @@ impl Mesh {
         (open, over)
     }
 
-    /// Copy rotated by `angle` [rad] about the x axis (used to align fins with the flow in tests).
+    /// Copy rotated by `angle` \[rad\] about the x axis (used to align fins with the flow in tests).
     pub fn rotated_about_x(&self, angle: f64) -> Mesh {
         let (s, c) = angle.sin_cos();
         let rot = |v: Vec3| Vec3::new(v.x, c * v.y - s * v.z, s * v.y + c * v.z);

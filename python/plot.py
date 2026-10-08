@@ -20,6 +20,16 @@ USABLE (statically unstable or unknown static stability, aero-table angle range 
 (runs that failed or did not land) or CAUTION (ballistic runs that fell broadside). Landing points of
 unstable runs are marked with a red x, of unknown stability with a triangle and of broadside falls with
 a diamond (`stable` and `broadside_time` columns of the dispersion CSV files).
+
+Consistency checks (implementation notes): when a figure would belong to a failed `sim` run (the
+`summary.json` carries the failure mark) the trajectory figure is not drawn (`all` prints
+`skip trajectory: ...`, the single command exits with status 1) so an old trajectory is never plotted.
+A PNG of a figure that is skipped is removed from `plots/` (`removed <path> (plot skipped; ...)`) so it
+cannot be mistaken for a current one. `config_hash` of `summary.json` and `flight_config_hash` of the
+two dispersion files are compared pairwise; if any two present values differ, a warning names the
+files and hashes. Unreadable files and dispersion files without `flight_config_hash` also warn.
+The panel plot uses alpha = 4 deg at the lowest subsonic Mach number of `panel_cp.csv`. Central
+differences, legend order and colours are internal choices of the plotting functions.
 """
 
 import argparse

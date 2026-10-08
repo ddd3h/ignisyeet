@@ -4,7 +4,7 @@
 //!
 //! # General table
 //!
-//! The table is a [`TableKind::General`] table on the grid `alpha = angle_axis(180, 30, 2, 10)`,
+//! The table is a `TableKind::General` table on the grid `alpha = angle_axis(180, 30, 2, 10)`,
 //! `beta = angle_axis(90, 30, 2, 10)` and the Mach grid of the aero options (or
 //! `general_mach_step`). Per solved Mach number `M_k`:
 //!
@@ -29,7 +29,7 @@
 //!
 //! Damping sums: with `CZ = -CN_pitch` and `Cm = x_cp CZ / d`, the pitch slope is
 //! `CNa_p = -dCZ/dalpha` and `x_p = d (dCm/dalpha) / (dCZ/dalpha)` at `(0, 0)` (odd cubic fit through the
-//! two lowest angles, [`odd_slope`]); the yaw slope `CNa_y = -dCY/dbeta`, `x_y = -d (dCn/dbeta) / (dCY/dbeta)`
+//! two lowest angles, `odd_slope`); the yaw slope `CNa_y = -dCY/dbeta`, `x_y = -d (dCn/dbeta) / (dCY/dbeta)`
 //! at `alpha = 0`. [`scale_damping`] then rescales the Barrowman sums separately for pitch (`sq`) and yaw
 //! (`sr`). Without solved sideslip the yaw sums equal the pitch sums.
 //!
@@ -139,7 +139,7 @@ pub struct Slopes {
     pub mach: f64,
     /// `-dCZ/dalpha` [1/rad].
     pub cna_pitch: f64,
-    /// Pitch centre of pressure from the nose [m].
+    /// Pitch centre of pressure from the nose \[m\].
     pub xcp_pitch: f64,
     pub cna_yaw: Option<f64>,
     pub xcp_yaw: Option<f64>,
@@ -172,7 +172,7 @@ pub struct GeneralInput<'a> {
     pub offset: bool,
     /// Mach step of the table; 0 = `model.opt.mach_step`.
     pub mach_step: f64,
-    /// Fin cant [deg] contained in the CFD geometry (the reference of the roll forcing).
+    /// Fin cant \[deg\] contained in the CFD geometry (the reference of the roll forcing).
     pub fin_cant_ref_deg: f64,
     /// The CFD wall contains the fin leading / trailing faces (STL surface): the Euler hybrid axial
     /// force then omits the Barrowman fin-edge drag.

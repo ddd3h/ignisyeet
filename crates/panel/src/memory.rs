@@ -13,14 +13,14 @@
 //! Where none is available (other systems), there is no check; the dense allocation itself is still
 //! fallible (see `solver::reserve_dense`), so a solve that does not fit fails with an error.
 
-/// A memory limit [bytes] and its source.
+/// A memory limit \[bytes\] and its source.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Available {
     pub bytes: u64,
     pub source: String,
 }
 
-/// `MemAvailable` [bytes] from the text of /proc/meminfo.
+/// `MemAvailable` \[bytes\] from the text of /proc/meminfo.
 pub fn parse_meminfo_available(text: &str) -> Option<u64> {
     kb_field(text, "MemAvailable:")
 }

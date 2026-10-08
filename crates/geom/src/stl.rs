@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! STL reader (ASCII and binary) and binary writer.
+//!
+//! Format detection: a file whose size is exactly `84 + 50 n` bytes (`n` read from bytes 80..84)
+//! is binary, unless it is a complete ASCII STL (valid UTF-8 starting with `solid` and containing
+//! `facet` and `endsolid`), because many binary exporters also start the 80-byte header with
+//! `solid`. Any other file is ASCII when it is UTF-8 text starting with `solid`, and otherwise a
+//! truncated binary file (an error). STL carries no units; the caller applies `rocket.stl_scale`.
 
 use crate::math::Vec3;
 use anyhow::{bail, Context, Result};

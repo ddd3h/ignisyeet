@@ -55,6 +55,45 @@
 //! Verified on a quasi-2-D turbulent flat plate (y+ about 1) at M 0.2 and M 2: residual down more than 4 orders
 //! within 500 second-order iterations, skin friction within 1 % of the SA value of the NASA TMR case at M 0.2 and
 //! within 4 % of van Driest II at M 2.
+//!
+//! # Settings written for the numerical scheme
+//!
+//! Euler: Roe (`scheme = "roe"`) with MUSCL reconstruction (weighted-least-squares gradients) and the Venkatakrishnan
+//! limiter (`VENKAT_LIMITER_COEFF = 0.05`), frozen at `min_iterations` (`LIMITER_ITER`; unfrozen, the limiter
+//! switching keeps the residual near 1e-4). `scheme = "jst"` writes the Jameson-Schmidt-Turkel scheme
+//! (`JST_SENSOR_COEFF = ( 0.5, 0.02 )`) without reconstruction. Time integration is implicit Euler (pseudo time) with
+//! FGMRES + ILU (tolerance 1e-6, 10 iterations); the adaptive CFL starts at `cfl` (default 5), grows by 1.2 while the
+//! residual falls, shrinks by 0.5 when it worsens, between `0.2 cfl` and `50 cfl`. `iterations` is `ITER`; the
+//! convergence field is the density RMS residual. `multigrid` (0..4) writes `MGLEVEL` and `MGCYCLE`; on the sample
+//! meshes SU2 builds no coarse grid and the setting has no effect.
+//!
+//! RANS (`scheme = "roe"`): Roe with MUSCL and the edge-based Van Albada limiter (never frozen; Venkatakrishnan-Wang
+//! at CFL up and down swung the 3-D residuals between 1e-4 and 1e-6, and froze into divergence), Green-Gauss
+//! gradients for the viscous and turbulence terms, weighted-least-squares reconstruction gradients, first-order
+//! upwind SA (`SCALAR_UPWIND`), `USE_ACCURATE_FLUX_JACOBIANS`, FGMRES + ILU(0) at a relative tolerance of 0.05 with
+//! at most 25 iterations (the loose solve is what lets the CFL reach its cap), CFL between `0.2 cfl` and `40 cfl`.
+//! The convergence fields are the density and SA residuals at 1e-14; the history carries the residuals,
+//! `rms[nu]`, the relative residual, the force coefficients, the per-marker coefficients (`AERO_COEFF_SURF`:
+//! `CFx(wall)`, `CFx(base)`, ...), the linear solver iterations and the CFL number. The flow field and wall
+//! distribution (`restart.dat`, `surface_flow.vtk`, with the wall `y+`) are written every [`OUTPUT_FREQ`] iterations.
+//! The freestream SA variable is `3 nu` (`FREESTREAM_NU_FACTOR = 3`); the viscosity is the Sutherland law
+//! (`1.716e-5` Pa s, `273.15` K, `110.4` K) and the walls are adiabatic (`MARKER_HEATFLUX` 0 on `wall` and `base`).
+//!
+//! The main lines of the Euler file for `M = 2`, `alpha = 4 deg`, half model and a 0.1 m reference diameter:
+//! `SOLVER= EULER`, `MACH_NUMBER= 2`, `AOA= 4`, `SIDESLIP_ANGLE= 0`, `FREESTREAM_OPTION= TEMPERATURE_FS` with the
+//! pressure and temperature of the launch altitude, `REF_ORIGIN_MOMENT_X= 0`, `REF_LENGTH= 0.1`,
+//! `REF_AREA= 0.0039269908` (half of the cross-section for the half model), `MARKER_EULER= ( wall, base )`,
+//! `MARKER_MONITORING= ( wall )`, `MARKER_FAR= ( farfield )`, `MARKER_SYM= ( symmetry )`.
+//!
+//! # Sideslip and roll rate
+//!
+//! The angle of attack goes to `AOA` and the body-axis sideslip `beta` is passed as `SIDESLIP_ANGLE = -beta`: the
+//! SU2 freestream direction in the CFD frame is `(cos a cos b', sin b', sin a cos b')` and its `b'` has the opposite
+//! sign of the body-axis `beta` (checked against the expansion of the axisymmetric table). A roll-damping case
+//! keeps the body fixed and uses a steady rotating frame (`GRID_MOVEMENT= ROTATING_FRAME`, `MOTION_ORIGIN= 0 0 0`,
+//! `ROTATION_RATE= -p 0 0`): the CFD `x` points aft, so a positive body-axis roll rate is a rotation about `-x`.
+//! The rate follows from the non-dimensional `p_hat = roll_rate_hat` as `p = 2 V p_hat / d` with `V = M a` at the
+//! reference altitude, so `Clp = dCl/dp_hat` has the normalisation of the flight model.
 
 use crate::case::CaseSpec;
 use crate::config::{CfdOptions, FlowModel, MultigridCycle, Scheme};
@@ -103,7 +142,7 @@ pub enum Stage {
 /// Reference dimensions of the full (not halved) rocket.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RefDims {
-    /// Reference length: body diameter [m].
+    /// Reference length: body diameter \[m\].
     pub length: f64,
     /// Reference area: body cross-section [m^2].
     pub area: f64,

@@ -388,7 +388,7 @@ def rigid_body(f):
     axs[1].text(0.02, 0.02, "厳密に 0 の時刻は描かない（線の切れ目）", transform=axs[1].transAxes, color=INK2, fontsize=8)
     axs[1].set_xlabel("時刻 $t$ [s]")
     axs[1].set_ylabel("$\\left|\\,|q|-1\\right|$")
-    axs[1].legend(loc="center right")
+    axs[1].legend(loc="lower right")
     fig.tight_layout()
     f.save(fig, "rigid_body_attitude")
 
@@ -1134,6 +1134,116 @@ def basic_finner_validation(f, vdir):
     f.save(fig, "validation_basic_finner")
 
 
+def aero_cost_accuracy(f, data):
+    """Table time [s] against the C_Nalpha difference [%] to Euler CFD, per method (marker) and Mach number (colour)."""
+    vm = pd.read_csv(data / "sample_euler_vs_models.csv", comment="#")
+    z = vm[vm.alpha_deg == 0].sort_values("mach")
+    times = {"barrowman": 0.2, "panel": 9.0, "cfd": 9149.0}  # whole table, sample rocket (doc/data/perf, cfd/run_summary.json)
+    fig, ax = plt.subplots(figsize=(6.0, 3.6))
+    machs = [0.3, 0.8, 1.2, 2.0]
+    for c, m in zip(SERIES, machs):
+        r = z[np.isclose(z.mach, m)].iloc[0]
+        for key, mk in (("barrowman", "o"), ("panel", "s"), ("cfd", "D")):
+            d = 0.0 if key == "cfd" else 100.0 * (r[f"{key}_cna_per_rad"] / r.cfd_cna_per_rad - 1.0)
+            ax.plot(times[key], d, mk, color=c, markersize=8, markeredgecolor="white", markeredgewidth=0.6)
+    ax.axhline(0, color=INK2, linewidth=0.8)
+    ax.set_xscale("log")
+    ax.set_xlim(0.08, 3e4)
+    ax.set_ylim(-34, 24)
+    ax.set_xlabel("表全体の計算時間 [s]（対数）")
+    ax.set_ylabel("CFD（Euler）に対する $C_{N\\alpha}$ の差 [%]")
+    for key, lab in (("barrowman", "部品積み上げ法"), ("panel", "パネル法"), ("cfd", "CFD（Euler）")):
+        ax.text(times[key], 21.5, lab, ha="center", color=INK2, fontsize=9)
+    from matplotlib.lines import Line2D
+    h = [Line2D([], [], marker="o", linestyle="", color=c, markeredgecolor="white", markersize=8, label=f"$M={m:g}$") for c, m in zip(SERIES, machs)]
+    leg_m = ax.legend(handles=h, title="色：Mach 数", loc="upper center", ncol=4, bbox_to_anchor=(0.5, -0.17), columnspacing=1.2, handletextpad=0.3)
+    ax.add_artist(leg_m)
+    hs = [Line2D([], [], marker=mk, linestyle="", color=INK2, markeredgecolor="white", markersize=8, label=lab)
+          for mk, lab in (("o", "部品積み上げ法"), ("s", "パネル法"), ("D", "CFD（Euler）"))]
+    ax.legend(handles=hs, title="記号：手法", loc="upper center", ncol=3, bbox_to_anchor=(0.5, -0.30), columnspacing=1.2, handletextpad=0.3)
+    fig.subplots_adjust(left=0.13, right=0.97, top=0.97, bottom=0.12)
+    f.save(fig, "aero_cost_accuracy")
+
+
+def panel_mesh_cost(f, data):
+    """Panel count n against matrix memory and the change of C_Nalpha (change relative to the finest mesh)."""
+    d = pd.read_csv(data / "panel" / "mesh_cost.csv", comment="#")
+    fig, axs = plt.subplots(1, 2, figsize=(7.4, 3.3))
+    n = np.linspace(d.panels.min() * 0.9, d.panels.max() * 1.05, 100)
+    axs[0].plot(n, (8 * n**2 + 64 * n) / 1e6, color=SERIES[0], linewidth=1.2, label="$8n^2+64n$")
+    axs[0].plot(d.panels, d.matrix_mb, "o", color=SERIES[1], markersize=7, label="実測")
+    axs[0].set_xlabel("表面パネル数 $n$")
+    axs[0].set_ylabel("行列のメモリ [MB]")
+    axs[0].legend(loc="upper left")
+    for c, col, lab in ((SERIES[0], "cna_m03", "$M=0.3$"), (SERIES[1], "cna_m08", "$M=0.8$")):
+        ref = d[col].iloc[-1]
+        axs[1].plot(d.panels, 100.0 * (d[col] / ref - 1.0), "-o", color=c, markersize=7, label=lab)
+    axs[1].axhline(0, color=INK2, linewidth=0.8)
+    axs[1].set_xlabel("表面パネル数 $n$")
+    axs[1].set_ylabel("$C_{N\\alpha}$ の変化 [%]（最も細かいメッシュ基準）")
+    axs[1].legend(loc="lower right")
+    fig.tight_layout()
+    f.save(fig, "panel_mesh_cost")
+
+
+def cfd_fin_size_cost(f, data):
+    """fin_size against cell count, time of one case and the spurious C_N at alpha = 0 (cad, half model)."""
+    d = pd.read_csv(data / "fin_resolution.csv", comment="#")
+    d = d[(d.surface == "cad") & np.isclose(d.mach, 0.8)].drop_duplicates("run")
+    d = d.assign(wall=d.wall_size_mm)
+    fig, axs = plt.subplots(1, 3, figsize=(8.4, 3.4))
+    for c, w, lab in ((SERIES[0], 6, "wall_size 6 mm"), (SERIES[1], 2, "wall_size 2 mm")):
+        s = d[d.wall == w].sort_values("fin_size_mm", ascending=True)
+        axs[0].plot(s.fin_size_mm, s.cells / 1e6, "o", color=c, markersize=8, label=lab)
+        axs[1].plot(s.fin_size_mm, (s.case_s_a0 + s.case_s_a4) / 60.0, "o", color=c, markersize=8, label=lab)
+        axs[2].plot(s.fin_size_mm, s.cn0, "o", color=c, markersize=8, label=lab)
+    axs[2].axhline(0, color=INK2, linewidth=0.8)
+    for ax, lab in zip(axs, ("セル数 [$10^6$]", "計算時間 [min]\n($\\alpha=0$ と $4^\\circ$ の合計)", "$\\alpha=0$ の $C_N$\n（真値は 0）")):
+        ax.set_xlabel("fin_size [mm]")
+        ax.set_ylabel(lab)
+        ax.set_xticks([1, 2, 6])
+    axs[0].legend(loc="upper left")
+    fig.tight_layout()
+    f.save(fig, "cfd_fin_size_cost")
+
+
+def integrator_cost_accuracy(f, data):
+    """Right-hand-side evaluations against the landing-point difference [m] for rk4 / rk45 / dop853."""
+    d = pd.read_csv(data / "sim" / "integrator_cost_accuracy.csv", comment="#")
+    fig, ax = plt.subplots(figsize=(6.0, 3.6))
+    floor = 1e-4
+    for c, k, mk, lab in ((SERIES[0], "rk4", "o", "rk4（刻み幅を変える）"), (SERIES[1], "rk45", "s", "rk45（許容誤差を変える）"), (SERIES[2], "dop853", "^", "dop853（許容誤差を変える）")):
+        s = d[d.integrator == k].sort_values("rhs_evals")
+        ax.plot(s.rhs_evals, np.maximum(s.landing_diff_m, floor), "-" + mk, color=c, markersize=7, linewidth=1.2, label=lab)
+    ax.axhline(floor, color=GRID, linewidth=0.8)
+    ax.text(2.5e5, floor * 1.25, "$10^{-4}$ m 以下（参照解と一致）", color=INK2, fontsize=8.5)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("右辺の評価回数（1 回の飛翔）")
+    ax.set_ylabel("参照解との着地点の差 [m]")
+    ax.set_xlim(4e4, 4e6)
+    ax.legend(loc="upper right")
+    fig.tight_layout()
+    f.save(fig, "integrator_cost_accuracy")
+
+
+def mc_sample_convergence(f, data):
+    """Maximum, P99.9 and P99 of the landing distance against the sample count N (ballistic and parachute)."""
+    d = pd.read_csv(data / "dispersion" / "sample_convergence.csv", comment="#")
+    fig, axs = plt.subplots(1, 2, figsize=(7.6, 3.3))
+    for ax, k, ttl in ((axs[0], "ballistic", "弾道落下"), (axs[1], "parachute", "パラシュート降下")):
+        for c, col, mk, lab in ((SERIES[3], "max", "o", "最大"), (SERIES[1], "p999", "s", "P99.9"), (SERIES[0], "p99", "^", "P99")):
+            ax.plot(d.samples, d[f"{k}_{col}"] / 1e3, "-" + mk, color=c, markersize=7, linewidth=1.2, label=lab)
+        ax.set_xscale("log")
+        ax.set_xlabel("サンプル数 $N$")
+        ax.set_ylabel("着地距離 [km]")
+        ax.set_ylim(0, None)
+        ax.text(0.04, 0.95, ttl, transform=ax.transAxes, va="top", color=INK2, fontsize=9.5)
+    axs[1].legend(loc="lower right")
+    fig.tight_layout()
+    f.save(fig, "mc_sample_convergence")
+
+
 def main():
     out, figdir = Path(sys.argv[1]), Path(sys.argv[2])
     f = Figs(figdir)
@@ -1158,7 +1268,14 @@ def main():
     vdir = data.parent / "validation" / "basic_finner"
     if (vdir / "summary_vs_measured.csv").exists():
         basic_finner_validation(f, vdir)
-
+    # Figures of the decision chapters (data committed under doc/data).
+    root = data.parent
+    aero_cost_accuracy(f, data)
+    if (root / "panel" / "mesh_cost.csv").exists():
+        panel_mesh_cost(f, root)
+    cfd_fin_size_cost(f, data)
+    integrator_cost_accuracy(f, root)
+    mc_sample_convergence(f, root)
 
 if __name__ == "__main__":
     main()

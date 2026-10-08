@@ -1,0 +1,32 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+\begin{tikzpicture}[font=\small,
+  st/.style={draw=cblue, fill=cfill, thick, rounded corners=4pt, minimum width=42mm, minimum height=14mm, text width=39mm, align=center},
+  ok/.style={draw=caqua, fill=cfillg, thick, rounded corners=4pt, minimum width=42mm, minimum height=14mm, text width=39mm, align=center},
+  bad/.style={draw=corange, fill=cfillo, thick, rounded corners=4pt, minimum width=42mm, minimum height=14mm, text width=39mm, align=center},
+  top/.style={draw=cink, fill=cfillg, thick, rounded corners=6pt, minimum width=60mm, minimum height=10mm, align=center},
+  arr/.style={->, thick, cink2}, lab/.style={font=\footnotesize, align=center, cink2}]
+  \node[top] (t) {コマンドの終了ステータス（\texttt{echo \$?}）};
+  \node[ok,  below left=18mm and 51mm of t.south] (c0) {\textbf{0}\\成功};
+  \node[bad, below left=18mm and 4mm of t.south]  (c1) {\textbf{1}\\エラーで止まった};
+  \node[bad, below right=18mm and 4mm of t.south] (c2) {\textbf{2}\\コマンドラインの\\使い方の誤り};
+  \node[bad, below right=18mm and 51mm of t.south] (c3) {\textbf{3}\\出力は書いたが\\結果が不完全、または使えない};
+  \draw[arr] (t.south) -- ++(0,-6mm) -| (c0.north);
+  \draw[arr] (t.south) -- ++(0,-6mm) -| (c1.north);
+  \draw[arr] (t.south) -- ++(0,-6mm) -| (c2.north);
+  \draw[arr] (t.south) -- ++(0,-6mm) -| (c3.north);
+  \node[st, below=10mm of c0] (d0) {警告の行（\texttt{warning[IY-…]}）が\\あれば読む。\\\texttt{summary.json} の \texttt{warnings} にも残る};
+  \node[st, below=10mm of c1] (d1) {標準エラー出力の\\\texttt{error[IY-…]:} の行を読む};
+  \node[st, below=10mm of c2] (d2) {\texttt{error: …} の行と\\\texttt{--help} を読む};
+  \node[st, below=10mm of c3] (d3) {\texttt{INCOMPLETE RESULTS} または\\\texttt{RESULTS NOT USABLE} の行を読む};
+  \draw[arr] (c0) -- (d0);
+  \draw[arr] (c1) -- (d1);
+  \draw[arr] (c2) -- (d2);
+  \draw[arr] (c3) -- (d3);
+  \node[st, below=10mm of d1, xshift=-0mm] (code) {行頭の \texttt{IY-Xnnn} を\\コードの一覧で引く};
+  \node[ok, below=10mm of d3] (use) {不完全: 理由を直して\\再実行する。\\使えない: 結果を判断に使わない};
+  \draw[arr] (d0.south) -- ++(0,-5mm) -| ($(code.west)+(-0mm,0)$) ;
+  \draw[arr] (d1) -- (code);
+  \draw[arr] (d3) -- (use);
+  \draw[arr] (use.west) -- (code.east);
+\end{tikzpicture}

@@ -38,7 +38,7 @@ impl Atmosphere {
     }
 }
 
-/// Atmospheric state at geometric altitude `z` [m] above mean sea level.
+/// Atmospheric state at geometric altitude `z` \[m\] above mean sea level.
 pub fn us76(z: f64) -> Atmosphere {
     let h = geopotential(z);
     let layer = LAYERS.iter().rev().find(|l| h >= l.0).unwrap_or(&LAYERS[0]);
@@ -108,7 +108,7 @@ pub fn us76_offset(z: f64, dt: f64) -> Atmosphere {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "model", rename_all = "lowercase")]
 pub enum AtmosphereModel {
-    /// US 1976 standard atmosphere with a temperature offset [K].
+    /// US 1976 standard atmosphere with a temperature offset \[K\].
     Us1976 { temperature_offset: f64 },
     /// Altitude-independent density, speed of sound and dynamic viscosity.
     Constant { density: f64, sound_speed: f64, viscosity: f64 },

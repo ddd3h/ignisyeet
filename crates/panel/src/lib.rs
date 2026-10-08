@@ -7,7 +7,7 @@
 //! * subsonic Mach numbers: Morino/Dirichlet constant-source/doublet panel solution with the
 //!   Goethert compressibility transformation (`solver`), with an empirical viscous cross-flow term;
 //!   above the attached-flow angle (15°) the normal force and its moment relax to the component
-//!   build-up model, whose fins carry the flat-plate crossflow force (see [`relax_to_large_angle`]);
+//!   build-up model, whose fins carry the flat-plate crossflow force (see `relax_to_large_angle`);
 //! * supersonic Mach numbers: local-inclination methods (`supersonic`);
 //! * transonic band: cubic Hermite blend in Mach number between the two regimes, of the
 //!   normal force and its nose moment (the centre of pressure is their ratio; monotone slopes) and
@@ -134,7 +134,7 @@ pub struct SubsonicSummary {
     pub mach: f64,
     /// Potential-flow CN slope [1/rad].
     pub cna: f64,
-    /// Centre of pressure aft of the nose at alpha -> 0 [m].
+    /// Centre of pressure aft of the nose at alpha -> 0 \[m\].
     pub xcp: f64,
     /// Damping sums S0, S1, S2.
     pub damp: [f64; 3],
@@ -154,7 +154,7 @@ pub struct SurfaceCp {
 pub struct PanelReport {
     pub panels: usize,
     pub wake_panels: usize,
-    /// Wall time of assembly and factorisation plus solves of all subsonic Mach numbers [s].
+    /// Wall time of assembly and factorisation plus solves of all subsonic Mach numbers \[s\].
     pub solve_seconds: f64,
     pub subsonic: Vec<SubsonicSummary>,
     /// Surface Cp at alpha = 4 deg for the lowest subsonic Mach number (M = 0 by default).
@@ -266,7 +266,7 @@ fn from_linear(a: [f64; 9]) -> AeroCoeffs {
     AeroCoeffs { cn: a[0], ca_on: a[2], ca_off: a[3], xcp, cna: a[4], damp: [a[6], a[7], a[8]], ..Default::default() }
 }
 
-/// Angle [rad] from which the subsonic columns equal the component build-up model: twice the
+/// Angle \[rad\] from which the subsonic columns equal the component build-up model: twice the
 /// attached-flow angle [`FIN_ALPHA_LINEAR`] (30°).
 pub const LARGE_ANGLE_RELAXED: f64 = 2.0 * FIN_ALPHA_LINEAR;
 
@@ -428,12 +428,12 @@ pub fn set_parallelism(threads: usize) {
     });
 }
 
-/// Sets the memory budget [bytes] checked before the dense solve; `None` = no limit.
+/// Sets the memory budget \[bytes\] checked before the dense solve; `None` = no limit.
 pub fn set_memory_limit(bytes: Option<u64>) {
     MEMORY_LIMIT.store(bytes.unwrap_or(0), std::sync::atomic::Ordering::Relaxed);
 }
 
-/// Peak memory [bytes] of the dense solve for `n` panels: one `n x n` f64 matrix (assembled, then
+/// Peak memory \[bytes\] of the dense solve for `n` panels: one `n x n` f64 matrix (assembled, then
 /// LU-factored in place, see [`solver::solve_potential`]), plus the right-hand sides. Computed in
 /// saturating 128-bit arithmetic and saturated at `u64::MAX` (from about 1.5e9 panels on), so any size gives
 /// a value to compare with the memory limits.
@@ -566,6 +566,13 @@ pub fn build_table_with_progress(
 
     progress(PanelStage::SupersonicDone);
     progress(PanelStage::Transonic);
+    // Implementation notes for the band (the user documentation only states the behaviour):
+    // * the end-point Mach slopes are one-sided differences with step `h = 0.02` taken outside the band;
+    // * for every quantity but the axial force the slopes are limited by `monotone_slopes`
+    //   (Fritsch-Carlson: negative ratios to 0, ratio vector scaled to length 3), because the
+    //   low-supersonic local-inclination values change quickly with Mach number and an unlimited
+    //   Hermite blend would overshoot; the axial force keeps the raw slopes to preserve the drag rise;
+    // * a band without Mach grid points inside it is not evaluated.
     // Transonic blend: values and Mach slopes of both regimes at the band edges.
     // The band starts at `transonic[0]`, or at the highest solved subsonic Mach number when that is
     // lower, so the subsonic columns are interpolated between solutions, never extrapolated.

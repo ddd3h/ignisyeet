@@ -1,0 +1,31 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+% Crates of the Rust workspace (arrow = depends on) and the data flow to python/plot.py.
+\begin{tikzpicture}[
+  font=\small,
+  rust/.style={draw=cblue, fill=cfill, thick, rounded corners=3pt, minimum width=30mm, minimum height=12mm, align=center},
+  py/.style={draw=corange, fill=cfillo, thick, rounded corners=3pt, minimum width=30mm, minimum height=12mm, align=center},
+  file/.style={draw=cink2, fill=cfillg, minimum width=30mm, minimum height=9mm, align=center, font=\footnotesize},
+  dep/.style={->, thick, cink2},
+  flow/.style={->, thick, cink2, dashed}]
+  \node[rust] (geom) at (0,0) {{\ttfamily geom}\\{\footnotesize STL・形状抽出}};
+  \node[rust] (aero) at (5.2,0) {{\ttfamily aero}\\{\footnotesize 大気・空力モデル・係数表}};
+  \node[rust] (panel) at (10.4,0) {{\ttfamily panel}\\{\footnotesize パネル法}};
+  \node[rust] (cfd) at (10.4,-3.2) {{\ttfamily cfd}\\{\footnotesize メッシュ・SU2・係数表}};
+  \node[rust] (sim) at (5.2,-3.2) {{\ttfamily sim}\\{\footnotesize 飛翔・積分・落下分散}};
+  \node[rust] (cli) at (5.2,-6.4) {{\ttfamily cli}\\{\footnotesize \texttt{ignisyeet} コマンド・設定・出力}};
+  \node[file] (out) at (0,-6.4) {出力ファイル\\{\scriptsize CSV・JSON・KML}};
+  \node[py] (plot) at (0,-9.2) {{\ttfamily python/plot.py}\\{\footnotesize 作図}};
+  \draw[dep] (aero) -- (geom);
+  \draw[dep] (panel) -- (aero);
+  \draw[dep] (cfd.north) -- (panel.south);
+  \draw[dep] (sim) -- (aero);
+  \draw[dep] (cli.east) -| (cfd.south);
+  \draw[dep] (cli) -- (sim);
+  \draw[dep] (sim.west) -| (geom.south);
+  \draw[flow] (cli) -- (out);
+  \draw[flow] (out) -- (plot);
+  \node[font=\scriptsize, cink2, anchor=west] at (11.4,-5.4) {実線：依存する（矢印の先）};
+  \node[font=\scriptsize, cink2, anchor=west, align=left] at (11.4,-7.0) {\texttt{cli} は 5 つの\\クレートすべてに依存する};
+  \node[font=\scriptsize, cink2, anchor=west] at (11.4,-6.2) {破線：データの流れ};
+\end{tikzpicture}

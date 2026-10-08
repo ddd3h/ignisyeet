@@ -160,7 +160,9 @@ impl Mat3 {
 }
 
 /// Eigen decomposition of a symmetric 3x3 matrix (cyclic Jacobi).
-/// Returns eigenvalues in descending order with matching unit eigenvectors.
+/// Returns eigenvalues in descending order with matching unit eigenvectors. Used for the principal
+/// axis of a rocket mesh (largest eigenvalue of the vertex covariance); see Golub & Van Loan,
+/// "Matrix Computations", for the Jacobi method.
 pub fn sym_eigen(a: [[f64; 3]; 3]) -> ([f64; 3], [Vec3; 3]) {
     let mut a = a;
     let mut v = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];

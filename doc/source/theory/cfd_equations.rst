@@ -72,16 +72,12 @@ CFD の方程式と離散化
 
 .. _sec-cfd-int-roles:
 
-使う外部プログラム
-~~~~~~~~~~~~~~~~~~
+使うツール
+~~~~~~~~~~
 
-CFD モードは、次の外部プログラムを使って、形状の準備から係数表までを一続きで実行する。
-
-* `SU2 <https://su2code.github.io/>`__ :cite:`su2`：流れの解法。Euler 方程式と RANS 方程式を解く。
-* `gmsh <https://gmsh.info/>`__ :cite:`gmsh`：体積メッシュの生成。
-* `OpenCASCADE <https://dev.opencascade.org/>`__ :cite:`occt`：CAD の立体カーネル。``panel_mesh`` の形状の作り直し、``step`` の CAD のファイルの読み込み、遠方境界の切り抜きに使う。
-* `Manifold <https://github.com/elalish/manifold>`__ :cite:`manifold`：重なった閉じた STL の殻のブーリアン和。``surface = "stl"`` のときだけ使う。
-* Open MPI :cite:`openmpi`：1 ケースを複数のランクで並列に解くときに使う。
+CFD モードは、流れの解法に `SU2 <https://su2code.github.io/>`__ :cite:`su2`、体積メッシュの生成に `gmsh <https://gmsh.info/>`__ :cite:`gmsh` を使う。
+CAD のモデル（``surface = "step"``）や STL（``surface = "stl"``）を壁面にするときは、OpenCASCADE :cite:`occt` と Manifold :cite:`manifold` を含むツールも要る。1 ケースを複数のランクで解くときは Open MPI :cite:`openmpi` を使う。
+必要なツールと用意の手順は :ref:`page-howto-cfd-setup` にある。
 
 .. _sec-cfd-euler-eq:
 
@@ -165,13 +161,11 @@ RANS（Reynolds 平均 Navier–Stokes 方程式）は、:eq:`eq-cfd-euler` に�
 SU2 は非構造メッシュの節点を中心とする有限体積法で、各節点のまわりの双対セルについて :eq:`eq-cfd-euler` を離散化する。選べる設定は次のとおりである。
 
 * **対流フラックス**\ ：``scheme = "roe"``\ （既定）は Roe の近似 Riemann 解法 :cite:`roe`、``"jst"`` は Jameson–Schmidt–Turkel の中心差分と人工粘性 :cite:`jst` である（:numref:`tbl-choose-cfd-scheme`）。
-* **2 次精度化**\ ：Roe では、MUSCL 形の再構成（勾配は重み付き最小二乗法）に制限関数を組み合わせる。Euler は Venkatakrishnan の制限関数 :cite:`venkat` で、早期終了の最小反復数 ``min_iterations`` の時点で値を固定する。固定しないと、制限関数の切り替わりで残差が :math:`10^{-4}` 付近から下がらなくなるためである。
-  RANS は辺ごとの Van Albada の制限関数で、固定しない。Venkatakrishnan–Wang の制限関数では、3 次元のケース（サンプル機体の :math:`M=0.8`、円すいの :math:`M=2`）の残差が :math:`10^{-4}` と :math:`10^{-6}` の間を行き来し、制限関数を固定すると発散したためである。
-  JST では再構成を使わない。
+* **2 次精度化**\ ：Roe では、MUSCL 形の再構成に制限関数を組み合わせた 2 次精度を使う。制限関数は ``model`` ごとに決まっていて、設定では選べない。JST は再構成を使わない。
 * **時間積分**\ ：定常解を得るために、陰的 Euler 法による擬似時間の進行を使う。CFL 数は適応的に変え、既定の初期値 ``cfl`` = 5 から、収束が進むと増やし、悪化すると減らす。
 * **収束判定**\ ：Euler は、密度の二乗平均残差が ``convergence``\ （既定 :math:`10^{-6}`）以下になるか、``iterations``\ （既定 3000）に達すると終了する。実際に止めるかどうかは係数の落ち着きも見て決める（:ref:`sec-cfd-int-convergence`）。
   RANS は、密度と SA の残差が基準の最大値から十分に下がり、係数が平らになったときに止める（:ref:`sec-cfd-int-rans-accept`）。反復数の上限は ``iterations``\ （RANS の既定 4000）で、2 次精度の段で数える。
-* **RANS の対流**\ ：乱流量の対流は 1 次風上、勾配は粘性項と乱流量に Green–Gauss 法、再構成に重み付き最小二乗法を使う。冷えた起動のケースは 1 次精度で解いた解から 2 次精度で解き直す（:ref:`sec-cfd-int-rans-stages`）。
+* **RANS の対流**\ ：乱流量の対流は 1 次風上である。冷えた起動のケースは、1 次精度で解いた解から 2 次精度で解き直す（:ref:`sec-cfd-int-rans-stages`）。
 * **マルチグリッド**\ ：``multigrid``\ （既定 0）を 1 から 4 にすると SU2 の凝集型マルチグリッドを要求するが、サンプルのメッシュでは粗い格子が作られず、効果がない（:ref:`sec-cfd-multigrid`）。
 
 .. _sec-cfd-sideslip:

@@ -50,7 +50,7 @@
      - Δ着地距離 [m]
      - Δ最小の静安定余裕 [cal]
      - 判断
-   * - 基準（サンプルの ``fin_le`` ``"rounded"``、``fin_te`` ``"square"``、``roughness`` 60 µm、``extra_cd`` 0.02、``fin_cant_deg`` 0）
+   * - 基準（サンプルの ``fin_le`` ``"rounded"``、``fin_te`` ``"square"``、``roughness`` 60 :math:`\mu\mathrm{m}`、``extra_cd`` 0.02、``fin_cant_deg`` 0）
      - 
      - 4440.5
      - 7735.5
@@ -68,13 +68,13 @@
      - +321.7
      - 0.00
      - 後縁の切り落としの有無を実機に合わせる
-   * - ``roughness`` 60 µm → 20 µm
+   * - ``roughness`` 60 :math:`\mu\mathrm{m}` → 20 :math:`\mu\mathrm{m}`
      - 摩擦抗力の :math:`C_A`\ （Mach 0.3 で −0.061）
      - +247.8
      - +439.8
      - 0.00
      - 塗装の仕上げで頂点が数 % 動く。測れないときは幅を見る
-   * - ``roughness`` 60 µm → 120 µm
+   * - ``roughness`` 60 :math:`\mu\mathrm{m}` → 120 :math:`\mu\mathrm{m}`
      - 同上（Mach 0.3 で +0.046）
      - −168.9
      - −301.2
@@ -727,7 +727,7 @@ Reynolds 数を全長 :math:`L` 基準で :math:`Re=VL/\nu` とする。
    C_f^{\mathrm{rough}} \leftarrow
    \begin{cases} C_f^{\mathrm{rough}}(1-0.1M^2) & (M<1)\\ C_f^{\mathrm{rough}}/(1+0.18M^2) & (M\ge1)\end{cases}
 
-を掛ける。:numref:`fig-skin-friction` に :math:`Re` と粗さによる変化を示す。サンプル機体（:math:`L=1.5` m、60 µm）では :math:`Re` が約 :math:`10^6` を超えると粗さの式が支配的になる。
+を掛ける。:numref:`fig-skin-friction` に :math:`Re` と粗さによる変化を示す。サンプル機体（:math:`L=1.5` m、60 :math:`\mu\mathrm{m}`）では :math:`Re` が約 :math:`10^6` を超えると粗さの式が支配的になる。
 
 .. _fig-skin-friction:
 

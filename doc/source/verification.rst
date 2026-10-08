@@ -423,10 +423,10 @@ ECEF 座標での積分
   （:math:`10^{-9}` 以内）。ノズルは重心より後ろにあるので :math:`+y_b` まわりの角加速度が :math:`(x_{\mathrm{aft}}-x_{cg})T\sin\varepsilon/I_{yy}` になり、傾きが 0 なら 0 である
   （``misaligned_thrust_points_along_azimuth_and_pitches``）。
 * **ノズルのオフセット**：:math:`y_b` 方向に 0.01 m のオフセットを与えると、:math:`z_b` まわりの角加速度が :math:`-0.01\,T/I_{zz}` になる（``nozzle_offset_gives_moment_about_the_cg``）。
-* **一般表の飛翔**：サンプル機体の軸対称表と、それを展開した一般表で飛翔を比べる（無風と 5 m/s の風）。頂点高度の差は無風で 0.003 m、5 m/s の風で 0.08 m（要求は 0.5 m）である。
+* **一般表の飛翔**：サンプル機体の軸対称表と、それを展開した一般表で飛翔を比べる（無風と 5 m/s の風）。頂点高度の差は無風で 0.004 m、5 m/s の風で 0.04 m（要求は 0.5 m）である。
   一般表の最小静安定余裕は、軸対称表の飛翔の各時刻（頂点まで、対気速度 10 m/s 超）で一般表の余裕の定義（:ref:`sec-static-margin-general`）から求めた最小値と 0.02 cal 以内で一致し、迎角と横滑り角はすべて有限である（``general_table_flight_matches_axisymmetric_table``）。
   一般表の余裕は 0 から 2° の割線の傾きから求めるので、0 から 1° の割線から求める軸対称表の余裕より約 0.1 cal 小さい。
-  設定ファイルのサンプルを一般表で飛ばしても、頂点高度は 4439.9 m に 0.5 m 以内で一致する（``general_table_sample_matches_axisymmetric_apogee``）。
+  設定ファイルのサンプルを一般表で飛ばしても、頂点高度は 4440.5 m に 0.5 m 以内で一致する（``general_table_sample_matches_axisymmetric_apogee``）。
 * **ランチャ上のロール角**：仰角 80° で ``roll_deg`` を 90° にすると、:math:`+x_b` は変わらず、:math:`+y_b` が元の :math:`+z_b` に、:math:`+z_b` が元の :math:`-y_b` になる
   （``launch_roll_rotates_the_body_about_the_rail``）。
 * **サンプルでのカント**：``fin_cant_deg = 1.0`` を設定すると、係数表の ``fin_cant_ref_deg`` とシミュレーションのカントが 1° になり、最大ロール角速度が 1 rad/s を超える

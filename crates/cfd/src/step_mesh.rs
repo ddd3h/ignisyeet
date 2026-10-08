@@ -932,7 +932,7 @@ pub fn ensure_mesh_step(
     std::fs::create_dir_all(&dir).with_context(|| format!("cannot create {}", dir.display()))?;
     let (treatment, mut warnings) = base_treatment_notes(opt);
     for w in &warnings {
-        eprintln!("warning: aero.cfd: {w}");
+        eprintln!("{}", crate::coded_line("warning", "aero.cfd:", w));
     }
     let (bytes, format, declared, scale) = read_file(opt)?;
     let mut params = base_params(opt, geom, &dir, threads, scale, treatment);

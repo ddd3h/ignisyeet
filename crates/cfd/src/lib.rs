@@ -171,6 +171,26 @@ pub fn not_installed_message(report: &tools::ToolReport, opt: &CfdOptions) -> St
     format!("[IY-F001] SU2 is not installed ({})\n{}", tools::INSTALL_HINT, lines.join("\n"))
 }
 
+/// `msg` with the scope text placed after its leading `[IY-Xnnn]` code: `[IY-F002] aero.cfd: text`. A message that
+/// already starts with the scope, or has no code, only gets the scope in front.
+pub fn scoped(scope: &str, msg: &str) -> String {
+    let (code, rest) = match msg.strip_prefix("[IY-").and_then(|b| b.split_once("] ")) {
+        Some((c, r)) => (Some(format!("[IY-{c}] ")), r),
+        None => (None, msg),
+    };
+    let rest = if scope.is_empty() || rest.starts_with(scope) { rest.to_string() } else { format!("{scope} {rest}") };
+    format!("{}{rest}", code.unwrap_or_default())
+}
+
+/// A user-visible line `level[IY-Xnnn]: scope text` (`level: scope text` for an uncoded message), as printed by the CLI.
+pub fn coded_line(level: &str, scope: &str, msg: &str) -> String {
+    let s = scoped(scope, msg);
+    match s.strip_prefix("[IY-").and_then(|b| b.split_once("] ")) {
+        Some((c, r)) => format!("{level}[IY-{c}]: {r}"),
+        None => format!("{level}: {s}"),
+    }
+}
+
 /// Fails with the "not installed" error unless SU2, MPI (for more than one rank) and gmsh work.
 pub fn check_tools(opt: &CfdOptions) -> Result<tools::ToolReport> {
     let r = tools::check_tools(opt, &[]);
@@ -483,7 +503,7 @@ pub fn build_table_with_progress(
         eprintln!("note: aero.cfd: {n}");
     }
     if let Some(why) = &plan.over_budget {
-        bail!("aero.cfd: {why}");
+        bail!("{}", scoped("aero.cfd:", why));
     }
     let run = runner::RunSetup {
         opt: cfd,
@@ -848,6 +868,18 @@ mod tests {
 
     /// Every `IY-Fnnn` code of the sources is documented in `doc/source/errors/cfd.rst` and the other way round, and
     /// every error of the embedded scripts carries one.
+    #[test]
+    fn coded_lines_lead_with_the_code() {
+        assert_eq!(scoped("aero.cfd:", "[IY-F002] a single case"), "[IY-F002] aero.cfd: a single case");
+        assert_eq!(scoped("aero.cfd:", "[IY-C510] aero.cfd: ranks"), "[IY-C510] aero.cfd: ranks");
+        assert_eq!(
+            coded_line("warning", "aero.cfd: case m0.5_a00.00:", "[IY-F523] wall y+ not checked"),
+            "warning[IY-F523]: aero.cfd: case m0.5_a00.00: wall y+ not checked"
+        );
+        assert_eq!(coded_line("warning", "aero.cfd:", "[IY-C511] aero.cfd: model"), "warning[IY-C511]: aero.cfd: model");
+        assert_eq!(coded_line("error", "aero.cfd: case x failed:", "plain"), "error: aero.cfd: case x failed: plain");
+    }
+
     #[test]
     fn error_codes_are_documented_and_scripts_are_coded() {
         fn codes(text: &str, out: &mut std::collections::BTreeSet<String>) {

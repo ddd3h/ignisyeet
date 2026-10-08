@@ -12,7 +12,7 @@
   \foreach \y in {0.7,1.4,2.1,2.8} \draw[cgrid] (0,\y) -- (4.0,\y);
   \fill[cblue] (2.4,2.1) circle (2pt);
   \node[note, anchor=north] at (2.0,-0.5) {各点の値：$C_N,\ C_A,\ x_{cp},\ C_{N\alpha}$,\\減衰の和 $S_0,S_1,S_2$、ロールの微係数};
-  \node[note, anchor=north] at (2.0,-1.7) {$\alpha_t$ の既定の範囲は 0 から 30°\\（超える分は外挿）};
+  \node[note, anchor=north] at (2.0,-1.7) {$\alpha_t$ の既定の範囲は 0 から 90°\\（範囲外を引くと結果は使えない）};
   % ---- middle: expansion ----
   \draw[arr] (6.0,2.2) -- (9.4,2.2);
   \node[note, anchor=south] at (7.7,2.35) {展開\\$\cos\alpha_t=\cos\alpha\cos\beta$};

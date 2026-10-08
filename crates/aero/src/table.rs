@@ -788,6 +788,10 @@ impl AeroTable {
     }
 
     /// Snapshot of the out-of-range lookup statistics (all clones of a table share them).
+    /// Counts: all lookups, Mach below/above the grid, angle below/above the grid (an axis with one node
+    /// counts every other value), and the largest Mach and total angle requested (axisymmetric: the
+    /// folded total angle; general: `acos(cos alpha cos beta)`). The user documentation describes the
+    /// resulting `aero_table_range` record and the exit-status-3 rules.
     pub fn out_of_range_stats(&self) -> OutOfRangeStats {
         let c = &self.counters;
         OutOfRangeStats {

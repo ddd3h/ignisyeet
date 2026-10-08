@@ -1,32 +1,27 @@
 % SPDX-License-Identifier: GPL-3.0-or-later
 % Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
-% Panel method: the six processing steps and the Mach regimes that use them.
+% Panel method: the method used in each Mach range (boundaries are the defaults) and what it gives.
 \begin{tikzpicture}[
   font=\footnotesize,
-  pstep/.style={draw=cblue, fill=cfill, thick, rounded corners=3pt, minimum width=28mm, minimum height=17mm, text width=26mm, align=center},
-  loc/.style={draw=corange, fill=cfillo, thick, rounded corners=3pt, minimum height=11mm, align=center},
-  arr/.style={->, thick, cink2},
-  note/.style={font=\scriptsize, cink2, align=center}]
-  % six steps
-  \node[pstep] (s1) at (0,0) {\textbf{1} 表面をパネルに分割\\{\scriptsize 閉じた表面メッシュ}};
-  \node[pstep] (s2) at (3.15,0) {\textbf{2} 各パネルに未知量\\{\scriptsize わき出し $\sigma$\\二重わき出し $\mu$}};
-  \node[pstep] (s3) at (6.3,0) {\textbf{3} 壁面を貫通しない条件\\{\scriptsize $\sigma$ に直接入る}};
-  \node[pstep] (s4) at (9.45,0) {\textbf{4} 連立方程式\\{\scriptsize 右辺は 3 通り}};
-  \node[pstep] (s5) at (12.6,0) {\textbf{5} 表面圧力 $C_p$\\{\scriptsize 面内速度から}};
-  \node[pstep] (s6) at (15.75,0) {\textbf{6} 力・モーメント\\{\scriptsize $C_{N\alpha}$, $x_{cp}$}};
-  \foreach \i/\j in {1/2,2/3,3/4,4/5,5/6} { \draw[arr] (s\i.east) -- (s\j.west); }
-  \node[note] at ([yshift=4mm]s2.north) {未知量};
-  \node[note] at ([yshift=4mm]s3.north) {課す条件};
-  \node[note] at ([yshift=4mm]s4.north) {解く};
-  \node[note] at ([yshift=4mm]s6.north) {得るもの};
-  % Mach regimes
-  \node[loc, minimum width=62mm] (sub) at (3.15,-4.2) {亜音速（$M\le0.8$）\\Morino の定式化 + Göthert の変換};
-  \node[loc, minimum width=40mm] (tr) at (9.0,-4.2) {遷音速（$0.8$〜$1.2$）\\Hermite 補間};
-  \node[loc, minimum width=56mm] (sup) at (14.6,-4.2) {超音速（$M\ge1.2$）\\局所傾斜法};
-  \draw[arr] (sub.north) -- ++(0,0.6) -| ([xshift=-6mm]s4.south);
-  \node[note, anchor=north] at ([yshift=-1mm]sub.south) {手順 1〜6 をすべて通る};
-  \node[note, anchor=north] at ([yshift=-1mm]tr.south) {両側の値と傾きをつなぐだけ};
-  \node[note, anchor=north] at ([yshift=-1mm]sup.south) {連立方程式は解かない};
-  \draw[arr] (sup.north) -- ++(0,0.6) -| ([xshift=6mm]s5.south);
-  \node[note, anchor=west, text width=36mm, align=left] at (14.75,-3.35) {手順 2〜4 を使わず、\\各パネルの傾きから直接};
+  band/.style={draw=cblue, fill=cfill, thick, rounded corners=2pt, align=center, text width=#1, minimum height=22mm},
+  bandt/.style={draw=cblue, pattern=north east lines, pattern color=cink2!60, thick, rounded corners=2pt, minimum height=22mm},
+  axial/.style={draw=corange, fill=cfillo, thick, rounded corners=2pt, align=center, minimum height=9mm},
+  note/.style={font=\scriptsize, cink2, align=center},
+  tick/.style={font=\scriptsize, cink2}]
+  \def\sx{6}
+  % Mach axis
+  \draw[->, thick, cink] (0,-0.6) -- ({2.45*\sx},-0.6) node[right] {$M$};
+  \foreach \m/\l in {0/0, 0.8/0.8, 1.2/1.2, 2/2} { \draw[cink] ({\m*\sx},-0.5) -- ({\m*\sx},-0.7); \node[tick, anchor=north] at ({\m*\sx},-0.7) {\l}; }
+  % bands
+  \node[band=44mm, minimum width=4.8cm, anchor=south west] (sub) at (0,0) {\textbf{亜音速}\\Morino の定式化\\+ Göthert の変換\\\scriptsize 表面のパネルを解く};
+  \fill[white] ({0.8*\sx},0) rectangle ({1.2*\sx},2.2);
+  \node[bandt, minimum width=2.4cm, anchor=south west] (tr) at ({0.8*\sx},0) {};
+  \node[font=\footnotesize, align=center, fill=white, inner sep=1pt] at ({1.0*\sx},1.1) {\textbf{遷音速}\\Hermite\\補間};
+  \node[band=60mm, minimum width=7.2cm, anchor=south west] (sup) at ({1.2*\sx},0) {\textbf{超音速}\\局所傾斜法\\\scriptsize 各パネルの傾きから圧力を決める};
+  % axial force
+  \node[axial, minimum width=14.7cm, anchor=south west] at (0,2.5) {軸力（全 Mach 数）：パネルで積分した表面摩擦 + 超音速の造波抗力 + 部品積み上げ法の底面・フィン縁・ボートテール・追加抗力};
+  % setting labels
+  \node[note, anchor=north] at ({0.4*\sx},-1.35) {\texttt{aero.panel.subsonic\_machs}\\（解く Mach 数。間は内挿）};
+  \node[note, anchor=north] at ({1.0*\sx},-1.35) {\texttt{aero.panel.transonic}\\\texttt{[lo, hi]}};
+  \node[note, anchor=north] at ({1.9*\sx},-1.35) {$M\ge$ \texttt{hi}};
 \end{tikzpicture}

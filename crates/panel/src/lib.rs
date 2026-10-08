@@ -566,6 +566,13 @@ pub fn build_table_with_progress(
 
     progress(PanelStage::SupersonicDone);
     progress(PanelStage::Transonic);
+    // Implementation notes for the band (the user documentation only states the behaviour):
+    // * the end-point Mach slopes are one-sided differences with step `h = 0.02` taken outside the band;
+    // * for every quantity but the axial force the slopes are limited by `monotone_slopes`
+    //   (Fritsch-Carlson: negative ratios to 0, ratio vector scaled to length 3), because the
+    //   low-supersonic local-inclination values change quickly with Mach number and an unlimited
+    //   Hermite blend would overshoot; the axial force keeps the raw slopes to preserve the drag rise;
+    // * a band without Mach grid points inside it is not evaluated.
     // Transonic blend: values and Mach slopes of both regimes at the band edges.
     // The band starts at `transonic[0]`, or at the highest solved subsonic Mach number when that is
     // lower, so the subsonic columns are interpolated between solutions, never extrapolated.

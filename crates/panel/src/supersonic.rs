@@ -204,6 +204,11 @@ fn taylor_maccoll(m1: f64, beta: f64) -> Option<(f64, f64)> {
     None
 }
 
+// Tangent-cone table: Mach 1.02 + 0.04 k (150 rows); each row integrates Taylor-Maccoll with the shock
+// angle sampled geometrically (600 points) towards the Mach angle and is resampled at 0.25 deg cone
+// half-angle steps up to the detachment limit. Inside the table the pressure coefficient is
+// interpolated linearly (below the first step as `cp ~ delta^2`); beyond a row's detachment angle the
+// Newtonian-shaped rise to `cp_max` is used and neighbouring rows are interpolated in Mach number.
 const CONE_M0: f64 = 1.02;
 const CONE_DM: f64 = 0.04;
 const CONE_NM: usize = 150;

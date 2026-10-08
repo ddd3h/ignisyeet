@@ -553,11 +553,11 @@ ECEF 座標での積分
   その中心が付け根の翼弦の後半にあり、Mach 数による変化がフィンの法線力の傾きの比に従う。
   先端の前縁が付け根の後縁より後ろにある後退したフィン（付け根の翼弦 0.20 m、先端の前縁 0.30 m 後ろ、先端の翼弦 0.10 m）でも、
   先端の後縁までの積分と :math:`10^{-4}` で一致し、最大の半幅の区間を含む（``fin_apparent_mass_of_a_fin_swept_beyond_its_root_chord_reaches_the_full_span``）。
-* **古い列の組**\ （``older_column_sets_load_with_zero_lag_and_magnus_columns``）：部品積み上げ法の表は形状の遅れの和とフィンの枚数を持ち、``cl4``、``cnpa``、``cmpa`` は 0 である。現在の形式の保存と読み込みで ``cl4``、``cnpa``、``cmpa``、``lag_l1`` が変わらない。
+* **古い列の組**\ （``older_column_sets_load_with_zero_lag_and_magnus_columns``）：部品積み上げ法の表は形状の遅れの和とフィンの枚数を持ち、``cl4``、``cnpa``、``cmpa`` は 0 である。バージョン 4 の形式の保存と読み込みで ``cl4``、``cnpa``、``cmpa``、``lag_l1`` が変わらない。
   14 個（``cmpa`` なし）、10 個、8 個の値の軸対称表、18 個（``cmpa`` なし）と 15 個の値の一般表は、足りない列が 0 で読める。
 * **外部の表の遅れの和**\ （``external_table_without_lag_columns_gets_the_geometric_lag_sums``、``panel_and_cfd_tables_get_the_lag_sums_of_the_geometry``）：遅れと Magnus の列を持つ外部の表は警告なしでその値を使う。
   持たない表は、STL の形状から求めた遅れの和を入れて警告を 1 つ出し（実測の減衰の表なら 0 の列を書くように促す）、形状が読めなければ遅れの和を 0 のまま別の警告を出す。
-  現在の形式で遅れの和を 0 と明示した表は、補わずに 0 のまま使う。``cl4`` を持ち ``fin_count`` のない表は、4 枚とみなす警告を出す。パネル法と CFD の表には、形状から求めた遅れの和が入る。
+  バージョン 4 の形式で遅れの和を 0 と明示した表は、補わずに 0 のまま使う。``cl4`` を持ち ``fin_count`` のない表は、4 枚とみなす警告を出す。パネル法と CFD の表には、形状から求めた遅れの和が入る。
 * **準定常の設定**\ （``quasi_steady_switch_flies_without_the_rate_and_acceleration_terms``）：``sim.quasi_steady = true`` のサンプルの飛翔が、加速度と回転による項のないモデルの値（頂点 4440.71 m、着地点 東 −654.73 m、北 −7708.12 m）になる。
 
 **サンプルでの項の効果**：サンプル（``examples/sample.toml``）を、加速度と回転による項を入れて（既定）と ``sim.quasi_steady = true`` で飛ばした差は次のとおりである。

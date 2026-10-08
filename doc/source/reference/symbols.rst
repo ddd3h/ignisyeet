@@ -68,9 +68,20 @@
      - 重心（ノーズ先端から後方へ測る）。
    * - :math:`C_{N\alpha}`
      - 法線力係数の傾き [1/rad]。
+   * - :math:`C_{m\alpha}`
+     - ノーズ先端まわりのピッチモーメント係数の迎角に対する傾き [1/rad]。
    * - :math:`C_{lp},\ C_{mq},\ C_{nr}`
      - ロール、ピッチ、ヨーの角速度に対する減衰の微係数。
-   * - :math:`C_{l\delta}`
+   * - :math:`S_0,\ S_1,\ S_2`
+     - ピッチとヨーの減衰の和 :math:`S_k=\sum_i C_{N\alpha,i}\,x_i^{\,k}`\ （:math:`x_i` は部品 :math:`i` の位置、:math:`C_{N\alpha,i}` はその法線力の傾き）。単位は :math:`k=0,1,2` に応じて 1/rad、m/rad、m\ :sup:`2`/rad。
+   * - :math:`L_0,\ L_1`
+     - 見かけの質量の遅れの和 :math:`L_0=(2/S)\int A\,\mathrm{d}x`、:math:`L_1=(2/S)\int A\,x\,\mathrm{d}x`\ （:math:`A` は断面積）。単位は m と m\ :sup:`2`。
+   * - :math:`C_{l4}`
+     - 誘導ロールの係数。:math:`\Delta C_l=C_{l4}\,\alpha_t^2\sin4(\phi_c-\phi_f)`\ （軸対称表だけ）。
+   * - :math:`C_{Np\alpha}^{*},\ C_{mp\alpha}^{*}`
+     - Magnus 力と、静的な圧力中心まわりの Magnus モーメントの傾き [1/rad]。無次元ロール角速度 :math:`\hat p` で無次元化する。
+   * - :math:`\omega_x`
+     - 機体座標のロール角速度 [rad/s]。   * - :math:`C_{l\delta}`
      - フィンのカント 1 rad あたりのロールモーメント係数 [1/rad]。
    * - :math:`d`, :math:`S`
      - 基準直径 [m] と基準面積 [m\ :sup:`2`]（``aero_table.json`` の ``ref_diameter`` と ``ref_area``）。
@@ -78,6 +89,8 @@
      - 動圧 [Pa]。
    * - :math:`\hat p`
      - 無次元ロール角速度 :math:`pd/(2V)`。
+   * - :math:`W,\ \Psi`
+     - 風のプロファイルの代表風速 [m/s] と代表風向 [deg]（風が吹いてくる方位）。表の高度範囲で平均した値（:ref:`sec-wind-profile`）。
 
 .. list-table:: 軸対称表と一般表の係数の対応
    :header-rows: 1

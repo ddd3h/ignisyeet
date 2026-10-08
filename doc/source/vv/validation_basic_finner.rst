@@ -20,7 +20,7 @@ Basic Finner は、10 口径の円すい・円柱の胴体に矩形フィン 4 �
 
    * - 項目
      - 内容
-   * - 妥当性が確認できた範囲
+   * - 実測と比べた範囲
      - Basic Finner の Mach 1.08–4.30（弾道射場の自由飛行）の :math:`C_{N\alpha}`、:math:`C_{m\alpha}`、:math:`x_{cp}`、:math:`C_{X0}`、:math:`C_{lp}` との比較。:math:`C_{lp}` は風洞の値も使う
    * - 未実施
      - 亜音速、遷音速の山（Mach 1.25 付近）、Basic Finner 以外の形状、実機の飛翔の係数、ピッチ減衰の実測との比較

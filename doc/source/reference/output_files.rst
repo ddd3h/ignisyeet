@@ -89,16 +89,7 @@
 ``summary.json``
 ~~~~~~~~~~~~~~~~
 
-``sim`` が書く、1 回の飛翔の要約である。
-降下モード ``descent``、基準風 ``wind_speed`` と ``wind_direction_deg``\ （``profile`` では表の平均風速 :math:`W` と平均風の風向 :math:`\Psi`。:ref:`sec-wind-profile`）、ランチャ離脱の時刻 ``rail_exit_time`` と速度 ``rail_exit_speed``、燃焼終了時刻 ``burnout_time``\ （推力曲線の終わりの時刻。飛翔がそれより前に終わったときは ``null``）、
-最大速度 ``max_speed``、最大 Mach 数 ``max_mach``、最大動圧 ``max_dyn_pressure``\ （積分のステップの始端ごとの状態と、着地の状態のうちの最大）、頂点の時刻 ``apogee_time`` と高度 ``apogee``\ （射点からの高さ）と位置 ``apogee_east`` ``apogee_north``、
-最小静安定余裕 ``min_stability_cal`` とランチャ離脱時の値 ``stability_at_rail_exit``\ （どちらも迎角 0 の極限の小迎角の余裕で、その状態が飛んでいる迎角は入らない。:ref:`sec-static-margin-general`。``min_stability_cal`` は、ランチャ離脱の時刻（自由飛行はここから始まる）から頂点までのうち対気速度が 10 m/s を超える間に、積分のステップの始端ごとに測った最小値である。
-離脱時の対気速度が 10 m/s を超えるときは、ランチャ離脱の時刻の値を含む。頂点付近の遅い部分と降下は含まない。
-該当する時刻がなければ（頂点までに対気速度が 10 m/s を超えない飛翔など）``null`` である。``stability_at_rail_exit`` は対気速度によらず求める。軸対称表では小さな迎角の圧力中心から求めた :math:`(x_{cp}(\delta)-x_{cg})/d`\ （:eq:`eq-margin-axisym`）、一般表では各ステップのピッチとヨーの余裕の小さいほう）、
-ランチャ離脱の値と着地の値は、ステップ内の補間（位置は三次エルミート補間、速度はその時間微分、残りは両端の線形補間）で求めた状態の値である（:ref:`sec-rail`、:ref:`sec-landing`）、
-着地の時刻 ``landing_time``、位置 ``landing_east`` ``landing_north`` ``landing_lat`` ``landing_lon``、射点からの距離 ``landing_distance``、着地速度 ``landing_speed`` を持つ。
-``landing_speed`` は着地の瞬間の **地面に対する速さ** で、水平方向の流され（風による移動）の速さを含む。降下率（鉛直の速さ）ではないので、パラシュート降下で風が強いと、降下率より大きい。
-これに加えて、次の項目を書く。
+``sim`` が書く、1 回の飛翔の要約である。項目は次のとおりである。長さは m、速さは m/s、時刻は s、角度は deg である。
 
 .. list-table::
    :header-rows: 1
@@ -106,6 +97,30 @@
 
    * - 項目
      - 内容
+   * - ``descent``
+     - 降下モード
+   * - ``wind_speed`` / ``wind_direction_deg``
+     - 基準風の風速 [m/s] と風向 [deg]。``profile`` では表の平均風速 :math:`W` と平均風の風向 :math:`\Psi`\ （:ref:`sec-wind-profile`）
+   * - ``rail_exit_time`` / ``rail_exit_speed``
+     - ランチャ離脱の時刻 [s] と速度 [m/s]（:ref:`sec-rail`）
+   * - ``burnout_time``
+     - 燃焼終了時刻 [s]（推力曲線の終わりの時刻）。飛翔がそれより前に終わったときは ``null``
+   * - ``max_speed`` / ``max_mach`` / ``max_dyn_pressure``
+     - 最大速度 [m/s]、最大 Mach 数、最大動圧 [Pa]
+   * - ``apogee_time`` / ``apogee`` / ``apogee_east`` / ``apogee_north``
+     - 頂点の時刻 [s]、射点からの高さ [m]、位置（東・北、射点から [m]）
+   * - ``min_stability_cal``
+     - 自由飛行の最小静安定余裕 [cal]。ランチャ離脱の時刻から頂点までのうち、対気速度が 10 m/s を超える間の最小値で、離脱時の対気速度が 10 m/s を超えるときは離脱時の値を含む。頂点付近の遅い部分と降下は含まない。該当する時刻がなければ ``null``。迎角 0 の極限の小迎角の余裕で、その状態が飛んでいる迎角は入らない（:ref:`sec-static-margin-general`）
+   * - ``stability_at_rail_exit``
+     - ランチャ離脱時の静安定余裕 [cal]。対気速度によらず求める。軸対称表では :math:`(x_{cp}(\delta)-x_{cg})/d`\ （:eq:`eq-margin-axisym`）、一般表ではピッチとヨーの余裕の小さいほう
+   * - ``landing_time``
+     - 着地の時刻 [s]（:ref:`sec-landing`）
+   * - ``landing_east`` / ``landing_north`` / ``landing_lat`` / ``landing_lon``
+     - 着地位置。東・北は射点から [m]、緯度・経度は [deg]
+   * - ``landing_distance``
+     - 射点からの距離 [m]
+   * - ``landing_speed``
+     - 着地の瞬間の地面に対する速さ [m/s]。水平方向の流され（風による移動）の速さを含む。降下率（鉛直の速さ）ではなく、パラシュート降下で風が強いと降下率より大きい
    * - ``landed``
      - ``sim.max_time`` までに着地したか（真偽値）。``false`` のとき、着地に関する 7 項目（``landing_time`` から ``landing_speed`` まで）は ``null`` である
    * - ``main_deploy_time`` / ``main_deploy_altitude``
@@ -117,7 +132,7 @@
    * - ``static_margin_min_t`` / ``static_margin_min_mach``
      - 最小の静安定余裕をとった状態の時刻 [s] と Mach 数（:ref:`sec-static-margin-general`）。余裕を一度も求めなかった飛翔では ``null``
    * - ``stable``
-     - 静的に安定なら ``true``、不安定（求まった余裕のどれかが負）なら ``false``、判定できない（求まらない余裕がある、またはどの余裕も求めなかった）なら ``null``。
+     - 静的に安定なら ``true``、不安定なら ``false``、判定できないなら ``null``（定義は :ref:`sec-exit-definitions`）。
        ``false`` と ``null`` のとき、``sim`` は着地したかどうかにかかわらず終了ステータス 3 で終わる（:ref:`sec-exit-status`）
    * - ``stability_unknown``
      - ``stable`` が ``null`` のときだけ書く。判定できない理由（``at t = 0.50 s: the yaw normal-force slope dCy/dbeta is zero at Mach 0.10`` の形で、最初に余裕が求まらなかった時刻と理由。:ref:`sec-static-margin-general`）
@@ -146,12 +161,11 @@
      - ``wind.model = "profile"`` のときだけ書く。その飛翔で表の風速に掛けた倍率 :math:`k`\ （CSV の表そのままなら 1。風の格子とモンテカルロのケースは、そのケースの平均風速に合わせた倍率。:ref:`sec-wind-scaling`）
    * - ``wind_at_ref_height``
      - ``wind.model = "profile"`` のときだけ書く。公称の表の風を ``wind.ref_height`` で求めた値で、高さ ``height`` [m]、風速 ``speed`` [m/s]、吹いてくる方位 ``direction_deg`` [deg] を持つ（無風なら方位は 0）。
-       風速の上限 :math:`V_{\mathrm{lim}}` を測る高さが ``wind.ref_height`` なら、保安距離の手順 1 の格子の上限は :math:`v_{\max}=W\,V_{\mathrm{lim}}/` ``speed``\ （:math:`W` は ``wind_speed``）になる（:ref:`sec-dispersion-safety`）。
-       ``sim`` と ``dispersion`` は、端末にも ``profile wind at wind.ref_height = 2 m: 3.04 m/s from 10 deg (mean wind 11.89 m/s)`` の形の行を出す（例の表の値）
+       保安距離での使い方は :ref:`sec-dispersion-safety` にある
    * - ``max_time``
      - 打ち切り時刻 ``sim.max_time`` [s]
    * - ``config_hash``
-     - この結果を計算した設定の識別子（16 桁の 16 進数）。出力先、計算資源（``[output]`` と ``[resources]``）、``[dispersion]`` を除く設定と、入力ファイル（STL、モータ、風のプロファイル、外部の係数表）の内容で決まる。同じ設定で計算した結果かの照合に使う。KML は、現在の設定と同じ設定で計算された結果だけをまとめる（:ref:`sec-kml`）
+     - この結果を計算した設定の識別子（16 桁の 16 進数）。出力先、計算資源（``[output]`` と ``[resources]``）、``[dispersion]`` を除く設定と、入力ファイル（STL、モータ、風のプロファイル、外部の係数表）の内容で決まる。結果が現在の設定で計算されたものかの照合に使い、KML は現在の設定と同じ識別子の結果だけをまとめる（:ref:`sec-kml`）。落下分散の出力にある ``config_hash`` と ``flight_config_hash`` も同じ目的の識別子である（:ref:`sec-file-dispersion`）
    * - ``warnings``
      - 警告の文字列の配列（空のこともある。:ref:`sec-config-checks`）。各文字列は、画面の ``warning[IY-O514]: …`` の形ではなく、コードを角括弧のまま先頭に付けた ``[IY-O514] …`` の形で書く（:ref:`errors`）。設定の読み込み時の警告（``profile`` で使わない ``wind.speed`` と ``wind.direction_deg``、2 回以上指定した ``--set`` のキー）が先頭で、計算中の警告が続く。``dispersion_meta.json`` と ``dispersion_summary.json`` の ``warnings`` も同じ順である
    * - ``aero_table_range``
@@ -172,13 +186,84 @@
 
    t,phase,east,north,up,lat,lon,alt,vel_e,vel_n,vel_u,airspeed,mach,alpha_deg,thrust,mass,x_cg,x_cp,stability_cal,dyn_pressure,cn,ca,pitch_deg,heading_deg,wx,wy,wz,beta_deg,roll_rate,cl,cy
 
-時刻歴で、位置（``east`` ``north`` ``up``、``lat`` ``lon`` ``alt``）、速度、``airspeed``、``mach``、``thrust``、``mass``、``x_cg``、``x_cp``、``stability_cal``、``dyn_pressure``、姿勢と角速度を持つ。
-``x_cp`` と ``stability_cal`` は、その状態が飛んでいる迎角での圧力中心と :math:`(x_{cp}-x_{cg})/d` [cal] の表示である。迎角が大きいと圧力中心が前に動くので、ランチャ離脱の直後や頂点付近では小さくなる。
-静的な安定の判定と ``summary.json`` の余裕は、迎角 0 の極限の小迎角の余裕で、この列とは違う（:ref:`sec-static-margin-general`）。
-``phase`` は ``rail``、``free``、``parachute`` のいずれかである。
-``alpha_deg`` は全迎角 :math:`\alpha_t`、``x_cp`` は一般表では等価な圧力中心（:eq:`eq-xcp-eff`）で、一般表の ``stability_cal`` はこの値から求める。
-末尾の 4 列は、``beta_deg``\ （横滑り角 :math:`\beta` [deg]）、``roll_rate``\ （ロール角速度 :math:`\omega_x` [rad/s]）、
-``cl``\ （ロールの係数 :math:`C_l^{\mathrm{tot}}`、:eq:`eq-cl-total`）、``cy``\ （一般表の :math:`C_Y`。軸対称表では 0）である。
+時刻歴である。座標は射点を原点とする ENU（東・北・上）で、機体座標は機首方向を x 軸とする。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 12 68
+
+   * - 列
+     - 単位
+     - 内容
+   * - ``t``
+     - s
+     - 点火からの時刻
+   * - ``phase``
+     - 
+     - ``rail``（ランチャ上）、``free``（自由飛行）、``parachute``（パラシュート降下）のいずれか
+   * - ``east`` ``north`` ``up``
+     - m
+     - 射点からの位置。``up`` は上向きが正
+   * - ``lat`` ``lon``
+     - deg
+     - 緯度と経度
+   * - ``alt``
+     - m
+     - 標高（射点では ``launch.altitude``）
+   * - ``vel_e`` ``vel_n`` ``vel_u``
+     - m/s
+     - 地面に対する速度の東・北・上成分。``vel_u`` は上昇が正
+   * - ``airspeed``
+     - m/s
+     - 風に対する速さ
+   * - ``mach``
+     - 
+     - Mach 数
+   * - ``alpha_deg``
+     - deg
+     - 全迎角 :math:`\alpha_t`
+   * - ``thrust``
+     - N
+     - 推力
+   * - ``mass``
+     - kg
+     - その時刻の質量
+   * - ``x_cg``
+     - m
+     - 重心。ノーズ先端から後方へ測る
+   * - ``x_cp``
+     - m
+     - 圧力中心。ノーズ先端から後方へ測る。その状態が飛んでいる迎角での値で、一般表では等価な圧力中心（:eq:`eq-xcp-eff`）
+   * - ``stability_cal``
+     - cal
+     - :math:`(x_{cp}-x_{cg})/d`。その状態の迎角での表示で、正が重心より後ろに圧力中心がある向きである。一般表ではこの値は ``x_cp`` から求める。迎角が大きいと圧力中心が前に動くので、ランチャ離脱の直後や頂点付近では小さくなる。静的な安定の判定と ``summary.json`` の余裕は迎角 0 の極限の小迎角の余裕で、この列とは違う（:ref:`sec-static-margin-general`）
+   * - ``dyn_pressure``
+     - Pa
+     - 動圧
+   * - ``cn`` ``ca``
+     - 
+     - 法線力係数と軸力係数。``ca`` は抗力の向きを正とする。一般表の ``cn`` は :math:`C_Y` と :math:`C_Z` の合成
+   * - ``pitch_deg``
+     - deg
+     - 機体軸の水平面に対する仰角。上向きが正で、鉛直上向きが 90
+   * - ``heading_deg``
+     - deg
+     - 機体軸の水平成分の方位。北が 0 で東回りに 0 以上 360 未満
+   * - ``wx`` ``wy`` ``wz``
+     - rad/s
+     - 機体座標の角速度成分（右手系の正）。``earth.model = "ecef"`` では ECEF に対する角速度
+   * - ``beta_deg``
+     - deg
+     - 横滑り角 :math:`\beta`
+   * - ``roll_rate``
+     - rad/s
+     - ロール角速度 :math:`\omega_x`（``wx`` と同じ値）
+   * - ``cl``
+     - 
+     - 適用したロールの係数 :math:`C_l^{\mathrm{tot}}`\ （:eq:`eq-cl-total`）
+   * - ``cy``
+     - 
+     - 横力係数（機体座標の y）。軸対称表では 0
 
 ``dispersion.csv``
 ~~~~~~~~~~~~~~~~~~
@@ -205,18 +290,42 @@
 ``dispersion_meta.json``
 ~~~~~~~~~~~~~~~~~~~~~~~~
 
-``mode = "wind_grid"`` が ``dispersion.csv`` と並べて書く。項目は、設定の識別子 ``config_hash``\ （風の格子について、``mode`` と ``[dispersion.monte_carlo]`` を除いた設定で決まる）、
-飛翔の設定の識別子 ``flight_config_hash``\ （``summary.json`` の ``config_hash`` と同じ決め方で、``sim`` の結果と同じ設定かの照合に使う）、
-ケース数 ``cases``、着地しなかったケースの数 ``failed``、そのうち積分がエラーで止まったケースの数 ``errored``、警告の文字列の配列 ``warnings``、係数表の範囲外の引き出しの集計 ``aero_table_range``\ （項目は :ref:`sec-file-summary` と同じ。エラーで止まったケースは数えない）、
-公称の飛翔の最小の静安定余裕 ``static_margin_min_cal`` [cal] と、それが 0 以上かを示す ``stable``\ （真偽値）、
-降下モード（``ballistic`` と ``parachute``）ごとの静的に不安定なケースの数 ``unstable`` と、そのモードのケースの最小の静安定余裕 ``unstable_min_static_margin_cal`` [cal]\ （余裕が求まるケースがなければ ``null``）、
-降下モードごとの静的な安定を判定できないケースの数 ``stability_unknown_runs`` と、公称の飛翔が判定できないときの理由 ``stability_unknown``\ （判定できたときは ``null``）、
-横向きに落ちた（``broadside_time`` が 10 s を超えた）弾道落下のケースの数 ``broadside_runs``\ （``{"ballistic": 1}`` の形。弾道落下だけを数える）、
-公称の風のモデル ``wind_model``、公称の基準風速 ``wind_speed`` と基準風向 ``wind_direction_deg``\ （``profile`` では表の平均風速 :math:`W` と平均風の風向 :math:`\Psi`。``profile_mean_speed`` と ``profile_mean_direction_deg`` を指定したときはその値）、
-``profile`` のときだけ公称の表の倍率 ``wind_scale``\ （CSV の風速に掛ける倍率。格子の風速はここからさらに拡大する。:ref:`sec-wind-scaling`）と ``wind.ref_height`` での公称の表の風 ``wind_at_ref_height``\ （``summary.json`` と同じ）である。
-公称の飛翔は、設定した風での弾道落下である。公称の飛翔が失敗して余裕が求まらないときは、``static_margin_min_cal`` と ``stable`` は ``null`` である。公称の飛翔の静的な安定を判定できないときも ``stable`` は ``null`` である。
-``stable`` が ``false`` か ``null`` のとき（公称の飛翔が失敗した場合を除く）、``unstable`` または ``stability_unknown_runs`` が 1 以上のモードがあるとき、迎角または Mach 数の範囲外の引き出しがあったとき（``aero_table_range`` の ``angles_in_range`` または ``machs_in_range`` が ``false``）、``dispersion`` は終了ステータス 3 で終わる（:ref:`sec-exit-status`、:ref:`sec-dispersion-unstable`）。
-KML は、このファイルの設定が現在の設定と一致するときだけ ``dispersion.csv`` を取り込む。
+``mode = "wind_grid"`` が ``dispersion.csv`` と並べて書く。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 72
+
+   * - 項目
+     - 内容
+   * - ``config_hash``
+     - 風の格子の結果を計算した設定の識別子（``mode`` と ``[dispersion.monte_carlo]`` を除く設定で決まる）。用途は ``summary.json`` の ``config_hash`` と同じである（:ref:`sec-file-summary`）
+   * - ``flight_config_hash``
+     - 飛翔の設定の識別子。``summary.json`` の ``config_hash`` と同じ値で、``sim`` の結果と同じ設定かの照合に使う
+   * - ``cases``
+     - ケース数
+   * - ``failed`` / ``errored``
+     - 着地しなかったケースの数と、そのうち積分がエラーで止まったケースの数
+   * - ``warnings``
+     - 警告の文字列の配列
+   * - ``aero_table_range``
+     - 係数表の範囲外の引き出しの集計。項目は :ref:`sec-file-summary` と同じで、エラーで止まったケースは数えない
+   * - ``static_margin_min_cal`` / ``stable``
+     - 公称の飛翔の最小の静安定余裕 [cal] と、それが 0 以上かを示す真偽値（公称の飛翔は、設定した風での弾道落下）。公称の飛翔が失敗して余裕が求まらないときと、静的な安定を判定できないときは、``stable`` が ``null`` である
+   * - ``unstable`` / ``unstable_min_static_margin_cal``
+     - 降下モード（``ballistic`` と ``parachute``）ごとの、静的に不安定なケースの数と、そのモードのケースの最小の静安定余裕 [cal]。余裕が求まるケースがなければ ``null``
+   * - ``stability_unknown_runs`` / ``stability_unknown``
+     - 降下モードごとの、静的な安定を判定できないケースの数と、公称の飛翔が判定できないときの理由（判定できたときは ``null``）
+   * - ``broadside_runs``
+     - 横向きに落ちた（``broadside_time`` が 10 s を超えた）ケースの数。弾道落下だけを数え、``{"ballistic": 1}`` の形
+   * - ``wind_model``
+     - 公称の風のモデル
+   * - ``wind_speed`` / ``wind_direction_deg``
+     - 公称の基準風速と基準風向。``profile`` では表の平均風速 :math:`W` と平均風の風向 :math:`\Psi`\ （``profile_mean_speed`` と ``profile_mean_direction_deg`` を指定したときはその値）
+   * - ``wind_scale`` / ``wind_at_ref_height``
+     - ``profile`` のときだけ書く。公称の表の倍率（CSV の風速に掛ける倍率。格子の風速はここからさらに拡大する。:ref:`sec-wind-scaling`）と、``wind.ref_height`` での公称の表の風（``summary.json`` と同じ）
+
+``stable`` が ``false`` か ``null`` のとき（公称の飛翔が失敗した場合を除く）、``unstable`` または ``stability_unknown_runs`` が 1 以上のモードがあるとき、迎角または Mach 数の範囲外の引き出しがあったとき（``angles_in_range`` または ``machs_in_range`` が ``false``）、``dispersion`` は終了ステータス 3 で終わる（:ref:`sec-exit-status`、:ref:`sec-dispersion-unstable`）。
 
 ``dispersion_mc.csv``
 ~~~~~~~~~~~~~~~~~~~~~
@@ -238,14 +347,56 @@ KML は、このファイルの設定が現在の設定と一致するときだ�
 ``dispersion_summary.json``
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-``mode = "monte_carlo"`` が書く。全体の項目はサンプル数 ``samples``、乱数の種 ``seed``、標準正規乱数を切る範囲 ``truncate_sigma``\ （``dispersion.monte_carlo.truncate_sigma`` の値。切らないときは ``null``。:ref:`sec-mc`）、降下モードごとの配列 ``descents``、設定の識別子 ``config_hash``\ （モンテカルロについて、``mode`` と風の格子の設定を除いた設定で決まる）、飛翔の設定の識別子 ``flight_config_hash``\ （``summary.json`` の ``config_hash`` と同じ決め方）、警告の配列 ``warnings``、係数表の範囲外の引き出しの集計 ``aero_table_range``\ （項目は :ref:`sec-file-summary` と同じ。失敗したサンプルは数えない）、
-公称の飛翔の最小の静安定余裕 ``static_margin_min_cal`` [cal] と、それが 0 以上かを示す ``stable``\ （風の格子の ``dispersion_meta.json`` と同じ。公称の飛翔が失敗したときは ``null``）、
-降下モードごとの静的に不安定なサンプルの数 ``unstable`` と最小の静安定余裕 ``unstable_min_static_margin_cal``\ （風の格子の ``dispersion_meta.json`` と同じ。失敗したサンプルは余裕を持たないので、数に入らない）、
-``stability_unknown_runs`` と ``stability_unknown``、横向きに落ちた弾道落下のサンプルの数 ``broadside_runs``、公称の風 ``wind_model``、``wind_speed``、``wind_direction_deg``、``wind_scale``、``wind_at_ref_height``\ （いずれも風の格子の ``dispersion_meta.json`` と同じ）である。
-モンテカルロの風速と風向の揺らぎは、この公称の風の周りに引く。
-``descents`` の各要素は、降下モード ``descent``、着地したサンプル数 ``n``、失敗数 ``failed``、そのうち着地しなかった数 ``not_landed``、着地点の平均と共分散行列、
-:math:`1\sigma` と :math:`3\sigma` の誤差楕円（長半径、短半径、長軸の方位）、最大着地距離 ``max_landing_distance`` とそのサンプル番号、
-着地距離のパーセンタイル ``landing_distance_p50`` ``landing_distance_p90`` ``landing_distance_p99`` ``landing_distance_p999``\ （P99.9。着地したサンプルについて、線形補間で求める。着地したサンプルが 1000 未満の降下モードでは ``null``。:ref:`P99.9 の条件 <sec-mc-percentile>`）、頂点高度の平均と標準偏差を持つ（:ref:`sec-mc`）。
+``mode = "monte_carlo"`` が書く。全体の項目は次のとおりである。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 72
+
+   * - 項目
+     - 内容
+   * - ``samples`` / ``seed``
+     - サンプル数と乱数の種
+   * - ``truncate_sigma``
+     - 標準正規乱数を切る範囲（``dispersion.monte_carlo.truncate_sigma`` の値。切らないときは ``null``。:ref:`sec-mc`）
+   * - ``descents``
+     - 降下モードごとの配列（下表）
+   * - ``config_hash`` / ``flight_config_hash``
+     - 識別子。``config_hash`` はモンテカルロの結果を計算した設定（``mode`` と風の格子の設定を除く）で決まる。``flight_config_hash`` は ``summary.json`` の ``config_hash`` と同じ値である
+   * - ``warnings`` / ``aero_table_range``
+     - 警告の配列と、係数表の範囲外の引き出しの集計（項目は :ref:`sec-file-summary` と同じ。失敗したサンプルは数えない）
+   * - ``static_margin_min_cal`` / ``stable``
+     - 公称の飛翔の最小の静安定余裕 [cal] とその判定。``dispersion_meta.json`` と同じで、公称の飛翔が失敗したときは ``null``
+   * - ``unstable`` / ``unstable_min_static_margin_cal``
+     - 降下モードごとの、静的に不安定なサンプルの数と最小の静安定余裕。``dispersion_meta.json`` と同じで、失敗したサンプルは余裕を持たないので数に入らない
+   * - ``stability_unknown_runs`` / ``stability_unknown`` / ``broadside_runs``
+     - ``dispersion_meta.json`` と同じ
+   * - ``wind_model`` / ``wind_speed`` / ``wind_direction_deg`` / ``wind_scale`` / ``wind_at_ref_height``
+     - 公称の風。``dispersion_meta.json`` と同じで、モンテカルロの風速と風向の揺らぎはこの公称の風の周りに引く
+
+``descents`` の各要素の項目は次のとおりである。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 72
+
+   * - 項目
+     - 内容
+   * - ``descent``
+     - 降下モード
+   * - ``n`` / ``failed`` / ``not_landed``
+     - 着地したサンプル数、失敗数、そのうち着地しなかった数
+   * - 着地点の平均と共分散行列
+     - 着地点の統計
+   * - 誤差楕円
+     - :math:`1\sigma` と :math:`3\sigma` の長半径、短半径、長軸の方位
+   * - ``max_landing_distance``
+     - 最大着地距離とそのサンプル番号
+   * - ``landing_distance_p50`` ``_p90`` ``_p99`` ``_p999``
+     - 着地距離のパーセンタイル。着地したサンプルについて線形補間で求める。P99.9 は、着地したサンプルが 1000 未満の降下モードでは ``null``（:ref:`P99.9 の条件 <sec-mc-percentile>`）
+   * - 頂点高度
+     - 平均と標準偏差（:ref:`sec-mc`）
+
 失敗したサンプルは、どの統計にも入らない。``failed`` が 1 以上のとき、``complete`` は ``false`` で、統計は着地したサンプルだけを表し、真のばらつきはこれより大きいか不明である。
 同じとき ``max_landing_distance_is_lower_bound`` が ``true`` になり、最大着地距離は下限である。
 着地点の平均は着地したサンプルが 1 つ以上、標準偏差・共分散・誤差楕円・頂点高度の標準偏差は 2 つ以上のとき求まる。サンプルが足りない統計は ``null`` である

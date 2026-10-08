@@ -73,6 +73,8 @@
      - 1.157 / 1.139 / 1.180
      - 0.599 / 0.558 / 0.670
 
+Barrowman 法、パネル法、Euler の CFD の比較を :numref:`fig-cfd-compare` に示す。
+
 .. _fig-cfd-compare:
 
 .. figure:: /_generated/plots/cfd_compare.*
@@ -270,6 +272,8 @@ STL は自動判定で y = 0 と z = 0 の両方に鏡映対称とされ、1/4 �
      - 1.156
      - :math:`+4.9\,\%,\ +6.1\,\%`
 
+STL をそのまま使う CFD と形状を作り直す CFD の比較を :numref:`fig-cfd-stl-check` に示す。
+
 .. _fig-cfd-stl-check:
 
 .. figure:: /_generated/plots/cfd_stl_check.*
@@ -315,6 +319,8 @@ STL は自動判定で y = 0 と z = 0 の両方に鏡映対称とされ、1/4 �
    * - 同、パラシュート降下 [m]
      - 14315.6
      - 13480.1
+
+二つの手法の飛翔の差を :numref:`fig-panel-flight` に示す。
 
 .. _fig-panel-flight:
 

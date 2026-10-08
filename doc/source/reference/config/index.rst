@@ -54,7 +54,9 @@
 --------
 
 設定ファイルは読み込み時に検査し、不正な値は項目名を示してエラー（終了ステータス 1）にする。
-有限でない値（``nan`` や ``inf``）は、すべての数値項目で受け付けない。主な範囲は次のとおりである。
+有限でない値（``nan`` や ``inf``）は、すべての数値項目で受け付けない。
+各キーの型と値の範囲は、:ref:`表のページ <page-reference-config>` の各項目にある。
+複数のキーにまたがる条件は次のとおりである。
 
 .. list-table::
    :header-rows: 1
@@ -62,78 +64,35 @@
 
    * - 項目
      - 条件
-   * - ``launch.latitude`` / ``launch.longitude``
-     - :math:`-90` から :math:`90` / :math:`-180` から :math:`180`
-   * - ``launch.elevation_deg``
-     - :math:`0 <` 値 :math:`\le 90`
-   * - ``launch.rail_length``、``rocket.stl_scale``、``rocket.dry_mass``、``rocket.ixx_dry`` ``iyy_dry`` ``izz_dry``
-     - 正
-   * - ``rocket.cg_dry``
-     - 0 以上（ノーズ先端から後方に測る）
-   * - ``rocket.roughness``、``rocket.extra_cd``、``recovery.delay``、``wind.speed``
-     - 0 以上
-   * - ``recovery.cd_s``
-     - 0 以上。``recovery.enabled = true`` のときは正（0 ではパラシュートが減速しない）
    * - ``recovery.main_cd_s`` と ``recovery.main_altitude``
      - 両方を指定するか、両方とも省略する。指定するときは、どちらも有限で正
+   * - ``recovery.enabled`` と ``recovery.cd_s``
+     - ``recovery.enabled = true`` のときは ``recovery.cd_s`` が正（0 ではパラシュートが減速しない）
    * - ``sim.descent = "parachute"``
-     - ``recovery.enabled = true`` のときだけ（``error[IY-C016]: sim.descent = "parachute" needs recovery.enabled = true``）。
-       コマンドラインの ``sim --descent parachute`` も同じで、回収系が無効なら ``--descent parachute needs recovery.enabled = true`` のエラーにする
+     - ``recovery.enabled = true`` のときだけ（:ref:`IY-C016`）。コマンドラインの ``sim --descent parachute`` も同じ
    * - ``aero.mach_min`` と ``aero.mach_max``
-     - ``mach_min`` は 0 以上、``mach_max`` は ``mach_min`` より大きい
-   * - ``aero.mach_step``、``aero.alpha_max_deg``、``aero.alpha_step_deg``、``aero.general_mach_step``
-     - 正
-   * - ``aero.mach_max``
-     - 10 以下（ロケットの飛翔の範囲を外れる）
-   * - ``aero.alpha_max_deg``
-     - 180 以下
+     - ``mach_max`` は ``mach_min`` より大きい
    * - 係数表の格子点の数（Mach 数の数 × 迎角の数）
-     - 約 10\ :sup:`6` 以下。迎角の数は、0 から ``alpha_max_deg`` までの片側の格子の点の数である（メッセージは ``the aero table grid would have about … points (… Mach x … alpha; at most 1e6)`` の形）。
-       部品積み上げ法の一般表（``method = "barrowman"`` かつ ``table_kind = "general"``）では、Mach 数の刻みに ``aero.general_mach_step`` を使い、メッセージも ``aero.general_mach_step`` を挙げる。
-       ``table_kind = "general"`` では、外部の表（``method = "table"``）以外のすべての手法（部品積み上げ法、パネル法、CFD）が軸対称の表を一般表へ展開するので、
-       軸対称の表（Mach 数 × 迎角）と一般表（Mach 数 × 迎角 × 横滑り角）のうち、点の多いほうで判定する（メッセージは ``the aero table grid would have about … points``）
-   * - ``aero.n_slices``
-     - 20 以上 10000 以下（形状抽出に必要な断面の数）
-   * - ``wind.ref_height``
-     - 正
-   * - ``wind.exponent``、``wind.roughness_length``、``wind.ground_blend_height``
-     - 正。そのモデルが使う項目だけを検査する（``exponent`` は ``power``、``roughness_length`` は ``log``、``ground_blend_height`` は ``power`` と ``log``）。使わないモデルでは、どの値でもエラーにしない
-   * - ``wind.profile_mean_speed`` / ``wind.profile_mean_direction_deg``
-     - ``model = "profile"`` のときだけ指定できる（ほかのモデルでは ``error[IY-C056]: wind.profile_mean_speed only applies to wind.model = "profile" (the model is "power"); set wind.speed / wind.direction_deg instead`` の形のエラー）。
-       ``profile_mean_speed`` は有限で 0 以上（``error[IY-C057]: wind.profile_mean_speed must be a finite number >= 0, found …``）、``profile_mean_direction_deg`` は 0 以上 360 以下（``error[IY-C058]: wind.profile_mean_direction_deg must be between 0 and 360, found …``）
+     - 約 10\ :sup:`6` 以下。迎角の数は、0 から ``alpha_max_deg`` までの片側の格子の点の数である。
+       ``table_kind = "general"`` では、外部の表（``method = "table"``）以外のすべての手法が軸対称の表を一般表へ展開する。
+       軸対称の表（Mach 数 × 迎角）と一般表（Mach 数 × 迎角 × 横滑り角）のうち、点の多いほうで判定する。
+       部品積み上げ法の一般表では、Mach 数の刻みに ``aero.general_mach_step`` を使う
+   * - ``wind.model`` と、``wind.exponent`` ``wind.roughness_length`` ``wind.ground_blend_height``
+     - そのモデルが使う項目だけを検査する（``exponent`` は ``power``、``roughness_length`` は ``log``、``ground_blend_height`` は ``power`` と ``log``）。使わないモデルでは、どの値でもエラーにしない
    * - ``wind.roughness_length``\ （``model = "log"``）
      - ``wind.ref_height`` の半分より小さい
-   * - ``sim.dt``、``sim.max_time``、``sim.output_interval``、``sim.rtol``、``sim.atol``
-     - 正
-   * - ``sim.dt``
-     - 10\ :sup:`-5` s 以上 0.05 s 以下（0.002 s が標準）。小さすぎると ``error[IY-C026]: sim.dt = … s is too small (>= 1e-5 s): the run would take days; 0.002 s is typical`` のエラー。
-       ``integrator = "rk4"`` では、さらに ``sim.max_time / sim.dt`` が 10\ :sup:`8` 以下（超えると ``sim.max_time / sim.dt = 3.600e8 steps is too many (at most 1e8): increase sim.dt or reduce sim.max_time``）。``rk45`` と ``dop853`` は ``dt`` で刻まないので、この 2 つの検査はしない
-   * - ``sim.rtol``、``sim.atol``
-     - 10\ :sup:`-3` 以下（10\ :sup:`-8` が標準）
-   * - ``sim.output_interval``
-     - ``sim.max_time`` 以下、かつ 10\ :sup:`-4` s 以上。``sim.max_time / sim.output_interval`` は 10\ :sup:`7` 以下（出力の行数の上限。超えるときは ``sim.output_interval`` を大きくする）
-   * - ``wind.direction_deg``
-     - 0 以上 360 以下（``wind.direction_deg must be between 0 and 360, found 400`` の形のエラー）。``model = "profile"`` の表の風向の列も、各行が 0 以上 360 以下
-   * - ``dispersion.wind_speeds`` の各要素、``[dispersion.monte_carlo]`` の各標準偏差
-     - 0 以上
-   * - ``dispersion.wind_speeds``
-     - 1 個以上 100 個以下の要素（空のリストはエラー）
-   * - ``dispersion.directions``
-     - 1 以上 360 以下
-   * - 風の格子のケース数（``wind_speeds`` の数 × ``directions``）
-     - 100000 以下（降下モードを数えない）
-   * - ``dispersion.monte_carlo.samples``
-     - 1 以上 10\ :sup:`6` 以下（0 は ``error[IY-C045]: dispersion.monte_carlo.samples must be at least 1``）
-   * - ``dispersion.monte_carlo.truncate_sigma``
-     - 指定するときは有限で正
-   * - ``rocket.fin_override.thickness``
-     - ``aero.method = "panel"`` と、``aero.method = "cfd"`` で ``aero.cfd.surface = "panel_mesh"``\ （フィンを両凸の断面としてメッシュにする）のときは正（``rocket.fin_override.thickness must be > 0 for aero.method = "panel", found 0``。厚さのないフィンはメッシュから抜け落ちる）。部品積み上げ法では、厚さはフィンの抗力にだけ使うので 0 でもよい
+   * - ``wind.profile_mean_speed`` / ``wind.profile_mean_direction_deg``
+     - ``model = "profile"`` のときだけ指定できる（:ref:`IY-C056`）
+   * - ``sim.max_time`` と ``sim.dt``
+     - ``integrator = "rk4"`` では ``sim.max_time / sim.dt`` が 10\ :sup:`8` 以下。``rk45`` と ``dop853`` は ``dt`` で刻まないので、この検査はしない
+   * - ``sim.max_time`` と ``sim.output_interval``
+     - ``sim.output_interval`` は ``sim.max_time`` 以下。``sim.max_time / sim.output_interval`` は 10\ :sup:`7` 以下
+   * - ``dispersion.wind_speeds`` と ``dispersion.directions``
+     - 風の格子のケース数（``wind_speeds`` の数 × ``directions``）が 100000 以下（降下モードを数えない）
+   * - ``rocket.fin_override.thickness`` と ``aero.method``
+     - ``aero.method = "panel"`` と、``aero.method = "cfd"`` で ``aero.cfd.surface = "panel_mesh"`` のときは正。部品積み上げ法では、厚さはフィンの抗力にだけ使うので 0 でもよい
    * - ``[aero.panel]`` の各項目
      - 手法にかかわらず検査する（:ref:`[aero.panel] の設定項目 <sec-config-aero>`）
-   * - ``atmosphere.density`` ``sound_speed`` ``viscosity``\ （``model = "constant"``）
-     - 有限で正
-   * - ``atmosphere.temperature_offset``\ （``model = "us1976"``）
-     - 有限で、−186.946 K より大きい（モデルの範囲で最も低い標準温度 186.946 K に足して、絶対温度が正になる値）
 
 どのセクションも、未知のキーがあるとキーの名前を示してエラーにする（``rol_deg`` のような綴りの誤りが黙って無視されないようにするためである）。
 
@@ -157,7 +116,7 @@ STL の表面が閉じていない（開いた辺が辺の 1 % を超えるか�
 積分が発散して状態に有限でない値が現れたときも、エラーにする（``error[IY-S081]: integration diverged at t = … s; reduce sim.dt or tighten rtol/atol, or check the aero table and mass properties``。:ref:`sec-integrators`）。値が有限でも、速さが 8 km/s を超えるか高さが 1000 km を超えたときは、発散とみなして同じ形のエラーにする。
 モンテカルロ解析では、そのサンプルを失敗として数える。風の格子では、そのケースだけを失敗として記録し、ほかのケースの計算は続ける（:ref:`sec-wind-grid-failed`）。
 
-飛翔計算の前に、重心まわりの慣性テンソルを、乾燥時と、燃焼中（燃焼時間を 32 等分した時刻と推力曲線の点の時刻）について検査する。
+飛翔計算の前に、重心まわりの慣性テンソルを、乾燥時と燃焼中について検査する。
 主慣性モーメントがすべて有限で正で、最大と最小の比が 10\ :sup:`8` 以下でなければ、
 ``inertia tensor is singular or ill-conditioned at t = … s (principal moments …, …, … kg m^2; the largest may be at most 1e8 times the smallest): check rocket.ixx_dry, iyy_dry, izz_dry and the products of inertia``
 の形のエラーにする（:ref:`sec-inertia-tensor`）。

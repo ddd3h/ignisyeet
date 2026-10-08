@@ -75,7 +75,7 @@ Makefile は既定では ``uv run --project .`` 経由で ``sphinx-build`` と `
 PDF の組版中に LaTeX がエラーで止まったときは、``doc/build/latex/ignisyeet.log`` を開き、``!`` で始まる行とその直後の行番号を確認する。
 多くはパッケージ不足かフォント不足である。原因を直したあと、もう一度 ``make pdf`` を実行すればよい。
 
-古いページ名の URL は、``conf.py`` の ``redirects`` で新しいページに転送する（アンカーは引き継がれない）。
+ページ名を変えるときは、``conf.py`` の ``redirects`` に元の URL と新しいページの対応を書く。転送ではアンカーは引き継がれない。
 
 .. _sec-dev-doc-scripts:
 

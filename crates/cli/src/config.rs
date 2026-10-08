@@ -55,25 +55,25 @@ pub struct Overrides {
 /// `"monte_carlo"`); a value that is not valid TOML is taken as a string, so `wind.model=profile`
 /// needs no quotes. The result is checked like the file itself (unknown keys, types, ranges).
 pub fn apply_set(raw: &mut toml::Value, arg: &str) -> Result<()> {
-    let (key, value) = arg.split_once('=').with_context(|| format!("--set {arg}: expected KEY=VALUE"))?;
+    let (key, value) = arg.split_once('=').with_context(|| format!("[IY-C002] --set {arg}: expected KEY=VALUE"))?;
     let key = key.trim();
     let parts: Vec<&str> = key.split('.').map(str::trim).collect();
     if parts.iter().any(|p| p.is_empty()) {
-        bail!("--set {arg}: invalid key \"{key}\" (expected a dotted path such as wind.speed)");
+        bail!("[IY-C001] --set {arg}: invalid key \"{key}\" (expected a dotted path such as wind.speed)");
     }
     let value = value.trim();
     if is_bare_integer(value) && value.parse::<i64>().is_err() {
-        bail!("--set {arg}: integer out of range (TOML integers are at most {})", i64::MAX);
+        bail!("[IY-C003] --set {arg}: integer out of range (TOML integers are at most {})", i64::MAX);
     }
     let parsed = toml::from_str::<toml::Table>(&format!("v = {value}")).ok().and_then(|mut t| t.remove("v"));
     let value = parsed.unwrap_or_else(|| toml::Value::String(value.to_string()));
     let mut node = raw;
     let (last, tables) = parts.split_last().expect("non-empty key");
     for (i, p) in tables.iter().enumerate() {
-        let t = node.as_table_mut().with_context(|| format!("--set {arg}: {} is not a table", parts[..i].join(".")))?;
+        let t = node.as_table_mut().with_context(|| format!("[IY-C004] --set {arg}: {} is not a table", parts[..i].join(".")))?;
         node = t.entry(p.to_string()).or_insert_with(|| toml::Value::Table(toml::Table::new()));
     }
-    let t = node.as_table_mut().with_context(|| format!("--set {arg}: {} is not a table", tables.join(".")))?;
+    let t = node.as_table_mut().with_context(|| format!("[IY-C004] --set {arg}: {} is not a table", tables.join(".")))?;
     t.insert(last.to_string(), value);
     Ok(())
 }
@@ -87,8 +87,10 @@ fn is_bare_integer(v: &str) -> bool {
 /// Checks the shape KEY=VALUE of one `--set` argument (a clap value parser: a malformed one is a usage error).
 pub fn parse_set_arg(arg: &str) -> std::result::Result<String, String> {
     match arg.split_once('=') {
-        None => Err(format!("expected KEY=VALUE, got \"{arg}\"")),
-        Some((k, _)) if k.split('.').any(|p| p.trim().is_empty()) => Err(format!("invalid key \"{}\" (expected a dotted path such as wind.speed)", k.trim())),
+        None => Err(format!("[IY-C002] expected KEY=VALUE, got \"{arg}\"")),
+        Some((k, _)) if k.split('.').any(|p| p.trim().is_empty()) => {
+            Err(format!("[IY-C001] invalid key \"{}\" (expected a dotted path such as wind.speed)", k.trim()))
+        }
         Some(_) => Ok(arg.to_string()),
     }
 }
@@ -109,7 +111,7 @@ pub fn apply_sets(raw: &mut toml::Value, sets: &[String]) -> Result<Vec<String>>
             None => last.push((key, value.trim().to_string(), 1)),
         }
     }
-    Ok(last.into_iter().filter(|e| e.2 > 1).map(|(k, v, _)| format!("--set {k} given more than once; the last value ({v}) is used")).collect())
+    Ok(last.into_iter().filter(|e| e.2 > 1).map(|(k, v, _)| format!("[IY-C500] --set {k} given more than once; the last value ({v}) is used")).collect())
 }
 
 /// The error of the first `--set` override that alone makes the configuration `base` fail to read
@@ -120,7 +122,7 @@ fn blame_set(base: &toml::Value, sets: &[String]) -> Option<anyhow::Error> {
     sets.iter().find_map(|arg| {
         let mut raw = base.clone();
         apply_set(&mut raw, arg).ok()?;
-        raw.try_into::<Config>().err().map(|e| anyhow::anyhow!("--set {}: {e}", arg.trim()))
+        raw.try_into::<Config>().err().map(|e| anyhow::anyhow!("[IY-C005] --set {}: {e}", arg.trim()))
     })
 }
 
@@ -376,10 +378,10 @@ pub struct Resolved {
 impl ResourcesCfg {
     pub fn validate(&self) -> Result<()> {
         if !self.memory_gb.is_finite() || self.memory_gb < 0.0 {
-            bail!("resources.memory_gb must be 0 (use the available memory) or positive");
+            bail!("[IY-C006] resources.memory_gb must be 0 (use the available memory) or positive");
         }
         if !(0..=19).contains(&self.nice) {
-            bail!("resources.nice must be between 0 and 19");
+            bail!("[IY-C007] resources.nice must be between 0 and 19");
         }
         Ok(())
     }
@@ -390,7 +392,7 @@ impl ResourcesCfg {
         let threads = if self.threads == 0 {
             available
         } else if self.threads > available {
-            warning = Some(format!("resources.threads = {} exceeds the {available} available threads; using {available}", self.threads));
+            warning = Some(format!("[IY-C501] resources.threads = {} exceeds the {available} available threads; using {available}", self.threads));
             available
         } else {
             self.threads
@@ -422,19 +424,22 @@ fn square() -> String {
 impl Config {
     /// Loads the configuration file with the command-line [`Overrides`] applied before validation.
     pub fn load_with(path: &Path, ov: &Overrides) -> Result<Self> {
-        let text = std::fs::read_to_string(path).with_context(|| format!("cannot read config {}", path.display()))?;
+        let text = std::fs::read_to_string(path).with_context(|| format!("[IY-C060] cannot read config {}", path.display()))?;
         let mut raw: toml::Value =
-            toml::from_str(text.strip_prefix('\u{feff}').unwrap_or(&text)).with_context(|| format!("invalid config {}", path.display()))?;
+            toml::from_str(text.strip_prefix('\u{feff}').unwrap_or(&text)).with_context(|| format!("[IY-C061] invalid config {}", path.display()))?;
         let base = raw.clone();
         let repeated = apply_sets(&mut raw, &ov.set)?;
         let what = if ov.set.is_empty() { String::new() } else { " with the --set overrides".to_string() };
-        let mut cfg = Self::from_value(raw, path.parent())
-            .map_err(|e| blame_set(&base, &ov.set).unwrap_or(e))
-            .with_context(|| format!("invalid config {}{what}", path.display()))?;
+        let mut cfg = Self::from_value(raw, path.parent()).map_err(|e| blame_set(&base, &ov.set).unwrap_or(e)).map_err(|e| {
+            // The headline carries its own code only when the cause has none (an unknown key, a wrong type).
+            let code = if format!("{e:#}").contains("[IY-") { "" } else { "[IY-C062] " };
+            e.context(format!("{code}invalid config {}{what}", path.display()))
+        })?;
         cfg.load_warnings.splice(0..0, repeated);
         if let Some(out) = &ov.out {
             // Relative to the current directory, not to the config file.
-            cfg.output.dir = if out.is_absolute() { out.clone() } else { std::env::current_dir().context("cannot read the current directory")?.join(out) };
+            cfg.output.dir =
+                if out.is_absolute() { out.clone() } else { std::env::current_dir().context("[IY-C063] cannot read the current directory")?.join(out) };
         }
         Ok(cfg)
     }
@@ -442,7 +447,7 @@ impl Config {
     pub(crate) fn from_value(raw: toml::Value, dir: Option<&Path>) -> Result<Self> {
         if raw.get("environment").is_some() {
             bail!(
-                "the [environment] section was removed: move wind_speed, wind_direction_deg, wind_ref_height and wind_exponent \
+                "[IY-C008] the [environment] section was removed: move wind_speed, wind_direction_deg, wind_ref_height and wind_exponent \
                  to [wind] as speed, direction_deg, ref_height and exponent"
             );
         }
@@ -459,25 +464,25 @@ impl Config {
     fn validate_numbers(&self) -> Result<()> {
         fn finite(key: &str, v: f64) -> Result<()> {
             if !v.is_finite() {
-                bail!("{key} must be a finite number, found {v}");
+                bail!("[IY-C009] {key} must be a finite number, found {v}");
             }
             Ok(())
         }
         fn positive(key: &str, v: f64) -> Result<()> {
             if !(v.is_finite() && v > 0.0) {
-                bail!("{key} must be a finite number > 0, found {v}");
+                bail!("[IY-C010] {key} must be a finite number > 0, found {v}");
             }
             Ok(())
         }
         fn non_negative(key: &str, v: f64) -> Result<()> {
             if !(v.is_finite() && v >= 0.0) {
-                bail!("{key} must be a finite number >= 0, found {v}");
+                bail!("[IY-C011] {key} must be a finite number >= 0, found {v}");
             }
             Ok(())
         }
         fn range(key: &str, v: f64, lo: f64, hi: f64) -> Result<()> {
             if !(v.is_finite() && (lo..=hi).contains(&v)) {
-                bail!("{key} must be between {lo} and {hi}, found {v}");
+                bail!("[IY-C012] {key} must be between {lo} and {hi}, found {v}");
             }
             Ok(())
         }
@@ -486,7 +491,7 @@ impl Config {
         positive("rocket.dry_mass", r.dry_mass)?;
         finite("rocket.cg_dry", r.cg_dry)?;
         if r.cg_dry < 0.0 {
-            bail!("rocket.cg_dry must be >= 0 (measured aft of the nose tip), found {}", r.cg_dry);
+            bail!("[IY-C013] rocket.cg_dry must be >= 0 (measured aft of the nose tip), found {}", r.cg_dry);
         }
         positive("rocket.ixx_dry", r.ixx_dry)?;
         positive("rocket.iyy_dry", r.iyy_dry)?;
@@ -518,7 +523,7 @@ impl Config {
             if let (Some(t), true) = (o.thickness, meshed) {
                 if t <= 0.0 {
                     bail!(
-                        "rocket.fin_override.thickness must be > 0 for aero.method = \"{}\", found {t}: the fins are meshed as biconvex sections of this thickness and fins without thickness would be left out of the mesh",
+                        "[IY-C014] rocket.fin_override.thickness must be > 0 for aero.method = \"{}\", found {t}: the fins are meshed as biconvex sections of this thickness and fins without thickness would be left out of the mesh",
                         if self.aero.method == AeroMethod::Panel { "panel" } else { "cfd" }
                     );
                 }
@@ -541,7 +546,7 @@ impl Config {
         finite("launch.altitude", l.altitude)?;
         positive("launch.rail_length", l.rail_length)?;
         if !(l.elevation_deg.is_finite() && l.elevation_deg > 0.0 && l.elevation_deg <= 90.0) {
-            bail!("launch.elevation_deg must be in (0, 90], found {}", l.elevation_deg);
+            bail!("[IY-C015] launch.elevation_deg must be in (0, 90], found {}", l.elevation_deg);
         }
         finite("launch.azimuth_deg", l.azimuth_deg)?;
         finite("launch.roll_deg", l.roll_deg)?;
@@ -552,24 +557,24 @@ impl Config {
         non_negative("recovery.delay", self.recovery.delay)?;
         self.recovery.validate()?;
         if self.sim.descent == Some(sim::Descent::Parachute) && !self.recovery.enabled {
-            bail!("sim.descent = \"parachute\" needs recovery.enabled = true");
+            bail!("[IY-C016] sim.descent = \"parachute\" needs recovery.enabled = true");
         }
 
         let a = &self.aero;
         non_negative("aero.mach_min", a.mach_min)?;
         finite("aero.mach_max", a.mach_max)?;
         if a.mach_max <= a.mach_min {
-            bail!("aero.mach_max ({}) must be greater than aero.mach_min ({})", a.mach_max, a.mach_min);
+            bail!("[IY-C017] aero.mach_max ({}) must be greater than aero.mach_min ({})", a.mach_max, a.mach_min);
         }
         positive("aero.mach_step", a.mach_step)?;
         positive("aero.alpha_max_deg", a.alpha_max_deg)?;
         positive("aero.alpha_step_deg", a.alpha_step_deg)?;
         positive("aero.general_mach_step", a.general_mach_step)?;
         if a.mach_max > MACH_LIMIT {
-            bail!("aero.mach_max = {} is too large for a rocket flight (<= {MACH_LIMIT})", a.mach_max);
+            bail!("[IY-C018] aero.mach_max = {} is too large for a rocket flight (<= {MACH_LIMIT})", a.mach_max);
         }
         if a.alpha_max_deg > 180.0 {
-            bail!("aero.alpha_max_deg = {} is outside (0, 180]", a.alpha_max_deg);
+            bail!("[IY-C019] aero.alpha_max_deg = {} is outside (0, 180]", a.alpha_max_deg);
         }
         // The Mach step the table is really built with (see `aero_options`).
         let general = a.table_kind == aero::table::TableKind::General;
@@ -592,14 +597,14 @@ impl Config {
         }
         if points > MAX_AERO_GRID_POINTS {
             bail!(
-                "the aero table grid would have about {points:.3e} points ({what}; at most {MAX_AERO_GRID_POINTS:e}): increase {step_key} / aero.alpha_step_deg or reduce aero.mach_max / aero.alpha_max_deg"
+                "[IY-C020] the aero table grid would have about {points:.3e} points ({what}; at most {MAX_AERO_GRID_POINTS:e}): increase {step_key} / aero.alpha_step_deg or reduce aero.mach_max / aero.alpha_max_deg"
             );
         }
         if a.n_slices < MIN_SLICES {
-            bail!("aero.n_slices = {} is too small: the geometry extraction needs at least {MIN_SLICES} slices", a.n_slices);
+            bail!("[IY-C021] aero.n_slices = {} is too small: the geometry extraction needs at least {MIN_SLICES} slices", a.n_slices);
         }
         if a.n_slices > MAX_SLICES {
-            bail!("aero.n_slices = {} is too large (at most {MAX_SLICES})", a.n_slices);
+            bail!("[IY-C022] aero.n_slices = {} is too large (at most {MAX_SLICES})", a.n_slices);
         }
         non_negative("aero.fin_threshold", a.fin_threshold)?;
         // [aero.panel] is checked whatever the method, so a bad value fails before the panel run that reads it.
@@ -607,7 +612,7 @@ impl Config {
         let hi_max = a.mach_max.max(PANEL_TRANSONIC_HI_MIN_CAP);
         if a.panel.transonic[1] > hi_max {
             bail!(
-                "aero.panel.transonic[1] = {} is above the table's aero.mach_max ({}): the transonic blend would run beyond the table; use at most {hi_max}",
+                "[IY-C023] aero.panel.transonic[1] = {} is above the table's aero.mach_max ({}): the transonic blend would run beyond the table; use at most {hi_max}",
                 a.panel.transonic[1],
                 a.mach_max
             );
@@ -628,42 +633,49 @@ impl Config {
             positive("wind.ground_blend_height", w.ground_blend_height)?;
         }
         if w.model == sim::WindModel::Log && 2.0 * w.roughness_length >= w.ref_height {
-            bail!("wind.roughness_length ({}) must be smaller than half of wind.ref_height ({}) for the log profile", w.roughness_length, w.ref_height);
+            bail!(
+                "[IY-C024] wind.roughness_length ({}) must be smaller than half of wind.ref_height ({}) for the log profile",
+                w.roughness_length,
+                w.ref_height
+            );
         }
 
         let s = &self.sim;
         positive("sim.dt", s.dt)?;
         if s.dt > MAX_DT {
-            bail!("sim.dt = {} s is too large for a rocket flight (<= {MAX_DT} s; 0.002 s is typical)", s.dt);
+            bail!("[IY-C025] sim.dt = {} s is too large for a rocket flight (<= {MAX_DT} s; 0.002 s is typical)", s.dt);
         }
         if s.dt < MIN_DT {
-            bail!("sim.dt = {} s is too small (>= {MIN_DT:e} s): the run would take days; 0.002 s is typical", s.dt);
+            bail!("[IY-C026] sim.dt = {} s is too small (>= {MIN_DT:e} s): the run would take days; 0.002 s is typical", s.dt);
         }
         positive("sim.max_time", s.max_time)?;
         if !s.integrator.is_adaptive() && s.max_time / s.dt > MAX_STEPS {
-            bail!("sim.max_time / sim.dt = {:.3e} steps is too many (at most {MAX_STEPS:e}): increase sim.dt or reduce sim.max_time", s.max_time / s.dt);
+            bail!(
+                "[IY-C027] sim.max_time / sim.dt = {:.3e} steps is too many (at most {MAX_STEPS:e}): increase sim.dt or reduce sim.max_time",
+                s.max_time / s.dt
+            );
         }
         positive("sim.output_interval", s.output_interval)?;
         if s.output_interval < MIN_OUTPUT_INTERVAL {
             bail!(
-                "sim.output_interval = {} s is too small (>= {MIN_OUTPUT_INTERVAL} s): it would write an enormous trajectory and limit the adaptive step",
+                "[IY-C028] sim.output_interval = {} s is too small (>= {MIN_OUTPUT_INTERVAL} s): it would write an enormous trajectory and limit the adaptive step",
                 s.output_interval
             );
         }
         if s.max_time / s.output_interval > MAX_OUTPUT_ROWS {
             bail!(
-                "sim.max_time / sim.output_interval = {:.3e} output rows is too many (at most {MAX_OUTPUT_ROWS:e}): increase sim.output_interval",
+                "[IY-C029] sim.max_time / sim.output_interval = {:.3e} output rows is too many (at most {MAX_OUTPUT_ROWS:e}): increase sim.output_interval",
                 s.max_time / s.output_interval
             );
         }
         if s.output_interval > s.max_time {
-            bail!("sim.output_interval = {} s exceeds sim.max_time = {} s", s.output_interval, s.max_time);
+            bail!("[IY-C030] sim.output_interval = {} s exceeds sim.max_time = {} s", s.output_interval, s.max_time);
         }
         positive("sim.rtol", s.rtol)?;
         positive("sim.atol", s.atol)?;
         for (k, v) in [("rtol", s.rtol), ("atol", s.atol)] {
             if v > MAX_TOL {
-                bail!("sim.{k} = {v} is too loose for a rocket flight (<= {MAX_TOL:e}; 1e-8 is typical)");
+                bail!("[IY-C031] sim.{k} = {v} is too loose for a rocket flight (<= {MAX_TOL:e}; 1e-8 is typical)");
             }
         }
 
@@ -698,7 +710,7 @@ impl Config {
         }
         if let Some(k) = mc.truncate_sigma {
             if !(k.is_finite() && k > 0.0) {
-                bail!("dispersion.monte_carlo.truncate_sigma must be a finite number > 0 (the bound of the clipped draws in sigma, e.g. 3.0), found {k}");
+                bail!("[IY-C032] dispersion.monte_carlo.truncate_sigma must be a finite number > 0 (the bound of the clipped draws in sigma, e.g. 3.0), found {k}");
             }
         }
         Ok(())
@@ -707,20 +719,20 @@ impl Config {
     fn validate(&self) -> Result<()> {
         self.validate_numbers()?;
         if !matches!(self.rocket.fin_le.as_str(), "rounded" | "sharp") {
-            bail!("rocket.fin_le must be \"rounded\" or \"sharp\"");
+            bail!("[IY-C033] rocket.fin_le must be \"rounded\" or \"sharp\"");
         }
         if !matches!(self.rocket.fin_te.as_str(), "square" | "tapered") {
-            bail!("rocket.fin_te must be \"square\" or \"tapered\"");
+            bail!("[IY-C034] rocket.fin_te must be \"square\" or \"tapered\"");
         }
         if self.rocket.dry_mass <= 0.0 || self.rocket.iyy_dry <= 0.0 || self.rocket.ixx_dry <= 0.0 {
-            bail!("rocket mass and inertias must be positive");
+            bail!("[IY-C035] rocket mass and inertias must be positive");
         }
         let r = &self.rocket;
         let izz = r.izz_dry.unwrap_or(r.iyy_dry);
         let tensor = geom::Mat3([[r.ixx_dry, r.ixy_dry, r.ixz_dry], [r.ixy_dry, r.iyy_dry, r.iyz_dry], [r.ixz_dry, r.iyz_dry, izz]]);
         let minors = [r.ixx_dry, r.ixx_dry * r.iyy_dry - r.ixy_dry * r.ixy_dry, tensor.det()];
         if !(izz > 0.0 && minors.iter().all(|m| *m > 0.0)) {
-            bail!("the inertia tensor of the rocket (ixx_dry, iyy_dry, izz_dry and the products) must be positive definite");
+            bail!("[IY-C036] the inertia tensor of the rocket (ixx_dry, iyy_dry, izz_dry and the products) must be positive definite");
         }
         let finite = [
             r.ixy_dry,
@@ -736,38 +748,38 @@ impl Config {
             self.launch.roll_deg,
         ];
         if finite.iter().any(|v| !v.is_finite()) {
-            bail!("rocket inertia products, CG offset, fin cant, motor misalignment and launch.roll_deg must be finite numbers");
+            bail!("[IY-C037] rocket inertia products, CG offset, fin cant, motor misalignment and launch.roll_deg must be finite numbers");
         }
         if self.aero.general_mach_step <= 0.0 {
-            bail!("aero.general_mach_step must be positive");
+            bail!("[IY-C038] aero.general_mach_step must be positive");
         }
         if self.aero.mach_step <= 0.0 || self.aero.alpha_step_deg <= 0.0 || self.aero.mach_max <= self.aero.mach_min {
-            bail!("invalid aero grid");
+            bail!("[IY-C039] invalid aero grid");
         }
         if self.dispersion.wind_speeds.is_empty() {
-            bail!("dispersion.wind_speeds must list at least one speed");
+            bail!("[IY-C040] dispersion.wind_speeds must list at least one speed");
         }
         if self.dispersion.directions == 0 {
-            bail!("dispersion.directions must be at least 1");
+            bail!("[IY-C041] dispersion.directions must be at least 1");
         }
         let d = &self.dispersion;
         if d.directions > MAX_DIRECTIONS {
-            bail!("dispersion.directions = {} is too large (at most {MAX_DIRECTIONS})", d.directions);
+            bail!("[IY-C042] dispersion.directions = {} is too large (at most {MAX_DIRECTIONS})", d.directions);
         }
         if d.wind_speeds.len() > MAX_WIND_SPEEDS {
-            bail!("dispersion.wind_speeds lists {} speeds (at most {MAX_WIND_SPEEDS})", d.wind_speeds.len());
+            bail!("[IY-C043] dispersion.wind_speeds lists {} speeds (at most {MAX_WIND_SPEEDS})", d.wind_speeds.len());
         }
         if d.wind_speeds.len() * d.directions > MAX_WIND_GRID_CASES {
-            bail!("the wind grid would have {} cases (wind_speeds x directions; at most {MAX_WIND_GRID_CASES})", d.wind_speeds.len() * d.directions);
+            bail!("[IY-C044] the wind grid would have {} cases (wind_speeds x directions; at most {MAX_WIND_GRID_CASES})", d.wind_speeds.len() * d.directions);
         }
         if d.monte_carlo.samples == 0 {
-            bail!("dispersion.monte_carlo.samples must be at least 1");
+            bail!("[IY-C045] dispersion.monte_carlo.samples must be at least 1");
         }
         if d.monte_carlo.samples > MAX_MC_SAMPLES {
-            bail!("dispersion.monte_carlo.samples = {} is too large (at most {MAX_MC_SAMPLES})", d.monte_carlo.samples);
+            bail!("[IY-C046] dispersion.monte_carlo.samples = {} is too large (at most {MAX_MC_SAMPLES})", d.monte_carlo.samples);
         }
         if self.aero.method == AeroMethod::Table && self.aero.table.is_none() {
-            bail!("aero.table is required when aero.method = \"table\"");
+            bail!("[IY-C047] aero.table is required when aero.method = \"table\"");
         }
         if self.aero.method == AeroMethod::Cfd {
             self.aero.cfd.validate()?;
@@ -775,7 +787,7 @@ impl Config {
                 let f = self.resolve(&self.aero.cfd.step_file);
                 if !f.is_file() {
                     bail!(
-                        "aero.cfd.step_file = \"{}\": no such file ({}; a relative path is relative to the configuration file)",
+                        "[IY-C048] aero.cfd.step_file = \"{}\": no such file ({}; a relative path is relative to the configuration file)",
                         self.aero.cfd.step_file.display(),
                         f.display()
                     );
@@ -784,27 +796,27 @@ impl Config {
         }
         self.atmosphere.build()?;
         if self.earth.model == sim::EarthModel::Flat && self.earth.gravity == sim::GravityModel::J2 {
-            bail!("earth.gravity = \"j2\" requires earth.model = \"ecef\"");
+            bail!("[IY-C049] earth.gravity = \"j2\" requires earth.model = \"ecef\"");
         }
         if self.wind.model == sim::WindModel::Profile && self.wind.profile.is_none() {
-            bail!("wind.profile (CSV path) is required when wind.model = \"profile\"");
+            bail!("[IY-C050] wind.profile (CSV path) is required when wind.model = \"profile\"");
         }
         if self.wind.ref_height <= 0.0 {
-            bail!("wind.ref_height must be positive");
+            bail!("[IY-C051] wind.ref_height must be positive");
         }
         if self.wind.model == sim::WindModel::Log && !(self.wind.roughness_length > 0.0 && self.wind.roughness_length < self.wind.ref_height) {
-            bail!("wind.roughness_length must be positive and smaller than wind.ref_height");
+            bail!("[IY-C052] wind.roughness_length must be positive and smaller than wind.ref_height");
         }
         if matches!(self.wind.model, sim::WindModel::Power | sim::WindModel::Log)
             && !(self.wind.ground_blend_height > 0.0 && self.wind.ground_blend_height < self.wind.ref_height)
         {
-            bail!("wind.ground_blend_height must be positive and smaller than wind.ref_height");
+            bail!("[IY-C053] wind.ground_blend_height must be positive and smaller than wind.ref_height");
         }
         if self.sim.dt <= 0.0 || self.sim.output_interval <= 0.0 {
-            bail!("sim.dt and sim.output_interval must be positive");
+            bail!("[IY-C054] sim.dt and sim.output_interval must be positive");
         }
         if self.sim.integrator.is_adaptive() && !(self.sim.rtol > 0.0 && self.sim.atol > 0.0) {
-            bail!("sim.rtol and sim.atol must be positive for the adaptive integrators (rk45, dop853)");
+            bail!("[IY-C055] sim.rtol and sim.atol must be positive for the adaptive integrators (rk45, dop853)");
         }
         self.resources.validate()?;
         self.nose_direction()?;
@@ -818,25 +830,28 @@ impl Config {
         let profile = w.model == sim::WindModel::Profile;
         for (key, v) in [("wind.profile_mean_speed", w.profile_mean_speed), ("wind.profile_mean_direction_deg", w.profile_mean_direction_deg)] {
             if v.is_some() && !profile {
-                bail!("{key} only applies to wind.model = \"profile\" (the model is \"{}\"); set wind.speed / wind.direction_deg instead", model_name(w.model));
+                bail!(
+                    "[IY-C056] {key} only applies to wind.model = \"profile\" (the model is \"{}\"); set wind.speed / wind.direction_deg instead",
+                    model_name(w.model)
+                );
             }
         }
         if let Some(v) = w.profile_mean_speed {
             if !(v.is_finite() && v >= 0.0) {
-                bail!("wind.profile_mean_speed must be a finite number >= 0, found {v}");
+                bail!("[IY-C057] wind.profile_mean_speed must be a finite number >= 0, found {v}");
             }
         }
         if let Some(v) = w.profile_mean_direction_deg {
             if !(v.is_finite() && (0.0..=360.0).contains(&v)) {
-                bail!("wind.profile_mean_direction_deg must be between 0 and 360, found {v}");
+                bail!("[IY-C058] wind.profile_mean_direction_deg must be between 0 and 360, found {v}");
             }
         }
         if profile && explicit_speed {
-            self.load_warnings.push("wind.speed is ignored for wind.model = \"profile\"; use wind.profile_mean_speed to scale the profile".into());
+            self.load_warnings.push("[IY-C502] wind.speed is ignored for wind.model = \"profile\"; use wind.profile_mean_speed to scale the profile".into());
         }
         if profile && explicit_direction {
             self.load_warnings
-                .push("wind.direction_deg is ignored for wind.model = \"profile\"; use wind.profile_mean_direction_deg to rotate the profile".into());
+                .push("[IY-C503] wind.direction_deg is ignored for wind.model = \"profile\"; use wind.profile_mean_direction_deg to rotate the profile".into());
         }
         Ok(())
     }
@@ -879,7 +894,7 @@ impl Config {
             "-y" => Some(Vec3::new(0.0, -1.0, 0.0)),
             "+z" => Some(Vec3::new(0.0, 0.0, 1.0)),
             "-z" => Some(Vec3::new(0.0, 0.0, -1.0)),
-            other => bail!("rocket.nose_direction '{other}' is not one of auto, +x, -x, +y, -y, +z, -z"),
+            other => bail!("[IY-C059] rocket.nose_direction '{other}' is not one of auto, +x, -x, +y, -y, +z, -z"),
         })
     }
 }
@@ -1136,10 +1151,10 @@ mod tests {
     #[test]
     fn set_shape_is_checked_by_the_parser_and_huge_integers_are_named() {
         assert_eq!(parse_set_arg("wind.speed=3").unwrap(), "wind.speed=3");
-        assert!(parse_set_arg("wind.speed").unwrap_err().contains("expected KEY=VALUE"));
-        assert!(parse_set_arg("wind..speed=3").unwrap_err().contains("invalid key"));
+        assert!(parse_set_arg("wind.speed").unwrap_err().contains("[IY-C002] expected KEY=VALUE"));
+        assert!(parse_set_arg("wind..speed=3").unwrap_err().contains("[IY-C001] invalid key"));
         let e = sample_set(&["dispersion.monte_carlo.seed=18446744073709551615"]).unwrap_err().to_string();
-        assert_eq!(e, "--set dispersion.monte_carlo.seed=18446744073709551615: integer out of range (TOML integers are at most 9223372036854775807)");
+        assert_eq!(e, "[IY-C003] --set dispersion.monte_carlo.seed=18446744073709551615: integer out of range (TOML integers are at most 9223372036854775807)");
         assert!(sample_set(&["dispersion.monte_carlo.seed=9223372036854775807"]).is_ok());
         assert!(sample_set(&["dispersion.monte_carlo.seed=-9223372036854775809"]).unwrap_err().to_string().contains("integer out of range"));
     }
@@ -1219,7 +1234,7 @@ mod tests {
         let sample = include_str!("../../../examples/sample.toml");
         let off = sample.replacen("enabled = true", "enabled = false", 1);
         let chute = off.replacen("[sim]", "[sim]\ndescent = \"parachute\"", 1);
-        assert_eq!(parse(&chute).unwrap_err().to_string(), "sim.descent = \"parachute\" needs recovery.enabled = true");
+        assert_eq!(parse(&chute).unwrap_err().to_string(), "[IY-C016] sim.descent = \"parachute\" needs recovery.enabled = true");
         parse(&off.replacen("[sim]", "[sim]\ndescent = \"ballistic\"", 1)).unwrap();
         parse(&sample.replacen("[sim]", "[sim]\ndescent = \"parachute\"", 1)).unwrap();
     }
@@ -1491,20 +1506,20 @@ mod tests {
         assert_eq!(Config::load_with(&path, &abs).unwrap().out_dir(), dir.join("abs"));
         let bad = Overrides { set: vec!["wind.nope=1".into()], out: None };
         let e = format!("{:#}", Config::load_with(&path, &bad).unwrap_err());
-        assert!(e.contains("with the --set overrides") && e.contains("--set wind.nope=1: unknown field `nope`"), "{e}");
+        assert!(e.contains("with the --set overrides") && e.contains("[IY-C005] --set wind.nope=1: unknown field `nope`") && !e.contains("IY-C062"), "{e}");
         // a value of the wrong type names the override
         let bad = Overrides { set: vec!["wind.speed=5".into(), "rocket.dry_mass=abc".into()], out: None };
         let e = format!("{:#}", Config::load_with(&path, &bad).unwrap_err());
-        assert!(e.contains("with the --set overrides: --set rocket.dry_mass=abc: invalid type: string \"abc\", expected f64"), "{e}");
+        assert!(e.contains("with the --set overrides: [IY-C005] --set rocket.dry_mass=abc: invalid type: string \"abc\", expected f64"), "{e}");
         // a range error keeps its own message (it names the key)
         let bad = Overrides { set: vec!["wind.speed=-1".into()], out: None };
         let e = format!("{:#}", Config::load_with(&path, &bad).unwrap_err());
-        assert!(e.contains("wind.speed") && !e.contains("--set wind.speed=-1:"), "{e}");
+        assert!(e.contains("[IY-C011] wind.speed") && !e.contains("--set wind.speed=-1:") && !e.contains("IY-C062"), "{e}");
         // a repeated key: the last value is used, with a warning
         let twice = Overrides { set: vec!["wind.speed=3".into(), "wind.direction_deg=90".into(), " wind . speed = 8 ".into()], out: None };
         let c = Config::load_with(&path, &twice).unwrap();
         assert_eq!(c.wind.speed, 8.0);
-        assert_eq!(c.load_warnings, vec!["--set wind.speed given more than once; the last value (8) is used".to_string()]);
+        assert_eq!(c.load_warnings, vec!["[IY-C500] --set wind.speed given more than once; the last value (8) is used".to_string()]);
     }
 
     #[test]
@@ -1515,8 +1530,8 @@ mod tests {
         assert_eq!(
             c.load_warnings,
             vec![
-                "wind.speed is ignored for wind.model = \"profile\"; use wind.profile_mean_speed to scale the profile".to_string(),
-                "wind.direction_deg is ignored for wind.model = \"profile\"; use wind.profile_mean_direction_deg to rotate the profile".to_string(),
+                "[IY-C502] wind.speed is ignored for wind.model = \"profile\"; use wind.profile_mean_speed to scale the profile".to_string(),
+                "[IY-C503] wind.direction_deg is ignored for wind.model = \"profile\"; use wind.profile_mean_direction_deg to rotate the profile".to_string(),
             ]
         );
         // defaults (keys absent) are not reported
@@ -1565,5 +1580,29 @@ mod tests {
             let e = with(model, key, "0.0").unwrap_err();
             assert!(e.contains(&format!("wind.{key}")), "{model} {key}: {e}");
         }
+    }
+
+    #[test]
+    fn config_errors_carry_one_code_each() {
+        let dir = std::env::temp_dir().join(format!("iy_cfg_codes_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let ov = Overrides { set: vec![], out: None };
+        let count = |e: &anyhow::Error| format!("{e:#}").matches("[IY-").count();
+        let missing = Config::load_with(&dir.join("none.toml"), &ov).unwrap_err();
+        assert!(format!("{missing:#}").starts_with("[IY-C060] cannot read config"), "{missing:#}");
+        std::fs::write(dir.join("syntax.toml"), "a = = 1").unwrap();
+        let e = Config::load_with(&dir.join("syntax.toml"), &ov).unwrap_err();
+        assert!(format!("{e:#}").starts_with("[IY-C061] invalid config") && count(&e) == 1, "{e:#}");
+        // an unknown key: the headline carries the code
+        let sample = include_str!("../../../examples/sample.toml");
+        std::fs::write(dir.join("unknown.toml"), sample.replacen("[wind]", "[wind]\nnope = 1", 1)).unwrap();
+        let e = Config::load_with(&dir.join("unknown.toml"), &ov).unwrap_err();
+        assert!(format!("{e:#}").starts_with("[IY-C062] invalid config") && count(&e) == 1, "{e:#}");
+        // a range error: the cause carries the code, the headline none
+        std::fs::write(dir.join("range.toml"), sample.replacen("[sim]", "[sim]\ndescent = \"parachute\"", 1).replacen("enabled = true", "enabled = false", 1))
+            .unwrap();
+        let e = Config::load_with(&dir.join("range.toml"), &ov).unwrap_err();
+        assert!(format!("{e:#}").contains("[IY-C016]") && !format!("{e:#}").contains("IY-C062") && count(&e) == 1, "{e:#}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -1,6 +1,25 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Landing dispersion studies: wind speed x direction grid and Monte Carlo.
+//!
+//! # Wind grid
+//! Every combination of the reference wind speeds and the evenly spaced directions is flown (both
+//! descent modes when a parachute is enabled). The cases are independent, so they are flown in
+//! parallel with rayon; the aero table is shared read-only. A case replaces only the reference
+//! speed and direction of the configured wind model (for a wind profile: the target mean speed
+//! and direction, which scale and rotate the whole table).
+//!
+//! # Monte Carlo random numbers
+//! Sample `i` uses its own `ChaCha8Rng` seeded with `seed + i` (64-bit wrapping addition), and
+//! standard normals come from `StandardNormal` (Ziggurat). A sample therefore depends only on
+//! `seed + i`, not on the other samples, the thread count or the order of execution; sample `i`
+//! of seed `s` equals sample `i + 1` of seed `s - 1`. Exactly 24 normals are drawn per sample, in
+//! the field order documented on [`Perturbation::draw`] (the two-axis quantities draw one value
+//! per axis, the cross-plane rail tilt is the 21st, the three aero rate terms are the 22nd to
+//! 24th), also for zero sigmas, so changing one sigma does not move the other draws. With
+//! `truncate_sigma = k` each normal is clamped to `[-k, k]` (not redrawn) before it is scaled,
+//! which keeps the number and order of draws and the values inside the bounds. `summarize`
+//! records the `truncate_sigma` it is given in the summary as is.
 
 use crate::flight::{AeroScale, Descent, Launch, Simulation, Summary};
 use crate::motor::Motor;

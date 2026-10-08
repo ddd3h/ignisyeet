@@ -26,28 +26,13 @@ IgnisYeet ドキュメント
    :numbered:
    :caption: 目次
 
-   intro
-   usage
-   safety
-   overview
-   coordinates
-   geometry
-   aerodynamics
-   aero_coefficients
-   barrowman
-   panel
-   cfd
-   cfd_internals
-   environment
-   propulsion
-   dynamics
-   dispersion
-   verification
-   verification_aero
-   validation
-   limitations
-   file_formats
-   errors
+   about
+   tutorial/index
+   howto/index
+   reference/index
+   theory/index
+   vv/index
+   dev/index
 
 .. raw:: latex
 

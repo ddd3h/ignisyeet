@@ -1,5 +1,7 @@
 .. _errors:
 
+.. _page-reference-error-codes:
+
 エラーとワーニング
 ==================
 
@@ -111,10 +113,10 @@ CFD のケースごとの行は、コードの後ろに範囲を示す文が続�
 .. toctree::
    :maxdepth: 1
 
-   errors/config
-   errors/geometry
-   errors/aero
-   errors/sim
-   errors/cli
-   errors/cfd
-   errors/install
+   ../errors/config
+   ../errors/geometry
+   ../errors/aero
+   ../errors/sim
+   ../errors/cli
+   ../errors/cfd
+   ../errors/install

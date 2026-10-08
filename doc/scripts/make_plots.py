@@ -1134,6 +1134,45 @@ def basic_finner_validation(f, vdir):
     f.save(fig, "validation_basic_finner")
 
 
+def placeholder(f, name, what):
+    """Save a clearly labelled placeholder figure while the data of `name` are not available."""
+    fig, ax = plt.subplots(figsize=(5.6, 3.4))
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.grid(False)
+    for sp in ax.spines.values():
+        sp.set_visible(True)
+        sp.set_linestyle("--")
+    ax.text(0.5, 0.58, "PLACEHOLDER", ha="center", va="center", fontsize=18, color="#e34948", transform=ax.transAxes)
+    ax.text(0.5, 0.40, f"{name}\n{what}", ha="center", va="center", fontsize=9.5, color=INK2, transform=ax.transAxes)
+    f.save(fig, name)
+
+
+def aero_cost_accuracy(f, data):
+    """Table time [s] against the C_Nalpha difference [%] to CFD (Euler), per method. Data: sample_euler_vs_models.csv, perf/."""
+    placeholder(f, "aero_cost_accuracy", "table time [s] vs C_N-alpha difference to CFD [%]")
+
+
+def panel_mesh_cost(f, panel_dir):
+    """Panel count n against matrix memory (8n^2+64n) and the change of C_Nalpha. Data: aero runs with --set aero.panel.*."""
+    placeholder(f, "panel_mesh_cost", "panel count vs matrix memory and C_N-alpha change")
+
+
+def cfd_fin_size_cost(f, data):
+    """fin_size 1/2/5 mm against cell count, time and C_N. Data: cfd/fin_resolution.csv."""
+    placeholder(f, "cfd_fin_size_cost", "fin_size vs cell count, time and C_N")
+
+
+def integrator_cost_accuracy(f, out):
+    """Right-hand-side evaluations against the landing-point difference [m] for rk4/rk45/dop853. Data: tolerance sweep."""
+    placeholder(f, "integrator_cost_accuracy", "RHS evaluations vs landing-point difference [m]")
+
+
+def mc_sample_convergence(f, mc_dir):
+    """Maximum, P99 and P99.9 against the sample count N = 1e2..1e5. Data: dispersion_mc.csv subsamples."""
+    placeholder(f, "mc_sample_convergence", "sample count N vs max / P99 / P99.9 of the landing distance")
+
+
 def main():
     out, figdir = Path(sys.argv[1]), Path(sys.argv[2])
     f = Figs(figdir)
@@ -1158,6 +1197,12 @@ def main():
     vdir = data.parent / "validation" / "basic_finner"
     if (vdir / "summary_vs_measured.csv").exists():
         basic_finner_validation(f, vdir)
+    # Figures of the decision chapters: placeholders until their data are available.
+    aero_cost_accuracy(f, data)
+    panel_mesh_cost(f, Path(sys.argv[4]) if len(sys.argv) > 4 else None)
+    cfd_fin_size_cost(f, data)
+    integrator_cost_accuracy(f, out)
+    mc_sample_convergence(f, Path(sys.argv[3]) if len(sys.argv) > 3 else None)
 
 
 if __name__ == "__main__":

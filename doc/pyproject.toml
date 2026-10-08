@@ -15,6 +15,7 @@ dependencies = [
     "pyte>=0.8",
     "pillow>=10",
     "sphinxext-opengraph>=0.9",
+    "sphinx-reredirects>=0.1.6",
 ]
 
 [tool.uv]

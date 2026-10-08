@@ -370,7 +370,7 @@ Configuration is written in TOML. Relative paths are resolved against **the dire
 | Section | Main contents |
 |---|---|
 | `[output]` | Output directory `dir` (default `out`, next to the configuration file), `kml` switch for the Google Earth file |
-| `[resources]` | Compute resources: `threads` (CPU thread cap, 0 = all available), `memory_gb` (budget for the panel matrix and CFD cases, 0 = no limit), `nice` (0 to 19, lowers the process priority) |
+| `[resources]` | Compute resources: `threads` (CPU thread cap, 0 = all available), `memory_gb` (budget for the panel matrix and CFD cases, 0 = the memory available to the process: `MemAvailable`, a cgroup limit or `ulimit -v`, whichever is smallest), `nice` (0 to 19, lowers the process priority) |
 | `[rocket]` | STL path and unit `stl_scale`, `nose_direction`, dry mass, center of gravity, moments of inertia (`ixx_dry`, `iyy_dry`; optional `izz_dry`, products `ixy_dry`/`ixz_dry`/`iyz_dry`, lateral CG offset `cg_lateral_dry`), `fin_cant_deg`, roughness, fin leading- and trailing-edge shapes, `extra_cd`, `[rocket.fin_override]` (manual fin specification, including `cant_deg`) |
 | `[motor]` | RASP `.eng` file, motor aft position `aft_x`, nozzle exit diameter, override of the propellant mass, thrust misalignment (`misalignment_deg`, `misalignment_azimuth_deg`, `misalignment_offset`) |
 | `[launch]` | Latitude, longitude, altitude, rail length (the distance the rocket travels along the rail until it leaves, i.e. the effective guide length), elevation angle, azimuth, `roll_deg` (body roll about the rail axis) |

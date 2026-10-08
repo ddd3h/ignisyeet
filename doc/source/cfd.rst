@@ -675,7 +675,7 @@ RANS で解く
      - 31.1 GB
 
 ``wall_size`` 5 mm のケースを 4 ランクで解いたときの実測のピークは、ランクの合計で約 7.8 GB であった。
-全領域は節点数もメモリも約 2 倍になる。メモリの予算（``[resources]`` の ``memory_gb``）に合わせて ``parallel_cases`` が減るので、同時に解けるケースは Euler よりずっと少ない。
+全領域は節点数もメモリも約 2 倍になる。メモリの予算（``[resources]`` の ``memory_gb``。既定は使えるメモリ。:ref:`sec-cfd-resources`）に合わせて ``parallel_cases`` が減るので、同時に解けるケースは Euler よりずっと少ない。
 ``ignisyeet cfd-check 設定ファイル --mesh`` は、境界層の層数、最初の層の高さ、厚さ、不正なプリズムの数（常に 0）も表示する。
 
 **抗力の内訳**\ 。軸力は、壁面（``wall``）の力の積分（圧力と摩擦）に、底面の項、追加抗力、二つの増分を足したものである。
@@ -704,8 +704,19 @@ RANS の壁は滑らかなので、設定の粗さの効果を部品積み上げ
 どちらも 0 にすると自動になり、ランク数は 4 とスレッド数の小さいほう、同時ケース数は ``スレッド数 / ランク数`` になる。
 積が使えるスレッド数を超えるときは、まず同時ケース数を、次にランク数を減らす。
 
+.. _sec-cfd-resources:
+
 ``[resources]`` の ``threads`` はスレッド数の上限（MPI ランクの総数と gmsh のスレッド数に効く）で、``memory_gb`` は同時に動かすケースのメモリの予算である。
-予算に収まるまで同時ケース数を減らし（最低でも 1 ケースは動かす）、1 ケースでも予算を超えるときは警告を出す。
+``memory_gb = 0``\ （既定）のときの予算は、このプロセスが使えるメモリ（Linux の ``MemAvailable``、cgroup の上限、``ulimit -v`` の上限の最小。macOS では物理メモリ）で、正の値を指定するとそれを使う。
+予算に収まるまで同時ケース数を減らす（``note: aero.cfd: parallel_cases reduced from … to … (memory budget … GB from …, about … GB per case)``）。
+1 ケースの見積もりが予算を超えるときは、メッシュを作ったあと、計算の前にエラーで止まる。
+メッセージは ``aero.cfd: a single CFD case needs about … GB (… on … cells / … nodes, … ranks), more than the memory budget of … GB (…); use a coarser mesh (a larger wall_size…) or fewer ranks_per_case (about 40 MB each)…`` で、末尾は ``memory_gb`` を指定していれば ``or raise resources.memory_gb``、既定の予算なら ``or set resources.memory_gb when more memory can be freed for the run`` である。
+``ignisyeet cfd-check 設定ファイル --mesh`` は、解決した並列度と見積もりを次の 1 行で表示する（予算が分からない環境では ``memory budget unknown (not checked)``）。
+
+.. code-block:: text
+
+   Resources: 4 ranks x 3 concurrent cases, about 9.0 GB per case (27.0 GB together), memory budget 30.0 GB (available memory, MemAvailable in /proc/meminfo)
+
 1 ケースのメモリは、ランク数 :math:`n_r`、セル数 :math:`N` に対して
 
 .. math::

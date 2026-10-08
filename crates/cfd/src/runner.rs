@@ -2038,7 +2038,10 @@ exit 0
         let out = run_all(&e.setup(), &|_| {}).unwrap();
         let r = out[0].result.as_ref().unwrap_or_else(|| panic!("{:?}", out[0].error));
         assert!(r.converged && r.warnings.is_empty(), "{r:?}");
-        assert!((r.coeffs.cn - 0.2).abs() < 1e-9 && r.iterations == 100 && r.residual_last == Some(-17.9), "residual_last is the residual at the judged row, not of the rows written after the stop: {r:?}");
+        assert!(
+            (r.coeffs.cn - 0.2).abs() < 1e-9 && r.iterations == 100 && r.residual_last == Some(-17.9),
+            "residual_last is the residual at the judged row, not of the rows written after the stop: {r:?}"
+        );
     }
 
     #[test]

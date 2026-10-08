@@ -72,7 +72,10 @@ pub enum CfdStage {
 pub struct CfdReport {
     pub cases: usize,
     pub failed: Vec<(f64, f64)>,
+    /// (Mach, alpha) of the accepted cases that did not converge; `unconverged_cases` names their directories (with
+    /// sideslip and roll).
     pub unconverged: Vec<(f64, f64)>,
+    pub unconverged_cases: Vec<String>,
     pub wall_seconds: f64,
     pub mesh_nodes: usize,
     pub mesh_cells: usize,
@@ -507,6 +510,7 @@ pub fn build_table_with_progress(
         failed: results.iter().filter(|r| r.result.is_none()).map(|r| (r.spec.mach, r.spec.alpha_deg)).collect(),
         failed_cases: results.iter().filter(|r| r.result.is_none()).map(|r| r.spec.dir_name()).collect(),
         unconverged: results.iter().filter(|r| r.result.as_ref().is_some_and(|x| !x.converged)).map(|r| (r.spec.mach, r.spec.alpha_deg)).collect(),
+        unconverged_cases: results.iter().filter(|r| r.result.as_ref().is_some_and(|x| !x.converged)).map(|r| r.spec.dir_name()).collect(),
         wall_seconds: t0.elapsed().as_secs_f64(),
         mesh_nodes: mesh.stats.nodes,
         mesh_cells: mesh.stats.cells,

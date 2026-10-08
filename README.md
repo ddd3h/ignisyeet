@@ -29,7 +29,7 @@ Given a rocket **STL file**, mass properties, a motor thrust curve and launch-si
 
 The heavy parts (geometry extraction, coefficient tables, the 6-DoF integration, the parallel dispersion) are written in Rust; plotting is written in Python (matplotlib).
 
-The documentation is in Japanese: <https://www.ddd3h.com/ignisyeet/> (sources in [`doc/`](doc/)). It covers tutorials, how-to guides, the configuration reference, the models behind every option, and the verification and validation results. The links below point to its five parts.
+The documentation is in Japanese: <https://www.ddd3h.com/ignisyeet/> (sources in [`doc/`](doc/)). It covers tutorials, how-to guides, the configuration reference, the models behind every option, and the verification and validation results. The links below point to its five parts and the developer guide.
 
 ## Features
 

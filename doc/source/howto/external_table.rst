@@ -17,35 +17,35 @@
 手順
 ------
 
-1. **CSV を用意する。** ``out/aero_table.csv`` を手本にして、見出し行と同じ列を、Mach 数を外側、迎角を内側にして全格子点を 1 行ずつ並べる。
+1. **CSV を用意する。** ``out/aero_table.csv`` を手本にして、``ext_table.csv`` という名前で、見出し行と同じ列を、Mach 数を外側、迎角を内側にして全格子点を 1 行ずつ並べる。
    一般表（迎角と横滑り角の 2 次元）では、横滑り角を最も内側にする。列の定義は :ref:`sec-file-axisym` と :ref:`sec-file-general` にある。
 
-   期待する結果: 見出し行が手本と一致し、全セルが有限の数値である。
+   期待する結果： 見出し行が手本と一致し、全セルが有限の数値である。
 
-2. **付随ファイルを用意する。** CSV と同じ名前で拡張子だけ ``.json`` にしたファイルを、同じディレクトリに置く。
-   必須の項目は ``source_hash`` ``ref_area`` ``ref_diameter`` ``length`` ``machs`` ``alphas_deg`` ``extrapolation`` である（:ref:`sec-file-sidecar`）。
+2. **付随ファイルを用意する。** CSV と同じ名前で拡張子だけ ``.json`` にしたファイル（``ext_table.json``）を、同じディレクトリに置く。
+   必須の項目は ``source_hash``\ （外部の表では任意の文字列。たとえば表の出所を表す名前）``ref_area`` ``ref_diameter`` ``length`` ``machs`` ``alphas_deg`` ``extrapolation`` である（:ref:`sec-file-sidecar`）。
    一般表では ``kind = "general"`` と ``betas_deg`` を加える。``machs`` と ``alphas_deg``\ （一般表では ``betas_deg`` も）は CSV の格子と一致させる。
 
-   期待する結果: 付随ファイルが CSV の隣にあり、各軸の点数の積が CSV の行数と一致する。
+   期待する結果： 付随ファイルが CSV の隣にあり、各軸の点数の積が CSV の行数と一致する。
 
-3. **設定に 2 行書く。**
+3. **設定に 2 行書く。** 自分の設定ファイル（ここでは ``sample.toml``）の ``[aero]`` を次のようにする。
 
    .. code-block:: toml
 
       [aero]
       method = "table"
-      table  = "cfd_table.csv"
+      table  = "ext_table.csv"
 
    ``table`` の相対パスは設定ファイルのあるディレクトリから解決される。
    STL からの形状抽出と空力モデルの計算は行われず、``sim`` と ``dispersion`` は表をそのまま使う。
 
-4. **実行する。**
+4. **実行する。** 手順 3 で書き換えた設定ファイルで ``sim`` を実行する。
 
    .. code-block:: console
 
       $ ignisyeet sim sample.toml
 
-   期待する結果: 先頭近くに ``Using external aero table ext_table.csv (13741 rows)`` の形の行が出て、続けて飛翔の結果が表示される。
+   期待する結果： 先頭近くに ``Using external aero table ext_table.csv (13741 rows)`` の形の行が出て、続けて飛翔の結果が表示される。
    ここに示した行数は、``examples/out/aero_table.csv``\ （Mach 0 から 3、刻み 0.02、迎角 0 から 90 deg、刻み 1 deg）を、付随ファイルとともに ``ext_table.csv`` として外部の表に読ませたときの値である。
    このとき飛翔の結果は、同じ機体を ``method = "barrowman"`` で計算したときと一致する（apogee 4440.5 m、着地 E -655.6 m、N -7707.7 m）。
 
@@ -92,8 +92,8 @@
 関連
 ------
 
-* 列と付随ファイルの項目の仕様: :ref:`page-reference-aero-table-format`
-* 表の考え方、内挿と外挿、格子の刻み: :ref:`page-theory-aero-tables`
-* 手法の選び方: :ref:`page-theory-aero-choose`
-* 設定キー: :ref:`cfg-aero-method`、:ref:`cfg-aero-table`、:ref:`cfg-aero-table_kind`
-* CFD で自分の係数表を作る: :ref:`page-howto-cfd-table`
+* 列と付随ファイルの項目の仕様：:ref:`page-reference-aero-table-format`
+* 表の考え方、内挿と外挿、格子の刻み：:ref:`page-theory-aero-tables`
+* 手法の選び方：:ref:`page-theory-aero-choose`
+* 設定キー：:ref:`cfg-aero-method`、:ref:`cfg-aero-table`、:ref:`cfg-aero-table_kind`
+* CFD で自分の係数表を作る：:ref:`page-howto-cfd-table`

@@ -30,7 +30,7 @@ CFD で係数表を作る（``aero.method = "cfd"``）ために必要な外部�
    * - manifold3d（Python。3.5.4）
      - ``surface = "stl"`` のときだけ必要 :cite:`manifold`
 
-SU2 は 8.3.0 に固定されている。8.5.0 は AVX-512 命令を持たない CPU で異常終了するためである。
+SU2 は 8.3.0 に固定されている（:ref:`IY-I510`）。
 
 手順
 ------
@@ -45,7 +45,7 @@ SU2 は 8.3.0 に固定されている。8.5.0 は AVX-512 命令を持たない
    対話式の質問に答えて入れる場合は、インストーラの CFD ツールの質問に ``y`` と答える（:ref:`page-howto-install`）。
    実行前に内容だけ確かめるときは ``--dry-run`` を付ける。
 
-   期待する結果: 最後に、設定ファイルの ``[aero.cfd] prefix`` に書く値（または環境変数 ``IGNISYEET_CFD_PREFIX`` に入れる値）が表示される。
+   期待する結果： 最後に、設定ファイルの ``[aero.cfd] prefix`` に書く値（または環境変数 ``IGNISYEET_CFD_PREFIX`` に入れる値）が表示される。
    Linux では、続けて SU2 のその CPU 向けの構築が行われる（下の「SU2 の構築」）。
 
 2. **CFD 環境の場所を ``ignisyeet`` に教える。** 設定ファイルに書くか、環境変数で渡す。
@@ -67,7 +67,7 @@ SU2 は 8.3.0 に固定されている。8.5.0 は AVX-512 命令を持たない
 
       $ ignisyeet cfd-check examples/sample_cfd.toml
 
-   期待する結果: 4 つのツールの場所とバージョンが ``ok`` で並び、最後に計算ケース数が出る。
+   期待する結果： 4 つのツールの場所とバージョンが ``ok`` で並び、最後に計算ケース数が出る。
 
    .. code-block:: text
 
@@ -88,7 +88,7 @@ SU2 は 8.3.0 に固定されている。8.5.0 は AVX-512 命令を持たない
 
       $ ignisyeet cfd-check examples/sample_step.toml --mesh
 
-   期待する結果: 節点数、セル数、壁面の三角形数、セルの種類、品質（SICN の最小値と平均、0.05 未満のセル数）が出る。
+   期待する結果： 節点数、セル数、壁面の三角形数、セルの種類、品質（SICN の最小値と平均、0.05 未満のセル数）が出る。
    ``examples/sample_step.toml`` の例では、節点数 560092、セル数 2690207、壁面の三角形数 479830、SICN の最小値 0.071、平均 0.783、0.05 未満のセル 0 で、メッシュ生成に 101 秒かかった（20 スレッドのマシン）。
    ``surface = "stl"`` では形状の忠実度、``surface = "step"`` では CAD のモデルの読み込みと位置合わせの結果も出る（:ref:`page-howto-cad-step`）。
    作ったメッシュは本番の計算でそのまま再利用される。
@@ -105,54 +105,10 @@ SU2 は 8.3.0 に固定されている。8.5.0 は AVX-512 命令を持たない
 SU2 の構築（Linux）
 ---------------------
 
-Linux では ``--cfd`` により、SU2 8.3.0 がソースから、その場の CPU 向けに構築される。
-conda-forge の SU2 は汎用の x86-64 向けで、実行する CPU 固有の命令をほとんど使わないので、構築した SU2 のほうが速く、メモリも少ない。
-同じ共有ノード（EPYC 7742 2 基、16 ランク）で同じメッシュを解いたとき、構築した SU2 の 1 反復あたりの時間は Euler で 0.70 から 0.87 倍、RANS（壁面 5 mm、Mach 0.8、迎角 4°）で 0.75 から 0.77 倍、ピークのメモリは Euler で約 0.75 倍、RANS で約 0.68 倍だった。
-係数の差は、法線力係数 :math:`C_N` が 0.005 % 以内、圧力中心 :math:`x_{cp}` が 0.011 mm 以内である（測定の詳細は :ref:`page-vv-performance`）。
-
-.. list-table::
-   :header-rows: 1
-   :widths: 28 36 36
-
-   * - 項目
-     - 構築する（既定）
-     - ``--su2-binary``
-   * - SU2
-     - その CPU 向けにソースから構築
-     - 汎用の conda-forge のバイナリ
-   * - 所要時間
-     - 3 から 10 分（コア数による。12 コアのデスクトップ CPU で 8 ジョブ、2 分 40 秒）
-     - なし
-   * - 必要なもの
-     - GitHub への接続
-     - なし
-   * - 別の CPU への移植
-     - 構築した CPU と同じ命令集合の CPU だけ
-     - 可
-   * - 向く環境
-     - 1 台のマシンで使い続ける
-     - CPU の世代が混在する共有クラスタ、コンテナ、配布用の環境
-
-構築を省いてバイナリを使うときは、``--su2-binary``\ （環境変数 ``IGNISYEET_SU2_BINARY=1``）を付ける。
-macOS では常に conda-forge のバイナリが使われる。
-
-構築の設定は次のとおりである。
-
-* 並列数は環境変数 ``IGNISYEET_SU2_JOBS`` で指定する。既定は全コア（空きメモリ 2 GB につき 1 ジョブまで）である。
-* 構築中のディスク使用量は約 0.5 GB で、終了後に残るのは ``PREFIX/share/ignisyeet-su2-native`` の約 70 MB である。
-* 実行ファイルは ``PREFIX/share/ignisyeet-su2-native/bin/SU2_CFD`` に置かれ、同じ場所の ``build-info.txt`` にコンパイラの版と構築した CPU の型番が記録される。
-* コンパイラは CFD 環境の gcc/g++ である。システムのコンパイラは要らない。
-
-使われる SU2 は、次の順で最初に見つかったものである。
-
-1. 環境変数 ``IGNISYEET_SU2_CFD``\ （``SU2_CFD`` のパス）。
-2. 構築した ``share/ignisyeet-su2-native/bin/SU2_CFD``。インストールされた ``ignisyeet`` の接頭辞、環境変数 ``IGNISYEET_PREFIX``、``~/.local`` の順に探す。
-3. ``[aero.cfd] prefix`` と ``PATH`` の ``SU2_CFD``\ （conda-forge のバイナリ）。
-
-``[aero.cfd] su2`` に明示的なパスを書いたときは、それが最優先である。
-どの SU2 が選ばれたかは、``cfd-check`` が表示する ``SU2_CFD`` のパスで分かる。
-``mpirun``、gmsh、ライブラリは、どの場合も ``[aero.cfd] prefix`` の CFD 環境から取られる。
-カスタムの ``--prefix`` で入れた開発者向けの実行ファイルは接頭辞の外にあるので、``IGNISYEET_PREFIX`` にその接頭辞を入れる。
+Linux では ``--cfd`` により、SU2 8.3.0 がソースから、その場の CPU 向けに構築される（所要時間は :ref:`page-howto-install` の C）。
+構築を省いて移植できる conda-forge のバイナリを使うときは、``--su2-binary``\ （環境変数 ``IGNISYEET_SU2_BINARY=1``）を付ける。macOS では常にバイナリが使われる。
+どちらを選ぶかと、速さの違いは :ref:`sec-vperf-su2-native` にある。
+使われる SU2 の選ばれ方と環境変数は :ref:`page-reference-installer` にあり、どの SU2 が選ばれたかは ``cfd-check`` が表示する ``SU2_CFD`` のパスで分かる。
 
 手作業で入れる場合
 --------------------
@@ -198,9 +154,9 @@ manifold3d は ``surface = "stl"`` のときだけ要る。この場合の SU2 �
 関連
 ------
 
-* インストーラのオプションと環境変数: :ref:`page-reference-installer`
-* CFD の設定キー: :ref:`page-reference-config-cfd`
-* 係数表を作る: :ref:`page-howto-cfd-table`
-* CAD のモデルから作る: :ref:`page-howto-cad-step`
-* CFD の選択肢の決め方: :ref:`page-theory-cfd-choose`
-* 計算時間とメモリの測定: :ref:`page-vv-performance`
+* インストーラのオプションと環境変数：:ref:`page-reference-installer`
+* CFD の設定キー：:ref:`page-reference-config-cfd`
+* 係数表を作る：:ref:`page-howto-cfd-table`
+* CAD のモデルから作る：:ref:`page-howto-cad-step`
+* CFD の選択肢の決め方：:ref:`page-theory-cfd-choose`
+* 計算時間とメモリの測定：:ref:`page-vv-performance`

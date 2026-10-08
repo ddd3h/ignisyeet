@@ -55,7 +55,7 @@ CAD のモデルから作るときは :ref:`page-howto-cad-step` を、CFD に�
 
    $ ignisyeet cfd-check examples/sample_cfd.toml --mesh
 
-期待する結果: メッシュの節点数とセル数、品質（SICN の最小値と平均）に続けて、並列度とメモリの見積もりが 1 行で出る。
+期待する結果： メッシュの節点数とセル数、品質（SICN の最小値と平均）に続けて、並列度とメモリの見積もりが 1 行で出る。
 次は ``examples/sample_step.toml`` を 30 GB のメモリのマシンで確かめたときの行である。
 
 .. code-block:: text
@@ -74,7 +74,7 @@ CAD のモデルから作るときは :ref:`page-howto-cad-step` を、CFD に�
 
    $ ignisyeet aero examples/sample_cfd.toml
 
-期待する結果: ケースが順に解かれ、終わると ``out_cfd/`` に ``aero_table.csv`` と付随ファイル ``aero_table.json``、``cfd_cases.csv``、``cfd_report.json`` が書かれる。
+期待する結果： ケースが順に解かれ、終わると ``out_cfd/`` に ``aero_table.csv`` と付随ファイル ``aero_table.json``、``cfd_cases.csv``、``cfd_report.json`` が書かれる。
 失敗したケースと未収束のケースがあれば、最後にまとめて表示される。
 続けて ``ignisyeet sim`` や ``ignisyeet dispersion`` を実行すると、この表が使われる。
 作った表を別の設定でも使うときは、``aero.method = "table"`` で読み込む（:ref:`page-howto-external-table`）。
@@ -133,6 +133,7 @@ CAD のモデルから作るときは :ref:`page-howto-cad-step` を、CFD に�
 サンプル機体の Euler で、300 反復まで解くと、密度の残差が :math:`10^{-6}` に達するのは :math:`M=0.8` で約 100 反復、:math:`M=2` で約 80 から 100 反復である。
 :math:`M=0.8` の揚力係数は振動しながら落ち着くので、残差が :math:`10^{-6}` に達した時点の法線力 :math:`C_N` は 300 反復の値より 0.6 % 低い。
 残差の絶対値ではなく、係数の落ち着きを見るのはこのためである。
+解の流れ場（Mach 数の分布と壁面の圧力係数）は :ref:`sec-cfd-flow` で見る。
 
 .. _fig-cfd-convergence:
 
@@ -145,9 +146,7 @@ CAD のモデルから作るときは :ref:`page-howto-cad-step` を、CFD に�
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 途中で止めた（Ctrl-C、SIGTERM、時間切れ）あと、同じ設定で ``ignisyeet aero`` をもう一度実行すると、終わったケースは再利用され、残りだけが解かれる。
-設定を一部変えたときも、結果に影響しないケースは再利用される。
 最初からやり直すには、出力先の下の ``cfd`` ディレクトリ（``workdir`` で変えられる）を削除する。
-止めたときに終わっていたケースの結果は残る。
 
 6. RANS で解く（摩擦抗力も CFD から得る場合）
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -179,41 +178,6 @@ Euler の設定を ``model = "rans"`` に替えるだけで始められるが、
 2 ケースの片方が失敗した Mach 数など、CFD の値を採用できない Mach 数は、部品積み上げ法の値に替わる。採用した側は ``cfd_report.json`` の ``clp_source`` で分かる。
 指定しないときの :math:`C_{lp}` は部品積み上げ法の値である。
 
-.. _sec-cfd-flow:
-
-流れ場を見る
---------------
-
-係数表の値の裏にある流れ場は、解いたケースの履歴と解から描ける。
-サンプル機体の :math:`\alpha=4^\circ`、Euler、``wall_size`` 2 mm（フィンの面 1 mm、142 万セル）、一様流からの開始で解いたときの図を示す。
-データは ``doc/data/cfd/fields/`` に保存してある。
-
-:numref:`fig-cfd-mach-field` は対称面 :math:`y=0` での Mach 数の分布である。
-
-* :math:`M_\infty=0.8`\ （上）: ノーズ先端によどみ点（青）があり、ノーズの肩で流れが加速する（橙）。
-* :math:`M_\infty=2.0`\ （下）: ノーズ先端から斜めに広がる青い帯がノーズの衝撃波で、迎角があるので風上側（:math:`z<0`）のほうが強い。フィンの前縁からも衝撃波が出ている。
-
-.. _fig-cfd-mach-field:
-
-.. figure:: /_generated/plots/cfd_mach_field.*
-   :width: 100%
-
-   対称面 :math:`y=0` での Mach 数の分布（:math:`\alpha=4^\circ`、上は :math:`M_\infty=0.8`、下は :math:`M_\infty=2.0`）。
-   流れは左から右へ向かう。色の中心は一様流の Mach 数で、青が一様流より遅い領域、橙が速い領域を表す。範囲を超える値は端の色で、灰色は機体の内部である。
-
-:numref:`fig-cfd-cp-surface` は壁面の圧力係数 :math:`C_p` の分布で、半モデルの解を :math:`y=0` 面で鏡映して全機を描いた。機体の下側（風上側）から見ている。
-
-* ノーズでは風上側の :math:`C_p` が風下側より高く、この差が法線力を生む。
-  先端から 0.02 から 0.25 m の範囲で、風上側（:math:`z<0`）と風下側（:math:`z>0`）の半分ごとに面積で重み付けした平均は、:math:`M_\infty=0.8` で風上側 :math:`-0.015`、風下側 :math:`-0.069`、:math:`M_\infty=2.0` で風上側 0.104、風下側 0.045 である。
-* :math:`M_\infty=0.8` では、尾部フェアリングの付け根（底面の縁）で流れが曲がって加速し、環状の負圧ができる（最小で :math:`C_p\approx-0.9`）。
-
-.. _fig-cfd-cp-surface:
-
-.. figure:: /_generated/plots/cfd_cp_surface.*
-   :width: 100%
-
-   壁面の圧力係数（:math:`\alpha=4^\circ`、上は :math:`M_\infty=0.8`、下は :math:`M_\infty=2.0`）。左はノーズ、右はフィンと尾部フェアリング。ノーズの風上側と風下側の色の差と、フィンの縁の分布を見る。色の範囲は図ごとに異なる。
-
 うまくいかないとき
 --------------------
 
@@ -241,10 +205,10 @@ Euler の設定を ``model = "rans"`` に替えるだけで始められるが、
 関連
 ------
 
-* 設定キー: :ref:`page-reference-config-cfd`
-* 出力ファイルの列と項目: :ref:`page-reference-cfd-output-files`
-* CFD の選択肢（Euler と RANS、壁面、対称性、メッシュ、``alpha_mode``、資源）の決め方: :ref:`page-theory-cfd-choose`
-* 方程式と離散化: :ref:`page-theory-cfd-equations`
-* 係数表の作り方（数式）: :ref:`page-theory-cfd-coefficients`
-* CAD のモデルから作る: :ref:`page-howto-cad-step`
-* 精度の根拠と計算時間: :ref:`page-vv-cfd-verification`、:ref:`page-vv-rans-verification`、:ref:`page-vv-performance`
+* 設定キー：:ref:`page-reference-config-cfd`
+* 出力ファイルの列と項目：:ref:`page-reference-cfd-output-files`
+* CFD の選択肢（Euler と RANS、壁面、対称性、メッシュ、``alpha_mode``、資源）の決め方：:ref:`page-theory-cfd-choose`
+* 方程式と離散化：:ref:`page-theory-cfd-equations`
+* 係数表の作り方（数式）：:ref:`page-theory-cfd-coefficients`
+* CAD のモデルから作る：:ref:`page-howto-cad-step`
+* 精度の根拠と計算時間：:ref:`page-vv-cfd-verification`、:ref:`page-vv-rans-verification`、:ref:`page-vv-performance`

@@ -17,7 +17,7 @@
 
 * 計算が終わっている（図の元になる CSV と JSON が出力先にある）。
 * 作図環境がある。インストーラで入れたときは ``ignisyeet-plot`` が使える。``pip`` で作る方法は :ref:`sec-python-env` にある。
-  リポジトリから使うときは ``uv run --project python python/plot.py`` を ``ignisyeet-plot`` の代わりに使う。
+  リポジトリから使うときは :ref:`page-reference-cli` を見る。
 
 手順
 ------

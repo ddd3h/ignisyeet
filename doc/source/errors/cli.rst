@@ -266,7 +266,7 @@ IY-O014
     error[IY-O014]: cannot read the CAD file <value>
 
 意味
-    CAD ファイルを読めない（空力表のキャッシュキーの計算）。
+    CAD ファイルを読めず、係数表がこの設定で作られたものかを確かめられない。
 
 主な原因
     ``aero.cfd`` で指定した CAD ファイルがない。

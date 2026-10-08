@@ -121,12 +121,14 @@ IgnisYeet が出すエラーやワーニングの行の読み方と、原因と�
 
    期待する結果：コードの見出しの下に、メッセージの形、意味、主な原因、対処が出る。
 
-4. 症状から調べる。コードが複数出ているときや、コードが分からないときは、次の表で近い症状を探す。
+4. 症状から調べる。コードが複数出ているときや、コードが分からないときは、次の「症状別の対処表」で近い症状を探す。
+
+   期待する結果：近い症状の行が見つかり、読むコードと確かめる設定が分かる。
 
 .. _tbl-warnings-symptoms:
 
 症状別の対処表
-----------------
+~~~~~~~~~~~~~~~~
 
 .. list-table::
    :header-rows: 1
@@ -165,9 +167,6 @@ IgnisYeet が出すエラーやワーニングの行の読み方と、原因と�
    * - 係数表の範囲外の係数を使った
      - :ref:`IY-O022`、:ref:`IY-O023`、:ref:`IY-O024`
      - 終了ステータス 3。``aero.alpha_max_deg``、``aero.mach_max`` を大きくして表を作り直す。
-   * - 風の格子のケースが失敗した
-     - :ref:`IY-O011`、:ref:`IY-O531` から :ref:`IY-O533`
-     - ``dispersion.csv`` の ``error`` 列を読む。すべて失敗したときは終了ステータス 1 になる（:ref:`page-howto-dispersion-run`）。
    * - 弾道落下が横向きに落ちた
      - :ref:`IY-O509`、:ref:`IY-O536`
      - 終了ステータスは変わらない。着地点は検証していない大迎角の空力で決まる（:ref:`page-theory-limitations`）。
@@ -186,9 +185,9 @@ IgnisYeet が出すエラーやワーニングの行の読み方と、原因と�
    * - ``--aero-table`` が受け付けられない
      - :ref:`IY-O002`、:ref:`IY-O003`、:ref:`IY-O004`
      - 表を同じ設定で作り直す（:ref:`page-howto-sweeps`）。
-   * - モンテカルロの統計が粗い、失敗したサンプルがある
-     - :ref:`IY-O537`、:ref:`IY-O538`、:ref:`IY-O029`
-     - ``dispersion.monte_carlo.samples`` を増やす（:ref:`page-howto-dispersion-run`）。
+   * - 風の格子のケースやモンテカルロのサンプルが失敗した、統計が粗い
+     - :ref:`IY-O011`、:ref:`IY-O029`、:ref:`IY-O531` から :ref:`IY-O533`、:ref:`IY-O537`、:ref:`IY-O538`
+     - ``dispersion.csv`` の ``error`` 列を読む。すべて失敗したときは終了ステータス 1 になる（:ref:`page-howto-dispersion-run`）。
    * - CFD のツールがない、ケースが収束しない、メモリが足りない
      - :ref:`IY-O009`、:ref:`IY-F001`、:ref:`IY-F002`、:ref:`IY-F119`、:ref:`IY-F120`
      - ツールの入れ方は :ref:`page-howto-cfd-setup`、ケースの扱いは :ref:`page-howto-cfd-table` にある。

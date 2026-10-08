@@ -86,25 +86,99 @@ IgnisYeet は、設定の ``prefix`` で指す環境の ``bin`` にある実行�
 CFD モードで ``aero`` を実行したときも、先に同じ検査を行い、ツールが足りなければ計算を始める前にエラーで止まる。
 SU2 のバージョンが 8.3.x でないときは、``cfd-check`` も CFD の係数表の作成も、検証した版が 8.3.0 であることを警告として表示する。
 
+.. _sec-cfd-native:
+
 SU2 の高速化ビルド（オプション）
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-conda-forge の SU2  8.3.0 は、汎用 CPU に対応した ``-march=generic`` で構築されている。それより新しい CPU で、より速く計算したいときは、``install.sh --su2-native`` でネイティブ最適化版を構築できる。
-ネイティブ版は、実行 CPU 固有の命令集合とメモリレイアウトに最適化されるが、別の CPU には移植できない。
+conda-forge の SU2 8.3.0 は、汎用の x86-64 向けに構築されており、実行する CPU 固有の命令（AVX など）をほとんど使わない。
+``install.sh --su2-native`` は、SU2 8.3.0 をソースから、その場の CPU 向けに構築する。
+構築は Linux で CFD 環境（``--cfd``）と git、gcc/g++ が必要で、約 10 分かかる。
 
-ネイティブ版は、``-march=native`` と ``-mtune=native`` を指定して gcc でビルドし、``-Denable-mixedprec=true`` で単精度と倍精度を混合してメモリを削減する。
+構築の設定は次のとおりである。
 
-サンプル機体（Mach 0.8, 2）の Euler と RANS で、共有ノード上の conda 版と比較したところ、以下のとおりである。
+- meson の ``--buildtype=release --optimization=3``。
+- C/C++ の引数に ``-march=native -mtune=native``\ （gcc 13 以降の CLI11 のために ``-include cstdint`` も加える）。
+- ``-Dwith-mpi=enabled -Dcustom-mpi=true``\ （CFD 環境の Open MPI を使う）、``-Dwith-omp=false``。
+- ``-Denable-mixedprec=true``\ （線形代数に単精度を混ぜて、メモリを減らす）。
+- ``-Denable-pywrapper=false -Denable-tests=false``。
 
-.. csv-table:: SU2 ネイティブ版の速度と精度
-   :file: data/cfd/su2_native_benchmark.csv
-   :header-rows: 4
+実行ファイルは ``PREFIX/share/ignisyeet-su2-native/bin/SU2_CFD`` に置かれ、インストーラの最後に ``export IGNISYEET_SU2_CFD=...`` の行としてそのパスが表示される。
 
-ネイティブ版は、秒/反復で約 20 % 削減、メモリは約 25 % 削減される。係数 :math:`C_N, C_A, x_{cp}` は 0.05 % 以内の差で一致する。
+**使い方。** 環境変数 ``IGNISYEET_SU2_CFD`` に ``SU2_CFD`` 実行ファイルのパスを入れる。
+``[aero.cfd] su2`` が既定の ``"SU2_CFD"`` のままのとき、この環境変数のパスが使われる。
+``su2`` に明示的なパスを書いたときは、そちらが優先される。
+どちらの場合も、``mpirun``、gmsh、ライブラリは ``[aero.cfd] prefix`` の CFD 環境から取る。
+指定しなければ conda-forge の SU2 を使う。
 
-ネイティブ版を選ぶには、``install.sh --su2-native`` を実行するか、環境変数 ``IGNISYEET_SU2_CFD=native`` を設定する。
-設定ファイル ``[aero.cfd]`` の ``su2`` キーで ``"native"`` を指定することもできる。
-既定は conda 版（``"conda"``）のままである。``-march=native`` ビルドのバイナリは生成元の CPU に固有であり、他の CPU では実行できない。
+**性能と精度。** 同じ共有ノード（virgo02、EPYC 7742 2 基、16 ランク）で、同じメッシュと設定を冷たい状態から解き、二つのビルドを交互に対にして実行した。
+共有ノードなので絶対値は負荷で変わる。比較には対ごとの比（ネイティブ / conda）を使う。
+ネイティブ版は、1 反復あたりの時間が Euler で 0.70 〜 0.87 倍、RANS（壁面 5 mm、Mach 0.8、迎角 4°）で 0.75 〜 0.77 倍である。
+ピーク RSS（16 ランクの合計）は、Euler で 3.69 GB から約 2.75 GB に、RANS で 7.5 GB から約 5.1 GB に減る。
+収束までの反復数は、conda 版と 1 反復ほどしか違わない。
+
+.. list-table:: ネイティブ版 / conda 版の比（対ごと）
+   :header-rows: 1
+   :widths: 30 14 14 14 14 14
+
+   * - ケース（組）
+     - 秒/反復
+     - 全体の時間
+     - ピーク RSS
+     - 反復数（conda、native）
+     - 実行順
+   * - Euler Mach 0.8, 4°（1）
+     - 0.786
+     - 0.795
+     - 0.747
+     - 354、355
+     - conda が先
+   * - Euler Mach 0.8, 4°（2）
+     - 0.866
+     - 0.871
+     - 0.743
+     - 354、356
+     - native が先
+   * - Euler Mach 0.8, 4°（3）
+     - 0.704
+     - 0.710
+     - 0.742
+     - 354、354
+     - conda が先
+   * - Euler Mach 2, 4°（2）
+     - 0.709
+     - 0.737
+     - 0.742
+     - 153、155
+     - native が先
+   * - Euler Mach 2, 4°（3）
+     - 0.722
+     - 0.745
+     - 0.742
+     - 154、155
+     - conda が先
+   * - RANS Mach 0.8, 4°（1）
+     - 0.746
+     - 0.735
+     - 0.682
+     - 404、403
+     - native が先
+   * - RANS Mach 0.8, 4°（2）
+     - 0.766
+     - 0.740
+     - 0.685
+     - 403、404
+     - conda が先
+
+Euler の Mach 2 の 1 組目は、conda 版が誤って前のケースから初期化されたため除いた。RANS の 1 組目は、ノード負荷が実行の途中で大きく変わったため、参考値である。
+全ての値は ``data/cfd/su2_native_benchmark.csv`` にある。
+
+係数の差は、:math:`C_N` が 0.004 % 以内、:math:`x_{cp}` が 0.011 mm 以内である。
+:math:`C_A` は 0 に近い値なので相対差が大きく見え、最大で 0.12 % だが、絶対値では 1 〜 3e-5 である。
+残差は、Euler で両者がほぼ一致し、RANS ではネイティブ版の方が 400 反復で約 0.2 〜 0.35 桁高い。ただし、どちらも同じ反復で収束判定を満たす。
+
+-march=native のバイナリは構築した CPU の命令集合に依存し、別の CPU に移すと異常終了することがある。
+そのため、既定は conda-forge の SU2 のままで、ネイティブ版は利用者が環境変数で選ぶ。
 
 .. _sec-cfd-surface:
 

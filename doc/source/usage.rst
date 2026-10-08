@@ -268,7 +268,9 @@ CFD 環境のパッケージは、すべてのプラットフォームで SU2 8.
 SU2 8.5.0 のパッケージは AVX-512 のない CPU で異常終了するため、8.3.0 を使う。
 micromamba を新たに入れる場合は、版 2.9.0 を取得する。
 インストール後に、設定ファイルの ``[aero.cfd] prefix`` に書く値（または環境変数 ``IGNISYEET_CFD_PREFIX``）を表示する。
-``--su2-native`` で構築した場合は、``[aero.cfd] su2 = "native"`` を設定するか、環境変数 ``IGNISYEET_SU2_CFD=native`` を設定することで、ネイティブ版を使う（既定は ``"conda"``）。
+``--su2-native`` を付けると、SU2 8.3.0 をその CPU 向け（``-march=native``、混合精度）にソースから構築し、``PREFIX/share/ignisyeet-su2-native`` に置く（構築時間は約 10 分、環境変数 ``IGNISYEET_SU2_NATIVE=1`` でも指定でき、並列数は ``IGNISYEET_SU2_JOBS``）。
+最後に表示される ``export IGNISYEET_SU2_CFD=...`` の行で、環境変数にその ``SU2_CFD`` のパスを設定すると、``[aero.cfd] su2`` が既定の ``"SU2_CFD"`` のとき、そのパスが使われる。``su2`` に明示的なパスを書いたときはそちらが優先される。
+指定しなければ conda-forge の SU2 を使う。ネイティブ版は構築した CPU に固有で、別の CPU では動かないことがある（:ref:`詳細 <sec-cfd-native>`）。
 
 オプション
 ^^^^^^^^^^
@@ -291,7 +293,7 @@ micromamba を新たに入れる場合は、版 2.9.0 を取得する。
    * - ``--cfd`` ``--no-cfd``
      - CFD ツール（SU2、gmsh、Open MPI と manifold3d 3.5.4）を入れる、入れない
    * - ``--su2-native``
-     - SU2 のネイティブ最適化版を構築する（CPU 固有、他の CPU では実行不可）。既定は conda-forge 版。``--cfd`` が必須
+     - SU2 8.3.0 をその CPU 向けにソースから構築する（Linux のみ、CPU 固有で移植不可、約 10 分）。使うには ``IGNISYEET_SU2_CFD`` を設定する。``--cfd`` が必須
    * - ``--version vX.Y.Z``
      - 入れるリリース（既定は最新）。developer ではチェックアウトするタグ。形式は ``vX.Y.Z`` に限り、``v`` のない値や他の形式はエラーにする
    * - ``--prefix DIR``
@@ -1391,8 +1393,8 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
      - ``""``
      - CFD ツールの環境（``<prefix>/bin/SU2_CFD``、``mpirun``、gmsh を持つ ``python``）。空なら環境変数 ``IGNISYEET_CFD_PREFIX``、それも空なら ``PATH``。先頭の ``~`` は展開する
    * - ``su2``
-     - ``"conda"``
-     - SU2 の実行ファイル名（またはパス）。``"conda"`` か ``"native"`` を指定して、conda-forge の汎用版またはネイティブ最適化版を選択できる。既定は ``"conda"`` である
+     - ``"SU2_CFD"``
+     - SU2 の実行ファイル名（またはパス）。既定の ``"SU2_CFD"`` のままのときは、環境変数 ``IGNISYEET_SU2_CFD``（``SU2_CFD`` のパス。``install.sh --su2-native`` の構築物など）があればそれを使う。明示的に書いたパスが優先される
    * - ``mpi``
      - ``"mpirun"``
      - MPI の起動コマンド（``ranks_per_case`` が 2 以上のときだけ使う）

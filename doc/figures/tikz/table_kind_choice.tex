@@ -1,0 +1,37 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+% Decision for aero.table_kind and the components each table keeps.
+\begin{tikzpicture}[
+  font=\small,
+  q/.style={draw=cblue, fill=cfill, thick, rounded corners=3pt, minimum width=62mm, minimum height=12mm, text width=58mm, align=center},
+  res/.style={draw=corange, fill=cfillo, thick, rounded corners=3pt, minimum width=40mm, minimum height=12mm, text width=38mm, align=center},
+  keep/.style={draw=cink2, fill=cfillg, thick, rounded corners=3pt, text width=62mm, align=left, inner sep=5pt, font=\footnotesize},
+  arr/.style={->, thick, cink2},
+  yes/.style={font=\footnotesize\bfseries, corange, inner sep=2pt},
+  no/.style={font=\footnotesize\bfseries, cblue, inner sep=2pt},
+  note/.style={font=\scriptsize, cink2, align=left, text width=44mm}]
+  \node[q] (q1) at (0,0)    {\textbf{Q1} 手法は \texttt{table} か};
+  \node[q] (q2) at (0,-3.0) {\textbf{Q2} 手法は \texttt{cfd} で、形状に非対称な\\要素があるか、横滑りを解くか};
+  \node[res] (rt) at (8.6,0)    {表の形式に合わせる\\{\footnotesize 軸対称表は \texttt{general} へ展開できる}};
+  \node[res] (rg) at (8.6,-3.0) {\texttt{general}};
+  \node[res] (ra) at (8.6,-6.0) {\texttt{axisymmetric}};
+  \draw[arr] (q1) -- node[yes, above]{はい} (rt);
+  \draw[arr] (q1) -- node[no, left]{いいえ} (q2);
+  \draw[arr] (q2) -- node[yes, above]{はい} (rg);
+  \draw[arr] (q2.south) -- ++(0,-1.0) |- node[no, pos=0.2, left]{いいえ} (ra.west);
+  \node[note, anchor=north, text width=70mm, align=center] at (8.6,-6.9) {\texttt{barrowman}・\texttt{panel} を \texttt{general} にしても\\軸対称表を展開するだけで、情報は増えない};
+  % right: what each table keeps
+  \node[keep, anchor=north west] (ka) at (14.6,0.9) {\textbf{軸対称表}\\
+    引数: $M$、全迎角 $\alpha_t$（0 から\\
+    \quad \texttt{alpha\_max\_deg}、既定 90°）\\
+    値: $C_N,\ C_A,\ x_{cp},\ C_{N\alpha}$、減衰の和、\\
+    \quad ロールの微係数\\
+    表せないもの: 迎角面の向きによる違い、\\
+    \quad 横滑りとの連成};
+  \node[keep, anchor=north west] (kg) at (14.6,-3.4) {\textbf{一般表}\\
+    引数: $M$、$\alpha$（$\pm180^\circ$）、$\beta$（$\pm90^\circ$）\\
+    値: $C_X,C_Y,C_Z,C_l,C_m,C_n$、\\
+    \quad ロールの微係数、ピッチ・ヨーの減衰の和\\
+    表せないもの: 角速度についての交差微係数、\\
+    \quad 非定常な空力};
+\end{tikzpicture}

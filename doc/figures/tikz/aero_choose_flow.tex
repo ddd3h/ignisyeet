@@ -1,0 +1,40 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+% Decision tree for aero.method.
+\begin{tikzpicture}[
+  font=\small,
+  q/.style={draw=cblue, fill=cfill, thick, rounded corners=3pt, minimum width=66mm, minimum height=12mm, text width=62mm, align=center},
+  res/.style={draw=corange, fill=cfillo, thick, rounded corners=3pt, minimum width=46mm, minimum height=13mm, text width=44mm, align=center},
+  resd/.style={draw=cink2, fill=cfillg, thick, rounded corners=3pt, minimum width=46mm, minimum height=13mm, text width=44mm, align=center},
+  arr/.style={->, thick, cink2},
+  yes/.style={font=\footnotesize\bfseries, corange, inner sep=2pt},
+  no/.style={font=\footnotesize\bfseries, cblue, inner sep=2pt},
+  note/.style={font=\scriptsize, cink2, align=left, text width=44mm}]
+  % questions (left column)
+  \node[q] (q1) at (0,0)   {\textbf{Q1} 風洞試験などで得た\\係数表があり、それを使うか};
+  \node[q] (q2) at (0,-3.0) {\textbf{Q2} 胴体が軸対称で、フィンが\\軸まわりに配置した薄い板か};
+  \node[q] (q3) at (0,-6.0) {\textbf{Q3} 遷音速（$M$ 0.8〜1.2）の抗力・安定が\\結論を左右するか、フィンが大きいか、\\結果が安全の判断に直結するか};
+  \node[q] (q4) at (0,-9.2) {\textbf{Q4} 静安定余裕が小さいか、\\別の手法と差を比べたいか};
+  % results (right column)
+  \node[resd] (rt) at (9.0,0)   {\texttt{table}\\{\footnotesize 係数表をそのまま使う}};
+  \node[res]  (rc1) at (9.0,-3.0) {\texttt{cfd}\\{\footnotesize \texttt{surface = "stl"} か \texttt{"step"}、\\一般表}};
+  \node[res]  (rc2) at (9.0,-6.0) {\texttt{cfd}（Euler）\\{\footnotesize 摩擦抗力を CFD で求めたいときだけ RANS}};
+  \node[res]  (rp)  at (9.0,-9.2) {\texttt{panel}\\{\footnotesize \texttt{barrowman} と二重に確認し、\\余裕は小さいほうで判断}};
+  \node[res]  (rb)  at (9.0,-12.2) {\texttt{barrowman}（既定）\\{\footnotesize 速く、外部プログラム不要}};
+  % arrows
+  \draw[arr] (q1) -- node[no, left]{いいえ} (q2);
+  \draw[arr] (q2) -- node[no, left]{はい} (q3);
+  \draw[arr] (q3) -- node[no, left]{いいえ} (q4);
+  \draw[arr] (q4.south) |- node[no, pos=0.2, left]{いいえ} (rb.west);
+  \draw[arr] (q1) -- node[yes, above]{はい} (rt);
+  \draw[arr] (q2) -- node[yes, above]{いいえ} (rc1);
+  \draw[arr] (q3) -- node[yes, above]{はい} (rc2);
+  \draw[arr] (q4) -- node[yes, above]{はい} (rp);
+  % evidence labels
+  \node[note, anchor=west] at (12.0,0)    {根拠は表を作った試験に依存する};
+  \node[note, anchor=west] at (12.0,-3.0) {形状の抽出が成り立たない形（ポッド、非対称）};
+  \node[note, anchor=west] at (12.0,-6.0) {実測との $C_{N\alpha}$ の差：Euler $-3$〜$-11$\,\%};
+  \node[note, anchor=west] at (12.0,-9.2) {実測との $C_{N\alpha}$ の差：$-18$〜$-34$\,\%};
+  \node[note, anchor=west] at (12.0,-12.2) {実測との $C_{N\alpha}$ の差：$-20$〜$-35$\,\%};
+  \node[note, anchor=west, text width=60mm] at (12.0,-13.7) {差は Basic Finner（Mach 1.08〜4.30）の実測に対するモデルの値（実測の大きさに対する割合）};
+\end{tikzpicture}

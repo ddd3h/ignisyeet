@@ -44,6 +44,7 @@ IgnisYeet ドキュメント
    dispersion
    verification
    verification_aero
+   validation
    limitations
    file_formats
 

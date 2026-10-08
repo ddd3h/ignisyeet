@@ -243,7 +243,8 @@ impl BodyCoeffs6 {
 ///   is the CFD base marker when `base_from_cfd` (it is then part of `ca_cfd`; for power-on the
 ///   base-pressure contribution over the nozzle exit area is removed, `base_cd(M) (A_base - A_base,on) / S`),
 ///   otherwise the Barrowman base drag with its nozzle-area power-on correction. `extra_cd` is added, and the
-///   skin-friction increment of the configured surface roughness ([`roughness_increment`]): the RANS wall is smooth.
+///   skin-friction increment of the configured surface roughness ([`roughness_increment`]): the RANS wall is smooth, and
+///   without `fin_edges_in_cfd` the fin-edge drag of the configured edges ([`fin_edge_increment`]).
 ///   No Euler (inviscid) term is ever added to a RANS value.
 ///
 /// `fin_edges_in_cfd`: the integrated CFD wall already holds the fin leading / trailing faces (STL surface), so
@@ -263,11 +264,15 @@ pub fn hybrid_axial(flow: FlowModel, fin_edges_in_cfd: bool, base_from_cfd: bool
             (t(&on), t(&off))
         }
         FlowModel::Rans if base_from_cfd => {
+            let rough = rough + fin_edge_increment(model, mach, fin_edges_in_cfd);
             let removed = (off.base - on.base).max(0.0);
             // Base drag over the nozzle exit area, `base_cd(M) A_nozzle / S`, is the model's off-on base difference.
             (off.extra + rough - removed, off.extra + rough)
         }
-        FlowModel::Rans => (on.base + on.extra + rough, off.base + off.extra + rough),
+        FlowModel::Rans => {
+            let rough = rough + fin_edge_increment(model, mach, fin_edges_in_cfd);
+            (on.base + on.extra + rough, off.base + off.extra + rough)
+        }
     };
     ((ca_cfd + add_on * k).max(0.0), (ca_cfd + add_off * k).max(0.0))
 }
@@ -289,6 +294,28 @@ pub fn roughness_increment(model: &AeroModel, mach: f64) -> f64 {
     }
 }
 
+/// Fraction of the configured fin-edge drag that the rebuilt (CAD) fins already carry in a RANS wall.
+///
+/// The rebuilt biconvex fin is cut at `BL_EDGE_BLUNT` of the chord from each edge, so its edges are faces of the
+/// section thickness at that chord position, `4 e (1 - e)` of the maximum thickness (7.8 % for 2 %). The Barrowman
+/// fin-edge terms (rounded leading edge, square trailing edge) scale with that frontal thickness, so the same fraction
+/// of them is already in the CFD wall and is subtracted; this is an estimate (the pressure drag of a 0.3 mm face is
+/// modelled with the coefficient of the configured edge), small against the term itself.
+pub fn rebuilt_lens_edge_fraction() -> f64 {
+    let e = crate::mesh::BL_EDGE_BLUNT;
+    4.0 * e * (1.0 - e)
+}
+
+/// Fin-edge drag the RANS table adds on the rebuilt (CAD) surface: the Barrowman terms of the configured fin edges
+/// (`fin_le_rounded`, `fin_te_square`) minus what the blunted lens already carries ([`rebuilt_lens_edge_fraction`]).
+/// 0 when the CFD wall holds the real edges (`fin_edges_in_cfd`: STL or STEP surface).
+pub fn fin_edge_increment(model: &AeroModel, mach: f64, fin_edges_in_cfd: bool) -> f64 {
+    if fin_edges_in_cfd {
+        return 0.0;
+    }
+    model.cd0(mach, false).fins * (1.0 - rebuilt_lens_edge_fraction())
+}
+
 /// Axial breakdown of one RANS case for `cfd_report.json` (all coefficients positive aft).
 #[derive(Debug, Clone, Copy, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
@@ -303,12 +330,14 @@ pub struct AxialReportEntry {
     pub barrowman_base: f64,
     /// Roughness friction increment added to the smooth-wall RANS value ([`roughness_increment`]).
     pub roughness_increment: f64,
+    /// Fin-edge increment added on the rebuilt surface ([`fin_edge_increment`]); 0 for STL / STEP.
+    pub fin_edge_increment: f64,
     /// The base term of the table comes from CFD (`base_from_cfd`, or the per-marker columns were absent).
     pub base_from_cfd: bool,
 }
 
 impl AxialReportEntry {
-    pub fn new(model: &AeroModel, mach: f64, alpha_deg: f64, markers: &MarkerCoeffs, base_from_cfd: bool) -> Self {
+    pub fn new(model: &AeroModel, mach: f64, alpha_deg: f64, markers: &MarkerCoeffs, base_from_cfd: bool, fin_edges_in_cfd: bool) -> Self {
         let b = model.cd0(mach, false);
         Self {
             mach,
@@ -318,6 +347,7 @@ impl AxialReportEntry {
             barrowman_friction: b.friction,
             barrowman_base: b.base,
             roughness_increment: roughness_increment(model, mach),
+            fin_edge_increment: fin_edge_increment(model, mach, fin_edges_in_cfd),
             base_from_cfd: markers.axial(0.0, base_from_cfd).base_in_cfx,
         }
     }
@@ -419,7 +449,7 @@ mod tests {
         let b = m.cd0(0.5, false);
         assert!(b.fins > 0.0 && (off - off_stl - b.fins).abs() < 1e-12);
         // RANS with the CFD base: only extra_cd (and the nozzle correction) are added.
-        let (ron, roff) = hybrid_axial(FlowModel::Rans, false, true, &m, 0.5, 0.0, 0.4);
+        let (ron, roff) = hybrid_axial(FlowModel::Rans, true, true, &m, 0.5, 0.0, 0.4);
         let r = roughness_increment(&m, 0.5);
         assert!((roff - (0.42 + r)).abs() < 1e-12);
         assert!(ron < roff && ron > 0.0);
@@ -432,24 +462,24 @@ mod tests {
         let (on, off) = (m.cd0(0.5, true), m.cd0(0.5, false));
         assert!(off.base > on.base && off.base > 0.0);
         // Barrowman base: wall + base model + extra, the nozzle area reduces the power-on base.
-        let (ron, roff) = hybrid_axial(FlowModel::Rans, false, false, &m, 0.5, 0.0, 0.4);
+        let (ron, roff) = hybrid_axial(FlowModel::Rans, true, false, &m, 0.5, 0.0, 0.4);
         let r = roughness_increment(&m, 0.5);
         assert!((roff - (0.4 + off.base + off.extra + r)).abs() < 1e-12);
         assert!((ron - (0.4 + on.base + on.extra + r)).abs() < 1e-12 && ron < roff);
         // CFD base: the base is in the CFD value, only extra (and the nozzle correction) is added.
-        let (con, coff) = hybrid_axial(FlowModel::Rans, false, true, &m, 0.5, 0.0, 0.4 + off.base);
+        let (con, coff) = hybrid_axial(FlowModel::Rans, true, true, &m, 0.5, 0.0, 0.4 + off.base);
         assert!((coff - (0.4 + off.base + off.extra + r)).abs() < 1e-12, "same total when the CFD base equals the model base");
         assert!((con - (coff - (off.base - on.base))).abs() < 1e-12);
         // No friction, fin-edge or boattail term of the Euler build-up reaches a RANS value, for either base source.
         let euler = hybrid_axial(FlowModel::Euler, false, false, &m, 0.5, 0.0, 0.4).1;
         for flag in [false, true] {
-            let r = hybrid_axial(FlowModel::Rans, false, flag, &m, 0.5, 0.0, 0.4).1;
+            let r = hybrid_axial(FlowModel::Rans, true, flag, &m, 0.5, 0.0, 0.4).1;
             assert!(euler - r >= off.friction + off.fins + off.boattail - 1e-12 - r - if flag { off.base } else { 0.0 });
         }
         // The off-axis factor scales the additions only.
         let a = 8f64.to_radians();
         let k = axial_alpha_factor(a);
-        let r = hybrid_axial(FlowModel::Rans, false, false, &m, 0.5, a, 0.4).1;
+        let r = hybrid_axial(FlowModel::Rans, true, false, &m, 0.5, a, 0.4).1;
         assert!((r - (0.4 + (off.base + off.extra + roughness_increment(&m, 0.5)) * k)).abs() < 1e-12);
     }
 
@@ -487,9 +517,9 @@ mod tests {
         assert_eq!((c6.cfx, split.base), (0.4, Some(0.1)));
         // Report entry: base source flag follows the columns.
         let mdl = model(0.0);
-        assert!(!AxialReportEntry::new(&mdl, 0.5, 0.0, &m, false).base_from_cfd);
-        assert!(AxialReportEntry::new(&mdl, 0.5, 0.0, &none, false).base_from_cfd);
-        let e = AxialReportEntry::new(&mdl, 0.5, 0.0, &m, true);
+        assert!(!AxialReportEntry::new(&mdl, 0.5, 0.0, &m, false, true).base_from_cfd);
+        assert!(AxialReportEntry::new(&mdl, 0.5, 0.0, &none, false, true).base_from_cfd);
+        let e = AxialReportEntry::new(&mdl, 0.5, 0.0, &m, true, true);
         assert!(e.base_from_cfd && e.barrowman_friction > 0.0 && e.cfd_base_ca == Some(0.1));
         let back: AxialReportEntry = serde_json::from_str("{\"mach\":1.0}").unwrap();
         assert_eq!(back.mach, 1.0);
@@ -507,16 +537,43 @@ mod tests {
             assert!((roughness_increment(&rough, m) - want).abs() < 1e-12, "M {m}");
             // RANS value: wall + base model + increment; zero roughness adds nothing.
             let b = rough.cd0(m, false);
-            let r = hybrid_axial(FlowModel::Rans, false, false, &rough, m, 0.0, 0.2).1;
+            let r = hybrid_axial(FlowModel::Rans, true, false, &rough, m, 0.0, 0.2).1;
             assert!((r - (0.2 + b.base + want)).abs() < 1e-12);
-            let r0 = hybrid_axial(FlowModel::Rans, false, true, &smooth, m, 0.0, 0.2).1;
+            let r0 = hybrid_axial(FlowModel::Rans, true, true, &smooth, m, 0.0, 0.2).1;
             assert!((r0 - 0.2).abs() < 1e-12);
             // The Euler value is unchanged by this correction.
             let e = hybrid_axial(FlowModel::Euler, false, false, &rough, m, 0.0, 0.2).1;
             assert!((e - (0.2 + b.friction + b.base + b.fins + b.boattail)).abs() < 1e-12);
         }
-        let e = AxialReportEntry::new(&rough, 0.8, 0.0, &MarkerCoeffs::default(), false);
-        assert!(e.roughness_increment > 0.0);
+        let e = AxialReportEntry::new(&rough, 0.8, 0.0, &MarkerCoeffs::default(), false, false);
+        assert!(e.roughness_increment > 0.0 && e.fin_edge_increment > 0.0);
+        assert_eq!(AxialReportEntry::new(&rough, 0.8, 0.0, &MarkerCoeffs::default(), false, true).fin_edge_increment, 0.0);
+    }
+
+    #[test]
+    fn rans_fin_edge_increment_on_the_rebuilt_surface() {
+        let g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
+        let m = AeroModel::new(g, AeroOptions { roughness: 0.0, extra_cd: 0.0, ..Default::default() });
+        let f = rebuilt_lens_edge_fraction();
+        assert!((f - 0.0784).abs() < 1e-12);
+        for mach in [0.5, 1.2, 2.0] {
+            let b = m.cd0(mach, false);
+            assert!(b.fins > 0.0);
+            let inc = fin_edge_increment(&m, mach, false);
+            assert!((inc - b.fins * (1.0 - f)).abs() < 1e-15 && inc > 0.0 && inc < b.fins);
+            assert_eq!(fin_edge_increment(&m, mach, true), 0.0, "STL / STEP: the edges are in the wall");
+            let cad = hybrid_axial(FlowModel::Rans, false, true, &m, mach, 0.0, 0.3).1;
+            let real = hybrid_axial(FlowModel::Rans, true, true, &m, mach, 0.0, 0.3).1;
+            assert!((real - 0.3).abs() < 1e-12 && (cad - real - inc).abs() < 1e-12);
+            // The alpha factor scales it like the other additions.
+            let a = 8f64.to_radians();
+            let ca = hybrid_axial(FlowModel::Rans, false, true, &m, mach, a, 0.3).1;
+            assert!((ca - 0.3 - inc * axial_alpha_factor(a)).abs() < 1e-12);
+        }
+        // Switching the configured edges off removes the term.
+        let g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
+        let plain = AeroModel::new(g, AeroOptions { fin_le_rounded: false, fin_te_square: false, ..Default::default() });
+        assert_eq!(fin_edge_increment(&plain, 1.2, false), 0.0);
     }
 
     #[test]

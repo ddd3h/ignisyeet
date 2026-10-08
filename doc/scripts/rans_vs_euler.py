@@ -5,7 +5,7 @@
   rans_vs_euler.py RANS_RUN_DIR --euler doc/data/cfd/sample_euler_vs_models.csv --euler-mesh doc/data/cfd/mesh_convergence.csv
                    --barrowman-smooth BARROWMAN_OUT/aero_drag.csv --out-csv ... --out-json ...
 
-* CN at alpha 4 and CN_alpha = CN(4) / 4 deg (both models; Euler 2 mm, 941k cells, sharp fin edges, conical tail fairing);
+* CN at alpha 4 and CN_alpha = CN(4) / 4 deg (both models; Euler 2 mm from the given CSV, sharp fin edges, conical tail fairing);
   xcp at alpha 4. Gates: CN_alpha within 8 %, xcp within 0.03 m.
 * Skin friction: RANS friction part of the wall axial force (surface_flow.vtk of the alpha 0 case, rans_surface.py;
   body and fins, the base cap excluded) vs the Barrowman friction term of a smooth wall (roughness 0; the RANS wall is

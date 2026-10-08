@@ -708,37 +708,20 @@ def cfd_study(f, out, pn, data):
     f.save(fig, "cfd_compare")
 
     mc = pd.read_csv(data / "mesh_convergence.csv", comment="#")
-    summ = json.load(open(data / "run_summary.json"))["mesh_convergence"]
     fig, ax = plt.subplots(figsize=(5.2, 3.5))
     for m, c, mk in ((2.0, SERIES[0], "o"), (0.8, SERIES[1], "s")):
-        s = mc[mc.mach == m].sort_values("cells")
-        h = s.cells.values ** (-1.0 / 3.0) * 1e2
-        ax.plot(h, s.cn, mk, color=c, markersize=6, label=f"$M={m:g}$")
-        if m == 2.0:
-            y, x = s.cn.values, s.cells.values ** (-1.0 / 3.0)
-            best = None
-            for p in np.arange(0.5, 6.0, 0.01):
-                A = np.c_[np.ones_like(x), x ** p]
-                cf = np.linalg.lstsq(A, y, rcond=None)[0]
-                r = float(((A @ cf - y) ** 2).sum())
-                if best is None or r < best[0]:
-                    best = (r, p, cf)
-            _, p, cf = best
-            xs = np.linspace(0, x.max(), 100)
-            ax.plot(xs * 1e2, cf[0] + cf[1] * xs ** p, color=c, linewidth=1.2, label=f"外挿 $C_N=C_N^\\infty+Ch^{{p}}$（$p={p:.2f}$）")
-            ax.plot([0], [cf[0]], "D", color=c, markersize=6, markerfacecolor="white")
-            ax.axhline(cf[0], color=c, linewidth=0.7, linestyle=":")
-        else:
-            ax.axhline(summ["M0.8"]["cn_extrapolated"], color=c, linewidth=0.7, linestyle=":", label=f"$M=0.8$ の推定値 $C_N={summ['M0.8']['cn_extrapolated']:.3f}$（非単調、外挿式なし）")
-    ax.set_xlim(left=-0.03)
-    ax.set_xlabel("代表格子幅 $h=N_{cell}^{-1/3}$ [$10^{-2}$]")
+        s = mc[mc.mach == m].sort_values("wall_size_m")
+        ax.plot(s.wall_size_m * 1e3, s.cn, "-" + mk, color=c, markersize=6, linewidth=1.0, label=f"$M={m:g}$")
+        ax.axhline(s.cn.iloc[0], color=c, linewidth=0.7, linestyle=":")
+    ax.set_xlim(0, 10.5)
+    ax.set_xlabel("壁面の要素の大きさ wall_size [mm]（フィンの面は 1 mm）")
     ax.set_ylabel("$C_N$（$\\alpha=4^\\circ$）")
-    ax.legend(loc="lower left")
+    ax.legend(loc="center right")
     fig.tight_layout()
     f.save(fig, "cfd_mesh_convergence")
 
     asy = pd.read_csv(data / "asymmetry_study.csv", comment="#")
-    order = [("base", "半モデル\n（既定の\nメッシュ）"), ("roll45", "フィン\n45° 回転"), ("jst", "JST"), ("tight", "残差\n$10^{-9}$"), ("zm", "z 対称\nメッシュ")]
+    order = [("base", "半モデル"), ("roll45", "フィン\n45° 回転"), ("jst", "JST"), ("tight", "残差\n$10^{-9}$"), ("zm", "z 対称\nメッシュ")]
     fig, ax = plt.subplots(figsize=(6.2, 3.3))
     w = 0.26
     for i, (m, c) in enumerate(((0.3, SERIES[0]), (0.8, SERIES[1]), (2.0, SERIES[2]))):
@@ -949,8 +932,8 @@ def cfd_fields(f, fields):
 
 def cfd_stl_check(f, data):
     """Direct-STL CFD versus the rebuilt (CAD) geometry and the Barrowman model (doc/data/cfd/stl_cross_check*)."""
-    t = pd.read_csv(data / "stl_cross_check.csv")
-    clp = pd.read_csv(data / "stl_cross_check_clp.csv")
+    t = pd.read_csv(data / "stl_cross_check.csv", comment="#")
+    clp = pd.read_csv(data / "stl_cross_check_clp.csv", comment="#")
     d = 0.1
     t["cn_n"] = -t.cz
     t["xcp"] = np.where(t.cz.abs() > 1e-6, t.cm * d / t.cz.where(t.cz.abs() > 1e-6, 1.0), np.nan)
@@ -982,6 +965,85 @@ def cfd_stl_check(f, data):
     fig.legend(handles=handles, loc="lower center", ncol=5, bbox_to_anchor=(0.5, -0.08), fontsize=8.5)
     fig.tight_layout()
     f.save(fig, "cfd_stl_check")
+
+
+def rans_study(f, data):
+    """RANS verification (doc/data/cfd/rans_*, committed): flat-plate friction, mesh study, RANS vs Euler across Mach."""
+    if (data / "rans_flatplate_cf.csv").exists():
+        cf = pd.read_csv(data / "rans_flatplate_cf.csv", comment="#")
+        cf = cf[cf.x <= 1.0]
+        rex = cf.x * 5e6
+        fig, axs = plt.subplots(1, 2, figsize=(7.8, 3.3), sharey=True)
+        axs[0].plot(rex, cf["tmr_cfl3d_sa"] * 1e3, color=SERIES[0], label="NASA TMR（CFL3D SA、545×385）")
+        axs[0].plot(rex, cf["ks_local"] * 1e3, color=INK2, linestyle=":", linewidth=1.4, label="Kármán–Schoenherr（局所）")
+        axs[0].plot(rex, cf["cf_m0.2"] * 1e3, "o", color=SERIES[1], markersize=6, label="IgnisYeet の RANS（273×193）")
+        axs[1].plot(rex, cf["van_driest2"] * 1e3, color=SERIES[0], label="van Driest II（断熱壁）")
+        axs[1].plot(rex, cf["cf_m2"] * 1e3, "o", color=SERIES[1], markersize=6, label="IgnisYeet の RANS（273×193）")
+        for ax, m in zip(axs, ("0.2", "2")):
+            ax.set_xscale("log")
+            ax.set_xlabel("局所 Reynolds 数 $Re_x$")
+            ax.text(0.97, 0.95, f"$M={m}$", transform=ax.transAxes, ha="right", va="top", color=INK2)
+            ax.legend(loc="lower left")
+        axs[0].set_ylabel("摩擦係数 $c_f$ [$10^{-3}$]")
+        fig.tight_layout()
+        f.save(fig, "rans_flatplate")
+
+    if (data / "rans_mesh_study.json").exists() and (data / "rans_verification.json").exists():
+        ms = pd.read_csv(data / "rans_mesh_study.csv", comment="#")
+        v6 = json.load(open(data / "rans_verification.json"))["gates"]["V6_sample_mesh_convergence"]["mach"]
+        fig, axs = plt.subplots(1, 3, figsize=(9.6, 3.3))
+        cols = (("cn", "cn", "$C_N$ の外挿値との差 [%]", 100.0, True), ("ca_wall", "ca", "$C_{Fx}(\\mathrm{wall})$ の外挿値との差 [%]", 100.0, True),
+                ("xcp_m", "xcp", "$x_{cp}$ の外挿値との差 [mm]", 1e3, False))
+        for ax, (col, key, lab, sc, rel) in zip(axs, cols):
+            for m, c, mk in ((0.8, SERIES[1], "s"), (2.0, SERIES[0], "o")):
+                s = ms[ms.mach == m].sort_values("nodes")
+                h = s.nodes.values ** (-1.0 / 3.0) * 1e2
+                ex = v6["0.8" if m == 0.8 else "2"][key]["extrapolated"]
+                d = (s[col].values / ex - 1.0) * sc if rel else (s[col].values - ex) * sc
+                ax.plot(h, d, mk + "-", color=c, markersize=6, linewidth=1.2, label=f"$M={m:g}$")
+                ax.plot([0, h.min()], [0, d[-1]], ":", color=c, linewidth=1.0)
+            ax.plot([0], [0], "D", color=INK2, markersize=6, markerfacecolor="white", label="Richardson の外挿値")
+            ax.axhline(0, color=INK2, linewidth=0.7)
+            ax.set_xlim(left=-0.03)
+            ax.set_xlabel("代表格子幅 $N_{node}^{-1/3}$ [$10^{-2}$]")
+            ax.set_ylabel(lab)
+        h_, l_ = axs[0].get_legend_handles_labels()
+        fig.legend(h_[:2] + h_[-1:], l_[:2] + l_[-1:], loc="lower center", ncol=3, bbox_to_anchor=(0.5, 0.0))
+        fig.tight_layout(rect=(0, 0.08, 1, 1))
+        f.save(fig, "rans_mesh_study")
+
+    if (data / "rans_table.csv").exists():
+        t = pd.read_csv(data / "rans_table.csv", comment="#")
+        rc = pd.read_csv(data / "rans_table_roughness.csv", comment="#") if (data / "rans_table_roughness.csv").exists() else None
+        ve = pd.read_csv(data / "rans_vs_euler.csv", comment="#") if (data / "rans_vs_euler.csv").exists() else None
+        a4 = t[t.alpha_deg == 4].sort_values("mach")
+        a0 = t[t.alpha_deg == 0].sort_values("mach")
+        fig, axs = plt.subplots(1, 3, figsize=(9.6, 3.4))
+        sty_e = dict(color=SERIES[0], marker="o", markersize=6, linewidth=1.2)
+        sty_r = dict(color=SERIES[1], marker="s", markersize=6, linewidth=1.2)
+        axs[0].plot(a4.mach, a4.euler_cn, label="Euler（2 mm）", **sty_e)
+        axs[0].plot(a4.mach, a4.rans_cn, label="RANS（5 mm）", **sty_r)
+        axs[1].plot(a4.mach, a4.euler_xcp_m, **sty_e)
+        axs[1].plot(a4.mach, a4.rans_xcp_m, **sty_r)
+        if ve is not None:
+            axs[0].plot(ve.mach, ve.rans_cn_a4, "^", color=SERIES[2], markersize=7, label="RANS（3 mm）")
+            axs[1].plot(ve.mach, ve.rans_xcp_m, "^", color=SERIES[2], markersize=7)
+        axs[2].plot(a0.mach, a0.euler_ca_off, **sty_e)
+        axs[2].plot(a0.mach, a0.rans_ca_off, color=SERIES[1], marker="s", markersize=6, linewidth=1.0, linestyle="--", markerfacecolor="white", label="RANS（5 mm、粗さとフィンの縁の増分なし）")
+        if rc is not None:
+            r0 = rc[rc.alpha_deg == 0].sort_values("mach")
+            axs[2].plot(r0.mach, r0.rans_ca_off_corrected, label="RANS（5 mm、増分を加えた再計算）", **sty_r)
+        axs[0].set_ylabel("$C_N$（$\\alpha=4^\\circ$）")
+        axs[1].set_ylabel("$x_{cp}$（$\\alpha=4^\\circ$）[m]")
+        axs[2].set_ylabel("軸力係数 $C_A$（$\\alpha=0$、燃焼後）")
+        for ax in axs:
+            ax.set_xlabel("Mach 数 $M$")
+            ax.set_xlim(0, 2.2)
+        h0, l0 = axs[0].get_legend_handles_labels()
+        h2, l2 = axs[2].get_legend_handles_labels()
+        fig.legend(h0 + h2, l0 + l2, loc="lower center", ncol=5, bbox_to_anchor=(0.5, 0.0))
+        fig.tight_layout(rect=(0, 0.08, 1, 1))
+        f.save(fig, "rans_vs_euler")
 
 
 def read_stl(path):
@@ -1088,6 +1150,8 @@ def main():
         cfd_study(f, out, pn, data)
     if (data / "stl_cross_check.csv").exists():
         cfd_stl_check(f, data)
+    if any(data.glob("rans_*.csv")):
+        rans_study(f, data)
     if (data / "fields" / "mesh_symmetry.npz").exists():
         cfd_fields(f, data / "fields")
     vdir = data.parent / "validation" / "basic_finner"

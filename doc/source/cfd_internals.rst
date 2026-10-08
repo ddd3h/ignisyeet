@@ -581,7 +581,7 @@ RANS は、フィンの面を厚さの 1/4 にするとプリズム層の柱が�
 .. figure:: _generated/plots/cfd_mesh_surface.*
    :width: 100%
 
-   サンプル機体の壁面のメッシュ（``wall_size`` 2 mm、フィンの面も 2 mm（``fin_size = 0.002``）、半モデル）。どちらも :math:`+y` 側から機体の外側の面を見た図で、左はノーズ先端（先端から 9 cm。先端が右を向く）、右はフィンの付け根の前縁側。
+   サンプル機体の壁面のメッシュ（既定の ``wall_size`` 2 mm、フィンの面は ``fin_size = "auto"`` で 1 mm、半モデル）。どちらも :math:`+y` 側から機体の外側の面を見た図で、左はノーズ先端（先端から 9 cm。先端が右を向く）、右はフィンの付け根の前縁側。
 
 体積メッシュの様子は、対称面（:math:`y=0`）での断面で分かる（:numref:`fig-cfd-mesh-section`）。
 壁面の近くでは要素が 2 mm で、壁から離れるにつれ\ :eq:`eq-cfd-size` に従って大きくなり、遠方境界（半径 30 m）では最大の大きさ 3 m に達する。
@@ -591,7 +591,7 @@ RANS は、フィンの面を厚さの 1/4 にするとプリズム層の柱が�
 .. figure:: _generated/plots/cfd_mesh_section.*
    :width: 100%
 
-   対称面 :math:`y=0` での体積メッシュの断面。左から計算領域の全体、機体のまわり、フィンと尾部フェアリングの拡大。灰色の部分は機体（とフィン）の内部である。メッシュは :numref:`fig-cfd-mesh-surface` と同じ（フィンの面も 2 mm）。
+   対称面 :math:`y=0` での体積メッシュの断面。左から計算領域の全体、機体のまわり、フィンと尾部フェアリングの拡大。灰色の部分は機体（とフィン）の内部である。メッシュは :numref:`fig-cfd-mesh-surface` と同じ（フィンの面は 1 mm）。
 
 メッシュは ``<出力先>/<workdir>/mesh/`` に保存され、形状と設定のハッシュが同じなら再利用される。
 ハッシュには、メッシュを作るスクリプト（SU2 のメッシュを書くスクリプトと境界層のスクリプトも）の内容と、``fin_size`` から決まるフィンの面の大きさが入る。
@@ -628,7 +628,9 @@ gmsh は、壁面の三角形、外側の面の三角形、外側の四面体だ
 層の高さは 1.2 倍ずつ増やし、最後の層が :math:`1.3\,h_w` 以上になる最小の層数 :math:`n` で止める。厚さは :math:`T=h_1(1.2^n-1)/0.2` である。
 最後の層の高さがその外側の四面体の大きさとほぼ同じなので、層の上面でセルの大きさが急に変わらない。
 上面の四面体の高さと最後の層の高さの比（大きいほうを小さいほうで割った値）の 99 パーセンタイルと最大値は、``mesh_stats.json`` の ``bl_top_ratio_p99`` と ``bl_top_ratio_max`` に記録する。
-サンプル機体（``yplus = 1``、:math:`M_{\max}=2`）では、``wall_size`` 2.5 mm から 6 mm で 49 層から 54 層、厚さ 22 mm から 54 mm である（表は :ref:`sec-cfd-rans-use`）。
+厚さ :math:`T` には上限があり、機体の後端での平板の乱流境界層の厚さ :math:`0.37\,L\,\mathit{Re}_L^{-1/5}`\ （解く最小の Mach 数）の 1.5 倍と、胴体の最大半径の 0.5 倍の小さいほうを超えるときは、層の数を減らす。
+そのときは、最後の層は上面の四面体より低い。
+サンプル機体（``yplus = 1``、Mach 数 0.8 と 2）では、``wall_size`` 2.5 mm から 8 mm のどれでも厚さが上限で決まり、49 層、厚さ 21.7 mm、最後の層の高さ約 3.6 mm である（表は :ref:`sec-cfd-rans-use`）。
 
 **法線**\ 。壁面の三角形の向きをそろえて外向き（流体の側）にする。一つの辺を 3 枚以上の三角形が共有するとき、向きをそろえられないときはエラーにする。
 
@@ -878,7 +880,7 @@ CFD の座標は機体座標を :math:`y` まわりに 180 度回したもの（
      C_A=\max\Bigl(C_A^{\mathrm{CFD}}+f(\alpha)\bigl(C_{D,f}+C_{D,\mathrm{base}}+C_{D,\mathrm{fin}}+C_{D,\mathrm{bt}}+C_{D,\mathrm{extra}}\bigr),\,0\Bigr)
 
   である。足すのは摩擦、底面、フィン縁（丸い前縁と四角い後縁）、ボートテール、追加抗力で、ノーズの圧力抗力 :math:`C_{D,\mathrm{nose}}` は **含めない**\ （CFD が与えるため）。
-  ただし ``surface = "stl"`` では、フィンの前縁と後縁の面が CFD の壁面にあり、その圧力抗力は :math:`C_A^{\mathrm{CFD}}` にすでに入っているので、フィン縁の項 :math:`C_{D,\mathrm{fin}}` を足さない（足すと二重に数える）。
+  ただし ``surface = "stl"`` と ``"step"`` では、フィンの前縁と後縁の面が CFD の壁面にあり、その圧力抗力は :math:`C_A^{\mathrm{CFD}}` にすでに入っているので、フィン縁の項 :math:`C_{D,\mathrm{fin}}` を足さない（足すと二重に数える）。
   ``panel_mesh`` の形状は、抽出した厚みのフィンを再構成するので、この項を足す。
   燃焼中の値では、底面の項に、ノズル出口の面積を除いた底面積を使う。
 * **RANS**\ ：SU2 の履歴のマーカごとの列（``CFx(wall)``、``CFx(base)``）を使う。壁面の軸力 :math:`C_{Fx}(\mathrm{wall})` は、圧力と摩擦、フィンの縁とボートテールの力を含む。
@@ -887,16 +889,34 @@ CFD の座標は機体座標を :math:`y` まわりに 180 度回したもの（
   .. math::
      :label: eq-cfd-ca-rans
 
-     C_A=\max\Bigl(C_{Fx}(\mathrm{wall})+C_{A,\mathrm{base}}+f(\alpha)\,C_{D,\mathrm{extra}},\,0\Bigr),\qquad
+     C_A=\max\Bigl(C_{Fx}(\mathrm{wall})+C_{A,\mathrm{base}}+f(\alpha)\bigl(C_{D,\mathrm{extra}}+\Delta C_{D,\mathrm{rough}}+\Delta C_{D,\mathrm{fin}}\bigr),\,0\Bigr),\qquad
      C_{A,\mathrm{base}}=\begin{cases}f(\alpha)\,C_{D,\mathrm{base}} & (\text{rans\_base = model})\\ C_{Fx}(\mathrm{base}) & (\text{rans\_base = cfd})\end{cases}
 
   とする。``"model"``\ （既定）は部品積み上げ法の底面抗力（燃焼中はノズル出口の面積を除いた底面積）、``"cfd"`` は RANS が平らな底面に積分した力である。
   ``"cfd"`` の燃焼中の値は、ノズル出口の面積にかかる底面圧力の寄与（部品積み上げ法の燃焼後と燃焼中の底面抗力の差）を引く。
-  部品積み上げ法の摩擦、フィン縁、ボートテールの項と、Euler の項は足さない。
-  履歴にマーカごとの列がないときは、監視する力の合計（``wall`` と ``base``\ 。底面を含む）を使い、表全体を ``rans_base = "cfd"`` と同じに作って、``cfd_report.json`` の ``warnings`` に記録する。
-  ケースごとの :math:`C_{Fx}(\mathrm{wall})`、:math:`C_{Fx}(\mathrm{base})` と、部品積み上げ法の摩擦と底面の値は、``cfd_report.json`` の ``axial_breakdown`` に並べて記録する（比べるためのもので、摩擦は表に足さない）。
+  RANS の壁は滑らかなので、設定の粗さの効果を、部品積み上げ法の粗い壁と滑らかな壁の摩擦の差として足す。
+  :math:`C_{D,f}` は粗さ :math:`k_s` の摩擦（:eq:`eq-cd0`）、:math:`c_f` は摩擦係数の式で、同じ Reynolds 数での比を使い、
 
-亜音速の Euler では、CFD の軸力の理論値は 0（d'Alembert のパラドックス）である。実際の値は小さな負の数（本章のサンプルで :math:`-0.03` から :math:`-0.06`）になり、そのまま合計に入る。
+  .. math::
+     :label: eq-cfd-rans-rough
+
+     \Delta C_{D,\mathrm{rough}}=C_{D,f}\Bigl(1-\frac{c_f(Re,M,0)}{c_f(Re,M,k_s/L)}\Bigr)
+
+  とする（粗さ 0 なら 0）。
+  作り直した形状（``panel_mesh``）では、フィンの前縁と後縁を弦長の割合 :math:`e=0.02` で鈍くしてあり（:ref:`sec-cfd-rebuild`）、その縁の面の厚さは最大の厚さの :math:`4e(1-e)=7.8` % である。
+  設定の縁（``fin_le``\ 、``fin_te``）の抗力は縁の厚さに比例するとして、部品積み上げ法のフィン縁の項 :math:`C_{D,\mathrm{fin}}` から、鈍くした縁がすでに壁面の力に持つ分を引いて
+
+  .. math::
+     :label: eq-cfd-rans-fin
+
+     \Delta C_{D,\mathrm{fin}}=C_{D,\mathrm{fin}}\bigl(1-4e(1-e)\bigr)
+
+  を足す。``surface = "stl"`` と ``"step"`` では縁の面が CFD の壁面にあるので、:math:`\Delta C_{D,\mathrm{fin}}=0` である。
+  どちらの増分もモデルによる補正で、CFD の解ではない。部品積み上げ法の摩擦とボートテールの項と、Euler の項は足さない。
+  履歴にマーカごとの列がないときは、監視する力の合計（``wall`` と ``base``\ 。底面を含む）を使い、表全体を ``rans_base = "cfd"`` と同じに作って、``cfd_report.json`` の ``warnings`` に記録する。
+  ケースごとの :math:`C_{Fx}(\mathrm{wall})`、:math:`C_{Fx}(\mathrm{base})`、部品積み上げ法の摩擦と底面の値、二つの増分は、``cfd_report.json`` の ``axial_breakdown`` に並べて記録する（部品積み上げ法の摩擦は比べるための値で、表に足さない）。
+
+亜音速の Euler では、CFD の軸力の理論値は 0（d'Alembert のパラドックス）である。実際の値は小さな負の数（サンプル機体の迎角 0〜8° で :math:`-0.01` から :math:`-0.05`）になり、そのまま合計に入る。
 
 ピッチ減衰
 ~~~~~~~~~~

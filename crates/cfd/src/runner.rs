@@ -689,14 +689,21 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: Option
     let t0 = Instant::now();
     let deadline = (setup.opt.timeout_minutes > 0.0).then(|| t0 + Duration::from_secs_f64(setup.opt.timeout_minutes * 60.0));
     let min_drop = 3.0;
-    // Practically converged (typical for Euler wake limit cycles): residual down 3 orders and the coefficients
-    // flat over `stable_window` iterations. Stop SU2 gracefully before the residual drifts and diverges, after its
-    // next periodic output (the restart file of the warm starts).
+    let minval = setup.opt.residual_minval();
+    let ratio = length_ratio(setup);
+    let budget = setup.opt.iterations;
+    // SU2 runs to a floor far below the target (see `su2cfg`); the runner stops it, after its next periodic output
+    // (the restart file of the warm starts), when
+    // * the residual reached the target and the coefficient trend has settled ([`History::euler_trend_settled`]), or
+    // * practically converged (typical for Euler wake limit cycles): residual down 3 orders, the coefficients flat over
+    //   `stable_window` iterations and their trend settled.
     let stop = |h: &History| {
-        if h.rows.len() >= setup.opt.min_iterations
-            && h.residual_drop_from_peak().is_some_and(|d| d >= min_drop)
-            && h.coefficients_stable(setup.opt.stable_window, kind)
-        {
+        let w = setup.opt.stable_window;
+        let settled = || h.euler_trend_settled(w, kind, ratio, budget);
+        let reached = h.last_residual().is_some_and(|r| r <= minval) && h.rows.len() >= w;
+        let practical =
+            h.rows.len() >= setup.opt.min_iterations && h.residual_drop_from_peak().is_some_and(|d| d >= min_drop) && h.coefficients_stable(w, kind);
+        if (reached || practical) && settled() {
             StopAction::AfterOutput(2 * crate::su2cfg::OUTPUT_FREQ + 5)
         } else {
             StopAction::Continue
@@ -719,11 +726,20 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: Option
         Ok(h) if !h.rows.is_empty() => h,
         _ => return Ok(fail(format!("SU2 produced no history.csv; end of su2.log:\n{}", tail(&log, 8)))),
     };
-    let minval = setup.opt.residual_minval();
     let n = h.rows.len();
     let reached = h.last_residual().is_some_and(|r| r <= minval);
     let window = (n / 4).clamp(2, 100);
+    let settled = h.euler_trend_settled(setup.opt.stable_window.min(n).max(2), kind, ratio, budget);
     let accepted = !reached && h.residual_drop_from_peak().is_some_and(|d| d >= min_drop) && h.coefficients_stable(window, kind);
+    let mut warnings = Vec::new();
+    if (reached || accepted) && !settled {
+        warnings.push(format!(
+            "the coefficients still trend or oscillate at the end ({} iterations): their range over the last \
+             stable_window iterations or their change extrapolated from the residual decay exceeds {} % of the force scale",
+            n,
+            100.0 * crate::history::EULER_TREND_FORCE
+        ));
+    }
     if !reached && !accepted {
         let why = if run.timed_out { "timeout" } else { "iteration limit" };
         return Ok(fail(format!(
@@ -747,7 +763,7 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: Option
         coeffs,
         coeffs6,
         iterations: s.iterations,
-        converged: reached,
+        converged: reached && settled,
         residual_first: first,
         residual_last: h.last_residual(),
         wall_seconds: wall,
@@ -755,8 +771,11 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: Option
         limit_cycle: false,
         yplus_p95: None,
         axial,
-        warnings: Vec::new(),
+        warnings,
     };
+    for w in &result.warnings {
+        eprintln!("warning: aero.cfd: case {}: {w}", spec.dir_name());
+    }
     write_done(&dir, &result)?;
     Ok(CaseOutcome { spec, result: Some(result), error: None, cached: false, warm: warm_flag })
 }
@@ -1154,7 +1173,8 @@ mode=$(cat "$(dirname "$0")/mode")
 echo "$mach $aoa $restart" >> "$(dirname "$0")/calls"
 echo "mock su2 $mode"
 [ "$mode" = fail ] && { echo "boom" >&2; exit 1; }
-if [ "$mode" = slow ]; then
+case "$mode" in slow|trend|trendlimit) live=1;; *) live=0;; esac
+if [ $live = 1 ]; then
   # Like SU2 8.3: the history grows row by row, the output files are written every OUTPUT_WRT_FREQ iterations,
   # and SIGTERM ends the run without writing anything.
   trap 'exit 1' TERM
@@ -1165,14 +1185,24 @@ if [ "$mode" = slow ]; then
   # Rows are written by shell builtins only: the runner's SIGTERM goes to the whole process group, and a child
   # killed inside a row (e.g. bc) would leave an empty field, which SU2 never writes.
   fz=$(echo "$aoa * 0.05" | bc -l); my=$(echo "0 - $aoa * 0.08" | bc -l)
+  iters=$(grep '^ITER' $cfg | cut -d' ' -f2); [ $iters -gt 1000 ] && iters=1000
   i=0
-  while [ $i -lt 1000 ]; do
-    r=$((100 + 2 * i))
-    printf '%d,-%d.%02d,0.3,%s,%s\n' $i $((r / 100)) $((r % 100)) $fz $my >> history.csv
+  while [ $i -lt $iters ]; do
+    if [ "$mode" = slow ]; then
+      r=$((100 + 2 * i))
+      printf '%d,-%d.%02d,0.3,%s,%s\n' $i $((r / 100)) $((r % 100)) $fz $my >> history.csv
+    else
+      # residual 1e-6 at row 500; CFz (1e-9 units) still falling by 3e-5 per row until row 700 (trendlimit: on)
+      r=$((100 + i))
+      d=$((700 - i)); [ $d -lt 0 ] && [ "$mode" = trend ] && d=0
+      c=$((200000000 + 30000 * d))
+      printf '%d,-%d.%02d,0.3,%d.%09d,-0.32\n' $i $((r / 100)) $((r % 100)) $((c / 1000000000)) $((c % 1000000000)) >> history.csv
+    fi
     [ $(( (i + 1) % freq )) -eq 0 ] && { echo "restart $i" > restart.dat; echo "surface $i" > surface_flow.vtk; }
-    sleep 0.01
+    sleep 0.005
     i=$((i+1))
   done
+  echo "restart end" > restart.dat; echo "surface end" > surface_flow.vtk
   exit 0
 fi
 echo '"Inner_Iter","rms[Rho]","CFx","CFz","CMy"' > history.part
@@ -1546,7 +1576,7 @@ exit 0
         let base = crate::table_base_from_cfd(e.opt.base_from_cfd(), missing);
         let pts: Vec<SolvedPoint> =
             out.iter().map(|o| SolvedPoint { mach: o.spec.mach, alpha_deg: o.spec.alpha_deg, coeffs: o.result.as_ref().map(|r| r.coeffs) }).collect();
-        let t = crate::table::build_from_points_roll(&pts, model, FlowModel::Rans, "h".into(), aero::Extrapolation::Linear, &[], base).unwrap().0;
+        let t = crate::table::build_from_points_roll(&pts, model, FlowModel::Rans, "h".into(), aero::Extrapolation::Linear, &[], base, false).unwrap().0;
         (t, base)
     }
 
@@ -1580,7 +1610,10 @@ exit 0
         assert!(!base);
         let wall = wall_at(&out);
         assert!(
-            (t.lookup(0.5, 0.0).ca_off - (wall + b.base + b.extra + crate::forces::roughness_increment(&model, 0.5))).abs() < 1e-6,
+            (t.lookup(0.5, 0.0).ca_off
+                - (wall + b.base + b.extra + (crate::forces::roughness_increment(&model, 0.5) + crate::forces::fin_edge_increment(&model, 0.5, false))))
+            .abs()
+                < 1e-6,
             "{}",
             t.lookup(0.5, 0.0).ca_off
         );
@@ -1597,7 +1630,12 @@ exit 0
         let (t, base) = table_of(&e, &out, &model);
         assert!(base);
         let wall = wall_at(&out);
-        assert!((t.lookup(0.5, 0.0).ca_off - (wall + 0.1 + b.extra + crate::forces::roughness_increment(&model, 0.5))).abs() < 1e-6);
+        assert!(
+            (t.lookup(0.5, 0.0).ca_off
+                - (wall + 0.1 + b.extra + (crate::forces::roughness_increment(&model, 0.5) + crate::forces::fin_edge_increment(&model, 0.5, false))))
+            .abs()
+                < 1e-6
+        );
     }
 
     /// No marker columns: the monitored total holds the base cap, so the table must not add the Barrowman base.
@@ -1618,7 +1656,12 @@ exit 0
         let (t, base) = table_of(&e, &out, &model);
         assert!(base, "no double count of the base");
         let b = model.cd0(0.5, false);
-        assert!((t.lookup(0.5, 0.0).ca_off - (0.3 + b.extra + crate::forces::roughness_increment(&model, 0.5))).abs() < 1e-6);
+        assert!(
+            (t.lookup(0.5, 0.0).ca_off
+                - (0.3 + b.extra + (crate::forces::roughness_increment(&model, 0.5) + crate::forces::fin_edge_increment(&model, 0.5, false))))
+            .abs()
+                < 1e-6
+        );
     }
 
     /// Limit cycle: the markers are averaged over the window the totals are averaged over.
@@ -1908,5 +1951,36 @@ exit 0
         let msg = out[0].error.as_ref().unwrap();
         assert!(msg.contains("first-order startup diverged twice") && msg.contains("SA residual rose"), "{msg}");
         assert_eq!(stages(&e).lines().count(), 2);
+    }
+
+    #[test]
+    fn euler_runs_past_the_target_until_the_coefficient_trend_has_settled() {
+        let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+        // CFz still falls by 3e-5 per iteration (0.2 % of the force scale over 20 iterations) when the residual
+        // reaches the 1e-6 target at row 500, and is flat from row 700: the case runs on and is accepted once the
+        // trend has settled.
+        let mut e = env("euler_trend", "trend");
+        e.opt.machs = vec![0.8];
+        e.opt.alphas_deg = vec![0.0, 4.0];
+        e.opt.alpha_mode = AlphaMode::Single;
+        e.opt.iterations = 1000;
+        let out = run_all(&e.setup(), &|_| {}).unwrap();
+        let r = out[1].result.as_ref().unwrap_or_else(|| panic!("{:?}", out[1].error));
+        assert!(r.converged && r.warnings.is_empty(), "{r:?}");
+        assert!(r.iterations > 700 && r.iterations < 1000, "{}", r.iterations);
+        assert!((r.coeffs.cn - 0.2).abs() < 1e-6, "{}", r.coeffs.cn);
+        let _ = std::fs::remove_dir_all(&e.dir);
+        // Still trending at the iteration limit: accepted with the residual target reached, but not converged, with
+        // a warning.
+        let mut e = env("euler_trendlimit", "trendlimit");
+        e.opt.machs = vec![0.8];
+        e.opt.alphas_deg = vec![0.0, 4.0];
+        e.opt.alpha_mode = AlphaMode::Single;
+        e.opt.iterations = 600;
+        let out = run_all(&e.setup(), &|_| {}).unwrap();
+        let r = out[1].result.as_ref().unwrap_or_else(|| panic!("{:?}", out[1].error));
+        assert!(!r.converged && r.iterations == 600, "{r:?}");
+        assert!(r.warnings.iter().any(|w| w.contains("still trend")), "{r:?}");
+        let _ = std::fs::remove_dir_all(&e.dir);
     }
 }

@@ -307,11 +307,12 @@ pub fn build_from_points(
     source_hash: String,
     extrapolation: Extrapolation,
 ) -> Result<(AeroTable, TableFill)> {
-    build_from_points_roll(points, model, flow, source_hash, extrapolation, &[], true)
+    build_from_points_roll(points, model, flow, source_hash, extrapolation, &[], true, false)
 }
 
 /// [`build_from_points`] with the roll-damping entries of the CFD roll pairs (empty: Barrowman `Clp`).
 /// `cl_delta` is always the Barrowman cant forcing; the table's reference cant is the geometry cant.
+#[allow(clippy::too_many_arguments)]
 pub fn build_from_points_roll(
     points: &[SolvedPoint],
     model: &AeroModel,
@@ -320,6 +321,7 @@ pub fn build_from_points_roll(
     extrapolation: Extrapolation,
     roll: &[crate::general::ClpEntry],
     base_from_cfd: bool,
+    fin_edges_in_cfd: bool,
 ) -> Result<(AeroTable, TableFill)> {
     let o = &model.opt;
     let machs = grid(o.mach_min.max(0.0), o.mach_max, o.mach_step);
@@ -377,7 +379,7 @@ pub fn build_from_points_roll(
             .map(|(j, &a)| {
                 let (cn, mom) = if a == 0.0 { (0.0, 0.0) } else { (cn_p[j].eval(m, false), mom_p[j].eval(m, false)) };
                 let xcp = if cn.abs() > 1e-9 { mom / cn } else { xcp0 };
-                let (ca_on, ca_off) = hybrid_axial(flow, false, base_from_cfd, model, m, a.to_radians(), ca_p[j].eval(m, false));
+                let (ca_on, ca_off) = hybrid_axial(flow, fin_edges_in_cfd, base_from_cfd, model, m, a.to_radians(), ca_p[j].eval(m, false));
                 AeroCoeffs { cn, ca_on, ca_off, xcp, cna, damp, cl_delta, clp, ..Default::default() }
             })
             .collect();
@@ -540,7 +542,7 @@ mod tests {
                 assert!((c.cn - cn(mach, a)).abs() < 4e-3, "cn at M={mach} a={a}: {} vs {}", c.cn, cn(mach, a));
                 assert!((c.xcp - xcp(mach)).abs() < 3e-3, "xcp {}", c.xcp);
                 let k = aero::model::axial_alpha_factor(a.to_radians());
-                let extra = (m.cd0(mach, false).extra + crate::forces::roughness_increment(&m, mach)) * k;
+                let extra = (m.cd0(mach, false).extra + crate::forces::roughness_increment(&m, mach) + crate::forces::fin_edge_increment(&m, mach, false)) * k;
                 assert!((c.ca_off - (ca(mach, a) + extra)).abs() < 3e-3, "ca {} vs {}", c.ca_off, ca(mach, a));
             }
         }
@@ -641,7 +643,7 @@ mod tests {
     fn sample_euler_points() -> Vec<SolvedPoint> {
         let text = include_str!("../../../doc/data/cfd/sample_euler_cases.csv");
         let mut v = Vec::new();
-        for line in text.lines().skip(1) {
+        for line in text.lines().filter(|l| !l.starts_with('#')).skip(1) {
             let f: Vec<&str> = line.split(',').collect();
             if f[2] != "converged" && f[2] != "accepted" {
                 continue;
@@ -701,13 +703,14 @@ mod tests {
                 .map(|(mach, a)| SolvedPoint { mach, alpha_deg: a, coeffs: Some(BodyCoeffs { cn: 0.3 * a, ca, mom: 0.5 * 0.3 * a }) })
                 .collect()
         };
-        let build = |flow: FlowModel, base: bool| build_from_points_roll(&pts(0.3), &m, flow, "h".into(), Extrapolation::Linear, &[], base).unwrap().0;
+        let build = |flow: FlowModel, base: bool| build_from_points_roll(&pts(0.3), &m, flow, "h".into(), Extrapolation::Linear, &[], base, false).unwrap().0;
         let (eu, rm, rc) = (build(FlowModel::Euler, false), build(FlowModel::Rans, false), build(FlowModel::Rans, true));
         let b = m.cd0(0.5, false);
         let at = |t: &AeroTable| t.lookup(0.5, 0.0).ca_off;
-        let r = crate::forces::roughness_increment(&m, 0.5);
+        let r = crate::forces::roughness_increment(&m, 0.5) + crate::forces::fin_edge_increment(&m, 0.5, false);
         assert!((at(&rm) - (0.3 + b.base + b.extra + r)).abs() < 1e-9);
         assert!((at(&rc) - (0.3 + b.extra + r)).abs() < 1e-9);
-        assert!(at(&eu) > at(&rm) + (b.friction - r) * 0.99);
+        // Euler adds the friction, the fin edges and the base, RANS only the increments of roughness and edges.
+        assert!(at(&eu) > at(&rm) + (b.friction - crate::forces::roughness_increment(&m, 0.5)) * 0.99);
     }
 }

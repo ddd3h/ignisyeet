@@ -263,7 +263,7 @@ pub fn decide(opt: &CfdOptions, y: &PlaneCheck, z: &PlaneCheck) -> Result<Symmet
         "axisymmetric" => {
             if !(y.symmetric && z.symmetric) {
                 bail!(
-                    "shape_symmetry = \"axisymmetric\" needs a surface that is mirror symmetric about y = 0 and z = 0, but the united STL is not:\n  {}\n  {}\n  \
+                    "[IY-F076] shape_symmetry = \"axisymmetric\" needs a surface that is mirror symmetric about y = 0 and z = 0, but the united STL is not:\n  {}\n  {}\n  \
                      use shape_symmetry = \"auto\" (the planes that pass the check are used) or \"none\" (full domain)",
                     numbers(y),
                     numbers(z)
@@ -274,7 +274,7 @@ pub fn decide(opt: &CfdOptions, y: &PlaneCheck, z: &PlaneCheck) -> Result<Symmet
         "pitch_plane" => {
             if !y.symmetric {
                 bail!(
-                    "shape_symmetry = \"pitch_plane\" needs a surface that is mirror symmetric about y = 0, but the united STL is not:\n  {}\n  \
+                    "[IY-F077] shape_symmetry = \"pitch_plane\" needs a surface that is mirror symmetric about y = 0, but the united STL is not:\n  {}\n  \
                      use shape_symmetry = \"auto\" or \"none\" (full domain)",
                     numbers(y)
                 );
@@ -406,7 +406,7 @@ mod tests {
         let without: Vec<Triangle> = cfd.iter().filter(|t| !t.iter().all(|v| v.y > 0.06 && v.x > 0.5)).copied().collect();
         let (y, z) = check_planes(&without, g.length);
         let e = decide(&opts(Some(ShapeSymmetry::Axisymmetric)), &y, &z).unwrap_err().to_string();
-        assert!(e.contains("y = 0") && e.contains("max mismatch") && e.contains("shape_symmetry"), "{e}");
+        assert!(e.starts_with("[IY-F076] ") && e.contains("y = 0") && e.contains("max mismatch") && e.contains("shape_symmetry"), "{e}");
         // auto uses the plane that passes: z only maps to none (no shape symmetry uses z alone) and says why.
         let d = decide(&opts(None), &y, &z).unwrap();
         assert_eq!((d.chosen.as_str(), d.meshed.as_str()), ("none", "full"));

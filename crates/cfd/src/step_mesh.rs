@@ -241,7 +241,7 @@ pub fn unit_scale(unit: StepUnit, format: &str, declared: Option<f64>, file: &Pa
         (_, Some(d)) => Ok(want / d),
         ("brep", None) => Ok(want),
         _ => bail!(
-            "aero.cfd.step_unit = \"{}\": the length unit of {} cannot be read from the file, so it cannot be overridden; use step_unit = \"auto\"",
+            "[IY-F070] aero.cfd.step_unit = \"{}\": the length unit of {} cannot be read from the file, so it cannot be overridden; use step_unit = \"auto\"",
             format!("{unit:?}").to_lowercase(),
             file.display()
         ),
@@ -409,7 +409,7 @@ impl Registration {
             return Ok(());
         }
         bail!(
-            "aero.cfd.surface = \"step\": {} does not describe the same rocket as rocket.stl (compared in the CFD frame, after the transform of the STL):\n  - {}\n  {}\n  likely cause: {}",
+            "[IY-F071] aero.cfd.surface = \"step\": {} does not describe the same rocket as rocket.stl (compared in the CFD frame, after the transform of the STL):\n  - {}\n  {}\n  likely cause: {}",
             file.display(),
             self.problems.join("\n  - "),
             self.summary(),
@@ -804,14 +804,14 @@ pub fn base_treatment_notes(opt: &CfdOptions) -> (&'static str, Vec<String>) {
         Some(BaseTreatment::Fairing) => (
             "fairing",
             vec![format!(
-                "base_treatment = fairing: the CAD shape is MODIFIED, an exact cone of {} base radii (cut at 10 % of the base radius) is fused with the solid behind its flat base; \
+                "[IY-F511] base_treatment = fairing: the CAD shape is MODIFIED, an exact cone of {} base radii (cut at 10 % of the base radius) is fused with the solid behind its flat base; \
                  the base is not integrated, the base drag comes from the empirical base term",
                 opt.tail_fairing
             )],
         ),
         _ => (
             "flat",
-            vec!["base_treatment = flat: the flat base is kept; the inviscid flow behind it is ill-posed, so the Euler solution is likely not to converge (cases that do not converge fail); the base is not integrated, the base drag comes from the empirical base term".to_string()],
+            vec!["[IY-F510] base_treatment = flat: the flat base is kept; the inviscid flow behind it is ill-posed, so the Euler solution is likely not to converge (cases that do not converge fail); the base is not integrated, the base drag comes from the empirical base term".to_string()],
         ),
     }
 }
@@ -857,8 +857,8 @@ fn base_params(opt: &CfdOptions, geom: &Geometry, dir: &Path, threads: usize, un
 /// Reads the CAD file and works out its format, declared unit and unit scale.
 fn read_file(opt: &CfdOptions) -> Result<(Vec<u8>, &'static str, Option<f64>, f64)> {
     let path = &opt.step_file;
-    let format = cad_format(path).with_context(|| format!("aero.cfd.step_file {}: not a STEP, IGES or BREP file", path.display()))?;
-    let bytes = std::fs::read(path).with_context(|| format!("cannot read the CAD file aero.cfd.step_file = {}", path.display()))?;
+    let format = cad_format(path).with_context(|| format!("[IY-F072] aero.cfd.step_file {}: not a STEP, IGES or BREP file", path.display()))?;
+    let bytes = std::fs::read(path).with_context(|| format!("[IY-F073] cannot read the CAD file aero.cfd.step_file = {}", path.display()))?;
     let declared = file_unit_metres(format, &bytes);
     let scale = unit_scale(opt.step_unit, format, declared, path)?;
     Ok((bytes, format, declared, scale))
@@ -941,12 +941,12 @@ pub fn ensure_mesh_step(
     let reg = register(&crate::surface::to_cfd_frame(raw, geom), &tess, opt.wall_size, geom.length);
     reg.check(&opt.step_file)?;
     if let Some(e) = report.fairing.as_ref().and_then(|f| f.get("error")).and_then(|e| e.as_str()) {
-        bail!("aero.cfd.surface = \"step\": {e}");
+        bail!("[IY-F074] aero.cfd.surface = \"step\": {e}");
     }
     let base_faces = report.faces.iter().filter(|f| is_base_face(f.centroid[0], f.planar, f.normal[0], geom.length, params.base_tol)).count();
     if base_faces == 0 && treatment != "fairing" {
         bail!(
-            "aero.cfd.surface = \"step\": the shape has no base faces (aft-facing faces at the base x = {:.4} m of the STL geometry); the CAD model must end in a flat base",
+            "[IY-F075] aero.cfd.surface = \"step\": the shape has no base faces (aft-facing faces at the base x = {:.4} m of the STL geometry); the CAD model must end in a flat base",
             geom.length
         );
     }
@@ -961,7 +961,7 @@ pub fn ensure_mesh_step(
         half_instead_of_quarter(&mut decision);
     }
     if report.solids > 1 {
-        warnings.push(format!("the CAD file holds {} disjoint solids; all of them are walls of the CFD mesh", report.solids));
+        warnings.push(format!("[IY-F512] the CAD file holds {} disjoint solids; all of them are walls of the CFD mesh", report.solids));
     }
     let feature = report.smallest_face_width;
     params.mode = "mesh".into();

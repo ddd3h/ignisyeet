@@ -82,7 +82,7 @@ pub fn stalled_warning(stalled: &[StalledCase]) -> Option<String> {
     let list: Vec<String> =
         stalled.iter().map(|c| format!("{} ({} orders below the reference)", c.case, c.residual_drop.map_or("?".to_string(), |d| format!("{d:.1}")))).collect();
     Some(format!(
-        "{} RANS case{} accepted with a stalled residual, not converged (coefficients averaged over two windows; a stalled residual needs only \
+        "[IY-F508] {} RANS case{} accepted with a stalled residual, not converged (coefficients averaged over two windows; a stalled residual needs only \
          {} orders below the reference, convergence {}): {}; check them in cfd_cases.csv (rans_verdict, residual_drop)",
         stalled.len(),
         if stalled.len() == 1 { "" } else { "s" },
@@ -168,7 +168,7 @@ pub struct CfdReport {
 /// Message of the missing-tools error.
 pub fn not_installed_message(report: &tools::ToolReport, opt: &CfdOptions) -> String {
     let lines: Vec<String> = report.missing(opt).iter().map(|t| format!("  - {}: {}", t.name, t.problem.as_deref().unwrap_or("unusable"))).collect();
-    format!("SU2 is not installed ({})\n{}", tools::INSTALL_HINT, lines.join("\n"))
+    format!("[IY-F001] SU2 is not installed ({})\n{}", tools::INSTALL_HINT, lines.join("\n"))
 }
 
 /// Fails with the "not installed" error unless SU2, MPI (for more than one rank) and gmsh work.
@@ -348,7 +348,7 @@ pub fn plan_resources_with(
         if per > *mem {
             let nodes_text = if nodes > 0 { format!("{nodes} nodes") } else { format!("about {} nodes", estimate_nodes(cells)) };
             over_budget = Some(format!(
-                "a single CFD case needs about {:.1} GB ({} on {cells} cells / {nodes_text}, {ranks} ranks), more than the memory budget \
+                "[IY-F002] a single CFD case needs about {:.1} GB ({} on {cells} cells / {nodes_text}, {ranks} ranks), more than the memory budget \
                  of {:.1} GB ({source}); use a coarser mesh (a larger wall_size{}) or fewer ranks_per_case (about 40 MB each){}",
                 gb(per),
                 if opt.model == FlowModel::Rans { "RANS" } else { "Euler" },
@@ -423,12 +423,12 @@ fn ensure_mesh_any(
 ) -> Result<(mesh::MeshResult, CfdOptions)> {
     match cfd.surface {
         SurfaceKind::Stl => {
-            stl_mesh::ensure_mesh_stl(cfd, geom, raw.ok_or_else(|| anyhow::anyhow!("surface = \"stl\" needs the STL triangles"))?, work, threads)
+            stl_mesh::ensure_mesh_stl(cfd, geom, raw.ok_or_else(|| anyhow::anyhow!("[IY-F005] surface = \"stl\" needs the STL triangles"))?, work, threads)
         }
         SurfaceKind::Step => step_mesh::ensure_mesh_step(
             cfd,
             geom,
-            raw.ok_or_else(|| anyhow::anyhow!("surface = \"step\" needs the STL triangles (the registration reference)"))?,
+            raw.ok_or_else(|| anyhow::anyhow!("[IY-F006] surface = \"step\" needs the STL triangles (the registration reference)"))?,
             atm,
             work,
             threads,
@@ -533,7 +533,7 @@ pub fn build_table_with_progress(
     let shape = cfd.shape();
     let mut warnings: Vec<String> = Vec::new();
     for e in clp.iter().filter(|e| e.source != "cfd") {
-        warnings.push(format!("roll damping at M={}: using the Barrowman Clp ({:.3}): {}", e.mach, e.barrowman, e.reason.as_deref().unwrap_or("")));
+        warnings.push(format!("[IY-F504] roll damping at M={}: using the Barrowman Clp ({:.3}): {}", e.mach, e.barrowman, e.reason.as_deref().unwrap_or("")));
     }
     let mut report = CfdReport {
         cases: results.len(),
@@ -592,12 +592,12 @@ pub fn build_table_with_progress(
     if cfd.model == FlowModel::Rans {
         report.axial_breakdown = axial_breakdown(&results, &model, cfd.surface_is_user_shape());
         if report.axial_breakdown.iter().any(|e| e.cfd_wall_ca.is_some()) && markers_missing {
-            report.warnings.push("RANS: some cases have no per-marker CFx columns; the table takes the base from CFD for all of them".into());
+            report.warnings.push("[IY-F505] RANS: some cases have no per-marker CFx columns; the table takes the base from CFD for all of them".into());
         }
         if report.axial_breakdown.iter().any(|e| e.cfd_wall_ca.is_none()) {
-            report
-                .warnings
-                .push("RANS: the history has no per-marker CFx(wall) column; the axial force is the monitored total, which includes the base cap".into());
+            report.warnings.push(
+                "[IY-F506] RANS: the history has no per-marker CFx(wall) column; the axial force is the monitored total, which includes the base cap".into(),
+            );
         }
     }
     let tab = if cfd.general_table() {
@@ -667,10 +667,10 @@ pub fn build_table_with_progress(
         report.mach_clamped_above = tab.meta.machs.last().is_some_and(|&m| m > hi + eps).then_some(hi);
         report.mach_clamped_below = tab.meta.machs.first().is_some_and(|&m| m < lo - eps).then_some(lo);
         if let Some(m) = report.mach_clamped_above {
-            report.warnings.push(format!("the table is held at its M = {m} values above M = {m} (no Mach extrapolation of the CFD data)"));
+            report.warnings.push(format!("[IY-F507] the table is held at its M = {m} values above M = {m} (no Mach extrapolation of the CFD data)"));
         }
         if let Some(m) = report.mach_clamped_below {
-            report.warnings.push(format!("the table is held at its M = {m} values below M = {m} (no Mach extrapolation of the CFD data)"));
+            report.warnings.push(format!("[IY-F507] the table is held at its M = {m} values below M = {m} (no Mach extrapolation of the CFD data)"));
         }
     }
     report.warnings.extend(stalled_warning(&report.stalled_cases));
@@ -720,7 +720,7 @@ mod tests {
         let p = plan_resources(&opts(4, 4), &b, 1_000_000, 12);
         assert_eq!(p.parallel, 1);
         let why = p.over_budget.as_deref().expect("over budget");
-        assert!(why.starts_with("a single CFD case needs about 3.5 GB (Euler on 1000000 cells") && why.contains("4 ranks"), "{why}");
+        assert!(why.starts_with("[IY-F002] a single CFD case needs about 3.5 GB (Euler on 1000000 cells") && why.contains("4 ranks"), "{why}");
         assert!(
             why.contains("memory budget of 2.0 GB (resources.memory_gb)") && why.contains("larger wall_size") && why.contains("raise resources.memory_gb"),
             "{why}"
@@ -736,7 +736,7 @@ mod tests {
     fn stalled_cases_are_named_with_their_residual_drop() {
         assert_eq!(stalled_warning(&[]), None);
         let w = stalled_warning(&[StalledCase { case: "m2.000_a00.00".into(), residual_drop: Some(0.94) }]).unwrap();
-        assert!(w.starts_with("1 RANS case accepted with a stalled residual, not converged"), "{w}");
+        assert!(w.starts_with("[IY-F508] 1 RANS case accepted with a stalled residual, not converged"), "{w}");
         assert!(w.contains("needs only 0.5 orders below the reference, convergence 3") && w.contains("m2.000_a00.00 (0.9 orders below the reference)"), "{w}");
     }
 
@@ -819,7 +819,7 @@ mod tests {
         .err()
         .unwrap()
         .to_string();
-        assert!(e.starts_with("SU2 is not installed (install with `install.sh --cfd`"), "{e}");
+        assert!(e.starts_with("[IY-F001] SU2 is not installed (install with `install.sh --cfd`"), "{e}");
         assert!(e.contains("no_such_su2_cfd"));
     }
 
@@ -844,5 +844,37 @@ mod tests {
         let r: forces::AxialReportEntry = serde_json::from_str("{}").unwrap();
         assert_eq!(r, forces::AxialReportEntry::default());
         assert!(serde_json::to_value(CfdReport::default()).unwrap()["axial_breakdown"].as_array().unwrap().is_empty());
+    }
+
+    /// Every `IY-Fnnn` code of the sources is documented in `doc/source/errors/cfd.rst` and the other way round, and
+    /// every error of the embedded scripts carries one.
+    #[test]
+    fn error_codes_are_documented_and_scripts_are_coded() {
+        fn codes(text: &str, out: &mut std::collections::BTreeSet<String>) {
+            for (i, _) in text.match_indices("IY-F") {
+                let d = &text[i + 4..];
+                if d.len() >= 3 && d.as_bytes()[..3].iter().all(u8::is_ascii_digit) {
+                    out.insert(format!("IY-F{}", &d[..3]));
+                }
+            }
+        }
+        let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let (mut in_src, mut in_doc) = (std::collections::BTreeSet::new(), std::collections::BTreeSet::new());
+        for e in std::fs::read_dir(&src).unwrap() {
+            let p = e.unwrap().path();
+            if p.file_name().is_some_and(|n| n == "config.rs") {
+                continue;
+            }
+            let text = std::fs::read_to_string(&p).unwrap();
+            if p.extension().is_some_and(|x| x == "py") {
+                for (i, _) in text.match_indices("mesh error: ").chain(text.match_indices("union error: ")) {
+                    assert!(text[..i].ends_with("] "), "{}: error without a code at byte {i}", p.display());
+                }
+            }
+            codes(&text.replace("IY-F{", ""), &mut in_src);
+        }
+        let doc = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../doc/source/errors/cfd.rst");
+        codes(&std::fs::read_to_string(&doc).expect("doc/source/errors/cfd.rst"), &mut in_doc);
+        assert_eq!(in_src, in_doc, "codes differ between the sources and doc/source/errors/cfd.rst");
     }
 }

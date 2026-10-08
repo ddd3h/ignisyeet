@@ -38,16 +38,16 @@ impl Su2Coeffs {
         let cfx = match (s.cfx, s.cd, s.cl) {
             (Some(x), _, _) => x,
             (None, Some(d), Some(l)) => d * a.cos() - l * a.sin(),
-            _ => bail!("history has neither CFx nor CD and CL"),
+            _ => bail!("[IY-F103] history has neither CFx nor CD and CL"),
         };
         let cfz = match (s.cfz, s.cd, s.cl) {
             (Some(z), _, _) => z,
             (None, Some(d), Some(l)) => d * a.sin() + l * a.cos(),
-            _ => bail!("history has neither CFz nor CD and CL"),
+            _ => bail!("[IY-F103] history has neither CFz nor CD and CL"),
         };
-        let Some(cmy) = s.cmy else { bail!("history has no CMy") };
+        let Some(cmy) = s.cmy else { bail!("[IY-F104] history has no CMy") };
         if ![cfx, cfz, cmy].iter().all(|v| v.is_finite()) {
-            bail!("non-finite coefficients in the history (diverged case)");
+            bail!("[IY-F105] non-finite coefficients in the history (diverged case)");
         }
         Ok(Self { cfx, cfz, cmy })
     }
@@ -172,7 +172,7 @@ pub struct Su2Coeffs6 {
 impl Su2Coeffs6 {
     /// From a history summary; fails when one of the six columns is missing or not finite.
     pub fn from_summary(s: &HistorySummary) -> Result<Self> {
-        let get = |v: Option<f64>, n: &str| v.ok_or_else(|| anyhow::anyhow!("history has no {n}"));
+        let get = |v: Option<f64>, n: &str| v.ok_or_else(|| anyhow::anyhow!("[IY-F104] history has no {n}"));
         let c = Self {
             cfx: get(s.cfx, "CFx")?,
             cfy: get(s.cfy, "CFy")?,
@@ -182,7 +182,7 @@ impl Su2Coeffs6 {
             cmz: get(s.cmz, "CMz")?,
         };
         if ![c.cfx, c.cfy, c.cfz, c.cmx, c.cmy, c.cmz].iter().all(|v| v.is_finite()) {
-            bail!("non-finite coefficients in the history (diverged case)");
+            bail!("[IY-F105] non-finite coefficients in the history (diverged case)");
         }
         Ok(c)
     }

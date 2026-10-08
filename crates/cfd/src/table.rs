@@ -331,7 +331,7 @@ pub fn build_from_points_roll(
     solved.sort_by(|a, b| a.partial_cmp(b).unwrap());
     solved.dedup();
     if solved.is_empty() {
-        bail!("no CFD cases to build a table from");
+        bail!("[IY-F003] no CFD cases to build a table from");
     }
     let mut fill = TableFill::default();
     let mut cols: Vec<Column> = Vec::new();
@@ -351,7 +351,7 @@ pub fn build_from_points_roll(
     }
     for (edge, m) in [("lowest", solved[0]), ("highest", *solved.last().unwrap())] {
         if !cols.iter().any(|c| c.mach == m) {
-            bail!("all CFD cases at the {edge} Mach number ({m}) failed (or have no angle of attack above 0); the table cannot be bridged there");
+            bail!("[IY-F004] all CFD cases at the {edge} Mach number ({m}) failed (or have no angle of attack above 0); the table cannot be bridged there");
         }
     }
 
@@ -687,7 +687,9 @@ mod tests {
             }
         }
         let e = build_from_points(&p, &m, FlowModel::Euler, "h".into(), Extrapolation::Linear).unwrap_err().to_string();
-        assert!(e.contains("highest") && e.contains('3'), "{e}");
+        assert!(e.starts_with("[IY-F004] ") && e.contains("highest") && e.contains('3'), "{e}");
+        let e = build_from_points(&[], &m, FlowModel::Euler, "h".into(), Extrapolation::Linear).unwrap_err().to_string();
+        assert!(e.starts_with("[IY-F003] "), "{e}");
         assert!(build_from_points(&[], &m, FlowModel::Euler, "h".into(), Extrapolation::Linear).is_err());
     }
 

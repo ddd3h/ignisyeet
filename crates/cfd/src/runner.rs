@@ -350,7 +350,7 @@ fn solve(
     let mut cmd = command(setup, dir, cfg, log)?;
     let mut child = match cmd.spawn() {
         Ok(c) => Group(c),
-        Err(e) => return Ok(Err(format!("cannot start SU2: {e}"))),
+        Err(e) => return Ok(Err(format!("[IY-F110] cannot start SU2: {e}"))),
     };
     let mut last_poll = Instant::now() - Duration::from_secs(10);
     // AfterOutput: (time of the decision, rows then, row limit, rows when the new output was first seen)
@@ -362,7 +362,7 @@ fn solve(
             std::thread::sleep(Duration::from_millis(300));
             child.kill(sys::SIGKILL);
             let _ = child.0.wait();
-            bail!("interrupted");
+            bail!("[IY-F111] interrupted");
         }
         if let Some(st) = child.0.try_wait()? {
             return Ok(Ok(Solve { status: Some(st), timed_out: false }));
@@ -450,7 +450,7 @@ fn coefficients_from_history(setup: &RunSetup, spec: &CaseSpec, h: &History, win
     // Half domain: the symmetry plane makes the side force and the roll / yaw moments meaningless (zero by symmetry).
     let coeffs6 = su26.map(|c| BodyCoeffs6::from_su2(&c)).map(|c| if setup.opt.symmetry { c.half_model() } else { c });
     if coeffs6.is_none() && (spec.is_roll() || setup.opt.general_table()) {
-        return Err("the history has no CFx, CFy, CFz, CMx, CMy, CMz columns (needed for sideslip, roll and general tables)".into());
+        return Err("[IY-F112] the history has no CFx, CFy, CFz, CMx, CMy, CMz columns (needed for sideslip, roll and general tables)".into());
     }
     Ok((s, coeffs, coeffs6, axial))
 }
@@ -708,15 +708,15 @@ fn exit_message(setup: &RunSetup, what: &str, st: &std::process::ExitStatus, log
     let name = log.file_name().map_or(String::new(), |n| n.to_string_lossy().into_owned());
     match killing_signal(st, &text) {
         Some(9) => format!(
-            "{what} was killed by signal 9 (SIGKILL; most likely out of memory: about {} per case with {} ranks and {} concurrent cases; \
+            "[IY-F120] {what} was killed by signal 9 (SIGKILL; most likely out of memory: about {} per case with {} ranks and {} concurrent cases; \
              lower parallel_cases or ranks_per_case); end of {name}:\n{}",
             case_memory_estimate(setup).map_or("? GB".to_string(), |b| format!("{:.1} GB", b as f64 / 1e9)),
             setup.ranks,
             setup.parallel,
             tail(log, 8)
         ),
-        Some(sig) => format!("{what} was killed by signal {sig}; end of {name}:\n{}", tail(log, 8)),
-        None => format!("{what} exited with {st}; end of {name}:\n{}", tail(log, 8)),
+        Some(sig) => format!("[IY-F121] {what} was killed by signal {sig}; end of {name}:\n{}", tail(log, 8)),
+        None => format!("[IY-F122] {what} exited with {st}; end of {name}:\n{}", tail(log, 8)),
     }
 }
 
@@ -797,7 +797,7 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: Option
     note_multigrid(setup.opt, &log);
     let h = match History::read(&dir.join("history.csv")) {
         Ok(h) if !h.rows.is_empty() => h,
-        _ => return Ok(fail(format!("SU2 produced no history.csv; end of su2.log:\n{}", tail(&log, 8)))),
+        _ => return Ok(fail(format!("[IY-F113] SU2 produced no history.csv; end of su2.log:\n{}", tail(&log, 8)))),
     };
     let full = h;
     // Stopped by the runner: accepted as decided (target reached, or practically converged), settled.
@@ -815,7 +815,7 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: Option
     let mut warnings = Vec::new();
     if (reached || accepted) && !settled {
         warnings.push(format!(
-            "the coefficients still trend or oscillate at the end ({} iterations): their range over the last \
+            "[IY-F524] the coefficients still trend or oscillate at the end ({} iterations): their range over the last \
              stable_window iterations or their change extrapolated from the residual decay exceeds {} % of the force scale \
              (centre of pressure: {} body lengths); coefficients averaged over the last {window} iterations",
             n,
@@ -826,7 +826,7 @@ fn run_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: Option
     if !reached && !accepted {
         let why = if run.timed_out { "timeout" } else { "iteration limit" };
         return Ok(fail(format!(
-            "not converged ({why}): residual {:.2} (target {minval}), drop {:.1} orders, coefficients {}",
+            "[IY-F119] not converged ({why}): residual {:.2} (target {minval}), drop {:.1} orders, coefficients {}",
             h.last_residual().unwrap_or(f64::NAN),
             h.residual_drop_from_peak().unwrap_or(f64::NAN),
             if h.coefficients_stable(window, kind) { "stable" } else { "still changing" }
@@ -911,7 +911,7 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
                 if let Some(why) = diverged {
                     if !conservative {
                         notes.push(format!(
-                            "the first-order startup diverged ({why}); repeated once with the adaptive CFL capped at {} instead of {} \
+                            "[IY-F526] the first-order startup diverged ({why}); repeated once with the adaptive CFL capped at {} instead of {} \
                              (the SA equation stays at {} of the flow CFL); the second-order stage keeps these settings",
                             crate::su2cfg::RANS_CONSERVATIVE_CFL_FACTOR * opt.cfl,
                             crate::su2cfg::RANS_CFL_MAX_FACTOR * opt.cfl,
@@ -920,20 +920,23 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
                         conservative = true;
                         continue;
                     }
-                    return Ok(fail(format!("the first-order startup diverged twice (the second time with conservative settings): {why}")));
+                    return Ok(fail(format!("[IY-F114] the first-order startup diverged twice (the second time with conservative settings): {why}")));
                 }
                 if let Some(st) = run.status.filter(|s| !s.success()) {
                     return Ok(fail(exit_message(setup, "SU2 (first-order startup)", &st, &log)));
                 }
                 if run.timed_out {
-                    return Ok(fail("not converged (timeout during the first-order startup)".into()));
+                    return Ok(fail("[IY-F119] not converged (timeout during the first-order startup)".into()));
                 }
                 let h = History::read(&dir.join("history_startup.csv")).ok().filter(|h| !h.rows.is_empty());
                 let Some(r) = h.as_ref().and_then(|h| Some(ResidualPeak { rho: h.residual_peak()?, nu: h.nu_peak()? })) else {
-                    return Ok(fail(format!("the first-order startup produced no density and SA residuals; end of su2_startup.log:\n{}", tail(&log, 8))));
+                    return Ok(fail(format!(
+                        "[IY-F115] the first-order startup produced no density and SA residuals; end of su2_startup.log:\n{}",
+                        tail(&log, 8)
+                    )));
                 };
                 if !dir.join(STARTUP_RESTART).exists() {
-                    return Ok(fail(format!("the first-order startup wrote no {STARTUP_RESTART}")));
+                    return Ok(fail(format!("[IY-F116] the first-order startup wrote no {STARTUP_RESTART}")));
                 }
                 startup = Some(r);
                 startup_was_conservative = conservative;
@@ -964,7 +967,7 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
         };
         let log = dir.join("su2.log");
         let retry = |why: String, notes: &mut Vec<String>| {
-            notes.push(format!("the warm start failed ({why}); solved again from the freestream"));
+            notes.push(format!("[IY-F525] the warm start failed ({why}); solved again from the freestream"));
         };
         if let Some(why) = History::read(&dir.join("history.csv")).ok().and_then(|h| h.rans_divergence()) {
             let _ = std::fs::remove_file(dir.join("restart.dat"));
@@ -974,7 +977,7 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
             }
             if !conservative {
                 notes.push(format!(
-                    "the second-order stage diverged ({why}); repeated once from the first-order solution with the adaptive CFL capped at {} \
+                    "[IY-F527] the second-order stage diverged ({why}); repeated once from the first-order solution with the adaptive CFL capped at {} \
                      instead of {} and the SA equation at {} of the flow CFL instead of 1",
                     crate::su2cfg::RANS_CONSERVATIVE_CFL_FACTOR * opt.cfl,
                     crate::su2cfg::RANS_CFL_MAX_FACTOR * opt.cfl,
@@ -984,9 +987,11 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
                 continue;
             }
             if startup_was_conservative {
-                return Ok(fail(format!("the second-order stage diverged with the conservative settings of the repeated first-order startup: {why}")));
+                return Ok(fail(format!(
+                    "[IY-F117] the second-order stage diverged with the conservative settings of the repeated first-order startup: {why}"
+                )));
             }
-            return Ok(fail(format!("diverged twice (the second time with conservative settings): {why}")));
+            return Ok(fail(format!("[IY-F118] diverged twice (the second time with conservative settings): {why}")));
         }
         if let Some(st) = run.status.filter(|s| !s.success()) {
             let msg = exit_message(setup, "SU2", &st, &log);
@@ -999,7 +1004,7 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
         note_multigrid(opt, &log);
         let full = match History::read(&dir.join("history.csv")) {
             Ok(h) if !h.rows.is_empty() => h,
-            _ => return Ok(fail(format!("SU2 produced no history.csv; end of su2.log:\n{}", tail(&log, 8)))),
+            _ => return Ok(fail(format!("[IY-F113] SU2 produced no history.csv; end of su2.log:\n{}", tail(&log, 8)))),
         };
         let judge = |h: &History| rans_verdict(h, reference, opt.stable_window.min(h.rows.len()).max(2), kind, ratio, opt.iterations);
         let (h, verdict) = judged_at_stop(&full, decision.take(), judge);
@@ -1019,7 +1024,7 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
                     continue;
                 }
                 let when = if run.timed_out { "timeout" } else { "iteration limit" };
-                return Ok(fail(format!("not converged ({when}): {why}")));
+                return Ok(fail(format!("[IY-F119] not converged ({when}): {why}")));
             }
         };
         // Stalled: averaged over both windows of the check.
@@ -1030,18 +1035,18 @@ fn run_rans_case(setup: &RunSetup, i: usize, spec: CaseSpec, hash: &str, warm: O
         };
         let mut warnings = notes.clone();
         if let Some(why) = &stalled {
-            warnings.push(format!("unconverged: {why}; coefficients averaged over the last {avg} iterations"));
+            warnings.push(format!("[IY-F520] unconverged: {why}; coefficients averaged over the last {avg} iterations"));
         } else if limit_cycle {
-            warnings.push(format!("limit cycle: coefficients averaged over the last {window} iterations"));
+            warnings.push(format!("[IY-F521] limit cycle: coefficients averaged over the last {window} iterations"));
         }
         let yplus = std::fs::read_to_string(dir.join("surface_flow.vtk")).ok().as_deref().and_then(wall_yplus_p95);
         match yplus {
             Some(y) if !opt.wall_function() && y > RANS_YPLUS_P95_MAX => warnings.push(format!(
-                "wall y+ P95 = {y:.2} exceeds {RANS_YPLUS_P95_MAX} (target yplus = {}): the first cell is too thick for the resolved wall",
+                "[IY-F522] wall y+ P95 = {y:.2} exceeds {RANS_YPLUS_P95_MAX} (target yplus = {}): the first cell is too thick for the resolved wall",
                 opt.yplus
             )),
             Some(_) => {}
-            None => warnings.push("wall y+ not checked: no Y_Plus in surface_flow.vtk".into()),
+            None => warnings.push("[IY-F523] wall y+ not checked: no Y_Plus in surface_flow.vtk".into()),
         }
         for w in &warnings {
             eprintln!("warning: aero.cfd: case {}: {w}", spec.dir_name());
@@ -1084,7 +1089,7 @@ enum St {
 /// failed cases are outcomes with `result = None`. Errors only on interruption or I/O problems.
 pub fn run_all(setup: &RunSetup, progress: &(dyn Fn(CfdStage) + Sync)) -> Result<Vec<CaseOutcome>> {
     if !cfg!(unix) {
-        bail!("the CFD mode needs a Unix-like system (Linux, macOS or WSL)");
+        bail!("[IY-F123] the CFD mode needs a Unix-like system (Linux, macOS or WSL)");
     }
     let cases = case_list(setup.opt);
     let n = cases.len();
@@ -1146,7 +1151,7 @@ pub fn run_all(setup: &RunSetup, progress: &(dyn Fn(CfdStage) + Sync)) -> Result
                     running -= 1;
                     state[i] = St::Finished;
                     if CANCEL.load(Ordering::SeqCst) {
-                        error = Some(anyhow!("interrupted"));
+                        error = Some(anyhow!("[IY-F111] interrupted"));
                     } else {
                         let conv = outcome.result.as_ref().is_some_and(|r| r.converged);
                         progress(CfdStage::CaseDone { index: i, total: n, mach: cases[i].mach, alpha: cases[i].alpha_deg, converged: conv });
@@ -1162,7 +1167,7 @@ pub fn run_all(setup: &RunSetup, progress: &(dyn Fn(CfdStage) + Sync)) -> Result
         return Err(e);
     }
     if CANCEL.load(Ordering::SeqCst) {
-        bail!("interrupted");
+        bail!("[IY-F111] interrupted");
     }
     let outcomes: Vec<CaseOutcome> = outcomes.into_iter().map(|o| o.expect("every case has an outcome")).collect();
     for line in failure_summary(&outcomes) {
@@ -1957,7 +1962,7 @@ exit 0
         let msg = out[0].error.as_ref().unwrap();
         assert!(out[0].result.is_none() && msg.contains("diverged twice") && msg.contains("SA residual rose"), "{msg}");
         assert_eq!(stages(&e).lines().filter(|l| l.starts_with("0.500000 0.000000 history ")).count(), 2);
-        assert!(failure_summary(&out)[0].starts_with("error: aero.cfd: case m0.500_a00.00 failed: diverged twice"), "{:?}", failure_summary(&out));
+        assert!(failure_summary(&out)[0].starts_with("error: aero.cfd: case m0.500_a00.00 failed: [IY-F118] diverged twice"), "{:?}", failure_summary(&out));
     }
 
     #[test]
@@ -1969,10 +1974,10 @@ exit 0
         std::fs::write(e.dir.join("mesh_stats.json"), r#"{"nodes": 405590, "cells": 901081}"#).unwrap();
         let out = run_all(&e.setup(), &|_| {}).unwrap();
         let msg = out[0].error.as_ref().unwrap();
-        assert!(msg.starts_with("SU2 was killed by signal 9 (SIGKILL; most likely out of memory: about ") && msg.contains("GB per case"), "{msg}");
+        assert!(msg.starts_with("[IY-F120] SU2 was killed by signal 9 (SIGKILL; most likely out of memory: about ") && msg.contains("GB per case"), "{msg}");
         assert!(msg.contains("lower parallel_cases or ranks_per_case"), "{msg}");
         let sum = failure_summary(&out);
-        assert!(sum.iter().any(|l| l.contains("m0.500_a00.00 failed: SU2 was killed by signal 9")), "{sum:?}");
+        assert!(sum.iter().any(|l| l.contains("m0.500_a00.00 failed: [IY-F120] SU2 was killed by signal 9")), "{sum:?}");
         // mpirun reports a killed rank in its log and exits with an ordinary code.
         use std::os::unix::process::ExitStatusExt;
         let st = std::process::ExitStatus::from_raw(1 << 8);

@@ -92,14 +92,14 @@ pub fn base_treatment_notes(opt: &CfdOptions) -> (&'static str, Vec<String>) {
         Some(BaseTreatment::Fairing) => (
             "fairing",
             vec![format!(
-                "base_treatment = fairing: the input STL is MODIFIED, a closed cone of {} base radii (cut at 10 % of the base radius) is united with the body behind the base; \
+                "[IY-F511] base_treatment = fairing: the input STL is MODIFIED, a closed cone of {} base radii (cut at 10 % of the base radius) is united with the body behind the base; \
                  the base is not integrated, the base drag comes from the empirical base term",
                 opt.tail_fairing
             )],
         ),
         _ => (
             "flat",
-            vec!["base_treatment = flat: the flat base is kept; the inviscid flow behind it is ill-posed, so the Euler solution is likely not to converge (cases that do not converge fail); the base is not integrated, the base drag comes from the empirical base term".to_string()],
+            vec!["[IY-F510] base_treatment = flat: the flat base is kept; the inviscid flow behind it is ill-posed, so the Euler solution is likely not to converge (cases that do not converge fail); the base is not integrated, the base drag comes from the empirical base term".to_string()],
         ),
     }
 }
@@ -137,7 +137,7 @@ fn ensure_union(opt: &CfdOptions, dir: &Path, p: &Prepared) -> Result<()> {
         bail!("{}", crate::not_installed_message(&tools, opt));
     }
     if !tools.manifold.ok() {
-        bail!("{}", tools.manifold.problem.clone().unwrap_or_default());
+        bail!("[IY-F007] {}", tools.manifold.problem.clone().unwrap_or_default());
     }
     let py = tools.gmsh.path.clone().context("no python with gmsh")?;
     let mut files = Vec::new();
@@ -323,7 +323,7 @@ fn fidelity_for(
         f.warnings.clear();
         f.symmetry = Some(decision.clone());
         if f.max_error() > f.warn_above {
-            f.warnings.push(format!("geometry error {:.3e} m exceeds half the wall size ({:.3e} m)", f.max_error(), f.warn_above));
+            f.warnings.push(format!("[IY-F513] geometry error {:.3e} m exceeds half the wall size ({:.3e} m)", f.max_error(), f.warn_above));
         }
         f
     };
@@ -335,7 +335,7 @@ fn fidelity_for(
     let wall = m.remove("wall").unwrap_or_default();
     let base = m.remove("base").unwrap_or_default();
     if wall.is_empty() {
-        bail!("the mesh {} has no wall facets", su2.display());
+        bail!("[IY-F078] the mesh {} has no wall facets", su2.display());
     }
     let f = fidelity::compute(&FidelityInput {
         input,

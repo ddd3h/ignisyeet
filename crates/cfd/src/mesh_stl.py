@@ -56,7 +56,7 @@ grow = p["growth"]
 mode = p["stl_remesh"]
 remesh = mode == "classify"
 if mode not in ("classify", "none"):
-    raise SystemExit("mesh error: stl_remesh must be classify or none, got %s" % mode)
+    raise SystemExit("[IY-F050] mesh error: stl_remesh must be classify or none, got %s" % mode)
 half = bool(p["symmetry"]) or bool(p["y_mirror"])
 quarter = bool(p["z_mirror"]) and half
 tol_plane = 1e-7 * L
@@ -74,13 +74,13 @@ if remesh:
         gmsh.model.mesh.createGeometry()
     except Exception as e:  # noqa: BLE001
         raise SystemExit(
-            "mesh error: gmsh cannot parametrise the united surface (%s). Sharp apexes and facets of very poor quality "
+            "[IY-F051] mesh error: gmsh cannot parametrise the united surface (%s). Sharp apexes and facets of very poor quality "
             "do that; stl_remesh = \"none\" meshes the triangles as they are (the fins are then under-resolved)." % e
         )
 gmsh.model.geo.synchronize()
 body = [t for d, t in gmsh.model.getEntities(2)]
 if not body:
-    raise SystemExit("mesh error: the STL surface has no triangles")
+    raise SystemExit("[IY-F052] mesh error: the STL surface has no triangles")
 
 # ---- farfield box with shared curves -----------------------------------------------------------------
 geo = gmsh.model.geo
@@ -133,7 +133,7 @@ def boundary_curves():
             cz.append(c)
         else:
             raise SystemExit(
-                "mesh error: a boundary curve of the clipped surface (bounding box %s) lies in neither or both symmetry planes" % str(bb)
+                "[IY-F053] mesh error: a boundary curve of the clipped surface (bounding box %s) lies in neither or both symmetry planes" % str(bb)
             )
     return cy, cz
 
@@ -160,7 +160,7 @@ def chain_loops(curves):
                 if e == cur:
                     loop.append(-c); cur = s; rest.remove(c); break
             else:
-                raise SystemExit("mesh error: the cut of the clipped surface is not a closed curve")
+                raise SystemExit("[IY-F054] mesh error: the cut of the clipped surface is not a closed curve")
         loops.append(loop)
     return loops
 
@@ -174,7 +174,7 @@ def chain_open(curves, point_ok):
         count[e] = count.get(e, 0) + 1
     free = [pt for pt, n in count.items() if n == 1]
     if len(free) != 2 or not all(point_ok(pt) for pt in free):
-        raise SystemExit("mesh error: the cut of the clipped surface is not one open curve between two points on the axis (end points %s)" % free)
+        raise SystemExit("[IY-F055] mesh error: the cut of the clipped surface is not one open curve between two points on the axis (end points %s)" % free)
     first, last = sorted(free, key=lambda pt: gmsh.model.getValue(0, pt, [])[0])
     chain, cur, rest = [], first, set(curves)
     while cur != last:
@@ -185,7 +185,7 @@ def chain_open(curves, point_ok):
             if e == cur:
                 chain.append(-c); cur = s; rest.remove(c); break
         else:
-            raise SystemExit("mesh error: broken cut curve")
+            raise SystemExit("[IY-F056] mesh error: broken cut curve")
     return chain, first, last
 
 
@@ -199,7 +199,7 @@ if not half:
 else:
     cut_y, cut_z = boundary_curves()
     if not cut_y or (quarter and not cut_z) or (not quarter and cut_z):
-        raise SystemExit("mesh error: unexpected cut curves of the clipped surface (y = 0: %d, z = 0: %d)" % (len(cut_y), len(cut_z)))
+        raise SystemExit("[IY-F057] mesh error: unexpected cut curves of the clipped surface (y = 0: %d, z = 0: %d)" % (len(cut_y), len(cut_z)))
     print("cut curves: y = 0 %d, z = 0 %d" % (len(cut_y), len(cut_z)))
     far = []
     # x = xa and x = xb faces, y = R and z = R faces: plain quadrilaterals over the quarter / half box.
@@ -212,7 +212,7 @@ else:
         chain_y, ny, ty = chain_open(cut_y, axis_ok)
         chain_z, nz, tz = chain_open(cut_z, axis_ok)
         if (ny, ty) != (nz, tz):
-            raise SystemExit("mesh error: the cuts at y = 0 and z = 0 do not meet at the same points of the axis")
+            raise SystemExit("[IY-F058] mesh error: the cuts at y = 0 and z = 0 do not meet at the same points of the axis")
         A, B = q(0, 0, 0), q(1, 0, 0)
         # y = 0 face (z >= 0): axis from the corner to the nose, the cut curve, the axis to the far corner, then the rectangle.
         loop = [line(A, ny)] + chain_y + [line(ty, B)] + [line(B, q(1, 0, 1)), line(q(1, 0, 1), q(0, 0, 1)), line(q(0, 0, 1), A)]
@@ -322,14 +322,14 @@ gmsh.option.setNumber("Mesh.Algorithm3D", int(p["algorithm3d"]))
 try:
     gmsh.model.mesh.generate(3)
 except Exception as e:  # noqa: BLE001
-    raise SystemExit("mesh error: 3D meshing failed (algorithm %d): %s" % (int(p["algorithm3d"]), e))
+    raise SystemExit("[IY-F024] mesh error: 3D meshing failed (algorithm %d): %s" % (int(p["algorithm3d"]), e))
 t2 = time.time()
 
 # ---- extraction --------------------------------------------------------------------------------------
 etypes, etags, enodes = gmsh.model.mesh.getElements(3)
 tets = np.concatenate([np.asarray(n, dtype=np.int64).reshape(-1, 4) for t, n in zip(etypes, enodes) if t == 4]) if len(etypes) else np.zeros((0, 4), dtype=np.int64)
 if len(tets) == 0:
-    raise SystemExit("mesh error: the volume mesh is empty (3D meshing failed)")
+    raise SystemExit("[IY-F023] mesh error: the volume mesh is empty (3D meshing failed)")
 ntags, ncoord, _ = gmsh.model.mesh.getNodes()
 ntags = np.asarray(ntags, dtype=np.int64)
 xyz = np.asarray(ncoord, dtype=np.float64).reshape(-1, 3)
@@ -367,11 +367,11 @@ flat = (cen[:, 0] >= L - tol) & (np.abs(nrm[:, 0]) > 0.9 * nlen)
 is_base = (cen[:, 0] > L + tol) | flat
 wall_tri, base_tri = wall_all[~is_base], wall_all[is_base]
 if len(base_tri) == 0:
-    raise SystemExit("mesh error: no base facets (aft-facing facets at x = length) found; the STL must end in a flat base or use base_treatment = fairing")
+    raise SystemExit("[IY-F059] mesh error: no base facets (aft-facing facets at x = length) found; the STL must end in a flat base or use base_treatment = fairing")
 print("meshed domain (%s): cells %d, nodes %d" % ("quarter" if quarter else "half" if half else "full", len(tets), len(used)))
 print("facets: wall %d, base %d, farfield %d" % (len(wall_tri), len(base_tri), len(far_tri)))
 if len(wall_tri) == 0 or len(far_tri) == 0:
-    raise SystemExit("mesh error: could not classify the boundary facets")
+    raise SystemExit("[IY-F022] mesh error: could not classify the boundary facets")
 
 remap = np.full(len(xyz), -1, dtype=np.int64)
 remap[used] = np.arange(len(used))

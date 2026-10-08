@@ -40,21 +40,21 @@ for i, path in enumerate(p["components"]):
     vol = float(mf.volume())
     rows.append({"index": i, "status": st, "volume": vol, "triangles": int(mf.num_tri())})
     if "NoError" not in st:
-        raise SystemExit("union error: component %d (%s) is not a valid manifold: %s" % (i, path, st))
+        raise SystemExit("[IY-F060] union error: component %d (%s) is not a valid manifold: %s" % (i, path, st))
     if vol <= 0.0:
-        raise SystemExit("union error: component %d has a non-positive volume %.3e (inside-out?)" % (i, vol))
+        raise SystemExit("[IY-F061] union error: component %d has a non-positive volume %.3e (inside-out?)" % (i, vol))
     parts.append(mf)
 
 u = parts[0] if len(parts) == 1 else m3.Manifold.batch_boolean(parts, m3.OpType.Add)
 st = str(u.status())
 if "NoError" not in st:
-    raise SystemExit("union error: manifold3d returned %s" % st)
+    raise SystemExit("[IY-F062] union error: manifold3d returned %s" % st)
 vol, area, genus = float(u.volume()), float(u.surface_area()), int(u.genus())
 if vol <= 0.0:
-    raise SystemExit("union error: the united solid has a non-positive volume %.3e" % vol)
+    raise SystemExit("[IY-F063] union error: the united solid has a non-positive volume %.3e" % vol)
 if genus < 0:
     raise SystemExit(
-        "union error: the united surface consists of several detached bodies (genus %d): "
+        "[IY-F064] union error: the united surface consists of several detached bodies (genus %d): "
         "a part of the STL (e.g. a fin) does not touch the rest" % genus
     )
 sum_vol = sum(r["volume"] for r in rows)

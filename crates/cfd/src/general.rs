@@ -393,7 +393,7 @@ pub fn build_general(inp: &GeneralInput) -> Result<(AeroTable, GeneralFill)> {
     solved.sort_by(|a, b| a.partial_cmp(b).unwrap());
     solved.dedup();
     if solved.is_empty() {
-        bail!("no CFD cases to build a table from");
+        bail!("[IY-F003] no CFD cases to build a table from");
     }
     let mut fill = GeneralFill::default();
     struct Col {
@@ -445,7 +445,7 @@ pub fn build_general(inp: &GeneralInput) -> Result<(AeroTable, GeneralFill)> {
     }
     for (edge, m) in [("lowest", solved[0]), ("highest", *solved.last().unwrap())] {
         if !cols.iter().any(|c| c.mach == m) {
-            bail!("all CFD cases at the {edge} Mach number ({m}) failed (or have no usable angles); the table cannot be bridged there");
+            bail!("[IY-F004] all CFD cases at the {edge} Mach number ({m}) failed (or have no usable angles); the table cannot be bridged there");
         }
     }
     fill.region = region;

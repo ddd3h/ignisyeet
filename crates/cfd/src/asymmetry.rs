@@ -140,7 +140,7 @@ pub fn warnings(entries: &[ZeroAngle], fin: Option<(f64, f64)>, rans: bool) -> V
                 "the table removes it by symmetry / alpha_mode, but CN at other angles has an error of the same origin".to_string()
             };
             format!(
-                "zero-angle asymmetry at M={}: {} at alpha = beta = 0 ({:.1} % of CN at {} deg = {:.3}){}; {}",
+                "[IY-F509] zero-angle asymmetry at M={}: {} at alpha = beta = 0 ({:.1} % of CN at {} deg = {:.3}){}; {}",
                 e.mach,
                 force,
                 100.0 * e.ratio,
@@ -194,7 +194,11 @@ mod tests {
         assert!((e[0].ratio - r).abs() < 1e-12 && (e[0].ratio_kept - r).abs() < 1e-12, "{e:?}");
         let w = warnings(&e, Some((0.005, 0.004)), false);
         assert_eq!(w.len(), 1, "{w:?}");
-        assert!(w[0].starts_with("zero-angle asymmetry at M=0.8: CY = +0.1160, CZ = +0.0200 at alpha = beta = 0 (9.9 % of CN at 4 deg = 1.187)"), "{}", w[0]);
+        assert!(
+            w[0].starts_with("[IY-F509] zero-angle asymmetry at M=0.8: CY = +0.1160, CZ = +0.0200 at alpha = beta = 0 (9.9 % of CN at 4 deg = 1.187)"),
+            "{}",
+            w[0]
+        );
         assert!(w[0].contains("wall_size 5.0 mm, fin thickness 4.0 mm") && w[0].contains("100 % of it stays in the table"), "{}", w[0]);
         // The mirror and offset modes remove it: still reported, no longer kept.
         for mode in [AlphaMode::Mirror, AlphaMode::Offset] {

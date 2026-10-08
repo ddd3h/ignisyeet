@@ -897,6 +897,17 @@ CFD の座標は機体座標を :math:`y` まわりに 180 度回したもの（
   である。足すのは摩擦、底面、フィン縁（丸い前縁と四角い後縁）、ボートテール、追加抗力で、ノーズの圧力抗力 :math:`C_{D,\mathrm{nose}}` は **含めない**\ （CFD が与えるため）。
   ただし ``surface = "stl"`` と ``"step"`` では、フィンの前縁と後縁の面が CFD の壁面にあり、その圧力抗力は :math:`C_A^{\mathrm{CFD}}` にすでに入っているので、フィン縁の項 :math:`C_{D,\mathrm{fin}}` を足さない（足すと二重に数える）。
   ``panel_mesh`` の形状は、抽出した厚みのフィンを再構成するので、この項を足す。
+  ``surface = "stl"`` と ``"step"`` では、フィンの後縁が底面にそろっていると、後縁の面は ``base`` のマーカーに入って力に積分されないので（上の底面の規則）、その底面抗力を次の項で足す。
+  後縁がそろっているとは、根元と翼端の後縁がどちらも底面の平面 :math:`x=L` から :math:`10^{-4}L` 以内にあることをいう。
+
+  .. math::
+     :label: eq-cfd-te-flush
+
+     C_{D,\mathrm{TE,flush}}=\frac{C_{D,\mathrm{base}}(M)\,n\,b\,t}{S_{\mathrm{ref}}}
+
+  ここで :math:`C_{D,\mathrm{base}}(M)` は部品積み上げ法の底面抗力係数、:math:`n` はフィンの枚数、:math:`b` は span、:math:`t` は抽出した平均のフィンの厚さである。
+  この項は :eq:`eq-cfd-ca` の和に入れ、``fin_te_square = false`` のとき、後縁が底面から内側にある（後縁の面が ``wall`` にある）とき、``panel_mesh`` のときは 0 である（``panel_mesh`` ではフィン縁の項全体 :math:`C_{D,\mathrm{fin}}` を足す）。
+  平均の厚さを使うので、後縁が鈍いくさび形のとき、実際の底面抗力より小さい。
   燃焼中の値では、底面の項に、ノズル出口の面積を除いた底面積を使う。
 * **RANS**\ ：SU2 の履歴のマーカごとの列（``CFx(wall)``、``CFx(base)``）を使う。壁面の軸力 :math:`C_{Fx}(\mathrm{wall})` は、圧力と摩擦、フィンの縁とボートテールの力を含む。
   底面の項は ``rans_base`` で選び、
@@ -908,6 +919,7 @@ CFD の座標は機体座標を :math:`y` まわりに 180 度回したもの（
      C_{A,\mathrm{base}}=\begin{cases}f(\alpha)\,C_{D,\mathrm{base}} & (\text{rans\_base = model})\\ C_{Fx}(\mathrm{base}) & (\text{rans\_base = cfd})\end{cases}
 
   とする。``"model"``\ （既定）は部品積み上げ法の底面抗力（燃焼中はノズル出口の面積を除いた底面積）、``"cfd"`` は RANS が平らな底面に積分した力である。
+  ``"model"`` で ``surface = "stl"`` と ``"step"`` のとき、フィンの後縁がそろっていれば、:eq:`eq-cfd-te-flush` の :math:`C_{D,\mathrm{TE,flush}}` を :math:`f(\alpha)` をかけて足す。``"cfd"`` では足さない（後縁の面は ``base`` のマーカーの力に入っている）。
   ``"cfd"`` の燃焼中の値は、ノズル出口の面積にかかる底面圧力の寄与（部品積み上げ法の燃焼後と燃焼中の底面抗力の差）を引く。
   RANS の壁は滑らかなので、設定の粗さの効果を、部品積み上げ法の粗い壁と滑らかな壁の摩擦の差として足す。
   :math:`C_{D,f}` は粗さ :math:`k_s` の摩擦（:eq:`eq-cd0`）、:math:`c_f` は摩擦係数の式で、同じ Reynolds 数での比を使い、
@@ -929,7 +941,7 @@ CFD の座標は機体座標を :math:`y` まわりに 180 度回したもの（
   を足す。``surface = "stl"`` と ``"step"`` では縁の面が CFD の壁面にあるので、:math:`\Delta C_{D,\mathrm{fin}}=0` である。
   どちらの増分もモデルによる補正で、CFD の解ではない。部品積み上げ法の摩擦とボートテールの項と、Euler の項は足さない。
   履歴にマーカごとの列がないときは、監視する力の合計（``wall`` と ``base``\ 。底面を含む）を使い、表全体を ``rans_base = "cfd"`` と同じに作って、``cfd_report.json`` の ``warnings`` に記録する。
-  ケースごとの :math:`C_{Fx}(\mathrm{wall})`、:math:`C_{Fx}(\mathrm{base})`、部品積み上げ法の摩擦と底面の値、二つの増分は、``cfd_report.json`` の ``axial_breakdown`` に並べて記録する（部品積み上げ法の摩擦は比べるための値で、表に足さない）。
+  ケースごとの :math:`C_{Fx}(\mathrm{wall})`、:math:`C_{Fx}(\mathrm{base})`、部品積み上げ法の摩擦と底面の値、増分（粗さ、フィン縁、そろった後縁の底面 ``fin_te_base_increment``）は、``cfd_report.json`` の ``axial_breakdown`` に並べて記録する（部品積み上げ法の摩擦は比べるための値で、表に足さない）。
 
 亜音速の Euler では、CFD の軸力の理論値は 0（d'Alembert のパラドックス）である。実際の値は小さな負の数（サンプル機体の迎角 0〜8° で :math:`-0.01` から :math:`-0.05`）になり、そのまま合計に入る。
 

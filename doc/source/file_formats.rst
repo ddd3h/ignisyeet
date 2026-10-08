@@ -479,7 +479,7 @@ CFD の実行の要約である。項目は次のとおりである。
    * - ``axial_breakdown``
      - RANS のとき、ロール減衰でないケースごとの軸力の内訳。``mach``、``alpha_deg``、``cfd_wall_ca`` と ``cfd_base_ca``\ （壁面と底面の ``CFx``。履歴に列がなければ ``null``）、
        ``barrowman_friction`` と ``barrowman_base``\ （その Mach 数の部品積み上げ法の摩擦と底面の抗力。比べるための値で、摩擦は表に足さない）、
-       ``roughness_increment``\ （表に足す、設定の粗さによる摩擦の増分。:eq:`eq-cfd-rans-rough`）、``fin_edge_increment``\ （表に足す、設定のフィンの縁の増分。:eq:`eq-cfd-rans-fin`。``stl`` と ``step`` では 0）、``base_from_cfd``\ （表の底面の項が CFD の値か）を持つ。Euler では空
+       ``roughness_increment``\ （表に足す、設定の粗さによる摩擦の増分。:eq:`eq-cfd-rans-rough`）、``fin_edge_increment``\ （表に足す、設定のフィンの縁の増分。:eq:`eq-cfd-rans-fin`。``stl`` と ``step`` では 0）、``fin_te_base_increment``\ （表に足す、底面にそろったフィンの後縁の底面抗力。:eq:`eq-cfd-te-flush`。``stl`` と ``step`` で底面をモデルから取るときだけ。それ以外は 0）、``base_from_cfd``\ （表の底面の項が CFD の値か）を持つ。Euler では空
 
 ``done.json``
 ~~~~~~~~~~~~~

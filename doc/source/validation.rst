@@ -111,6 +111,10 @@ Clp の無次元化と換算の根拠、表の読み取りの確認、注意点�
      - ``roll_damping = true``、``base_treatment = "fairing"``、``wall_size`` 2.1 mm、``fin_size`` 0.47 mm、全領域（約 69 万セル）。Mach 数は Table IX の 8 点。
        Mach 数ごとに、:math:`\alpha=0` で無次元ロール角速度 :math:`\pm0.01` の 2 ケースと、ロールなしの :math:`\alpha=0,2^\circ` の 2 ケースを解く。:math:`C_{lp}` はロールありの 2 ケースの差から求める。
 
+Euler の行は同じコミットで一括して解いたものではなく、行ごとのコミットを ``cfd_euler.csv`` の ``ignisyeet`` 列に記録した（``base_treatment = "fairing"`` は fde5d87 と、Mach 1.077 と 1.293 を解き直した 27582ee、``"flat"`` は 2f31ab9）。
+ロール減衰の Euler は Mach 1.077、1.293、2.375 が 27582ee、Mach 1.832–4.3 が 82c521f で、``summary_vs_measured.csv`` の先頭に記録した。
+コミットによる結果の違いは確かめていない。
+
 ``wall_size`` は胴体の直径に対して決めた。サンプル機体（直径 100 mm）の RANS の既定 5 mm と同じ 0.05 口径である。
 大気は US 標準大気 1976 の海面の値（音速 340.3 m/s）で、射場の空気（音速 343.4–344.0 m/s、密度 1.16–1.20 kg/m\ :sup:`3`）とほぼ同じである。摩擦の項の Reynolds 数は Mach 2.375 で :math:`1.7\times10^7`\ （全長基準）で、射場の範囲に入る。
 
@@ -591,7 +595,7 @@ RANS（SU2、Spalart-Allmaras）
   低い超音速の大きな過大は 1 割程度に縮む。Mach 3.73 と 4.30 の不足は部品積み上げ法と同じ向きである。
   32 ケースのうち 6 ケース（Mach 1.077 のロールの 2 ケース、Mach 1.832 の :math:`\alpha=2^\circ`、Mach 3.734 の 2 ケース、Mach 4.3 の :math:`\alpha=0`）は、反復の上限で係数がわずかに動いたままで、警告が出た（力の範囲が 0.2 % を超える）。
   粗い ``wall_size``\ （2.1 mm）の影響と合わせて、Mach 3.73 と 4.30 の不足への寄与は確かめていない。
-* :math:`C_{lp}` の比較は、無次元化を :math:`pd/(2V)` と推定したうえでの比較である（:numref:`tbl-validation-sources`）。
+* :math:`C_{lp}` の比較は、無次元化（:math:`pd/(2V)`）と Regan の風洞の値のスパンの換算を、実測との一致から推定したうえでの比較である。そのため独立した妥当性確認ではなく、無矛盾性の確認にとどまる（:numref:`tbl-validation-sources`）。
   Regan の風洞の値（換算）は射場の値より 10 % 程度小さく、両者の差は手法の差と同じ程度である。
 
 .. _sec-validation-limits:

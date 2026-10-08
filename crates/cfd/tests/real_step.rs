@@ -326,12 +326,8 @@ fn fairing_of_the_basic_finner_starts_at_the_body_radius_not_at_the_fin_tips() {
         geom::stl::read_stl(&examples().join("basic_finner/basic_finner.stl")).unwrap().into_iter().map(|t| t.map(|v| v * 0.001)).collect();
     let g = extract(&raw, &ExtractOptions::default()).unwrap();
     let dir = tmp("finner_fairing");
-    let opt = CfdOptions {
-        step_file: examples().join("basic_finner/basic_finner.step"),
-        wall_size: 0.004,
-        fin_size: cfd::FinSize::Size(0.002),
-        ..step_options()
-    };
+    let opt =
+        CfdOptions { step_file: examples().join("basic_finner/basic_finner.step"), wall_size: 0.004, fin_size: cfd::FinSize::Size(0.002), ..step_options() };
     let m = cfd::mesh_only(&g, &opt, &aero::AeroOptions::default(), &dir, &budget(), Some(&raw)).unwrap();
     let info = m.step.as_ref().unwrap();
     let f = info.fairing.as_ref().unwrap();

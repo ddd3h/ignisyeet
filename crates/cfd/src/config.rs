@@ -709,6 +709,13 @@ impl CfdOptions {
                 self.wall_size
             ));
         }
+        if self.wall_function() {
+            w.push(format!(
+                "aero.cfd: yplus = {} selects the standard wall function (30..150), which is not verified (the RANS verification uses \
+                 a resolved wall, yplus = 1); use yplus <= 5 unless you check the results yourself",
+                self.yplus
+            ));
+        }
         w
     }
 
@@ -1008,6 +1015,10 @@ mod tests {
         CfdOptions { yplus: 10.0, ..Default::default() }.validate().unwrap();
         assert!(!CfdOptions::rans().wall_function() && CfdOptions { yplus: 50.0, ..CfdOptions::rans() }.wall_function());
         assert!(!CfdOptions { yplus: 50.0, ..Default::default() }.wall_function());
+        // The wall function is accepted but not verified: a warning.
+        let w = CfdOptions { yplus: 50.0, ..CfdOptions::rans() }.warnings_for(64);
+        assert!(w.len() == 1 && w[0].contains("yplus = 50 selects the standard wall function") && w[0].contains("not verified"), "{w:?}");
+        assert!(CfdOptions::rans().warnings_for(64).is_empty() && CfdOptions { yplus: 50.0, ..Default::default() }.warnings_for(64).is_empty());
         // rans_base
         let r: CfdOptions = serde_json::from_str(r#"{"model":"rans","rans_base":"cfd"}"#).unwrap();
         assert!(r.base_from_cfd());

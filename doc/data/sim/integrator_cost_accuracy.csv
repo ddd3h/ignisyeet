@@ -1,0 +1,18 @@
+# Sample (examples/sample.toml, parachute descent, wind 4 m/s), sim.attitude = "normalize". integrator: sim.integrator; setting: rk4 step dt [s] or rk45/dop853 rtol = atol; rhs_evals: right-hand-side evaluations of the whole flight; landing_diff_m: horizontal distance of the landing point to the rk4 dt = 0.5 ms reference (landing E -655.5684 m, N -7707.6941 m); apogee_diff_m: apogee minus reference apogee; wall_s: wall time of one flight on one thread.
+integrator,setting,rhs_evals,apogee_diff_m,landing_diff_m,wall_s
+rk4,0.05,54808,0.3440,0.5980,0.007
+rk4,0.02,137008,0.1376,0.2376,0.017
+rk4,0.01,273992,0.0320,0.0558,0.033
+rk4,0.005,547972,-0.0211,0.0369,0.066
+rk4,0.002,1369916,0.0015,0.0026,0.166
+rk4,0.001,2739828,0.0000,0.0000,0.331
+rk45,1e-3,82294,0.0228,0.0457,0.014
+rk45,1e-5,82528,0.0079,0.0184,0.014
+rk45,1e-7,83572,0.0016,0.0004,0.014
+rk45,1e-9,87676,0.0001,0.0003,0.015
+rk45,1e-11,100660,0.0000,0.0000,0.019
+dop853,1e-3,164470,0.0018,0.0059,0.040
+dop853,1e-5,164614,-0.0026,0.0017,0.040
+dop853,1e-7,165670,-0.0003,0.0010,0.040
+dop853,1e-9,168850,0.0004,0.0008,0.041
+dop853,1e-11,182302,0.0000,0.0000,0.045

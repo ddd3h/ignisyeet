@@ -673,8 +673,9 @@ RANS は、フィンの面を厚さの 1/4 にするとプリズム層の柱が�
 .. figure:: /_generated/plots/cfd_fin_size_cost.*
    :width: 90%
 
-   ``fin_size`` とセル数、計算時間、:math:`C_N` の関係（サンプル機体、Euler、半モデル）。データは ``doc/data/cfd/fin_resolution.csv``。
-   見るところは、``fin_size`` を細かくするとセル数と時間が増え、:math:`\alpha=0` の偽の法線力が小さくなることである。
+   ``fin_size`` とセル数（左）、:math:`\alpha=0` と :math:`4^\circ` の計算時間（中央）、:math:`\alpha=0` の :math:`C_N`\ （右）の関係（サンプル機体、Euler、半モデル、:math:`M=0.8`）。
+   線は ``wall_size`` ごとに結ぶ。データは ``doc/data/cfd/fin_resolution.csv``。
+   見るところは、``fin_size`` を細かくするとセル数と時間が増え、:math:`\alpha=0` の偽の法線力が 0 に近づくことである。
 
 STL と CAD のモデルのフィンの縁の面も、``fin_size`` を細かくして初めて圧力抗力が軸力に入る。サンプルの STL の厚さ 4 mm のフィンは前縁と後縁が平らな面で、``wall_size`` 5 mm のままでは縁の面の圧力が出ず、:math:`M=0.8` の圧力の軸力が負になる（フィンの面を 1 mm にすると正になる。:ref:`sec-cfd-val-fin-size`）。
 

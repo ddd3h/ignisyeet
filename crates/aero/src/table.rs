@@ -2,6 +2,15 @@
 // Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Pre-computed aerodynamic coefficient tables with CSV/JSON persistence.
 //!
+//! `source_hash` of the JSON sidecar identifies the inputs a table was built for. `aero` writes the
+//! FNV-1a hash (16 hex digits) of the STL content, the extracted geometry (after scale, nose
+//! direction, fin override and cant), the configuration values that influence the coefficients and
+//! the program and aero model versions; a stored table is reused only when this value equals the
+//! one of the current inputs. For an external table (`aero.method = "table"`) any string is
+//! accepted. The CSV and the sidecar are written through temporary files that are renamed into
+//! place, so an interrupted run never leaves a broken table behind. Numbers are written in the
+//! shortest exponent form that reads back to the same `f64`.
+//!
 //! Two kinds share one file format (version 4, recorded in the JSON sidecar):
 //!
 //! * **Axisymmetric**: (Mach, total angle of attack) grid with the normal force, axial force,

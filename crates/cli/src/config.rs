@@ -1,6 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
 //! TOML configuration file. Relative paths are resolved against the config file directory.
+//!
+//! # Identity of a result (implementation notes moved from the user documentation)
+//!
+//! The aero table cache is keyed by an FNV-1a hash (16 hex digits) of the STL content, the extracted
+//! geometry, the aero-relevant settings, the program version and the aero model version (an internal
+//! number raised whenever the way coefficients are computed changes, so a table from another model
+//! version is rebuilt). With `aero.method = "cfd"` the content of `aero.cfd.step_file` is included.
+//! Settings that do not change the coefficients are left out: the blocks of the methods that are not
+//! selected (`[aero.panel]`, `[aero.cfd]`), the external table path, `[resources]`, and for CFD the
+//! tool and resource keys (`prefix`, `su2`, `mpi`, `ranks_per_case`, `parallel_cases`,
+//! `timeout_minutes`, `workdir`). `--set` overrides are applied before hashing, so a value given
+//! on the command line hashes like the same value written in the file; `--out` is not hashed.
+//! The `config_hash` of `summary.json` covers everything except `[output]`, `[resources]` and
+//! `[dispersion]`, plus the content of the input files; `flight_config_hash` of the dispersion
+//! outputs is the same computation and ties them to a `sim` run.
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};

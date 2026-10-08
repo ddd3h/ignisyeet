@@ -152,7 +152,7 @@ fn load_config(path: &Path, ov: &ConfigArgs, table: &TableArg) -> Result<Config>
 fn apply_resources(r: &config::Resolved) {
     if let Some(w) = &r.warning {
         match ui().mode {
-            ui::Mode::Quiet => eprintln!("warning: {w}"),
+            ui::Mode::Quiet => eprintln!("{}", ui::warning_line(w)),
             _ => ui().warn(w),
         }
     }
@@ -212,10 +212,13 @@ fn stability_reason(s: &Summary) -> Option<String> {
     }
 }
 
-fn main() -> Result<()> {
+fn main() {
     let r = run();
     outfile::unlock_all();
-    r
+    if let Err(e) = r {
+        eprintln!("{}", ui::error_report(&e));
+        std::process::exit(1);
+    }
 }
 
 fn run() -> Result<()> {
@@ -329,7 +332,7 @@ fn fmt_vs(v: f64, limit: f64, decimals: usize) -> String {
 fn print_warnings(warnings: &[String]) {
     for w in warnings {
         match ui().mode {
-            ui::Mode::Quiet => eprintln!("warning: {w}"),
+            ui::Mode::Quiet => eprintln!("{}", ui::warning_line(w)),
             _ => ui().warn(w),
         }
     }
@@ -1393,7 +1396,7 @@ fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
         }
     }
     for w in opt.warnings().into_iter().chain(r.warnings()) {
-        println!("  warning: {w}");
+        println!("  {}", ui::warning_line(&w));
     }
     if r.ready(opt) {
         let n = cfd_case_count(cfg, opt);
@@ -1866,7 +1869,7 @@ fn write_kml(cfg: &Config, mut parts: kml::Parts, skip_flight: bool) -> Result<(
             ui::Mode::Plain if stale => u.warn(msg),
             ui::Mode::Plain => println!("  {msg}"),
             ui::Mode::Rich => u.warn(msg),
-            ui::Mode::Quiet if stale => eprintln!("warning: {msg}"),
+            ui::Mode::Quiet if stale => eprintln!("{}", ui::warning_line(&msg)),
             ui::Mode::Quiet => {}
         }
     };

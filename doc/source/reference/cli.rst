@@ -45,7 +45,7 @@
    * - オプション
      - 内容
    * - ``-q`` ``--quiet`` ``--no-progress``
-     - 出力の量を減らす（:ref:`sec-ui-modes`）。
+     - 出力の量と進捗表示の指定。:ref:`sec-ui-modes` に定義する。
    * - ``--set KEY=VALUE``
      - ``geom`` ``aero`` ``sim`` ``dispersion``。設定のキーを上書きする（:ref:`sec-cli-overrides`）。
    * - ``--out DIR``

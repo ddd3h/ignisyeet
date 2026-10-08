@@ -299,9 +299,9 @@
    * - 項目
      - 内容
    * - ``config_hash``
-     - 風の格子の結果を計算した設定の識別子（``mode`` と ``[dispersion.monte_carlo]`` を除く設定で決まる）。用途は ``summary.json`` の ``config_hash`` と同じである（:ref:`sec-file-summary`）
+     - 風の格子の結果を計算した設定の識別子（:ref:`sec-file-summary` の ``config_hash``）
    * - ``flight_config_hash``
-     - 飛翔の設定の識別子。``summary.json`` の ``config_hash`` と同じ値で、``sim`` の結果と同じ設定かの照合に使う
+     - 飛翔の設定の識別子（:ref:`sec-file-summary` の ``config_hash``）
    * - ``cases``
      - ケース数
    * - ``failed`` / ``errored``
@@ -362,7 +362,7 @@
    * - ``descents``
      - 降下モードごとの配列（下表）
    * - ``config_hash`` / ``flight_config_hash``
-     - 識別子。``config_hash`` はモンテカルロの結果を計算した設定（``mode`` と風の格子の設定を除く）で決まる。``flight_config_hash`` は ``summary.json`` の ``config_hash`` と同じ値である
+     - 結果を計算した設定の識別子（:ref:`sec-file-summary` の ``config_hash``）
    * - ``warnings`` / ``aero_table_range``
      - 警告の配列と、係数表の範囲外の引き出しの集計（項目は :ref:`sec-file-summary` と同じ。失敗したサンプルは数えない）
    * - ``static_margin_min_cal`` / ``stable``

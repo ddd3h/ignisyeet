@@ -1020,7 +1020,7 @@ UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設�
 * 予算にかかわらず、必要な量がこのプロセスの使えるメモリ（Linux の ``MemAvailable``、cgroup の上限、``ulimit -v`` の上限の最小。macOS では物理メモリ）を超えるときも、同じく計算の前にエラーで止まる
   （``the panel method needs about … GB for … panels (dense matrix), more than the … GB of memory available to this process (…)``。括弧内は値の出所）。パネルの設定を粗くする。どれも読めない環境では確かめない（:doc:`panel`）。
 * CFD は、予算に収まるよう同時実行ケース数を減らす。``memory_gb = 0`` のときの予算は、このプロセスが使えるメモリである。
-  1 ケースの見積もりが予算を超えるときは、メッシュを作ったあと、計算の前にエラーで止まる（:ref:`sec-cfd-resources`）。
+  1 ケースの見積もりが予算を超えるときは、メッシュを作ったあと、計算の前にエラーで止まる（:ref:`メモリの予算 <sec-cfd-resources>`）。
 
 実際に使うスレッド数、メモリ予算、``nice`` は、起動時の設定パネルに表示する（プレーン表示では 1 行で示す）。``memory_gb = 0`` のときのメモリは ``available memory`` と表示する。
 

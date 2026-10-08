@@ -130,7 +130,14 @@ RANS（Reynolds 平均 Navier–Stokes 方程式）は、:eq:`eq-cfd-euler` に�
 境界条件と基準量
 ~~~~~~~~~~~~~~~~
 
-境界は次の名前で区別する。
+境界は次の名前で区別する（:numref:`fig-cfd-bc`）。
+
+.. _fig-cfd-bc:
+
+.. figure:: /_generated/tikz/cfd_bc.*
+   :width: 100%
+
+   対称面 :math:`y=0` での CFD の座標、自由流、境界の名前、基準量。:math:`x` は後方、:math:`z` は上向きで、モーメントはノーズ先端のまわりにとる。見るところは、力を積分する面が wall だけで、底面（base）は別の名前で区別されることと、自由流を傾けて迎角を与えることである。
 
 .. list-table::
    :header-rows: 1

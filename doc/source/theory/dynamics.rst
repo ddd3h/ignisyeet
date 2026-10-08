@@ -783,14 +783,14 @@ R. T. Jones の有限翼の指示関数 :cite:`jones1940` は、迎角を急に�
 計算例
 ~~~~~~
 
-付属のサンプル（射角 85°、方位 270°、北風 4 m/s、パラシュートあり）の結果を示す。
+付属のサンプル（射角 85°、方位 270°、北風 4 m/s、パラシュートあり）の結果を :numref:`fig-trajectory` と :numref:`fig-flight-states` に示す。
 
 .. _fig-trajectory:
 
 .. figure:: /_generated/plots/trajectory.*
    :width: 100%
 
-   高度の時刻歴（左）と地表への投影（右）。
+   高度の時刻歴（左）と地表への投影（右）。見るところは、頂点の時刻と高度、降下に入って高度が緩やかに下がる区間、着地点が風下へどれだけ流されるかである。
 
 .. _fig-flight-states:
 

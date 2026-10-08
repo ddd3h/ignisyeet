@@ -21,11 +21,13 @@ REPO_URL="${IGNISYEET_REPO_URL:-https://github.com/$REPO.git}"
 DOWNLOAD_BASE="${IGNISYEET_DOWNLOAD_BASE:-https://github.com/$REPO/releases/download}"
 CFD_ENV_NAME="ignisyeet-cfd"
 CFD_PACKAGES="python=3.10 su2=8.3.0 gmsh=4.15.2 python-gmsh=4.15.2 openmpi=5"
+# Compilers for the SU2 source build (Linux only): conda-forge gcc/g++ with their own sysroot, so no system compiler is needed.
+CFD_COMPILER_PACKAGES="cxx-compiler"
 MICROMAMBA_VERSION="2.9.0"
 MANIFOLD3D_VERSION="3.5.4"
-# --su2-native: SU2 built from source for this CPU (-march=native) with mixed-precision linear algebra
+# SU2 is built from source for this CPU (-march=native) with mixed-precision linear algebra; --su2-binary keeps the conda-forge binary
 SU2_NATIVE_TAG="v8.3.0"
-SU2_NATIVE_REPO="https://github.com/su2code/SU2.git"
+SU2_NATIVE_URL="https://github.com/su2code/SU2/archive/refs/tags/v8.3.0.tar.gz"
 
 ROLE="${IGNISYEET_ROLE:-}"                 # user | developer | "" (ask)
 VERSION="${IGNISYEET_VERSION:-}"           # vX.Y.Z | "" (latest release)
@@ -33,7 +35,8 @@ PREFIX="${IGNISYEET_PREFIX:-$HOME/.local}"
 DEV_DIR="${IGNISYEET_DIR:-}"
 WANT_CFD="${IGNISYEET_CFD:-}"              # 1 | 0 | "" (ask; default no)
 WANT_TEST=""                               # 1 | 0 | "" (ask; default yes)
-WANT_SU2_NATIVE="${IGNISYEET_SU2_NATIVE:-0}" # 1 | 0: build SU2 from source for this CPU (Linux, with the CFD env)
+WANT_SU2_SRC=1                             # 1: build SU2 from source for this CPU (Linux, with the CFD env) | 0: conda-forge binary
+[ "${IGNISYEET_SU2_BINARY:-0}" = 1 ] && WANT_SU2_SRC=0
 ASSUME_YES="${IGNISYEET_YES:-0}"
 NO_COLOR_FLAG="${IGNISYEET_NO_COLOR:-0}"
 DRY_RUN="${IGNISYEET_DRY_RUN:-0}"
@@ -387,10 +390,11 @@ Roles:
   --developer          git clone, build from source, tests, python/doc environments
 
 Options:
-  --cfd / --no-cfd     install (or skip) the optional CFD tools: SU2, gmsh, Open MPI (~3 GB, conda-forge) and manifold3d (pip)
-  --su2-native         also build SU2 $SU2_NATIVE_TAG from source for this CPU (-march=native, mixed precision) into
-                       PREFIX/share/ignisyeet-su2-native (Linux; needs the CFD env, git, gcc/g++, ~10 min); the
-                       binary runs only on CPUs like this one. Select it with IGNISYEET_SU2_CFD (printed at the end)
+  --cfd / --no-cfd     install (or skip) the optional CFD tools: SU2, gmsh, Open MPI (~3 GB, conda-forge) and manifold3d (pip); on Linux SU2 is then compiled for this CPU
+  --su2-binary         with --cfd: use the portable conda-forge SU2 binary and skip the source build. By default SU2
+                       $SU2_NATIVE_TAG is compiled for this CPU (-march=native, mixed precision; Linux; compilers come from
+                       the CFD env; 3-10 min depending on the cores, ~0.5 GB of disk during the build) into
+                       PREFIX/share/ignisyeet-su2-native, and ignisyeet finds it there; it runs only on CPUs like this one
   --version vX.Y.Z     release to install (default: latest GitHub release); developer: tag to check out
   --prefix DIR         install prefix (default: ~/.local; binary in DIR/bin, data in DIR/share/ignisyeet)
   --dir DIR            developer clone location (default: current clone, else ~/ignisyeet)
@@ -401,12 +405,12 @@ Options:
   --no-color           plain output (also honours NO_COLOR)
   --dry-run            show what would be done and exit
   --uninstall          remove what this installer installed (asks before optional parts)
-  --purge              with --uninstall: also remove the plotting venv, the CFD environment and the native SU2
+  --purge              with --uninstall: also remove the plotting venv, the CFD environment and the SU2 source build
   -h, --help           this help
 
 Environment variables:
-  IGNISYEET_ROLE, IGNISYEET_VERSION, IGNISYEET_PREFIX, IGNISYEET_DIR, IGNISYEET_CFD (1/0), IGNISYEET_SU2_NATIVE (1/0),
-  IGNISYEET_YES, IGNISYEET_NO_COLOR, IGNISYEET_DRY_RUN, IGNISYEET_FORCE, IGNISYEET_ADD_PATH,
+  IGNISYEET_ROLE, IGNISYEET_VERSION, IGNISYEET_PREFIX, IGNISYEET_DIR, IGNISYEET_CFD (1/0), IGNISYEET_SU2_BINARY (1),
+  IGNISYEET_SU2_JOBS (compile jobs, default: all cores), IGNISYEET_YES, IGNISYEET_NO_COLOR, IGNISYEET_DRY_RUN, IGNISYEET_FORCE, IGNISYEET_ADD_PATH,
   IGNISYEET_DOWNLOAD_BASE (release download base URL), IGNISYEET_REPO_URL (git URL)
 
 Supported platforms: Linux x86_64 / aarch64, macOS Intel / Apple Silicon.
@@ -420,7 +424,8 @@ parse_args() {
       --developer | --dev) ROLE=developer ;;
       --cfd) WANT_CFD=1 ;;
       --no-cfd) WANT_CFD=0 ;;
-      --su2-native) WANT_SU2_NATIVE=1 ;;
+      --su2-binary) WANT_SU2_SRC=0 ;;
+      --su2-native) WANT_SU2_SRC=1 ;; # the default; accepted so that existing command lines keep working
       --version) shift; [ $# -gt 0 ] || die "--version needs a value"; VERSION="$1"; validate_version "$VERSION" ;;
       --version=*) VERSION="${1#*=}"; validate_version "$VERSION" ;;
       --prefix) shift; [ $# -gt 0 ] || die "--prefix needs a value"; PREFIX="$1" ;;
@@ -442,8 +447,6 @@ parse_args() {
   done
   case "$ROLE" in "" | user | developer) ;; *) die "role must be 'user' or 'developer' (got '$ROLE')" ;; esac
   case "$WANT_CFD" in "" | 0 | 1) ;; *) die "IGNISYEET_CFD must be 1 or 0" ;; esac
-  case "$WANT_SU2_NATIVE" in 0 | 1) ;; *) die "IGNISYEET_SU2_NATIVE must be 1 or 0" ;; esac
-  if [ "$WANT_SU2_NATIVE" = 1 ] && [ "$WANT_CFD" = 0 ]; then die "--su2-native needs the CFD tools (drop --no-cfd)"; fi
   [ -n "$VERSION" ] && validate_version "$VERSION"
   # Relative paths would give broken symlinks (they are resolved against the link's own directory).
   PREFIX=$(abs_path "$PREFIX")
@@ -724,7 +727,7 @@ decide() {
   if [ -z "$WANT_CFD" ]; then
     if [ -n "$CFD_PREFIX" ] || [ -n "$SU2_PATH" ]; then
       WANT_CFD=0 # already available; nothing to ask
-    elif ask_yn "Install the optional CFD tools (SU2, gmsh, Open MPI via conda-forge, ~3 GB)?" n; then WANT_CFD=1; else WANT_CFD=0; fi
+    elif ask_yn "Install the optional CFD tools (SU2, gmsh, Open MPI via conda-forge, ~3 GB; on Linux SU2 is compiled for this CPU, 3-10 min)?" n; then WANT_CFD=1; else WANT_CFD=0; fi
   fi
   CFD_ACTION=none # none | reuse | create
   if [ "$CFD_DISABLED" = 1 ]; then
@@ -737,14 +740,11 @@ decide() {
   CFD_NEED_MM=0
   [ "$CFD_ACTION" = create ] && [ -z "$CONDA_MGR" ] && CFD_NEED_MM=1
   SU2_NATIVE_DIR="$PREFIX/share/ignisyeet-su2-native"
-  if [ "$WANT_SU2_NATIVE" = 1 ]; then
-    [ "$OS" = Linux ] || die "--su2-native is supported on Linux only"
-    [ "$CFD_ACTION" != none ] || [ -n "$CFD_PREFIX" ] || die "--su2-native needs the CFD environment (add --cfd)"
-    local t missing=""
-    for t in git gcc g++ python3; do have "$t" || missing="$missing $t"; done
-    [ -z "$missing" ] || die "--su2-native needs:$missing (e.g. sudo apt install build-essential git python3)"
+  # The source build runs when the CFD tools are requested (--cfd, or the answer to the question), not on every re-run.
+  BUILD_SU2=0
+  if [ "$CFD_ACTION" != none ] && [ "$WANT_CFD" = 1 ] && [ "$WANT_SU2_SRC" = 1 ]; then
+    if [ "$OS" = Linux ]; then BUILD_SU2=1; else SU2_SRC_NOTE="SU2 is compiled from source on Linux only; this platform uses the conda-forge binary"; fi
   fi
-
   # user: already installed?
   SAME_VERSION=0
   if [ "$ROLE" = user ] && [ -n "$IGN_VER" ] && [ "v$IGN_VER" = "$VERSION" ] && [ -d "$DATA_ROOT/$VERSION" ] && [ "$FORCE" != 1 ]; then
@@ -790,9 +790,12 @@ show_plan() {
       note "SU2 is pinned to 8.3.0 on all platforms" ;;
     none) skip "CFD: not requested" ;;
   esac
-  if [ "$WANT_SU2_NATIVE" = 1 ]; then
-    p "SU2 native: build ${CYAN}SU2 $SU2_NATIVE_TAG${RESET} from source (-march=native, -Denable-mixedprec=true, MPI of the CFD env) into ${CYAN}$(tilde "$SU2_NATIVE_DIR")${RESET} ${GREY}(~10 min)${RESET}"
-    note "the native SU2 runs only on CPUs with the instruction set of this one; the conda SU2 stays the default"
+  if [ "$BUILD_SU2" = 1 ]; then
+    p "SU2: compile ${CYAN}SU2 $SU2_NATIVE_TAG${RESET} from source (-march=native, -Denable-mixedprec=true, compilers and Open MPI of the CFD env) into ${CYAN}$(tilde "$SU2_NATIVE_DIR")${RESET} ${GREY}(3-10 min depending on the cores)${RESET}"
+    note "the compiled SU2 runs only on CPUs with the instruction set of this one; --su2-binary keeps the portable conda-forge SU2"
+  elif [ "$CFD_ACTION" != none ] && [ "$WANT_CFD" = 1 ]; then
+    p "SU2: use the conda-forge binary ${GREY}(--su2-binary)${RESET}"
+    if [ -n "${SU2_SRC_NOTE:-}" ]; then note "$SU2_SRC_NOTE"; fi
   fi
 }
 
@@ -993,6 +996,8 @@ install_cfd() {
     ok "reusing $(basename "$mm") ${GREY}$mm${RESET}"
   fi
   local pkgs="$CFD_PACKAGES"
+  [ "$BUILD_SU2" = 1 ] && pkgs="$pkgs $CFD_COMPILER_PACKAGES"
+  CFD_MM="$mm"
   note "this downloads about 3 GB; progress is in $LOG_FILE"
   # shellcheck disable=SC2086
   if ! step "Creating conda env $CFD_ENV_NAME (conda-forge)" "$mm" $root_args create -y -n "$CFD_ENV_NAME" -c conda-forge --override-channels $pkgs; then
@@ -1014,41 +1019,114 @@ install_cfd() {
   fi
 }
 
-# --- SU2 built for this CPU (--su2-native) --------------------------------------------------------------
+# --- SU2 compiled for this CPU --------------------------------------------------------------------------
 # SU2's own meson.py / ninja (they download meson, ninja and the CoDiPack / MeDiPack headers into externals/).
-# The compiler wrappers of the CFD env (Open MPI 5) are pointed at the system gcc/g++, and the binary is linked
-# against the env's libmpi with an rpath, so it runs with the env's mpirun. `-include cstdint`: CLI11 in SU2 8.3.0
-# misses that header for gcc >= 13.
+# Compilers: the conda-forge gcc/g++ of the CFD env (installed into it when missing; the system gcc/g++ otherwise).
+# The MPI compiler wrappers of the env (Open MPI 5) are pointed at that compiler, and the binary is linked against
+# the env's libmpi and libstdc++ with an rpath, so it runs with the env's mpirun. `-include cstdint`: CLI11 in
+# SU2 8.3.0 misses that header for gcc >= 13. build-info.txt next to the binary records the toolchain and the
+# CPU model; ignisyeet compares the latter with the running CPU.
+cpu_model() { sed -n 's/^model name[[:space:]]*:[[:space:]]*//p' /proc/cpuinfo 2>/dev/null | head -n 1; }
+
+# Compile jobs: IGNISYEET_SU2_JOBS, else all cores limited to one job per 2 GB of available memory.
+su2_jobs() {
+  local n mem_kb j
+  if [ -n "${IGNISYEET_SU2_JOBS:-}" ]; then printf '%s' "$IGNISYEET_SU2_JOBS"; return 0; fi
+  n=$(nproc 2>/dev/null || echo 4)
+  mem_kb=$(sed -n 's/^MemAvailable:[[:space:]]*\([0-9]*\).*/\1/p' /proc/meminfo 2>/dev/null)
+  j=$(( ${mem_kb:-0} / 2000000 ))
+  [ "$j" -ge 1 ] || j=1
+  [ "$j" -lt "$n" ] && n=$j
+  printf '%s' "$n"
+}
+
+su2_conda_cxx() { # the conda-forge g++ of the CFD env, if present
+  local c
+  for c in "$CFD_PREFIX"/bin/*-conda-linux-gnu-c++; do [ -x "$c" ] && { printf '%s' "$c"; return 0; }; done
+  return 1
+}
+
+# A failed source build leaves the conda-forge SU2 (always installed) in use. Say so loudly and carry on.
+su2_build_failed() { # REASON
+  SU2_BUILD_FAILED="$1"
+  rmdir "$SU2_NATIVE_DIR" 2>/dev/null || true
+  warn "SU2 could not be compiled: $1"
+  warn "the portable conda-forge SU2 (no -march=native, no mixed precision) stays in use; the rest of the CFD tools are installed"
+  warn "details: $LOG_FILE; retry with: bash install.sh --cfd --force   (or keep the conda-forge SU2 for good with --su2-binary)"
+  return 0
+}
+
 install_su2_native() {
-  [ "$WANT_SU2_NATIVE" = 1 ] || return 0
-  section "SU2 $SU2_NATIVE_TAG for this CPU"
-  if [ -z "$CFD_PREFIX" ] || [ ! -x "$CFD_PREFIX/bin/mpicxx" ]; then warn "no CFD environment with mpicxx; native SU2 skipped"; return 0; fi
-  if [ -x "$SU2_NATIVE_DIR/bin/SU2_CFD" ] && [ "$FORCE" != 1 ]; then
-    ok "reusing ${CYAN}$SU2_NATIVE_DIR/bin/SU2_CFD${RESET} ${GREY}(--force rebuilds)${RESET}"
+  if [ "$BUILD_SU2" != 1 ]; then
+    # --su2-binary: an earlier source build would still be found by ignisyeet, so it is removed.
+    if [ "$WANT_SU2_SRC" = 0 ] && [ "$CFD_ACTION" != none ] && [ "$WANT_CFD" = 1 ] && [ -d "$SU2_NATIVE_DIR" ]; then
+      rm -rf "$SU2_NATIVE_DIR"
+      note "removed the earlier SU2 source build $SU2_NATIVE_DIR; the conda-forge SU2 is used"
+    fi
+    return 0
+  fi
+  section "SU2 $SU2_NATIVE_TAG compiled for this CPU"
+  if [ -z "$CFD_PREFIX" ] || [ ! -x "$CFD_PREFIX/bin/mpicxx" ] || [ ! -x "$CFD_PREFIX/bin/python" ]; then
+    su2_build_failed "the CFD environment has no Open MPI compiler wrappers or python"; return 0
+  fi
+  local cpu; cpu=$(cpu_model)
+  if [ -x "$SU2_NATIVE_DIR/bin/SU2_CFD" ] && [ "$FORCE" != 1 ] && [ -f "$SU2_NATIVE_DIR/build-info.txt" ] \
+    && grep -qx "su2: $SU2_NATIVE_TAG" "$SU2_NATIVE_DIR/build-info.txt" && grep -qxF "cpu: $cpu" "$SU2_NATIVE_DIR/build-info.txt"; then
+    ok "reusing ${CYAN}$SU2_NATIVE_DIR/bin/SU2_CFD${RESET} ${GREY}(built for this CPU; --force rebuilds)${RESET}"
     state_set su2_native "$SU2_NATIVE_DIR"
     return 0
   fi
+  # compilers
+  local cxx cc mm
+  cxx=$(su2_conda_cxx || true)
+  if [ -z "$cxx" ]; then
+    mm="${CFD_MM:-$CONDA_MGR}"; [ -n "$mm" ] || mm=$(find_conda_manager || true)
+    if [ -n "$mm" ]; then
+      step "Adding conda-forge compilers to the CFD env" "$mm" install -y -p "$CFD_PREFIX" -c conda-forge --override-channels $CFD_COMPILER_PACKAGES \
+        || note "the compilers could not be installed into the CFD environment"
+      cxx=$(su2_conda_cxx || true)
+    fi
+  fi
+  if [ -n "$cxx" ]; then
+    cc="${cxx%c++}gcc"
+  elif have gcc && have g++; then
+    cc=$(command -v gcc); cxx=$(command -v g++)
+    note "using the system compilers $cc / $cxx"
+  else
+    su2_build_failed "no C++ compiler (conda-forge cxx-compiler could not be installed, no system g++)"; return 0
+  fi
   local src="$SU2_NATIVE_DIR/src" jobs
-  jobs="${IGNISYEET_SU2_JOBS:-$(nproc 2>/dev/null || echo 4)}"
+  jobs=$(su2_jobs)
   rm -rf "$src"
-  mkdir -p "$SU2_NATIVE_DIR"
-  step "Cloning SU2 $SU2_NATIVE_TAG" git clone --depth 1 --branch "$SU2_NATIVE_TAG" "$SU2_NATIVE_REPO" "$src" \
-    || { warn "SU2 could not be cloned; native SU2 skipped"; return 0; }
+  mkdir -p "$src"
+  step "Downloading SU2 $SU2_NATIVE_TAG" sh -c 'curl -fsSL "$1" | tar -xz --strip-components=1 -C "$2"' sh "$SU2_NATIVE_URL" "$src" \
+    || { su2_build_failed "SU2 $SU2_NATIVE_TAG could not be downloaded from $SU2_NATIVE_URL (no network?)"; rm -rf "$src"; return 0; }
   note "configure and compile with $jobs jobs (IGNISYEET_SU2_JOBS); progress is in $LOG_FILE"
-  if ! step "Configuring SU2 (meson)" env -C "$src" OMPI_CC=gcc OMPI_CXX=g++ CC="$CFD_PREFIX/bin/mpicc" CXX="$CFD_PREFIX/bin/mpicxx" \
-    python3 ./meson.py setup build --prefix="$SU2_NATIVE_DIR" --buildtype=release --optimization=3 \
+  local t0; t0=$(date +%s)
+  if ! step "Configuring SU2 (meson, downloads CoDiPack and MeDiPack)" env -C "$src" OMPI_CC="$cc" OMPI_CXX="$cxx" CC="$CFD_PREFIX/bin/mpicc" CXX="$CFD_PREFIX/bin/mpicxx" \
+    "$CFD_PREFIX/bin/python" ./meson.py setup build --prefix="$SU2_NATIVE_DIR" --buildtype=release --optimization=3 \
     -Dwith-mpi=enabled -Dcustom-mpi=true -Dwith-omp=false -Denable-mixedprec=true -Denable-pywrapper=false \
     -Denable-tests=false "-Dc_args=-march=native -mtune=native" "-Dcpp_args=-march=native -mtune=native -include cstdint"; then
-    warn "SU2 configuration failed; native SU2 skipped (the conda SU2 is unaffected)"; return 0
+    su2_build_failed "the SU2 configuration (meson) failed"; return 0
   fi
-  if ! step "Compiling SU2 (ninja, ~10 min)" env -C "$src" OMPI_CC=gcc OMPI_CXX=g++ ./ninja -j "$jobs" -C build install; then
-    warn "SU2 compilation failed; native SU2 skipped (the conda SU2 is unaffected)"; return 0
+  if ! step "Compiling SU2 (ninja)" env -C "$src" OMPI_CC="$cc" OMPI_CXX="$cxx" ./ninja -j "$jobs" -C build install; then
+    su2_build_failed "the SU2 compilation failed"; return 0
   fi
-  if ! "$SU2_NATIVE_DIR/bin/SU2_CFD" --help </dev/null 2>&1 | grep -q 'SU2 v8\.3'; then
-    warn "the native SU2_CFD does not start; it is not used"; return 0
+  if ! env -u LD_LIBRARY_PATH "$SU2_NATIVE_DIR/bin/SU2_CFD" --help </dev/null 2>&1 | grep -q 'SU2 v8\.3'; then
+    su2_build_failed "the compiled SU2_CFD does not start on this machine"; return 0
   fi
+  {
+    echo "su2: $SU2_NATIVE_TAG"
+    echo "cpu: $cpu"
+    echo "built: $(date -u +%Y-%m-%dT%H:%M:%SZ) in $(elapsed_since "$t0") with $jobs jobs on $(uname -sr)"
+    echo "cxx: $("$cxx" --version 2>&1 | head -n 1)"
+    echo "mpi: $("$CFD_PREFIX/bin/mpirun" --version 2>&1 | head -n 1)"
+    echo "flags: --buildtype=release --optimization=3 -Dwith-mpi=enabled -Dcustom-mpi=true -Dwith-omp=false -Denable-mixedprec=true -Denable-pywrapper=false -Denable-tests=false"
+    echo "c_args: -march=native -mtune=native"
+    echo "cpp_args: -march=native -mtune=native -include cstdint"
+  } >"$SU2_NATIVE_DIR/build-info.txt"
   rm -rf "$src"
-  ok "SU2 $SU2_NATIVE_TAG (native, mixed precision) installed in ${CYAN}$SU2_NATIVE_DIR${RESET}"
+  ok "SU2 $SU2_NATIVE_TAG (mixed precision, ${cpu:-this CPU}) installed in ${CYAN}$SU2_NATIVE_DIR${RESET} ${GREY}($(elapsed_since "$t0"))${RESET}"
   state_set su2_native "$SU2_NATIVE_DIR"
 }
 
@@ -1116,9 +1194,14 @@ summary() {
     say "    ${CYAN}prefix = \"$CFD_PREFIX\"${RESET}"
     say "  ${GREY}or: export IGNISYEET_CFD_PREFIX=\"$CFD_PREFIX\"${RESET}"
   fi
-  if [ "$WANT_SU2_NATIVE" = 1 ] && [ -x "$SU2_NATIVE_DIR/bin/SU2_CFD" ]; then
-    say "  ${BOLD}SU2 native${RESET} ${GREY}- use it instead of the conda SU2 (this CPU only):${RESET}"
-    say "    ${CYAN}export IGNISYEET_SU2_CFD=\"$SU2_NATIVE_DIR/bin/SU2_CFD\"${RESET}"
+  if [ "$BUILD_SU2" = 1 ] && [ -x "$SU2_NATIVE_DIR/bin/SU2_CFD" ] && [ -z "${SU2_BUILD_FAILED:-}" ]; then
+    say "  ${BOLD}SU2${RESET} ${GREY}- compiled for this CPU; ignisyeet uses it automatically:${RESET}"
+    say "    ${CYAN}$SU2_NATIVE_DIR/bin/SU2_CFD${RESET}"
+    say "  ${GREY}it runs only on CPUs like this one; run the installer again after moving to another CPU${RESET}"
+  fi
+  if [ -n "${SU2_BUILD_FAILED:-}" ]; then
+    say ""
+    warn "SU2 was not compiled ($SU2_BUILD_FAILED); the portable conda-forge SU2 is used"
   fi
   if [ "${PATH_MISSING:-0}" = 1 ]; then
     say ""
@@ -1138,13 +1221,14 @@ do_uninstall() {
   local ver dev venv cfd mm su2n
   ver=$(state_get version); dev=$(state_get dev_dir); venv=$(state_get venv); cfd=$(state_get cfd_env); mm=$(state_get micromamba)
   su2n=$(state_get su2_native)
+  [ -z "$su2n" ] && [ -d "$PREFIX/share/ignisyeet-su2-native" ] && su2n="$PREFIX/share/ignisyeet-su2-native"
   [ -z "$venv" ] && [ -d "$VENV_DIR" ] && venv="$VENV_DIR"
   say "  ${GREY}prefix${RESET}  $PREFIX"
   [ -e "$BIN_DIR/ignisyeet" ] || [ -L "$BIN_DIR/ignisyeet" ] && say "  ${GREY}binary${RESET}  $BIN_DIR/ignisyeet"
   [ -d "$DATA_ROOT" ] && say "  ${GREY}data${RESET}    $DATA_ROOT ${GREY}(${ver:-no state file})${RESET}"
   [ -n "$venv" ] && say "  ${GREY}venv${RESET}    $venv"
   [ -n "$cfd" ] && say "  ${GREY}cfd env${RESET} $cfd"
-  [ -n "$su2n" ] && say "  ${GREY}su2 native${RESET} $su2n"
+  [ -n "$su2n" ] && say "  ${GREY}su2 build${RESET} $su2n"
   [ -n "$dev" ] && say "  ${GREY}clone${RESET}   $dev"
   if [ "$DRY_RUN" = 1 ]; then say ""; say "  ${GREY}dry run: nothing removed${RESET}"; return 0; fi
   if ! ask_yn "Remove the installed binary, links and release data?" y && [ "$HAVE_TTY" = 1 ]; then say "  aborted"; return 0; fi
@@ -1172,7 +1256,7 @@ do_uninstall() {
     fi
   fi
   if [ -n "$su2n" ] && [ -d "$su2n" ]; then
-    if [ "$PURGE" = 1 ] || ask_yn "Remove the native SU2 build ($su2n)?" n; then rm -rf "$su2n"; ok "removed $su2n"; fi
+    if [ "$PURGE" = 1 ] || ask_yn "Remove the compiled SU2 ($su2n)?" n; then rm -rf "$su2n"; ok "removed $su2n"; fi
   fi
   if [ -n "$mm" ] && [ -x "$mm" ]; then note "micromamba ($mm) was installed by this installer and is kept; remove it manually if unused"; fi
   if [ -n "$dev" ] && [ -d "$dev" ]; then

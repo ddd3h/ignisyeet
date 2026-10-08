@@ -78,6 +78,29 @@
 //!
 //! Children run in their own process group and are killed on Ctrl-C / SIGTERM; finished cases
 //! keep their `done.json`.
+//!
+//! # Commands, divergence and stopping
+//!
+//! The command line is `mpirun -n <ranks> --oversubscribe --bind-to none SU2_CFD case.cfg`; a run is a single node, so
+//! MPI communicates through shared memory only. The second-order stage of a RANS case is read once a second; a
+//! divergence stops SU2 at once ([`History::rans_divergence`]: on the median of the last five rows the density
+//! residual 2 orders (the SA residual 3 orders) above its minimum since row 10, a non-finite value, or a force
+//! coefficient above 100). A diverged first-order stage is repeated once with the adaptive CFL capped at `4 cfl`
+//! (normally `40 cfl`) and the SA equation at 0.2 of the flow CFL; the second-order stage keeps those settings. A
+//! diverged second-order stage of a cold case is repeated once from the startup solution with the same settings.
+//! Every repeat is recorded as a warning; a second divergence fails the case. SU2 writes nothing when it is
+//! stopped by SIGTERM, so an early stop waits for the next periodic output (every 50 iterations) and one more history
+//! row, at most 105 rows, so that the warm-start solution and the wall `y+` distribution are those of the accepted
+//! state. Failed cases are reported together at the end as `error[IY-F1nn]: aero.cfd: case ... failed: <reason>`;
+//! a kill by signal 9 adds the memory estimate per case to the reason. Case directories are named
+//! `m0.800_a04.00` (negative angles `a-04.00`, sideslip `_b04.00`, roll cases `_r+0.0100` and `_r-0.0100`).
+//!
+//! # Verification record
+//!
+//! The acceptance rules were set with the measurements in `doc/data/cfd` (`rans_flatplate.csv` for the flat-plate
+//! replay of the stopping rule, `rans_table_cases.csv` for the 20-case RANS table, `fin_resolution.csv` and
+//! `mesh_convergence.csv` for the Euler mesh studies). Euler: 0.56 % low `CN` at the iteration where the density
+//! residual first reached 1e-6 (M 0.8 sample rocket), which is why the residual alone does not stop a case.
 
 use crate::case::{case_hash, case_list, read_done, warm_start_source_for, write_done, AxialRecord, CaseResult, CaseSpec, ResidualPeak};
 use crate::config::{AlphaMode, CfdOptions, FlowModel};

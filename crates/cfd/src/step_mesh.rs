@@ -46,6 +46,35 @@
 //!
 //! The mesh hash contains the bytes of the CAD file, every parameter of both modes and the scripts (`mesh_step.py`,
 //! `bl_layer.py`, `su2_writer.py`).
+//!
+//! # Files written for `surface = "step"` (below `<workdir>/mesh/`)
+//!
+//! * `step_prepared.brep`: the unit-converted solid in the CFD frame, with the cone fused for Euler `"fairing"`
+//!   (OpenCASCADE BREP, metres); the volume mesh is made from it.
+//! * `step_surface.stl`: its triangulation (binary STL grouped by face, CFD frame, metres), used by the registration.
+//! * `step_report.json`: `solids_in_file`, `faces_in_file`, `notes` (sewing, healing, fusion), `solids`, `volume`,
+//!   `area`, `bbox`, `faces` (per face `tag`, `type`, `area`, `centroid`, `normal`, `planar`, `width` = `2A/P` (m),
+//!   `bbox`, `base`), `face_triangles`, `smallest_face_width` and `smallest_face`, `smallest_edge` and
+//!   `smallest_edge_tag`, `symmetry_y` and `symmetry_z` (the mirror check per plane), `fairing` (position and size of
+//!   the cone, or the reason `error` it could not be added), `seconds` and `seconds_symmetry` (s).
+//! * `step_prepare.json`, `prepare_params.json`, `prepare.log`: hash of the prepare stage, its parameters and log; the
+//!   same hash skips the stage.
+//! * `step_quarter_failed.json`: the hash of the prepared shape when the quarter domain could not be cut; the same
+//!   shape then meshes the half domain from the start.
+//!
+//! `ignisyeet cfd-check <config> --mesh` prints after the mesh statistics a report starting with
+//! `CAD surface (surface = "step", base treatment: ...):` with the lines `file`, `shape`, `details`, `domain` (two
+//! symmetry lines included), `base`, and four registration lines, possibly followed by `note:` and `warning:` lines;
+//! the values equal `step` in `cfd_report.json`. Example of the report (values omitted):
+//!
+//! ```text
+//! file        .../sample_rocket.step (step, unit declared 0.001 m, step_unit auto, scale 1)
+//! shape       1 solid(s) in the file, 1 after fusion; ... faces (... base), area ... m^2, volume ... m^3
+//! details     3 STEP-only region(s), ... m^2; smallest face width ... m -> smallest mesh size ... m
+//! domain      full: shape symmetry none (requested auto), full mesh: auto: not symmetric (y = 0: ...; z = 0: ...)
+//! base        fairing {...}
+//! registration  STL -> STEP surface: max ... m at (...), p99 ... m, rms ... m (... samples, allowed ... m)
+//! ```
 
 use crate::case::hash_parts;
 use crate::config::{BaseTreatment, CfdOptions, FlowModel, StepUnit};

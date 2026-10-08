@@ -862,10 +862,10 @@ IY-S060
     error[IY-S060]: dispersion mode "monte_carlo" returns per-sample data: call run_monte_carlo
 
 意味
-    モンテカルロ用の関数を風速グリッドの経路で呼んだ。
+    ``dispersion.mode = "monte_carlo"`` の計算が、風の格子の計算として実行された。
 
 主な原因
-    内部の呼び出しの誤り。
+    ソフトウェアの誤り。
 
 対処
     ``dispersion.mode`` を確認する。通常は表示されない。

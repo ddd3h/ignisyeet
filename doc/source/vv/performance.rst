@@ -120,3 +120,60 @@ STL をそのまま使う計算と作り直した形状の計算（:ref:`sec-cfd
      - 10 ケース、1074 s
 
 STL モードは、鏡映対称な形状で :math:`-\alpha` を解かずに済むこと（24 ケースから 16 ケース）と早期終了により、4.6 倍速い。作り直すモードは早期終了だけで 2.1 倍速い。
+
+.. _sec-vperf-su2-native:
+
+SU2 の構築方法と速さ
+~~~~~~~~~~~~~~~~~~~~~~
+
+Linux のインストーラは、SU2 8.3.0 をその場の CPU 向けにソースから構築するか、移植できる conda-forge のバイナリを使うかを選べる（:ref:`page-howto-cfd-setup`）。
+conda-forge のバイナリは汎用の x86-64 向けで、実行する CPU 固有の命令をほとんど使わない。
+同じ共有ノード（EPYC 7742 2 基、他の仕事と共用）で、同じメッシュと設定を 16 ランクで解いて比べた結果を :numref:`tbl-vperf-su2-native` に示す。
+同じ条件の組（Euler 5 組、RANS 2 組）を、実行の順を入れ替えながら測った。
+値は ``doc/data/cfd/su2_native_benchmark.csv`` にある。
+
+.. _tbl-vperf-su2-native:
+
+.. list-table:: 構築した SU2 の conda-forge の SU2 に対する比（構築した値 / conda-forge の値）
+   :header-rows: 1
+   :widths: 40 20 20 20
+
+   * - 計算
+     - 1 反復あたりの時間
+     - ピークのメモリ
+     - 係数の差
+   * - Euler（Mach 0.8 と 2、迎角 4°。5 組）
+     - 0.70 から 0.87
+     - 約 0.75
+     - :math:`C_N` 0.005 % 以内、:math:`x_{cp}` 0.001 mm 以内
+   * - RANS（壁面 5 mm、Mach 0.8、迎角 4°。2 組）
+     - 0.75 から 0.77
+     - 約 0.68
+     - :math:`C_N` 0.004 % 以内、:math:`x_{cp}` 0.011 mm 以内
+
+ノードの負荷が組ごとに違うので、時間の比は組によって動く。RANS の 1 組目は負荷の差が大きい（構築した SU2 の実行中は 26 から 82、conda-forge の SU2 の実行中は 82 から 48）。
+どちらの構築方法でも同じ係数表になる。
+
+選び方は :numref:`tbl-vperf-su2-choice` のとおりである。
+
+.. _tbl-vperf-su2-choice:
+
+.. list-table:: SU2 の構築方法の選び方
+   :header-rows: 1
+   :widths: 28 36 36
+
+   * - 項目
+     - 構築する（既定）
+     - ``--su2-binary``
+   * - SU2
+     - その CPU 向けにソースから構築
+     - 汎用の conda-forge のバイナリ
+   * - 必要なもの
+     - GitHub への接続
+     - なし
+   * - 別の CPU への移植
+     - 構築した CPU と同じ命令集合の CPU だけ
+     - 可
+   * - 向く環境
+     - 1 台のマシンで使い続ける
+     - CPU の世代が混在する共有クラスタ、コンテナ、配布用の環境

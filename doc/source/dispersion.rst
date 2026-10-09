@@ -112,7 +112,7 @@
 
 .. list-table:: モンテカルロ解析のばらつき（標準偏差の既定値）
    :header-rows: 1
-   :widths: 22 12 14 52
+   :widths: 30 11 11 48
    :class: longtable
 
    * - 項目
@@ -474,7 +474,7 @@ P99 と P99.9 は :math:`10^3` から :math:`10^5` サンプルで数 % しか�
 
 .. list-table:: 方式の比較（コストはサンプル機体、20 スレッドの CPU（Intel Core i7-12700、ほかの処理も動いていた）での値）
    :header-rows: 1
-   :widths: 14 46 40
+   :widths: 20 42 38
 
    * - 方式
      - 得られる量と限界

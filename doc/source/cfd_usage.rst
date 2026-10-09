@@ -2,14 +2,9 @@ CFD による空力表の作成
 ======================
 
 部品積み上げ法とパネル法は数秒で係数表を作るが、遷音速の抗力や複雑な形状の細部は CFD でなければ捉えられない（方法の選択は :ref:`page-theory-aero-choose`）。
-この章は、``aero.method = "cfd"`` で SU2 に機体まわりの流れを解かせ、その結果を係数表にするまでを、ツールの用意、計算の実行、CAD のモデルの利用、出力ファイルの順に述べる。
-最後の節で、係数表そのものの形式を示す。外部の風洞試験の表を使うときも、この形式で用意する。
-
-CFD は 1 ケースごとの計算が重く、設定によって結果も時間も大きく変わる。
-サンプル機体の Euler で 12 ケースを解くのに約 1.9 時間、RANS で 20 ケースを解くのに約 4.4 時間かかる。
-計算の前に資源の見積もりを確かめ、計算のあとにケースの状態を確かめる手順を、この章で身につけることができる。
-方程式、離散化、選択肢の根拠は理論の章（:ref:`page-theory-cfd-equations`、:ref:`page-theory-cfd-choose`、:ref:`page-theory-cfd-coefficients`）が扱う。
-設定キーの値域は :ref:`page-reference-config-cfd` にある。
+``aero.method = "cfd"`` を指定すると、SU2 が機体まわりの流れを解き、その結果が係数表になる。CFD は 1 ケースごとの計算が重く、設定によって結果も時間も大きく変わる。
+この章は、ツールの用意、計算の実行と結果の確かめ方、CAD のモデルの利用、出力ファイルを述べ、最後の節で係数表そのものの形式を示す。外部の風洞試験の表を使うときも、この形式で用意する。
+方程式と離散化の根拠は :ref:`page-theory-cfd-equations` にあり、設定キーの値域は :ref:`page-reference-config-cfd` にある。
 
 .. _page-howto-cfd-setup:
 
@@ -70,7 +65,7 @@ manifold3d の行は ``surface = "stl"`` のときだけ検査される。
 
 ``--mesh`` を付けると、実際にメッシュを作って品質を表示する。節点数、セル数、壁面の三角形数、セルの種類、品質（SICN の最小値と平均、0.05 未満のセル数）が出る。
 ``examples/sample_step.toml`` では、節点数 560092、セル数 2690207、壁面の三角形数 479830、SICN の最小値 0.071、平均 0.783、0.05 未満のセル 0 で、メッシュの生成に 101 秒かかった（20 スレッドのマシン）。
-作ったメッシュは本番の計算でそのまま再利用される。
+このメッシュは本番の計算にも使われる。
 
 .. _sec-cfd-native:
 
@@ -146,9 +141,9 @@ CFD で係数表を作る
 失敗したケースと未収束のケースがあれば、最後にまとめて表示される。
 続けて ``ignisyeet sim`` や ``ignisyeet dispersion`` を実行すると、この表が使われる。作った表を別の設定でも使うときは、``aero.method = "table"`` で読み込む。
 
-:math:`M=0.3, 0.8, 1.2, 2.0` と :math:`\alpha=0, 4, 8^\circ` の 12 ケースを 4 ランクで 1 ケースずつ解くと、約 1.9 時間かかった（20 スレッドのデスクトップ CPU で、他の計算と同時に実行した測定。メッシュは ``wall_size`` 2 mm、142 万セル。``doc/data/cfd/run_summary.json``）。
+:math:`M=0.3, 0.8, 1.2, 2.0` と :math:`\alpha=0, 4, 8^\circ` の 12 ケース（``sample_cfd.toml`` の行列）を 4 ランクで 1 ケースずつ解く時間は、合計で約 1.9 時間である。:math:`\alpha=0, 2, 4, 8^\circ` の 16 ケースでは全体で約 2.5 時間かかった（20 スレッドのデスクトップ CPU で、他の計算と同時に実行した測定。メッシュは ``wall_size`` 2 mm、142 万セル。``doc/data/cfd/run_summary.json``）。
 
-途中で止めた（Ctrl-C、SIGTERM、時間切れ）あと、同じ設定で ``ignisyeet aero`` をもう一度実行すると、終わったケースは再利用され、残りだけが解かれる。
+途中で止めた（Ctrl-C、SIGTERM、時間切れ）あと、同じ設定で ``ignisyeet aero`` をもう一度実行すると、終わったケースは解き直さず、残りだけが解かれる。
 最初からやり直すには、出力先の下の ``cfd`` ディレクトリ（``workdir`` で変えられる）を削除する。
 
 解いたケースを確かめる
@@ -327,11 +322,27 @@ CAD から書き出す
 ``registration`` は STL と CAD の距離で、``max`` が ``allowed`` 以内なら通る。
 ``bounding box`` と ``offsets`` は包含箱の比較で、``offsets`` がすべて 0 に近ければ位置と向きがそろっている。
 
-照合は、包含箱、ノーズの先端、STL の面と CAD の面の距離を比べる。許容は ``allowed`` に表示される。許容より小さい形の違い（フィンの厚さの違いなど）は通る。
-縫い合わせや形状の修復をしたときは ``note:`` の行に、離れたソリッドや ``"fairing"`` で形を変えたことは ``warning[IY-F5nn]:`` の行に出る。同じ内容は、係数表を作ったあとの ``cfd_report.json`` の ``step`` に入る。
+照合は、包含箱、ノーズの先端、STL の面と CAD の面の距離を比べる。:math:`L` を STL から抽出した全長、:math:`h_w` を ``wall_size`` として、同じ機体とみなす条件は次のとおりである。
 
-照合に通らないときは、``aero.cfd.surface = "step": … does not describe the same rocket as rocket.stl`` のエラーに、続く理由の行（``the nose tips differ``、``the STL extends beyond the STEP``、``the STEP is … times as large as the STL``、``the STL lies up to … m from the STEP surface``）が付く。
-``likely cause: units`` は単位（``step_unit`` と ``rocket.stl_scale``）、``a different orientation or position`` は向きか原点（STL と同じ座標系で書き出し直す）、``a different revision of the CAD model`` は別の版のモデルである（:ref:`IY-F071`）。
+.. list-table::
+   :header-rows: 1
+   :widths: 24 76
+
+   * - 条件
+     - 内容
+   * - 包含箱
+     - STL の包含箱が CAD のモデルの包含箱に :math:`0.01L` の余裕で収まる。CAD のモデルの包含箱は、どの軸でも STL の 1.25 倍を超えない
+   * - ノーズ先端
+     - :math:`x` の最小値の差が :math:`0.01L` 以下である
+   * - 面の距離
+     - STL の面上の点が、すべて CAD のモデルの面から :math:`\max(2h_w,\,0.01L)` 以内にある。CAD の立体の内側に :math:`\max(h_w,\,0.002L)` より深く埋まった点（胴体に差し込んだ箱で表したフィンなど）は除き、除いた点は STL の点の 25 % 以下である
+   * - CAD にだけある部分
+     - STL の面から :math:`\max(h_w,\,0.002L)` より離れた部分は、CAD の細部として許し、つながった領域の数と面積を報告する
+
+許容は報告の ``allowed`` に表示される。許容より小さい形の違い（フィンの厚さの違いなど）は通る。
+縫い合わせや形状の修復をしたときは ``note:`` の行に、離れたソリッドや ``"fairing"`` で形を変えたことは警告の行に出る。同じ内容は、係数表を作ったあとの ``cfd_report.json`` の ``step`` に入る。
+
+照合に通らないときは、メッシュを作る前にエラーで止まり、不一致の理由と推定した原因が付く。原因は単位（``step_unit`` と ``rocket.stl_scale``）、向きか原点（STL と同じ座標系で書き出し直す）、別の版のモデルのいずれかである（:ref:`IY-F071`）。
 
 係数表を作る
 ~~~~~~~~~~~~
@@ -341,7 +352,7 @@ CAD から書き出す
    $ ignisyeet aero examples/sample_step.toml
 
 CFD の実行、中断と再開、``cfd_cases.csv`` の読み方は STL の場合と同じである。CAD のモデルの係数表は、常に 6 成分の一般表になる。
-付属の ``sample_rocket.step`` は鏡映対称でないので、全領域を解く。全領域は半領域の約 2 倍のセルで、負の迎角も解くので、``sample_cfd.toml`` の約 1.9 時間よりかなり長くかかる。
+付属の ``sample_rocket.step`` は鏡映対称でないので、全領域を解く。全領域は半領域の約 2 倍のセルで、負の迎角も解くので、``sample_cfd.toml``\ （:math:`\alpha=0, 4, 8^\circ` の 12 ケース、半領域）の約 1.9 時間よりかなり長くかかる。
 ``wall_size`` 6 mm（フィンの面 1 mm）では、``sample_rocket.step`` の全領域は 162 万セル、同じ大きさの ``panel_mesh`` の半モデルは 81 万セルだった（``doc/data/cfd/fin_resolution.csv``）。
 細い面（ランチラグの管の壁など）には、その幅の 1/4（``wall_size`` の 1/8 を下限とする）まで細かい要素を置くので、細部の多いモデルではセルが増える。
 
@@ -508,7 +519,7 @@ CFD の実行の要約である。項目は次のとおりである。
    * - ``mesh/step_report.json``
      - ``surface = "step"`` のとき。CAD のモデルの読み込みと位置合わせの報告。内容は ``cfd_report.json`` の ``step`` に入る
 
-同じ入力のケースとメッシュは、次の実行で再利用される。途中で止めた計算や、設定の一部だけを変えた計算は、影響を受けないケースから先を計算する。
+同じ設定で実行し直すと、終わったケースは解き直さない。
 
 .. _page-reference-aero-table-format:
 
@@ -739,19 +750,21 @@ Mach 数の刻みは、作り方で異なる。部品積み上げ法は ``aero.g
   零揚力抗力、法線力傾斜、迎角 0 の圧力中心と静安定余裕（:ref:`sec-static-margin-general`）を、外挿ではなく表の値から求めるためである。
 * CSV の行数が、``machs`` と ``alphas_deg``\ （一般表では ``betas_deg`` も）の積に一致すること。
 * 各行の格子の座標が、付随ファイルの格子から決まる位置の値に一致すること。並びが違う行は、行番号と期待される格子点を示してエラーにする（比較の許容は相対 :math:`10^{-6}`）。
-* 格子の座標の列を含むすべてのセルが有限であること。``NaN`` と ``inf`` は ``row 4 of …: column 1 (mach) is not finite: inf`` の形（行と列は例）で列の位置と見出しを示してエラーにする。
+* 格子の座標の列を含むすべてのセルが有限であること。``NaN`` と ``inf`` は、行と列の位置を示してエラーにする。
 * 値が数として読めない行、列数が合わない行がないこと。
 
-CSV の見出しは、列の名前と順序が上の見出しと一致していなければならない（大文字小文字と前後の空白は無視する）。違うと ``error[IY-A044]: aero table <path>: unexpected CSV header …`` のエラーになる。
+CSV の見出しは、列の名前と順序が上の見出しと一致していなければならない（大文字小文字と前後の空白は無視する）。違うとエラーになる（:ref:`IY-A044`）。
 
 .. _sec-file-v1:
 
 列の少ない形式の表
 ~~~~~~~~~~~~~~~~~~
 
-各行の値の数は見出しの列数に一致しなければならない。軸対称表は 17 列（格子の 2 列に値 15 個）、一般表は 22 列（格子の 3 列に値 19 個）の形式か、次の列の組の形式である。足りない列は 0 とする。
+各行の値の数は見出しの列数に一致しなければならない。軸対称表は 17 列（格子の 2 列に値 15 個）、一般表は 22 列（格子の 3 列に値 19 個）の形式か、:numref:`tbl-aero-table-short` の列の組の形式である。足りない列は 0 とする。
 
-.. list-table::
+.. _tbl-aero-table-short:
+
+.. list-table:: 列の少ない形式の表
    :header-rows: 1
    :widths: 22 18 60
 
@@ -780,9 +793,8 @@ CSV の見出しは、列の名前と順序が上の見出しと一致してい�
 形状を抽出できないときは、注意書きを表示してロール項を 0 のままにし、機体はロールしない。フィンがなければ補う値も 0 で、注意書きは出ない。
 ロール項を含む表は、そのまま使う。補った値は読み込んだ表のメモリ上だけに入り、元のファイルは書き換えない。
 
-遅れと Magnus の列を持たない外部の表（上の表の ``format_version`` 1、2 と 15 個の値の一般表）には、ロール項と同じく、現在の STL の形状から部品積み上げ法の遅れの和（胴体とフィンの見かけの質量。:ref:`sec-damping`）を求めて補い、
-``the external aero table has no lag/Magnus columns: the apparent-mass (lag) sums were filled from the geometry (component build-up); Magnus force and induced roll are 0`` の警告を出す。
-形状を抽出できないときは遅れの和を 0 のまま飛ばし、``the external aero table has no lag/Magnus columns and the geometry is unavailable: the flight has no apparent-mass (lag) terms, Magnus force or induced roll`` の警告を出す。
+遅れと Magnus の列を持たない外部の表（:numref:`tbl-aero-table-short` の ``format_version`` 1、2 と 15 個の値の一般表）には、ロール項と同じく、現在の STL の形状から部品積み上げ法の遅れの和（胴体とフィンの見かけの質量。:ref:`sec-damping`）を求めて補い、警告を出す（:ref:`IY-O525`）。
+形状を抽出できないときは遅れの和を 0 のまま飛ばし、その旨の警告を出す（:ref:`IY-O527`）。
 どちらの場合も Magnus 力とモーメント、誘導ロールは 0 で、回転による法線力（減衰の和から求める。:eq:`eq-cnq-force`）は働く。
 
 **実測や CFD のピッチ減衰を使う表**：強制振動の風洞試験や CFD、実射の同定で得たピッチ減衰 :math:`C_{mq}+C_{m\dot\alpha}` は、局所的な迎角の項だけでなく、見かけの質量の遅れと対流の回転の項（:eq:`eq-lag-dyn-section`）をすでに含む。
@@ -809,7 +821,7 @@ CSV の見出しは、列の名前と順序が上の見出しと一致してい�
 * 格子の外の引き出しは、迎角・横滑り角の最初の格子点より小さい側も、最後の格子点より大きい側も、範囲外として数える（``aero_table_range`` の ``angle_beyond``。:ref:`sec-file-summary`）。格子点が 1 つだけの軸では、その値以外はすべて範囲外である。
 * 軸対称な外部の表は、``aero.table_kind = "general"`` で一般表に展開できる（展開した表は書き出さない）。外部の表が最初から一般表なら、そのまま使う。
 * 軸対称表の誘導ロール ``cl4`` は、付随ファイルの ``fin_roll_deg`` のフィンの面を基準にした値で、フィンが 4 枚の機体（``fin_count``）にだけ使う。
-  ``cl4`` を書くときは ``fin_count`` も書く。ないときは 4 枚とみなして警告を出す（``the aero table has an induced roll cl4 but no fin_count in its sidecar: the sin(4 phi) form of four fins is assumed``）。
+  ``cl4`` を書くときは ``fin_count`` も書く。ないときは 4 枚とみなして警告を出す（:ref:`IY-O526`）。
   Magnus 力の ``cnpa`` は :math:`\hat p=pd/(2V)` についての傾き（McCoy の :math:`C_{Np\alpha}` の 2 倍）で、正の向きは :math:`\bm{u}\times\bm{e}_x` である（:eq:`eq-magnus`）。``cmpa`` は静的な圧力中心まわりの Magnus のモーメント（McCoy の :math:`C_{Mp\alpha}` の向き。:eq:`eq-magnus-moment`）である。
 
 .. _sec-file-drag:

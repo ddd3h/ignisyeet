@@ -1240,8 +1240,7 @@ RANS の既定値は ``model = "rans"`` を選んだときの値である。
    \renewcommand{\arraystretch}{1}
 
 ``thrust_misalignment_deg`` から ``cmq_scale`` までの 9 項目は既定で無効である。
-乱数は、ロールと非対称の 6 項目を最初の 11 項目のあとに、空力の 3 項目（``lag_scale`` ``magnus_scale`` ``cmq_scale``）をさらにそのあとに引く。
-したがって、最初の 11 項目の値はこの 9 項目の設定に依存せず、空力の 3 項目の設定は、ほかのどの項目の値も変えない。
+この 9 項目のどれを有効にしても、最初の 11 項目から引く値は変わらない。また ``lag_scale`` ``magnus_scale`` ``cmq_scale`` の設定は、ほかのどの項目の値も変えない。
 
 .. _sec-config-checks:
 
@@ -1249,37 +1248,29 @@ RANS の既定値は ``model = "rans"`` を選んだときの値である。
 --------
 
 各キーの型と範囲は、上の表の意味の欄に示した。複数のキーにまたがる条件は、それぞれの表の後ろに書いた。
-ここでは、表のキーに結び付かない検査をまとめる。
+ここでは、表のキーに結び付かない検査をまとめる。検査にかかったときのメッセージと対処は :ref:`errors` にある。
 
-``wind.model`` が使わないキー（``exponent`` は ``power`` だけ、``roughness_length`` は ``log`` だけ、``ground_blend_height`` は ``power`` と ``log`` だけが使う）は検査せず、使わないモデルではどの値でもエラーにしない。
+``wind.model`` が使わないキーは検査せず、使わないモデルではどの値でもエラーにしない。
 ``wind.profile_mean_speed`` と ``wind.profile_mean_direction_deg`` は ``model = "profile"`` のときだけ指定できる（:ref:`IY-C056`）。
-どのセクションも、未知のキーがあるとキーの名前を示してエラーにする（``rol_deg`` のような綴りの誤りが黙って無視されないようにするためである）。
+どのセクションも、未知のキーがあるとキーの名前を示してエラーにする。綴りの誤りが黙って無視されることはない。
 
-入力ファイルが読めないときは、エラーにファイルのパスを示す（STL、モータの ``.eng``、風のプロファイル、外部の係数表とその付随ファイル）。
-STL は、頂点の座標に有限でない値（``NaN`` や ``inf``）があると、三角形の番号を示してエラーにする。
-STL の表面が閉じていない（開いた辺が辺の 1 % を超えるか、機体の基準直径の 0.1 倍より幅の広い穴がある）ときもエラーにする（:ref:`sec-geometry-warnings`）。
-バイナリ STL は、見出しに書かれた三角形の数に必要なバイト数よりファイルが短いと、``binary STL declares 3 triangles (needs 234 bytes) but the file has 191 bytes: the file is truncated or corrupt`` の形（数は例）で、宣言した数、必要なバイト数、実際のバイト数を示してエラーにする。
+入力ファイル（STL、モータの ``.eng``、風のプロファイル、外部の係数表とその付随ファイル）が読めないときは、ファイルのパスを示してエラーにする。
+STL は、頂点の座標に有限でない値があるとき、バイナリ STL が見出しの三角形の数に対して短いとき、表面が閉じていないときにもエラーにする（:ref:`sec-geometry-warnings`）。
 ``.eng`` の検査は :ref:`sec-propulsion-eng` に、外部の係数表の検査は :ref:`sec-aero-table-format` にある。
 
 形状を抽出したあとで、次の場合にエラーにする。
 
-* ``rocket.stl_scale`` を掛けた機体の全長が 0.1 m から 20 m の範囲の外にある。メッセージは ``body length … m is outside the plausible 0.1-20 m range: check the STL units and rocket.stl_scale`` の形で、``stl_scale`` の現在の値を添える。
+* 機体の全長が許容範囲の外にある。``stl_scale`` の誤りを疑う（範囲は :ref:`page-theory-geometry` にある）。
 * 乾燥重心 ``rocket.cg_dry`` が機体の全長より後方にある。
-* モータ（``.eng`` の長さ）が機体の全長より長い。メッセージは ``the motor (… m) is longer than the body (… m): check motor.eng (the motor length in its header, in millimetres) and rocket.stl_scale`` （1 mm の許容がある）。
-* モータが機体の外にある。モータ後端の位置 ``motor.aft_x`` がモータの長さ（``.eng`` の長さ）より前、または機体の全長より後方にある（1 mm の許容がある）。
-  メッセージは ``motor.aft_x = 0.2 m puts the motor outside the body: the motor is … m long and the body … m, so motor.aft_x (the motor's aft end, measured aft of the nose tip) must be between … and … m`` の形である。
-  省略したときは先頭が ``motor.aft_x (default: the body length … m) puts the motor outside the body`` になる。
+* モータ（``.eng`` の長さ）が機体の全長より長い。
+* モータ後端の位置 ``motor.aft_x`` がモータの長さより前、または機体の全長より後方にあり、モータが機体の外に出る。どちらも 1 mm の許容がある。
 
-全長と乾燥重心の検査のエラーでは、形状の抽出の警告（:ref:`sec-geometry-warnings`）を、メッセージの後に 1 行ずつ ``geometry warning: …`` の形で続ける。
+全長と乾燥重心の検査のエラーでは、形状の抽出の警告（:ref:`sec-geometry-warnings`）をメッセージの後に続けて示す。
 
-積分が発散して状態に有限でない値が現れたときも、エラーにする（``error[IY-S081]: integration diverged at t = … s; reduce sim.dt or tighten rtol/atol, or check the aero table and mass properties``。:ref:`sec-integrators`）。値が有限でも、速さが 8 km/s を超えるか高さが 1000 km を超えたときは、発散とみなして同じ形のエラーにする。
-モンテカルロ解析では、そのサンプルを失敗として数える。風の格子では、そのケースだけを失敗として記録し、ほかのケースの計算は続ける（:ref:`sec-wind-grid-failed`）。
+積分が発散して状態に有限でない値が現れたときも、速さや高さが現実にあり得ない値になったときも、エラーにする（:ref:`sec-integrators`）。
+モンテカルロ解析ではそのサンプルを失敗として数え、風の格子ではそのケースだけを失敗として記録して、ほかのケースの計算は続ける（:ref:`sec-wind-grid-failed`）。
 
-飛翔計算の前に、重心まわりの慣性テンソルを、乾燥時と燃焼中について検査する。
-主慣性モーメントがすべて有限で正で、最大と最小の比が 10\ :sup:`8` 以下でなければ、
-``inertia tensor is singular or ill-conditioned at t = … s (principal moments …, …, … kg m^2; the largest may be at most 1e8 times the smallest): check rocket.ixx_dry, iyy_dry, izz_dry and the products of inertia``
-の形のエラーにする（:ref:`sec-inertia-tensor`）。
-回収系が無効な機体をパラシュート降下で飛ばそうとすると、``the parachute descent needs recovery.enabled = true (with recovery disabled there is no parachute to deploy); fly the ballistic descent or enable [recovery]`` のエラーにする。
-回収系が有効なときは、飛翔計算の前にも ``recovery.cd_s`` が有限で正であること（``recovery.cd_s must be positive and finite when recovery.enabled = true, got …``）と、``recovery.delay`` が有限で 0 以上であること（``recovery.delay must be non-negative and finite, got …``）を確かめる。
+飛翔計算の前に、乾燥時と燃焼中の慣性テンソルを検査し、主慣性モーメントが正でない、または極端に偏るときはエラーにする（:ref:`sec-inertia-tensor`）。
+回収系が無効な機体をパラシュート降下で飛ばそうとするとエラーにする。回収系が有効なときは、``recovery.cd_s`` が有限で正であること、``recovery.delay`` が有限で 0 以上であることも飛翔計算の前に確かめる。
 
 UTF-8 の BOM（バイト順マーク）が先頭にあっても読める（設定ファイル、``.eng``、外部の係数表とその JSON、風のプロファイルの表）。

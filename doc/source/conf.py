@@ -110,5 +110,7 @@ latex_elements = {
 % row: drop the list skips and the empty line that the cell label leaves in front of the list.
 \usepackage{etoolbox}
 \AtBeginEnvironment{description}{\ifinner\setlength{\topsep}{0pt}\setlength{\partopsep}{0pt}\setlength{\parsep}{0pt}\par\nointerlineskip\vskip-\baselineskip\fi}
+% The key names in those cells may break after an underscore (wind.profile_mean_direction_deg is wider than the cell).
+\makeatletter\AtBeginEnvironment{description}{\ifinner\let\IY@us\_\def\_{\IY@us\allowbreak}\fi}\makeatother
 """,
 }

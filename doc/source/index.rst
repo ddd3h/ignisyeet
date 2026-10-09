@@ -64,12 +64,13 @@ IgnisYeet ドキュメント
    howto/index
    reference/index
    theory/index
+   cfd
+   cfd_methods
    environment
    config
-   verification
-   validation
-   limitations
-   development
+   dispersion
+   vv/index
+   dev/index
 
 .. raw:: latex
 

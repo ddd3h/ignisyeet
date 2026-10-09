@@ -1,48 +1,21 @@
 .. _page-theory-cfd-coefficients:
 
-CFD から係数表を作る式
-========================
+CFD の係数表
+============
 
-本章は、SU2 が出した力とモーメントの係数から、飛翔計算が読む係数表を作る式を述べる。
-座標と符号の変換、CFD が与えない項の補い方、解いた点から規則的な表の格子への補間、一般表、解いた範囲の外、ロール減衰微係数の順に進む。
-解く条件の選び方は :ref:`page-theory-cfd-choose`、方程式は :ref:`page-theory-cfd-equations` にある。表の定義は :ref:`page-theory-aero-tables` と :ref:`page-theory-aero-coefficients` にある。
+CFD の解は、Mach 数、迎角、横滑り角の点ごとの力とモーメントである。飛翔計算が読むのは、これを規則的な格子に並べた係数表なので、点から表を作る段階にも、結果を左右する取り決めがある。
+迎角の正負をどう扱うか、CFD が与えない項を何で補うか、解いた範囲の外をどうつなぐかである。
 
-この章で決めること
---------------------
-
-この章の式そのものは選べないが、次の設定が結果の表に効く。
-
-.. list-table::
-   :header-rows: 1
-   :widths: 30 40 30
-
-   * - 決めること
-     - 設定キー
-     - 本章の節
-   * - 底面の項を CFD から取るか
-     - :ref:`rans_base <cfg-aero-cfd-rans_base>`
-     - :ref:`sec-cfd-post`
-   * - 迎角と Mach 数の格子、迎角の上限
-     - :ref:`machs <cfg-aero-cfd-machs>`、:ref:`alphas_deg <cfg-aero-cfd-alphas_deg>`、:ref:`alpha_max_deg <cfg-aero-alpha_max_deg>`
-     - :ref:`sec-cfd-table-build`、:ref:`sec-cfd-region-outside`
-   * - 一般表の Mach 数の刻み
-     - :ref:`general_mach_step <cfg-aero-cfd-general_mach_step>`
-     - :ref:`sec-cfd-general`
-   * - ロール減衰を CFD から取るか
-     - :ref:`roll_damping <cfg-aero-cfd-roll_damping>`
-     - :ref:`sec-cfd-roll-post`
-
-選び方
---------
+この章は、まず CFD の値とモデルの値の区分を示し、迎角とケース行列の取り方、SU2 の係数から機体軸の係数への変換、軸対称表と一般表の作り方、解いた範囲の外、ロール減衰微係数の順に述べる。
+最後に流れ場の図で係数の由来を確かめ、適用範囲と精度をまとめる。解く条件の選び方は :ref:`page-theory-cfd-choose`、表の定義は :ref:`page-theory-aero-tables` と :ref:`page-theory-aero-coefficients` にある。
 
 .. _sec-cfd-supplied:
 
-CFD が与える値とモデルで補う値
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+CFD の値とモデルの値
+--------------------
 
-係数表の各量が、CFD の解から来るか、部品積み上げ法（またはパネル法）のモデルから来るかを :numref:`tbl-cfd-supplied` に示す。
-結果を使うときは、モデルで補った量の精度が部品積み上げ法の精度であることに注意する。
-:numref:`fig-cfd-supplied` は、その区分と、迎角の軸上での CFD の値とモデルの値の関係を示す。
+係数表の各量が、CFD の解から来るか、部品積み上げ法（またはパネル法）のモデルから来るかを :numref:`tbl-cfd-supplied` と :numref:`fig-cfd-supplied` に示す。
+モデルで補った量の精度は、部品積み上げ法の精度である。
 
 .. _fig-cfd-supplied:
 
@@ -94,8 +67,97 @@ CFD が与える値とモデルで補う値
      - どの手法でもモデルにない
      - 同左
 
-モデル
---------
+迎角とケース行列
+----------------
+
+.. _sec-cfd-alpha-mode:
+
+迎角の扱い
+~~~~~~~~~~
+
+``alpha_mode`` は、迎角の正負と :math:`\alpha=0` での非対称性の扱いを決める。
+非構造のメッシュで解いた法線力 :math:`f(\alpha)` は、真の奇関数 :math:`f_{odd}(\alpha)` に、正負の迎角で同じ値だけ現れる数値的なずれ :math:`c_0` が足されたものになりうる（:math:`f(\pm\alpha)=\pm f_{odd}+c_0`）。
+:numref:`fig-alpha-mode` は、三つの値がこのずれ :math:`c_0` をどう扱うかを示す。
+
+.. _fig-alpha-mode:
+
+.. figure:: /_generated/tikz/alpha_mode_schematic.*
+   :width: 100%
+
+   ``alpha_mode`` の三つの値。青の破線は :math:`f(\alpha)=f_{odd}+c_0`、橙は係数として使う量である。
+   見るところは、``mirror`` は正負の両方を解いて :math:`c_0` を打ち消し、``offset`` は :math:`\alpha=0` の解で引き、``single`` は何もしないことである。
+
+``"mirror"``\ （既定）
+   各正の迎角を負の迎角でも解いて :math:`c_0` を打ち消す（:math:`z` 対称メッシュのときは鏡像なので解かない）。負の迎角のケースが収束することが前提である。
+``"offset"``
+   設定した迎角と :math:`\alpha=0` だけを解き、:math:`\alpha=0` の法線力とモーメントを引く。ずれが全迎角で同じ大きさであることが前提である。
+``"single"``
+   設定した迎角だけを解き、結果をそのまま使う。形状とメッシュが対称で、:math:`\alpha=0` で法線力が 0 になることが前提である。
+
+形状が鏡映対称でない（ランチラグなど）とき、または片側の迎角だけ解きたいときは、既定の ``"mirror"`` から変える。
+``"mirror"`` では、各正の迎角 :math:`\alpha` について、:math:`+\alpha` と :math:`-\alpha` の結果から
+
+.. math::
+   :label: eq-cfd-mirror
+
+   C_N=\frac{C_N(+\alpha)-C_N(-\alpha)}{2},\qquad
+   m=\frac{m(+\alpha)-m(-\alpha)}{2},\qquad
+   C_A=\frac{C_A(+\alpha)+C_A(-\alpha)}{2}
+
+を使う。:math:`m=C_N x_{cp}` はノーズ周りのモーメント（長さの次元）である。:math:`c_0` は :eq:`eq-cfd-mirror` の差で打ち消される。
+片方の迎角の解が得られなかったときは、もう一方に :math:`\alpha=0` の値をずれの推定値として使う。
+:math:`\alpha=0` の解の軸力 :math:`C_A` だけを使い、その法線力とモーメント（真値は 0）は、計算で現れた非対称性として報告に記録される。
+``"offset"`` では、:math:`\alpha=0` の値を :math:`C_N^{(0)},m^{(0)}` として
+
+.. math::
+   :label: eq-cfd-offset
+
+   C_N=C_N(\alpha)-C_N^{(0)},\qquad m=m(\alpha)-m^{(0)}
+
+とする。``z_mirror_mesh`` が有効なとき、:math:`-\alpha` の解は :math:`+\alpha` の解の鏡像なので、``"mirror"`` の組合せは :math:`+\alpha` の結果に一致する。
+:math:`\alpha=0` のずれは 0 になり、負の迎角の計算は不要になる。
+
+一般表では、``"mirror"`` と ``"offset"`` のどちらでも、:math:`\alpha=\beta=0` の横力、法線力、ピッチとヨーのモーメント（:math:`C_Y,C_Z,C_m,C_n`）を全点から引く（:ref:`sec-cfd-general`）。
+ロールモーメント :math:`C_l` は、鏡映対称な形状でだけ引く。鏡映対称でない形状では、カントしたフィンのロールの強制力なので残す。
+鏡映対称でない形状では、その細部が :math:`\alpha=\beta=0` で生む小さな力も一緒に引かれる。``"single"`` では、形状の対称性で 0 にならない成分がそのまま残る。
+
+.. _sec-cfd-choose-matrix:
+
+ケース行列
+~~~~~~~~~~
+
+``machs``、``alphas_deg``、``betas_deg`` の組合せがケースの行列である。既定は、Mach 数 0.3、0.6、0.8、0.95、1.1、1.3、1.6、2.0、2.5、3.0 の 10 点と、迎角 0、2、4、8、12、16° の 6 点で、横滑り角は 0 だけである。
+迎角は 0 を含む必要があり、横滑り角は 0 から始める。
+
+* **Mach 数**\ ：飛翔が通る Mach 数の範囲を覆う。解いた最小と最大の Mach 数の外では、係数表は外挿せず端の値で一定になり、警告が出る。遷音速（:math:`M\approx0.8`\ 〜\ 1.2）は係数の変化が大きいので、この帯に点を置く。
+* **迎角**\ ：飛翔で到達する迎角の上限まで解く。解いた最大の迎角 :math:`\alpha_e` の先は、その 2 倍（上限 90°）まで部品積み上げ法の値へなめらかにつなぐ（:eq:`eq-cfd-beyond`）。
+* **ケース数**\ ：:math:`n_\alpha` 個の正の迎角と :math:`n_\beta` 個の正の横滑り角を指定したとき、1 つの Mach 数の ``"none"`` のケース数は :math:`(2n_\alpha+1)(2n_\beta+1)` である。対称性を使えば、解かない符号が減る（:ref:`sec-cfd-stl-symmetry`）。``roll_damping`` は Mach 数ごとに 2 ケースを足す。
+
+ケースの並び順は、Mach 数が小さい順、各 Mach 数の中で横滑り角、その中で迎角である。
+付属の ``examples/sample_cfd.toml`` は 12 ケース、``examples/sample_rans.toml`` は :math:`M=0.3,0.8,1.2,2` と :math:`\alpha=0,\pm4,\pm8^\circ` の 20 ケースである。
+
+ロール減衰と横滑りは、必要なときだけ解く。
+
+* ``roll_damping = true`` にすると、各 Mach 数で :math:`\alpha=\beta=0`、:math:`\hat p=\pm` ``roll_rate_hat`` の 2 ケースを、機体が回る流れとして全領域で解く（:ref:`sec-cfd-sideslip`）。Euler だけで使える。2 ケースの差からロール減衰微係数 :math:`C_{lp}` を求め、係数表に入れる（:ref:`sec-cfd-roll-post`）。差を取るので、フィンのカントや非対称による回転なしのずれは打ち消される。指定しないときの :math:`C_{lp}` は部品積み上げ法の値である。
+* ``betas_deg`` に 0 以外を入れると横力 :math:`C_Y` とヨーモーメント :math:`C_n` が CFD から得られるが、係数表が一般表になり、ケースが増える。
+
+.. _sec-cfd-table-kind:
+
+係数表の種類
+~~~~~~~~~~~~
+
+CFD が作る係数表には、軸対称表と一般表（6 成分、:ref:`sec-aero-coeff6`）の二種類がある。次のどれかのとき、一般表になる。
+
+* ``surface = "stl"`` か ``"step"`` である。
+* ``shape_symmetry`` が ``"pitch_plane"`` か ``"none"`` と明示されている。
+* ``betas_deg`` に 0 以外がある。
+
+それ以外は軸対称表で、ロール減衰だけを解いた場合も軸対称表である。
+一般表は、:math:`C_X,C_Y,C_Z,C_l,C_m,C_n` を (M, α, β) の関数として持つ 6 成分の準定常空力の表である（:ref:`sec-aero-table`）。
+迎角は :math:`-180^\circ` から :math:`180^\circ`、横滑り角は :math:`-90^\circ` から :math:`90^\circ` の格子で、解いた範囲の外はモデルの値で埋める（:ref:`sec-cfd-region-outside`）。
+
+解から係数へ
+------------
 
 .. _sec-cfd-post:
 
@@ -174,7 +236,7 @@ CFD の座標は機体座標を :math:`y` まわりに 180 度回したもの（
      C_A=\max\Bigl(C_{Fx}(\mathrm{wall})+C_{A,\mathrm{base}}+f(\alpha)\bigl(C_{D,\mathrm{extra}}+\Delta C_{D,\mathrm{rough}}+\Delta C_{D,\mathrm{fin}}\bigr),\,0\Bigr),\qquad
      C_{A,\mathrm{base}}=\begin{cases}f(\alpha)\,C_{D,\mathrm{base}} & (\text{rans\_base = model})\\ C_{Fx}(\mathrm{base}) & (\text{rans\_base = cfd})\end{cases}
 
-  とする。``"model"``\ （既定）は部品積み上げ法の底面抗力（燃焼中はノズル出口の面積を除いた底面積）、``"cfd"`` は RANS が平らな底面に積分した力である。
+  とする。``"model"`` は部品積み上げ法の底面抗力（燃焼中はノズル出口の面積を除いた底面積）、``"cfd"`` は RANS が平らな底面に積分した力である。
   ``"model"`` で後縁がそろっていれば、:eq:`eq-cfd-te-flush` を :math:`f(\alpha)` をかけて足す。``"cfd"`` では足さない（後縁の面は ``base`` の力に入っている）。
   ``"cfd"`` の燃焼中の値は、ノズル出口の面積にかかる底面圧力の寄与を引く。
   RANS の壁は滑らかなので、設定の粗さの効果を、部品積み上げ法の粗い壁と滑らかな壁の摩擦の差として足す。:math:`C_{D,f}` は粗さ :math:`k_s` の摩擦（:eq:`eq-cd0`）、:math:`c_f` は摩擦係数の式で、同じ Reynolds 数での比を使い、
@@ -195,12 +257,11 @@ CFD の座標は機体座標を :math:`y` まわりに 180 度回したもの（
 
   を足す。``surface = "step"`` では縁の面が CFD の壁面にあるので :math:`\Delta C_{D,\mathrm{fin}}=0` である。
   どちらの増分もモデルによる補正で、CFD の解ではない。部品積み上げ法の摩擦とボートテールの項は足さない。
-  ケースごとの壁面と底面の軸力、部品積み上げ法の値、増分は ``cfd_report.json`` の ``axial_breakdown`` に並べて記録する。
 
 亜音速の Euler では、CFD の軸力の理論値は 0（d'Alembert のパラドックス）である。実際の値は小さな負の数（サンプル機体の迎角 0〜8° で :math:`-0.01` から :math:`-0.05`）になり、そのまま合計に入る。
 
-ピッチ減衰
-~~~~~~~~~~
+ピッチ・ヨー減衰
+~~~~~~~~~~~~~~~~
 
 定常な CFD はピッチ減衰を与えない。そこで :ref:`sec-damping` の和 :math:`S_0,S_1,S_2`\ （:ref:`page-theory-barrowman` の :eq:`eq-body-sums` と同じ定義）は、
 部品積み上げ法（パネル法があればその値）の **ばらつき** を残したまま、全体の傾きと重心を CFD の値に取り替える。
@@ -220,10 +281,13 @@ CFD の座標は機体座標を :math:`y` まわりに 180 度回したもの（
 
 とする。これらの和から :math:`C_{mq}`、:math:`C_{nr}` が決まる関係は :ref:`sec-aero-damping` にある。CFD が直接与えるのは傾きと重心位置だけである。
 
+係数表の作成
+------------
+
 .. _sec-cfd-table-build:
 
-係数表の作成（軸対称表）
-~~~~~~~~~~~~~~~~~~~~~~~~
+軸対称表
+~~~~~~~~
 
 解いた点は不規則な格子（解いた Mach 数と迎角）なので、それを係数表の規則的な格子に埋める。
 
@@ -261,12 +325,11 @@ CFD の座標は機体座標を :math:`y` まわりに 180 度回したもの（
 
 .. _sec-cfd-general:
 
-一般表の作成
-~~~~~~~~~~~~
+一般表
+~~~~~~
 
 一般表（6 成分、:ref:`sec-aero-coeff6`）になる条件は :ref:`sec-cfd-table-kind` にある。
-格子は、迎角が :math:`-180^\circ` から :math:`180^\circ`、横滑り角が :math:`-90^\circ` から :math:`90^\circ` である。
-どちらも非一様で、:math:`\pm30^\circ` までは 2 度刻み、その外側は 10 度刻み（迎角 61 点、横滑り角 43 点）とする。
+格子は、迎角が :math:`-180^\circ` から :math:`180^\circ`、横滑り角が :math:`-90^\circ` から :math:`90^\circ` で、どちらも非一様である。:math:`\pm30^\circ` までは 2 度刻み、その外側は 10 度刻み（迎角 61 点、横滑り角 43 点）とする。
 Mach 数の刻みは ``general_mach_step``\ （既定 0.1、0 なら ``[aero]`` の ``mach_step``）で、範囲は ``[aero]`` の ``mach_min`` から ``mach_max`` である。
 1 つの Mach 数あたり :math:`61\times43` 点で、Mach 数の刻みを粗くするとファイルが小さくなる（ファイルの形式は :ref:`sec-file-general`）。
 
@@ -305,7 +368,7 @@ Mach 数ごとの作り方は次のとおりである。
    \end{aligned}
 
 とする。:eq:`eq-cfd-damp` をピッチ（:math:`S^q`）とヨー（:math:`S^r`）にそれぞれ適用する。
-横滑りを解かないときは、ヨーの和をピッチの和に等しくし、``cfd_report.json`` の ``yaw_damping_from_pitch`` が真になる。ピッチとヨーを別々に求めるので、機体が非対称なときは異なる値になる。
+横滑りを解かないときは、ヨーの和をピッチの和に等しくする。ピッチとヨーを別々に求めるので、機体が非対称なときは異なる値になる。
 
 ロールのカント強制 :math:`C_{l\delta}` は、部品積み上げ法の値を使う。
 一般表は、表の :math:`C_l` に含まれるカント :math:`\delta_{\mathrm{ref}}` を記録する（:eq:`eq-cl-total`）。
@@ -321,10 +384,10 @@ CFD の領域の外
 一般表の値のうち、解いた迎角と横滑り角の範囲の外側は、CFD の結果ではなくモデルの値である。
 解いた範囲 :math:`R` の内側は CFD の補間値で、外側は :eq:`eq-cfd-fill` により境界をまたいで連続につないだモデルの値である。
 展開は軸対称な形状のものなので、非対称な形状の :math:`R` の外側では当てにならない。
-どこまでが CFD の値かは、``cfd_report.json`` の ``cfd_region``\ （迎角と横滑り角の最小・最大）と ``model_outside_cfd_region`` で確かめる。係数表のファイルには領域の情報は付かない。
+どこまでが CFD の値かは、実行の報告に出る解いた迎角と横滑り角の最小・最大で確かめる。係数表のファイルには領域の情報は付かない。
 
 Mach 数の方向は異なり、解いた Mach 数の範囲の外は、``extrapolation`` にかかわらず、端の値で一定とする。
-表の Mach 数の格子が解いた範囲より広いと、``cfd_report.json`` に ``mach_clamped_above``\ （それより上で一定になる Mach 数）または ``mach_clamped_below`` を記録し、同じ内容の警告を ``warnings`` に加える。
+表の Mach 数の格子が解いた範囲より広いと、一定になる Mach 数が報告され、警告が出る。
 軸対称表では、解いた最大の迎角より大きい行を部品積み上げ法へのつなぎ（:eq:`eq-cfd-beyond`）で埋める。
 CFD が与えない項とピッチ・ヨー減衰の和は、部品積み上げ法（またはパネル法）のモデルから補う（:ref:`sec-cfd-post`）。
 
@@ -333,7 +396,7 @@ CFD が与えない項とピッチ・ヨー減衰の和は、部品積み上げ�
 ロール減衰微係数
 ~~~~~~~~~~~~~~~~
 
-回転座標系の 2 ケース（:ref:`sec-cfd-roll-cases`）から、Mach 数ごとに
+回転座標系の 2 ケース（:ref:`sec-cfd-sideslip`）から、Mach 数ごとに
 
 .. math::
    :label: eq-cfd-clp
@@ -341,29 +404,26 @@ CFD が与えない項とピッチ・ヨー減衰の和は、部品積み上げ�
    C_{lp}=\frac{C_l(+\hat p)-C_l(-\hat p)}{2\,\hat p}
 
 を求める（:math:`C_l=-C_{Mx}`）。差を取るので、カントや非対称による零回転のずれは消える。
-次の場合、その Mach 数の値は使わず、部品積み上げ法の :math:`C_{lp}` に替えて、理由を警告と ``cfd_report.json`` の ``clp`` に記録する。
+次の場合、その Mach 数の値は使わず、部品積み上げ法の :math:`C_{lp}` に替えて、理由を警告として報告する。
 
 * 2 ケースのどちらかが失敗したか、値が有限でない。
 * フィンがあるのに :math:`C_{lp}` が正である（ロール減衰は負でなければならない）。
 * フィンがあるのに :math:`|C_{lp}|<10^{-6}` である。
 
 表の値は、部品積み上げ法の :math:`C_{lp}(M)` に、使える Mach 数での CFD / 部品積み上げ法の比を PCHIP で補間して（範囲外は端の値で一定）かけた値である（部品積み上げ法の値が 0 に近いときは、CFD の値そのものを補間する）。
-使える Mach 数がなければ部品積み上げ法の値になる。``clp_source`` は ``"cfd"``\ （すべての Mach 数が CFD）、``"barrowman"``\ （解かない、またはすべて不採用）、``"mixed"`` のいずれかである。
-ロール減衰は Euler の解であり、粘性の寄与（フィンの摩擦）は含まない。
+使える Mach 数がなければ部品積み上げ法の値になる。報告には、すべての Mach 数が CFD か、解かない（またはすべて不採用）か、混在かが示される。
 
 .. _sec-cfd-flow:
 
 流れ場を見る
---------------
+------------
 
 係数表の値は、流れ場の積分である。流れ場を見ると、法線力、圧力中心、軸力が壁面のどこから生まれるかがわかる。
-サンプル機体の :math:`\alpha=4^\circ`、Euler、``wall_size`` 2 mm（フィンの面 1 mm、142 万セル）、一様流からの開始で解いたときの図を示す。
-データは ``doc/data/cfd/fields/`` に保存してある。
+サンプル機体の :math:`\alpha=4^\circ`、Euler、``wall_size`` 2 mm（フィンの面 1 mm、142 万セル）、一様流からの開始で解いたときの図を示す。データは ``doc/data/cfd/fields/`` に保存してある。
 
 :numref:`fig-cfd-mach-field` は対称面 :math:`y=0` での Mach 数の分布である。
-
-* :math:`M_\infty=0.8`\ （上）: ノーズ先端によどみ点（青）があり、ノーズの肩で流れが加速する（橙）。
-* :math:`M_\infty=2.0`\ （下）: ノーズ先端から斜めに広がる青い帯がノーズの衝撃波で、迎角があるので風上側（:math:`z<0`）のほうが強い。フィンの前縁からも衝撃波が出ている。
+:math:`M_\infty=0.8` では、ノーズ先端によどみ点（青）があり、ノーズの肩で流れが加速する（橙）。
+:math:`M_\infty=2.0` では、ノーズ先端から斜めに広がる青い帯がノーズの衝撃波で、迎角があるので風上側（:math:`z<0`）のほうが強い。フィンの前縁からも衝撃波が出ている。
 
 .. _fig-cfd-mach-field:
 
@@ -374,10 +434,9 @@ CFD が与えない項とピッチ・ヨー減衰の和は、部品積み上げ�
    流れは左から右へ向かう。色の中心は一様流の Mach 数で、青が一様流より遅い領域、橙が速い領域を表す。範囲を超える値は端の色で、灰色は機体の内部である。
 
 :numref:`fig-cfd-cp-surface` は壁面の圧力係数 :math:`C_p` の分布で、半モデルの解を :math:`y=0` 面で鏡映して全機を描いた。機体の下側（風上側）から見ている。
-
-* ノーズでは風上側の :math:`C_p` が風下側より高く、この差が法線力を生む。
-  先端から 0.02 から 0.25 m の範囲で、風上側（:math:`z<0`）と風下側（:math:`z>0`）の半分ごとに面積で重み付けした平均は、:math:`M_\infty=0.8` で風上側 :math:`-0.015`、風下側 :math:`-0.069`、:math:`M_\infty=2.0` で風上側 0.104、風下側 0.045 である。
-* :math:`M_\infty=0.8` では、尾部フェアリングの付け根（底面の縁）で流れが曲がって加速し、環状の負圧ができる（最小で :math:`C_p\approx-0.9`）。
+ノーズでは風上側の :math:`C_p` が風下側より高く、この差が法線力を生む。
+先端から 0.02 から 0.25 m の範囲で、風上側（:math:`z<0`）と風下側（:math:`z>0`）の半分ごとに面積で重み付けした平均は、:math:`M_\infty=0.8` で風上側 :math:`-0.015`、風下側 :math:`-0.069`、:math:`M_\infty=2.0` で風上側 0.104、風下側 0.045 である。
+:math:`M_\infty=0.8` では、尾部フェアリングの付け根（底面の縁）で流れが曲がって加速し、環状の負圧ができる（最小で :math:`C_p\approx-0.9`）。
 
 .. _fig-cfd-cp-surface:
 
@@ -388,48 +447,55 @@ CFD が与えない項とピッチ・ヨー減衰の和は、部品積み上げ�
 
 これらの図は、係数表の値が壁面の圧力分布を積分した結果であることを示す。法線力は風上側と風下側の圧力差、軸力の圧力抗力はノーズとフィンの前縁の圧力、底面の負圧は Euler では底面抗力のモデルで補う部分に当たる。
 
-適用範囲と限界
-----------------
+適用範囲と精度
+--------------
 
-* 係数表は準定常である。ピッチ・ヨー減衰は傾きと重心だけが CFD で、ばらつきはモデルである。ロールとピッチ・ヨーの交差する微係数は扱わない。
-* 解いた迎角と横滑り角の外側はモデルの値である。軸対称表は、解いた最大の迎角の 2 倍（上限 90°）から先が部品積み上げ法の値になる。
-* Mach 数は外挿せず、端の値で一定とする。
-* Euler の底面、摩擦、フィン縁の抗力は経験式による。``stl`` と ``step`` のフィン縁は、縁の面を ``fin_size`` で解像した場合に限り CFD の値になる（:ref:`sec-cfd-mesh-size`）。
-* フィンの後縁が鈍いくさび形のとき、そろった後縁の底面抗力は過小になる。
-* ロール減衰は Euler の解で、フィンの摩擦を含まない。符号とほぼ 0 の検査に通らない Mach 数は部品積み上げ法の値になる。
+* **解く内容**\ ：定常解を (M, α, β) の点ごとに並べた準定常の表である。角速度に依存する非定常な空力を、すべて表現するものではない。ピッチ・ヨー減衰は傾きと重心だけが CFD で、ばらつきはモデルである。ロールとピッチ・ヨーの交差する微係数は扱わない。
+* **Euler**\ ：粘性による摩擦とはく離を含まない。平らな底面は解が定まらないので、``panel_mesh`` では尾部フェアリング、``stl`` と ``step`` では ``base_treatment`` で扱う。底面、摩擦、フィン縁の抗力は経験式による。亜音速の軸力の理論値は 0 で、実際の値は小さな負の数になる。
+* **RANS**\ ：``panel_mesh``\ （フィンの配置が :math:`y=0` について対称なときだけ）と ``step`` で使える。SA は一方程式の渦粘性モデルで、付着した流れの摩擦を対象に検証した。底面の後流の圧力、はく離の大きい流れは確かめていない。
+* **一般表と領域の外**\ ：解いた迎角と横滑り角の外側はモデルの値で、非対称な形状ではあてにならない。軸対称表は、解いた最大の迎角の 2 倍（上限 90°）から先が部品積み上げ法の値になる。Mach 数は外挿せず、端の値で一定とする。
+* **形状**\ ：``panel_mesh`` は回転体と台形フィンに限られる。``stl`` と ``step`` は、フィンの縁の面を ``fin_size`` で解像した場合に限り、縁の圧力抗力が軸力に入る。フィンの後縁が鈍いくさび形のとき、そろった後縁の底面抗力は過小になる。
+* **メッシュ**\ ：メッシュ収束は完全でなく、フィンの面を 1 mm より細かくした計算はない。STL のメッシュは作成のたびに少し変わる。
+* **ロール減衰**\ ：Euler の解で、フィンの摩擦を含まない。符号とほぼ 0 の検査に通らない Mach 数は部品積み上げ法の値になる。
 
-精度の証拠
+実装上の制約の一覧は :ref:`sec-lim-cfd` にある。
+
+.. _sec-cfd-trust:
+
+どこまで信頼してよいか
+~~~~~~~~~~~~~~~~~~~~~~
+
+CFD が与える値は、法線力 :math:`C_N`、圧力中心 :math:`x_{cp}`、軸力のうち圧力による抗力（RANS では摩擦も）、横滑りを解けば横力 :math:`C_Y` とヨーモーメント :math:`C_n`、``roll_damping`` ならロール減衰 :math:`C_{lp}` である。
+それ以外はモデルで補う（:numref:`tbl-cfd-supplied`）。検証と実測との比較を、スコープを区別して示す。
+
+* **検証**\ （解析解、相関式、収束との比較）：
+  円すいの表面圧力は、メッシュを細かくすると Taylor–Maccoll の解 :cite:`taylormaccoll` に近づく（:ref:`sec-vaero-cfd`）。
+  表の :math:`C_{N\alpha}` は法線力の補間曲線の原点での傾きと 0.1 % 以内で一致する。
+  :math:`z` 対称メッシュと ``alpha_mode = "mirror"`` で :math:`\alpha=0` の見かけの非対称性が消える（:ref:`sec-cfd-val-asym`）。ロール減衰と横滑りの符号と無次元化、6 成分への写像は、軸対称表を展開した値と一致する（:ref:`sec-cfd-val-roll`）。
+  メッシュ収束は、フィンの面を 1 mm にしたまま ``wall_size`` を変えると :math:`C_N` が単調に増える（:ref:`sec-vaero-cfd-mesh`）。
+  RANS は、平板の摩擦が NASA TMR の SA の解と 0.8 % 以内（:math:`M=0.2`）、:math:`M=2` の van Driest II と 1.2 % 以内（最も細かい格子）で一致し、円すいとフィンなし胴体の摩擦の軸力も平板の見積もりと 2.5〜7.4 % で一致する。
+  サンプル機体の RANS の :math:`C_N`\ 、:math:`C_A`\ 、:math:`x_{cp}`\ （:math:`M=0.8,2`、:math:`\alpha=4^\circ`）は、メッシュに対して単調に収束する（GCI は :math:`C_N` で 0.5 % 以内、:math:`C_A` で 1.9 % 以内）。
+* **相互比較**\ （手法どうし）：
+  亜音速の :math:`C_{N\alpha}` は、CFD とパネル法の差が 2.5 %（:math:`M=0.8`）から 9 %（:math:`M=0.3`）で、部品積み上げ法より CFD に近い（:ref:`sec-vaero-compare`）。
+  STL をそのまま解く計算は、作り直した形状による計算と相互比較した（:ref:`sec-cfd-val-stl`）。
+  RANS は Euler の CFD と :math:`C_N` で 3.6〜5.1 %、:math:`x_{cp}` で 4 mm 以内で一致する（形状の違いを含む。:ref:`sec-cfd-rans-compare`）。
+* **妥当性確認**\ （実測との比較）：
+  Basic Finner の超音速（Mach 1.08–4.30）の射場試験との比較だけで、Euler の :math:`C_{N\alpha}` は実測より 3〜11 % 小さく、:math:`x_{cp}` は 0.2 口径以内で合う（:ref:`page-vv-validation-basic-finner`）。
+
+RANS の検証の項目と結果は :numref:`tbl-rans-gates`\ （:ref:`sec-cfd-rans`）にあり、次の条件は確かめていない、または基準を満たさない。
+
+* 亜音速の :math:`\alpha=0` の非対称：:math:`M=0.8` で :math:`C_N(0)` が 0.011〜0.034 残る（底面の後ろの剥離した流れの非対称な解）。``alpha_mode = "mirror"`` が :math:`\pm\alpha` の組合せで取り除く。
+* 低い亜音速：:math:`M=0.3` の :math:`\alpha=0,-4^\circ,-8^\circ` は残差が周期的に振動し、収束しない。サンプル機体の係数表（20 ケース）で収束と判定されたのは 15 ケース（75 %）で、基準の 90 % に届かない。
+* 底面の流れ：底面の圧力（``rans_base = "cfd"``）は確かめていない。
+* CAD のモデル：``surface = "step"`` の RANS はメッシュの検査までを確かめ、SU2 の解は確かめていない。
+* 壁関数：``yplus`` 30〜150 は検証していない。
+
+検証の全体は :ref:`page-vv-cfd-verification` と :ref:`page-vv-rans-verification`、手法どうしの相互比較は :ref:`page-vv-cross-comparison`、計算時間とメモリの測定は :ref:`page-vv-performance` にある。
+
+関連する設定
 ------------
 
-* **符号と一貫性（検証）**\ ：ロール減衰の符号と無次元化、6 成分への写像、横滑りの符号は、軸対称表を展開した値と一致する（:ref:`sec-cfd-val-roll`）。表の :math:`C_{N\alpha}` は法線力の補間曲線の原点での傾きと 0.1 % 以内で一致する（:ref:`sec-vaero-cfd`）。
-* **非対称性の除去（検証）**\ ：``alpha_mode = "mirror"`` と :math:`z` 対称メッシュで :math:`\alpha=0` の見かけの非対称性が消える（:ref:`sec-cfd-val-asym`）。
-* **手法どうし（相互比較）**\ ：CFD と部品積み上げ法、パネル法の係数の比較は :ref:`sec-vaero-compare` にある。
-* **実測との比較（妥当性確認）**\ ：Basic Finner の超音速の射場試験との比較だけである（:ref:`page-vv-validation-basic-finner`）。
-
-関連する設定キー
-------------------
-
-値の完全な定義は :ref:`page-reference-config-cfd` にある。
-
-.. list-table::
-   :header-rows: 1
-   :widths: 24 22 54
-
-   * - キー
-     - 既定値
-     - 効果の方向
-   * - :ref:`rans_base <cfg-aero-cfd-rans_base>`
-     - ``"model"``
-     - ``"cfd"`` は底面の力を CFD から取る（検証していない）
-   * - :ref:`alpha_mode <cfg-aero-cfd-alpha_mode>`
-     - ``"mirror"``
-     - 一般表の :math:`\alpha=\beta=0` の引き算と像の平均の扱いが変わる
-   * - :ref:`general_mach_step <cfg-aero-cfd-general_mach_step>`
-     - 0.1
-     - 粗くすると一般表のファイルが小さくなる
-   * - :ref:`roll_damping <cfg-aero-cfd-roll_damping>`
-     - ``false``
-     - ``true`` で :math:`C_{lp}` を CFD から取る
-   * - :ref:`extrapolation <cfg-aero-extrapolation>`
-     - ``[aero]`` の値
-     - 表の格子の外の引き出しだけに効く。CFD の領域の外のつなぎには効かない
+迎角と Mach 数の格子は ``machs``、``alphas_deg``、``betas_deg``、``alpha_mode``、``alpha_max_deg``、ロール減衰は ``roll_damping`` で決める。
+底面の力を CFD から取るかは ``rans_base``、一般表の Mach 数の刻みは ``general_mach_step`` で決める。
+``extrapolation`` は表の格子の外の引き出しだけに効き、CFD の領域の外のつなぎには効かない。
+解く条件の設定は :ref:`page-theory-cfd-choose` にある。各キーの型、既定値、値の範囲は :ref:`page-reference-config-cfd` にある。

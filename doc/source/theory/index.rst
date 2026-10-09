@@ -76,16 +76,16 @@
      - 入力を変えたときの頂点高度・着地点・静的余裕の変化 :numref:`tbl-choose-barrowman-sens`
    * - ``aero.method``
      - :ref:`page-theory-aero-choose`
-     - 流れ図 :numref:`fig-choose-aero-method`
+     - 流れ図 :numref:`fig-choose-aero-method`、状況別 :numref:`tbl-choose-aero-situation`、手法の比較 :numref:`tbl-aero-methods`、範囲 :numref:`tbl-choose-aero-range`、根拠 :numref:`tbl-choose-aero-evidence`
    * - ``aero.table_kind``、``mach_step``、``alpha_step_deg``、``extrapolation``、``general_mach_step``
      - :ref:`page-theory-aero-tables`
-     - 流れ図 :numref:`fig-choose-table-kind`、格子の刻み :numref:`tbl-choose-table-grid`
+     - 流れ図 :numref:`fig-choose-table-kind`、表 :numref:`tbl-choose-table-kind`、格子の刻み :numref:`tbl-choose-table-grid`
    * - ``aero.panel.*``
      - :ref:`page-theory-panel`
      - メッシュ :numref:`tbl-choose-panel-mesh`、遷音速の帯 :numref:`tbl-choose-panel-transonic`。``fin_section`` は選べる値が 1 つ
    * - ``aero.cfd.*``
      - :ref:`page-theory-cfd-choose`
-     - 流れ図 :numref:`fig-choose-cfd-model`、:numref:`fig-choose-cfd-surface`、表 :numref:`tbl-choose-cfd-model`、:numref:`tbl-choose-cfd-surface`、:numref:`tbl-choose-cfd-other`、資源 :numref:`tbl-cfd-parallel`
+     - 流れ図 :numref:`fig-choose-cfd-model`、:numref:`fig-choose-cfd-surface`、表 :numref:`tbl-choose-cfd-model`、資源 :numref:`tbl-cfd-parallel`
    * - ``sim.integrator``、``sim.attitude``、``sim.dt``、``rtol``、``atol``
      - :ref:`page-theory-integrators`
      - 流れ図 :numref:`fig-integrator-choice`、表 :numref:`tbl-choose-integrator`、:numref:`tbl-choose-attitude`
@@ -100,10 +100,10 @@
      - 図 :numref:`fig-descent-modes`、表 :numref:`tbl-choose-descent`
    * - ``dispersion.mode``
      - :ref:`page-theory-dispersion`
-     - 流れ図 :numref:`fig-dispersion-choice`、表 :numref:`tbl-choose-dispersion`
+     - 流れ図 :numref:`fig-dispersion-choice`
    * - ``dispersion.monte_carlo.*``（``samples``、``seed``、``truncate_sigma``、標準偏差）
      - :ref:`page-theory-dispersion`
-     - 表 :numref:`tbl-choose-samples`、:numref:`tbl-choose-truncate`、:numref:`tbl-choose-sigma`、:numref:`tbl-choose-statistic`
+     - 標準偏差 :numref:`tbl-mc-perturb`、サンプル数 :numref:`tbl-safety-samples`
 
 結果を使う前に、仮定と適用範囲の一覧 :ref:`page-theory-limitations` を確かめる。
 
@@ -113,13 +113,16 @@
 .. toctree::
    :maxdepth: 1
 
+   overview
    geometry
    coordinates
    propulsion
-   cfd_choose
-   cfd_equations
-   cfd_coefficients
+   aero_choose
+   aero_coefficients
+   aero_tables
+   barrowman
+   panel
    dynamics
    descent
    integrators
-   dispersion
+   limitations

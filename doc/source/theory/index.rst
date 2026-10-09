@@ -85,7 +85,7 @@
      - メッシュ :numref:`tbl-choose-panel-mesh`、遷音速の帯 :numref:`tbl-choose-panel-transonic`。``fin_section`` は選べる値が 1 つ
    * - ``aero.cfd.*``
      - :ref:`page-theory-cfd-choose`
-     - 流れ図 :numref:`fig-choose-cfd-model`、:numref:`fig-choose-cfd-surface`、表 :numref:`tbl-choose-cfd-model`、資源 :numref:`tbl-cfd-parallel`
+     - 流れ図 :numref:`fig-choose-cfd-model`、:numref:`fig-choose-cfd-surface`、表 :numref:`tbl-choose-cfd-model`、:numref:`tbl-choose-cfd-surface`、:numref:`tbl-choose-cfd-other`、資源 :numref:`tbl-cfd-parallel`
    * - ``sim.integrator``、``sim.attitude``、``sim.dt``、``rtol``、``atol``
      - :ref:`page-theory-integrators`
      - 流れ図 :numref:`fig-integrator-choice`、表 :numref:`tbl-choose-integrator`、:numref:`tbl-choose-attitude`
@@ -100,10 +100,10 @@
      - 図 :numref:`fig-descent-modes`、表 :numref:`tbl-choose-descent`
    * - ``dispersion.mode``
      - :ref:`page-theory-dispersion`
-     - 流れ図 :numref:`fig-dispersion-choice`
+     - 流れ図 :numref:`fig-dispersion-choice`、表 :numref:`tbl-choose-dispersion`
    * - ``dispersion.monte_carlo.*``（``samples``、``seed``、``truncate_sigma``、標準偏差）
      - :ref:`page-theory-dispersion`
-     - 標準偏差 :numref:`tbl-mc-perturb`、サンプル数 :numref:`tbl-safety-samples`
+     - 表 :numref:`tbl-choose-samples`、:numref:`tbl-choose-truncate`、:numref:`tbl-choose-sigma`、:numref:`tbl-choose-statistic`
 
 結果を使う前に、仮定と適用範囲の一覧 :ref:`page-theory-limitations` を確かめる。
 
@@ -114,15 +114,13 @@
    :maxdepth: 1
 
    overview
-   geometry
-   coordinates
-   propulsion
    aero_choose
    aero_coefficients
    aero_tables
    barrowman
    panel
-   dynamics
-   descent
-   integrators
+   cfd_choose
+   cfd_equations
+   cfd_coefficients
+   dispersion
    limitations

@@ -13,8 +13,6 @@
 
    * - ページ
      - 載っているもの
-   * - :doc:`config/index`
-     - 設定ファイルの形式、値の検査、各表のキー（基本、空力、CFD、環境、飛翔計算、落下分散）
    * - :doc:`cli`
      - ``ignisyeet`` のサブコマンドとオプション、端末の出力モード、``make`` と ``plot.py``
    * - :doc:`installer`
@@ -35,7 +33,6 @@
 .. toctree::
    :maxdepth: 1
 
-   config/index
    cli
    installer
    output_files

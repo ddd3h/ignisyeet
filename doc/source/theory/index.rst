@@ -76,10 +76,10 @@
      - 入力を変えたときの頂点高度・着地点・静的余裕の変化 :numref:`tbl-choose-barrowman-sens`
    * - ``aero.method``
      - :ref:`page-theory-aero-choose`
-     - 流れ図 :numref:`fig-choose-aero-method`、状況別 :numref:`tbl-choose-aero-situation`、手法の比較 :numref:`tbl-aero-methods`、範囲 :numref:`tbl-choose-aero-range`、根拠 :numref:`tbl-choose-aero-evidence`
+     - 流れ図 :numref:`fig-choose-aero-method`
    * - ``aero.table_kind``、``mach_step``、``alpha_step_deg``、``extrapolation``、``general_mach_step``
      - :ref:`page-theory-aero-tables`
-     - 流れ図 :numref:`fig-choose-table-kind`、表 :numref:`tbl-choose-table-kind`、格子の刻み :numref:`tbl-choose-table-grid`
+     - 流れ図 :numref:`fig-choose-table-kind`、格子の刻み :numref:`tbl-choose-table-grid`
    * - ``aero.panel.*``
      - :ref:`page-theory-panel`
      - メッシュ :numref:`tbl-choose-panel-mesh`、遷音速の帯 :numref:`tbl-choose-panel-transonic`。``fin_section`` は選べる値が 1 つ
@@ -116,11 +116,6 @@
    geometry
    coordinates
    propulsion
-   aero_choose
-   aero_coefficients
-   aero_tables
-   barrowman
-   panel
    cfd_choose
    cfd_equations
    cfd_coefficients

@@ -25,12 +25,6 @@
      - 風、大気、地球のモデルを設定する。高度別の風の表を作る
    * - :doc:`external_table`
      - 風洞試験などの外部の係数表を使う
-   * - :doc:`cfd_setup`
-     - CFD に必要なツール（SU2、gmsh、MPI）を用意して確かめる
-   * - :doc:`cfd_table`
-     - CFD で係数表を作り、結果を確かめ、中断から再開する
-   * - :doc:`cad_step`
-     - CAD のモデル（STEP）から CFD の係数表を作る
    * - :doc:`dispersion_run`
      - 風の格子とモンテカルロで落下分散を計算して読む
    * - :doc:`keepout_zone`
@@ -53,9 +47,6 @@
    launcher_parachute
    environment
    external_table
-   cfd_setup
-   cfd_table
-   cad_step
    dispersion_run
    keepout_zone
    sweeps

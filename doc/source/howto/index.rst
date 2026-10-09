@@ -35,12 +35,6 @@
      - 保安距離（保安域の半径）を求める
    * - :doc:`sweeps`
      - 設定を書き換えずに条件を変えて繰り返す
-   * - :doc:`read_results`
-     - 端末の表示と ``summary.json`` を読み、結果が使えるかを確かめる
-   * - :doc:`plots_kml`
-     - 図を描き、Google Earth（KML）で見る
-   * - :doc:`warnings_errors`
-     - ワーニング、エラー、終了ステータス 3 に対処する
 
 .. toctree::
    :maxdepth: 1
@@ -56,6 +50,3 @@
    dispersion_run
    keepout_zone
    sweeps
-   read_results
-   plots_kml
-   warnings_errors

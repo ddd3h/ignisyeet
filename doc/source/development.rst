@@ -214,6 +214,19 @@ PDF の組版中に LaTeX がエラーで止まったときは、``doc/build/lat
    ``rans_*.py``¦RANS の検証の実行と集計（平板、円錐、サンプル機体、メッシュ、粗さ補正）
    ``perf_profile.sh``¦各段階の実行時間とプロファイルを測る（結果は ``doc/data/perf/``）
 
+.. _sec-dev-reproduce:
+
+検証の再現
+~~~~~~~~~~
+
+:ref:`page-vv` の式と数値解法の検証は、リポジトリの直下で ``cargo test --release`` を実行すると再現できる。
+SU2 を使う比較はテストに含まれず、CFD ツールを入れた環境で別に実行した結果である。
+
+CFD と RANS の計算結果は ``doc/data/cfd/`` に、Basic Finner の実測値、計算の出力、比較の表と各数値の出典は ``doc/data/validation/basic_finner/`` に、計算時間とメモリの測定は ``doc/data/perf/`` に保存してある。
+:ref:`page-vv-validation` の表と図は、これらの値から作る。
+Basic Finner の計算に使った設定と形状は ``examples/basic_finner/`` にある。
+サンプル機体の係数表と飛翔の結果は、``examples/`` の設定ファイルを :ref:`page-tutorial` の手順で実行して得る。
+
 .. _sec-development:
 
 CI とリリース

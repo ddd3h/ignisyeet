@@ -16,6 +16,18 @@ CFD
 流れの方程式
 ------------
 
+``model`` で、粘性のない Euler 方程式と、粘性と乱流を含む RANS 方程式のどちらを解くかを選ぶ。
+:numref:`fig-cfd-euler-rans` に二つの違いを示す。Euler は壁の上を流れが滑り、壁の力は圧力だけである。摩擦と底面の抗力は部品積み上げ法の式で補う。
+RANS は壁で速度が 0 になる境界層を壁の上のプリズム層で解くので、摩擦も解に入る。底面は平らなまま解き、その後ろには剝離した後流ができる。
+
+.. _fig-cfd-euler-rans:
+
+.. figure:: /_generated/tikz/cfd_euler_rans.*
+   :width: 100%
+
+   Euler と RANS の違い。上段は壁の近くの流れと格子、中段は機体の底面の扱い、下段は軸力の各項を CFD の解から得るか部品積み上げ法の式で補うかを示す。
+   軸力の式は :eq:`eq-cfd-ca`\ （Euler）と :eq:`eq-cfd-ca-rans`\ （RANS）にある。
+
 .. _sec-cfd-euler-eq:
 
 Euler 方程式

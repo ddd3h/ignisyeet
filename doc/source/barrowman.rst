@@ -11,8 +11,6 @@
 
 手法は Barrowman による部品積み上げ法 :cite:`barrowman` を基礎とし、遷音速・超音速への拡張と抗力の推算には Niskanen :cite:`niskanen,niskanentech` がまとめた方法（OpenRocket の基礎）を用いる。
 細長い飛翔体の空力の一般論は Nielsen :cite:`nielsenbook`、圧縮性流れの基礎は Liepmann と Roshko :cite:`liepmann` や Anderson :cite:`anderson` を参照した。
-この章は、胴体、フィン、全機の法線力と圧力中心、減衰とロール、抗力の順に式を示し、適用範囲と実測との差を述べたあと、入力の感度から選び方をまとめる。
-手法どうしの使い分けは :ref:`page-theory-aero-choose` に、係数の定義は :ref:`page-theory-aero-coefficients` にある。
 
 モデル
 ------
@@ -706,23 +704,10 @@ Reynolds 数を全長 :math:`L` 基準で :math:`Re=VL/\nu` とする。
 
 仮定と制約の全体は :ref:`sec-lim-aero` にある。
 
-**検証**\ （式の実装を解析解・手計算と比べる）は :ref:`sec-vaero-barrowman` にある。
-
-* 胴体の法線力傾斜が、ノーズの形によらず 2 になることを手計算と照合した。
-* フィンの法線力と圧力中心が、亜音速・超音速・遷音速で連続につながることを確認した。
-* カントを付けたサンプル機体の飛翔計算で、最大ロール角速度が、係数から見積もった値と一致した（:ref:`sec-vaero-barrowman-roll-flight`）。
-
-**相互比較**\ （モデルどうし）では、ロール減衰が CFD の回転座標系の計算と同じ桁になる（:ref:`sec-vaero-barrowman-su2`）。
+式の実装は解析解と手計算で確かめてあり（:ref:`sec-vaero-barrowman`）、ロール減衰は CFD の回転座標系の計算と同じ桁になる（:ref:`sec-vaero-barrowman-su2`）。
 サンプル機体の :math:`C_{N\alpha}` は、Euler の CFD より亜音速で 26〜29 %、Mach 2 で 15 % 小さい（:ref:`sec-aero-accuracy-cross`）。
-
-**実測との比較**\ は、Basic Finner の Mach 1.08 から 4.30 だけである（:ref:`sec-validation-results`）。
-
-* :math:`C_{N\alpha}` は 20〜35 % 小さい。
-* :math:`C_{X0}` は 23〜38 % 小さい。
-* :math:`x_{cp}` は :math:`-2.4` から :math:`+2.4` % で合う。
-* :math:`C_{lp}` は Mach 1.83〜3.15 で :math:`-8` から :math:`+5` %、低い超音速で過大、Mach 3.73 と 4.30 で 13〜15 % 小さい。
-
-亜音速の実測との比較はない。差の大きさを、形の違う機体にそのまま当てはめることはできない（:ref:`sec-validation-limits`）。
+実測との比較は Basic Finner の Mach 1.08 から 4.30 だけで、:math:`C_{N\alpha}` は 20〜35 %、:math:`C_{X0}` は 23〜38 % 小さく、圧力中心は 2.4 % 以内で合う（:ref:`sec-validation-results`）。
+亜音速の実測との比較はなく、差の大きさを形の違う機体にそのまま当てはめることはできない（:ref:`sec-validation-limits`）。
 
 選び方
 ------

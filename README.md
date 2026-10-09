@@ -29,7 +29,7 @@ Given a rocket **STL file**, mass properties, a motor thrust curve and launch-si
 
 The heavy parts (geometry extraction, coefficient tables, the 6-DoF integration, the parallel dispersion) are written in Rust; plotting is written in Python (matplotlib).
 
-The documentation is in Japanese: <https://www.ddd3h.com/ignisyeet/> (sources in [`doc/`](doc/)). It covers tutorials, how-to guides, the configuration reference, the models behind every option, and the verification and validation results. The links below point to its five parts and the developer guide.
+The documentation is in Japanese: <https://www.ddd3h.com/ignisyeet/> (sources in [`doc/`](doc/)). It is one book: a quick start, usage, the configuration keys, workflows, the models behind every option, and the verification and validation results, with the error and warning codes in an appendix. The links below point to its main chapters.
 
 ## Features
 
@@ -40,7 +40,7 @@ The documentation is in Japanese: <https://www.ddd3h.com/ignisyeet/> (sources in
 - **Landing dispersion**: wind grid and Monte Carlo with error ellipses and percentiles of the landing distance, and a documented procedure for a keep-out distance.
 - **Output**: CSV and JSON files, KML for Google Earth, readable terminal output with progress bars.
 
-Limits and assumptions of the models are listed in the [limitations](https://www.ddd3h.com/ignisyeet/theory/limitations.html) page. The results are model results. Only the supersonic Basic Finner range data have been compared with measurements ([validation](https://www.ddd3h.com/ignisyeet/vv/validation_basic_finner.html)); all other comparisons are cross-checks between methods.
+Limits and assumptions of the models are listed in the [limitations](https://www.ddd3h.com/ignisyeet/limitations.html) page. The results are model results. Only the supersonic Basic Finner range data have been compared with measurements ([validation](https://www.ddd3h.com/ignisyeet/validation.html)); all other comparisons are cross-checks between methods.
 
 ## Screenshots
 
@@ -64,7 +64,7 @@ One-line installer (Linux x86_64 / aarch64, macOS Intel / Apple Silicon; on Wind
 curl -fsSL https://raw.githubusercontent.com/ddd3h/ignisyeet/main/install.sh | bash
 ```
 
-The installer asks whether you are a **user** or a **developer**, installs only what is missing, and can install the optional CFD tools. Options, environment variables and uninstalling are described in the [installer reference](https://www.ddd3h.com/ignisyeet/reference/installer.html); the steps are in the [installation guide](https://www.ddd3h.com/ignisyeet/howto/install.html).
+The installer asks whether you are a **user** or a **developer**, installs only what is missing, and can install the optional CFD tools. The steps, options, environment variables and uninstalling are described in the [installation chapter](https://www.ddd3h.com/ignisyeet/install.html).
 
 To build from source:
 
@@ -84,7 +84,7 @@ make all                                  # aero, sim, dispersion and plots from
 make all CONFIG=my/rocket.toml            # your own configuration file
 ```
 
-The [tutorial](https://www.ddd3h.com/ignisyeet/tutorial/index.html) walks through the first run. Before the results are used to set a keep-out distance, read the [keep-out procedure](https://www.ddd3h.com/ignisyeet/howto/keepout_zone.html#sec-dispersion-safety).
+The [tutorial](https://www.ddd3h.com/ignisyeet/quickstart.html) walks through the first run. Before the results are used to set a keep-out distance, read the [keep-out procedure](https://www.ddd3h.com/ignisyeet/workflows.html#sec-dispersion-safety).
 
 ## Commands
 
@@ -101,20 +101,23 @@ ignisyeet [-q|--quiet] [--no-progress] <command> ...
 | `cfd-check <config> [--mesh]` | Checks the CFD tools; `--mesh` also builds the volume mesh and reports its quality |
 | `sample-stl <path>` | Writes the STL of the bundled sample rocket |
 
-Every configuration key can be overridden for one run with `--set KEY=VALUE`, and the output directory with `--out DIR`. See the [command-line reference](https://www.ddd3h.com/ignisyeet/reference/cli.html) and the [configuration reference](https://www.ddd3h.com/ignisyeet/reference/config/index.html).
+Every configuration key can be overridden for one run with `--set KEY=VALUE`, and the output directory with `--out DIR`. See the [command-line reference](https://www.ddd3h.com/ignisyeet/usage.html) and the [configuration reference](https://www.ddd3h.com/ignisyeet/config.html).
 
 ## Documentation
 
-| Part | Content |
+| Chapter | Content |
 |---|---|
-| [Getting started](https://www.ddd3h.com/ignisyeet/tutorial/index.html) | Install and fly the sample rocket |
-| [How-to guides](https://www.ddd3h.com/ignisyeet/howto/index.html) | Own rocket, motor, wind, CFD, dispersion, keep-out distance, plots |
-| [Reference](https://www.ddd3h.com/ignisyeet/reference/index.html) | Configuration keys, commands, output files, exit codes, error codes |
-| [Theory and explanation](https://www.ddd3h.com/ignisyeet/theory/index.html) | How to choose each option, and the models behind it |
-| [Verification and validation](https://www.ddd3h.com/ignisyeet/vv/index.html) | Evidence for each model and its limits |
-| [Developer guide](https://www.ddd3h.com/ignisyeet/dev/index.html) | Crate architecture, build, tests, release |
+| [Getting started](https://www.ddd3h.com/ignisyeet/quickstart.html) | Install and fly the sample rocket |
+| [Usage](https://www.ddd3h.com/ignisyeet/usage.html) | Commands, output files, exit status, plots and KML |
+| [Configuration](https://www.ddd3h.com/ignisyeet/config.html) | Every configuration key, with type, default and range |
+| [Workflows](https://www.ddd3h.com/ignisyeet/workflows.html) | Own rocket, motor, wind, dispersion, keep-out distance |
+| [CFD](https://www.ddd3h.com/ignisyeet/cfd_usage.html) | Building aerodynamic tables with CFD |
+| [Models](https://www.ddd3h.com/ignisyeet/intro.html) | Coordinates, geometry, aerodynamics, environment, dynamics, descent, dispersion |
+| [Verification and validation](https://www.ddd3h.com/ignisyeet/verification.html) | Evidence for each model and its limits |
+| [Error and warning codes](https://www.ddd3h.com/ignisyeet/errors/index.html) | Every error and warning, with its cause and fix |
+| [Developer guide](https://www.ddd3h.com/ignisyeet/development.html) | Crate architecture, build, tests, release |
 
-To build the HTML or PDF version from `doc/` (Sphinx), see the [developer guide](https://www.ddd3h.com/ignisyeet/dev/build_release.html):
+To build the HTML or PDF version from `doc/` (Sphinx), see the [developer guide](https://www.ddd3h.com/ignisyeet/development.html):
 
 ```sh
 cd doc && make html     # doc/build/html/index.html
@@ -123,7 +126,7 @@ cd doc && make pdf      # doc/build/latex/ignisyeet.pdf
 
 ## Development
 
-`cargo test --release`, `cargo clippy --all-targets -- -D warnings` and `cargo fmt --all -- --check` must pass. A release is made by pushing a tag equal to the workspace version; see the [developer guide](https://www.ddd3h.com/ignisyeet/dev/build_release.html).
+`cargo test --release`, `cargo clippy --all-targets -- -D warnings` and `cargo fmt --all -- --check` must pass. A release is made by pushing a tag equal to the workspace version; see the [developer guide](https://www.ddd3h.com/ignisyeet/development.html).
 
 ## License
 

@@ -83,18 +83,21 @@ fn config_keys() -> BTreeMap<String, Vec<String>> {
     m
 }
 
-/// Every `.. _cfg-...:` label in the reference pages with the file it is in.
+/// Every `.. _cfg-...:` label in the configuration chapter with the file it is in.
 fn labels() -> BTreeMap<String, Vec<String>> {
-    let dir = root().join("doc/source/reference/config");
+    let root = root();
+    let files: Vec<PathBuf> = vec![root.join("doc/source/config.rst")];
     let mut m: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for e in std::fs::read_dir(dir).unwrap().flatten() {
-        let p = e.path();
+    for p in files {
         if p.extension().is_none_or(|x| x != "rst") {
             continue;
         }
         let name = p.file_name().unwrap().to_string_lossy().to_string();
         for line in std::fs::read_to_string(&p).unwrap().lines() {
-            if let Some(l) = line.trim().strip_prefix(".. _cfg-").and_then(|r| r.strip_suffix(':')) {
+            // A label is either on a line of its own or opens a table cell (`* - .. _cfg-...:`).
+            let t = line.trim();
+            let t = t.strip_prefix("* - ").unwrap_or(t);
+            if let Some(l) = t.strip_prefix(".. _cfg-").and_then(|r| r.strip_suffix(':')) {
                 m.entry(format!("cfg-{l}")).or_default().push(name.clone());
             }
         }

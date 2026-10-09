@@ -1,9 +1,9 @@
 .. _page-tutorial:
 
-はじめに
-==========
+クイックスタート
+================
 
-このページでは、IgnisYeet をインストールし、付属のサンプル機体の飛翔を 1 回計算して、結果を見るところまでを順に行う。
+この章では、IgnisYeet をインストールし、付属のサンプル機体の飛翔を 1 回計算して、結果を見るところまでを順に行う。
 所要時間は 10 分ほどである。各手順のコマンドはそのまま貼り付けて実行でき、実行後に出る内容を「期待する出力」として示す。
 ここで使うサンプルは、直径 100 mm、全長 1.5 m、4 枚フィンの機体で、風速 4 m/s の北風、パラシュート降下の条件である。
 
@@ -41,7 +41,7 @@
    インストールの完了画面。枠の ``version`` がインストールした版、``binary`` が実行ファイルの場所である。``Next`` の下に、次の手順で打つコマンドが並ぶ。
 
 新しい端末を開く（または ``source ~/.bashrc`` を実行する）と、``ignisyeet`` コマンドが使えるようになる。
-質問や選択肢の詳細は :ref:`page-howto-install` にある。
+質問や選択肢の詳細は :ref:`page-howto-install` の章にある。
 
 動作を確かめる
 ----------------
@@ -166,11 +166,8 @@
 ``out/ignisyeet.kml`` を Google Earth（Web 版でもよい）で開くと、飛翔経路と着地点を地図の上で見られる。
 図の種類と KML の見方は :ref:`page-howto-plots-kml` にある。
 
-次に読むページ
+次に読むところ
 ----------------
 
-* 自分の機体を計算する：:ref:`page-howto-own-rocket`
-* 結果の読み方（端末の表示、``summary.json``）：:ref:`page-howto-read-results`
-* 風だけを変えた計算を繰り返す：:ref:`page-howto-sweeps`
-* 設定ファイルの全項目：:ref:`page-reference-config`
-* 計算がうまくいかないとき：:ref:`page-howto-warnings-errors`
+自分の機体を計算するには :ref:`page-howto-own-rocket`、結果の読み方は :ref:`page-howto-read-results`、設定ファイルの全項目は :ref:`page-reference-config` にある。
+計算がうまくいかないときは :ref:`page-howto-warnings-errors` を見る。

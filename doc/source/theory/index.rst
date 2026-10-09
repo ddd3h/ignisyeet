@@ -113,7 +113,6 @@
 .. toctree::
    :maxdepth: 1
 
-   overview
    geometry
    coordinates
    propulsion

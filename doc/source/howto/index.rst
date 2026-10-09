@@ -13,8 +13,6 @@
 
    * - ページ
      - できること
-   * - :doc:`install`
-     - インストールして動作を確かめる
    * - :doc:`own_rocket`
      - 自分の機体の STL と質量特性を設定し、形状の抽出を確かめる
    * - :doc:`motor`
@@ -47,7 +45,6 @@
 .. toctree::
    :maxdepth: 1
 
-   install
    own_rocket
    motor
    launcher_parachute

@@ -3,117 +3,14 @@
 座標系と地球
 ============
 
-IgnisYeet は、運動方程式を地面に固定した平らな座標系（平面地球）で積分するか、自転する地球の座標系（ECEF）で積分するかを選べる。
-この章では、その選択の判断基準と、使う座標系、姿勢の表現、地球の形のモデルを説明する。
-座標系は結果の符号と向きに直結するので、定義をここで固める。
+運動方程式を、地面に固定した平らな座標系（平面地球）で積分するか、自転する地球の座標系（ECEF）で積分するかは、``earth.model`` で選ぶ。
+座標系は結果の符号と向きに直結するので、この章で使う座標系、姿勢の表現、地球の形のモデルの定義を固める。
 
-この章で決めること
---------------------------
-
-.. list-table::
-   :header-rows: 1
-   :widths: 36 64
-
-   * - 設定キー
-     - 決めること
-   * - :ref:`cfg-earth-model`
-     - ``flat``\ （平面地球、既定）か ``ecef``\ （自転する楕円体）か
-   * - :ref:`cfg-earth-gravity`
-     - 重力の大きさ。``j2`` は ``ecef`` のときだけ選べる（:ref:`page-theory-atmosphere-gravity`）
-   * - :ref:`cfg-launch-latitude`、:ref:`cfg-launch-longitude`、:ref:`cfg-launch-altitude`
-     - 射点の測地座標。ECEF モードの初期位置と、出力の緯度・経度に使う
-   * - :ref:`cfg-launch-azimuth_deg`、:ref:`cfg-launch-elevation_deg`、:ref:`cfg-launch-roll_deg`
-     - ランチャの方位・射角・ロール角（初期姿勢）
-
-選び方
-------
-
-``earth.model`` の選択は、射点から着地点までの最大距離、許容する誤差、自転の影響を結果に含めたいかで決める（:numref:`fig-choose-earth-model`）。
-
-.. _fig-choose-earth-model:
-
-.. figure:: /_generated/tikz/earth_model_choice.*
-   :width: 85%
-
-   ``earth.model`` の選び方。許容する高さ誤差 :math:`\varepsilon` から求めた距離 :math:`\sqrt{2R\varepsilon}` と着地までの距離 :math:`d` を比べ、自転の影響を含めたいときは距離によらず ECEF を選ぶ。
-
-.. _tbl-choose-earth:
-
-.. list-table:: 地球モデルの比較
-   :header-rows: 1
-   :widths: 14 22 22 18 24
-
-   * - 選択肢
-     - 含む効果
-     - 近似の誤差・仮定
-     - 計算コスト
-     - 選ぶとき・避けるとき
-   * - ``flat``\ （既定）
-     - 有効重力、風、大気。曲率・自転（Coriolis 力・遠心力）は含まない
-     - 高さの誤差 :math:`d^2/2R`。:math:`d=3.6` km で 1 m、11.3 km で 10 m。精度の根拠は :ref:`sec-verify-ecef`
-     - 基準（サンプルで 1 飛翔 0.24 s）
-     - 着地が射点から数 km〜10 km 以内の飛翔。Coriolis 力による偏りが風の不確かさに埋もれる規模
-   * - ``ecef``
-     - 曲率、Coriolis 力、遠心力、扁平を含む重力（``j2``）
-     - 大気・風は楕円体高と射点からの高さだけの関数。地形は扱わない
-     - 約 2 倍（サンプルで 1 飛翔 0.45 s）
-     - 頂点が高い、射程が 10 km を超える、Coriolis 力による偏りそのものを評価する、``j2`` 重力を使う飛翔。数 km 規模では結果の差が風の不確かさに埋もれる
-
-コストは ``examples/sample.toml`` を ``--set earth.model=ecef`` で 1 回飛ばした経過時間（CPU、``rk4``、:math:`\Delta t=2` ms）の比較で、機種によって絶対値は変わる。
-サンプル規模（頂点 4.4 km、着地まで約 7.7 km）での両モードの差は :numref:`tbl-ecef-compare` にある。着地点の差は 9 m 以内で、``flat`` で足りる。
-Coriolis 力による偏りは頂点が高いほど大きく、真空中の鉛直打上げ（頂点 111 km）では約 2.6 km に達する（:ref:`sec-verify-ecef`）。
-
-.. _sec-enu-range:
-
-平面地球近似が使える範囲
-~~~~~~~~~~~~~~~~~~~~~~~~
-
-ENU 座標系は射点での接平面を基準にしているので、射点から離れるほど実際の地表（球面）とのずれが大きくなる。
-地球を半径 :math:`R` の球とし、射点 :math:`O` から地表に沿って距離 :math:`d` 離れた点 :math:`P` を考える（:numref:`fig-enu-curvature`）。
-
-.. _fig-enu-curvature:
-
-.. figure:: /_generated/tikz/enu_curvature.*
-   :width: 60%
-
-   接平面（ENU の水平面）と球面のずれ :math:`\Delta h`。見るところは、射点から離れるほど球面が接平面の下へ離れ、そのずれが距離の 2 乗で増えることである。
-
-中心角を :math:`\vartheta=d/R` とすると、接平面から球面までの鉛直方向のずれは
-
-.. math::
-   :label: eq-enu-dh
-
-   \Delta h = R\,(1-\cos\vartheta) \simeq \frac{R\vartheta^2}{2} = \frac{d^2}{2R}\qquad(d\ll R)
-
-である。許容誤差を :math:`\varepsilon` とすると、平面近似が使える距離は
-
-.. math::
-   :label: eq-enu-dmax
-
-   d \le \sqrt{2R\,\varepsilon}
-
-となる。:math:`R=6371\ \mathrm{km}` として、:math:`\varepsilon=1\ \mathrm{m}` なら :math:`d\le 3.6\ \mathrm{km}`、
-:math:`\varepsilon=10\ \mathrm{m}` なら :math:`d\le 11.3\ \mathrm{km}` である（:numref:`fig-enu-error`）。
-
-.. _fig-enu-error:
-
-.. figure:: /_generated/plots/enu_error.*
-   :width: 80%
-
-   射点からの距離と接平面からのずれ :math:`\Delta h=d^2/2R`。見るところは、許容するずれ（1 m、10 m）に対して平面地球が使える距離（3.6 km、11.3 km）が読めることである。
-
-平面地球モードでは、着地の判定を :math:`z_U\le0`\ （接平面との交点）で行う。
-着地点が射点から 10 km 離れると、実際の地表はそこからさらに約 8 m 低い。
-機体はその分だけ長く落下するはずなので、計算上の着地点は実際より少し射点寄りになる。
-落下角が浅いパラシュート降下ほど、この水平方向の誤差は大きくなる。
-数 km 以内に落下する一般的なロケットでは無視できるが、高高度・長距離の飛翔では ECEF モードを選ぶ（:numref:`fig-choose-earth-model`）。
-
-
-モデル
-------
+数 km 規模の飛翔では、平面地球で足りる。曲率と自転が効くのは、頂点が高い飛翔、射程が 10 km を超える飛翔、Coriolis 力による偏りそのものを評価したい場合である。
+この章は、座標系と姿勢の定義、地球楕円体と ECEF での積分を順に述べ、平面地球が使える範囲と両モードの差を示して、最後に選び方をまとめる。
 
 局所 ENU 座標系
-~~~~~~~~~~~~~~~
+---------------
 
 射点を原点とし、:math:`x_E` 軸を東、:math:`y_N` 軸を北、:math:`z_U` 軸を天頂（射点での楕円体の法線方向）にとる右手系である :cite:`torge`\ （:numref:`fig-frames`）。位置ベクトルを :math:`\bm{x}=(x_E,\,y_N,\,z_U)^\top` と書く。
 :math:`z_U` は **射点からの高さ** であり、海抜高度は :math:`h_0+z_U`\ （:math:`h_0` は射点標高）である。
@@ -132,7 +29,7 @@ ECEF モードでも、位置・速度などの **出力** は常に射点の EN
    局所 ENU 座標系と、ランチャの方位角 :math:`\psi`・射角 :math:`\theta_e`。見るところは、方位角が北から時計回り、射角が水平面から測る角であることである。
 
 機体座標系
-~~~~~~~~~~
+----------
 
 重心を原点とし、:math:`x_b` 軸を機軸に沿って **ノーズ方向**、:math:`y_b`, :math:`z_b` 軸をそれに直交する右手系にとる
 （:numref:`fig-body-frame`）。軸対称表と軸対称な質量特性だけを使うときは、:math:`y_b`, :math:`z_b` 軸の向きは結果に影響しない。
@@ -154,7 +51,7 @@ ECEF モードでも、位置・速度などの **出力** は常に射点の EN
 .. _sec-body-basis:
 
 STL から決める機体軸
-~~~~~~~~~~~~~~~~~~~~~~~~
+------------------------
 
 機体軸の向きは、STL の座標で次のように決める。
 STL でノーズからテールへ向かう単位ベクトルを :math:`\bm{a}`\ （形状抽出の結果で、``geometry.json`` の ``frame.aft_direction``）とし、
@@ -173,12 +70,12 @@ STL でノーズからテールへ向かう単位ベクトルを :math:`\bm{a}`\
 例えば、サンプルの STL はノーズが :math:`+z` を向いている（:math:`\bm{a}=(0,0,-1)`）ので、
 :math:`\bm{e}_x=(0,0,1)`、:math:`\bm{e}_y=(0,-1,0)`、:math:`\bm{e}_z=(1,0,0)` になる。
 この三つのベクトルは ``geometry.json`` の ``body_x``, ``body_y``, ``body_z`` に書き出される。
-慣性乗積、重心の横ずれ、推力のオフセットを設定するときは、この軸に対する値を与える（:ref:`page-reference-config-general`）。
+慣性乗積、重心の横ずれ、推力のオフセットを設定するときは、この軸に対する値を与える。
 
 .. _sec-aero-angles:
 
 迎角と横滑り角
-~~~~~~~~~~~~~~
+--------------
 
 対気速度を機体座標で表したものを :math:`\bm{u}=(u_x,u_y,u_z)`、その大きさを :math:`V` として、
 一般表の引数である **迎角** :math:`\alpha` と **横滑り角** :math:`\beta` を
@@ -215,7 +112,7 @@ STL でノーズからテールへ向かう単位ベクトルを :math:`\bm{a}`\
    推力の傾き :math:`\varepsilon` とその方位 :math:`\phi`。
 
 姿勢の表現（クォータニオン）
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+----------------------------
 
 機体座標系から ENU 座標系への回転を単位クォータニオン :math:`\bm{q}=(q_0,q_1,q_2,q_3)` で表す :cite:`shuster`。
 対応する回転行列は
@@ -253,7 +150,7 @@ STL でノーズからテールへ向かう単位ベクトルを :math:`\bm{a}`\
 .. _sec-initial-attitude:
 
 初期姿勢
-~~~~~~~~
+--------
 
 ランチャ上の機軸方向は、射角 :math:`\theta_e` と方位角 :math:`\psi`\ （北から時計回り）から
 
@@ -276,26 +173,20 @@ STL でノーズからテールへ向かう単位ベクトルを :math:`\bm{a}`\
 :math:`\gamma=0` では :math:`+y_b` が水平になる。:math:`\gamma=90^\circ` では :math:`+y_b` が元の :math:`+z_b` の向きになる。
 
 地球楕円体と測地座標
-~~~~~~~~~~~~~~~~~~~~
+--------------------
 
 射点と着地点を緯度・経度で扱うため、地球を WGS84 楕円体 :cite:`wgs84,torge` で近似する（:numref:`fig-ellipsoid`）。
 
-.. list-table:: WGS84 楕円体の定数
+.. csv-table:: WGS84 楕円体の定数
    :header-rows: 1
    :widths: 40 60
 
-   * - 量
-     - 値
-   * - 赤道半径 :math:`a`
-     - 6 378 137.0 m
-   * - 扁平率 :math:`f`
-     - 1 / 298.257 223 563
-   * - 極半径 :math:`b=a(1-f)`
-     - 6 356 752.314 m
-   * - 第一離心率の 2 乗 :math:`e^2=f(2-f)`
-     - 0.006 694 380 0
-   * - 第二離心率の 2 乗 :math:`e'^2=(a^2-b^2)/b^2`
-     - 0.006 739 496 7
+   量,値
+   赤道半径 :math:`a`,6 378 137.0 m
+   扁平率 :math:`f`,1 / 298.257 223 563
+   極半径 :math:`b=a(1-f)`,6 356 752.314 m
+   第一離心率の 2 乗 :math:`e^2=f(2-f)`,0.006 694 380 0
+   第二離心率の 2 乗 :math:`e'^2=(a^2-b^2)/b^2`,0.006 739 496 7
 
 .. _fig-ellipsoid:
 
@@ -357,7 +248,7 @@ STL でノーズからテールへ向かう単位ベクトルを :math:`\bm{a}`\
 .. _sec-ecef:
 
 ECEF 座標での積分
-~~~~~~~~~~~~~~~~~
+-----------------
 
 ``earth.model = "ecef"`` とすると、運動方程式を WGS84 楕円体に固定した **回転座標系**\ （ECEF 座標系）で積分する。
 平面地球近似と違い、地表の曲率（鉛直方向が射点から離れるにつれて変わること）、Coriolis 力、遠心力、扁平を考慮した重力（``gravity = "j2"``）を扱える。
@@ -436,7 +327,7 @@ ECEF に対する角速度 :math:`\bm{\omega}` に、自転ベクトルを機体
 .. _sec-ecef-gravity:
 
 重力と遠心力
-~~~~~~~~~~~~
+------------
 
 :eq:`eq-ecef-accel` の :math:`\bm{g}(\bm{r})` は万有引力であり、遠心加速度 :math:`-\bm{\Omega}\times(\bm{\Omega}\times\bm{r})` は第 4 項で別に加わる。
 一方、``inverse_square`` と ``constant`` が与える大きさ（それぞれ :math:`g_0(R_\oplus/(R_\oplus+h_0+z))^2` と :math:`g_0`）は、平面地球モードと同じ **有効重力** :math:`\bm{g}_{\mathrm{eff}}` で、
@@ -468,29 +359,67 @@ ECEF に対する角速度 :math:`\bm{\omega}` に、自転ベクトルを機体
 ピッチ角と方位角は、現在位置の局所の天頂・東・北に対して測る。
 
 
-適用範囲と限界
+
+.. _sec-enu-range:
+
+平面地球近似が使える範囲
+------------------------
+
+ENU 座標系は射点での接平面を基準にしているので、射点から離れるほど実際の地表（球面）とのずれが大きくなる。
+地球を半径 :math:`R` の球とし、射点 :math:`O` から地表に沿って距離 :math:`d` 離れた点 :math:`P` を考える（:numref:`fig-enu-curvature`）。
+
+.. _fig-enu-curvature:
+
+.. figure:: /_generated/tikz/enu_curvature.*
+   :width: 60%
+
+   接平面（ENU の水平面）と球面のずれ :math:`\Delta h`。見るところは、射点から離れるほど球面が接平面の下へ離れ、そのずれが距離の 2 乗で増えることである。
+
+中心角を :math:`\vartheta=d/R` とすると、接平面から球面までの鉛直方向のずれは
+
+.. math::
+   :label: eq-enu-dh
+
+   \Delta h = R\,(1-\cos\vartheta) \simeq \frac{R\vartheta^2}{2} = \frac{d^2}{2R}\qquad(d\ll R)
+
+である。許容誤差を :math:`\varepsilon` とすると、平面近似が使える距離は
+
+.. math::
+   :label: eq-enu-dmax
+
+   d \le \sqrt{2R\,\varepsilon}
+
+となる。:math:`R=6371\ \mathrm{km}` として、:math:`\varepsilon=1\ \mathrm{m}` なら :math:`d\le 3.6\ \mathrm{km}`、
+:math:`\varepsilon=10\ \mathrm{m}` なら :math:`d\le 11.3\ \mathrm{km}` である（:numref:`fig-enu-error`）。
+
+.. _fig-enu-error:
+
+.. figure:: /_generated/plots/enu_error.*
+   :width: 80%
+
+   射点からの距離と接平面からのずれ :math:`\Delta h=d^2/2R`。見るところは、許容するずれ（1 m、10 m）に対して平面地球が使える距離（3.6 km、11.3 km）が読めることである。
+
+平面地球モードでは、着地の判定を :math:`z_U\le0`\ （接平面との交点）で行う。
+着地点が射点から 10 km 離れると、実際の地表はそこからさらに約 8 m 低い。
+機体はその分だけ長く落下するはずなので、計算上の着地点は実際より少し射点寄りになる。
+落下角が浅いパラシュート降下ほど、この水平方向の誤差は大きくなる。
+
+適用範囲と精度
 --------------
 
-* 平面地球モードは、射点の接平面を水平面とみなし、地球の自転と曲率を無視する。着地点が射点から 10 km を超えると高さ方向に数 m 以上の誤差が生じる（:ref:`sec-enu-range`）。
+* 平面地球モードは、射点の接平面を水平面とみなし、地球の自転と曲率を無視する。着地点が射点から 10 km を超えると高さ方向に数 m 以上の誤差が生じる。
 * ECEF モードでも、地球の自転速度は一定、地表は射点標高の楕円体面（地形・起伏は考えない）で、大気と風は楕円体高と射点標高からの高さの関数であり、緯度・経度による変化は考えない。
-* ECEF モードの風は機体の現在位置の局所 ENU で与え、射点の基底との差は射点からの距離を地球半径で割った角度（55 km で約 0.5°）である。
 * 重力は点質量に :math:`J_2` 項を加えたところまでで、高次の項や重力異常は考えない（:ref:`sec-lim-earth`）。
 * 着地は射点標高の面で判定する。山や谷、海面との標高差は扱わない。
 
-精度の証拠
-----------
+座標変換と ECEF の積分は、解析解や平面地球との比較で検証している（:ref:`sec-verify-geo`、:ref:`sec-verify-ecef`）。
 
-座標変換、ECEF の積分、平面地球との一致を検証している（:ref:`sec-verify-geo`、:ref:`sec-verify-ecef`）。
-
-* **測地座標の往復変換**：東京駅の上空で、楕円体高 100 km まで往復変換の誤差が 0.1 mm 未満である（:ref:`sec-verify-geo`）。
-* **平面地球との一致**：風のないサンプルで、自転なし（:math:`\Omega=0`）の ECEF モードの結果が平面地球モードに一致する。着地点の差は弾道落下で 0.10 m、パラシュート降下で 0.057 m、頂点高度の差と飛行時間の差は 0.5 % 未満である（:ref:`sec-verify-ecef`）。
-* **Coriolis 力**：空力のない真空中の鉛直打上げ（頂点 111 km、北緯 35°）の西向きのずれが、1 次近似の見積もり（:math:`-2659` m）と 2.1 % の差で一致する（:ref:`sec-verify-ecef`）。
-* **重力と遠心力**：静止した機体の正味の重力が鉛直下向きだけになる（水平成分は高度 0〜80 km で :math:`2\times10^{-4}\ \mathrm{m/s^2}` 未満）。
+* 測地座標の往復変換の誤差は、東京駅の上空で楕円体高 100 km まで 0.1 mm 未満である。
+* 風のないサンプルで、自転なし（:math:`\Omega=0`）の ECEF モードの結果が平面地球モードに一致する。着地点の差は弾道落下で 0.10 m、パラシュート降下で 0.057 m、頂点高度の差と飛行時間の差は 0.5 % 未満である。
+* 空力のない真空中の鉛直打上げ（頂点 111 km、北緯 35°）の西向きのずれは、1 次近似の見積もり（:math:`-2659` m）と 2.1 % の差で一致する。
+* 静止した機体の正味の重力は鉛直下向きだけになる。水平成分は高度 0〜80 km で :math:`2\times10^{-4}\ \mathrm{m/s^2}` 未満である。
 
 自転を入れた ECEF の結果を実測と比べた妥当性確認はない。
-
-平面地球モードとの比較
-~~~~^^^^^^^^^^^^^^^^^^
 
 サンプル（パラシュート降下、``rk45``）を同じ条件で計算した結果を :numref:`tbl-ecef-compare` に示す。
 重力モデルは、平面地球が逆 2 乗則、ECEF が逆 2 乗則と :math:`J_2` である。
@@ -522,37 +451,43 @@ ECEF に対する角速度 :math:`\bm{\omega}` に、自転ベクトルを機体
      - −7710.3
      - 685.4
 
-数 km 規模の飛翔では、着地点の差は 7.7 km の飛行距離に対して 9 m 以内にとどまる。
-風や空力係数の不確かさに比べて小さいので、この規模では平面地球モードで十分であり、
-高高度・長距離の飛翔や、Coriolis 力そのものを評価したいときに ECEF モードを使えばよい。
+着地点の差は 7.7 km の飛行距離に対して 9 m 以内で、風や空力係数の不確かさに比べて小さい。
+Coriolis 力による偏りは頂点が高いほど大きく、真空中の鉛直打上げ（頂点 111 km）では約 2.6 km に達する。
 
-関連する設定キー
-----------------
+選び方
+------
 
-.. list-table::
+``earth.model`` は、射点から着地点までの最大距離、許容する誤差、自転の影響を結果に含めたいかで決める（:numref:`fig-choose-earth-model`、:numref:`tbl-choose-earth`）。
+
+.. _fig-choose-earth-model:
+
+.. figure:: /_generated/tikz/earth_model_choice.*
+   :width: 85%
+
+   ``earth.model`` の選び方。許容する高さ誤差 :math:`\varepsilon` から求めた距離 :math:`\sqrt{2R\varepsilon}` と着地までの距離 :math:`d` を比べ、自転の影響を含めたいときは距離によらず ECEF を選ぶ。
+
+.. _tbl-choose-earth:
+
+.. list-table:: 地球モデルの比較
    :header-rows: 1
-   :widths: 38 20 42
+   :widths: 14 40 46
 
-   * - キー
-     - 既定値
-     - 効果の向き
-   * - :ref:`cfg-earth-model`
-     - ``flat``
-     - ``ecef`` にすると曲率と自転を含み、計算時間が約 2 倍になる
-   * - :ref:`cfg-earth-gravity`
-     - ``inverse_square``
-     - ``j2`` は ``ecef`` のみ。着地点への効果は数 m（サンプル）
-   * - :ref:`cfg-launch-latitude`、:ref:`cfg-launch-longitude`
-     - サンプル 34.7347°、139.4204°
-     - 射点の位置。ECEF では緯度により Coriolis 力が変わる
-   * - :ref:`cfg-launch-altitude`
-     - サンプル 20 m
-     - 大気の海抜高度と重力の基準。着地判定の面でもある
-   * - :ref:`cfg-launch-azimuth_deg`、:ref:`cfg-launch-elevation_deg`
-     - サンプル 270°、85°
-     - 初期姿勢（北から時計回りの方位角と射角）
-   * - :ref:`cfg-launch-roll_deg`
-     - 0°
-     - 機軸まわりの初期ロール角
+   * - 選択肢
+     - 含む効果と仮定
+     - 選ぶとき
+   * - ``flat``\ （既定）
+     - 有効重力、風、大気。曲率と自転は含まない。高さの誤差は :math:`d^2/2R`
+     - 着地が射点から数 km〜10 km 以内。Coriolis 力による偏りが風の不確かさに埋もれる規模
+   * - ``ecef``
+     - 曲率、Coriolis 力、遠心力、扁平を含む重力（``j2``）。地形は扱わない
+     - 頂点が高い、射程が 10 km を超える、Coriolis 力による偏りを評価する、``j2`` 重力を使う飛翔
 
-値の完全な定義は :ref:`page-reference-config-environment` と :ref:`page-reference-config-general` にある。
+計算時間は ``ecef`` が ``flat`` の約 2 倍である（``examples/sample.toml`` を ``rk4``、:math:`\Delta t=2` ms で 1 飛翔するのに 0.24 s と 0.45 s。値は機種によって変わる）。
+
+関連する設定
+------------
+
+地球モデルは ``earth.model``\ （``flat`` または ``ecef``）、重力は ``earth.gravity`` で選ぶ（``j2`` は ``ecef`` のときだけ）。
+射点の測地座標は ``launch.latitude``、``launch.longitude``、``launch.altitude`` で与え、ECEF の初期位置と出力の緯度・経度、大気の海抜高度、着地判定の面に使う。
+初期姿勢は ``launch.azimuth_deg``\ （北から時計回りの方位角）、``launch.elevation_deg``\ （射角）、``launch.roll_deg``\ （機軸まわりのロール角、既定 0）で与える。
+各キーの型、既定値、範囲は設定ファイルの章（:ref:`cfg-earth-model`）にある。

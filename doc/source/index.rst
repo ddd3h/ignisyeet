@@ -66,6 +66,11 @@ IgnisYeet ドキュメント
    theory/index
    environment
    config
+   coordinates
+   geometry
+   propulsion
+   dynamics
+   descent
    vv/index
    dev/index
 

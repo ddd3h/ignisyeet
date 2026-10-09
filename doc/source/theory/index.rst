@@ -114,9 +114,6 @@
    :maxdepth: 1
 
    overview
-   geometry
-   coordinates
-   propulsion
    aero_choose
    aero_coefficients
    aero_tables
@@ -125,8 +122,5 @@
    cfd_choose
    cfd_equations
    cfd_coefficients
-   dynamics
-   descent
-   integrators
    dispersion
    limitations

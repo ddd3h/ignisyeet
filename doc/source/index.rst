@@ -66,8 +66,10 @@ IgnisYeet ドキュメント
    theory/index
    environment
    config
-   vv/index
-   dev/index
+   verification
+   validation
+   limitations
+   development
 
 .. raw:: latex
 

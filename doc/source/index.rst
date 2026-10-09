@@ -66,6 +66,7 @@ IgnisYeet ドキュメント
    theory/index
    environment
    config
+   usage
    vv/index
    dev/index
 
@@ -78,4 +79,5 @@ IgnisYeet ドキュメント
    :maxdepth: 1
    :caption: 付録
 
+   errors/index
    references

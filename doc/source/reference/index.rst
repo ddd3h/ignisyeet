@@ -15,20 +15,12 @@
      - 載っているもの
    * - :doc:`config/index`
      - 設定ファイルの形式、値の検査、各表のキー（基本、空力、CFD、環境、飛翔計算、落下分散）
-   * - :doc:`cli`
-     - ``ignisyeet`` のサブコマンドとオプション、端末の出力モード、``make`` と ``plot.py``
    * - :doc:`installer`
      - ``install.sh`` のオプションと環境変数
-   * - :doc:`output_files`
-     - 出力ファイルの一覧と、形状・飛翔・落下分散の列と項目
    * - :doc:`aero_table_format`
      - 係数表（CSV と付随 JSON）、``aero_drag.csv``、``panel_cp.csv``
    * - :doc:`cfd_output_files`
      - ``cfd_cases.csv`` と ``cfd_report.json``
-   * - :doc:`exit_codes`
-     - 終了ステータス 0、1、2、3 の定義
-   * - :doc:`error_codes`
-     - エラーコードとワーニングコードの体系と、コード別の説明
    * - :doc:`symbols`
      - 記号、単位、座標系の符号
 
@@ -36,11 +28,7 @@
    :maxdepth: 1
 
    config/index
-   cli
    installer
-   output_files
    aero_table_format
    cfd_output_files
-   exit_codes
-   error_codes
    symbols

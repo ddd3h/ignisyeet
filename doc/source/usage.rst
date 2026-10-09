@@ -3,12 +3,9 @@
 使い方
 ======
 
-IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファイルを渡して使う。計算はサブコマンドごとに分かれ、形状の抽出、係数表の作成、1 回の飛翔、落下分散の順に進む。
-各コマンドは結果をファイルとして出力先に書き、端末には設定、進み具合、結果の要約を表示する。
+IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファイルを渡して使う。
+1 回の解析は、``geom`` で形状を取り出し、``aero`` で係数表を作り、``sim`` で 1 回飛ばし、``dispersion`` で落下分散を求める順に進む。各コマンドは結果をファイルとして出力先に書き、端末には設定、進み具合、結果の要約を表示する。
 結果が使えるかどうかは、端末の要約、終了ステータス、``summary.json`` の三つで判断できる。
-
-この章は、コマンドの引数、端末の表示、結果の読み方、終了ステータス、出力ファイルの列と項目、図と KML、``make`` のターゲットを順に述べ、最後にエラーとワーニングの表示の形を示す。
-各コードの意味と対処は付録の一覧にある。
 
 .. _page-reference-cli:
 
@@ -31,7 +28,7 @@ IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファ�
    * - ``geom <config>``
      - STL から形状を抽出する。``geometry.json`` と ``profile.csv`` を書く。
    * - ``aero <config> [--force]``
-     - 空力係数表 ``aero_table.csv`` を作る。入力と設定が前回と同じなら保存済みの表を使う。``--force`` を付けると、保存済みの表が設定と一致していても再計算する（``aero.method = "table"`` では効果がない）。
+     - 空力係数表 ``aero_table.csv`` を作る。入力と設定が前回と同じなら、出力先にある表をそのまま使う。``--force`` を付けると再計算する（``aero.method = "table"`` では効果がない）。
    * - ``sim <config> [--descent ballistic|parachute]``
      - 設定した風で 1 回飛翔させる。``trajectory.csv`` と ``summary.json`` を書く。``--descent`` は ``sim.descent`` を上書きする。係数表がないか入力が変わったときは、先に ``aero`` を実行する。
    * - ``dispersion <config>``
@@ -126,7 +123,7 @@ IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファ�
 計算が進むと、工程ごとに、実行中は進捗バーを、終わると完了行（チェック印と処理名、要約、所要時間）を表示する。
 
 ``aero``
-   Barrowman 法では係数表の行数を分母にしたバーを出す。パネル法では段階ごとに進み具合を示し、2 行目に実行中の処理を表示する。保存済みの表を使うときは、バーを出さずに ``cached`` と行数を表示する（:numref:`fig-screen-aero-panel`）。
+   Barrowman 法では係数表の行数を分母にしたバーを出す。パネル法では段階ごとに進み具合を示し、2 行目に実行中の処理を表示する。前回と同じ設定の表を使うときは、バーを出さずに ``cached`` と行数を表示する（:numref:`fig-screen-aero-panel`）。
 
 ``sim``
    飛翔の段階（``rail`` ``powered`` ``coast`` ``parachute`` など）と、その時点の高度・速度・Mach 数・静安定余裕を表示し続ける。
@@ -238,10 +235,8 @@ IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファ�
      - 赤のバツ印と ``UNSTABLE``
      - 不安定（圧力中心が重心より前にある）。結果は使えない
 
-ここでの余裕は、迎角 0 の極限の小迎角の余裕で、その状態が飛んでいる迎角は入らない。自由飛行中の最小値は、ランチャ離脱から頂点までのうち対気速度が 10 m/s を超える間の値である。
+ここでの余裕は迎角 0 の極限の小迎角の余裕で、最小値を取る範囲とその定義は :ref:`sec-static-margin-general` にある。
 サンプルでは燃焼中に重心が前へ移るので、最小はランチャ離脱の時刻にある。
-頂点まで対気速度が 10 m/s を超えなかったときは、自由飛行中の値が ``n/a (airspeed < 10 m/s)`` と出る。
-余裕の定義と求め方は :ref:`page-theory-dynamics` にある。
 
 終了ステータスが 3 のとき、標準エラー出力の最後の行が理由を示す。
 
@@ -538,7 +533,7 @@ IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファ�
    * - ``apogee_time`` / ``apogee`` / ``apogee_east`` / ``apogee_north``
      - 頂点の時刻 [s]、射点からの高さ [m]、位置（東・北、射点から [m]）
    * - ``min_stability_cal``
-     - 自由飛行の最小静安定余裕 [cal]。ランチャ離脱の時刻から頂点までのうち、対気速度が 10 m/s を超える間の最小値で、離脱時の対気速度が 10 m/s を超えるときは離脱時の値を含む。頂点付近の遅い部分と降下は含まない。該当する時刻がなければ ``null``。迎角 0 の極限の小迎角の余裕で、その状態が飛んでいる迎角は入らない（:ref:`sec-static-margin-general`）
+     - 自由飛行の最小静安定余裕 [cal]。求める範囲と定義は :ref:`sec-static-margin-general` にある。該当する時刻がなければ ``null``
    * - ``stability_at_rail_exit``
      - ランチャ離脱時の静安定余裕 [cal]。対気速度によらず求める。軸対称表では :math:`(x_{cp}(\delta)-x_{cg})/d`\ （:eq:`eq-margin-axisym`）、一般表ではピッチとヨーの余裕の小さいほう
    * - ``landing_time``
@@ -593,7 +588,7 @@ IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファ�
    * - ``max_time``
      - 打ち切り時刻 ``sim.max_time`` [s]
    * - ``config_hash``
-     - この結果を計算した設定の識別子（16 桁の 16 進数）。出力先、計算資源（``[output]`` と ``[resources]``）、``[dispersion]`` を除く設定と、入力ファイル（STL、モータ、風のプロファイル、外部の係数表）の内容で決まる。結果が現在の設定で計算されたものかの照合に使い、KML は現在の設定と同じ識別子の結果だけをまとめる（:ref:`sec-kml`）。落下分散の出力にある ``config_hash`` と ``flight_config_hash`` も同じ目的の識別子である（:ref:`sec-file-dispersion`）
+     - どの設定で計算した結果かを示す識別子。現在の設定の結果かどうかの照合に使い、KML は現在の設定の結果だけをまとめる（:ref:`sec-kml`）。落下分散の出力にある ``config_hash`` と ``flight_config_hash`` も同じ目的の識別子である
    * - ``warnings``
      - 警告の文字列の配列（空のこともある）。各文字列は、画面の ``warning[IY-O514]: …`` の形ではなく、コードを角括弧のまま先頭に付けた ``[IY-O514] …`` の形で書く（:ref:`errors`）。設定の読み込み時の警告（``profile`` で使わない ``wind.speed`` と ``wind.direction_deg``、2 回以上指定した ``--set`` のキー）が先頭で、計算中の警告が続く。``dispersion_meta.json`` と ``dispersion_summary.json`` の ``warnings`` も同じ順である
    * - ``aero_table_range``
@@ -727,9 +722,9 @@ IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファ�
    * - 項目
      - 内容
    * - ``config_hash``
-     - 風の格子の結果を計算した設定の識別子（:ref:`sec-file-summary` の ``config_hash``）
+     - 風の格子の結果を計算した設定を示す識別子
    * - ``flight_config_hash``
-     - 飛翔の設定の識別子（:ref:`sec-file-summary` の ``config_hash``）
+     - 飛翔の設定を示す識別子
    * - ``cases``
      - ケース数
    * - ``failed`` / ``errored``
@@ -790,7 +785,7 @@ IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファ�
    * - ``descents``
      - 降下モードごとの配列（下表）
    * - ``config_hash`` / ``flight_config_hash``
-     - 結果を計算した設定の識別子（:ref:`sec-file-summary` の ``config_hash``）
+     - どの設定で計算した結果かを示す識別子
    * - ``warnings`` / ``aero_table_range``
      - 警告の配列と、係数表の範囲外の引き出しの集計（項目は :ref:`sec-file-summary` と同じ。失敗したサンプルは数えない）
    * - ``static_margin_min_cal`` / ``stable``
@@ -1037,101 +1032,12 @@ make のターゲットと変数
 
 .. _page-howto-warnings-errors:
 
-.. _errors:
-
-.. _page-reference-error-codes:
-
 エラーとワーニングの表示
 ------------------------
 
-IgnisYeet が出すエラーとワーニングには、安定したコードが付く。
-コードは ``IY-`` に領域の英字 1 文字と 3 桁の番号が続く形（例：``IY-C012``）で、メッセージの文面を直しても変わらない。
-各コードの意味、主な原因、対処は付録の一覧にあり、ここには重ねて書かない。
-
-番号が 001 から 499 ならエラー、500 から 999 ならワーニングである。
-エラーは処理を止める。ワーニングは処理を続け、結果の読み方に注意が要ることを知らせる。
-ただし、結果を使えない状況のワーニング（静的な不安定など）は、出力を書いた後に終了ステータス 3 で終わる。
-
-エラーは ``error[IY-Xnnn]: …``、ワーニングは ``warning[IY-Xnnn]: …`` の形で、メッセージの先頭にコードを付けて表示する。
-同じ状況は呼び出し箇所によらず同じコードで表示する。表示の形は出力モードで変わる（:ref:`sec-ui-modes`）。
-
-.. list-table::
-   :header-rows: 1
-   :widths: 22 78
-
-   * - 出力
-     - 形
-   * - プレーンモード（標準出力がパイプやファイルのとき）
-     - ワーニングは標準出力に ``warning[IY-O515]: rail exit speed … m/s is below 15 m/s: …`` の行で書く。
-   * - クワイエットモード（``-q``）
-     - ワーニングを標準エラー出力に、プレーンモードと同じ ``warning[IY-…]: …`` の行で書く。エラーも表示する。
-   * - リッチモード（標準出力が端末のとき）
-     - ワーニングは黄色の ``⚠ [IY-O515] rail exit speed …`` の行で書く（``⚠`` が重大度を示すので、``warning`` の語は付けない）。
-   * - 致命的エラー（コマンドが失敗して終了するとき）
-     - 全モード共通で、標準エラー出力に ``error[IY-C062]: invalid config rocket.toml`` のように見出しの 1 行を書く。原因があれば、空行の後に ``Caused by:`` と原因の行が続く。コードは先頭の行に 1 回だけ出る。
-   * - インストーラ（``install.sh``）
-     - ``error[IY-I010]: …`` と ``warning[IY-I510]: …`` を標準エラー出力に書く。
-
-CFD のケースごとの行は、コードの後ろに範囲を示す文が続く
-（``error[IY-F118]: aero.cfd: case m0.500_a00.00 failed: …``、``warning[IY-F523]: aero.cfd: case m0.500_a00.00: …``）。
-別のコードのエラーを文中に含むメッセージ（風の格子のケースの失敗にその原因のコードが入るもの、HXT と Delaunay の両方が失敗したメッシュのエラー）では、先頭のコードが外側の状況を表し、文中のコードが原因を表す。
-コマンドラインの引数の誤り（``--set`` の形など）は ``error: invalid value '…' for '--set <KEY=VALUE>': [IY-C002] …`` の形で、コードは文中に出る。コードが先頭になく ``error: …`` だけの行は、終了ステータス 2 の使い方の誤りである。``ignisyeet --help`` と ``ignisyeet <サブコマンド> --help`` を見る。
-
-機械出力では、コードを ``[IY-Xnnn] …`` の形のまま文字列の先頭に書く。
-次のものがそうである。
-
-* ``summary.json``、``dispersion_meta.json``、``dispersion_summary.json``、``geometry.json`` の ``warnings`` の配列（:ref:`sec-file-summary`）。
-* 終了ステータス 3 の行 ``ignisyeet: RESULTS NOT USABLE: [IY-O020] …`` と ``ignisyeet: INCOMPLETE RESULTS: [IY-O0nn] …``\ （:ref:`sec-exit-status`）。
-
-ワーニングの数値のうち、しきい値と比べるものは、しきい値を破った側にあると読める桁数で示す（静安定余裕 1.4977 cal は ``1.498``、開傘の速さ 50.2 m/s は ``50.2``）。
-ワーニングは ``summary.json`` の ``warnings`` に、落下分散では ``dispersion_meta.json`` と ``dispersion_summary.json`` の ``warnings`` にも、同じ文を残す。設定の読み込み時のワーニング（``profile`` で使わない ``wind.speed`` と ``wind.direction_deg``、2 回以上指定した ``--set`` のキー）は、配列の先頭に入る。後から結果のファイルだけを見るときは、この配列を読む。
-
-実例を示す。サンプルの ``sim.dt`` を ``1e-7`` にすると、次のエラーで止まる（終了ステータス 1）。
-
-.. code-block:: text
-
-   error[IY-C026]: invalid config sample.toml with the --set overrides
-
-   Caused by:
-       sim.dt = 0.0000001 s is too small (>= 1e-5 s): the run would take days; 0.002 s is typical
-
-``Caused by:`` の次の行が、直すべき項目と値の範囲を示す。
-
-コードの探し方
-~~~~~~~~~~~~~~
-
-行からコードの部分（``IY-C026``）を写し、英字から領域の一覧を開く。``error[`` と ``]:`` は要らない。致命的エラーに ``Caused by:`` がある場合は、先頭の行のコードを探す。
-一覧の見出しはコードそのものなので、ブラウザのページ内検索か、文書の検索欄にコードを入れて探せる。各コードのアンカーは ``IY-C012`` の形である。ソースやログを ``grep -r "IY-C012"`` で探すと、そのコードを出す箇所もわかる。
-各コードの項目には、メッセージの形、意味、主な原因、対処が並ぶ。
-
-.. list-table::
-   :header-rows: 1
-   :widths: 10 50 40
-
-   * - 英字
-     - 領域
-     - 一覧
-   * - C
-     - 設定（設定ファイル、``--set``、``[resources]``、``[aero.cfd]``）
-     - :ref:`errors-config`
-   * - G
-     - 形状（STL の読み込みと抽出）
-     - :ref:`errors-geometry`
-   * - A
-     - 空力（係数表、大気、パネル法）
-     - :ref:`errors-aero`
-   * - S
-     - 飛行計算と分散計算（モータ、風の表、回収系、積分）
-     - :ref:`errors-sim`
-   * - O
-     - コマンド、出力、結果の使用可否
-     - :ref:`errors-cli`
-   * - F
-     - CFD（SU2 とメッシャー）
-     - :ref:`errors-cfd`
-   * - I
-     - インストーラ
-     - :ref:`errors-install`
+エラーは ``error[IY-C062]: …``、ワーニングは ``warning[IY-O515]: …`` のように、コードを先頭に付けて表示する（リッチモードでは黄色の ``⚠ [IY-O515] …`` の行）。
+エラーは処理を止め、ワーニングは処理を続ける。ワーニングは ``summary.json`` の ``warnings`` にも同じ文が残るので、後から結果のファイルだけを見るときはこの配列を読む。
+コードの体系、表示の形、コードの探し方は付録の :ref:`errors` に、各コードの意味と対処は領域ごとの一覧にある。
 
 .. _tbl-warnings-symptoms:
 
@@ -1139,7 +1045,6 @@ CFD のケースごとの行は、コードの後ろに範囲を示す文が続�
 ~~~~~~~~~~~~~~
 
 コードが複数出ているときや、コードが分からないときは、近い症状を探す。
-
 
 .. list-table::
    :header-rows: 1
@@ -1149,59 +1054,59 @@ CFD のケースごとの行は、コードの後ろに範囲を示す文が続�
      - コード
      - 確かめる設定と、読むページ
    * - 設定ファイルが読めない、値が範囲外
-     - :ref:`IY-C060`、:ref:`IY-C061`、:ref:`IY-C005`、:ref:`IY-C009` から :ref:`IY-C059`
+     - :ref:`IY-C060`、``IY-C061``、``IY-C005``、``IY-C009`` から ``IY-C059``
      - メッセージが名指しする項目を直す。``--set`` の綴りの誤りは、未知のキーとして原因の行に出る。値の範囲の一覧は :ref:`sec-config-checks` にある。
    * - STL が読めない、表面が閉じていない
-     - :ref:`IY-G001` から :ref:`IY-G011`
+     - :ref:`IY-G001` から ``IY-G011``
      - STL を修復するか、ソリッドとして書き出し直す（:ref:`page-howto-own-rocket`）。
    * - 形状の抽出結果が疑わしい（比、向き、フィンの位置）
-     - :ref:`IY-G501` から :ref:`IY-G512`
+     - :ref:`IY-G501` から ``IY-G512``
      - ``rocket.stl_scale``、``rocket.nose_direction``、``rocket.fin_override`` を確かめる（:ref:`sec-geometry-warnings`）。
    * - 全長が範囲外、モータが機体に収まらない
-     - :ref:`IY-O005` から :ref:`IY-O008`、:ref:`IY-O502`、:ref:`IY-O503`
+     - :ref:`IY-O005` から ``IY-O008``、``IY-O502``、``IY-O503``
      - ``rocket.stl_scale``、``rocket.cg_dry``、``motor.aft_x`` を確かめる。
    * - 推力曲線のファイルが読めない、疑わしい
-     - :ref:`IY-S001` から :ref:`IY-S015`、:ref:`IY-S500` から :ref:`IY-S502`、:ref:`IY-O013`
+     - :ref:`IY-S001` から ``IY-S015``、``IY-S500`` から ``IY-S502``、``IY-O013``
      - ``.eng`` の行を直す（:ref:`page-howto-motor`）。
    * - レールを離れない
      - :ref:`IY-S080`
      - 推力、質量、``launch.rail_length`` を確かめる（:ref:`page-howto-launcher-parachute`）。
    * - ランチャ離脱速度が低い、風による迎角が大きい
-     - :ref:`IY-O515`、:ref:`IY-O516`
+     - :ref:`IY-O515`、``IY-O516``
      - ``launch.rail_length`` を長くする（:ref:`page-howto-launcher-parachute`）。
    * - 静的に不安定、または判定できない
-     - :ref:`IY-O020`、:ref:`IY-O021`、:ref:`IY-O025`、:ref:`IY-O026`、:ref:`IY-O505` から :ref:`IY-O508`
+     - :ref:`IY-O020`、``IY-O021``、``IY-O025``、``IY-O026``、``IY-O505`` から ``IY-O508``
      - 終了ステータス 3。``rocket.cg_dry`` とフィン、モータの取り付け位置を見直す。結果は使わない（:ref:`page-howto-read-results`）。
    * - 着地しない
-     - :ref:`IY-O027`、:ref:`IY-O028`、:ref:`IY-O029`、:ref:`IY-O504`、:ref:`IY-O530`
+     - :ref:`IY-O027`、``IY-O028``、``IY-O029``、``IY-O504``、``IY-O530``
      - 終了ステータス 3。降下方式、``recovery.cd_s``、``sim.max_time`` を確かめる（:ref:`page-howto-launcher-parachute`）。
    * - 係数表の範囲外の係数を使った
-     - :ref:`IY-O022`、:ref:`IY-O023`、:ref:`IY-O024`
+     - :ref:`IY-O022`、``IY-O023``、``IY-O024``
      - 終了ステータス 3。``aero.alpha_max_deg``、``aero.mach_max`` を大きくして表を作り直す。
    * - 弾道落下が横向きに落ちた
-     - :ref:`IY-O509`、:ref:`IY-O536`
+     - :ref:`IY-O509`、``IY-O536``
      - 終了ステータスは変わらない。着地点は検証していない大迎角の空力で決まる（:ref:`page-theory-limitations`）。
    * - パラシュートが高速で開く、着地速度が大きい、開傘が遅れた
-     - :ref:`IY-O511`、:ref:`IY-O517` から :ref:`IY-O520`
+     - :ref:`IY-O511`、``IY-O517`` から ``IY-O520``
      - ``recovery.delay``、``recovery.cd_s``、``recovery.main_altitude`` を確かめる（:ref:`page-howto-launcher-parachute`）。
    * - 風の表が読めない、表が飛翔の高度に足りない
-     - :ref:`IY-S030` から :ref:`IY-S037`、:ref:`IY-S050` から :ref:`IY-S053`、:ref:`IY-O512`、:ref:`IY-O513`、:ref:`IY-O521`
+     - :ref:`IY-S030` から ``IY-S037``、``IY-S050`` から ``IY-S053``、``IY-O512``、``IY-O513``、``IY-O521``
      - 表の行と高度の範囲を直す（:ref:`page-howto-environment`）。
    * - 頂点が高く、地上風のモデルが外挿になる
      - :ref:`IY-O514`
      - 高度 1 km を超える飛翔では、``wind.model = "profile"`` を使う（:ref:`page-howto-environment`）。
    * - 出力先を別の実行が使っている
-     - :ref:`IY-O031`、:ref:`IY-O032`
+     - :ref:`IY-O031`、``IY-O032``
      - ``--out`` で出力先を分ける（:ref:`sec-output-lock`）。
    * - ``--aero-table`` が受け付けられない
-     - :ref:`IY-O002`、:ref:`IY-O003`、:ref:`IY-O004`
+     - :ref:`IY-O002`、``IY-O003``、``IY-O004``
      - 表を同じ設定で作り直す（:ref:`page-howto-sweeps`）。
    * - 風の格子のケースやモンテカルロのサンプルが失敗した、統計が粗い
-     - :ref:`IY-O011`、:ref:`IY-O029`、:ref:`IY-O531` から :ref:`IY-O533`、:ref:`IY-O537`、:ref:`IY-O538`
+     - :ref:`IY-O011`、``IY-O029``、``IY-O531`` から ``IY-O533``、``IY-O537``、``IY-O538``
      - ``dispersion.csv`` の ``error`` 列を読む。すべて失敗したときは終了ステータス 1 になる（:ref:`page-howto-dispersion-run`）。
    * - CFD のツールがない、ケースが収束しない、メモリが足りない
-     - :ref:`IY-O009`、:ref:`IY-F001`、:ref:`IY-F002`、:ref:`IY-F119`、:ref:`IY-F120`
-     - ツールの入れ方は :ref:`page-howto-cfd-setup`、ケースの扱いは :ref:`page-howto-cfd-table` にある。
+     - :ref:`IY-O009`、``IY-F001``、``IY-F002``、``IY-F119``、``IY-F120``
+     - ツールの入れ方は :ref:`page-howto-cfd-setup` にある。
    * - インストールが止まる
      - ``IY-I…``
      - :ref:`errors-install` と :ref:`page-howto-install`。

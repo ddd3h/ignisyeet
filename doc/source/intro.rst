@@ -66,31 +66,34 @@ IgnisYeet はどの団体・組織にも属さないオープンソースソフ�
 
    IgnisYeet のモデルの構成。青の箱が計算の段階、灰色が入出力ファイルである。形状から係数表（空力モデル）を作り、環境と推力を与えた飛翔計算がそれを引き、落下分散は飛翔計算を多数のケースで繰り返す。見るところは、係数表が一度だけ作られ、飛翔計算と落下分散の両方がそれを引くことである。
 
-**形状モデル**\ （:ref:`page-theory-geometry`）
-   STL を機軸に垂直な多数の断面で切り、胴体の半径分布とフィンの寸法を求める。胴体は軸対称、フィンは台形と仮定する。
+**形状モデル**
+   STL を機軸に垂直な多数の断面で切り、胴体の半径分布とフィンの寸法を求める。胴体は軸対称、フィンは台形と仮定する（:ref:`page-theory-geometry`）。
 
-**空力モデル**\ （:ref:`page-theory-aero-choose`）
+**空力モデル**
    求めた形状から、Mach 数 :math:`M` と迎角 :math:`\alpha` の格子上で空力係数を計算し、表として保存する。
-   手法は ``aero.method`` で選ぶ。既定は部品積み上げ法（Barrowman 法 :cite:`barrowman`、:ref:`page-theory-barrowman`）、``"panel"`` は表面パネルを解くパネル法（:ref:`page-theory-panel`）、
-   ``"cfd"`` は SU2 による CFD（:ref:`page-theory-cfd-choose`）、``"table"`` は外部の係数表である。
-   係数を先に表にするので、飛翔計算は表の内挿だけを行う。理由と効果は空力モデルの章にある。
+   手法は ``aero.method`` で選ぶ。既定は部品積み上げ法（Barrowman 法 :cite:`barrowman`）、``"panel"`` は表面パネルを解くパネル法、
+   ``"cfd"`` は SU2 による CFD、``"table"`` は外部の係数表である（:ref:`page-theory-aero-choose`）。
+   係数を先に表にするので、飛翔計算は表の内挿だけを行う。
 
-**環境モデルと推進モデル**\ （:ref:`page-theory-coordinates`、:ref:`page-theory-atmosphere-gravity`、:ref:`page-theory-wind`、:ref:`page-theory-propulsion`）
+**環境モデルと推進モデル**
    座標系（平面地球と自転する ECEF）、大気（米国標準大気 :cite:`us76`\ 、温度差、一定大気）、重力（一定・逆 2 乗則・:math:`J_2`）、風（一定・べき法則・対数則・高度別の表）、
-   推力曲線と質量特性を与える。
+   推力曲線と質量特性を与える（:ref:`page-theory-coordinates`）。
 
-**飛翔モデル**\ （:ref:`page-theory-dynamics`、:ref:`page-theory-descent`、:ref:`page-theory-integrators`）
+**飛翔モデル**
    6 自由度の運動方程式を、空力係数を各時刻の :math:`(M,\alpha)` で表から内挿して積分する。
-   積分法は固定刻みの 4 次 Runge–Kutta 法と、刻み幅を自動で調整する Dormand–Prince 法 :cite:`dormand` から選ぶ :cite:`hairer`。
+   積分法は固定刻みの 4 次 Runge–Kutta 法と、刻み幅を自動で調整する Dormand–Prince 法 :cite:`dormand` から選ぶ :cite:`hairer`\ （:ref:`page-theory-dynamics`）。
 
-**落下分散モデル**\ （:ref:`page-theory-dispersion`）
+**落下分散モデル**
    風速と風向の組合せごとに（``wind_grid``）、または推力・質量・空力係数・射角・風などをランダムに変えたサンプルごとに（``monte_carlo``。モンテカルロ法 :cite:`metropolis`）、
-   飛翔を独立に計算し、着地点を集める。
+   飛翔を独立に計算し、着地点を集める（:ref:`page-theory-dispersion`）。
 
 目的別の使い方
 --------------
 
-何を計算したいかによって、使うコマンドと選ぶ設定が決まる。:numref:`tbl-choose-purpose` に対応を示す。
+何を計算したいかによって、使うコマンドと選ぶ設定が決まる。
+飛翔経路（頂点、最大速度、着地点）を 1 本求めるには ``sim`` を使い、空力係数の表だけを求める、または外部の係数表と比べるには ``aero`` を使う。
+風速と風向を変えたときの着地点の広がりは ``dispersion`` の ``wind_grid`` で見通し、機体と環境の不確かさを含めた着地点の分布は ``monte_carlo`` で求める。
+保安距離を決めるには、この二つの落下分散を併用する（手順は :ref:`page-howto-keepout-zone`）。
 設定ブロックごとの選択肢と、それを説明する章の対応は :numref:`fig-opt-map` にある。
 
 .. _fig-opt-map:
@@ -100,58 +103,8 @@ IgnisYeet はどの団体・組織にも属さないオープンソースソフ�
 
    設定ブロックと選択肢、それを説明する章の対応。見出しは設定ファイルの表（``[wind]`` など）、中の項目は選ぶキーと値、下の箱が読む章である。青の見出しは機体と環境の入力、橙の見出しは空力・飛翔・落下分散の計算手法である。
 
-.. _tbl-choose-purpose:
-
-.. list-table:: 目的別のコマンドと主な設定
-   :header-rows: 1
-   :widths: 40 16 44
-
-   * - 目的
-     - コマンド
-     - 選択を左右する主な設定
-   * - 飛翔経路（頂点、最大速度、着地点）を 1 本求める
-     - ``sim``
-     - ``aero.method``、``earth.model``、``wind.model``、``sim.integrator``
-   * - 空力係数の表だけを求める、外部の係数表と比べる
-     - ``aero``
-     - ``aero.method``、``aero.table_kind``、``aero.cfd.*``
-   * - 風速と風向を変えたときの着地点の広がりを見通す
-     - ``dispersion``\ （``wind_grid``）
-     - ``dispersion.wind_speeds``、``dispersion.directions``、``wind.model``
-   * - 機体と環境の不確かさを含めた着地点の分布を求める
-     - ``dispersion``\ （``monte_carlo``）
-     - ``dispersion.monte_carlo.*``\ （サンプル数、標準偏差）
-   * - 保安距離を決める
-     - ``dispersion`` の両方
-     - ``aero.method``\ （手法間の差）、サンプル数、``truncate_sigma``
-
-保安距離を決める手順は :ref:`page-howto-keepout-zone` にある。
-
 計算時間は、空力係数の手法（特に CFD）で桁が変わる。手法の選択は、精度の要求とこの計算時間の釣り合いで決める。
-サンプル機体での目安を :numref:`tbl-overview-time` に示す。測定の条件と内訳は :ref:`sec-vaero-timing` にまとめてある。
-
-.. _tbl-overview-time:
-
-.. list-table:: サンプル機体での計算時間（20 スレッドの CPU）
-   :header-rows: 1
-   :widths: 50 50
-
-   * - 処理
-     - 時間
-   * - 形状抽出（約 1.4 万三角形、600 断面）＋係数表（151 Mach × 91 迎角）
-     - 0.1 s 未満（係数表だけなら約 20 ms）
-   * - 係数表（パネル法、既定のメッシュ約 5900 枚）
-     - 約 9 s（亜音速 6 点の連立方程式が約 5 s）。CPU が他の処理と競合すると長くなる
-   * - 係数表（CFD、Euler、約 142 万セル（フィンの面 1 mm）、:math:`M=0.3`〜2 の 4 点 × 迎角 4 点の 16 ケース）
-     - 行列全体で約 2.5 時間（4 ランクで 1 ケースずつ、別の計算と同時に実行した測定。1 ケースは約 6〜15 分）
-   * - 1 回の飛翔（パラシュート降下を含め約 690 s 分）、``rk4``\ （:math:`\Delta t=2` ms）
-     - 約 0.2 s
-   * - 同、``rk45``\ （既定の許容誤差）
-     - 約 0.03 s
-   * - 落下分散 ``wind_grid``\ （7 風速 × 8 方位 × 2 降下モード = 112 ケース、``rk4``）
-     - 約 0.7 s
-   * - 落下分散 ``monte_carlo``\ （1000 サンプル × 2 降下モード、``rk45``）
-     - 約 0.8 s
+サンプル機体での測定値は :ref:`sec-vaero-timing` にまとめてある。
 
 .. _sec-about-reading:
 
@@ -168,18 +121,10 @@ IgnisYeet はどの団体・組織にも属さないオープンソースソフ�
 * 長さは m、角度は度（式の中ではラジアン）、静安定余裕は機体の基準直径に対する倍（cal）で表す。符号と座標系は次の「記号と単位」にある。
 * 数値を挙げた箇所には、条件（Mach 数、迎角、機体、メッシュ）を付けた。条件のない数値は、サンプル機体（``examples/sample.toml``）の値である。
 
-結果の確からしさを述べる語を、次のように使い分ける。
-
-検証
-   モデルと解析解、手計算、メッシュの収束との比較。実装が式のとおりに動くことを確かめる。
-
-相互比較
-   同じ問題を二つの手法（たとえばパネル法と CFD）で解いた結果どうしの比較。手法の差の大きさを示すが、どちらが正しいかは決めない。
-
-妥当性確認
-   実測との比較。実測データがあるのは、Basic Finner の超音速（Mach 1.08–4.30）の射場試験に限られる。
-
-各モデルにどの比較があるかは :ref:`page-vv` にまとめてある。
+結果の確からしさを述べる語は使い分ける。
+**検証** は、モデルを解析解や手計算と比べて、実装が式のとおりに動くことを確かめることである。
+**相互比較** は、同じ問題を二つの手法（たとえばパネル法と CFD）で解いた結果どうしの比較で、手法の差の大きさを示すがどちらが正しいかは決めない。
+**妥当性確認** は実測との比較を指す。各モデルにどの比較があるかは :ref:`page-vv` にまとめてある。
 
 .. _page-reference-symbols:
 

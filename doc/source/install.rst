@@ -6,16 +6,7 @@
 この章は、IgnisYeet のインストールと更新、アンインストールを扱う。計算に使う ``ignisyeet`` コマンドと、作図に使う ``ignisyeet-plot`` コマンドを使えるようにするのが目的である。
 CFD による空力計算を使うときだけ、CFD ツール（SU2、gmsh、Open MPI）も入れる。Barrowman 法とパネル法だけなら要らない。
 中心はインストーラ ``install.sh`` を使う方法で、developer の入れ方、ソースからのビルド、``pip`` による作図環境も述べる。最後に、インストーラのオプションと環境変数を一覧にする。
-
-前提
-----
-
-* 対応する OS：Linux（x86_64、aarch64）または macOS（Intel、Apple Silicon）。
-* ``bash``、``curl``、``tar``\ （ほとんどの環境に最初から入っている）。
-* インターネット接続（リリースの取得と、作図用ライブラリの導入に使う）。
-* 管理者権限（``sudo``）は要らない。すべて自分のホームディレクトリの下（既定は ``~/.local``）に入る。
-
-``git``、``cargo``、``uv``、``python3`` などは、user では必須ではない。
+対応するのは Linux（x86_64、aarch64）と macOS（Intel、Apple Silicon）で、インターネット接続と ``bash``、``curl``、``tar`` があればよい。管理者権限は要らず、すべて自分のホームディレクトリの下（既定は ``~/.local``）に入る。
 ``python3`` が 3.10 未満または無いときは、インストーラが ``uv`` を使って用意することを提案する。
 
 インストーラで入れる
@@ -40,7 +31,7 @@ CFD による空力計算を使うときだけ、CFD ツール（SU2、gmsh、Op
 
 1. 役割を選ぶ（:numref:`fig-screen-install-role`）。``1`` が user（既定）、``2`` が developer で、Enter だけで user になる。
    user は、GitHub のリリースから自分のプラットフォーム用の実行ファイルを取得し、チェックサムを検証してから ``~/.local/bin/ignisyeet`` に置く。
-   例題と作図スクリプトは ``~/.local/share/ignisyeet/<バージョン>`` に入り、``current`` というリンクが最新版を指す。
+   例題と作図スクリプトは ``~/.local/share/ignisyeet/`` の下に入る。
    作図用の環境と、それを使う ``ignisyeet-plot`` コマンドも用意する。developer は、ソースからビルドして開発する人向けである（次節）。
 
    .. _fig-screen-install-role:
@@ -138,7 +129,7 @@ developer として入れる
 役割の質問で ``2`` を選ぶ（または ``--developer`` を付ける）と、リリースの実行ファイルではなく、ソースからビルドして使う環境ができる。
 その他の手順は user と同じである。
 
-* git でリポジトリを取得する（すでに clone があれば再利用し、変更がなければ ``git pull`` する）。
+* git でリポジトリを取得する。
 * ``cargo`` がなければ ``rustup`` を入れ、``cargo build --release`` を実行する。``cargo test --release`` を実行するかも尋ねられる。
 * 作図用の環境とドキュメント用の環境を作る。
 * TeX Live、dvisvgm、mutool、inkscape、IPAex フォントのうち足りないものは、実行すべき ``apt`` または ``brew`` のコマンドを表示する（``sudo`` はインストーラ自身は実行しない）。
@@ -322,7 +313,7 @@ CFD の計算で使う SU2 は、次の順で最初に見つかったもので�
 --------------------
 
 インストール用のコマンドをもう一度実行すると更新になる。入っていないものだけを入れるので、再実行しても安全である。
-user では最新のリリースが取得され、``current`` のリンクが新しい版に切り替わり、古い版のデータは ``~/.local/share/ignisyeet/<バージョン>`` に残る。
+user では最新のリリースが取得され、``~/.local/share/ignisyeet/current/`` が新しい版になる。古い版のデータは残る。
 特定のバージョンは ``--version vX.Y.Z`` で指定する。
 同じバージョンがすでに入っているときは ``Reinstall it?`` と尋ねる。尋ねない場面（``-y`` など）で入れ直すには ``--force`` を付ける。
 
@@ -351,19 +342,5 @@ developer の clone は、明示的に確認したときだけ削除する。
 ------------------
 
 失敗した手順の名前とログの末尾が画面に出る。全体の記録は ``~/.local/share/ignisyeet/install.log`` にある。インストーラは再実行しても安全なので、原因を取り除いてからもう一度実行する。
-個別の症状は次のとおりである。コードの意味は :ref:`errors-install` にあり、エラーとワーニング全般の読み方は :ref:`page-howto-warnings-errors` にある。
-
-``ignisyeet: command not found``
-   ``~/.local/bin`` が ``PATH`` に入っていない。「PATH を設定する」の ``export PATH=...`` の行をシェルの設定ファイルに書き、新しい端末を開く。
-
-最新のリリースが分からない（``could not determine the latest release``、:ref:`IY-I021`）
-   まだリリースが公開されていないか、ネットワークに接続できていない。``--developer`` で入れるか、``--version vX.Y.Z`` で版を指定する。
-
-プロキシの内側でダウンロードに失敗する（:ref:`IY-I042`）
-   ``curl`` は ``https_proxy`` と ``http_proxy`` を読む。実行前に設定しておく（例：``export https_proxy=http://proxy.example.com:8080``）。
-
-チェックサムが一致しない（:ref:`IY-I044`）
-   取得したファイルが壊れているか、配布物と異なる。インストーラは何もインストールしないので、時間をおいてもう一度実行する。
-
-CFD ツールの SU2 が異常終了する（:ref:`IY-I510`）
-   AVX-512 のない CPU では SU2 8.5.0 が異常終了する。インストーラが作る環境は SU2 8.3.0 に固定している。別の版が入った環境は、画面に出る再作成のコマンドで作り直せる。原因と手順は :ref:`IY-I510` にある。
+個別の症状とコードの意味は、付録の :ref:`errors-install` にある。
+``ignisyeet: command not found`` と出るときは ``~/.local/bin`` が ``PATH`` に入っていないので、「PATH を設定する」の行をシェルの設定ファイルに書いて新しい端末を開く。

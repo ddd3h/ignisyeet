@@ -5,16 +5,19 @@ CFD の係数表
 
 CFD の解は、Mach 数、迎角、横滑り角の点ごとの力とモーメントである。飛翔計算が読むのは、これを規則的な格子に並べた係数表なので、点から表を作る段階にも、結果を左右する取り決めがある。
 迎角の正負をどう扱うか、CFD が与えない項を何で補うか、解いた範囲の外をどうつなぐかである。
-
-この章は、まず CFD の値とモデルの値の区分を示し、迎角とケース行列の取り方、SU2 の係数から機体軸の係数への変換、軸対称表と一般表の作り方、解いた範囲の外、ロール減衰微係数の順に述べる。
-最後に流れ場の図で係数の由来を確かめ、適用範囲と精度をまとめる。解く条件の選び方は :ref:`page-theory-cfd-choose`、表の定義は :ref:`page-theory-aero-tables` と :ref:`page-theory-aero-coefficients` にある。
+解く条件の選び方は :ref:`page-theory-cfd-choose` で述べる。
 
 .. _sec-cfd-supplied:
 
 CFD の値とモデルの値
 --------------------
 
-係数表の各量が、CFD の解から来るか、部品積み上げ法（またはパネル法）のモデルから来るかを :numref:`tbl-cfd-supplied` と :numref:`fig-cfd-supplied` に示す。
+係数表の各量が、CFD の解から来るか、部品積み上げ法（またはパネル法）のモデルから来るかを :numref:`fig-cfd-supplied` に示す。
+CFD の解から得るのは、法線力 :math:`C_N`、圧力中心 :math:`x_{cp}`、軸力の圧力抗力（造波）である。横滑りを解けば横力 :math:`C_Y` とヨーモーメント :math:`C_n` も CFD から得る。
+RANS ではこれに摩擦抗力が加わり（粗さの増分だけはモデル）、底面抗力は ``rans_base`` で CFD かモデルかを選ぶ。
+Euler では摩擦抗力と底面抗力をモデルで補い（フェアリングの面は力に入れない）、フィン縁とボートテールの抗力は、縁の面が壁面にある ``stl`` と ``step`` では CFD、``panel_mesh`` ではモデルである（RANS の ``panel_mesh`` は設定の縁の増分を足し、``step`` は CFD で、``stl`` は使えない）。
+ロール減衰 :math:`C_{lp}` は、Euler で ``roll_damping`` を指定したときだけ CFD で、ほかはモデルである。ピッチ・ヨー減衰 :math:`C_{mq}`、:math:`C_{nr}` は傾きと重心が CFD で、ばらつきはモデルである。
+ロールのカント強制 :math:`C_{l\delta}` と、解いた迎角と横滑り角の外側はモデルで、ロールとピッチ・ヨーの交差する微係数はどの手法にもない。
 モデルで補った量の精度は、部品積み上げ法の精度である。
 
 .. _fig-cfd-supplied:
@@ -23,49 +26,6 @@ CFD の値とモデルの値
    :width: 90%
 
    CFD の解から得る量とモデルで補う量（上）と、迎角の軸上の区分（下）。見るところは、解いた最大の迎角 :math:`\alpha_e` の先でモデルの値へつなぐことと、モデルで補う量の精度は部品積み上げ法の精度になることである。
-
-.. _tbl-cfd-supplied:
-
-.. list-table:: 係数表の量と出どころ
-   :header-rows: 1
-   :widths: 24 38 38
-
-   * - 量
-     - Euler
-     - RANS
-   * - 法線力 :math:`C_N`、圧力中心 :math:`x_{cp}`
-     - CFD
-     - CFD
-   * - 軸力の圧力抗力（造波）
-     - CFD
-     - CFD
-   * - 摩擦抗力
-     - モデル
-     - CFD（粗さの増分はモデル）
-   * - 底面抗力
-     - モデル（フェアリングの面は力に入れない）
-     - ``rans_base`` で、モデル（既定）か CFD
-   * - フィン縁、ボートテールの抗力
-     - ``panel_mesh`` はモデル。``stl`` と ``step`` は縁の面が CFD の壁面にあるので CFD
-     - ``panel_mesh`` は設定の縁の増分をモデルで足す。``stl`` は使えない。``step`` は CFD
-   * - 横力 :math:`C_Y`、ヨーモーメント :math:`C_n`
-     - 横滑りを解けば CFD
-     - 横滑りを解けば CFD
-   * - ロール減衰 :math:`C_{lp}`
-     - ``roll_damping`` なら CFD、なければモデル
-     - モデル
-   * - ピッチ・ヨー減衰 :math:`C_{mq}`、:math:`C_{nr}`
-     - 傾きと重心は CFD、ばらつきはモデル
-     - 同左
-   * - ロールのカント強制 :math:`C_{l\delta}`
-     - モデル
-     - モデル
-   * - 解いた迎角と横滑り角の外側
-     - モデル
-     - モデル
-   * - ロールとピッチ・ヨーの交差する微係数
-     - どの手法でもモデルにない
-     - 同左
 
 迎角とケース行列
 ----------------
@@ -466,31 +426,20 @@ CFD が与えない項とピッチ・ヨー減衰の和は、部品積み上げ�
 ~~~~~~~~~~~~~~~~~~~~~~
 
 CFD が与える値は、法線力 :math:`C_N`、圧力中心 :math:`x_{cp}`、軸力のうち圧力による抗力（RANS では摩擦も）、横滑りを解けば横力 :math:`C_Y` とヨーモーメント :math:`C_n`、``roll_damping`` ならロール減衰 :math:`C_{lp}` である。
-それ以外はモデルで補う（:numref:`tbl-cfd-supplied`）。検証と実測との比較を、スコープを区別して示す。
+それ以外はモデルで補う（:numref:`fig-cfd-supplied`）。検証と実測との比較を、スコープを区別して示す。
 
-* **検証**\ （解析解、相関式、収束との比較）：
-  円すいの表面圧力は、メッシュを細かくすると Taylor–Maccoll の解 :cite:`taylormaccoll` に近づく（:ref:`sec-vaero-cfd`）。
-  表の :math:`C_{N\alpha}` は法線力の補間曲線の原点での傾きと 0.1 % 以内で一致する。
-  :math:`z` 対称メッシュと ``alpha_mode = "mirror"`` で :math:`\alpha=0` の見かけの非対称性が消える（:ref:`sec-cfd-val-asym`）。ロール減衰と横滑りの符号と無次元化、6 成分への写像は、軸対称表を展開した値と一致する（:ref:`sec-cfd-val-roll`）。
-  メッシュ収束は、フィンの面を 1 mm にしたまま ``wall_size`` を変えると :math:`C_N` が単調に増える（:ref:`sec-vaero-cfd-mesh`）。
-  RANS は、平板の摩擦が NASA TMR の SA の解と 0.8 % 以内（:math:`M=0.2`）、:math:`M=2` の van Driest II と 1.2 % 以内（最も細かい格子）で一致し、円すいとフィンなし胴体の摩擦の軸力も平板の見積もりと 2.5〜7.4 % で一致する。
-  サンプル機体の RANS の :math:`C_N`\ 、:math:`C_A`\ 、:math:`x_{cp}`\ （:math:`M=0.8,2`、:math:`\alpha=4^\circ`）は、メッシュに対して単調に収束する（GCI は :math:`C_N` で 0.5 % 以内、:math:`C_A` で 1.9 % 以内）。
-* **相互比較**\ （手法どうし）：
-  亜音速の :math:`C_{N\alpha}` は、CFD とパネル法の差が 2.5 %（:math:`M=0.8`）から 9 %（:math:`M=0.3`）で、部品積み上げ法より CFD に近い（:ref:`sec-vaero-compare`）。
-  STL をそのまま解く計算は、作り直した形状による計算と相互比較した（:ref:`sec-cfd-val-stl`）。
-  RANS は Euler の CFD と :math:`C_N` で 3.6〜5.1 %、:math:`x_{cp}` で 4 mm 以内で一致する（形状の違いを含む。:ref:`sec-cfd-rans-compare`）。
-* **妥当性確認**\ （実測との比較）：
-  Basic Finner の超音速（Mach 1.08–4.30）の射場試験との比較だけで、Euler の :math:`C_{N\alpha}` は実測より 3〜11 % 小さく、:math:`x_{cp}` は 0.2 口径以内で合う（:ref:`page-vv-validation-basic-finner`）。
+検証では、円すいの表面圧力が Taylor–Maccoll の解 :cite:`taylormaccoll` に近づくこと、``alpha_mode = "mirror"`` で :math:`\alpha=0` の見かけの非対称性が消えること、メッシュを細かくすると :math:`C_N` が収束することを確かめた（:ref:`sec-vaero-cfd`）。
+RANS は、平板の摩擦が NASA TMR の SA の解や van Driest II と 1.2 % 以内で一致し、サンプル機体の係数はメッシュに対して単調に収束する（:ref:`page-vv-rans-verification`）。
+手法どうしの相互比較では、亜音速の :math:`C_{N\alpha}` は部品積み上げ法よりパネル法と CFD が近く、RANS は Euler の CFD と :math:`C_N` で 3.6〜5.1 % で一致する（:ref:`sec-vaero-compare`）。
+実測との比較は、Basic Finner の超音速（Mach 1.08–4.30）の射場試験だけである。Euler の :math:`C_{N\alpha}` は実測より 3〜11 % 小さく、:math:`x_{cp}` は 0.2 口径以内で合う（:ref:`page-vv-validation-basic-finner`）。
 
-RANS の検証の項目と結果は :numref:`tbl-rans-gates`\ （:ref:`sec-cfd-rans`）にあり、次の条件は確かめていない、または基準を満たさない。
+RANS で確かめていない、または基準を満たさない条件は次のとおりである（検証の項目と結果は :numref:`tbl-rans-gates`）。
 
-* 亜音速の :math:`\alpha=0` の非対称：:math:`M=0.8` で :math:`C_N(0)` が 0.011〜0.034 残る（底面の後ろの剥離した流れの非対称な解）。``alpha_mode = "mirror"`` が :math:`\pm\alpha` の組合せで取り除く。
-* 低い亜音速：:math:`M=0.3` の :math:`\alpha=0,-4^\circ,-8^\circ` は残差が周期的に振動し、収束しない。サンプル機体の係数表（20 ケース）で収束と判定されたのは 15 ケース（75 %）で、基準の 90 % に届かない。
-* 底面の流れ：底面の圧力（``rans_base = "cfd"``）は確かめていない。
-* CAD のモデル：``surface = "step"`` の RANS はメッシュの検査までを確かめ、SU2 の解は確かめていない。
-* 壁関数：``yplus`` 30〜150 は検証していない。
+* 亜音速の :math:`\alpha=0` の非対称：底面の後ろの剥離した流れの非対称な解で、:math:`M=0.8` の :math:`C_N(0)` が残る。``alpha_mode = "mirror"`` が :math:`\pm\alpha` の組合せで取り除く。
+* 低い亜音速：:math:`M=0.3` の :math:`\alpha=0,-4^\circ,-8^\circ` は残差が周期的に振動し、収束しない。サンプル機体の係数表で収束と判定されたのは 20 ケースのうち 15 ケースで、基準の 90 % に届かない。
+* 底面の流れ、CAD のモデルの解、壁関数の ``yplus``：確かめていない。CAD のモデルはメッシュの検査までを確かめた。
 
-検証の全体は :ref:`page-vv-cfd-verification` と :ref:`page-vv-rans-verification`、手法どうしの相互比較は :ref:`page-vv-cross-comparison`、計算時間とメモリの測定は :ref:`page-vv-performance` にある。
+検証の全体は :ref:`page-vv-cfd-verification` にある。
 
 関連する設定
 ------------

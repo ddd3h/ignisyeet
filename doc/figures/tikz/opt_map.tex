@@ -27,24 +27,24 @@
   % row 2: atmosphere, wind, aero
   \node[hdr]  (h4) at (0*\px,-1*\py) {atmosphere};
   \node[body, below=0mm of h4] (b4) {\texttt{model} = us1976 / constant\\\texttt{temperature\_offset}\\\texttt{density}, \texttt{sound\_speed},\\\texttt{viscosity}（constant のみ）};
-  \node[chap, below=2mm of b4] (c4) {大気と重力};
+  \node[chap, below=2mm of b4] (c4) {環境モデル};
 
   \node[hdr]  (h5) at (1*\px,-1*\py) {wind};
   \node[body, below=0mm of h5] (b5) {\texttt{model} = constant / power /\\\hspace*{12mm}log / profile\\\texttt{ref\_height}, \texttt{exponent},\\\texttt{roughness\_length}\\\texttt{profile\_mean\_speed}};
-  \node[chap, below=2mm of b5] (c5) {風};
+  \node[chap, below=2mm of b5] (c5) {環境モデル};
 
   \node[hdro] (h6) at (2*\px,-1*\py) {aero};
   \node[body, below=0mm of h6] (b6) {\texttt{method} = barrowman / panel /\\\hspace*{12mm}cfd / table\\\texttt{table\_kind}, \texttt{panel.*}, \texttt{cfd.*}};
-  \node[chapo, below=2mm of b6] (c6) {空力手法の選択};
+  \node[chapo, below=2mm of b6] (c6) {空力解析};
 
   % row 3: sim, recovery, dispersion
   \node[hdro] (h7) at (0*\px,-2*\py) {sim};
   \node[body, below=0mm of h7] (b7) {\texttt{integrator} = rk4 / rk45 / dop853\\\texttt{attitude} = normalize / lie\_group\\\texttt{quasi\_steady}};
-  \node[chapo, below=2mm of b7] (c7) {力学と積分};
+  \node[chapo, below=2mm of b7] (c7) {運動方程式と数値積分};
 
   \node[hdro] (h8) at (1*\px,-2*\py) {recovery};
   \node[body, below=0mm of h8] (b8) {\texttt{enabled}, \texttt{delay}\\\texttt{cd\_s}\\\texttt{main\_cd\_s}, \texttt{main\_altitude}};
-  \node[chapo, below=2mm of b8] (c8) {降下};
+  \node[chapo, below=2mm of b8] (c8) {降下方式};
 
   \node[hdro] (h9) at (2*\px,-2*\py) {dispersion};
   \node[body, below=0mm of h9] (b9) {\texttt{mode} = wind\_grid / monte\_carlo\\\texttt{wind\_speeds}, \texttt{directions}\\\texttt{monte\_carlo.samples}, \texttt{seed}\\\texttt{monte\_carlo.*}（ばらつき）};

@@ -66,7 +66,7 @@ IgnisYeet ドキュメント
    theory/index
    environment
    config
-   workflows
+   cfd_usage
    vv/index
    dev/index
 

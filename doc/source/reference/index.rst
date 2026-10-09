@@ -19,10 +19,6 @@
      - ``install.sh`` のオプションと環境変数
    * - :doc:`output_files`
      - 出力ファイルの一覧と、形状・飛翔・落下分散の列と項目
-   * - :doc:`aero_table_format`
-     - 係数表（CSV と付随 JSON）、``aero_drag.csv``、``panel_cp.csv``
-   * - :doc:`cfd_output_files`
-     - ``cfd_cases.csv`` と ``cfd_report.json``
    * - :doc:`exit_codes`
      - 終了ステータス 0、1、2、3 の定義
    * - :doc:`error_codes`
@@ -36,8 +32,6 @@
    cli
    installer
    output_files
-   aero_table_format
-   cfd_output_files
    exit_codes
    error_codes
    symbols

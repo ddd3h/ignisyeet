@@ -123,4 +123,3 @@
    descent
    integrators
    dispersion
-   limitations

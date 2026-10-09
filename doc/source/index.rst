@@ -64,6 +64,9 @@ IgnisYeet ドキュメント
    howto/index
    reference/index
    theory/index
+   aerodynamics
+   barrowman
+   panel
    environment
    config
    vv/index

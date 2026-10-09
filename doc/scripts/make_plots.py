@@ -794,6 +794,106 @@ def facing(tri3, elev, azim):
     return np.cross(tri3[:, 1] - tri3[:, 0], tri3[:, 2] - tri3[:, 0]) @ eye > 0
 
 
+def cfd_euler_rans(f, fields):
+    """Euler and RANS of the sample rocket at one condition (doc/data/cfd/fields_rans, extracted by extract_cfd_rans_fields.py)."""
+    from matplotlib.collections import LineCollection
+    from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
+    from matplotlib.tri import Triangulation
+
+    div_cmap = LinearSegmentedColormap.from_list("div", ["#104281", "#5598e7", "#f0efec", "#f19a6c", "#b23f0f"])
+    body_c = "#c9c8c3"
+    models = [("euler", "Euler"), ("rans", "RANS")]
+    col = {"euler": SEQ[4], "rans": "#b23f0f"}
+    prof = {m: np.load(fields / f"{m}_profile.npz") for m, _ in models}
+    minf, x_st = float(prof["euler"]["mach_inf"]), float(prof["euler"]["x"])
+    note = dict(color=INK2, fontsize=8.5, linespacing=1.3)
+
+    fig = plt.figure(figsize=(10, 7.8))
+    gs = fig.add_gridspec(3, 3, width_ratios=[1, 1, 0.03], height_ratios=[1.0, 0.85, 1.0], hspace=0.36, wspace=0.12,
+                          left=0.07, right=0.93, top=0.95, bottom=0.07)
+    # (a) Mach number on the symmetry plane behind the body
+    lev = np.linspace(0.0, 1.0, 41)
+    norm = TwoSlopeNorm(vmin=0.0, vcenter=minf, vmax=1.0)
+    for k, (m, lab) in enumerate(models):
+        ax = fig.add_subplot(gs[0, k])
+        d = np.load(fields / f"{m}_base.npz")
+        tr = Triangulation(d["points"][:, 0], d["points"][:, 1], d["triangles"])
+        mach = d["mach"].astype(float)
+        ax.set_facecolor(body_c)
+        cs = ax.tricontourf(tr, np.clip(mach, 0.0, 1.0), levels=lev, cmap=div_cmap, norm=norm)
+        cs.set_rasterized(True)
+        ax.tricontour(tr, mach, levels=[0.3], colors=INK, linewidths=0.6)
+        ax.set_xlim(1.25, 2.1); ax.set_ylim(-0.2, 0.2)
+        ax.set_aspect("equal"); ax.grid(False)
+        ax.set_xlabel("$x$ [m]")
+        if k == 0:
+            ax.set_ylabel("$z$ [m]")
+        ax.set_title(lab, color=INK, fontsize=11, loc="left")
+    axs = fig.axes
+    axs[0].text(1.56, 0.075, "底面を覆う円すい\n（流れは剝離しない）", ha="left", va="center", **note)
+    axs[1].text(1.63, 0.0, "剝離域", ha="left", va="center", color="white", fontsize=9)
+    axs[1].text(1.62, 0.13, "平らな底面と後流\n（黒線は $M=0.3$）", ha="left", va="center", **note)
+    axs[0].text(1.32, -0.185, "灰色は機体（フィンの断面を含む）", ha="left", va="bottom", **note)
+    cax = fig.add_subplot(gs[0, 2])
+    cb = fig.colorbar(cs, cax=cax, ticks=[0.0, 0.4, 0.8, 1.0])
+    cb.set_label("Mach 数", color=INK2)
+    cb.ax.tick_params(labelsize=8)
+
+    # (b) volume-mesh section on the symmetry plane at the mid-body station
+    for k, (m, lab) in enumerate(models):
+        ax = fig.add_subplot(gs[1, k])
+        w = np.load(fields / f"{m}_wallmesh.npz")
+        r = float(w["radius"])
+        seg = w["segments"].astype(float)
+        seg[:, :, 1] = (seg[:, :, 1] - r) * 1e3
+        ax.add_collection(LineCollection(seg, colors=SEQ[7], linewidths=0.4, rasterized=True))
+        ax.fill_between([0.72, 0.78], -4, 0, color=body_c, zorder=0)
+        ax.set_xlim(0.726, 0.777); ax.set_ylim(-1.5, 24)
+        ax.grid(False)
+        ax.set_xlabel("$x$ [m]")
+        if k == 0:
+            ax.set_ylabel("壁からの距離 [mm]")
+    axs = fig.axes[-2:]
+    axs[0].text(0.7275, 22.5, "四面体", va="top", bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="none", alpha=0.85), **note)
+    axs[1].text(0.7275, 22.5, "壁の上のプリズム層", va="top", bbox=dict(boxstyle="round,pad=0.25", fc="white", ec="none", alpha=0.85), **note)
+
+    ins = axs[1].inset_axes([0.56, 0.30, 0.41, 0.46])
+    wr = np.load(fields / "rans_wallmesh.npz")
+    sg = wr["segments"].astype(float)
+    sg[:, :, 1] = (sg[:, :, 1] - float(wr["radius"])) * 1e3
+    ins.add_collection(LineCollection(sg, colors=SEQ[7], linewidths=0.4, rasterized=True))
+    ins.fill_between([0.72, 0.78], -1, 0, color=body_c, zorder=0)
+    ins.set_xlim(0.742, 0.762); ins.set_ylim(-0.03, 0.6)
+    ins.set_facecolor("white"); ins.grid(False)
+    ins.tick_params(labelsize=7)
+    ins.set_xticks([]); ins.set_yticks([0.0, 0.3, 0.6])
+    ins.set_title("壁際の拡大 [mm]", fontsize=8, color=INK2, pad=7, bbox=dict(fc="white", ec="none", pad=1.5))
+    axs[1].indicate_inset_zoom(ins, edgecolor=INK2, linewidth=0.6)
+
+    # (c) velocity profile at the same station
+    ax1 = fig.add_subplot(gs[2, 0])
+    ax2 = fig.add_subplot(gs[2, 1])
+    for m, lab in models:
+        p = prof[m]
+        ls = "--" if m == "euler" else "-"
+        for ax in (ax1, ax2):
+            ax.plot(p["v"], p["d"] * 1e3, color=col[m], label=lab, linewidth=1.8, linestyle=ls)
+    ax1.set_ylim(0, 16); ax1.set_ylabel("壁からの距離 [mm]")
+    ax2.set_yscale("log"); ax2.set_ylim(1e-4, 40)
+    pr = prof["rans"]
+    d99 = float(pr["d"][np.argmax(pr["v"] >= 0.99 * pr["v"][-1])]) * 1e3  # boundary-layer thickness delta_99 [mm]
+    for ax, ttl in ((ax1, "(線形軸)"), (ax2, "(対数軸)")):
+        ax.set_xlabel("$|V|/U_\\infty$"); ax.set_xlim(-0.03, 1.5)
+        ax.axvline(0.0, color=INK2, linewidth=0.8)
+        ax.set_title(f"$x={x_st:g}$ m の壁に垂直な速度分布 {ttl}", fontsize=9, color=INK2, loc="left")
+        ax.axhline(d99, color=col["rans"], linewidth=0.7, linestyle=":")
+        ax.text(0.03, d99 * (0.8 if ax is ax2 else 1.0) + (0.0 if ax is ax2 else 0.3), f"RANS の境界層厚さ $\\delta_{{99}}={d99:.1f}$ mm", ha="left", va="top" if ax is ax2 else "bottom", color=col["rans"], fontsize=8.5)
+    ax1.legend(loc="upper left", fontsize=9)
+    ax1.text(0.04, 0.22, "壁で $|V|=0$", transform=ax1.transAxes, color=col["rans"], fontsize=9)
+    ax1.text(1.06, 3.0, "Euler は壁でも\n$|V|\\approx U_\\infty$（滑る）", color=col["euler"], fontsize=8.5, linespacing=1.3)
+    f.save(fig, "cfd_euler_rans")
+
+
 def cfd_fields(f, fields):
     """Sample-rocket CFD meshes and flow fields (doc/data/cfd/fields, extracted by extract_cfd_fields.py)."""
     from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
@@ -1265,6 +1365,8 @@ def main():
         rans_study(f, data)
     if (data / "fields" / "mesh_symmetry.npz").exists():
         cfd_fields(f, data / "fields")
+    if (data / "fields_rans" / "rans_profile.npz").exists():
+        cfd_euler_rans(f, data / "fields_rans")
     vdir = data.parent / "validation" / "basic_finner"
     if (vdir / "summary_vs_measured.csv").exists():
         basic_finner_validation(f, vdir)

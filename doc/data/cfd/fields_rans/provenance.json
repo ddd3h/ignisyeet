@@ -1,0 +1,9 @@
+{
+ "source": "sample rocket (examples/sample_cfd.toml and examples/sample_rans.toml geometry), half model, M 0.8, alpha 0 deg, freestream p 101085 Pa, T 288.02 K, each solved from the freestream",
+ "euler": "model euler with the defaults of sample_cfd.toml: wall_size 2 mm, fin_size auto (1 mm), tail_fairing 6 base radii, z-symmetric mesh, 1415504 tetrahedra (302867 nodes); 352 iterations (early stop), final log10 RMS density -8.46; the case was solved again with the same case.cfg, ITER = 352 and only RESTART written, because the runner deletes restart.dat of a finished case",
+ "rans": "model rans (Spalart-Allmaras) with the defaults of sample_rans.toml: wall_size 5 mm, yplus 1, 45 prism layers (first height 1.3 um, total 23.8 mm), 1549958 cells (1179810 prisms, 370148 tetrahedra), 677894 nodes; startup stage + main stage, 452 iterations in total (early stop), 837 s on 4 MPI ranks, final log10 RMS density -7.16, y+ p95 0.95",
+ "station": "wall-normal profile and mesh zoom at x = 0.75 m (half the body length), +z side of the symmetry plane y = 0",
+ "commit": "2cc8f74",
+ "date": "2026-10-09",
+ "tools": "SU2 8.3.0, 4 MPI ranks per case; extracted with doc/scripts/extract_cfd_rans_fields.py"
+}

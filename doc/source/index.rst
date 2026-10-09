@@ -43,6 +43,7 @@ IgnisYeet ドキュメント
    environment
    propulsion
    dynamics
+   integrators
    descent
    dispersion
    verification

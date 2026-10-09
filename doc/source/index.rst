@@ -64,8 +64,11 @@ IgnisYeet ドキュメント
    howto/index
    reference/index
    theory/index
+   cfd
+   cfd_methods
    environment
    config
+   dispersion
    vv/index
    dev/index
 

@@ -352,8 +352,8 @@ pub fn rocket_profile(profile: &[(f64, f64, f64)], cg: Option<f64>, cp: Option<f
     let (w, ml) = (860.0, 20.0);
     let scale = (w - 2.0 * ml) / len;
     let half = (rmax * scale).max(20.0);
-    let h = 2.0 * half + 56.0;
-    let cy = half + 14.0;
+    let h = 2.0 * half + 68.0;
+    let cy = half + 26.0;
     let outline = |f: &dyn Fn(&(f64, f64, f64)) -> f64| -> String {
         let mut d = String::new();
         for (i, p) in valid.iter().enumerate() {

@@ -337,6 +337,7 @@ td.r,th.r{text-align:right}
 .figs{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px 22px;margin-top:8px}
 @media (max-width:480px){.figs{grid-template-columns:1fr}.cols{grid-template-columns:1fr}}
 figure{margin:0}
+section>figure{margin-top:16px}
 figcaption{color:var(--muted);font-size:.85rem;margin-top:2px}
 .chart{width:100%;height:auto;display:block}
 .chart .tx{fill:var(--fg);font:11px system-ui,sans-serif}

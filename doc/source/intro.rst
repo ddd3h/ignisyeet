@@ -58,6 +58,7 @@ IgnisYeet はどの団体・組織にも属さないオープンソースソフ�
 ------------
 
 :numref:`fig-pipeline` に構成を示す。入力は機体の CAD データ、設定ファイル、推力曲線の三つである。
+機体の CAD データは、STEP、IGES、BREP のファイル（``rocket.cad``）か STL ファイル（``rocket.stl``）で与える。CAD のファイルは三角形に分割してから形状を抽出する。読むには CFD 用のツール（gmsh の Python）が要る。CAD のファイルがあるときはそれを勧め、STL はメッシュしか書き出せないツールで使う。
 
 .. _fig-pipeline:
 
@@ -147,7 +148,7 @@ IgnisYeet はどの団体・組織にも属さないオープンソースソフ�
    * - 局所 ENU 座標系
      - 原点は射点。:math:`x_E` が東、:math:`y_N` が北、:math:`z_U` が天頂（射点での楕円体の法線方向）の右手系。:math:`z_U` は射点からの高さで、海抜高度は :math:`h_0+z_U`\ （:math:`h_0` は射点標高）。
    * - 機体座標系
-     - 原点は重心。:math:`x_b` は機軸に沿ってノーズ方向、:math:`y_b` と :math:`z_b` はそれに直交する右手系。向きは STL から決まる（``geometry.json`` の ``body_x`` ``body_y`` ``body_z``。:ref:`sec-body-basis`）。
+     - 原点は重心。:math:`x_b` は機軸に沿ってノーズ方向、:math:`y_b` と :math:`z_b` はそれに直交する右手系。向きは入力の形状から決まる（``geometry.json`` の ``body_x`` ``body_y`` ``body_z``。:ref:`sec-body-basis`）。
    * - 機体上の位置
      - ノーズ先端から後方へ測った距離 :math:`x` [m]。機体上の点 :math:`x` の機体座標は :math:`(x_{cg}-x,\,0,\,0)`。
    * - 迎角 :math:`\alpha`

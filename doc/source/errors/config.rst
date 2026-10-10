@@ -1452,6 +1452,77 @@ IY-C063
 対処
     存在するディレクトリに移って実行するか、``--out`` に絶対パスを指定する。
 
+.. _IY-C064:
+
+IY-C064
+-------
+
+重大度: エラー
+
+メッセージ::
+
+    error[IY-C064]: rocket.stl and rocket.cad are both set; give the rocket as one STL or one CAD file
+    error[IY-C064]: the rocket geometry is missing: set rocket.stl (an STL file) or rocket.cad (a STEP, IGES or BREP file)
+
+意味
+    機体の形状を ``rocket.stl`` と ``rocket.cad`` の両方に書いたか、どちらにも書いていない。どちらか一方だけを書く。
+
+主な原因
+    STL から CAD に切り替えたときに、元の ``stl`` の行を消していない。形状のキーを書き忘れた。
+
+対処
+    使う方のキーだけを残す。
+
+関連
+    :ref:`cfg-rocket-stl`、:ref:`cfg-rocket-cad`
+
+.. _IY-C065:
+
+IY-C065
+-------
+
+重大度: エラー
+
+メッセージ::
+
+    error[IY-C065]: rocket.stl_scale = <値> is set with rocket.cad: the unit of a CAD file comes from the file (rocket.cad_unit overrides it), so stl_scale does not apply
+    error[IY-C065]: rocket.cad_unit is set with rocket.stl: it is the unit of rocket.cad; an STL gets its unit from rocket.stl_scale
+
+意味
+    単位のキーが形状の種類と合っていない。``stl_scale`` は STL の、``cad_unit`` は CAD ファイルのキーである。
+
+主な原因
+    STL から CAD に切り替えたときに、``stl_scale`` を残した（単位を二重に掛けないように、エラーにしている）。
+
+対処
+    CAD では ``stl_scale`` を消し、必要なら ``cad_unit`` で単位を指定する。STL では ``cad_unit`` を消す。
+
+関連
+    :ref:`cfg-rocket-stl_scale`、:ref:`cfg-rocket-cad_unit`
+
+.. _IY-C066:
+
+IY-C066
+-------
+
+重大度: エラー
+
+メッセージ::
+
+    error[IY-C066]: rocket.cad = "<path>": not a CAD file OpenCASCADE reads; use a STEP (.step, .stp), IGES (.iges, .igs) or BREP (.brep, .brp) file
+
+意味
+    ``rocket.cad`` のファイルの拡張子が CAD の形式でない。
+
+主な原因
+    STL のファイルを ``cad`` に書いた。拡張子が違う。
+
+対処
+    STL は ``rocket.stl`` に書く。CAD ファイルは拡張子を ``.step`` ``.stp`` ``.iges`` ``.igs`` ``.brep`` ``.brp`` のいずれかにする。
+
+関連
+    :ref:`cfg-rocket-cad`
+
 .. _IY-C100:
 
 IY-C100

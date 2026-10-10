@@ -99,7 +99,7 @@
 ``[rocket]``
 ------------
 
-機体の STL と質量特性、表面とフィンの仕様を指定する。
+機体の形状（STL か CAD のファイル）と質量特性、表面とフィンの仕様を指定する。
 STL の読み方と形状の抽出は :ref:`page-theory-geometry` にある。
 質量、重心、慣性モーメントは推進剤を除いた乾燥状態の値で与え、燃焼中の変化はモータの推進剤質量から決まる。
 慣性テンソル、``cg_lateral_dry``、``misalignment_offset`` は機体座標（:math:`x_b` がノーズ方向）で与える（:ref:`sec-body-basis`）。
@@ -119,18 +119,28 @@ STL の読み方と形状の抽出は :ref:`page-theory-geometry` にある。
    * - .. _cfg-rocket-stl:
 
        ``rocket.stl``
-          パス、必須
-     - 機体の STL ファイル（ASCII とバイナリのどちらも読める）。
+          パス、``rocket.cad`` とどちらか一方が必須
+     - 機体の STL ファイル（ASCII とバイナリのどちらも読める）。``rocket.cad`` と同時には指定できない（:ref:`IY-C064`）。
    * - .. _cfg-rocket-stl_scale:
 
        ``rocket.stl_scale``
           数値、``1.0``
-     - STL の長さの単位を m に直す係数。mm の STL は ``0.001``。掛けた後の機体の全長は 0.1 m 以上 20 m 以下。正。
+     - STL の長さの単位を m に直す係数。mm の STL は ``0.001``。掛けた後の機体の全長は 0.1 m 以上 20 m 以下。正。``rocket.cad`` と同時には ``1.0`` 以外にできない（CAD の単位は ``rocket.cad_unit`` で決める。:ref:`IY-C065`）。
+   * - .. _cfg-rocket-cad:
+
+       ``rocket.cad``
+          パス、``rocket.stl`` とどちらか一方が必須
+     - 機体の CAD ファイル。STEP（``.step`` ``.stp``）、IGES（``.iges`` ``.igs``）、BREP（``.brep`` ``.brp``）を読める。STL に書き出し直さずに、形状の抽出から飛翔の計算までの入力にできる。相対パスは設定ファイルのディレクトリを基準にする。``rocket.stl`` と同時には指定できない（:ref:`IY-C064`）。読むには CFD 用ツールの gmsh（Python）が要る（:ref:`IY-G017`）。``aero.cfd.surface = "step"`` で ``step_file`` を省くと、このファイルが CFD の壁面になる（:ref:`page-howto-own-rocket`）。
+   * - .. _cfg-rocket-cad_unit:
+
+       ``rocket.cad_unit``
+          文字列、``"auto"``
+     - ``rocket.cad`` の長さの単位。``"auto"`` はファイルが宣言する単位（BREP は m）で読む。単位を宣言していない STEP と IGES では ``"auto"`` を指定できない（:ref:`IY-G018`）。``rocket.stl`` と同時には指定できない。選べる値は ``"auto"``、``"m"``、``"cm"``、``"mm"``、``"in"``、``"ft"``。
    * - .. _cfg-rocket-nose_direction:
 
        ``rocket.nose_direction``
           文字列、``"auto"``
-     - STL 座標でノーズが向く方向。``"auto"`` は形状から判定する。選べる値は ``"auto"``、``"+x"``、``"-x"``、``"+y"``、``"-y"``、``"+z"``、``"-z"``。
+     - STL または CAD ファイルの座標でノーズが向く方向。``"auto"`` は形状から判定する。選べる値は ``"auto"``、``"+x"``、``"-x"``、``"+y"``、``"-y"``、``"+z"``、``"-z"``。
    * - .. _cfg-rocket-dry_mass:
 
        ``rocket.dry_mass``
@@ -666,12 +676,12 @@ RANS の既定値は ``model = "rans"`` を選んだときの値である。
 
        ``aero.cfd.step_file``
           パス、なし
-     - ``surface = "step"`` で必須。CAD のファイル。相対パスは設定ファイルのディレクトリを基準にする。``rocket.stl`` と同じ座標系の、一つの閉じた立体として書き出す。``surface = "step"`` 以外ではエラーである。ファイル形式は STEP（``.step`` ``.stp``）、IGES（``.iges`` ``.igs``）、BREP（``.brep`` ``.brp``）（:ref:`sec-cfd-step`）。
+     - ``surface = "step"`` で必須（``rocket.cad`` があるときは省くと、そのファイルを使う）。CAD のファイル。相対パスは設定ファイルのディレクトリを基準にする。``rocket.stl`` と同じ座標系の、一つの閉じた立体として書き出す。``surface = "step"`` 以外ではエラーである。ファイル形式は STEP（``.step`` ``.stp``）、IGES（``.iges`` ``.igs``）、BREP（``.brep`` ``.brp``）（:ref:`sec-cfd-step`）。
    * - .. _cfg-aero-cfd-step_unit:
 
        ``aero.cfd.step_unit``
           文字列、``"auto"``
-     - ``step_file`` の長さの単位。``"auto"`` はファイルが宣言する単位（BREP は m）で読む。単位を宣言していない STEP と IGES では ``"auto"`` を指定できない。``surface = "step"`` 以外ではエラーである。選べる値は ``"auto"``、``"m"``、``"cm"``、``"mm"``、``"in"``、``"ft"``\ （:ref:`sec-cfd-step`）。
+     - ``step_file`` の長さの単位（``step_file`` を省いて ``rocket.cad`` を使うときは、``"auto"`` のままなら ``rocket.cad_unit``）。``"auto"`` はファイルが宣言する単位（BREP は m）で読む。単位を宣言していない STEP と IGES では ``"auto"`` を指定できない。``surface = "step"`` 以外ではエラーである。選べる値は ``"auto"``、``"m"``、``"cm"``、``"mm"``、``"in"``、``"ft"``\ （:ref:`sec-cfd-step`）。
    * - .. _cfg-aero-cfd-base_treatment:
 
        ``aero.cfd.base_treatment``

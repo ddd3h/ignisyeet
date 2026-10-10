@@ -3,6 +3,8 @@
 mod config;
 mod kml;
 mod outfile;
+mod report;
+mod report_svg;
 #[cfg(test)]
 #[path = "../../../testutil/tmp.rs"]
 mod test_tmp;
@@ -96,6 +98,19 @@ enum Cmd {
         /// Also export the wall surface and build the volume mesh (reports node/cell counts and quality).
         #[arg(long)]
         mesh: bool,
+    },
+    /// Write one self-contained HTML report (report.html) from the result files of an output directory. Reads files only; sections whose files are missing are left out.
+    Report {
+        config: PathBuf,
+        /// Read the results from DIR instead of output.dir; a relative DIR is resolved from the current directory.
+        #[arg(long, value_name = "DIR")]
+        out: Option<PathBuf>,
+        /// Write the report to FILE instead of <results directory>/report.html.
+        #[arg(long, value_name = "FILE")]
+        output: Option<PathBuf>,
+        /// Do not embed the PNG files of plots/ in the report.
+        #[arg(long)]
+        no_plots: bool,
     },
     /// Write the built-in sample rocket as a binary STL in millimetres, nose towards +z.
     SampleStl { path: PathBuf },
@@ -276,6 +291,11 @@ fn run() -> Result<()> {
             outfile::lock_dir(&cfg.out_dir())?;
             return cfd_check(&cfg, &config, mesh);
         }
+        Cmd::Report { config, out, output, no_plots } => {
+            let ov = ConfigArgs { set: Vec::new(), out };
+            let cfg = load_config(&config, &ov, &TableArg::default())?;
+            run_report(&cfg, &config, output.as_deref(), !no_plots)?;
+        }
         Cmd::SampleStl { path } => {
             let tris: Vec<_> = geom::sample::SampleRocket::default().mesh().iter().map(|t| t.map(|v| geom::Vec3::new(v.y, v.z, -v.x) * 1000.0)).collect();
             geom::stl::write_stl_binary(&path, &tris)?;
@@ -296,6 +316,60 @@ fn run() -> Result<()> {
         }
         outfile::unlock_all();
         std::process::exit(EXIT_INCOMPLETE);
+    }
+    Ok(())
+}
+
+/// `SOURCE_DATE_EPOCH` when it is set to a number (reproducible builds), otherwise the current time.
+fn report_epoch() -> u64 {
+    std::env::var("SOURCE_DATE_EPOCH")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .unwrap_or_else(|| std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()))
+}
+
+/// `ignisyeet report`: reads the result files of the output directory and writes the HTML report.
+fn run_report(cfg: &Config, config_path: &Path, output: Option<&Path>, embed_plots: bool) -> Result<()> {
+    let dir = cfg.out_dir();
+    report::check_dir(&dir)?;
+    outfile::lock_dir(&dir)?;
+    let path = output.map(Path::to_path_buf).unwrap_or_else(|| dir.join("report.html"));
+    let report_dir = path.parent().filter(|p| !p.as_os_str().is_empty()).map(Path::to_path_buf).unwrap_or_else(|| PathBuf::from("."));
+    let same = |a: &Path, b: &Path| a == b || matches!((a.canonicalize(), b.canonicalize()), (Ok(x), Ok(y)) if x == y);
+    let ctx = report::Context {
+        config_path,
+        version: env!("CARGO_PKG_VERSION"),
+        epoch: report_epoch(),
+        hashes: report::Hashes {
+            flight: run_hash(cfg, RunKind::Flight),
+            wind_grid: run_hash(cfg, RunKind::WindGrid),
+            monte_carlo: run_hash(cfg, RunKind::MonteCarlo),
+        },
+        motor: load_motor(cfg).ok().map(|m| report::MotorInfo {
+            name: m.name.clone(),
+            total_impulse: m.total_impulse(),
+            burn_time: m.burn_time(),
+            propellant_mass: m.propellant_mass,
+        }),
+        report_dir: if same(&report_dir, &dir) { dir.clone() } else { report_dir },
+        dir,
+        embed_plots,
+    };
+    let r = report::build(cfg, &ctx)?;
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent).with_context(|| format!("[IY-O030] cannot create {}", parent.display()))?;
+    }
+    outfile::write(&path, r.html.as_bytes())?;
+    if ui().mode == ui::Mode::Quiet {
+        println!("{}", path.display());
+    } else {
+        println!("  -> {} ({} sections, {:.0} kB)", path.display(), r.sections.len(), r.html.len() as f64 / 1024.0);
+    }
+    if !r.mismatches.is_empty() {
+        print_warnings(&[format!(
+            "[IY-O545] the configuration has changed since the results were computed: {}; the report shows the current configuration next to the older results",
+            r.mismatches.join("; ")
+        )]);
     }
     Ok(())
 }

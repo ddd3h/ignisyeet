@@ -17,9 +17,9 @@ INCOMPLETE = $(OUT)/.incomplete
 # aero, sim and dispersion share the aero table cache: never run them in parallel (make -j).
 .NOTPARALLEL:
 
-.PHONY: all begin finish build test geom aero sim dispersion plot clean
+.PHONY: all begin finish build test geom aero sim dispersion plot report clean
 
-all: begin aero sim dispersion plot finish
+all: begin aero sim dispersion plot report finish
 
 begin:
 	rm -f "$(INCOMPLETE)"
@@ -47,6 +47,9 @@ dispersion: build
 
 plot:
 	$(PLOT) all "$(OUT)"
+
+report: build
+	"$(BIN)" report "$(CONFIG)" --out "$(OUT)"
 
 clean:
 	cargo clean

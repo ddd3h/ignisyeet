@@ -621,6 +621,75 @@ IY-O040
 対処
     ``ballistic`` か ``parachute`` を指定する。
 
+.. _IY-O041:
+
+IY-O041
+-------
+
+重大度: エラー
+
+メッセージ::
+
+    error[IY-O041]: the output directory <value> does not exist; run sim, dispersion or aero first (or give the directory of the run with --out)
+
+意味
+    ``report`` が結果を読む出力ディレクトリがない。
+
+主な原因
+    ``sim``、``dispersion``、``aero`` をまだ実行していない。実行時に ``--out`` で別のディレクトリへ書いたのに、``report`` に同じ ``--out`` を渡していない。``output.dir`` の綴りの誤り。
+
+対処
+    先に結果を作る。``--out`` を付けて実行したときは、``report`` にも同じ ``--out`` を付ける。
+
+関連
+    :ref:`sec-cli-report`
+
+.. _IY-O042:
+
+IY-O042
+-------
+
+重大度: エラー
+
+メッセージ::
+
+    error[IY-O042]: no result files in <value> (looked for summary.json, dispersion.csv, dispersion_mc.csv, dispersion_summary.json, aero_table.json, geometry.json); run geom, aero, sim or dispersion first
+
+意味
+    ``report`` が読む出力ディレクトリに、結果のファイルが 1 つもない。
+
+主な原因
+    ディレクトリは作られているが、まだどのコマンドも結果を書いていない。別のプログラムのディレクトリを指している。
+
+対処
+    ``geom``、``aero``、``sim``、``dispersion`` のどれかを実行してから、``report`` を実行する。
+
+関連
+    :ref:`sec-cli-report`
+
+.. _IY-O043:
+
+IY-O043
+-------
+
+重大度: エラー
+
+メッセージ::
+
+    error[IY-O043]: cannot read <value>: not valid JSON
+
+意味
+    ``report`` が結果のファイルを読めない、または JSON として解釈できない。
+
+主な原因
+    ファイルの読み取り権限がない。書き込みの途中で止まって欠けている。手で編集して JSON が壊れた。
+
+対処
+    該当のコマンド（``sim`` なら ``summary.json``、``dispersion`` なら ``dispersion_meta.json`` と ``dispersion_summary.json``、``aero`` なら ``aero_table.json``）を実行し直して、ファイルを作り直す。
+
+関連
+    :ref:`sec-cli-report`
+
 .. _IY-O500:
 
 IY-O500
@@ -1573,3 +1642,26 @@ IY-O544
 対処
     括弧内のエラーに従う。
 
+
+.. _IY-O545:
+
+IY-O545
+-------
+
+重大度: ワーニング
+
+メッセージ::
+
+    warning[IY-O545]: the configuration has changed since the results were computed: summary.json (recorded <hash>, current <hash>); the report shows the current configuration next to the older results
+
+意味
+    ``report`` が読んだ結果は、今の設定ファイルとは別の設定で計算したものである。レポートの「Inputs」には今の設定を示すので、結果と入力が食い違う。
+
+主な原因
+    ``sim`` や ``dispersion`` を実行した後に、設定ファイル、機体のファイル、モータのファイルを書き換えた。実行時に ``--set`` を付けたが、``report`` には付けられない。
+
+対処
+    結果を作ったときと同じ設定に戻すか、``sim`` と ``dispersion`` を実行し直す。
+
+関連
+    :ref:`sec-cli-report`

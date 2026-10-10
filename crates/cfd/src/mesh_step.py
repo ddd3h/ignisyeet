@@ -95,8 +95,23 @@ def classify_body_faces(faces):
 
 
 # ---- prepare ---------------------------------------------------------------------------------------------------------
+def prime_iges_reader():
+    """The IGES reader of OpenCASCADE registers its unit setting at the first import of the process: before that,
+    gmsh cannot set `Geometry.OCCTargetUnit` ("Could not set OpenCASCADE target unit"). One import of the file in its own
+    unit, thrown away, makes the setting work. (STEP and BREP need no priming.)"""
+    if not p["step_file"].lower().endswith((".iges", ".igs")) or getattr(prime_iges_reader, "done", False):
+        return
+    prime_iges_reader.done = True
+    gmsh.option.setString("Geometry.OCCTargetUnit", "")
+    gmsh.model.add("prime")
+    occ.importShapes(p["step_file"], highestDimOnly=True)
+    gmsh.model.remove()
+    gmsh.option.setString("Geometry.OCCTargetUnit", "M")
+
+
 def load(heal):
     """Imports the file into a fresh model; returns (volumes, notes)."""
+    prime_iges_reader()
     gmsh.model.add("step")
     notes = []
     dt = occ.importShapes(p["step_file"], highestDimOnly=True)

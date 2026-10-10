@@ -29,7 +29,7 @@ CFD による空力計算を使うときだけ、CFD ツール（SU2、gmsh、Op
 ロゴが出たあと、質問が始まる。``curl ... | bash`` で実行しても、質問は端末から読み取るのでそのまま答えられる。
 質問は次の順に進む。
 
-1. 役割を選ぶ（:numref:`fig-screen-install-role`）。``1`` が user（既定）、``2`` が developer で、Enter だけで user になる。
+1. 役割を選ぶ（:numref:`fig-screen-install-role`）。``1`` が user（既定）、``2`` が developer で、:kbd:`Enter` だけで user になる。
    user は、GitHub のリリースから自分のプラットフォーム用の実行ファイルを取得し、チェックサムを検証してから ``~/.local/bin/ignisyeet`` に置く。
    例題と作図スクリプトは ``~/.local/share/ignisyeet/`` の下に入る。
    作図用の環境と、それを使う ``ignisyeet-plot`` コマンドも用意する。developer は、ソースからビルドして開発する人向けである（次節）。
@@ -57,7 +57,7 @@ CFD による空力計算を使うときだけ、CFD ツール（SU2、gmsh、Op
 
 3. 計画を確認する（:numref:`fig-screen-install-plan`）。
    取得するファイル名、置き場所、作る環境が ``Plan`` として順に並び、``Proceed?`` と尋ねられる。この時点では何も変更していないので、内容が気に入らなければ ``n`` で中止できる。
-   ``y`` または Enter で進む。
+   ``y`` または :kbd:`Enter` で進む。
 
    .. _fig-screen-install-plan:
 

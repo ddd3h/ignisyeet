@@ -17,7 +17,7 @@
 
    curl -fsSL https://raw.githubusercontent.com/ddd3h/ignisyeet/main/install.sh | bash
 
-質問が出るので、**Enter だけ** で答える（役割は user、CFD ツールは入れない、実行計画はそのまま進める）。
+質問が出るので、:kbd:`Enter` だけで答える（役割は user、CFD ツールは入れない、実行計画はそのまま進める）。
 ただし、``~/.local/bin`` が ``PATH`` に入っていないときに出る「Add … to PATH in …?」の質問には ``y`` と答える。
 
 期待する出力

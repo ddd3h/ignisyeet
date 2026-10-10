@@ -162,5 +162,9 @@ latex_elements = {
 \AtBeginEnvironment{description}{\ifinner\setlength{\topsep}{0pt}\setlength{\partopsep}{0pt}\setlength{\parsep}{0pt}\par\nointerlineskip\vskip-\baselineskip\fi}
 % The key names in those cells may break after an underscore (wind.profile_mean_direction_deg is wider than the cell).
 \makeatletter\AtBeginEnvironment{description}{\ifinner\let\IY@us\_\def\_{\IY@us\allowbreak}\fi}\makeatother
+% :kbd: keys (the Enter key in the quickstart) are drawn as key caps.
+\makeatletter
+\protected\def\sphinxkeyboard#1{{\setlength{\fboxsep}{1.2pt}\setlength{\fboxrule}{0.5pt}\fcolorbox{black!50}{black!6}{\strut\,\textsf{\footnotesize\bfseries #1}\,}}}
+\makeatother
 """,
 }

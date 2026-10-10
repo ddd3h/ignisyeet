@@ -34,6 +34,8 @@ IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファ�
      - 設定した風で 1 回飛翔させる。``trajectory.csv`` と ``summary.json`` を書く。``--descent`` は ``sim.descent`` を上書きする。係数表がないか入力が変わったときは、先に ``aero`` を実行する。
    * - ``dispersion <config>``
      - ``dispersion.mode`` に従って落下分散を並列に計算する。``"wind_grid"`` は ``dispersion.csv`` と ``dispersion_meta.json`` を、``"monte_carlo"`` は ``dispersion_mc.csv`` と ``dispersion_summary.json`` を書く。係数表がないか入力が変わったときは、先に ``aero`` を実行する。
+   * - ``report <config> [--out DIR] [--output FILE] [--no-plots]``
+     - 出力先にある結果のファイルから、単独で開ける HTML のレポート ``report.html`` を書く（:ref:`sec-cli-report`）。計算は行わない。
    * - ``cfd-check <config> [--mesh]``
      - CFD に必要なツール（SU2、MPI、gmsh。``surface = "stl"`` では manifold3d も）の有無と版、ケース数を表示する。``--mesh`` は壁面のメッシュも作って品質を表示する。``surface = "stl"`` では形状の忠実度、``surface = "step"`` では CAD のモデルの読み込みと位置合わせも表示する。必要なツールが足りないときは終了ステータス 1 で終わる。
    * - ``sample-stl <path>``
@@ -54,11 +56,79 @@ IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファ�
    * - ``--set KEY=VALUE``
      - ``geom`` ``aero`` ``sim`` ``dispersion``。設定のキーを上書きする。
    * - ``--out DIR``
-     - ``geom`` ``aero`` ``sim`` ``dispersion``。出力先を ``output.dir`` の代わりに ``DIR`` にする。
+     - ``geom`` ``aero`` ``sim`` ``dispersion``。出力先を ``output.dir`` の代わりに ``DIR`` にする。``report`` では、結果を読むディレクトリを ``DIR`` にする。
    * - ``--aero-table PATH``
      - ``aero`` ``sim`` ``dispersion``。別の出力先で作った係数表を使う。
    * - ``--help`` ``--version``
      - 使い方、版を表示する。
+
+.. _sec-cli-report:
+
+レポート
+~~~~~~~~
+
+``report`` は、出力先にある結果のファイルを 1 つの HTML ファイルにまとめる。
+ブラウザで開くだけで読め、1 ファイルのまま共有できる。図は SVG で埋め込み、外部の通信もスクリプトも使わない。
+配色はブラウザの設定に合わせて明るい配色と暗い配色を切り替え、印刷にも向く。
+
+.. code-block:: console
+
+   $ ignisyeet report examples/sample.toml
+     -> examples/out/report.html (7 sections, 126 kB)
+
+レポートは、出力先にあるファイルだけを読んで作る。計算し直さないので、数秒で終わる。
+ファイルがない項目は、その節を省く。``sim`` だけを実行した出力先でも、``dispersion`` だけを実行した出力先でも作れる。
+出力先がない、結果のファイルが 1 つもない、結果のファイルを読めないときは、エラーで終わる（:ref:`IY-O041`、:ref:`IY-O042`、:ref:`IY-O043`）。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 22 30 48
+
+   * - 節
+     - 読むファイル
+     - 内容
+   * - Inputs
+     - 設定ファイル、モータのファイル
+     - 機体、モータ、空力、射点、回収系、風、計算、落下分散の設定値
+   * - Geometry
+     - ``geometry.json``、``profile.csv``、``trajectory.csv``
+     - 寸法、ノーズ、フィン。輪郭の図に、点火時の重心と圧力中心を重ねる
+   * - Aerodynamics
+     - ``aero_table.json``、``aero_drag.csv``（なければ ``aero_table.csv``）
+     - 係数表の範囲と、抗力係数、CN\ :sub:`α`、圧力中心の Mach 数による変化
+   * - Flight
+     - ``summary.json``、``trajectory.csv``
+     - 頂点、最大速度、静安定余裕、開傘、着地の数値。高度、速度、Mach 数、静安定余裕の時刻歴と地上の航跡
+   * - Landing dispersion
+     - ``dispersion.csv``、``dispersion_meta.json``、``dispersion_mc.csv``、``dispersion_summary.json``
+     - 風の格子の着地点と風速ごとの最大距離。モンテカルロの着地点、楕円、百分位の距離
+   * - Warnings
+     - 上の各 JSON の ``warnings``
+     - 記録された警告。コードは、この文書のコード一覧へのリンクになる
+   * - Output files
+     - 出力先のファイル
+     - ファイルの一覧と大きさ。レポートを出力先に置いたときは、各ファイルへのリンク
+
+``plots/`` に ``make plot`` が書いた PNG のうち、レポートが自分で描かない図（3 次元の飛翔経路、方式の比較）は、結果より古くなければ折りたたみの節に埋め込む。``--no-plots`` で埋め込まない。
+
+オプションは次のとおりである。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 76
+
+   * - オプション
+     - 内容
+   * - ``--out DIR``
+     - 結果を読むディレクトリ。``sim`` や ``dispersion`` を ``--out`` 付きで実行したときは、同じ ``DIR`` を渡す。
+   * - ``--output FILE``
+     - レポートの書き込み先。省略すると、結果を読むディレクトリの ``report.html``。
+   * - ``--no-plots``
+     - ``plots/`` の PNG を埋め込まない。
+
+レポートの入力欄は、そのときの設定ファイルの内容である。
+結果を計算した後に設定ファイルやモータのファイルを書き換えると、レポートの冒頭に注意を書き、警告 :ref:`IY-O545` を出す。
+生成時刻は、環境変数 ``SOURCE_DATE_EPOCH`` があればその時刻になり、同じ入力から同じファイルができる。
 
 .. _sec-cli-overrides:
 
@@ -489,6 +559,9 @@ IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファ�
    * - ``plots/*.png``
      - ``python/plot.py``
      - 図（:ref:`sec-plots`）
+   * - ``report.html``
+     - ``report``
+     - 結果をまとめた HTML のレポート 1 つ（:ref:`sec-cli-report`）
 
 以下に、形状・飛翔・落下分散の出力の列と項目を示す。
 
@@ -1003,11 +1076,13 @@ make のターゲットと変数
    * - ターゲット
      - 内容
    * - ``all``
-     - ``aero`` ``sim`` ``dispersion`` ``plot`` を順に実行する。``sim`` か ``dispersion`` が終了ステータス 3 で終わっても作図まで進み、最後に ``make: results are INCOMPLETE or NOT USABLE (exit status 3): see the lines above`` を出して失敗する（:ref:`sec-exit-status`）。ほかの失敗ではその場で止まる。
+     - ``aero`` ``sim`` ``dispersion`` ``plot`` ``report`` を順に実行する。``sim`` か ``dispersion`` が終了ステータス 3 で終わっても作図まで進み、最後に ``make: results are INCOMPLETE or NOT USABLE (exit status 3): see the lines above`` を出して失敗する（:ref:`sec-exit-status`）。ほかの失敗ではその場で止まる。
    * - ``geom`` ``aero`` ``sim`` ``dispersion``
      - ビルドしてから同名のサブコマンドを ``CONFIG`` で実行する。
    * - ``plot``
      - ``python/plot.py all $(OUT)`` を実行する。
+   * - ``report``
+     - ビルドしてから ``report`` を ``CONFIG`` で実行し、``$(OUT)/report.html`` を書く。
    * - ``build`` ``test`` ``clean``
      - ``cargo build --release``、``cargo test --release``、``cargo clean`` と ``$(OUT)`` の削除。
 

@@ -48,10 +48,12 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
     let s = sep();
     p.section("Input");
     p.row("config", short_path(config_path));
-    p.row(
-        "STL",
-        format!("{} {}{}", short_path(&cfg.resolve(&cfg.rocket.stl)), dim(format!("(scale {}, nose {})", cfg.rocket.stl_scale, cfg.rocket.nose_direction)), ""),
-    );
+    let (label, how) = if cfg.rocket.cad.is_some() {
+        ("CAD", format!("(unit {}, nose {})", format!("{:?}", cfg.rocket.cad_unit).to_lowercase(), cfg.rocket.nose_direction))
+    } else {
+        ("STL", format!("(scale {}, nose {})", cfg.rocket.stl_scale, cfg.rocket.nose_direction))
+    };
+    p.row(label, format!("{} {}", short_path(&cfg.resolve(cfg.rocket.geometry_file())), dim(how)));
     if flight {
         let eng = short_path(&cfg.resolve(&cfg.motor.eng));
         match motor {
@@ -213,7 +215,9 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
         if a.method == AeroMethod::Cfd {
             let c = &a.cfd;
             let surface = match c.surface {
-                cfd::SurfaceKind::Step => format!("step ({})", c.step_file.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default()),
+                cfd::SurfaceKind::Step => {
+                    format!("step ({})", cfg.cfd_options().step_file.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default())
+                }
                 _ => name(&c.surface),
             };
             p.row(

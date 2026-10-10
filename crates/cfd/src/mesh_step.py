@@ -2,7 +2,11 @@
 # IgnisYeet volume mesher for a CAD B-rep surface (STEP, IGES or BREP; generated into the mesh work directory and run
 # with the gmsh python). Usage: python mesh_step.py params.json
 #
-# Two modes (`mode` in params.json), driven by step_mesh.rs:
+# Three modes (`mode` in params.json), driven by step_mesh.rs and cad_input.rs:
+#
+# extract  imports the file like prepare (same unit handling, sewing, fusion, healing retry) but leaves it in the frame of
+#          the file and writes only its fine tessellation (`tess_stl`, binary STL, metres): the rocket geometry for the
+#          extraction of `rocket.cad`. `divisions` elements along the longest extent at most, `curvature` elements per circle.
 #
 # prepare  imports the file with OpenCASCADE (lengths converted to metres from the file's unit, `unit_scale` applied
 #          when the unit is overridden), sews loose faces into a solid when the file has no solid, fuses several solids
@@ -51,8 +55,9 @@ gmsh.option.setNumber("Mesh.MaxNumThreads3D", 1)
 gmsh.option.setString("Geometry.OCCTargetUnit", "M")
 occ = gmsh.model.occ
 
-L = p["length"]
-base_tol = p["base_tol"]
+# The extract mode has no rocket frame yet (it supplies the geometry), so it passes neither.
+L = p.get("length", 0.0)
+base_tol = p.get("base_tol", 0.0)
 mode = p["mode"]
 
 
@@ -90,8 +95,23 @@ def classify_body_faces(faces):
 
 
 # ---- prepare ---------------------------------------------------------------------------------------------------------
+def prime_iges_reader():
+    """The IGES reader of OpenCASCADE registers its unit setting at the first import of the process: before that,
+    gmsh cannot set `Geometry.OCCTargetUnit` ("Could not set OpenCASCADE target unit"). One import of the file in its own
+    unit, thrown away, makes the setting work. (STEP and BREP need no priming.)"""
+    if not p["step_file"].lower().endswith((".iges", ".igs")) or getattr(prime_iges_reader, "done", False):
+        return
+    prime_iges_reader.done = True
+    gmsh.option.setString("Geometry.OCCTargetUnit", "")
+    gmsh.model.add("prime")
+    occ.importShapes(p["step_file"], highestDimOnly=True)
+    gmsh.model.remove()
+    gmsh.option.setString("Geometry.OCCTargetUnit", "M")
+
+
 def load(heal):
     """Imports the file into a fresh model; returns (volumes, notes)."""
+    prime_iges_reader()
     gmsh.model.add("step")
     notes = []
     dt = occ.importShapes(p["step_file"], highestDimOnly=True)
@@ -127,14 +147,14 @@ def load(heal):
     return vols, notes
 
 
-def tessellate():
-    # At most 300 elements along the longest extent: a shape in the wrong unit (1000 times too large) is still
-    # tessellated quickly, and the registration names the unit.
+def tessellate(max_divisions=300, curvature=12):
+    # At most `max_divisions` elements along the longest extent: a shape in the wrong unit (1000 times too large) is
+    # still tessellated quickly, and the registration names the unit.
     b = gmsh.model.getBoundingBox(-1, -1)
-    h = max(p["tess_size"], max(b[3] - b[0], b[4] - b[1], b[5] - b[2]) / 300.0)
+    h = max(p["tess_size"], max(b[3] - b[0], b[4] - b[1], b[5] - b[2]) / max_divisions)
     gmsh.option.setNumber("Mesh.MeshSizeMax", h)
     gmsh.option.setNumber("Mesh.MeshSizeMin", h / 8.0)
-    gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", 12)
+    gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", curvature)
     gmsh.option.setNumber("Mesh.Algorithm", 6)
     gmsh.model.mesh.generate(2)
 
@@ -237,30 +257,68 @@ def symmetry_check(axis, faces, nodes_of, tol, max_points):
     }
 
 
-def prepare():
-    notes = []
+def import_and_tessellate(**tess):
+    """Imports the file and tessellates it; when the surface mesher fails on the imported faces, the import is repeated
+    with shape healing. Returns (volumes, notes)."""
     vols, notes = load(False)
     try:
-        tessellate()
+        tessellate(**tess)
     except Exception as e:  # noqa: BLE001
         gmsh.model.remove()
         vols, notes = load(True)
         notes.append("the surface mesher failed on the imported faces (%s)" % e)
         try:
-            tessellate()
+            tessellate(**tess)
         except Exception as e2:  # noqa: BLE001
             die("IY-F041", "gmsh cannot mesh the surface of %s, even after shape healing (%s); repair the CAD model or export it again"
                 % (os.path.basename(p["step_file"]), e2))
+    return vols, notes
+
+
+def face_triangles(f, idx, xyz):
+    """The triangles of face `f` of the current surface mesh, (n, 3, 3) coordinates."""
+    t = []
+    for et, en in zip(*gmsh.model.mesh.getElements(2, f)[::2]):
+        if et == 2:
+            t.append(idx[np.asarray(en, np.int64)].reshape(-1, 3))
+    t = np.vstack(t) if t else np.zeros((0, 3), np.int64)
+    return xyz[t]
+
+
+def node_index():
+    """(coordinates (n, 3), tag -> row index) of the nodes of the current mesh."""
+    tags, coord, _ = gmsh.model.mesh.getNodes()
+    xyz = np.asarray(coord).reshape(-1, 3)
+    idx = np.zeros(int(tags.max()) + 1, np.int64)
+    idx[tags] = np.arange(len(tags))
+    return xyz, idx
+
+
+def extract():
+    """Tessellates the shape in the frame and unit of the file (affine = identity) for the geometry extraction."""
+    vols, notes = import_and_tessellate(max_divisions=p["divisions"], curvature=p["curvature"])
+    faces = [t for _, t in gmsh.model.getBoundary(vols, oriented=False, combined=True)]
+    xyz, idx = node_index()
+    tris = np.concatenate([face_triangles(f, idx, xyz) for f in faces]).astype(np.float32)
+    write_stl(p["tess_stl"], tris)
+    b = gmsh.model.getBoundingBox(-1, -1)
+    json.dump({"notes": notes, "solids": len(vols), "faces": len(faces), "triangles": len(tris), "bbox": list(b),
+               "seconds": time.time() - t0}, open(p["report_json"], "w"), indent=1)
+    print("EXTRACT_OK solids %d, faces %d, triangles %d, bbox %s" % (len(vols), len(faces), len(tris), [round(c, 6) for c in b]))
+    gmsh.finalize()
+    sys.exit(0)
+
+
+def prepare():
+    notes = []
+    vols, notes = import_and_tessellate()
     faces = [t for _, t in gmsh.model.getBoundary(vols, oriented=False, combined=True)]
     report["notes"] = notes
     report["solids"] = len(vols)
     report["volume"] = float(sum(occ.getMass(3, t) for _, t in vols))
     report["bbox"] = list(gmsh.model.getBoundingBox(-1, -1)) if len(vols) > 1 else list(gmsh.model.getBoundingBox(3, vols[0][1]))
     info, tris, counts = [], [], []
-    tags, coord, _ = gmsh.model.mesh.getNodes()
-    xyz = np.asarray(coord).reshape(-1, 3)
-    idx = np.zeros(int(tags.max()) + 1, np.int64)
-    idx[tags] = np.arange(len(tags))
+    xyz, idx = node_index()
     nodes_of = {}
     min_edge = (np.inf, None)
     for _, c in gmsh.model.getBoundary([(2, f) for f in faces], oriented=False, combined=False):
@@ -280,12 +338,8 @@ def prepare():
         info.append({"tag": int(f), "type": typ, "area": float(area), "centroid": [float(c) for c in cen], "normal": [float(c) for c in n],
                      "planar": bool(planar), "width": float(width), "bbox": [float(c) for c in gmsh.model.getBoundingBox(2, f)],
                      "base": is_base(cen[0], planar, n[0])})
-        t = []
-        for et, en in zip(*gmsh.model.mesh.getElements(2, f)[::2]):
-            if et == 2:
-                t.append(idx[np.asarray(en, np.int64)].reshape(-1, 3))
-        t = np.vstack(t) if t else np.zeros((0, 3), np.int64)
-        tris.append(xyz[t])
+        t = face_triangles(f, idx, xyz)
+        tris.append(t)
         counts.append(len(t))
         _, c_in, _ = gmsh.model.mesh.getNodes(2, f, includeBoundary=False)
         nodes_of[f] = np.asarray(c_in).reshape(-1, 3)
@@ -351,6 +405,8 @@ def prepare():
 report = {}
 if mode == "prepare":
     prepare()
+if mode == "extract":
+    extract()
 if mode != "mesh":
     die("IY-F042", "unknown mode %s" % mode)
 

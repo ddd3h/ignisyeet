@@ -12,6 +12,7 @@
 //! Frames and sign conventions are documented in [`su2cfg`] and [`forces`].
 
 pub mod asymmetry;
+pub mod cad_input;
 pub mod case;
 pub mod config;
 pub mod fidelity;

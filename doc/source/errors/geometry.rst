@@ -351,6 +351,98 @@ IY-G015
 関連
     :ref:`page-theory-geometry`
 
+.. _IY-G016:
+
+IY-G016
+-------
+
+重大度: エラー
+
+メッセージ::
+
+    error[IY-G016]: cannot read the CAD file <path>
+
+意味
+    ``rocket.cad`` の CAD ファイルを開けない、または読めない。
+
+主な原因
+    パスの誤り、ファイルがない、読み取り権限がない。
+
+対処
+    ``rocket.cad`` のパスと権限を確認する。
+
+関連
+    :ref:`cfg-rocket-cad`
+
+.. _IY-G017:
+
+IY-G017
+-------
+
+重大度: エラー
+
+メッセージ::
+
+    error[IY-G017]: rocket.cad = "<path>" is read with OpenCASCADE through the gmsh python, which is not installed: <原因>; install the CFD tools, or export the rocket as an STL and use rocket.stl
+
+意味
+    CAD ファイルを読む gmsh（Python）が見つからないか、動かない。
+
+主な原因
+    CFD 用環境を導入していない。``IGNISYEET_CFD_PREFIX`` や ``aero.cfd.prefix`` が実際の場所を指していない。
+
+対処
+    ``install.sh --cfd`` で導入するか、``IGNISYEET_CFD_PREFIX`` を導入先に合わせる。導入しないときは、機体を STL に書き出して ``rocket.stl`` に書く。``ignisyeet cfd-check`` で gmsh の状態を確認できる。
+
+関連
+    :ref:`cfg-rocket-cad`、:ref:`IY-F001`
+
+.. _IY-G018:
+
+IY-G018
+-------
+
+重大度: エラー
+
+メッセージ::
+
+    error[IY-G018]: rocket.cad_unit = "<単位>": the length unit of <path> cannot be read from the file, so it cannot be overridden; use cad_unit = "auto"
+
+意味
+    ``cad_unit`` で単位を指定したが、その STEP か IGES のファイルは長さの単位を宣言していないため、指定を適用できない。
+
+主な原因
+    単位を宣言しないファイルに ``auto`` 以外を指定した。
+
+対処
+    ``cad_unit = "auto"`` にするか、単位を宣言するようにファイルを書き出し直す。BREP ファイルは単位を持たず m として読むので、``cad_unit`` で単位を指定できる。
+
+関連
+    :ref:`cfg-rocket-cad_unit`
+
+.. _IY-G019:
+
+IY-G019
+-------
+
+重大度: エラー
+
+メッセージ::
+
+    error[IY-G019]: the CAD file <path> gave no surface triangles
+
+意味
+    CAD ファイルから表面の三角形を作れなかった。作った三角形のファイルを読めないときも、このコードで始まる。
+
+主な原因
+    ファイルに立体も面もない。作業用ディレクトリに空きがない。
+
+対処
+    機体を一つの閉じた立体として書き出し直す。CAD の取り込み自体が失敗したときは、``[IY-F010]`` などのコードで原因が出る（:ref:`IY-F040`、:ref:`IY-F041`）。
+
+関連
+    :ref:`cfg-rocket-cad`
+
 .. _IY-G501:
 
 IY-G501

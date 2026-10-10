@@ -1059,6 +1059,9 @@ make のターゲットと変数
    * - STL が読めない、表面が閉じていない
      - :ref:`IY-G001` から ``IY-G011``
      - STL を修復するか、ソリッドとして書き出し直す（:ref:`page-howto-own-rocket`）。
+   * - CAD ファイルが読めない、形状のキーの組合せが誤り
+     - :ref:`IY-G016` から ``IY-G019``、:ref:`IY-C064` から ``IY-C066``
+     - ``rocket.cad``、``rocket.cad_unit`` と CFD 用ツールの導入を確かめる（:ref:`page-howto-own-rocket`）。
    * - 形状の抽出結果が疑わしい（比、向き、フィンの位置）
      - :ref:`IY-G501` から ``IY-G512``
      - ``rocket.stl_scale``、``rocket.nose_direction``、``rocket.fin_override`` を確かめる（:ref:`sec-geometry-warnings`）。

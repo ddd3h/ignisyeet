@@ -164,11 +164,19 @@ impl Default for OutputCfg {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RocketCfg {
-    pub stl: PathBuf,
+    /// The rocket as an STL file; exactly one of `stl` and `cad` is given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stl: Option<PathBuf>,
     /// Factor converting STL units to metres (0.001 for millimetres).
     #[serde(default = "one")]
     pub stl_scale: f64,
-    /// "auto" or one of "+x", "-x", "+y", "-y", "+z", "-z": direction the nose points in the STL.
+    /// The rocket as a CAD file (STEP, IGES or BREP), read with OpenCASCADE in metres.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cad: Option<PathBuf>,
+    /// Length unit of `cad`: `auto` is the unit the file declares (a BREP file is read as metres).
+    #[serde(default, skip_serializing_if = "is_auto_unit")]
+    pub cad_unit: cfd::config::StepUnit,
+    /// "auto" or one of "+x", "-x", "+y", "-y", "+z", "-z": direction the nose points in the STL or CAD file.
     #[serde(default = "auto")]
     pub nose_direction: String,
     pub dry_mass: f64,
@@ -220,7 +228,43 @@ pub struct FinOverride {
     pub cant_deg: Option<f64>,
 }
 
+fn is_auto_unit(u: &cfd::config::StepUnit) -> bool {
+    *u == cfd::config::StepUnit::Auto
+}
+
 impl RocketCfg {
+    /// The geometry file, the STL or the CAD file (the one that is set; an unvalidated configuration without either
+    /// gives an empty path).
+    pub fn geometry_file(&self) -> &Path {
+        self.cad.as_deref().or(self.stl.as_deref()).unwrap_or(Path::new(""))
+    }
+
+    /// The input checks of `stl`, `cad`, `stl_scale` and `cad_unit`.
+    fn validate_input(&self) -> Result<()> {
+        match (&self.stl, &self.cad) {
+            (Some(_), Some(_)) => bail!("[IY-C064] rocket.stl and rocket.cad are both set; give the rocket as one STL or one CAD file"),
+            (None, None) => bail!("[IY-C064] the rocket geometry is missing: set rocket.stl (an STL file) or rocket.cad (a STEP, IGES or BREP file)"),
+            _ => {}
+        }
+        if let Some(c) = &self.cad {
+            if self.stl_scale != 1.0 {
+                bail!(
+                    "[IY-C065] rocket.stl_scale = {} is set with rocket.cad: the unit of a CAD file comes from the file (rocket.cad_unit overrides it), so stl_scale does not apply",
+                    self.stl_scale
+                );
+            }
+            if cfd::step_mesh::cad_format(c).is_none() {
+                bail!(
+                    "[IY-C066] rocket.cad = \"{}\": not a CAD file OpenCASCADE reads; use a STEP (.step, .stp), IGES (.iges, .igs) or BREP (.brep, .brp) file",
+                    c.display()
+                );
+            }
+        } else if self.cad_unit != cfd::config::StepUnit::Auto {
+            bail!("[IY-C065] rocket.cad_unit is set with rocket.stl: it is the unit of rocket.cad; an STL gets its unit from rocket.stl_scale");
+        }
+        Ok(())
+    }
+
     /// Configured fin cant \[deg\].
     pub fn cant_deg(&self) -> f64 {
         self.fin_override.as_ref().and_then(|o| o.cant_deg).unwrap_or(self.fin_cant_deg)
@@ -503,6 +547,7 @@ impl Config {
         }
         let (r, m, l) = (&self.rocket, &self.motor, &self.launch);
         positive("rocket.stl_scale", r.stl_scale)?;
+        r.validate_input()?;
         positive("rocket.dry_mass", r.dry_mass)?;
         finite("rocket.cg_dry", r.cg_dry)?;
         if r.cg_dry < 0.0 {
@@ -797,15 +842,16 @@ impl Config {
             bail!("[IY-C047] aero.table is required when aero.method = \"table\"");
         }
         if self.aero.method == AeroMethod::Cfd {
-            self.aero.cfd.validate()?;
-            if self.aero.cfd.surface == cfd::config::SurfaceKind::Step {
-                let f = self.resolve(&self.aero.cfd.step_file);
+            let opt = self.cfd_options();
+            opt.validate()?;
+            if opt.surface == cfd::config::SurfaceKind::Step {
+                let f = &opt.step_file;
                 if !f.is_file() {
-                    bail!(
-                        "[IY-C048] aero.cfd.step_file = \"{}\": no such file ({}; a relative path is relative to the configuration file)",
-                        self.aero.cfd.step_file.display(),
-                        f.display()
-                    );
+                    let (key, given) = match self.aero.cfd.step_file.as_os_str().is_empty() {
+                        true => ("rocket.cad (the default of aero.cfd.step_file)", self.rocket.geometry_file()),
+                        false => ("aero.cfd.step_file", self.aero.cfd.step_file.as_path()),
+                    };
+                    bail!("[IY-C048] {key} = \"{}\": no such file ({}; a relative path is relative to the configuration file)", given.display(), f.display());
                 }
             }
         }
@@ -886,9 +932,18 @@ impl Config {
         }
     }
 
-    /// `[aero.cfd]` with `step_file` resolved against the configuration directory (what the CFD mode is given).
+    /// `[aero.cfd]` with `step_file` resolved against the configuration directory (what the CFD mode is given). With
+    /// `surface = "step"` and no `step_file`, the CAD file of `rocket.cad` is the CFD wall too, in the unit of `cad_unit`.
     pub fn cfd_options(&self) -> cfd::CfdOptions {
         let mut o = self.aero.cfd.clone();
+        if o.surface == cfd::SurfaceKind::Step && o.step_file.as_os_str().is_empty() {
+            if let Some(cad) = &self.rocket.cad {
+                o.step_file = cad.clone();
+                if o.step_unit == cfd::StepUnit::Auto {
+                    o.step_unit = self.rocket.cad_unit;
+                }
+            }
+        }
         if !o.step_file.as_os_str().is_empty() {
             o.step_file = self.resolve(&o.step_file);
         }
@@ -1444,6 +1499,77 @@ mod tests {
         assert_eq!(c.rocket.fin_override.as_ref().and_then(|f| f.count), Some(4));
         // integers are accepted for floats as in the file
         assert_eq!(sample_set(&["wind.speed=6"]).unwrap().wind.speed, 6.0);
+    }
+
+    /// The sample with the rocket given by the `--set` overrides (`rocket.stl` and `rocket.stl_scale` removed first when
+    /// `drop_stl`).
+    fn rocket_input(drop_stl: bool, sets: &[&str]) -> Result<Config> {
+        let mut raw: toml::Value = toml::from_str(include_str!("../../../examples/sample.toml"))?;
+        if drop_stl {
+            let r = raw.get_mut("rocket").and_then(|r| r.as_table_mut()).unwrap();
+            r.remove("stl");
+            r.remove("stl_scale");
+        }
+        for a in sets {
+            apply_set(&mut raw, a)?;
+        }
+        Config::from_value(raw, None)
+    }
+
+    #[test]
+    fn the_rocket_is_one_stl_or_one_cad_file() {
+        let c = rocket_input(true, &["rocket.cad=model.STEP"]).unwrap();
+        assert_eq!((c.rocket.stl.as_deref(), c.rocket.cad.as_deref()), (None, Some(Path::new("model.STEP"))));
+        assert_eq!(c.rocket.geometry_file(), Path::new("model.STEP"));
+        for f in ["a.stp", "a.iges", "a.igs", "a.brep", "a.BRP"] {
+            rocket_input(true, &[&format!("rocket.cad={f}")]).unwrap();
+        }
+        let c = rocket_input(true, &["rocket.cad=a.step", "rocket.cad_unit=mm"]).unwrap();
+        assert_eq!(c.rocket.cad_unit, cfd::StepUnit::Mm);
+        // The STL keeps its scale; the unit key is not serialised unless set.
+        let c = rocket_input(false, &[]).unwrap();
+        assert_eq!(c.rocket.stl_scale, 0.001);
+        let j = serde_json::to_string(&c.rocket).unwrap();
+        assert!(!j.contains("cad"), "{j}");
+        // Both, neither.
+        for (drop, sets) in [(false, vec!["rocket.cad=a.step"]), (true, vec![])] {
+            let e = format!("{:#}", rocket_input(drop, &sets).unwrap_err());
+            assert!(e.contains("[IY-C064]") && e.contains("rocket.stl") && e.contains("rocket.cad"), "{e}");
+        }
+    }
+
+    #[test]
+    fn a_cad_file_takes_its_unit_from_the_file_not_from_stl_scale() {
+        let e = format!("{:#}", rocket_input(true, &["rocket.cad=a.step", "rocket.stl_scale=0.001"]).unwrap_err());
+        assert!(e.contains("[IY-C065]") && e.contains("stl_scale") && e.contains("cad_unit"), "{e}");
+        // An explicit 1.0 is the default and harmless.
+        rocket_input(true, &["rocket.cad=a.step", "rocket.stl_scale=1.0"]).unwrap();
+        let e = format!("{:#}", rocket_input(false, &["rocket.cad_unit=mm"]).unwrap_err());
+        assert!(e.contains("[IY-C065]") && e.contains("cad_unit"), "{e}");
+        let e = format!("{:#}", rocket_input(true, &["rocket.cad=a.stl"]).unwrap_err());
+        assert!(e.contains("[IY-C066]") && e.contains("a.stl") && e.contains("STEP"), "{e}");
+        let e = format!("{:#}", rocket_input(true, &["rocket.cad=a.step", "rocket.cad_unit=furlong"]).unwrap_err());
+        assert!(e.contains("furlong") || e.contains("unknown variant"), "{e}");
+    }
+
+    #[test]
+    fn the_cad_file_is_the_default_cfd_step_file() {
+        let sets = ["rocket.cad=model.step", "rocket.cad_unit=mm", "aero.method=cfd", "aero.cfd.surface=step", "aero.cfd.base_treatment=fairing"];
+        // A missing file is reported under the key that was set.
+        let e = format!("{:#}", rocket_input(true, &sets).unwrap_err());
+        assert!(e.contains("[IY-C048]") && e.contains("rocket.cad") && e.contains("model.step"), "{e}");
+        let dir = TempDir::new("cfg_cad_default");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("model.step"), "x").unwrap();
+        let mut raw: toml::Value = toml::from_str(include_str!("../../../examples/sample.toml")).unwrap();
+        raw.get_mut("rocket").and_then(|r| r.as_table_mut()).unwrap().remove("stl");
+        raw.get_mut("rocket").and_then(|r| r.as_table_mut()).unwrap().remove("stl_scale");
+        for a in sets {
+            apply_set(&mut raw, a).unwrap();
+        }
+        let c = Config::from_value(raw, Some(&dir)).unwrap();
+        let o = c.cfd_options();
+        assert_eq!((o.step_file, o.step_unit), (dir.join("model.step"), cfd::StepUnit::Mm));
     }
 
     #[test]

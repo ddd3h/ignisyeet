@@ -424,7 +424,7 @@ fn aero_range_json(s: &aero::table::OutOfRangeStats) -> serde_json::Value {
     })
 }
 
-/// Plausible size range of a rocket body; outside it `rocket.stl_scale` is most likely wrong.
+/// Plausible size range of a rocket body; outside it the length unit (`rocket.stl_scale`, `rocket.cad_unit`) is most likely wrong.
 const LENGTH_RANGE: (f64, f64) = (0.1, 20.0);
 const DIAMETER_RANGE: (f64, f64) = (0.005, 3.0);
 
@@ -457,18 +457,35 @@ fn grid_warnings(cfg: &Config) -> Vec<String> {
     w
 }
 
+/// The key that sets the length unit of the rocket geometry.
+fn unit_name(cfg: &Config) -> &'static str {
+    if cfg.rocket.cad.is_some() {
+        "rocket.cad_unit"
+    } else {
+        "rocket.stl_scale"
+    }
+}
+
+/// [`unit_name`] with its value, for the hints of the size checks.
+fn unit_key(cfg: &Config) -> String {
+    if cfg.rocket.cad.is_some() {
+        format!("rocket.cad_unit (now \"{}\"; \"auto\" is the unit the file declares)", format!("{:?}", cfg.rocket.cad_unit).to_lowercase())
+    } else {
+        format!("rocket.stl_scale (now {}; 0.001 converts millimetres to metres)", cfg.rocket.stl_scale)
+    }
+}
+
 fn size_warnings(cfg: &Config, length: f64, diameter: f64) -> Vec<String> {
     let mut w = Vec::new();
     if !(LENGTH_RANGE.0..=LENGTH_RANGE.1).contains(&length) {
-        w.push(format!(
-            "[IY-O502] body length {length:.4} m is outside the plausible {}-{} m range: check rocket.stl_scale (now {}; 0.001 converts millimetres to metres)",
-            LENGTH_RANGE.0, LENGTH_RANGE.1, cfg.rocket.stl_scale
-        ));
+        w.push(format!("[IY-O502] body length {length:.4} m is outside the plausible {}-{} m range: check {}", LENGTH_RANGE.0, LENGTH_RANGE.1, unit_key(cfg)));
     }
     if !(DIAMETER_RANGE.0..=DIAMETER_RANGE.1).contains(&diameter) {
         w.push(format!(
-            "[IY-O503] body diameter {diameter:.4} m is outside the plausible {}-{} m range: check rocket.stl_scale (now {})",
-            DIAMETER_RANGE.0, DIAMETER_RANGE.1, cfg.rocket.stl_scale
+            "[IY-O503] body diameter {diameter:.4} m is outside the plausible {}-{} m range: check {}",
+            DIAMETER_RANGE.0,
+            DIAMETER_RANGE.1,
+            unit_key(cfg)
         ));
     }
     w
@@ -724,12 +741,14 @@ pub(crate) fn strip_bom(text: &str) -> &str {
     text.strip_prefix('\u{feff}').unwrap_or(text)
 }
 
-/// An error when the body length (metres, after `rocket.stl_scale`) is not that of a rocket.
+/// An error when the body length (metres, after the unit of the geometry file) is not that of a rocket.
 fn check_length(cfg: &Config, length: f64) -> Result<()> {
     if !(LENGTH_RANGE.0..=LENGTH_RANGE.1).contains(&length) {
         anyhow::bail!(
-            "[IY-O005] body length {length:.4} m is outside the plausible {}-{} m range: check the STL units and rocket.stl_scale (now {}; 0.001 converts millimetres to metres)",
-            LENGTH_RANGE.0, LENGTH_RANGE.1, cfg.rocket.stl_scale
+            "[IY-O005] body length {length:.4} m is outside the plausible {}-{} m range: check the units of the geometry file and {}",
+            LENGTH_RANGE.0,
+            LENGTH_RANGE.1,
+            unit_key(cfg)
         );
     }
     Ok(())
@@ -739,7 +758,7 @@ fn check_length(cfg: &Config, length: f64) -> Result<()> {
 fn check_cg(cfg: &Config, length: f64) -> Result<()> {
     let cg = cfg.rocket.cg_dry;
     if cg > length {
-        anyhow::bail!("[IY-O006] rocket.cg_dry = {cg} m is outside the body: it is measured aft of the nose tip and the body is {length:.4} m long (check rocket.stl_scale and the unit of cg_dry)");
+        anyhow::bail!("[IY-O006] rocket.cg_dry = {cg} m is outside the body: it is measured aft of the nose tip and the body is {length:.4} m long (check {} and the unit of cg_dry)", unit_name(cfg));
     }
     Ok(())
 }
@@ -750,7 +769,8 @@ fn check_motor_position(cfg: &Config, length: f64, motor_length: f64) -> Result<
     const TOL: f64 = 1e-3;
     if motor_length > length + TOL {
         anyhow::bail!(
-            "[IY-O007] the motor ({motor_length:.4} m) is longer than the body ({length:.4} m): check motor.eng (the motor length in its header, in millimetres) and rocket.stl_scale"
+            "[IY-O007] the motor ({motor_length:.4} m) is longer than the body ({length:.4} m): check motor.eng (the motor length in its header, in millimetres) and {}",
+            unit_name(cfg)
         );
     }
     let a = cfg.motor.aft_x.unwrap_or(length);
@@ -790,10 +810,21 @@ fn out_path(cfg: &Config, name: &str) -> Result<PathBuf> {
     Ok(p)
 }
 
-fn geometry(cfg: &Config) -> Result<Geometry> {
-    let stl = cfg.resolve(&cfg.rocket.stl);
+/// The rocket as triangles in metres: the STL scaled by `rocket.stl_scale`, or the CAD file of `rocket.cad` tessellated
+/// by OpenCASCADE (in its own unit, cached below `<output.dir>/cad/`).
+fn load_rocket_triangles(cfg: &Config) -> Result<Vec<geom::stl::Triangle>> {
+    let file = cfg.resolve(cfg.rocket.geometry_file());
+    if cfg.rocket.cad.is_some() {
+        let roots = [cfg.base_dir.clone()];
+        return Ok(cfd::cad_input::tessellate_cad(&cfg.cfd_options(), &roots, &file, cfg.rocket.cad_unit, &cfg.out_dir())?.triangles);
+    }
     let s = cfg.rocket.stl_scale;
-    let tris: Vec<_> = geom::stl::read_stl(&stl).with_context(|| format!("cannot read STL {}", stl.display()))?.into_iter().map(|t| t.map(|v| v * s)).collect();
+    Ok(geom::stl::read_stl(&file).with_context(|| format!("cannot read STL {}", file.display()))?.into_iter().map(|t| t.map(|v| v * s)).collect())
+}
+
+fn geometry(cfg: &Config) -> Result<Geometry> {
+    let stl = cfg.resolve(cfg.rocket.geometry_file());
+    let tris = load_rocket_triangles(cfg)?;
     let opt = ExtractOptions { n_slices: cfg.aero.n_slices, nose_direction: cfg.nose_direction()?, fin_threshold: cfg.aero.fin_threshold };
     let mut g = geom::extract(&tris, &opt).with_context(|| format!("geometry extraction failed for {}", stl.display()))?;
     if let Some(o) = &cfg.rocket.fin_override {
@@ -941,8 +972,13 @@ fn aero_inputs(cfg: &Config) -> Result<serde_json::Value> {
 
 fn source_hash(cfg: &Config) -> Result<String> {
     let mut h = 0xcbf2_9ce4_8422_2325u64;
-    let stl = cfg.resolve(&cfg.rocket.stl);
-    fnv1a(&mut h, &std::fs::read(&stl).with_context(|| format!("[IY-G001] cannot read STL {}", stl.display()))?);
+    let stl = cfg.resolve(cfg.rocket.geometry_file());
+    let bytes = if cfg.rocket.cad.is_some() {
+        std::fs::read(&stl).with_context(|| format!("[IY-G016] cannot read the CAD file {}", stl.display()))?
+    } else {
+        std::fs::read(&stl).with_context(|| format!("[IY-G001] cannot read STL {}", stl.display()))?
+    };
+    fnv1a(&mut h, &bytes);
     // The extracted geometry (after scale, nose direction, fin override and cant) enters as well, so a change
     // of the extraction code invalidates cached tables without a MODEL_VERSION bump.
     fnv1a(&mut h, &serde_json::to_vec(&geometry(cfg)?)?);
@@ -954,6 +990,8 @@ fn source_hash(cfg: &Config) -> Result<String> {
     #[derive(Serialize)]
     struct Inputs<'a> {
         scale: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        cad_unit: Option<cfd::StepUnit>,
         nose: &'a str,
         fins: &'a Option<config::FinOverride>,
         cant_deg: f64,
@@ -965,6 +1003,7 @@ fn source_hash(cfg: &Config) -> Result<String> {
     }
     let inputs = Inputs {
         scale: cfg.rocket.stl_scale,
+        cad_unit: cfg.rocket.cad.is_some().then_some(cfg.rocket.cad_unit),
         nose: &cfg.rocket.nose_direction,
         fins: &cfg.rocket.fin_override,
         cant_deg: cfg.rocket.cant_deg(),
@@ -1013,7 +1052,7 @@ fn run_hash(cfg: &Config, kind: RunKind) -> String {
     fnv1a(&mut h, v.to_string().as_bytes());
     fnv1a(&mut h, env!("CARGO_PKG_VERSION").as_bytes());
     fnv1a(&mut h, &MODEL_VERSION.to_le_bytes());
-    let mut files = vec![cfg.resolve(&cfg.rocket.stl), cfg.resolve(&cfg.motor.eng)];
+    let mut files = vec![cfg.resolve(cfg.rocket.geometry_file()), cfg.resolve(&cfg.motor.eng)];
     if cfg.aero.method == config::AeroMethod::Cfd && cfg.aero.cfd.surface == cfd::SurfaceKind::Step {
         files.push(cfg.cfd_options().step_file);
     }
@@ -1294,11 +1333,10 @@ fn show_table(t: &AeroTable, elapsed: Option<std::time::Duration>, sub: Sub) {
     }
 }
 
-/// Raw STL in metres (only needed for `surface = "stl"`).
+/// The rocket surface in metres as the CFD reference (needed for `surface = "stl"` and `"step"`): the STL, or the
+/// tessellation of the CAD file.
 fn raw_stl(cfg: &Config) -> Result<Vec<geom::stl::Triangle>> {
-    let s = cfg.rocket.stl_scale;
-    let stl = cfg.resolve(&cfg.rocket.stl);
-    Ok(geom::stl::read_stl(&stl).with_context(|| format!("cannot read STL {}", stl.display()))?.into_iter().map(|t| t.map(|v| v * s)).collect())
+    load_rocket_triangles(cfg)
 }
 
 /// Build the coefficient table with SU2.
@@ -1381,7 +1419,7 @@ fn cfd_case_count(cfg: &Config, opt: &cfd::CfdOptions) -> usize {
 
 /// `cfd-check`: report the CFD tools and their versions; with `mesh`, also build the volume mesh.
 fn cfd_check(cfg: &Config, config_path: &Path, mesh: bool) -> Result<()> {
-    let opt = &cfg.aero.cfd;
+    let opt = &cfg.cfd_options();
     let roots = [cfg.base_dir.clone()];
     let r = cfd::tools::check_tools(opt, &roots);
     println!("CFD tools for {}", config_path.display());
@@ -2708,7 +2746,7 @@ mod tests {
         assert!(NO_LAG_COLUMNS_FILLED.contains("filled from the geometry"));
         // Without a readable STL the lag sums stay 0, with the other warning.
         let mut nogeo = cfg.clone();
-        nogeo.rocket.stl = tmp.join("missing.stl");
+        nogeo.rocket.stl = Some(tmp.join("missing.stl"));
         let mut fresh = AeroTable::load(&csv).unwrap();
         assert_eq!(fill_external_lag_terms(&nogeo, &mut fresh), vec![NO_LAG_COLUMNS_NO_GEOMETRY.to_string()]);
         assert_eq!(fresh.lookup(0.5, 0.0).lag_l0, 0.0);
@@ -3579,7 +3617,7 @@ mod tests {
         let mesh = geom::sample::SampleRocket::default().mesh();
         geom::stl::write_stl_binary(&dir.join("r.stl"), &mesh[1..]).unwrap();
         let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
-        cfg.rocket.stl = dir.join("r.stl");
+        cfg.rocket.stl = Some(dir.join("r.stl"));
         cfg.rocket.stl_scale = 1.0;
         cfg.rocket.cg_dry = 5.0;
         let e = geometry(&cfg).unwrap_err().to_string();
@@ -3775,7 +3813,7 @@ mod tests {
     #[test]
     fn missing_input_files_name_the_path() {
         let mut cfg = load_sample(include_str!("../../../examples/sample.toml"));
-        cfg.rocket.stl = "no_such_rocket.stl".into();
+        cfg.rocket.stl = Some("no_such_rocket.stl".into());
         for e in [source_hash(&cfg).unwrap_err(), geometry(&cfg).unwrap_err()] {
             assert!(format!("{e:#}").contains("cannot read STL") && format!("{e:#}").contains("no_such_rocket.stl"), "{e:#}");
         }
@@ -4199,5 +4237,107 @@ mod tests {
         assert_eq!(summary_json(&target, &s, &[]).unwrap()["wind_model"], "profile");
         let power = serde_json::Value::Object(wind_json(&simulation(&sample_config("ptarget").0, &p).unwrap().wind));
         assert!(power["wind_model"] == "power" && power.get("wind_scale").is_none() && power.get("wind_at_ref_height").is_none());
+    }
+
+    // ---- CAD input (`rocket.cad`) -------------------------------------------------------------------------------
+
+    /// The Basic Finner (STL in mm, STEP in mm) with the rocket given as `stl` or as `cad`.
+    fn finner_config(cad: bool, out: &Path) -> Config {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/basic_finner");
+        let text = include_str!("../../../examples/basic_finner/basic_finner.toml");
+        let text =
+            if cad { text.replace("stl = \"basic_finner.stl\"", "cad = \"basic_finner.step\"").replace("stl_scale = 0.001", "") } else { text.to_string() };
+        let mut cfg = Config::from_value(toml::from_str(&text).unwrap(), Some(&dir)).unwrap();
+        cfg.output.dir = out.to_path_buf();
+        cfg
+    }
+
+    fn gmsh_available(cfg: &Config) -> bool {
+        let opt = cfg.cfd_options();
+        let ok = cfd::tools::probe_gmsh(cfd::tools::resolve_prefix(&opt).as_deref(), std::slice::from_ref(&cfg.base_dir)).ok();
+        if !ok {
+            eprintln!("SKIPPED: the gmsh python is not available (set IGNISYEET_CFD_PREFIX or aero.cfd.prefix), so rocket.cad cannot be read");
+        }
+        ok
+    }
+
+    #[test]
+    fn a_cad_rocket_gives_the_geometry_and_barrowman_table_of_its_stl() {
+        let (stl_out, cad_out) = (TempDir::new("cad_eq_stl"), TempDir::new("cad_eq_cad"));
+        let (stl, cad) = (finner_config(false, &stl_out), finner_config(true, &cad_out));
+        if !gmsh_available(&cad) {
+            return;
+        }
+        let (a, b) = (geometry(&stl).unwrap(), geometry(&cad).unwrap());
+        let close = |name: &str, x: f64, y: f64, rel: f64| assert!((x - y).abs() <= rel * x.abs().max(1e-12), "{name}: STL {x} CAD {y}");
+        close("length", a.length, b.length, 1e-4);
+        close("ref_radius", a.ref_radius, b.ref_radius, 1e-3);
+        close("volume", a.volume, b.volume, 1e-3);
+        close("nose.length", a.nose.length, b.nose.length, 1e-3);
+        assert_eq!(a.frame.aft_direction.map(f64::round), b.frame.aft_direction.map(f64::round));
+        let (fa, fb) = (a.fins.as_ref().unwrap(), b.fins.as_ref().unwrap());
+        assert_eq!(fa.count, fb.count);
+        for (n, x, y) in [
+            ("root_chord", fa.root_chord, fb.root_chord),
+            ("tip_chord", fa.tip_chord, fb.tip_chord),
+            ("span", fa.span, fb.span),
+            ("thickness", fa.thickness, fb.thickness),
+            ("x_le_root", fa.x_le_root, fb.x_le_root),
+        ] {
+            close(n, x, y, 5e-3);
+        }
+        assert!((fa.sweep - fb.sweep).abs() < 1e-4, "sweep {} {}", fa.sweep, fb.sweep);
+        // The radius profile: the largest difference is a small fraction of the radius (the CAD surface is cut by
+        // the slices as inscribed polygons, so its radius is the lower one by a fraction of a percent at most).
+        assert_eq!(a.profile.len(), b.profile.len());
+        let worst = a.profile.iter().zip(&b.profile).map(|(p, q)| (p.r - q.r).abs()).fold(0.0, f64::max);
+        assert!(worst < 2e-3 * a.ref_radius, "profile differs by {worst} m");
+        // Barrowman coefficients from both tables.
+        let (ta, tb) = (aero_table(&stl, true).unwrap(), aero_table(&cad, true).unwrap());
+        for (m, alpha) in [(0.3, 0.0), (0.8, 4.0), (2.0, 4.0)] {
+            let (p, q) = (ta.lookup(m, alpha), tb.lookup(m, alpha));
+            close("cna", p.cna, q.cna, 2e-3);
+            assert!((p.xcp - q.xcp).abs() < 1e-3 * a.length, "xcp {} {}", p.xcp, q.xcp);
+            assert!((p.cn - q.cn).abs() < 2e-3 * p.cn.abs().max(1e-3) + 1e-4, "cn {} {}", p.cn, q.cn);
+        }
+    }
+
+    #[test]
+    fn a_cad_rocket_in_another_unit_is_read_with_cad_unit() {
+        let out = TempDir::new("cad_unit");
+        let mut cfg = finner_config(true, &out);
+        if !gmsh_available(&cfg) {
+            return;
+        }
+        // The file declares millimetres; reading it as metres makes the rocket 1000 times too large.
+        cfg.rocket.cad_unit = cfd::StepUnit::M;
+        let e = format!("{:#}", geometry(&cfg).unwrap_err());
+        assert!(e.contains("[IY-O005]") && e.contains("rocket.cad_unit"), "{e}");
+        cfg.rocket.cad_unit = cfd::StepUnit::Mm;
+        assert!((geometry(&cfg).unwrap().length - 0.3).abs() < 1e-4);
+    }
+
+    #[test]
+    fn a_missing_cad_file_is_a_coded_error() {
+        let out = TempDir::new("cad_missing");
+        let mut cfg = finner_config(true, &out);
+        cfg.rocket.cad = Some("no_such_rocket.step".into());
+        let e = format!("{:#}", load_rocket_triangles(&cfg).unwrap_err());
+        assert!(e.contains("[IY-G016] cannot read the CAD file") && e.contains("no_such_rocket.step"), "{e}");
+        assert!(format!("{:#}", source_hash(&cfg).unwrap_err()).contains("[IY-G016]"));
+    }
+
+    #[test]
+    fn the_cad_file_enters_the_cache_keys_and_is_the_cfd_wall_by_default() {
+        let out = TempDir::new("cad_keys");
+        let mut cfg = finner_config(true, &out);
+        cfg.aero.method = config::AeroMethod::Cfd;
+        cfg.aero.cfd.surface = cfd::SurfaceKind::Step;
+        cfg.aero.cfd.step_file = PathBuf::new();
+        cfg.aero.cfd.base_treatment = Some(cfd::BaseTreatment::Fairing);
+        let o = cfg.cfd_options();
+        assert_eq!(o.step_file, cfg.resolve(Path::new("basic_finner.step")));
+        // The geometry file is what the run hash covers.
+        assert_eq!(cfg.resolve(cfg.rocket.geometry_file()), o.step_file);
     }
 }

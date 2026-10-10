@@ -7,7 +7,7 @@
   ext/.style={draw=cink2, fill=white, thick, dashed, rounded corners=3pt, minimum width=50mm, minimum height=11mm, align=center},
   file/.style={draw=cink2, fill=cfillg, minimum height=8mm, align=center, font=\footnotesize\ttfamily},
   arr/.style={->, thick, cink2}, note/.style={font=\footnotesize, cink2, align=left}]
-  \node[file] (stl) at (0,0) {rocket.stl};
+  \node[file, minimum width=30mm] (stl) at (0,0) {機体の CAD データ\\{\scriptsize rocket.stl}};
   \node[rust, minimum width=22mm] (geom) at (3.6,0) {形状抽出};
   \node[file] (gj) at (3.6,-1.8) {geometry.json\\（形状情報）};
   \node[meth] (m1) at (9.2,3.6) {部品積み上げ法\\{\footnotesize 部品ごとの式の和}};

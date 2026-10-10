@@ -120,7 +120,7 @@ STL の読み方と形状の抽出は :ref:`page-theory-geometry` にある。
 
        ``rocket.stl``
           パス、``rocket.cad`` とどちらか一方が必須
-     - 機体の STL ファイル（ASCII とバイナリのどちらも読める）。``rocket.cad`` と同時には指定できない（:ref:`IY-C064`）。
+     - 機体の STL ファイル（ASCII とバイナリのどちらも読める）。メッシュしか書き出せないツールで作った機体に使い、CAD のファイルがあるときは ``rocket.cad`` を勧める。``rocket.cad`` と同時には指定できない（:ref:`IY-C064`）。
    * - .. _cfg-rocket-stl_scale:
 
        ``rocket.stl_scale``
@@ -130,7 +130,7 @@ STL の読み方と形状の抽出は :ref:`page-theory-geometry` にある。
 
        ``rocket.cad``
           パス、``rocket.stl`` とどちらか一方が必須
-     - 機体の CAD ファイル。STEP（``.step`` ``.stp``）、IGES（``.iges`` ``.igs``）、BREP（``.brep`` ``.brp``）を読める。STL に書き出し直さずに、形状の抽出から飛翔の計算までの入力にできる。相対パスは設定ファイルのディレクトリを基準にする。``rocket.stl`` と同時には指定できない（:ref:`IY-C064`）。読むには CFD 用ツールの gmsh（Python）が要る（:ref:`IY-G017`）。``aero.cfd.surface = "step"`` で ``step_file`` を省くと、このファイルが CFD の壁面になる（:ref:`page-howto-own-rocket`）。
+     - 機体の CAD ファイル。STEP（``.step`` ``.stp``）、IGES（``.iges`` ``.igs``）、BREP（``.brep`` ``.brp``）を読める。単位と形状の細部がファイルから得られるので、STL に書き出し直さずに、形状の抽出から飛翔の計算までの入力にできる（CAD のファイルがあるときはこちらを勧める）。相対パスは設定ファイルのディレクトリを基準にする。``rocket.stl`` と同時には指定できない（:ref:`IY-C064`）。読むには CFD 用ツールの gmsh（Python）が要る（:ref:`IY-G017`）。``aero.cfd.surface = "step"`` で ``step_file`` を省くと、このファイルが CFD の壁面になる（:ref:`page-howto-own-rocket`）。
    * - .. _cfg-rocket-cad_unit:
 
        ``rocket.cad_unit``
@@ -509,7 +509,7 @@ CAD モデルから検出したフィンの寸法を上書きする。書いた�
 
        ``aero.n_slices``
           整数、``600``
-     - 形状抽出で STL を切る断面の数。20 以上 10000 以下。
+     - 形状抽出で機体の表面を切る断面の数。20 以上 10000 以下。
    * - .. _cfg-aero-fin_threshold:
 
        ``aero.fin_threshold``
@@ -671,12 +671,12 @@ RANS の既定値は ``model = "rans"`` を選んだときの値である。
 
        ``aero.cfd.surface``
           文字列、``"panel_mesh"``
-     - 壁面の形状。``"panel_mesh"`` は抽出した胴体とフィンを再構成する。``"stl"`` は入力の STL から壁面を作る（入力の形状と同一ではない）。``"step"`` は ``step_file`` の CAD のモデルをそのまま壁面にする（``rocket.stl`` と照合する）。``"stl"`` と ``model = "rans"`` の組合せはエラーである。``"panel_mesh"`` には別名 ``"cad"`` がある（:ref:`sec-cfd-surface`、:ref:`sec-cfd-stl`、:ref:`sec-cfd-fidelity`、:ref:`sec-cfd-step`）。
+     - 壁面の形状。``"panel_mesh"`` は抽出した胴体とフィンを再構成する。``"stl"`` は入力の STL から壁面を作る（入力の形状と同一ではない）。``"step"`` は ``step_file`` の CAD のモデルをそのまま壁面にする（機体の入力、すなわち ``rocket.stl`` か ``rocket.cad`` の三角形分割と照合する）。``"stl"`` と ``model = "rans"`` の組合せはエラーである。``"panel_mesh"`` には別名 ``"cad"`` がある（:ref:`sec-cfd-surface`、:ref:`sec-cfd-stl`、:ref:`sec-cfd-fidelity`、:ref:`sec-cfd-step`）。
    * - .. _cfg-aero-cfd-step_file:
 
        ``aero.cfd.step_file``
           パス、なし
-     - ``surface = "step"`` で必須（``rocket.cad`` があるときは省くと、そのファイルを使う）。CAD のファイル。相対パスは設定ファイルのディレクトリを基準にする。``rocket.stl`` と同じ座標系の、一つの閉じた立体として書き出す。``surface = "step"`` 以外ではエラーである。ファイル形式は STEP（``.step`` ``.stp``）、IGES（``.iges`` ``.igs``）、BREP（``.brep`` ``.brp``）（:ref:`sec-cfd-step`）。
+     - ``surface = "step"`` で必須（``rocket.cad`` があるときは省くと、そのファイルを使う）。CAD のファイル。相対パスは設定ファイルのディレクトリを基準にする。機体の入力（``rocket.stl`` または ``rocket.cad``）と同じ座標系の、一つの閉じた立体として書き出す。``surface = "step"`` 以外ではエラーである。ファイル形式は STEP（``.step`` ``.stp``）、IGES（``.iges`` ``.igs``）、BREP（``.brep`` ``.brp``）（:ref:`sec-cfd-step`）。
    * - .. _cfg-aero-cfd-step_unit:
 
        ``aero.cfd.step_unit``
@@ -1264,7 +1264,7 @@ RANS の既定値は ``model = "rans"`` を選んだときの値である。
 ``wind.profile_mean_speed`` と ``wind.profile_mean_direction_deg`` は ``model = "profile"`` のときだけ指定できる（:ref:`IY-C056`）。
 どのセクションも、未知のキーがあるとキーの名前を示してエラーにする。綴りの誤りが黙って無視されることはない。
 
-入力ファイル（STL、モータの ``.eng``、風のプロファイル、外部の係数表とその付随ファイル）が読めないときは、ファイルのパスを示してエラーにする。
+入力ファイル（STL または CAD のファイル、モータの ``.eng``、風のプロファイル、外部の係数表とその付随ファイル）が読めないときは、ファイルのパスを示してエラーにする。
 STL は、頂点の座標に有限でない値があるとき、バイナリ STL が見出しの三角形の数に対して短いとき、表面が閉じていないときにもエラーにする（:ref:`sec-geometry-warnings`）。
 ``.eng`` の検査は :ref:`sec-propulsion-eng` に、外部の係数表の検査は :ref:`sec-aero-table-format` にある。
 

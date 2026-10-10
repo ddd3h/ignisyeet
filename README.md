@@ -3,7 +3,7 @@
 
 # IgnisYeet
 
-**A rocket simulator that estimates aerodynamics from an STL file, flies the rocket in 6 degrees of freedom, and computes the landing dispersion**
+**A rocket simulator that estimates aerodynamics from the rocket's CAD data, flies the rocket in 6 degrees of freedom, and computes the landing dispersion**
 
 [![Docs](https://github.com/ddd3h/ignisyeet/actions/workflows/docs.yml/badge.svg?branch=main)](https://github.com/ddd3h/ignisyeet/actions/workflows/docs.yml)
 [![Documentation](https://img.shields.io/badge/docs-www.ddd3h.com%2Fignisyeet-1f6feb?logo=readthedocs&logoColor=white)](https://www.ddd3h.com/ignisyeet/)
@@ -19,9 +19,9 @@
 [![Citation](https://img.shields.io/badge/cite-CITATION.cff-orange)](CITATION.cff)
 </div>
 
-Given a rocket **STL file**, mass properties, a motor thrust curve and launch-site conditions, IgnisYeet:
+Given the rocket's **CAD data**, mass properties, a motor thrust curve and launch-site conditions, IgnisYeet:
 
-1. extracts the body radius distribution and the fin dimensions from the STL;
+1. extracts the body radius distribution and the fin dimensions from the CAD model;
 2. computes the aerodynamic coefficients once on a grid of Mach number and angle of attack (and sideslip for a six-component table) and stores them as a coefficient table;
 3. flies the rocket in **6 degrees of freedom**, interpolating the coefficient table;
 4. computes the **spread of landing points** with a grid of wind speeds and directions, or with Monte Carlo sampling;
@@ -33,7 +33,7 @@ The documentation is in Japanese: <https://www.ddd3h.com/ignisyeet/> (sources in
 
 ## Features
 
-- **Geometry from STL**: principal-axis detection, radius distribution, automatic detection of the fins (manual override possible).
+- **Geometry from CAD data**: principal-axis detection, radius distribution, automatic detection of the fins (manual override possible).
 - **Aerodynamic models**: Barrowman method, panel method (Morino subsonic, local inclination supersonic), CFD with SU2 (Euler or RANS; surface from the extracted geometry, the STL or a STEP model), and external coefficient tables.
 - **Six-component quasi-steady aerodynamics**: damping, apparent mass, Magnus force, induced roll, fin cant, roll-resonance check.
 - **6-DoF flight**: flat or rotating Earth, US Standard Atmosphere 1976, constant/power/log/profile winds, RK4, RK45 and DOP853 integrators, ballistic, parachute and dual-deploy descent.
@@ -94,7 +94,7 @@ ignisyeet [-q|--quiet] [--no-progress] <command> ...
 
 | Command | Description |
 |---|---|
-| `geom <config>` | Extracts the geometry from the STL (`geometry.json`, `profile.csv`) |
+| `geom <config>` | Extracts the geometry from the CAD data (`geometry.json`, `profile.csv`) |
 | `aero <config> [--force]` | Builds the aerodynamic coefficient table (reused when the inputs are unchanged) |
 | `sim <config> [--descent ballistic\|parachute]` | Flies once with the configured wind (`trajectory.csv`, `summary.json`) |
 | `dispersion <config>` | Computes the landing dispersion in parallel (`dispersion.mode`) |

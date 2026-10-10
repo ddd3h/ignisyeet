@@ -26,7 +26,7 @@ IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファ�
    * - コマンド
      - 内容と書き出すファイル
    * - ``geom <config>``
-     - STL から形状を抽出する。``geometry.json`` と ``profile.csv`` を書く。
+     - 機体の CAD データから形状を抽出する。``geometry.json`` と ``profile.csv`` を書く。
    * - ``aero <config> [--force]``
      - 空力係数表 ``aero_table.csv`` を作る。入力と設定が前回と同じなら、出力先にある表をそのまま使う。``--force`` を付けると再計算する（``aero.method = "table"`` では効果がない）。
    * - ``sim <config> [--descent ballistic|parachute]``

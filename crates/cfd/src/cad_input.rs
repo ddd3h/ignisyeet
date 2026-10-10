@@ -42,8 +42,8 @@ pub struct CadSurface {
     pub stl: PathBuf,
 }
 
-#[derive(Serialize)]
-struct ExtractParams {
+#[derive(Serialize, Default)]
+pub(crate) struct ExtractParams {
     mode: &'static str,
     step_file: String,
     unit_scale: f64,
@@ -144,6 +144,19 @@ pub fn tessellate_cad(opt: &CfdOptions, roots: &[PathBuf], file: &Path, unit: St
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_extract_mode_reads_the_keys_it_is_given() {
+        // Every key of the parameters is read by the script, and the keys the extract mode reads are the parameters
+        // (the others it reads with a default: `length`, `base_tol`).
+        let j = serde_json::to_value(ExtractParams::default()).unwrap();
+        for k in j.as_object().unwrap().keys() {
+            assert!(SCRIPT.contains(&format!("p[\"{k}\"]")) || k == "mode", "the script does not read {k}");
+        }
+        let a = SCRIPT.find("def extract():").unwrap();
+        let body = &SCRIPT[a..a + SCRIPT[a..].find("\ndef prepare()").unwrap()];
+        assert!(!body.contains("p[\"length\"]") && !body.contains("p[\"affine\"]"), "extract() must not need the rocket frame");
+    }
 
     #[test]
     fn the_hash_follows_the_file_and_the_unit() {

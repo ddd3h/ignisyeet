@@ -1338,6 +1338,8 @@ print(f(float(sys.argv[2]), float(sys.argv[3])))
         let j = serde_json::to_value(StepParams { bl: Some(mesh::bl_params(&CfdOptions::rans(), &sample_geom(), &atm)), ..params() }).unwrap();
         // Every key the scripts read from params.json (`p["..."]`) and from the layer parameters (`bl["..."]`).
         let blk = j["bl"].as_object().unwrap();
+        // The extract mode (cad_input.rs) has its own parameters.
+        let extract = serde_json::to_value(crate::cad_input::ExtractParams::default()).unwrap();
         let mut keys = 0;
         for (name, script) in [("mesh_step.py", SCRIPT), ("bl_layer.py", mesh::BL_LAYER)] {
             for line in script.lines() {
@@ -1346,7 +1348,7 @@ print(f(float(sys.argv[2]), float(sys.argv[3])))
                     while let Some(i) = rest.find(pat) {
                         rest = &rest[i + pat.len()..];
                         let key = &rest[..rest.find('"').unwrap()];
-                        assert!(obj.contains_key(key), "{name} reads missing key {pat}{key}");
+                        assert!(obj.contains_key(key) || (pat == "p[\"" && extract.get(key).is_some()), "{name} reads missing key {pat}{key}");
                         keys += 1;
                     }
                 }

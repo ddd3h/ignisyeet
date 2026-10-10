@@ -4254,7 +4254,7 @@ mod tests {
 
     fn gmsh_available(cfg: &Config) -> bool {
         let opt = cfg.cfd_options();
-        let ok = cfd::tools::probe_gmsh(cfd::tools::resolve_prefix(&opt).as_deref(), &[cfg.base_dir.clone()]).ok();
+        let ok = cfd::tools::probe_gmsh(cfd::tools::resolve_prefix(&opt).as_deref(), std::slice::from_ref(&cfg.base_dir)).ok();
         if !ok {
             eprintln!("SKIPPED: the gmsh python is not available (set IGNISYEET_CFD_PREFIX or aero.cfd.prefix), so rocket.cad cannot be read");
         }

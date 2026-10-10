@@ -49,11 +49,11 @@ ECEF モードでも、位置・速度などの **出力** は常に射点の EN
 
 .. _sec-body-basis:
 
-STL から決める機体軸
-------------------------
+入力の座標から決める機体軸
+------------------------------
 
-機体軸の向きは、STL の座標で次のように決める。
-STL でノーズからテールへ向かう単位ベクトルを :math:`\bm{a}`\ （形状抽出の結果）とし、
+機体軸の向きは、入力（CAD データまたは STL）の座標で次のように決める。
+入力でノーズからテールへ向かう単位ベクトルを :math:`\bm{a}`\ （形状抽出の結果）とし、
 
 .. math::
    :label: eq-body-basis
@@ -62,7 +62,7 @@ STL でノーズからテールへ向かう単位ベクトルを :math:`\bm{a}`\
    \bm{e}_y=\frac{\bm{a}\times\bm{h}}{|\bm{a}\times\bm{h}|},\qquad
    \bm{e}_z=\bm{e}_x\times\bm{e}_y
 
-とする。:math:`\bm{h}` は補助のベクトルで、STL の :math:`x` 軸の単位ベクトルを使う。
+とする。:math:`\bm{h}` は補助のベクトルで、入力の :math:`x` 軸の単位ベクトルを使う。
 機体が :math:`x` 軸にほぼ沿っているとき（:math:`|a_x|\ge0.9`）は :math:`y` 軸の単位ベクトルを使う。
 :math:`(\bm{e}_x,\bm{e}_y,\bm{e}_z)` は右手系である。
 
@@ -107,7 +107,7 @@ STL でノーズからテールへ向かう単位ベクトルを :math:`\bm{a}`\
 .. figure:: /_generated/tikz/body_axes.*
    :width: 85%
 
-   STL から決めた機体軸 :math:`(x_b,y_b,z_b)`、迎角 :math:`\alpha`、横滑り角 :math:`\beta`、
+   入力の座標から決めた機体軸 :math:`(x_b,y_b,z_b)`、迎角 :math:`\alpha`、横滑り角 :math:`\beta`、
    推力の傾き :math:`\varepsilon` とその方位 :math:`\phi`。
 
 姿勢の表現（クォータニオン）

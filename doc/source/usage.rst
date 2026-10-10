@@ -4,6 +4,7 @@
 ======
 
 IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファイルを渡して使う。
+機体は、STEP、IGES、BREP の CAD ファイル（``rocket.cad``）か STL ファイル（``rocket.stl``）で与える。CAD ファイルは三角形に分割してから形状を抽出するので、読むには CFD 用ツールの gmsh（Python）が要る。
 1 回の解析は、``geom`` で形状を取り出し、``aero`` で係数表を作り、``sim`` で 1 回飛ばし、``dispersion`` で落下分散を求める順に進む。各コマンドは結果をファイルとして出力先に書き、端末には設定、進み具合、結果の要約を表示する。
 結果が使えるかどうかは、端末の要約、終了ステータス、``summary.json`` の三つで判断できる。
 
@@ -26,7 +27,7 @@ IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファ�
    * - コマンド
      - 内容と書き出すファイル
    * - ``geom <config>``
-     - 機体の CAD データから形状を抽出する。``geometry.json`` と ``profile.csv`` を書く。
+     - 機体の CAD データ（CAD ファイルまたは STL）から形状を抽出する。``geometry.json`` と ``profile.csv`` を書く。
    * - ``aero <config> [--force]``
      - 空力係数表 ``aero_table.csv`` を作る。入力と設定が前回と同じなら、出力先にある表をそのまま使う。``--force`` を付けると再計算する（``aero.method = "table"`` では効果がない）。
    * - ``sim <config> [--descent ballistic|parachute]``
@@ -498,8 +499,8 @@ IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファ�
 
 ``geom`` と、係数表を作る ``aero`` が書く、抽出した形状である。
 全長 ``length``、基準半径 ``ref_radius`` と基準面積 ``ref_area``、底面半径 ``base_radius``、ノーズ ``nose``、ボートテール ``boattail``、胴体のぬれ面積 ``wetted_area_body`` と体積 ``volume``、
-フィンの平面形の面積 ``planform_area`` と重心位置 ``planform_centroid``、フィン ``fins``、STL の座標との対応 ``frame``\ （``axis_point``、``aft_direction``、``nose_offset``）、断面ごとの ``profile`` を持つ。
-機体軸 :math:`x_b,y_b,z_b` を STL の座標で表した単位ベクトル ``body_x``、``body_y``、``body_z`` も書く（:ref:`sec-body-basis`）。
+フィンの平面形の面積 ``planform_area`` と重心位置 ``planform_centroid``、フィン ``fins``、入力の座標との対応 ``frame``\ （``axis_point``、``aft_direction``、``nose_offset``）、断面ごとの ``profile`` を持つ。
+機体軸 :math:`x_b,y_b,z_b` を入力の座標で表した単位ベクトル ``body_x``、``body_y``、``body_z`` も書く（:ref:`sec-body-basis`）。
 抽出の妥当性についての所見は、文字列の配列 ``warnings`` に書く（疑わしい点がなければ空。:ref:`sec-geometry-warnings`）。各文字列は ``[IY-G5nn] …`` の形で、コードを角括弧のまま先頭に付ける（:ref:`errors`）。
 
 ``profile.csv``
@@ -1056,7 +1057,7 @@ make のターゲットと変数
    * - 設定ファイルが読めない、値が範囲外
      - :ref:`IY-C060`、``IY-C061``、``IY-C005``、``IY-C009`` から ``IY-C059``
      - メッセージが名指しする項目を直す。``--set`` の綴りの誤りは、未知のキーとして原因の行に出る。値の範囲の一覧は :ref:`sec-config-checks` にある。
-   * - STL が読めない、表面が閉じていない
+   * - STL が読めない、表面が閉じていない（STL の入力）
      - :ref:`IY-G001` から ``IY-G011``
      - STL を修復するか、ソリッドとして書き出し直す（:ref:`page-howto-own-rocket`）。
    * - CAD ファイルが読めない、形状のキーの組合せが誤り
@@ -1064,10 +1065,10 @@ make のターゲットと変数
      - ``rocket.cad``、``rocket.cad_unit`` と CFD 用ツールの導入を確かめる（:ref:`page-howto-own-rocket`）。
    * - 形状の抽出結果が疑わしい（比、向き、フィンの位置）
      - :ref:`IY-G501` から ``IY-G512``
-     - ``rocket.stl_scale``、``rocket.nose_direction``、``rocket.fin_override`` を確かめる（:ref:`sec-geometry-warnings`）。
+     - ``rocket.stl_scale``\ （STL の入力）、``rocket.nose_direction``、``rocket.fin_override`` を確かめる（:ref:`sec-geometry-warnings`）。
    * - 全長が範囲外、モータが機体に収まらない
      - :ref:`IY-O005` から ``IY-O008``、``IY-O502``、``IY-O503``
-     - ``rocket.stl_scale``、``rocket.cg_dry``、``motor.aft_x`` を確かめる。
+     - ``rocket.stl_scale``\ （STL の入力）、``rocket.cad_unit``\ （CAD の入力）、``rocket.cg_dry``、``motor.aft_x`` を確かめる。
    * - 推力曲線のファイルが読めない、疑わしい
      - :ref:`IY-S001` から ``IY-S015``、``IY-S500`` から ``IY-S502``、``IY-O013``
      - ``.eng`` の行を直す（:ref:`page-howto-motor`）。

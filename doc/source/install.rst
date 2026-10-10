@@ -177,6 +177,7 @@ CFD ツールと SU2
 ----------------
 
 CFD ツール（SU2、gmsh、Open MPI。STL の壁面に使う manifold3d を含む）は、どちらの役割でも任意で入れられる。
+ただし、機体を STEP、IGES、BREP の CAD ファイル（``rocket.cad``）で与えるときは、そのファイルを読むために gmsh の Python が要る。
 conda-forge から取得するので約 3 GB のダウンロードがあり、既存の micromamba、mamba、conda と既存の ``ignisyeet-cfd`` 環境があればそれを使う。
 パッケージの版は、すべてのプラットフォームで SU2 8.3.0、gmsh 4.15.2、Open MPI 5 に固定される。
 入れるには、``--cfd`` を付けて実行するか、上の質問 2 に ``y`` と答える。

@@ -265,15 +265,23 @@ fn iges_unit_metres(text: &str) -> Option<f64> {
 /// Scale applied after the import (see the module documentation): 1 for `auto`, else `step_unit / declared unit` (the
 /// declared unit is 1 m for a BREP file).
 pub fn unit_scale(unit: StepUnit, format: &str, declared: Option<f64>, file: &Path) -> Result<f64> {
+    unit_scale_for(unit, format, declared, file, "[IY-F070] aero.cfd.step_unit")
+}
+
+/// [`unit_scale`] for the key `key` (with its code, `[IY-Xnnn] section.key`) that holds the unit.
+pub fn unit_scale_for(unit: StepUnit, format: &str, declared: Option<f64>, file: &Path, key: &str) -> Result<f64> {
     let Some(want) = unit.metres() else { return Ok(1.0) };
     match (format, declared) {
         (_, Some(d)) => Ok(want / d),
         ("brep", None) => Ok(want),
-        _ => bail!(
-            "[IY-F070] aero.cfd.step_unit = \"{}\": the length unit of {} cannot be read from the file, so it cannot be overridden; use step_unit = \"auto\"",
-            format!("{unit:?}").to_lowercase(),
-            file.display()
-        ),
+        _ => {
+            let name = key.rsplit('.').next().unwrap_or(key);
+            bail!(
+                "{key} = \"{}\": the length unit of {} cannot be read from the file, so it cannot be overridden; use {name} = \"auto\"",
+                format!("{unit:?}").to_lowercase(),
+                file.display()
+            )
+        }
     }
 }
 

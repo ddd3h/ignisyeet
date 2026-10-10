@@ -268,16 +268,11 @@ pub fn gmsh_python(prefix: Option<&Path>, roots: &[PathBuf]) -> Vec<PathBuf> {
 pub const INSTALL_HINT: &str = "install with `install.sh --cfd`, see the CFD chapter of the documentation";
 const HINT: &str = INSTALL_HINT;
 
-/// Locates the tools and probes their versions.
-pub fn check_tools(opt: &CfdOptions, roots: &[PathBuf]) -> ToolReport {
-    let prefix = resolve_prefix(opt);
-    let pre = prefix.as_deref();
-    // `SU2_CFD --help` prints the banner `SU2 v8.x.y "Name", ...` first.
-    let su2 = probe("SU2_CFD", &resolve_su2(opt), pre, &["--help"], HINT);
-    let mpi = probe("mpirun", &opt.mpi, pre, &["--version"], HINT);
+/// The python with the gmsh module (see [`gmsh_python`]), probed by importing it.
+pub fn probe_gmsh(prefix: Option<&Path>, roots: &[PathBuf]) -> ToolInfo {
     let mut gmsh = ToolInfo { name: "gmsh (python)", path: None, version: None, problem: Some(format!("no python with the gmsh module found ({HINT})")) };
-    for py in gmsh_python(pre, roots) {
-        if let Ok(out) = command(&py, pre).args(["-c", "import gmsh; print(gmsh.__version__)"]).output() {
+    for py in gmsh_python(prefix, roots) {
+        if let Ok(out) = command(&py, prefix).args(["-c", "import gmsh; print(gmsh.__version__)"]).output() {
             if out.status.success() {
                 if let Some(v) = first_line(&out) {
                     gmsh = ToolInfo { name: "gmsh (python)", path: Some(py), version: Some(format!("gmsh {v}")), problem: None };
@@ -286,6 +281,17 @@ pub fn check_tools(opt: &CfdOptions, roots: &[PathBuf]) -> ToolReport {
             }
         }
     }
+    gmsh
+}
+
+/// Locates the tools and probes their versions.
+pub fn check_tools(opt: &CfdOptions, roots: &[PathBuf]) -> ToolReport {
+    let prefix = resolve_prefix(opt);
+    let pre = prefix.as_deref();
+    // `SU2_CFD --help` prints the banner `SU2 v8.x.y "Name", ...` first.
+    let su2 = probe("SU2_CFD", &resolve_su2(opt), pre, &["--help"], HINT);
+    let mpi = probe("mpirun", &opt.mpi, pre, &["--version"], HINT);
+    let gmsh = probe_gmsh(pre, roots);
     // manifold3d is imported by the same python that has gmsh.
     let mut manifold = ToolInfo {
         name: "manifold3d (python)",

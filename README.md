@@ -33,7 +33,7 @@ The documentation is in Japanese: <https://www.ddd3h.com/ignisyeet/> (sources in
 
 ## Features
 
-- **Geometry from CAD data**: principal-axis detection, radius distribution, automatic detection of the fins (manual override possible).
+- **Geometry from CAD data**: the rocket is given as a STEP, IGES or BREP file (`rocket.cad`, tessellated before extraction; reading it needs gmsh with its Python module from the CFD tools) or as an STL (`rocket.stl`, for tools that only export meshes). Principal-axis detection, radius distribution, automatic detection of the fins (manual override possible).
 - **Aerodynamic models**: Barrowman method, panel method (Morino subsonic, local inclination supersonic), CFD with SU2 (Euler or RANS; surface from the extracted geometry, the STL or a STEP model), and external coefficient tables.
 - **Six-component quasi-steady aerodynamics**: damping, apparent mass, Magnus force, induced roll, fin cant, roll-resonance check.
 - **6-DoF flight**: flat or rotating Earth, US Standard Atmosphere 1976, constant/power/log/profile winds, RK4, RK45 and DOP853 integrators, ballistic, parachute and dual-deploy descent.
@@ -94,7 +94,7 @@ ignisyeet [-q|--quiet] [--no-progress] <command> ...
 
 | Command | Description |
 |---|---|
-| `geom <config>` | Extracts the geometry from the CAD data (`geometry.json`, `profile.csv`) |
+| `geom <config>` | Extracts the geometry from the rocket's CAD file or STL (`geometry.json`, `profile.csv`) |
 | `aero <config> [--force]` | Builds the aerodynamic coefficient table (reused when the inputs are unchanged) |
 | `sim <config> [--descent ballistic\|parachute]` | Flies once with the configured wind (`trajectory.csv`, `summary.json`) |
 | `dispersion <config>` | Computes the landing dispersion in parallel (`dispersion.mode`) |

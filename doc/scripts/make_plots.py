@@ -1158,40 +1158,440 @@ def read_stl(path):
     return rec["v"].astype(float)
 
 
-def stl_mesh(f):
-    """The sample rocket STL drawn as its triangles: whole body and a close-up of the tail."""
-    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
+# >>> geometry
+# ---------------------------------------------------------------- geometry chapter (doc/data/geometry, examples/)
 
-    tris = read_stl(Path(__file__).resolve().parents[2] / "examples" / "sample_rocket.stl")
-    # STL is in mm with the nose towards +z; lay it on its side (x along the body) for the page.
-    t = tris[:, :, [2, 0, 1]].copy()
-    t[:, :, 0] *= -1
-    nrm = np.cross(t[:, 1] - t[:, 0], t[:, 2] - t[:, 0])
-    nrm /= np.linalg.norm(nrm, axis=1, keepdims=True) + 1e-30
-    light = np.array([-0.3, -0.8, 0.5])
-    light /= np.linalg.norm(light)
-    shade = 0.25 + 0.75 * np.clip(np.abs(nrm @ light), 0, 1) ** 1.5
-    hi_c, lo_c = np.array(matplotlib.colors.to_rgb("#9ec5f4")), np.array(matplotlib.colors.to_rgb("#184f95"))
-    face = lo_c[None, :] + (hi_c - lo_c)[None, :] * shade[:, None]
+EXAMPLES = Path(__file__).resolve().parents[2] / "examples"
+GDATA = Path(__file__).resolve().parents[1] / "data" / "geometry"
+FACE_COLORS = ["#86b6ef", "#f0a37d", "#7fd2b4", "#f3cd6b", "#eeb0c9", "#a79fd8"]
 
-    fig = plt.figure(figsize=(10, 4.6))
-    views = [
-        (fig.add_axes([0.0, 0.05, 0.62, 0.9], projection="3d"), None, 0.0),
-        (fig.add_axes([0.6, 0.0, 0.42, 1.0], projection="3d"), (1150, 1500), 0.35),
+
+def g_json(name):
+    return json.loads((GDATA / name / "geometry.json").read_text())
+
+
+def g_body(tris, g):
+    """Triangles (n, 3, 3) in the frame of the file -> (distance aft of the nose tip, y, z) of the body frame."""
+    fr = g["frame"]
+    c, aft = np.array(fr["axis_point"]), np.array(fr["aft_direction"])
+    ey, ez = np.array(g["body_y"]), np.array(g["body_z"])
+    d = tris - c
+    return np.stack([d @ aft - fr["nose_offset"], d @ ey, d @ ez], axis=-1)
+
+
+def g_rot(az, el):
+    a, e = np.radians(az), np.radians(el)
+    rz = np.array([[np.cos(a), -np.sin(a), 0], [np.sin(a), np.cos(a), 0], [0, 0, 1]])
+    rx = np.array([[1, 0, 0], [0, np.cos(e), -np.sin(e)], [0, np.sin(e), np.cos(e)]])
+    return rx @ rz
+
+
+def g_clip_x(tri, x0, x1):
+    """Triangles cut to the slab x0 <= X <= x1, as polygons of five vertices (the last one repeated)."""
+    lo, hi = tri[:, :, 0].min(axis=1), tri[:, :, 0].max(axis=1)
+    inside = (lo >= x0) & (hi <= x1)
+    cross = ~inside & (hi >= x0) & (lo <= x1)
+    out = [np.concatenate([tri[inside], tri[inside][:, :1].repeat(2, axis=1)], axis=1)]
+    for q in tri[cross]:
+        poly = [v for v in q]
+        for axis_sign, lim in ((1.0, x0), (-1.0, x1)):
+            res = []
+            for i, a in enumerate(poly):
+                b = poly[(i + 1) % len(poly)]
+                da, db = axis_sign * (a[0] - lim), axis_sign * (b[0] - lim)
+                if da >= 0:
+                    res.append(a)
+                if (da >= 0) != (db >= 0):
+                    res.append(a + (b - a) * (da / (da - db)))
+            poly = res
+            if len(poly) < 3:
+                break
+        if len(poly) >= 3:
+            poly = (poly + [poly[-1]] * 5)[:5]
+            out.append(np.array(poly)[None])
+    return np.concatenate(out)
+
+
+def g_draw_tris(ax, tri, colors, view=(0, 0), edge=None, lw=0.2, light=(-0.4, -0.6, 0.7)):
+    """Orthographic view of triangles given in the body frame (X aft along the axis, Y, Z), depth-sorted.
+
+    Screen: horizontal = X', vertical = Z'' after turning by `view` = (azimuth, elevation) in degrees."""
+    from matplotlib.collections import PolyCollection
+
+    r = g_rot(*view)
+    p = tri @ r.T  # (n, 3, 3): X', depth, Z''
+    n = np.cross(p[:, 1] - p[:, 0], p[:, 2] - p[:, 0])
+    n /= np.linalg.norm(n, axis=1, keepdims=True) + 1e-30
+    li = np.array(light) / np.linalg.norm(light)
+    sh = (0.5 + 0.5 * np.clip(np.abs(n @ li), 0, 1) ** 1.1)[:, None]
+    order = np.argsort(-p[:, :, 1].mean(axis=1))
+    face = np.clip(np.asarray(colors)[order] * sh[order], 0, 1)
+    poly = p[order][:, :, [0, 2]]
+    ec = edge if edge is not None else face
+    col = PolyCollection(poly, facecolors=face, edgecolors=ec, linewidths=lw if edge is not None else 0.25)
+    col.set_rasterized(True)
+    ax.add_collection(col)
+    lo, hi = poly.reshape(-1, 2).min(axis=0), poly.reshape(-1, 2).max(axis=0)
+    ax.set_xlim(lo[0], hi[0])
+    ax.set_ylim(lo[1], hi[1])
+    ax.set_aspect("equal")
+    ax.set_axis_off()
+    return r
+
+
+def g_rgb(c):
+    return np.array(matplotlib.colors.to_rgb(c))
+
+
+def geometry_cad_to_triangles(f):
+    """The sample rocket as B-rep faces, as the triangles of the CAD tessellation and as the facets of the STL."""
+    gc, gs = g_json("sample_cad"), g_json("sample_stl")
+    faces = json.loads((GDATA / "sample_cad_faces.json").read_text())
+    coarse = np.load(GDATA / "sample_cad_coarse.npz")
+    tail = np.load(GDATA / "sample_cad_tail.npz")
+    stl = read_stl(EXAMPLES / "sample_rocket.stl") * 0.001
+
+    def cad_tris(z):
+        return z["verts"].astype(float)[z["tris"]]
+
+    ct = g_body(cad_tris(coarse), gc)
+    fc = np.array([g_rgb(FACE_COLORS[k % 6]) for k in coarse["face"]])
+    tt = g_body(cad_tris(tail), gc)
+    st = g_body(stl, gs)
+    x0, x1 = 1.33, 1.50
+    ptt, pst = g_clip_x(tt, x0, x1), g_clip_x(st, x0, x1)
+
+    fig = plt.figure(figsize=(8.0, 5.0))
+    ax0 = fig.add_axes([0.0, 0.60, 1.0, 0.33])
+    r0 = g_draw_tris(ax0, ct, fc, view=(-28, 22))
+    ax1 = fig.add_axes([0.0, 0.0, 0.5, 0.54])
+    ax2 = fig.add_axes([0.5, 0.0, 0.5, 0.54])
+    edge = (0.05, 0.10, 0.25, 0.6)
+    col = g_rgb("#9ec5f4")
+    view = (-52, 24)
+    g_draw_tris(ax1, ptt, np.tile(col, (len(ptt), 1)), view=view, edge=edge, lw=0.1)
+    g_draw_tris(ax2, pst, np.tile(col, (len(pst), 1)), view=view, edge=edge, lw=0.4)
+    fig.text(0.0, 0.985, f"CAD ファイルの面（{faces['faces']} 面、色は面ごと）", fontsize=11, color=INK, va="center")
+    fig.text(0.0, 0.575, f"CAD を分割した三角形（全体で {faces['triangles_fine']:,} 個）", fontsize=11, color=INK, va="center")
+    fig.text(0.5, 0.575, f"STL の三角形（全体で {len(stl):,} 個）", fontsize=11, color=INK, va="center")
+    fl = {i["index"]: i["bbox_m"] for i in faces["face_list"]}
+
+    def centre(idx):
+        b = np.array([fl[i] for i in idx])
+        pt = np.array([(b[:, 0].min() + b[:, 3].max()) / 2, (b[:, 1].min() + b[:, 4].max()) / 2, (b[:, 2].min() + b[:, 5].max()) / 2])
+        q = g_body(pt[None, None, :], gc)[0, 0] @ r0.T
+        return q[0], q[2]
+
+    for idx, label, off in (([40, 41, 42, 43], "ランチラグ", (0, 24)), ([36, 37, 38, 39], "レールボタン", (0, 24))):
+        ax0.annotate(label, centre(idx), xytext=off, textcoords="offset points", fontsize=9, color=INK2, ha="center",
+                     arrowprops=dict(arrowstyle="-", color=INK2, lw=0.7))
+    # the part shown below
+    q = (ct @ r0.T)[(ct[:, :, 0].min(axis=1) >= x0)]
+    lo, hi = q[:, :, [0, 2]].reshape(-1, 2).min(axis=0), q[:, :, [0, 2]].reshape(-1, 2).max(axis=0)
+    ax0.add_patch(plt.Rectangle((lo[0] - 0.004, lo[1] - 0.004), hi[0] - lo[0] + 0.008, hi[1] - lo[1] + 0.008, fill=False, ec=INK2, lw=0.9, ls="--"))
+    ax0.annotate("下に拡大", (lo[0] - 0.004, lo[1] - 0.004), xytext=(-4, 0), textcoords="offset points", fontsize=9, color=INK2, ha="right", va="bottom", annotation_clip=False)
+    f.save(fig, "geometry_cad_to_triangles")
+
+
+def geometry_axis(f):
+    """The principal axis of the triangles of the sample rocket (turned in space) and the cues for the nose direction."""
+    from matplotlib.collections import PolyCollection
+
+    ax_data = json.loads((GDATA / "sample_axis.json").read_text())
+    R = np.array(ax_data["rotation"])
+    tris = read_stl(EXAMPLES / "sample_rocket.stl") * 0.001 @ R.T
+    c, e1 = np.array(ax_data["centroid_m"]), np.array(ax_data["principal_axis"])
+    lam = ax_data["eigenvalues_m2_relative"]
+    gs = g_json("sample_stl")
+    fig = plt.figure(figsize=(8.0, 3.7))
+    ax = fig.add_axes([0.07, 0.13, 0.36, 0.80])
+    poly = tris[:, :, [0, 2]]
+    pc = PolyCollection(poly, facecolors="#b8d3f5", edgecolors="#b8d3f5", linewidths=0.3)
+    pc.set_rasterized(True)
+    ax.add_collection(pc)
+    ax.set_xlim(-0.15, 1.1)
+    ax.set_ylim(-1.25, 0.2)
+    ax.set_aspect("equal")
+    s = np.array([-0.82, 0.82])
+    ax.plot(c[0] + s * e1[0], c[2] + s * e1[2], color=SERIES[1], lw=1.6, ls=(0, (6, 3)), zorder=3)
+    ax.plot(*c[[0, 2]], "o", color=SERIES[1], ms=5, zorder=4)
+    ax.annotate("面積で重みを付けた重心 $\\mathbf{c}$", c[[0, 2]], xytext=(52, 22), textcoords="offset points", fontsize=9, color=INK2, ha="center",
+                arrowprops=dict(arrowstyle="-", color=INK2, lw=0.7))
+    ax.annotate("第 1 主軸", (c[0] - 0.45 * e1[0], c[2] - 0.45 * e1[2]), xytext=(-12, -16), textcoords="offset points", fontsize=9, color=SERIES[1], ha="right")
+    ax.set_xlabel("$x$ [m]（STL の座標）")
+    ax.set_ylabel("$z$ [m]")
+    ax.text(0.97, 0.97, f"分散の割合\n第 1 軸 {100 * lam[0]:.1f} %\n第 2・3 軸 {100 * lam[1]:.1f} %、{100 * lam[2]:.1f} %", transform=ax.transAxes, ha="right", va="top",
+            fontsize=8.5, color=INK2, linespacing=1.35)
+    # right: the cues for the direction
+    ax2 = fig.add_axes([0.52, 0.34, 0.46, 0.44])
+    prof = pd.DataFrame(gs["profile"])
+    L = gs["length"]
+    xs = prof.x / L
+    ax2.fill_between(xs, -prof.r * 1000, prof.r * 1000, color="#b8d3f5", lw=0)
+    fin = prof[prof.fin_span > 0]
+    ax2.fill_between(fin.x / L, (fin.r) * 1000, (fin.r + fin.fin_span) * 1000, color="#f4c3a8", lw=0)
+    ax2.fill_between(fin.x / L, -(fin.r) * 1000, -(fin.r + fin.fin_span) * 1000, color="#f4c3a8", lw=0)
+    ax2.axvspan(0.5 - 0.08, 0.5 + 0.08, color=GRID, alpha=0.8, lw=0, zorder=0)
+    ax2.text(0.5, 190, "判定に使わない範囲\n（中央から 0.08）", ha="center", va="top", fontsize=8.5, color=INK2, linespacing=1.3)
+    pf = ax_data["fin_centre_fraction"]
+    ax2.plot([pf, pf], [-175, 175], color=SERIES[1], lw=1.4)
+    ax2.annotate(f"フィン根元の中央\n全長の {100 * pf:.0f} %", (pf, 150), xytext=(-8, 4), textcoords="offset points", ha="right", fontsize=8.5, color=SERIES[1], linespacing=1.3)
+    ax2.set_xlim(0, 1)
+    ax2.set_ylim(-190, 190)
+    ax2.set_yticks([])
+    ax2.grid(False)
+    ax2.spines["left"].set_visible(False)
+    ax2.set_xlabel("軸に沿った位置 / 全長")
+    ax2.set_title("向きの判定（1. フィンの位置）", fontsize=10, color=INK, loc="left")
+    e0, e1_ = ax_data["end_radius_sum_nose_end_m"] * 1000, ax_data["end_radius_sum_tail_end_m"] * 1000
+    fig.text(0.52, 0.12, f"2. 端の半径（フィンで決まらないとき）：両端の 2 断面の半径の和は {e0:.1f} mm と {e1_:.1f} mm。\n    小さい方の端をノーズとする。", fontsize=8.5, color=INK2, va="center", linespacing=1.4)
+    f.save(fig, "geometry_axis")
+
+
+def geometry_slices(f):
+    """Slices of the sample STL: the plane positions, four sections with the body radius and the fin points, and r_b(x)."""
+    from matplotlib.collections import LineCollection, PolyCollection
+
+    gs = g_json("sample_stl")
+    prov = json.loads((GDATA / "provenance.json").read_text())["sections"]
+    sec = np.load(GDATA / "sample_sections.npz")
+    st = g_body(read_stl(EXAMPLES / "sample_rocket.stl") * 0.001, gs)
+    prof = pd.DataFrame(gs["profile"])
+    L, delta = gs["length"], prov["fin_threshold_m"]
+    stations = prov["stations"]
+    fig = plt.figure(figsize=(8.0, 4.7))
+    ax = fig.add_axes([0.07, 0.78, 0.91, 0.19])
+    pc = PolyCollection(st[:, :, :2], facecolors="#b8d3f5", edgecolors="#b8d3f5", linewidths=0.3)
+    pc.set_rasterized(True)
+    ax.add_collection(pc)
+    for x in prof.x[::20]:
+        ax.axvline(x, color=INK2, lw=0.3, alpha=0.5)
+    for s in stations:
+        ax.axvline(s["x_m"], color=SERIES[1], lw=1.4)
+        ax.text(s["x_m"], 0.175, s["name"], ha="center", va="bottom", fontsize=11, color=SERIES[1], fontweight="bold")
+    ax.set_xlim(0, L)
+    ax.set_ylim(-0.17, 0.2)
+    ax.set_aspect("equal")
+    ax.set_axis_off()
+    fig.text(0.07, 0.985, "機軸に垂直な断面", fontsize=9.5, color=INK2, va="center")
+    w = 0.165
+    for k, s in enumerate(stations):
+        a = fig.add_axes([0.07 + k * 0.235 + 0.02, 0.43, w, w * 8.0 / 4.7])
+        seg = sec[s["name"]].astype(float) * 1000
+        a.add_collection(LineCollection(seg, colors=INK2, linewidths=0.9))
+        rb = s["r_body_program_m"] * 1000
+        th = np.linspace(0, 2 * np.pi, 361)
+        a.plot(rb * np.cos(th), rb * np.sin(th), color=SERIES[0], lw=1.3, ls=(0, (5, 3)))
+        lim = (rb + delta * 1000)
+        pts = seg.reshape(-1, 2)
+        far = pts[np.hypot(pts[:, 0], pts[:, 1]) > lim]
+        a.plot(far[:, 0], far[:, 1], ".", color=SERIES[1], ms=2.6)
+        a.set_xlim(-160, 160)
+        a.set_ylim(-160, 160)
+        a.set_aspect("equal")
+        a.grid(False)
+        a.set_xticks([-100, 0, 100])
+        a.set_yticks([-100, 0, 100] if k == 0 else [])
+        a.tick_params(labelsize=8)
+        for sp in a.spines.values():
+            sp.set_visible(True)
+            sp.set_color("#bdbcb6")
+        a.set_title(f"{s['name']}：$x={s['x_m']:.2f}$ m\n$r_b={rb:.1f}$ mm", fontsize=9.5, color=INK)
+        if k == 0:
+            a.set_ylabel("mm")
+    a = fig.get_axes()[-1]
+    a.annotate("フィン点", far[np.argmin(far[:, 0] + far[:, 1])], xytext=(-102, 0), textcoords="data", fontsize=8.5, color=SERIES[1], ha="center", va="center",
+               arrowprops=dict(arrowstyle="-", color=SERIES[1], lw=0.7))
+    a.text(0, -148, "破線は $r_b$", fontsize=8.5, color=SERIES[0], ha="center")
+    ax3 = fig.add_axes([0.07, 0.105, 0.91, 0.24])
+    ax3.plot(prof.x, prof.r * 1000, color=SERIES[0], label="胴体半径 $r_b$")
+    fin = prof[prof.fin_span > 0]
+    ax3.plot(fin.x, (fin.r + fin.fin_span) * 1000, color=SERIES[1], lw=1.4, label="フィンの外側の半径 $r_b+$ フィン高さ")
+    for s in stations:
+        ax3.plot(s["x_m"], s["r_body_program_m"] * 1000, "o", color=SERIES[1], ms=5, zorder=4)
+        ax3.annotate(s["name"], (s["x_m"], s["r_body_program_m"] * 1000), xytext=(0, -15), textcoords="offset points", ha="center", fontsize=10, color=SERIES[1], fontweight="bold")
+    ax3.set_xlim(0, L)
+    ax3.set_ylim(0, 165)
+    ax3.set_xlabel("先端からの距離 $x$ [m]")
+    ax3.set_ylabel("半径 [mm]")
+    ax3.legend(loc="upper left", ncol=1)
+    f.save(fig, "geometry_slices")
+
+
+def g_fin_outline(tri_body, g):
+    """Fin of the triangles (body frame): the projection (x, height above the axis) of the triangles that lie in the plane of one fin,
+    and the half width of the fin."""
+    rb, span = g["fins"]["body_radius"], g["fins"]["span"]
+    v = tri_body.reshape(-1, 3)
+    r = np.hypot(v[:, 1], v[:, 2])
+    th = np.arctan2(v[:, 2], v[:, 1])
+    far = r > rb + 0.7 * span
+    ph = th[far][0]
+    near = far & (np.cos(th - ph) > 0.97)
+    ph = np.angle(np.exp(1j * th[near]).mean())
+    c, s_ = np.cos(ph), np.sin(ph)
+    d = -tri_body[:, :, 1] * s_ + tri_body[:, :, 2] * c
+    s = tri_body[:, :, 1] * c + tri_body[:, :, 2] * s_
+    half = np.abs((-v[:, 1] * s_ + v[:, 2] * c)[near]).max() * 1.05
+    keep = (np.abs(d) <= half).all(axis=1) & (tri_body[:, :, 0].min(axis=1) > 0)
+    return np.stack([tri_body[keep][:, :, 0], s[keep]], axis=-1), half
+
+
+def geometry_fins(f):
+    """The fin of three inputs in its plane, the trapezoid that is extracted from it and its dimensions."""
+    from matplotlib.collections import PolyCollection
+
+    sc, ss, sf = g_json("sample_cad"), g_json("sample_stl"), g_json("basic_finner_stl")
+    tail = np.load(GDATA / "sample_cad_tail.npz")
+    cad = tail["verts"].astype(float)[tail["tris"]]
+    bf = read_stl(EXAMPLES / "basic_finner" / "basic_finner.stl") * 0.001
+    cases = [
+        ("サンプル機体（STL）", ss, g_body(read_stl(EXAMPLES / "sample_rocket.stl") * 0.001, ss)),
+        ("サンプル機体（CAD）", sc, g_body(cad, sc)),
+        ("Basic Finner（STL）", sf, g_body(bf, sf)),
     ]
-    for ax, xlim, lw in views:
-        sel = t if xlim is None else t[(t[:, :, 0].max(axis=1) >= xlim[0]) & (t[:, :, 0].min(axis=1) <= xlim[1])]
-        fc = face if xlim is None else face[(t[:, :, 0].max(axis=1) >= xlim[0]) & (t[:, :, 0].min(axis=1) <= xlim[1])]
-        ax.add_collection3d(Poly3DCollection(sel, facecolors=fc, edgecolors=(0.05, 0.12, 0.25, 0.55) if lw else "none", linewidths=lw, alpha=1.0))
-        lo, hi = sel.reshape(-1, 3).min(axis=0), sel.reshape(-1, 3).max(axis=0)
-        ax.set_xlim(lo[0], hi[0]); ax.set_ylim(lo[1], hi[1]); ax.set_zlim(lo[2], hi[2])
-        ax.set_box_aspect(hi - lo)
-        ax.view_init(elev=22, azim=-62)
-        ax.set_axis_off()
-    fig.savefig(f.out / "stl_mesh.svg", bbox_inches="tight")
-    fig.savefig(f.out / "stl_mesh.pdf", bbox_inches="tight")
-    plt.close(fig)
-    print("plot  stl_mesh.svg")
+    fig, axs = plt.subplots(1, 3, figsize=(8.2, 3.3), gridspec_kw={"wspace": 0.12})
+    for ax, (ttl, g, tb) in zip(axs, cases):
+        fn = g["fins"]
+        sil, half = g_fin_outline(tb, g)
+        rb, a, b, sp, m, xle, tk = fn["body_radius"], fn["root_chord"], fn["tip_chord"], fn["span"], fn["sweep"], fn["x_le_root"], fn["thickness"]
+        u = 1000.0
+        pc = PolyCollection(sil * u, facecolors="#b8d3f5", edgecolors="#b8d3f5", linewidths=0.3)
+        pc.set_rasterized(True)
+        ax.add_collection(pc)
+        xs = np.array([xle, xle + m, xle + m + b, xle + a]) * u
+        ys = np.array([rb, rb + sp, rb + sp, rb]) * u
+        ax.fill_between([xle * u - 0.2 * a * u, (xle + a) * u + 0.2 * a * u], rb * u - 0.4 * sp * u, rb * u, color=GRID, lw=0, zorder=3)
+        ax.plot(np.r_[xs, xs[0]], np.r_[ys, ys[0]], color=SERIES[1], lw=1.6)
+        ax.set_xlim(xle * u - 0.12 * a * u, (xle + a) * u + 0.12 * a * u)
+        ax.set_ylim((rb - 0.3 * sp) * u, (rb + 1.6 * sp) * u)
+        ax.set_aspect("equal")
+        ax.grid(False)
+        ax.set_xticks([])
+        ax.set_yticks([])
+        for sp_ in ax.spines.values():
+            sp_.set_visible(False)
+        arr = dict(arrowstyle="<->", color=INK, lw=0.8, shrinkA=0, shrinkB=0)
+        yb = (rb - 0.1 * sp) * u
+        ax.annotate("", (xle * u, yb), (xle * u + a * u, yb), arrowprops=arr)
+        ax.text((xle + a / 2) * u, yb - 0.04 * sp * u, f"$a$ = {a * u:.1f} mm", ha="center", va="top", fontsize=9, color=INK)
+        yt = (rb + 1.12 * sp) * u
+        ax.annotate("", ((xle + m) * u, yt), ((xle + m + b) * u, yt), arrowprops=arr)
+        ax.text((xle + m + b / 2) * u, yt + 0.04 * sp * u, f"$b$ = {b * u:.1f} mm", ha="center", va="bottom", fontsize=9, color=INK)
+        if m * u > 1.0:
+            ym = (rb + 1.36 * sp) * u
+            ax.plot([xle * u, xle * u], [rb * u, ym + 0.02 * sp * u], color=INK2, lw=0.5, ls=":")
+            ax.annotate("", (xle * u, ym), ((xle + m) * u, ym), arrowprops=arr)
+            ax.text((xle + m / 2) * u, ym + 0.04 * sp * u, f"$m$ = {m * u:.1f} mm", ha="center", va="bottom", fontsize=9, color=INK)
+            ax.plot([(xle + m) * u] * 2, [(rb + sp) * u, ym + 0.02 * sp * u], color=INK2, lw=0.5, ls=":")
+        xr = (xle + a) * u + 0.07 * a * u
+        ax.annotate("", (xr, rb * u), (xr, (rb + sp) * u), arrowprops=arr)
+        ax.text(xr + 0.02 * a * u, (rb + sp / 2) * u, f"$s$ = {sp * u:.1f} mm", ha="left", va="center", fontsize=9, color=INK, rotation=90)
+        ax.text(0.5, -0.03, f"$t$ = {tk * u:.2f} mm（中央値）" + ("" if m * u > 1.0 else "、$m$ = 0") , transform=ax.transAxes, ha="center", va="top", fontsize=9, color=INK2)
+        ax.set_anchor("N")
+        ax.set_title(ttl, fontsize=10, color=INK, pad=4)
+        ax.text(xle * u - 0.1 * a * u, (rb - 0.3 * sp) * u, "胴体", fontsize=8.5, color=INK2, va="bottom", zorder=4)
+    f.save(fig, "geometry_fins")
+
+
+def g_differences(gs, gc):
+    """Relative differences (%) CAD against STL of the extracted quantities: lengths against the STL value, the leading edge
+    position against the length and the sweep against the root chord."""
+    fs, fc = gs["fins"], gc["fins"]
+    q = [
+        ("全長 $L$", gs["length"], gc["length"], gs["length"]),
+        ("基準直径 $d$", 2 * gs["ref_radius"], 2 * gc["ref_radius"], 2 * gs["ref_radius"]),
+        ("ノーズ長 $L_n$", gs["nose"]["length"], gc["nose"]["length"], gs["nose"]["length"]),
+        ("根元翼弦 $a$", fs["root_chord"], fc["root_chord"], fs["root_chord"]),
+        ("端翼弦 $b$", fs["tip_chord"], fc["tip_chord"], fs["tip_chord"]),
+        ("スパン $s$", fs["span"], fc["span"], fs["span"]),
+        ("後退長 $m$（$a$ 比）", fs["sweep"], fc["sweep"], fs["root_chord"]),
+        ("前縁位置 $x_{le}$（$L$ 比）", fs["x_le_root"], fc["x_le_root"], gs["length"]),
+        ("厚さ $t$", fs["thickness"], fc["thickness"], fs["thickness"]),
+    ]
+    return [(n, 100 * abs(c - s) / ref) for n, s, c, ref in q]
+
+
+def geometry_compare(f):
+    """CAD against STL: difference of the radius profile along the body, and of the extracted quantities."""
+    bs, bc = g_json("basic_finner_stl"), g_json("basic_finner_cad")
+    ss, sc = g_json("sample_stl"), g_json("sample_cad")
+    bar = pd.read_csv(GDATA / "basic_finner_barrowman.csv", comment="#")
+    fig, axs = plt.subplots(1, 2, figsize=(8.2, 3.4), gridspec_kw={"width_ratios": [1, 1.1], "wspace": 1.0})
+    ax = axs[0]
+    for (a, b, lab, col) in ((bs, bc, "Basic Finner（同じモデル）", SERIES[0]), (ss, sc, "サンプル機体（モデルが違う）", SERIES[1])):
+        ra = np.array([p["r"] for p in a["profile"]])
+        rb_ = np.array([p["r"] for p in b["profile"]])
+        x = np.array([p["x"] for p in a["profile"]]) / a["length"]
+        ax.plot(x, 100 * (rb_ - ra) / a["ref_radius"], color=col, lw=1.4, label=lab)
+    ax.axhline(0, color=INK2, lw=0.6)
+    ax.set_xlabel("先端からの距離 / 全長")
+    ax.set_ylabel("胴体半径の差 (CAD − STL) / $r_{\\max}$ [%]")
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.23), fontsize=8.5)
+    ax.set_xlim(0, 1)
+    # right: relative differences of the quantities
+    ax = axs[1]
+    d_b, d_s = g_differences(bs, bc), g_differences(ss, sc)
+    cna = np.abs(bar.cna_cad - bar.cna_stl) / bar.cna_stl
+    xcp = np.abs(bar.xcp_cad_m - bar.xcp_stl_m) / bs["length"]
+    d_b += [("$C_{N\\alpha}$（部品積み上げ法）", 100 * cna.max()), ("圧力中心 $x_{cp}$（$L$ 比）", 100 * xcp.max())]
+    names = [n for n, _ in d_b]
+    y = np.arange(len(names))[::-1]
+    floor = 1e-4
+    vb = np.maximum([v for _, v in d_b], floor)
+    vs = np.maximum([v for _, v in d_s], floor)
+    ax.plot(vb, y, "o", color=SERIES[0], ms=6, label="Basic Finner", zorder=3)
+    ax.plot(vs, y[: len(vs)], "o", mfc="white", mec=SERIES[1], mew=1.6, ms=6, label="サンプル機体", zorder=3)
+    for yy, v in zip(y, vb):
+        ax.plot([floor, v], [yy, yy], color=GRID, lw=1.0, zorder=1)
+    ax.set_xscale("log")
+    ax.set_xlim(floor, 30)
+    ax.set_yticks(y)
+    ax.set_yticklabels(names, fontsize=8.5)
+    ax.set_xlabel("CAD と STL の差 [%]")
+    ax.grid(axis="y", visible=False)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.45, -0.2), ncol=2, fontsize=8.5)
+    f.save(fig, "geometry_compare")
+
+
+def geometry_sensitivity(f):
+    """Fin values of the sample rocket against the number of slices and the fin threshold (STL and CAD)."""
+    ns = pd.read_csv(GDATA / "sweep_n_slices.csv", comment="#")
+    th = pd.read_csv(GDATA / "sweep_fin_threshold.csv", comment="#")
+    th = th[th.fin_threshold > 0]
+    th = th[th.fins == 4]
+    rows = [("root_chord_m", "根元翼弦 [mm]", 200.0), ("sweep_m", "後退長 [mm]", 80.0),
+            ("x_le_root_m", "前縁位置 [mm]", 1300.0)]
+    fig, axs = plt.subplots(len(rows), 2, figsize=(8.0, 4.2), sharex="col", gridspec_kw={"hspace": 0.2, "wspace": 0.28})
+    for i, (col, lab, design) in enumerate(rows):
+        for j, (df, key) in enumerate(((ns, "n_slices"), (th, "fin_threshold"))):
+            ax = axs[i, j]
+            ax.axhline(design, color=INK2, lw=0.9, ls=":")
+            for inp, c, mk, name in (("stl", SERIES[0], "o", "STL"), ("cad", SERIES[1], "s", "CAD")):
+                d = df[df.input == inp]
+                ax.plot(d[key], d[col] * 1000, marker=mk, ms=4.5, color=c, label=name)
+            dflt = 600 if key == "n_slices" else 0.05
+            ax.axvline(dflt, color=SERIES[2], lw=0.9, ls="--")
+            if key == "n_slices":
+                ax.set_xscale("log")
+            if j == 0:
+                ax.set_ylabel(lab, fontsize=8.5)
+            if i == 0:
+                ax.set_title("断面の数 ``n_slices``".replace("``", "") if key == "n_slices" else "しきい値 ``fin_threshold``".replace("``", ""), fontsize=10, color=INK, loc="left")
+    axs[0, 1].legend(loc="upper right", fontsize=8.5, ncol=2)
+    axs[-1, 0].set_xlabel("断面の数 $N_s$")
+    axs[-1, 1].set_xlabel("しきい値 $\\delta / r_{\\max}$")
+    f.save(fig, "geometry_sensitivity")
+
+
+def geometry_figures(f):
+    geometry_cad_to_triangles(f)
+    geometry_axis(f)
+    geometry_slices(f)
+    geometry_fins(f)
+    geometry_compare(f)
+    geometry_sensitivity(f)
+# <<< geometry
 
 
 def basic_finner_validation(f, vdir):
@@ -1345,10 +1745,12 @@ def mc_sample_convergence(f, data):
 
 
 def main():
+    if sys.argv[1] == "--geometry":
+        geometry_figures(Figs(Path(sys.argv[2])))
+        return
     out, figdir = Path(sys.argv[1]), Path(sys.argv[2])
     f = Figs(figdir)
     theory(f)
-    stl_mesh(f)
     rigid_body(f)
     from_outputs(f, out)
     if len(sys.argv) > 3:
@@ -1370,6 +1772,8 @@ def main():
     vdir = data.parent / "validation" / "basic_finner"
     if (vdir / "summary_vs_measured.csv").exists():
         basic_finner_validation(f, vdir)
+    if (data.parent / "geometry" / "provenance.json").exists():
+        geometry_figures(f)
     # Figures of the decision chapters (data committed under doc/data).
     root = data.parent
     aero_cost_accuracy(f, data)

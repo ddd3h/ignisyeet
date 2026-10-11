@@ -148,7 +148,7 @@
 この :math:`\beta` は、:ref:`page-theory-aero-coefficients` の横滑り角 :math:`\beta` とは別の量である。
 同じ記号を使うが、本章（とパネル法）では圧縮性の係数だけを指す。
 
-**亜音速（:math:`M\le0.9`）**
+**亜音速**\ （:math:`M\le0.9`）
 
 フィン 1 枚の法線力傾斜は、Diederich の平面翼の式 :cite:`diederich` に Prandtl–Glauert の圧縮性補正 :cite:`glauert` を加えた形で
 
@@ -166,7 +166,7 @@
 
 （:math:`N` 枚分、干渉なし）と一致する。
 
-**超音速（:math:`M\ge1.5`）**
+**超音速**\ （:math:`M\ge1.5`）
 
 超音速では、薄い平板の表面圧力係数を、面の傾き :math:`\eta` について Busemann の 3 次展開 :cite:`barrowmanfin,niskanen`
 
@@ -205,7 +205,7 @@
 
 である。
 
-**遷音速（:math:`0.9<M<1.5`）**
+**遷音速**\ （:math:`0.9<M<1.5`）
 
 遷音速では簡単な理論がないので、迎角 :math:`\alpha` を固定し、:math:`M=0.9` の亜音速の値と :math:`M=1.5` の超音速の値を、
 両端の値と :math:`M` についての傾きが一致する **3 次 Hermite 補間** でつなぐ。

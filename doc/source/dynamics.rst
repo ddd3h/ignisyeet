@@ -586,7 +586,7 @@ Magnus 力
 大きさは :math:`C_{N,\mathrm{Magnus}}=C_{Np\alpha}^{*}\,\hat p\,\sin\alpha_t` で、向き :math:`\bm{u}\times\bm{e}_x=(0,u_z,-u_y)` は静的な法線力の面から 90° 回った向きである。
 :math:`\omega_x>0` で対気速度の横の成分が :math:`+z_b` 向き（:math:`u_z>0`）なら、``cnpa`` が正のとき力は :math:`+y_b` を向く。
 McCoy の Magnus 力の係数 :math:`C_{Np\alpha}` は :math:`pd/V` で無次元化するので、:math:`\hat p=pd/(2V)` を使う表の値は :math:`C_{Np\alpha}^{*}=2C_{Np\alpha}` である。
-符号の約束も同じである。McCoy の 6 自由度の式の Magnus の加速度は :math:`(\rho Sd\,p\,C_{Np\alpha}/2m)(\bm{v}\times\bm{x})`\ （:math:`\bm{v}` は機体の対気速度、:math:`\bm{x}` は機軸の単位ベクトル）:cite:`mccoy` で、
+符号の約束も同じである。McCoy の 6 自由度の式の Magnus の加速度は :math:`(\rho Sd\,p\,C_{Np\alpha}/2m)(\bm{v}\times\bm{x})`\ （:math:`\bm{v}` は機体の対気速度、:math:`\bm{x}` は機軸の単位ベクトル）\ :cite:`mccoy` で、
 :math:`\bm{v}\times\bm{x}` は\ :eq:`eq-magnus` の :math:`\bm{u}\times\bm{e}_x` である。McCoy によれば、弾丸の :math:`C_{Np\alpha}` はふつう小さな負の値である。
 Magnus 力は静的な法線力の圧力中心 :math:`x_{cp}`\ （一般表では :eq:`eq-xcp-eff` の等価な圧力中心）に働くとし、そのモーメント :math:`(x_{cg}-x_{cp},0,0)^\top\times\Delta\bm{F}_b` を加える。
 これに、圧力中心まわりの Magnus のモーメント

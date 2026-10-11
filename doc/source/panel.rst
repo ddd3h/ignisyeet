@@ -661,7 +661,7 @@ Mach 数が :math:`M_{lo}=\min(` ``transonic[0]``\ :math:`,\ ` 最後の亜音�
    C_{f}^{\mathrm{panel}}+C_{x}^{\mathrm{wave}}+C_{D,\mathrm{base}}+C_{D,\mathrm{fin}}+C_{D,\mathrm{bt}}+C_{D,\mathrm{extra}} & (M\ge M_{hi})
    \end{cases}
 
-:math:`C_{D,\mathrm{nose}}, C_{D,\mathrm{base}}, C_{D,\mathrm{fin}}, C_{D,\mathrm{bt}}, C_{D,\mathrm{extra}}` は:ref:`page-theory-barrowman` の部品積み上げ法の項（:eq:`eq-cd0`）をそのまま使う。
+:math:`C_{D,\mathrm{nose}}, C_{D,\mathrm{base}}, C_{D,\mathrm{fin}}, C_{D,\mathrm{bt}}, C_{D,\mathrm{extra}}` は :ref:`page-theory-barrowman` の部品積み上げ法の項（:eq:`eq-cd0`）をそのまま使う。
 :math:`C_{D,\mathrm{base}}` は燃焼中にノズル出口の面積を差し引くので、係数表に燃焼中・燃焼後の 2 種類の値がある点も同じである。
 超音速では、ノーズの項の代わりに局所傾斜法で積分した造波抗力 :math:`C_x^{\mathrm{wave}}`\ （ノーズ・肩・ボートテール・フィンの厚みの寄与を含む）を使う。
 遷音速は前節の補間で両端をつなぐ。

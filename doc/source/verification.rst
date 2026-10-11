@@ -220,7 +220,7 @@ ECEF での積分
 * **カントの基準**：一般表（:math:`\delta_{\mathrm{ref}}=2^\circ`）では、カントが基準と等しいとき表の :math:`C_l` だけで、3° のとき :math:`C_l+C_{l\delta}\cdot1^\circ` でロールが定まる。
 * **慣性テンソル**：点質量の平行軸の項 :math:`I_{xy}=-mxy` などが :math:`10^{-15}` 以内で一致する。主慣性モーメントの比が :math:`10^8` を超えるもの、:math:`I_{xx}\le0` は ``inertia tensor is singular or ill-conditioned`` のエラーになる。
   乾燥重心の横ずれについては、推進剤を含めた重心の横ずれと慣性乗積が :math:`10^{-12}` で一致する。
-* **推力の傾きとノズルのオフセット**：傾き 2° の加速度成分が :math:`T\sin\varepsilon/m` と :math:`T(1-\cos\varepsilon)/m`、角加速度が :math:`(x_{\mathrm{aft}}-x_{cg})T\sin\varepsilon/I_{yy}`（:math:`10^{-9}` 以内）。オフセット 0.01 m のヨーまわりの角加速度は :math:`-0.01\,T/I_{zz}` である。
+* **推力の傾きとノズルのオフセット**：傾き 2° の加速度成分が :math:`T\sin\varepsilon/m` と :math:`T(1-\cos\varepsilon)/m`、角加速度が :math:`(x_{\mathrm{aft}}-x_{cg})T\sin\varepsilon/I_{yy}`\ （:math:`10^{-9}` 以内）。オフセット 0.01 m のヨーまわりの角加速度は :math:`-0.01\,T/I_{zz}` である。
 * **一般表の飛翔**：サンプルの軸対称表と、それを展開した一般表の頂点高度の差は無風で 0.004 m、5 m/s の風で 0.04 m。一般表で飛ばした設定ファイルのサンプルの頂点は 4440.5 m に 0.5 m 以内で一致する。
 * **ランチャ上のロール角**：仰角 80° で ``roll_deg = 90`` にすると、機体座標が期待どおりに回る。
 * **サンプルでのカント**：``fin_cant_deg = 1.0`` で最大ロール角速度は約 88 rad/s（Mach 1.54、燃焼終了の直前）である。この時刻の表の値（:math:`C_{l\delta}=16.7`、:math:`C_{lp}=-34.4`）と対気速度 519 m/s から定常ロールの式で見積もった値も約 88 rad/s で、飛翔計算と一致する。
@@ -271,8 +271,8 @@ ECEF での積分
 
 その他の確認は次のとおりである。
 
-* **Magnus 力の向き**：ロール角速度 200 rad/s、迎角 2°、``cnpa = 1`` で、力は :math:`+y_b` 向き、大きさ :math:`qS\,C_{Np\alpha}^{*}\hat p\sin\alpha`（:math:`10^{-9}` 以内）。McCoy の式 :cite:`mccoy` から手で導いた向きに一致する。
-* **対流の回転の力と Magnus のモーメント**：力は :math:`-\tfrac12\rho SL_0\,qV`（:math:`-z_b` 向き）、モーメントは :math:`qSd\,C_{mp\alpha}^{*}\hat p\sin\alpha` である。
+* **Magnus 力の向き**：ロール角速度 200 rad/s、迎角 2°、``cnpa = 1`` で、力は :math:`+y_b` 向き、大きさ :math:`qS\,C_{Np\alpha}^{*}\hat p\sin\alpha`\ （:math:`10^{-9}` 以内）。McCoy の式 :cite:`mccoy` から手で導いた向きに一致する。
+* **対流の回転の力と Magnus のモーメント**：力は :math:`-\tfrac12\rho SL_0\,qV`\ （:math:`-z_b` 向き）、モーメントは :math:`qSd\,C_{mp\alpha}^{*}\hat p\sin\alpha` である。
 * **回転による法線力の符号**：減衰のモーメントと同じ符号で、式に :math:`10^{-12}` で一致する。
 * **風のシアの中の遅れのモーメント**：鉛直に 100 m/s で上がる機体で、式と :math:`10^{-9}` で一致する。風のシアの項を除くと 20 % 以上違う。
 * **迎角による消え方**：0° で 1、15° で :math:`\cos15^\circ`、30° 以上で 0 になり、単調に減る。

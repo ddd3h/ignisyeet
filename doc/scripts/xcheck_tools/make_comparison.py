@@ -5,7 +5,7 @@
 Usage: python make_comparison.py <work dir>
 <work dir> holds ign/ (run_ignisyeet.sh), or/ (run_openrocket.py) and rp/ (run_rocketpy.py).
 
-Writes static_aero.csv, flight_nowind.csv, flight_wind.csv, summary.csv, sensitivity.csv.
+Writes static_aero.csv, components_or.csv, flight_nowind.csv, flight_wind.csv, summary.csv, sensitivity.csv.
 The tools are labelled ign (IgnisYeet), or (OpenRocket), rp_or and rp_ign (RocketPy with the drag
 coefficient of OpenRocket and of IgnisYeet).
 """
@@ -98,6 +98,8 @@ def main():
         "mach": m,
         "cna_ign": np.interp(m, a.mach, a.cna), "xcp_ign": np.interp(m, a.mach, a.xcp),
         "cd_off_ign": np.interp(m, a.mach, a.cd_off), "cd_on_ign": np.interp(m, a.mach, a.cd_on),
+        "cd_friction_ign": np.interp(m, a.mach, a.friction), "cd_nose_ign": np.interp(m, a.mach, a.nose),
+        "cd_base_ign": np.interp(m, a.mach, a.base), "cd_fins_ign": np.interp(m, a.mach, a.fins),
         "cna_or": o.cna, "xcp_or": o.xcp, "cd_or": o.cd_total,
         "cd_friction_or": o.cd_friction, "cd_pressure_or": o.cd_pressure, "cd_base_or": o.cd_base,
         "cna_rp": r.cna, "xcp_rp": r.xcp,
@@ -105,6 +107,7 @@ def main():
     for fins in ("square", "airfoil"):
         st[f"cd_or_{fins}"] = pd.read_csv(orr / f"or_static_{fins}.csv").cd_total
     st.round(6).to_csv(out / "static_aero.csv", index=False)
+    pd.read_csv(orr / "or_components_rounded.csv").round(6).to_csv(out / "components_or.csv", index=False)
 
     rows, flights = [], {}
     for case in ("nowind", "wind"):

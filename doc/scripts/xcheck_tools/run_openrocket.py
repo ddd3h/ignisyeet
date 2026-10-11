@@ -8,6 +8,7 @@ Writes to <out_dir>:
   or_static.csv        mach, cd_total, cd_friction, cd_pressure, cd_base, cna (1/rad), xcp (m from the nose tip)
                        at alpha = 0 (cd) and alpha = 1 deg (cna, xcp)
   or_flight_<case>_<fins>.csv  time series up to apogee (case: nowind, wind)
+  or_components_<fins>.csv     nose, body tube and fins: CNa, CP and drag contributions at five Mach numbers
   or_summary_<fins>.json       the scalar results of each case
 """
 
@@ -56,6 +57,37 @@ def static_aero(rocket, fcid, cfg, mach_grid):
             else:
                 out.update(cna=float(f.getCN()) / aoa, xcp=float(f.getCP().x))
         rows.append(out)
+    return rows
+
+
+def components(rocket, fcid, cfg, machs, fin_count):
+    """Per-component contributions (nose, body tube, fins) to CNa, CP and the drag coefficients at alpha = 1 deg.
+
+    OpenRocket reports the drag of one fin; the contribution to the rocket is fin_count times that.
+    """
+    from info.openrocket.core.aerodynamics import BarrowmanCalculator, FlightConditions
+    from info.openrocket.core.logging import WarningSet
+    from info.openrocket.core.models.atmosphere import ExtendedISAModel
+
+    config = rocket.getFlightConfiguration(fcid)
+    calc = BarrowmanCalculator()
+    atm = ExtendedISAModel().getConditions(cfg["launch"]["altitude"])
+    rows = []
+    aoa = math.radians(1.0)
+    for m in machs:
+        fc = FlightConditions(config)
+        fc.setAtmosphericConditions(atm)
+        fc.setMach(float(m))
+        fc.setAOA(aoa)
+        res = calc.getForceAnalysis(config, fc, WarningSet())
+        for key in res.keySet():
+            name = str(key.getName())
+            if name not in ("Nose", "Body", "Fins"):
+                continue
+            f = res.get(key)
+            n = fin_count if name == "Fins" else 1
+            rows.append({"mach": float(m), "component": name, "cna": float(f.getCN()) / aoa, "xcp_m": float(f.getCP().x),
+                         "cd_pressure": n * float(f.getPressureCD()), "cd_friction": n * float(f.getFrictionCD()), "cd_base": n * float(f.getBaseCD())})
     return rows
 
 
@@ -116,6 +148,12 @@ def main():
     rows = static_aero(rocket, fcid, cfg, machs)
     tag = a.fins if a.dt == 0.01 else f"{a.fins}_dt{a.dt:g}"
     with open(out / f"or_static_{a.fins}.csv", "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+
+    rows = components(rocket, fcid, cfg, [0.3, 0.8, 1.2, 2.0, 3.0], common.load_geometry(a.geometry)["fin_count"])
+    with open(out / f"or_components_{a.fins}.csv", "w", newline="") as fh:
         w = csv.DictWriter(fh, fieldnames=list(rows[0]))
         w.writeheader()
         w.writerows(rows)

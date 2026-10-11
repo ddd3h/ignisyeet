@@ -30,7 +30,7 @@ jar = Path(os.environ["OPENROCKET_JAR"])
 java = run("java", "-version").splitlines()[0]
 info = {
     "run_date": datetime.date.today().isoformat(),
-    "ignisyeet": {"version": run(sys.argv[1], "--version").splitlines()[0], "commit": run("git", "rev-parse", "--short", "HEAD")},
+    "ignisyeet": {"version": run(sys.argv[1], "--version").splitlines()[0], "repository_commit_at_run": run("git", "rev-parse", "--short", "HEAD")},
     "openrocket": {
         "version": "24.12",
         "jar": jar.name,

@@ -42,7 +42,7 @@ This takes a few minutes and runs, in order:
 | `run_openrocket.py` | builds the rocket (`build_openrocket_model.py`), writes `sample_rocket.ork`, computes the static coefficients (alpha = 0 and 1 deg, Mach 0.02 to 3) and flies the two cases to apogee for the fin sections `rounded`, `square`, `airfoil` (and `rounded` with a time step of 0.002 s) |
 | `make_drag_inputs.py` | the drag curves that RocketPy is fed with: `drag_ign.csv` (IgnisYeet, power off and on) and `drag_or.csv` (OpenRocket's total drag coefficient, `rounded` fins) |
 | `run_rocketpy.py` | builds the rocket, evaluates its Barrowman coefficients and flies both cases to apogee, once with each drag curve |
-| `make_comparison.py` | `static_aero.csv`, `flight_nowind.csv`, `flight_wind.csv`, `alpha_wind.csv`, `summary.csv`, `sensitivity.csv` |
+| `make_comparison.py` | `static_aero.csv`, `components_or.csv` (OpenRocket's nose, body-tube and fin contributions), `flight_nowind.csv`, `flight_wind.csv`, `alpha_wind.csv`, `summary.csv`, `sensitivity.csv` |
 | `check_environment.py` | `environment.csv`: air density and gravity of the three programs |
 | `run_basic_finner.py` | `basic_finner.csv`: static coefficients of the Basic Finner in OpenRocket and RocketPy next to the measured values and IgnisYeet's |
 | `write_provenance.py` | `provenance.json` |
@@ -69,6 +69,7 @@ with `extra_cd = 0` are the ones compared.
 
 ## Notes
 
+- OpenRocket's results change in the sixth digit from run to run (apogee 4875.17 and 4875.16 m); the tables quote one decimal.
 - `sample_rocket.ork` is for inspection. It refers to the motor by its digest, so OpenRocket's GUI shows the
   motor only after `sample_motor_nocase.eng` is imported. The scripts do not load it; they build the rocket in
   memory.

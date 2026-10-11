@@ -210,6 +210,7 @@ OpenRocket は Barrowman 法による空力（抗力を含む）と 6 自由度�
 
 .. csv-table:: 三つのプログラムに共通に与えた入力
    :delim: ¦
+   :class: longtable
    :header-rows: 1
    :widths: 18 82
 
@@ -228,7 +229,7 @@ OpenRocket には、機体の質量、重心、慣性モーメントをそのま
 * **追加抗力** ``rocket.extra_cd``：IgnisYeet のサンプルは、ランチャラグなどの抗力として 0.02 を加える。OpenRocket と RocketPy にはこの機体のラグの入力がないので、IgnisYeet でも 0 にして比べる。サンプルの値のままの結果は :numref:`tbl-vv-tools-sens` に示す。
 * **フィンの断面**：IgnisYeet のサンプルは前縁が丸く後縁が平ら（``rocket.fin_le = "rounded"``、``rocket.fin_te = "square"``）である。OpenRocket のフィンの断面は、前縁・後縁とも平ら（square）、前縁・後縁とも丸い（rounded）、前縁が丸く後縁がとがる（airfoil）の 3 種で、同じ組み合わせはない。rounded を主として比べ、square と airfoil は幅として示す。
 * **抗力**：RocketPy には抗力係数の曲線を与える。(i) OpenRocket の抗力係数（:math:`\alpha=0`、rounded、射点の大気、燃焼中も同じ曲線）と、(ii) IgnisYeet の抗力係数（燃焼後と燃焼中の 2 本）の 2 通りで飛ばした。(ii) の RocketPy と IgnisYeet の差は、抗力を共通にしたときの飛翔計算（質量、推力、重力、大気、ランチャ、数値積分、法線力の扱い）の差を表し、(i) の RocketPy と OpenRocket の差も同じである。
-* **独立な部分**：空力（抗力の組み立て、法線力、圧力中心、ピッチ減衰）、重力（IgnisYeet は :math:`g_0=9.80665\ \mathrm{m/s^2}` の逆 2 乗則、OpenRocket と RocketPy は緯度 34.7° の値で、射点の上 500 m で 9.7955 m/s^2 と、IgnisYeet より 0.10 % 小さい）、ランチャ離脱の判定、数値積分である。空気の密度は 3 者で 0.03 % 以内（高さ 0.5〜4 km）で一致した。
+* **独立な部分**：空力（抗力の組み立て、法線力、圧力中心、ピッチ減衰）、重力（IgnisYeet は :math:`g_0=9.80665\ \mathrm{m/s^2}` の逆 2 乗則、OpenRocket と RocketPy は緯度 34.7° の値で、射点の上 500 m で :math:`9.7955\ \mathrm{m/s^2}` と、IgnisYeet より 0.10 % 小さい）、ランチャ離脱の判定、数値積分である。空気の密度は 3 者で 0.03 % 以内（高さ 0.5〜4 km）で一致した。
 
 OpenRocket の時間刻みは 0.01 s で、0.002 s にしても頂点高度は 0.1 m も変わらない。RocketPy は相対許容誤差と絶対許容誤差を :math:`10^{-8}` にした。
 
@@ -250,6 +251,7 @@ OpenRocket の時間刻みは 0.01 s で、0.002 s にしても頂点高度は 0
 
 .. csv-table:: サンプル機体の静的な空力。三つの値は IgnisYeet / OpenRocket / RocketPy の順。:math:`C_{N\alpha}` の単位は 1/rad。抗力は IgnisYeet が燃焼後の値、OpenRocket が rounded の値（括弧は 3 種の断面の幅）、RocketPy は抗力を計算しない
    :delim: ¦
+   :class: longtable
    :header-rows: 1
    :widths: 10 24 26 40
 
@@ -268,8 +270,9 @@ OpenRocket の時間刻みは 0.01 s で、0.002 s にしても頂点高度は 0
 
 .. csv-table:: 零揚力の抗力係数の内訳。IgnisYeet（燃焼後）と OpenRocket（rounded）。フィンの縁は前縁と後縁の圧力抗力
    :delim: ¦
+   :class: longtable
    :header-rows: 1
-   :widths: 14 14 14 14 14 14 16
+   :widths: 8 22 14 14 14 16 12
 
    :math:`M`¦プログラム¦摩擦¦ノーズ¦底面¦フィンの縁¦合計
    0.3¦IgnisYeet¦0.310¦0.0005¦0.132¦0.032¦0.474
@@ -293,6 +296,7 @@ OpenRocket の時間刻みは 0.01 s で、0.002 s にしても頂点高度は 0
 
 .. csv-table:: 無風の上昇。頂点は射点からの高さ。最大加速度は燃焼終了の 0.05 s 前までの最大値。水平距離は頂点での射点からの距離。頂点時刻と燃焼終了の値は 0.01 s の出力の間隔による
    :delim: ¦
+   :class: longtable
    :header-rows: 1
    :widths: 30 17 17 18 18
 
@@ -332,6 +336,7 @@ OpenRocket の時間刻みは 0.01 s で、0.002 s にしても頂点高度は 0
 
 .. csv-table:: 頂点高度 [m] の、比べる条件の外の入力に対する変化
    :delim: ¦
+   :class: longtable
    :header-rows: 1
    :widths: 56 22 22
 
@@ -354,6 +359,7 @@ OpenRocket の時間刻みは 0.01 s で、0.002 s にしても頂点高度は 0
 
 .. csv-table:: 風 4 m/s の上昇。頂点高度の変化は無風との差
    :delim: ¦
+   :class: longtable
    :header-rows: 1
    :widths: 30 17 17 18 18
 
@@ -390,6 +396,7 @@ Basic Finner（:ref:`sec-validation`）の :math:`C_{N\alpha}`、圧力中心、
 
 .. csv-table:: Basic Finner の :math:`C_{N\alpha}` [1/rad]、圧力中心（先端から、口径）、:math:`C_{X0}`。値は 実測 / IgnisYeet / OpenRocket / RocketPy の順（:math:`C_{X0}` は RocketPy なし）
    :delim: ¦
+   :class: longtable
    :header-rows: 1
    :widths: 10 30 30 30
 

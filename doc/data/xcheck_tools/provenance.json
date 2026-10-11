@@ -1,0 +1,32 @@
+{
+  "run_date": "2026-10-11",
+  "ignisyeet": {
+    "version": "IgnisYeet 0.4.0 — Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke).",
+    "binary": "/home/ddd3h/ignisyeet/.claude/tmp/xcheck-tools/target/release/ignisyeet",
+    "rust_source_commit": "ddb4070",
+    "repository_commit_at_run": "41ae873"
+  },
+  "openrocket": {
+    "version": "24.12",
+    "jar": "OpenRocket-24.12.jar",
+    "jar_url": "https://github.com/openrocket/openrocket/releases/download/release-24.12/OpenRocket-24.12.jar",
+    "jar_sha256": "4959b72f52f5f607941e9722abbb7b7f0c4a38ebbbf84204a329db9f31c4f897",
+    "java": "openjdk version \"25.0.4.1\" 2026-08-18",
+    "access": "JPype1 1.7.1 against info.openrocket.core.* (the Python package orhelper is not used: it targets the pre-2022 package net.sf.openrocket)",
+    "simulation": "Extended Barrowman aerodynamics, 6-DOF RK4, time step 0.01 s (0.002 s checked), Flat Earth, ISA atmosphere at the launch altitude"
+  },
+  "rocketpy": {
+    "version": "1.13.0",
+    "numpy": "2.5.4",
+    "scipy": "1.18.1",
+    "pandas": "3.0.6",
+    "simulation": "6-DOF, LSODA, rtol = atol = 1e-8"
+  },
+  "python": "3.12.14",
+  "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.43",
+  "inputs": [
+    "examples/sample.toml",
+    "examples/sample_rocket.stl",
+    "examples/sample_motor.eng"
+  ]
+}

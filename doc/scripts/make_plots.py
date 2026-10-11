@@ -1744,6 +1744,140 @@ def mc_sample_convergence(f, data):
     f.save(fig, "mc_sample_convergence")
 
 
+# ---------------------------------------------------------------- cross-comparison with OpenRocket and RocketPy
+
+XC_STYLE = {  # key: (label, colour, linestyle)
+    "ign": ("IgnisYeet", SERIES[0], "-"),
+    "or": ("OpenRocket", SERIES[1], "-"),
+    "rp_or": ("RocketPy（OpenRocket の抗力）", SERIES[2], "--"),
+    "rp_ign": ("RocketPy（IgnisYeet の抗力）", SERIES[3], "--"),
+}
+
+
+def xcheck_static(f, xd):
+    """CNalpha, centre of pressure and zero-lift drag against Mach for IgnisYeet, OpenRocket and RocketPy."""
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+
+    d = pd.read_csv(xd / "static_aero.csv")
+    fig, axs = plt.subplots(1, 3, figsize=(9.6, 3.3))
+    for ax, (q, lab) in zip(axs[:2], (("cna", "$C_{N\\alpha}$ [1/rad]"), ("xcp", "圧力中心 $x_{cp}$（先端から）[m]"))):
+        ax.plot(d.mach, d[f"{q}_ign"], color=SERIES[0])
+        ax.plot(d.mach, d[f"{q}_or"], color=SERIES[1])
+        ax.plot(d.mach, d[f"{q}_rp"], color=SERIES[2], ls="--")
+        ax.set_ylabel(lab)
+    ax = axs[2]
+    band = d[["cd_or", "cd_or_square", "cd_or_airfoil"]]
+    ax.fill_between(d.mach, band.min(axis=1), band.max(axis=1), color=SERIES[1], alpha=0.18, lw=0)
+    ax.plot(d.mach, d.cd_or, color=SERIES[1])
+    ax.plot(d.mach, d.cd_off_ign, color=SERIES[0])
+    ax.plot(d.mach, d.cd_on_ign, color=SERIES[0], ls=":")
+    ax.set_ylabel("零揚力抗力係数 $C_D$")
+    for ax in axs:
+        ax.set_xlabel("Mach 数")
+        ax.set_xlim(0, 3)
+    handles = [Line2D([], [], color=SERIES[0]), Line2D([], [], color=SERIES[0], ls=":"), Line2D([], [], color=SERIES[1]),
+               Patch(color=SERIES[1], alpha=0.18, lw=0), Line2D([], [], color=SERIES[2], ls="--")]
+    labels = ["IgnisYeet（抗力は燃焼後）", "IgnisYeet（抗力は燃焼中）", "OpenRocket（フィン断面 rounded）", "OpenRocket（フィン断面 3 種の幅）", "RocketPy"]
+    fig.legend(handles, labels, loc="lower center", ncol=3, bbox_to_anchor=(0.5, -0.12), fontsize=8.5)
+    fig.tight_layout()
+    f.save(fig, "xcheck_static")
+
+
+def xcheck_flight(f, xd):
+    """Altitude and speed against time (no wind), and the differences between pairs of programs."""
+    d = pd.read_csv(xd / "flight_nowind.csv")
+    fig, axs = plt.subplots(3, 2, figsize=(9.0, 7.4), sharex=True, gridspec_kw={"height_ratios": [2.2, 1.2, 1.2]})
+    for j, (q, lab, unit) in enumerate((("alt", "高度 [m]", "m"), ("v", "速さ [m/s]", "m/s"))):
+        ax = axs[0, j]
+        for k, (name, col, ls) in XC_STYLE.items():
+            ax.plot(d.t, d[f"{q}_{k}"], color=col, ls=ls, lw=1.8 if k in ("ign", "or") else 1.4, label=name)
+        ax.set_ylabel(lab)
+        ax = axs[1, j]
+        ax.axhline(0, color=INK2, lw=0.8)
+        ax.plot(d.t, d[f"{q}_or"] - d[f"{q}_ign"], color=SERIES[1], label="OpenRocket − IgnisYeet")
+        ax.set_ylabel(f"差 [{unit}]")
+        ax = axs[2, j]
+        ax.axhline(0, color=INK2, lw=0.8)
+        ax.plot(d.t, d[f"{q}_rp_ign"] - d[f"{q}_ign"], color=SERIES[3], ls="--", label="RocketPy（IgnisYeet の抗力）− IgnisYeet")
+        ax.plot(d.t, d[f"{q}_rp_or"] - d[f"{q}_or"], color=SERIES[2], ls="--", label="RocketPy（OpenRocket の抗力）− OpenRocket")
+        ax.set_ylabel(f"差 [{unit}]")
+        ax.set_xlabel("時刻 [s]")
+        ax.set_xlim(0, 28)
+    h, lab = axs[0, 0].get_legend_handles_labels()
+    h1, lab1 = axs[1, 0].get_legend_handles_labels()
+    h2, lab2 = axs[2, 0].get_legend_handles_labels()
+    fig.legend(h + h1 + h2, lab + lab1 + lab2, loc="lower center", ncol=2, bbox_to_anchor=(0.5, -0.115), fontsize=8.5)
+    fig.tight_layout()
+    f.save(fig, "xcheck_flight")
+
+
+def xcheck_diff(f, xd):
+    """Relative differences of the ascent metrics between pairs of programs (no wind and 4 m/s wind)."""
+    s = pd.read_csv(xd / "summary.csv").pivot_table(index=["case", "metric"], columns="tool", values="value")
+    metrics = [("apogee_m", "頂点高度"), ("apogee_time_s", "頂点時刻"), ("max_velocity_ms", "最大速さ"), ("burnout_altitude_m", "燃焼終了高度"),
+               ("burnout_velocity_ms", "燃焼終了速さ"), ("rail_exit_speed_ms", "ランチャ離脱速さ"), ("apogee_horizontal_m", "頂点の水平距離")]
+    pairs = [("or", "ign", "OpenRocket / IgnisYeet", SERIES[1], "o"), ("rp_ign", "ign", "RocketPy（IgnisYeet の抗力）/ IgnisYeet", SERIES[3], "s"),
+             ("rp_or", "or", "RocketPy（OpenRocket の抗力）/ OpenRocket", SERIES[2], "^")]
+    fig, axs = plt.subplots(1, 2, figsize=(9.6, 3.9), sharey=True)
+    y = np.arange(len(metrics))[::-1]
+    for ax, case, ttl in zip(axs, ("nowind", "wind"), ("無風", "風 4 m/s")):
+        ax.axvline(0, color=INK2, lw=0.8)
+        for a, b, lab, col, mk in pairs:
+            v = [100 * (s.loc[(case, m), a] / s.loc[(case, m), b] - 1) for m, _ in metrics]
+            ax.plot(v, y, mk, color=col, ms=7, ls="none", label=lab)
+        ax.set_xscale("symlog", linthresh=0.1, linscale=0.6)
+        ax.set_xlabel("相対差 [%]（左の分子 / 右の分母 − 1）")
+        ax.set_title(ttl, color=INK2, fontsize=10)
+    axs[0].set_yticks(y)
+    axs[0].set_yticklabels([n for _, n in metrics])
+    h, lab = axs[0].get_legend_handles_labels()
+    fig.legend(h, lab, loc="lower center", ncol=3, bbox_to_anchor=(0.5, -0.06), fontsize=8.5)
+    fig.tight_layout()
+    f.save(fig, "xcheck_diff")
+
+
+def xcheck_alpha(f, xd):
+    """Angle of attack after the rail exit with a 4 m/s side wind."""
+    d = pd.read_csv(xd / "alpha_wind.csv")
+    d = d[(d.t >= 0.25) & (d.t <= 1.6)]
+    fig, ax = plt.subplots(figsize=(6.4, 3.3))
+    ax.plot(d.t, d.aoa_ign, color=SERIES[0], lw=2.0, label="IgnisYeet")
+    ax.plot(d.t, d.aoa_or, color=SERIES[1], lw=2.0, label="OpenRocket")
+    ax.plot(d.t, d.aoa_rp_ign, color=SERIES[3], ls="--", label="RocketPy")
+    ax.set_xlabel("時刻 [s]")
+    ax.set_ylabel("迎角 [°]")
+    ax.legend()
+    fig.tight_layout()
+    f.save(fig, "xcheck_alpha")
+
+
+def xcheck_basic_finner(f, xd):
+    """Basic Finner: CNalpha, centre of pressure and CX0 of the measured data and of three programs."""
+    d = pd.read_csv(xd / "basic_finner.csv")
+    fig, axs = plt.subplots(1, 3, figsize=(9.6, 3.3))
+    for ax, (q, lab) in zip(axs, (("cna", "$C_{N\\alpha}$ [1/rad]"), ("xcp", "圧力中心（先端から）[口径]"), ("cx0", "$C_{X0}$"))):
+        ax.plot(d.mach, d[f"{q}_measured"], "D", color=INK, ms=5, label="実測（DREV 射場）", zorder=5)
+        ax.plot(d.mach, d[f"{q}_ign"], "-o", color=SERIES[0], ms=4, label="IgnisYeet")
+        ax.plot(d.mach, d[f"{q}_or"], "-s", color=SERIES[1], ms=4, label="OpenRocket")
+        if q != "cx0":
+            ax.plot(d.mach, d[f"{q}_rp"], "--^", color=SERIES[2], ms=4, label="RocketPy")
+        ax.set_xlabel("Mach 数")
+        ax.set_ylabel(lab)
+    h, lab = axs[1].get_legend_handles_labels()
+    fig.legend(h, lab, loc="lower center", ncol=4, bbox_to_anchor=(0.5, -0.06), fontsize=8.5)
+    fig.tight_layout()
+    f.save(fig, "xcheck_basic_finner")
+
+
+def xcheck_figures(f, xd):
+    xcheck_static(f, xd)
+    xcheck_flight(f, xd)
+    xcheck_diff(f, xd)
+    xcheck_alpha(f, xd)
+    xcheck_basic_finner(f, xd)
+
+
 def main():
     if sys.argv[1] == "--geometry":
         geometry_figures(Figs(Path(sys.argv[2])))
@@ -1782,6 +1916,8 @@ def main():
     cfd_fin_size_cost(f, data)
     integrator_cost_accuracy(f, root)
     mc_sample_convergence(f, root)
+    if (root / "xcheck_tools" / "summary.csv").exists():
+        xcheck_figures(f, root / "xcheck_tools")
 
 if __name__ == "__main__":
     main()

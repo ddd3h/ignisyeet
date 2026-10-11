@@ -1,0 +1,83 @@
+{
+ "commit": "7124e11",
+ "binary": "ignisyeet",
+ "tools": "gmsh 4.15.2 (python, OpenCASCADE)",
+ "sample_stl_warnings": [],
+ "sample_cad_tessellation": {
+  "solids": 1,
+  "faces": 44,
+  "triangles": 213300,
+  "notes": []
+ },
+ "sample_cad_warnings": [
+  "[IY-G501] the STL surface has 1 non-manifold (shared by more than two triangles) edges of 319949: small mesh defects, check the extracted geometry"
+ ],
+ "basic_finner_stl_warnings": [],
+ "basic_finner_cad_tessellation": {
+  "solids": 1,
+  "faces": 20,
+  "triangles": 284008,
+  "notes": []
+ },
+ "basic_finner_cad_warnings": [],
+ "basic_finner_barrowman": {
+  "max_abs_dCNa_per_rad": 0.0027008681958395897,
+  "max_abs_dXcp_m": 9.948328106912374e-06,
+  "machs": "0 .. 4.5 (226 values), alpha = 0"
+ },
+ "sections": {
+  "source": "examples/sample_rocket.stl (scale 0.001), cut by the slicing of the extraction written in numpy (geometry_data.py)",
+  "n_slices": 600,
+  "max_abs_difference_of_body_radius_to_program_all_slices_m": 0.0,
+  "section_frame_axis_sign_matching_the_program": -1.0,
+  "stations": [
+   {
+    "name": "A",
+    "index": 48,
+    "x_m": 0.12125,
+    "r_body_numpy_m": 0.03256188272762684,
+    "r_body_program_m": 0.03256188272762684,
+    "fin_span_program_m": 0.0,
+    "segments": 144
+   },
+   {
+    "name": "B",
+    "index": 320,
+    "x_m": 0.80125,
+    "r_body_numpy_m": 0.0499999996738222,
+    "r_body_program_m": 0.0499999996738222,
+    "fin_span_program_m": 0.0,
+    "segments": 144
+   },
+   {
+    "name": "C",
+    "index": 532,
+    "x_m": 1.33125,
+    "r_body_numpy_m": 0.0499999996738222,
+    "r_body_program_m": 0.0499999996738222,
+    "fin_span_program_m": 0.03908495442684604,
+    "segments": 176
+   },
+   {
+    "name": "D",
+    "index": 568,
+    "x_m": 1.4212500000000001,
+    "r_body_numpy_m": 0.0499999996738222,
+    "r_body_program_m": 0.0499999996738222,
+    "fin_span_program_m": 0.10001333305740776,
+    "segments": 176
+   }
+  ],
+  "fin_threshold_m": 0.0024999999836911105
+ },
+ "source": "examples/sample_rocket.stl and .step (the sample rocket), examples/basic_finner/basic_finner.stl and .step (the Basic Finner)",
+ "commands": [
+  "ignisyeet geom <config> --out <dir>  (sample.toml with rocket.stl or rocket.cad = sample_rocket.step; basic_finner.toml with stl or cad = basic_finner.step)",
+  "ignisyeet geom ... --set aero.n_slices=<n> / --set aero.fin_threshold=<t>",
+  "ignisyeet aero <basic finner config> --out <dir>   (Barrowman, default method)",
+  "python mesh_step.py (mode extract, divisions 250 / 400 / 1000) then ignisyeet geom on the STL with stl_scale = 1",
+  "python scripts/geometry_gmsh.py examples/sample_rocket.step doc/data/geometry   (faces, fine tail tessellation, coarse tessellation)"
+ ],
+ "cfd_prefix": "IGNISYEET_CFD_PREFIX (the sample.toml has no [aero.cfd] prefix; the Basic Finner configuration has)",
+ "date": "2026-10-11"
+}

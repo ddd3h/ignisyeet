@@ -330,7 +330,7 @@ OpenRocket の時間刻みは 0.01 s で、0.002 s にしても頂点高度は 0
 * **抗力を共通にした二組**\ （RocketPy と IgnisYeet、RocketPy と OpenRocket）：頂点高度の差は +0.01 % と +0.04 %（+0.4 m と +2.1 m）、頂点時刻は +0.03 % と −0.01 %、最大の速さは +0.01 % と +0.05 % である。質量の変化、推力、大気、数値積分を含む飛翔計算は、抗力の入力が同じなら、頂点高度、頂点時刻、最大の速さ、燃焼終了の高度と速さが 0.06 % 以内で一致する（ランチャ離脱の速さと水平距離を除く）。RocketPy の重力を IgnisYeet と同じ式にすると頂点高度は 1.8 m 低くなり（:numref:`tbl-vv-tools-sens`）、重力の差の影響は 0.04 % である。最大加速度は燃焼中の推力と質量で決まり、四つとも 214.0〜214.1 m/s² である。
 * **OpenRocket と IgnisYeet の差**：頂点高度は +6.7 %（+305 m）、頂点時刻は +3.3 %（+0.88 s）、最大の速さは +2.0 % である。差の原因は抗力の組み立て（:numref:`tbl-vv-tools-drag`）で、燃焼終了の高度の差が 0.7 % なのに速さの差は 2.3 % であるように、差は燃焼終了後の超音速の減速で広がる。
 * **フィンの断面による幅**：OpenRocket の頂点高度は、フィンの断面で 4519 m（square）から 4988 m（airfoil）まで 10 % 動く（:numref:`tbl-vv-tools-sens`）。この幅は、IgnisYeet と OpenRocket の差（6.7 %）より大きい。IgnisYeet の 4570 m が square の 4519 m に近いのは、異なる抗力の組み立てが偶然に近い値を与えただけで、一致ではない（square の抗力は :math:`M=0.3` で IgnisYeet より 21 % 高く、:math:`M=2,3` で 6 % と 4 % 低い）。
-* **ランチャ離脱**：IgnisYeet と RocketPy は 0.247 s、45.66 m/s で一致し、OpenRocket は 0.248 s、45.85 m/s と報告する。OpenRocket は離脱を時間刻み（0.01 s）の格子の時刻に記録するためで、同じ 0.248 s の速さは IgnisYeet が 45.850 m/s、RocketPy が 45.845 m/s、OpenRocket が 45.849 m/s と、0.01 % 以内で一致する。
+* **ランチャ離脱**：IgnisYeet と RocketPy は 0.247 s、45.66 m/s で一致し、OpenRocket は 0.248 s、45.85 m/s と報告する。OpenRocket は離脱を時間刻み（0.01 s）の格子の時刻に記録するためで、同じ 0.248 s の速さは IgnisYeet が 45.850 m/s、RocketPy が 45.845 m/s、OpenRocket が 45.849 m/s と、0.02 % 以内で一致する。
 
 .. _tbl-vv-tools-sens:
 

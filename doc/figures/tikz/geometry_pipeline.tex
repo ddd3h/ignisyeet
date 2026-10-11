@@ -1,0 +1,45 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+\begin{tikzpicture}[
+  font=\small,
+  srcn/.style={draw=cink2, fill=cfillg, minimum width=38mm, minimum height=11mm, align=center},
+  stg/.style={draw=cblue, fill=cfill, thick, rounded corners=3pt, minimum width=43mm, minimum height=9mm, align=center},
+  dtn/.style={draw=cink2, fill=white, minimum width=43mm, minimum height=9mm, align=center},
+  rsn/.style={draw=cink2, fill=cfillg, minimum width=43mm, minimum height=11mm, align=center},
+  note/.style={font=\footnotesize, cink2, anchor=west, align=left, text width=64mm},
+  arr/.style={->, thick, cink2},
+  link/.style={cgrid, thick, dashed}]
+  % two inputs
+  \node[srcn] (cad) at (-2.2,0) {機体の CAD データ\\{\footnotesize STEP・IGES・BREP}};
+  \node[srcn] (stl) at (2.2,0) {STL ファイル\\{\footnotesize 三角形だけで、単位を持たない}};
+  \node[stg] (tess) at (-2.2,-2.0) {三角形に分割\\{\footnotesize 縫合・単位は m に換算}};
+  \node[stg] (scale) at (2.2,-2.0) {単位を m に直す\\{\footnotesize \texttt{stl\_scale}}};
+  \node[dtn] (tri) at (0,-4.0) {表面の三角形（単位 m）};
+  \node[stg] (axis) at (0,-5.7) {機軸とノーズの向きを決める};
+  \node[stg] (cut) at (0,-7.4) {機軸に垂直な断面で切る};
+  \node[stg] (read) at (0,-9.1) {断面から胴体半径とフィンを読む};
+  \node[rsn] (res) at (0,-11.0) {胴体半径 $r_b(x)$・ノーズ・フィン・基準量\\{\footnotesize \texttt{geometry.json}、\texttt{profile.csv}}};
+  \draw[arr] (cad) -- (tess);
+  \draw[arr] (stl) -- (scale);
+  \draw[arr] (tess.south) -- ++(0,-0.35) -| ([xshift=-12mm]tri.north);
+  \draw[arr] (scale.south) -- ++(0,-0.35) -| ([xshift=12mm]tri.north);
+  \draw[arr] (tri) -- (axis);
+  \draw[arr] (axis) -- (cut);
+  \draw[arr] (cut) -- (read);
+  \draw[arr] (read) -- (res);
+  % notes
+  \node[note] (n1) at (4.7,0) {\texttt{rocket.cad}\ か \texttt{rocket.stl} のどちらか一方};
+  \node[note] (n2) at (4.7,-2.0) {CAD の単位はファイルから得る（\texttt{cad\_unit} で上書き）。STL の単位は \texttt{stl\_scale} で与える};
+  \node[note] (n3) at (4.7,-4.0) {以降の処理は入力の種類によらない};
+  \node[note] (n4) at (4.7,-5.7) {面積で重みを付けた主成分の第 1 軸。\texttt{nose\_direction} で指定もできる};
+  \node[note] (n5) at (4.7,-7.4) {既定 600 枚（\texttt{n\_slices}）};
+  \node[note] (n6) at (4.7,-9.1) {しきい値 \texttt{fin\_threshold} より外側の点をフィンとみなす};
+  \node[note] (n7) at (4.7,-11.0) {空力係数の計算がこれを使う};
+  \draw[link] (stl.east) -- (n1.west |- stl.east);
+  \draw[link] (scale.east) -- (n2.west |- scale.east);
+  \draw[link] (tri.east) -- (n3.west |- tri.east);
+  \draw[link] (axis.east) -- (n4.west |- axis.east);
+  \draw[link] (cut.east) -- (n5.west |- cut.east);
+  \draw[link] (read.east) -- (n6.west |- read.east);
+  \draw[link] (res.east) -- (n7.west |- res.east);
+\end{tikzpicture}

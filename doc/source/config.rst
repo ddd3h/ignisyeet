@@ -135,7 +135,7 @@ STL の読み方と形状の抽出は :ref:`page-theory-geometry` にある。
 
        ``rocket.cad_unit``
           文字列、``"auto"``
-     - ``rocket.cad`` の長さの単位。``"auto"`` はファイルが宣言する単位（BREP は m）で読む。単位を宣言していない STEP と IGES では ``"auto"`` を指定できない（:ref:`IY-G018`）。``rocket.stl`` と同時には指定できない。選べる値は ``"auto"``、``"m"``、``"cm"``、``"mm"``、``"in"``、``"ft"``。
+     - ``rocket.cad`` の長さの単位。``"auto"`` はファイルが宣言する単位（BREP は m）で読む。単位を宣言していない STEP と IGES では ``"auto"`` 以外を指定できない（:ref:`IY-G018`）。``rocket.stl`` と同時には指定できない。選べる値は ``"auto"``、``"m"``、``"cm"``、``"mm"``、``"in"``、``"ft"``。
    * - .. _cfg-rocket-nose_direction:
 
        ``rocket.nose_direction``
@@ -681,7 +681,7 @@ RANS の既定値は ``model = "rans"`` を選んだときの値である。
 
        ``aero.cfd.step_unit``
           文字列、``"auto"``
-     - ``step_file`` の長さの単位（``step_file`` を省いて ``rocket.cad`` を使うときは、``"auto"`` のままなら ``rocket.cad_unit``）。``"auto"`` はファイルが宣言する単位（BREP は m）で読む。単位を宣言していない STEP と IGES では ``"auto"`` を指定できない。``surface = "step"`` 以外ではエラーである。選べる値は ``"auto"``、``"m"``、``"cm"``、``"mm"``、``"in"``、``"ft"``\ （:ref:`sec-cfd-step`）。
+     - ``step_file`` の長さの単位（``step_file`` を省いて ``rocket.cad`` を使うときは、``"auto"`` のままなら ``rocket.cad_unit``）。``"auto"`` はファイルが宣言する単位（BREP は m）で読む。単位を宣言していない STEP と IGES では ``"auto"`` 以外を指定できない。``surface = "step"`` 以外ではエラーである。選べる値は ``"auto"``、``"m"``、``"cm"``、``"mm"``、``"in"``、``"ft"``\ （:ref:`sec-cfd-step`）。
    * - .. _cfg-aero-cfd-base_treatment:
 
        ``aero.cfd.base_treatment``

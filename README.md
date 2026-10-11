@@ -40,7 +40,7 @@ The documentation is in Japanese: <https://www.ddd3h.com/ignisyeet/> (sources in
 - **Landing dispersion**: wind grid and Monte Carlo with error ellipses and percentiles of the landing distance, and a documented procedure for a keep-out distance.
 - **Output**: CSV and JSON files, KML for Google Earth, readable terminal output with progress bars.
 
-Limits and assumptions of the models are listed in the [limitations](https://www.ddd3h.com/ignisyeet/limitations.html) page. The results are model results. Only the supersonic Basic Finner range data have been compared with measurements ([validation](https://www.ddd3h.com/ignisyeet/validation.html)); all other comparisons are cross-checks between methods.
+Limits and assumptions of the models are listed in the [limitations](https://www.ddd3h.com/ignisyeet/limitations.html) page. The results are model results. Only the supersonic Basic Finner range data have been compared with measurements ([validation](https://www.ddd3h.com/ignisyeet/validation.html)); all other comparisons are cross-checks between methods or between programs (the ascent of the sample rocket is also compared with OpenRocket and RocketPy).
 
 ## Screenshots
 

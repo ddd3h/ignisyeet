@@ -3,9 +3,9 @@
 相互比較と妥当性確認
 ====================
 
-:ref:`page-vv` は、式と数値解法を解析解や理論と比べた。この章は、その先の二つを扱う。
-一つは、同じ機体の係数を部品積み上げ法、パネル法、CFD で算出して比べる相互比較である。もう一つは、算出した係数を Basic Finner の実測値と比べる妥当性確認である。
-相互比較は手法どうしの差の大きさを示すだけで、どの値が実機に近いかを決めない。実機への近さを言えるのは、実測と比べた範囲だけである。
+:ref:`page-vv` は、式と数値解法を解析解や理論と比べた。この章は、その先の三つを扱う。
+一つは、同じ機体の係数を部品積み上げ法、パネル法、CFD で算出して比べる相互比較である。一つは、同じ機体の飛翔を OpenRocket と RocketPy にも計算させて比べる相互比較である。もう一つは、算出した係数を Basic Finner の実測値と比べる妥当性確認である。
+相互比較は手法やプログラムどうしの差の大きさを示すだけで、どの値が実機に近いかを決めない。実機への近さを言えるのは、実測と比べた範囲だけである。
 最後の節に、各段階と各手法の計算時間とメモリの測定をまとめる。
 
 .. _page-vv-cross-comparison:
@@ -186,6 +186,244 @@ STL をそのまま使う CFD と形状を作り直す CFD の比較を :numref:
 大きな迎角の係数は、二つの手法で同じ扱いになる。パネル法の亜音速の列は、迎角 15° から 30° の間で部品積み上げ法の値へ移り、30° から先は部品積み上げ法の法線力と圧力中心である。
 サンプルの表では、どちらの手法でも迎角 30° 以上の圧力中心は Mach 0.5 以下で 0.90 m 以上で、燃焼後の重心（0.85 m）より後ろにあるので、頂点のあとの弾道落下が横向きのまま落ちるつり合いは生じない。
 大迎角の係数は、どちらの手法でも、フィンの平板の横流れの経験的な近似（:ref:`sec-fin-large-alpha`）と、後ろ向きの流れに前向きの係数を使う折り返しに依っており、実測で確かめていない（:ref:`sec-lim-aero`）。
+
+.. _sec-vv-tools:
+
+他のシミュレータとの相互比較
+----------------------------
+
+IgnisYeet の飛翔計算の結果を、OpenRocket と RocketPy が同じ機体、同じ推力、同じ大気と風で計算した結果と比べる。
+三つのプログラムのどれも実測を使わないので、この比較は相互比較であり、妥当性確認ではない。**値が近いことは、どれかが正しいことを意味しない。**
+比べる範囲はサンプル機体の上昇（頂点まで）である。パラシュート降下は、降下のモデルがプログラムごとに違うので比べない。
+最後の小節（:ref:`sec-vv-tools-bf`）だけは、Basic Finner の静的な係数を OpenRocket と RocketPy でも求め、実測と IgnisYeet に並べる。
+
+.. _sec-vv-tools-setup:
+
+比べるプログラムと入力
+~~~~~~~~~~~~~~~~~~~~~~
+
+比べたのは、IgnisYeet 0.4.0（部品積み上げ法、``aero.method = "barrowman"``）、OpenRocket 24.12 :cite:`niskanen,niskanentech`\ （Java 25 上で、画面なしに Java の API から実行）、RocketPy 1.13.0 :cite:`ceotto2021rocketpy`\ （Python 3.12）である。
+OpenRocket は Barrowman 法による空力（抗力を含む）と 6 自由度の飛翔計算を持つ。RocketPy は 6 自由度の飛翔計算を持ち、法線力と圧力中心は Barrowman 法で求めるが、抗力は計算せず、抗力係数の曲線を入力に取る。
+機体と条件は、三つで共通に与えた（:numref:`tbl-vv-tools-inputs`）。
+
+.. _tbl-vv-tools-inputs:
+
+.. csv-table:: 三つのプログラムに共通に与えた入力
+   :delim: ¦
+   :header-rows: 1
+   :widths: 18 82
+
+   項目¦内容
+   形状¦``sample_rocket.stl`` から ``ignisyeet geom`` が取り出した値。直径 0.1 m、全長 1.5 m、フィン 4 枚（根元翼弦 0.199 m、端翼弦 0.0998 m、スパン 0.100 m、後退長 0.0799 m、厚さ 4 mm、根元の前縁が先端から 1.300 m）。ノーズは長さ 0.300 m の接線オジブ（取り出した輪郭との差は 0.003 mm、二乗平均）
+   質量¦乾燥質量 8.0 kg（モーターのケースを含む）、重心 0.85 m、:math:`I_{xx}=0.02`、:math:`I_{yy}=1.5\ \mathrm{kg\,m^2}`\ （乾燥重心まわり）
+   推力¦``sample_motor.eng`` の推力曲線（折れ線）と推進剤 3.0 kg。推進剤は推力の積分に比例して減り、重心は円筒の中心（先端から 1.25 m）にある
+   ランチャ¦長さ 5 m、仰角 85°、方位 270°
+   射点と大気¦標高 20 m、標準大気（ISA）。風は、なし、または高度によらない 4 m/s（270° から吹く。ランチャが傾く側と同じ）
+   地球と範囲¦平らな地球。頂点まで
+
+OpenRocket には、機体の質量、重心、慣性モーメントをそのまま入力する欄がない。部品の質量を 0 にして、乾燥質量 8.0 kg を 4 個の点質量に分け、重心と :math:`I_{xx}`、:math:`I_{yy}` が上の値になるように置いた。OpenRocket が計算した乾燥状態の値は、質量 8.0 kg、重心 0.850 m、:math:`I_{xx}=0.0200`、:math:`I_{yy}=1.5000\ \mathrm{kg\,m^2}` である。
+
+三つで **共通にできなかった** 入力と、**独立な** 部分がある。
+
+* **追加抗力** ``rocket.extra_cd``：IgnisYeet のサンプルは、ランチャラグなどの抗力として 0.02 を加える。OpenRocket と RocketPy にはこの機体のラグの入力がないので、IgnisYeet でも 0 にして比べる。サンプルの値のままの結果は :numref:`tbl-vv-tools-sens` に示す。
+* **フィンの断面**：IgnisYeet のサンプルは前縁が丸く後縁が平ら（``rocket.fin_le = "rounded"``、``rocket.fin_te = "square"``）である。OpenRocket のフィンの断面は、前縁・後縁とも平ら（square）、前縁・後縁とも丸い（rounded）、前縁が丸く後縁がとがる（airfoil）の 3 種で、同じ組み合わせはない。rounded を主として比べ、square と airfoil は幅として示す。
+* **抗力**：RocketPy には抗力係数の曲線を与える。(i) OpenRocket の抗力係数（:math:`\alpha=0`、rounded、射点の大気、燃焼中も同じ曲線）と、(ii) IgnisYeet の抗力係数（燃焼後と燃焼中の 2 本）の 2 通りで飛ばした。(ii) の RocketPy と IgnisYeet の差は、抗力を共通にしたときの飛翔計算（質量、推力、重力、大気、ランチャ、数値積分、法線力の扱い）の差を表し、(i) の RocketPy と OpenRocket の差も同じである。
+* **独立な部分**：空力（抗力の組み立て、法線力、圧力中心、ピッチ減衰）、重力（IgnisYeet は :math:`g_0=9.80665\ \mathrm{m/s^2}` の逆 2 乗則、OpenRocket と RocketPy は緯度 34.7° の値で、射点の上 500 m で 9.7955 m/s^2 と、IgnisYeet より 0.10 % 小さい）、ランチャ離脱の判定、数値積分である。空気の密度は 3 者で 0.03 % 以内（高さ 0.5〜4 km）で一致した。
+
+OpenRocket の時間刻みは 0.01 s で、0.002 s にしても頂点高度は 0.1 m も変わらない。RocketPy は相対許容誤差と絶対許容誤差を :math:`10^{-8}` にした。
+
+.. _sec-vv-tools-static:
+
+静的な空力
+~~~~~~~~~~
+
+:numref:`fig-vv-tools-static` と :numref:`tbl-vv-tools-static` に、:math:`C_{N\alpha}`、圧力中心、零揚力の抗力係数を示す。:math:`C_{N\alpha}` と圧力中心は迎角 1° の値、抗力は :math:`\alpha=0` の値で、大気は射点のものである。
+
+.. _fig-vv-tools-static:
+
+.. figure:: /_generated/plots/xcheck_static.*
+   :width: 100%
+
+   サンプル機体の :math:`C_{N\alpha}`\ （左）、圧力中心（中）、零揚力の抗力係数（右）。IgnisYeet と RocketPy は同じ Barrowman の式から始まるので亜音速で重なり、Mach 1 より上で分かれる。OpenRocket の抗力の帯は、フィンの断面の 3 種（rounded、square、airfoil）の幅である。
+
+.. _tbl-vv-tools-static:
+
+.. csv-table:: サンプル機体の静的な空力。三つの値は IgnisYeet / OpenRocket / RocketPy の順。:math:`C_{N\alpha}` の単位は 1/rad。抗力は IgnisYeet が燃焼後の値、OpenRocket が rounded の値（括弧は 3 種の断面の幅）、RocketPy は抗力を計算しない
+   :delim: ¦
+   :header-rows: 1
+   :widths: 10 24 26 40
+
+   :math:`M`¦:math:`C_{N\alpha}`¦圧力中心 [m]¦零揚力の抗力係数 :math:`C_D`
+   0.3¦11.69 / 12.03 / 11.69¦1.163 / 1.152 / 1.163¦0.474 / 0.458（0.444〜0.574）
+   0.8¦12.24 / 12.58 / 12.24¦1.175 / 1.168 / 1.172¦0.604 / 0.580（0.560〜0.659）
+   1.2¦13.97 / 13.22 / 12.15¦1.209 / 1.190 / 1.171¦0.713 / 0.627（0.606〜0.682）
+   2.0¦11.19 / 8.27 / 10.30¦1.179 / 1.074 / 1.134¦0.538 / 0.454（0.441〜0.506）
+   3.0¦8.23 / 5.99 / 8.63¦1.100 / 0.950 / 1.088¦0.421 / 0.354（0.346〜0.404）
+
+* **亜音速**\ （:math:`M=0.3,0.8`）：RocketPy は IgnisYeet と :math:`C_{N\alpha}` が 0.02 % 以内、圧力中心が 3 mm 以内で一致する。どちらも Barrowman の式を使うので、これは独立な二つの推算の一致ではない。OpenRocket の :math:`C_{N\alpha}` は 2.8〜2.9 % 大きく、圧力中心は 7〜10 mm 前にある。OpenRocket の部品別の内訳では、ボディチューブにも 0.29 の法線力の傾きを割り当てる（:math:`M=0.3` で全体 12.03 のうち、ノーズ 2.05、ボディチューブ 0.29、フィン 9.69）。
+* **超音速**\ （:math:`M=2,3`）：:math:`C_{N\alpha}` は、OpenRocket が IgnisYeet より 26〜27 % 小さく、RocketPy は :math:`M=2` で 8 % 小さく :math:`M=3` で 5 % 大きい。圧力中心は、:math:`M=3` で OpenRocket が IgnisYeet より 150 mm（1.5 口径）前にある。三つは超音速のフィンの法線力に別の式を使う（IgnisYeet は Busemann の展開と Mach 円錐の補正：:ref:`page-theory-barrowman`）。同じ機体の Euler の CFD（:math:`M=2` で 13.24、:ref:`sec-vaero-compare-three`）に対しては、IgnisYeet が 15 % 小さく、OpenRocket は 38 % 小さい。
+* **抗力**：OpenRocket の抗力係数（rounded）は、IgnisYeet より :math:`M=0.3` で 3 % 低く、:math:`M=1.2` で 12 %、:math:`M=2,3` で 16 % 低い。内訳を :numref:`tbl-vv-tools-drag` に示す。
+
+.. _tbl-vv-tools-drag:
+
+.. csv-table:: 零揚力の抗力係数の内訳。IgnisYeet（燃焼後）と OpenRocket（rounded）。フィンの縁は前縁と後縁の圧力抗力
+   :delim: ¦
+   :header-rows: 1
+   :widths: 14 14 14 14 14 14 16
+
+   :math:`M`¦プログラム¦摩擦¦ノーズ¦底面¦フィンの縁¦合計
+   0.3¦IgnisYeet¦0.310¦0.0005¦0.132¦0.032¦0.474
+   0.3¦OpenRocket¦0.306¦0.002¦0.132¦0.018¦0.458
+   2.0¦IgnisYeet¦0.182¦0.069¦0.125¦0.162¦0.538
+   2.0¦OpenRocket¦0.179¦0.0005¦0.125¦0.149¦0.454
+
+摩擦と底面の項は 2 % 以内で一致し、底面の項は式が同じである（:eq:`eq-base`）。フィンの前縁の抗力も同じ式で、:math:`M=2` の前縁の項は IgnisYeet と OpenRocket のどちらも 0.136 になる（4 枚、前縁の正面積 :math:`Nst`、前縁の後退角 38.6° の :math:`\cos^2` を掛けた値）。差は次の二つに分かれる。
+
+* **ノーズの造波抗力**：超音速の差の大部分である。:math:`M=2` で IgnisYeet は 0.069、OpenRocket は 0.0005 で、:math:`M=2` の抗力の差 0.084 のうち 0.069 を占める。IgnisYeet は等価な円錐の式にノーズ形状の係数を掛ける（:ref:`sec-nose-drag`）。OpenRocket の式は、オジブのノーズの造波抗力を、ノーズの後端近くの表面の傾きから決めるので、後端で胴体になめらかにつながる接線オジブでは、Mach 1.3 以上でほぼ 0 になる。
+* **フィンの後縁**：IgnisYeet の後縁は平ら（square）で、後縁の面積に底面抗力の全部を加える。OpenRocket の rounded は半分を加える。:math:`M=0.3` の差 0.013 と :math:`M=2` の差 0.013 はこれによる。
+
+.. _sec-vv-tools-flight:
+
+無風の上昇
+~~~~~~~~~~
+
+風のない上昇の結果を :numref:`tbl-vv-tools-flight` に、時刻歴を :numref:`fig-vv-tools-flight` に示す。IgnisYeet は :math:`C_D` に :math:`C_A` の表（燃焼後と燃焼中）を使い、OpenRocket は rounded の曲線を使う。
+
+.. _tbl-vv-tools-flight:
+
+.. csv-table:: 無風の上昇。頂点は射点からの高さ。最大加速度は燃焼終了の 0.05 s 前までの最大値。水平距離は頂点での射点からの距離。頂点時刻と燃焼終了の値は 0.01 s の出力の間隔による
+   :delim: ¦
+   :header-rows: 1
+   :widths: 30 17 17 18 18
+
+   項目¦IgnisYeet¦OpenRocket¦RocketPy（OpenRocket の抗力）¦RocketPy（IgnisYeet の抗力）
+   頂点高度 [m]¦4569.8¦4875.2¦4877.2¦4570.2
+   頂点時刻 [s]¦26.59¦27.47¦27.47¦26.60
+   最大の速さ [m/s]¦522.1¦532.3¦532.6¦522.1
+   最大 Mach 数¦1.549¦1.580¦1.582¦1.550
+   最大加速度 [m/s²]¦214.1¦214.0¦214.1¦214.1
+   ランチャ離脱の速さ [m/s]¦45.66¦45.85¦45.66¦45.66
+   燃焼終了（3.1 s）の高度 [m]¦931.7¦938.6¦938.9¦931.7
+   燃焼終了（3.1 s）の速さ [m/s]¦513.1¦525.2¦525.4¦513.2
+   頂点の水平距離 [m]¦652.1¦701.0¦706.8¦661.5
+
+.. _fig-vv-tools-flight:
+
+.. figure:: /_generated/plots/xcheck_flight.*
+   :width: 100%
+
+   無風の上昇の高度（左）と速さ（右）。上段は四つの計算、中段は OpenRocket と IgnisYeet の差、下段は抗力を共通にした二組（RocketPy と IgnisYeet、RocketPy と OpenRocket）の差。下段の縦軸は中段より 2 桁細かい。見る点は、抗力を共通にした二組の差が頂点まで 2.1 m と 0.4 m/s 以内であることと、OpenRocket と IgnisYeet の差が燃焼終了のあとに広がることである。
+
+相対差を :numref:`fig-vv-tools-diff` に示す。
+
+.. _fig-vv-tools-diff:
+
+.. figure:: /_generated/plots/xcheck_diff.*
+   :width: 100%
+
+   上昇の指標の相対差（対称対数の軸。原点から ±0.1 % までは線形）。OpenRocket と IgnisYeet の差は 0.4〜7.5 % に散らばり、抗力を共通にした二組の差は、水平距離を除いて 0.4 % 以内である。
+
+* **抗力を共通にした二組**\ （RocketPy と IgnisYeet、RocketPy と OpenRocket）：頂点高度の差は +0.01 % と +0.04 %（+0.4 m と +2.1 m）、頂点時刻は +0.03 % と −0.01 %、最大の速さは +0.01 % と +0.05 % である。質量の変化、推力、大気、数値積分を含む飛翔計算は、抗力の入力が同じなら、頂点高度、頂点時刻、最大の速さ、燃焼終了の高度と速さが 0.06 % 以内で一致する（ランチャ離脱の速さと水平距離を除く）。RocketPy の重力を IgnisYeet と同じ式にすると頂点高度は 1.8 m 低くなり、重力の差の影響は 0.04 % である。最大加速度は燃焼中の推力と質量で決まり、四つとも 214.0〜214.1 m/s² である。
+* **OpenRocket と IgnisYeet の差**：頂点高度は +6.7 %（+305 m）、頂点時刻は +3.3 %（+0.88 s）、最大の速さは +2.0 % である。差の原因は抗力の組み立て（:numref:`tbl-vv-tools-drag`）で、燃焼終了の高度の差が 0.7 % なのに速さの差は 2.3 % であるように、差は燃焼終了後の超音速の減速で広がる。
+* **フィンの断面による幅**：OpenRocket の頂点高度は、フィンの断面で 4519 m（square）から 4988 m（airfoil）まで 10 % 動く（:numref:`tbl-vv-tools-sens`）。この幅は、IgnisYeet と OpenRocket の差（6.7 %）より大きい。IgnisYeet の 4570 m が square の 4519 m に近いのは、異なる抗力の組み立てが偶然に近い値を与えただけで、一致ではない（square の抗力は :math:`M=0.3` で IgnisYeet より 21 % 高く、:math:`M=2,3` で 6 % と 4 % 低い）。
+* **ランチャ離脱**：IgnisYeet と RocketPy は 0.247 s、45.66 m/s で一致し、OpenRocket は 0.248 s、45.85 m/s で 0.41 % 速い。離脱の判定の違いによると考えられるが、原因は切り分けていない。
+
+.. _tbl-vv-tools-sens:
+
+.. csv-table:: 頂点高度 [m] の、比べる条件の外の入力に対する変化
+   :delim: ¦
+   :header-rows: 1
+   :widths: 56 22 22
+
+   条件¦無風¦風 4 m/s
+   IgnisYeet（``extra_cd`` = 0。比べた条件）¦4569.8¦4519.1
+   IgnisYeet（``extra_cd`` = 0.02。サンプルのまま）¦4477.8¦4428.2
+   OpenRocket（フィン断面 rounded。比べた条件）¦4875.2¦4818.4
+   OpenRocket（フィン断面 square）¦4519.4¦4468.0
+   OpenRocket（フィン断面 airfoil）¦4987.8¦4929.5
+   OpenRocket（rounded、時間刻み 0.002 s）¦4875.2¦4818.4
+
+.. _sec-vv-tools-wind:
+
+風のある上昇
+~~~~~~~~~~~~
+
+高度によらない 4 m/s の風を、ランチャが傾く側（270°）から当てた結果を :numref:`tbl-vv-tools-wind` に示す。ランチャの上では風上に傾き、離脱のあとに迎角が生じて機体が風上へ向きを変える（風見効果）。
+
+.. _tbl-vv-tools-wind:
+
+.. csv-table:: 風 4 m/s の上昇。頂点高度の変化は無風との差
+   :delim: ¦
+   :header-rows: 1
+   :widths: 30 17 17 18 18
+
+   項目¦IgnisYeet¦OpenRocket¦RocketPy（OpenRocket の抗力）¦RocketPy（IgnisYeet の抗力）
+   頂点高度 [m]¦4519.1¦4818.4¦4810.7¦4507.9
+   頂点高度の変化 [m]¦−50.8¦−56.7¦−66.5¦−62.3
+   頂点時刻 [s]¦26.40¦27.25¦27.22¦26.37
+   頂点の水平距離 [m]¦909.8¦990.2¦1048.5¦977.9
+
+風による頂点高度の低下は、IgnisYeet が 50.8 m で、OpenRocket（56.7 m）と RocketPy（62.3〜66.5 m）はそれより大きい。
+頂点の水平距離は、OpenRocket が IgnisYeet より 8.8 % 長い。抗力を共通にした二組でも、RocketPy は IgnisYeet より 7.5 %、OpenRocket より 5.9 % 長く、頂点高度の差は 0.25 % と 0.16 % である。
+
+水平距離の差は、ランチャ離脱の直後の迎角の推移に現れる（:numref:`fig-vv-tools-alpha`）。
+
+.. _fig-vv-tools-alpha:
+
+.. figure:: /_generated/plots/xcheck_alpha.*
+   :width: 80%
+
+   風 4 m/s のとき、ランチャ離脱（0.25 s）のあとの迎角の大きさ。IgnisYeet と OpenRocket は 0.4 s までほぼ重なる（0.4 s で 2.15° と 2.15°）。RocketPy は早く減り、0.4 s で 1.5° になる。
+
+迎角は離脱の直後に 4.4〜4.9° で、三つとも 0.5 s ごろに 1 回目の極小（0.1° 以下）になる。迎角の大きさの極小の間隔は、IgnisYeet が 0.28 s（0.53 s と 0.81 s）、OpenRocket が 0.28 s（0.52 s と 0.80 s）、RocketPy が 0.24 s（0.46 s と 0.70 s）で、RocketPy の振動は 15 % ほど速い。山の高さは、IgnisYeet が 1.18°、OpenRocket が 1.44°、RocketPy が 1.58° である（1 つ目の山）。RocketPy は IgnisYeet と同じ :math:`C_{N\alpha}` と圧力中心を持つので（:numref:`tbl-vv-tools-static`）、振動の速さの違いは、法線力の傾きと重心からの距離の違いだけでは説明できない。原因は切り分けていない。
+
+.. _sec-vv-tools-bf:
+
+Basic Finner の静的な係数
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Basic Finner（:ref:`sec-validation`）の :math:`C_{N\alpha}`、圧力中心、:math:`C_{X0}` を、OpenRocket と RocketPy でも求めて、実測と IgnisYeet の部品積み上げ法に並べた（:numref:`tbl-vv-tools-bf`、:numref:`fig-vv-tools-bf`）。
+形状は :numref:`tbl-validation-geometry` と同じで、フィンの厚さは取り出した 1.3 mm、粗さは 2 :math:`\mu`\ m、大気は標準大気の海面である。OpenRocket のノーズは半頂角 10° の円すい（長さ 2.84 口径）、フィンは rounded、RocketPy はノーズを円すいにした。:math:`C_{X0}` は IgnisYeet と OpenRocket のみである（RocketPy は抗力を計算しない）。
+ここは実測との比較を含む。ただし、これは OpenRocket と RocketPy の評価ではない。Basic Finner の前縁のとがったくさび形のフィンは、OpenRocket のフィンの断面の選択肢（square、rounded、airfoil）にそのままはなく、:math:`C_{X0}` には丸い前縁の抗力が入る。
+
+.. _tbl-vv-tools-bf:
+
+.. csv-table:: Basic Finner の :math:`C_{N\alpha}` [1/rad]、圧力中心（先端から、口径）、:math:`C_{X0}`。値は 実測 / IgnisYeet / OpenRocket / RocketPy の順（:math:`C_{X0}` は RocketPy なし）
+   :delim: ¦
+   :header-rows: 1
+   :widths: 10 30 30 30
+
+   :math:`M`¦:math:`C_{N\alpha}`¦圧力中心¦:math:`C_{X0}`
+   1.077¦18.47 / 12.70 / 12.84 / 11.85¦8.35 / 8.15 / 8.15 / 8.01¦0.863 / 0.535 / 0.816
+   1.293¦18.27 / 12.55 / 11.14 / 11.30¦8.29 / 8.17 / 8.00 / 7.95¦0.731 / 0.526 / 0.714
+   1.832¦11.78 / 9.41 / 6.69 / 9.53¦7.88 / 7.85 / 7.08 / 7.71¦0.585 / 0.390 / 0.610
+   2.375¦10.52 / 7.58 / 5.40 / 8.32¦7.30 / 7.47 / 6.52 / 7.48¦0.484 / 0.320 / 0.556
+   2.718¦9.01 / 6.84 / 4.94 / 7.74¦7.19 / 7.26 / 6.25 / 7.35¦0.435 / 0.290 / 0.532
+   3.147¦8.69 / 6.17 / 4.53 / 7.14¦6.93 / 7.02 / 5.95 / 7.19¦0.373 / 0.260 / 0.507
+   3.734¦8.32 / 5.51 / 4.14 / 6.51¦6.65 / 6.73 / 5.62 / 6.99¦0.309 / 0.230 / 0.482
+   4.300¦7.74 / 5.05 / 3.87 / 6.03¦6.52 / 6.48 / 5.36 / 6.81¦0.271 / 0.208 / 0.465
+
+.. _fig-vv-tools-bf:
+
+.. figure:: /_generated/plots/xcheck_basic_finner.*
+   :width: 100%
+
+   Basic Finner の :math:`C_{N\alpha}`\ （左）、圧力中心（中）、:math:`C_{X0}`\ （右）。黒の菱形が実測（DREV の射場、Table IX）。
+
+実測との差は、:math:`C_{N\alpha}` が IgnisYeet で −20〜−35 %、OpenRocket で −30〜−50 %、RocketPy で −14〜−38 % である。圧力中心は、IgnisYeet が ±2.4 % 以内、RocketPy が −4.1〜+5.2 %、OpenRocket が −2.3〜−17.8 % で、OpenRocket は Mach 1.8 以上で圧力中心が実測より 0.8〜1.2 口径前にある。:math:`C_{X0}` は、IgnisYeet が −23〜−38 % 低く、OpenRocket は Mach 1.8 まで実測に近く（−5.5〜+4.3 %）、Mach 2.4 以上で高くなり +15〜+72 % になる。
+三つとも :math:`C_{N\alpha}` は実測より小さい。IgnisYeet の差の議論は :ref:`sec-validation-discussion` にある。
+
+.. _sec-vv-tools-scope:
+
+この比較が示すことと示さないこと
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* **示すこと**：同じ機体と条件に対する三つのプログラムの結果が、どの量でどれだけ違うか。抗力を共通にすれば、IgnisYeet の飛翔計算（質量の変化、推力、大気、重力、ランチャ、数値積分）は、頂点高度、頂点時刻、速さについて RocketPy と 0.1 % 以内で一致する。風のある上昇の水平距離は 7.5 % 違う。上昇の結果の差の大部分は、抗力の組み立て（ノーズの造波抗力、フィンの縁の抗力）の差で説明でき、静的な空力の差は :math:`C_{N\alpha}` と圧力中心に現れる。
+* **示さないこと**：どのプログラムの値が実機に近いか。OpenRocket と RocketPy の結果は、実機の測定値を使っていない。IgnisYeet と RocketPy の亜音速の一致は、同じ Barrowman の式を使うことの結果で、独立な確認ではない。IgnisYeet と OpenRocket が近い量（摩擦と底面の抗力、フィンの前縁の抗力）も、Niskanen の式 :cite:`niskanen` に共通の源がある。
+* **範囲**：サンプル機体 1 つ、風は一様な 4 m/s の 1 条件、頂点まで。パラシュート降下、風の高度分布、ほかの機体は比べていない。OpenRocket は 24.12 版の 1 つの設定（フィン断面 rounded を主）で、RocketPy は 1.13.0 版の 1 つの設定である。別の版や設定では差が変わりうる。
+* **未解決**：風のある上昇での RocketPy の水平距離の違い（:numref:`fig-vv-tools-alpha`）と、OpenRocket のランチャ離脱の速さの 0.41 % の差は、原因を切り分けていない。
+
+再計算の手順と入力は ``doc/scripts/xcheck_tools/README.md`` に、結果は ``doc/data/xcheck_tools/`` にある（バージョン、OpenRocket の jar の SHA256、実行日は ``provenance.json``）。
 
 .. _page-vv-validation-basic-finner:
 

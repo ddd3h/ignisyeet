@@ -49,7 +49,7 @@ IgnisYeet はどの団体・組織にも属さないオープンソースソフ�
    機体が空気中を進むことで生じる力で、機体軸方向の **軸力** と、それに垂直な **法線力** に分けて扱う。
    大きさは機体形状・Mach 数・迎角に依存し、さらに風によって対気速度が変わるため、軌道への影響が大きい。
 
-モデルロケット向けのオープンソースの飛翔シミュレータには OpenRocket :cite:`niskanen,niskanentech` があり、IgnisYeet の空力係数と抗力の推算法はこれに倣っている。
+モデルロケット向けのオープンソースの飛翔シミュレータには OpenRocket :cite:`niskanen,niskanentech` があり、IgnisYeet の空力係数と抗力の推算法はこれに倣っている。同じ機体の上昇を OpenRocket と、6 自由度の飛翔シミュレータ RocketPy :cite:`ceotto2021rocketpy` にも計算させた相互比較を :ref:`sec-vv-tools` に示す。
 
 .. _page-theory-overview:
 

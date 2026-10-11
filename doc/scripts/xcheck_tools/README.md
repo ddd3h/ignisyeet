@@ -69,7 +69,7 @@ with `extra_cd = 0` are the ones compared.
 
 ## Notes
 
-- OpenRocket's results change in the sixth digit from run to run (apogee 4875.17 and 4875.16 m); the tables quote one decimal.
+- OpenRocket's results change in the sixth digit from run to run (apogee 4875.169 and 4875.172 m in two runs); the tables quote one decimal.
 - `sample_rocket.ork` is for inspection. It refers to the motor by its digest, so OpenRocket's GUI shows the
   motor only after `sample_motor_nocase.eng` is imported. The scripts do not load it; they build the rocket in
   memory.

@@ -1,0 +1,11 @@
+case,variant,apogee_m
+nowind,ign extra_cd 0.02 (sample as is),4477.76
+nowind,or fins rounded,4875.169
+nowind,or fins square,4519.415
+nowind,or fins airfoil,4987.8
+nowind,"or fins rounded, dt 0.002 s",4875.168
+wind,ign extra_cd 0.02 (sample as is),4428.206
+wind,or fins rounded,4818.442
+wind,or fins square,4467.971
+wind,or fins airfoil,4929.548
+wind,"or fins rounded, dt 0.002 s",4818.354

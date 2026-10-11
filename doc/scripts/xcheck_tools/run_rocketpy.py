@@ -62,8 +62,9 @@ def build(geom, cfg, drag_csv):
     return rocket
 
 
-def environment(cfg, wind):
-    from rocketpy import Environment
+def environment(cfg, wind, iy_gravity=False):
+    """iy_gravity: gravity as in IgnisYeet, g0 (R / (R + h))^2 with g0 = 9.80665 m/s^2 and R = 6371 km (default: RocketPy's own)."""
+    from rocketpy import Environment, Function
 
     la = cfg["launch"]
     env = Environment(latitude=la["latitude"], longitude=la["longitude"], elevation=la["altitude"])
@@ -72,6 +73,8 @@ def environment(cfg, wind):
         env.set_atmospheric_model(type="custom_atmosphere", wind_u=-common.WIND_SPEED * math.sin(w), wind_v=-common.WIND_SPEED * math.cos(w))
     else:
         env.set_atmospheric_model(type="standard_atmosphere")
+    if iy_gravity:
+        env.gravity = Function(lambda z: common.G0 * (6371000.0 / (6371000.0 + z)) ** 2)
     return env
 
 
@@ -130,6 +133,9 @@ def main():
                 w.writerow(list(s))
                 w.writerows(zip(*[s[k] for k in s]))
             summary.setdefault(name, {})[case] = res
+        if spec == a.drag[-1]:  # one extra flight: the last drag curve with IgnisYeet's gravity (no wind)
+            s, res = fly(rocket, environment(cfg, False, iy_gravity=True), cfg)
+            summary.setdefault(name + "_iygravity", {})["nowind"] = res
     (out / "rp_summary.json").write_text(json.dumps(summary, indent=2))
     print(json.dumps(summary, indent=2))
 

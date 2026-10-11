@@ -158,7 +158,16 @@ def main():
         w.writeheader()
         w.writerows(rows)
 
-    summary = {}
+    from info.openrocket.core.masscalc import MassCalculator
+
+    config = rocket.getFlightConfiguration(fcid)
+    mc = MassCalculator()
+    mass = {}
+    for key, fn in (("structure", mc.calculateStructure), ("launch", mc.calculateLaunch)):
+        rb = fn(config)
+        mass[key] = {"mass_kg": float(rb.getMass()), "cg_x_m": float(rb.getCM().x), "ixx_kgm2": float(rb.getIxx()), "iyy_kgm2": float(rb.getIyy())}
+
+    summary = {"mass_properties": mass}
     for case, wind in (("nowind", False), ("wind", True)):
         s, ev, apo, vmax, mmax, amax, vrod = flight(doc, rocket, fcid, cfg, wind, a.dt)
         with open(out / f"or_flight_{case}_{tag}.csv", "w", newline="") as fh:

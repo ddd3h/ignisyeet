@@ -28,5 +28,6 @@ D="$ROOT/doc/data/xcheck_tools"
 
 "$PY" "$HERE/make_comparison.py" "$WORK"
 "$PY" "$HERE/check_environment.py" "$WORK"
+"$PY" "$HERE/fit_nose.py" "$WORK/ign/geom/profile.csv" >/dev/null
 "$PY" "$HERE/run_basic_finner.py" >/dev/null
 "$PY" "$HERE/write_provenance.py" "$IGNISYEET" >/dev/null

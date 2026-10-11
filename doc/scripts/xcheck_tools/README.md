@@ -43,6 +43,7 @@ This takes a few minutes and runs, in order:
 | `make_drag_inputs.py` | the drag curves that RocketPy is fed with: `drag_ign.csv` (IgnisYeet, power off and on) and `drag_or.csv` (OpenRocket's total drag coefficient, `rounded` fins) |
 | `run_rocketpy.py` | builds the rocket, evaluates its Barrowman coefficients and flies both cases to apogee, once with each drag curve |
 | `make_comparison.py` | `static_aero.csv`, `components_or.csv` (OpenRocket's nose, body-tube and fin contributions), `flight_nowind.csv`, `flight_wind.csv`, `alpha_wind.csv`, `summary.csv`, `sensitivity.csv` |
+| `fit_nose.py` | `nose_fit.json` |
 | `check_environment.py` | `environment.csv`: air density and gravity of the three programs |
 | `run_basic_finner.py` | `basic_finner.csv`: static coefficients of the Basic Finner in OpenRocket and RocketPy next to the measured values and IgnisYeet's |
 | `write_provenance.py` | `provenance.json` |
@@ -78,5 +79,7 @@ with `extra_cd = 0` are the ones compared.
   other two bracket it (`sensitivity.csv`).
 - RocketPy's reported `max_acceleration` contains a spike at the burn-out step; `make_comparison.py` takes the
   maximum of the acceleration before burn-out of all three programs instead.
-- The nose-cone fit: `numpy`-fit of a tangent ogive of length L and radius 0.05 m to `profile.csv` (`ignisyeet geom`);
-  L = 0.300 m gives 0.003 mm rms, a parabola 0.22 mm, a von Karman nose 1.7 mm.
+- The nose-cone shape is found by `fit_nose.py` (`nose_fit.json`): over the points x < 0.25 m of `profile.csv` a tangent ogive of 0.300 m
+  deviates by 0.003 mm rms; the best parabola by 0.10 mm and the best von Karman nose by 1.2 mm.
+- `or_mass_properties.json` holds the mass, CG, Ixx and Iyy that OpenRocket computed for the rocket (without and with the propellant).
+- `sensitivity.csv` also holds the RocketPy flight with IgnisYeet's gravity (g0 = 9.80665 m/s^2, inverse-square law).

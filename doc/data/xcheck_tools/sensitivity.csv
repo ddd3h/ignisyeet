@@ -1,11 +1,12 @@
 case,variant,apogee_m
 nowind,ign extra_cd 0.02 (sample as is),4477.76
-nowind,or fins rounded,4875.172
-nowind,or fins square,4519.412
-nowind,or fins airfoil,4987.803
-nowind,"or fins rounded, dt 0.002 s",4875.168
+nowind,or fins rounded,4875.171
+nowind,or fins square,4519.413
+nowind,or fins airfoil,4987.801
+nowind,"or fins rounded, dt 0.002 s",4875.169
 wind,ign extra_cd 0.02 (sample as is),4428.206
-wind,or fins rounded,4818.439
-wind,or fins square,4467.972
-wind,or fins airfoil,4929.547
-wind,"or fins rounded, dt 0.002 s",4818.353
+wind,or fins rounded,4818.442
+wind,or fins square,4467.967
+wind,or fins airfoil,4929.548
+wind,"or fins rounded, dt 0.002 s",4818.352
+nowind,rp (IgnisYeet drag) with IgnisYeet gravity,4568.407

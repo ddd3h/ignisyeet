@@ -71,6 +71,7 @@ def metrics(s):
         "max_acceleration_ms2": float(np.nanmax(s["acc"][t <= BURNOUT - 0.05])),  # RocketPy gives spikes at the burnout step
         "rail_exit_speed_ms": float(s["rail_exit_speed"]),
         "rail_exit_time_s": float(s["rail_exit_time"]),
+        "speed_at_0.248s_ms": float(np.interp(0.248, t, s["v"])),  # OpenRocket reports the rod clearance at its first step, 0.248 s
         "burnout_altitude_m": float(np.interp(BURNOUT, t, s["alt"])),
         "burnout_velocity_ms": float(np.interp(BURNOUT, t, s["v"])),
         "apogee_horizontal_m": float(horiz),
@@ -138,7 +139,10 @@ def main():
         for fins in ("rounded", "square", "airfoil"):
             sens.append({"case": case, "variant": f"or fins {fins}", "apogee_m": metrics(load_or(orr, f"{case}_{fins}"))["apogee_m"]})
         sens.append({"case": case, "variant": "or fins rounded, dt 0.002 s", "apogee_m": metrics(load_or(orr, f"{case}_rounded_dt0.002"))["apogee_m"]})
+    g = json.loads((rp / "rp_summary.json").read_text())["ign_iygravity"]["nowind"]["apogee_m"]
+    sens.append({"case": "nowind", "variant": "rp (IgnisYeet drag) with IgnisYeet gravity", "apogee_m": g})
     pd.DataFrame(sens).round(3).to_csv(out / "sensitivity.csv", index=False)
+    (out / "or_mass_properties.json").write_text(json.dumps(json.loads((orr / "or_summary_rounded.json").read_text())["mass_properties"], indent=2) + "\n")
     print(pd.DataFrame(rows).pivot(index="metric", columns=["case", "tool"], values="value").round(3).to_string())
 
 

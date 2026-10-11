@@ -1,0 +1,30 @@
+{
+  "tangent ogive": {
+    "best_length_m": 0.3,
+    "rms_mm": 0.0027
+  },
+  "parabola": {
+    "best_length_m": 0.2965,
+    "rms_mm": 0.1009
+  },
+  "von Karman": {
+    "best_length_m": 0.278,
+    "rms_mm": 1.163
+  },
+  "LV-Haack": {
+    "best_length_m": 0.328,
+    "rms_mm": 1.8373
+  },
+  "ellipsoid": {
+    "best_length_m": 0.34,
+    "rms_mm": 6.5728
+  },
+  "cone": {
+    "best_length_m": 0.26,
+    "rms_mm": 6.8171
+  },
+  "tangent ogive at NOSE_LENGTH": {
+    "length_m": 0.3,
+    "rms_mm": 0.0027
+  }
+}

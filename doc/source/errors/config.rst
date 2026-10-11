@@ -329,7 +329,7 @@ IY-C014
     パネル法と CFD の表面メッシュは、翼を両凸断面の厚みのある形で作る。厚み 0 の翼はメッシュから落ちる。
 
 主な原因
-    ``aero.method`` が ``panel`` か ``cfd``（``surface = "panel_mesh"``）で、``fin_override.thickness`` が 0 以下。
+    ``aero.method`` が ``panel`` か ``cfd``\ （``surface = "panel_mesh"``）で、``fin_override.thickness`` が 0 以下。
 
 対処
     正の厚みを書く。Barrowman では 0 を書いてよい。
@@ -1978,7 +1978,7 @@ IY-C119
     ``base_treatment`` を書いていない。
 
 対処
-    ``"fairing"``（CAD 形状に円錐を融合する）か ``"flat"`` を書く。
+    ``"fairing"``\ （CAD 形状に円錐を融合する）か ``"flat"`` を書く。
 
 関連
     :ref:`sec-cfd-step`

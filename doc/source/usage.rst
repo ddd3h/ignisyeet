@@ -94,7 +94,7 @@ IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファ�
      - ``geometry.json``、``profile.csv``、``trajectory.csv``
      - 寸法、ノーズ、フィン。輪郭の図に、点火時の重心と圧力中心を重ねる
    * - Aerodynamics
-     - ``aero_table.json``、``aero_drag.csv``（なければ ``aero_table.csv``）
+     - ``aero_table.json``、``aero_drag.csv``\ （なければ ``aero_table.csv``）
      - 係数表の範囲と、抗力係数、CN\ :sub:`α`、圧力中心の Mach 数による変化
    * - Flight
      - ``summary.json``、``trajectory.csv``
@@ -639,12 +639,12 @@ IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファ�
    * - ``drogue_deploy_time``
      - （ドローグ、または単一の）パラシュートが開いた時刻 [s]。開傘は、頂点の時刻に ``recovery.delay`` を足した時刻に、刻み幅によらず正確に起こる（:ref:`sec-integrators`）。その時刻にモータがまだ燃えていれば、推力の終わりの時刻に遅らせる（``deploy_delayed``）。弾道落下と、開傘する前に着地した飛翔では、この項目を書かない
    * - ``deploy_delayed``
-     - 開傘を推力の終わりまで遅らせたときだけ書く。本来の開傘時刻（頂点 + ``recovery.delay``）``nominal_time`` [s] と、その時刻の推力 ``thrust`` [N] を持つ（:ref:`sec-parachute`）
+     - 開傘を推力の終わりまで遅らせたときだけ書く。本来の開傘時刻（頂点 + ``recovery.delay``）\ ``nominal_time`` [s] と、その時刻の推力 ``thrust`` [N] を持つ（:ref:`sec-parachute`）
    * - ``broadside_time`` / ``fell_broadside``
      - 頂点のあとの弾道落下で、全迎角が 60° から 120° の間で飛んだ時間 [s]（パラシュート降下では 0）と、それが 10 s を超えたか（真偽値）。``true`` のときは警告を出す（:ref:`sec-lim-aero`）
    * - ``roll_resonance``
      - ロール角速度がピッチの固有振動数を横切ったときだけ書く（トリムの強制がある飛翔で、頂点より前の自由飛行。:ref:`sec-roll-resonance`）。
-       最初の交差の時刻 ``t`` [s]、Mach 数 ``mach``、そのときのロール角速度（＝固有振動数）``frequency`` [rad/s]、上昇中の交差の回数 ``crossings`` を持つ。警告も出す（:ref:`IY-O510`）
+       最初の交差の時刻 ``t`` [s]、Mach 数 ``mach``、そのときのロール角速度（＝固有振動数）\ ``frequency`` [rad/s]、上昇中の交差の回数 ``crossings`` を持つ。警告も出す（:ref:`IY-O510`）
    * - ``drogue_deploy_speed`` / ``drogue_deploy_q``
      - パラシュート（二段開傘ではドローグ）が開いたときの対気速度 [m/s]\ （風に対する速さ）と動圧 [Pa]。``drogue_deploy_time`` と同じく、開傘しなかった飛翔では書かない。
        対気速度が 50 m/s を超えるか動圧が 2 kPa を超えると警告する（:ref:`IY-O518`）
@@ -754,7 +754,7 @@ IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファ�
      - 横滑り角 :math:`\beta`
    * - ``roll_rate``
      - rad/s
-     - ロール角速度 :math:`\omega_x`（``wx`` と同じ値）
+     - ロール角速度 :math:`\omega_x`\ （``wx`` と同じ値）
    * - ``cl``
      - 
      - 適用したロールの係数 :math:`C_l^{\mathrm{tot}}`\ （:eq:`eq-cl-total`）
@@ -1100,7 +1100,7 @@ make のターゲットと変数
      - 設定ファイルの ``[output] dir``
      - 作図が読む出力ディレクトリ。``dir`` は設定ファイルのあるディレクトリを基準にする。省略時は設定ファイルのある場所の ``out``。
    * - ``BIN``
-     - ``$(CARGO_TARGET_DIR)/release/ignisyeet``（未設定なら ``target/release/ignisyeet``）
+     - ``$(CARGO_TARGET_DIR)/release/ignisyeet``\ （未設定なら ``target/release/ignisyeet``）
      - 実行ファイル。
    * - ``PLOT``
      - ``uv run --project python python/plot.py``

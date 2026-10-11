@@ -392,7 +392,7 @@ CFD の出力ファイル
    * - ``mach`` ``alpha_deg`` ``beta_deg``
      - ケースの Mach 数、迎角 [deg]、横滑り角 [deg]
    * - ``status``
-     - ``converged``、``accepted``、``unconverged``、``failed``（意味は前節）。``alpha_mode = "mirror"`` の軸対称表では、正負の解を合わせた行が ``combined`` で末尾に付く
+     - ``converged``、``accepted``、``unconverged``、``failed``\ （意味は前節）。``alpha_mode = "mirror"`` の軸対称表では、正負の解を合わせた行が ``combined`` で末尾に付く
    * - ``iterations``
      - 反復数（失敗したケースは 0。RANS は 2 次精度の段の反復数）
    * - ``residual_first`` / ``residual_last``

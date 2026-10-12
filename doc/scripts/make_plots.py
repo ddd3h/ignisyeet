@@ -17,6 +17,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+import matplotlib.ticker  # noqa: E402
 import numpy as np  # noqa: E402
 import pandas as pd  # noqa: E402
 
@@ -1744,6 +1745,72 @@ def mc_sample_convergence(f, data):
     f.save(fig, "mc_sample_convergence")
 
 
+# ---------------------------------------------------------------- testing chapter (doc/data/testing)
+
+def test_counts(f, data):
+    """Test functions per crate, split into the ones that run by default and the ignored ones."""
+    d = pd.read_csv(data / "testing" / "test_counts.csv", comment="#").sort_values("default", ascending=True)
+    fig, ax = plt.subplots(figsize=(6.4, 3.0))
+    y = np.arange(len(d))
+    ax.barh(y, d["default"], color=SERIES[0], label="既定で実行")
+    ax.barh(y, d["ignored"], left=d["default"], color=SERIES[1], label="ignored（外部ツール・計時）")
+    for yi, (a, b) in enumerate(zip(d["default"], d["ignored"])):
+        ax.text(a + b + 3, yi, f"{a + b}", va="center", color=INK2, fontsize=9)
+    ax.set_yticks(y, [f"{c}" for c in d["crate"]])
+    ax.set_xlabel("テスト関数の数")
+    ax.set_xlim(0, d[["default", "ignored"]].sum(axis=1).max() * 1.12)
+    ax.grid(axis="y", visible=False)
+    ax.legend(loc="lower right")
+    fig.tight_layout()
+    f.save(fig, "test_counts")
+
+
+def test_margins(f, data):
+    """Measured deviation divided by the bound of the assertion, for the tests that print their value."""
+    d = pd.read_csv(data / "testing" / "test_margins.csv", comment="#")
+    d["ratio"] = d["value"] / d["bound"]
+    col = {"analytic": SERIES[0], "invariant": SERIES[2], "refine": SERIES[3], "cross": SERIES[1]}
+    lab = {"analytic": "解析解・理論式", "invariant": "保存量", "refine": "メッシュの細分", "cross": "他モデルとの相互比較"}
+    fig, ax = plt.subplots(figsize=(8.0, 4.4))
+    y = np.arange(len(d))[::-1]
+    for k in ("analytic", "invariant", "refine", "cross"):
+        m = d["kind"] == k
+        ax.plot(d.ratio[m], y[m.values], "o", color=col[k], markersize=7, label=lab[k])
+    ax.axvline(1.0, color=INK, linewidth=1.0)
+    ax.text(1.0, len(d) - 0.35, " 判定幅（これを超えると失敗）", color=INK, fontsize=8.5, ha="left", va="bottom")
+    ax.set_xscale("log")
+    ax.set_xlim(1e-7, 5)
+    ax.set_ylim(-0.7, len(d) + 0.2)
+    ax.set_yticks(y, d["quantity"], fontsize=7.5)
+    ax.set_xlabel("測った偏差 ÷ テストの判定幅")
+    ax.legend(loc="lower left", fontsize=8.5)
+    fig.tight_layout()
+    f.save(fig, "test_margins")
+
+
+def test_order(f, data):
+    """Attitude error of the Lie-group integrators at the steps h and h/2, with the slopes of orders 4 and 5."""
+    o = pd.read_csv(data / "testing" / "test_order.csv", comment="#")
+    fig, ax = plt.subplots(figsize=(4.6, 3.4))
+    for i, r in o.iterrows():
+        c = SERIES[i]
+        hs = np.array([r.h, r.h / 2])
+        es = np.array([r.err_h, r.err_h2])
+        ax.loglog(hs, es, "o", color=c, markersize=7)
+        p = np.round(r.order)
+        xs = np.array([r.h / 2.2, r.h * 1.15])
+        ax.loglog(xs, r.err_h * (xs / r.h) ** p, "--", color=c, linewidth=1.0)
+        ax.text(r.h * 1.2, r.err_h, f"{r.method}\n観測 {r.order:.2f}\n許容 {r.lo}–{r.hi}", color=c, fontsize=8.5, va="center")
+    ax.set_xlim(0.018, 0.2)
+    ax.set_xticks([0.025, 0.05], ["0.025", "0.05"])
+    ax.xaxis.set_minor_formatter(matplotlib.ticker.NullFormatter())
+    ax.set_xlabel("刻み幅 $h$ [s]")
+    ax.set_ylabel("20 s 後の姿勢の誤差 [rad]")
+    ax.grid(which="minor", visible=False)
+    fig.tight_layout()
+    f.save(fig, "test_order")
+
+
 # ---------------------------------------------------------------- cross-comparison with OpenRocket and RocketPy
 
 XC_STYLE = {  # key: (label, colour, linestyle)
@@ -1916,6 +1983,10 @@ def main():
     cfd_fin_size_cost(f, data)
     integrator_cost_accuracy(f, root)
     mc_sample_convergence(f, root)
+    if (root / "testing" / "test_counts.csv").exists():
+        test_counts(f, root)
+        test_margins(f, root)
+        test_order(f, root)
     if (root / "xcheck_tools" / "summary.csv").exists():
         xcheck_figures(f, root / "xcheck_tools")
 

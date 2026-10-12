@@ -1665,3 +1665,26 @@ IY-O545
 
 関連
     :ref:`sec-cli-report`
+
+.. _IY-O546:
+
+IY-O546
+-------
+
+重大度: ワーニング
+
+メッセージ::
+
+    warning[IY-O546]: report.html could not be written: <reason>
+
+意味
+    ``output.html = true`` で自動的に書く HTML レポートを書けなかった。コマンド自体の結果は出力先に残っていて、終了ステータスにも影響しない。
+
+主な原因
+    出力先に書けない。``report.html`` と同じ名前のディレクトリがある。
+
+対処
+    出力先の権限と ``report.html`` の有無を確認し、``ignisyeet report`` で書き直す。
+
+関連
+    :ref:`cfg-output-html`、:ref:`sec-cli-report`

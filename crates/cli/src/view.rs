@@ -340,6 +340,7 @@ pub fn config_panel(cfg: &Config, config_path: &std::path::Path, sub: Sub, motor
     p.section("Output");
     p.row("directory", short_path(&cfg.out_dir()));
     p.row("KML", if cfg.output.kml { style("on").green().to_string() } else { dim("off").to_string() });
+    p.row("HTML report", if cfg.output.html { style("on").green().to_string() } else { dim("off").to_string() });
     p
 }
 

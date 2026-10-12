@@ -3,6 +3,7 @@
 [output]
 dir = "out_step"         # CFD results of the STEP surface do not overwrite the other outputs
 kml = true                 # also write ignisyeet.kml for Google Earth
+html = false               # also write report.html (as `ignisyeet report`) at the end of geom, aero, sim and dispersion
 
 [rocket]
 stl = "sample_rocket.stl"

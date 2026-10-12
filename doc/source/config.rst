@@ -23,7 +23,7 @@
 ``[output]``
 ------------
 
-結果ファイルの出力先と、KML の有無を指定する。
+結果ファイルの出力先と、KML と HTML レポートの有無を指定する。
 出力先は ``--out`` でも与えられ、そのときはコマンドラインの値が優先する。
 
 .. raw:: latex
@@ -47,6 +47,11 @@
        ``output.kml``
           真偽値、``true``
      - Google Earth 用の ``ignisyeet.kml`` を書き出すか（:ref:`sec-kml`）。
+   * - .. _cfg-output-html:
+
+       ``output.html``
+          真偽値、``false``
+     - ``true`` のとき、``geom`` ``aero`` ``sim`` ``dispersion`` の最後に HTML のレポート ``report.html`` を出力先へ書く（:ref:`sec-cli-report`）。``report`` コマンドはこの値によらず書く。
 
 .. raw:: latex
 

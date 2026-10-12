@@ -149,6 +149,9 @@ pub struct OutputCfg {
     /// Also write the Google Earth file ignisyeet.kml (flight and dispersion results).
     #[serde(default = "yes")]
     pub kml: bool,
+    /// Also write the HTML report (report.html) at the end of geom, aero, sim and dispersion runs.
+    #[serde(default)]
+    pub html: bool,
 }
 
 fn out_dir() -> PathBuf {
@@ -157,7 +160,7 @@ fn out_dir() -> PathBuf {
 
 impl Default for OutputCfg {
     fn default() -> Self {
-        Self { dir: out_dir(), kml: true }
+        Self { dir: out_dir(), kml: true, html: false }
     }
 }
 
@@ -1411,6 +1414,7 @@ mod tests {
         let c = parse(&sample.replacen("dir = \"out\"", "", 1)).unwrap();
         assert_eq!(c.output.dir, PathBuf::from("out"));
         assert!(c.output.kml);
+        assert!(!c.output.html);
         let e = parse(&sample.replacen("samples = 1000", "samples = 0", 1)).unwrap_err().to_string();
         assert!(e.contains("dispersion.monte_carlo.samples must be at least 1"), "{e}");
     }
@@ -1492,6 +1496,8 @@ mod tests {
         assert_eq!(c.dispersion.wind_speeds, vec![2.0, 4.0]);
         assert_eq!(c.dispersion.monte_carlo.samples, 3);
         assert!(!c.output.kml);
+        assert!(!c.output.html);
+        assert!(sample_set(&["output.html=true"]).unwrap().output.html);
         // a quoted TOML string, whitespace around the parts, a new table
         let c = sample_set(&[" dispersion.mode = \"wind_grid\" ", "rocket.nose_direction=-z", "rocket.fin_override.count=4"]).unwrap();
         assert_eq!(c.dispersion.mode, sim::DispersionMode::WindGrid);

@@ -240,6 +240,8 @@ fn run() -> Result<()> {
     let cli = Cli::parse();
     ui::init(cli.quiet, cli.no_progress);
     let mut incomplete: Option<String> = None;
+    // Configuration of a finished geom/aero/sim/dispersion run, for the report written by `output.html`.
+    let mut auto_report: Option<(Config, PathBuf)> = None;
     match cli.cmd {
         Cmd::Geom { config, ov } => {
             let cfg = load_config(&config, &ov, &TableArg::default())?;
@@ -258,6 +260,7 @@ fn run() -> Result<()> {
             let mut w = g.warnings.clone();
             w.extend(size_warnings(&cfg, g.length, 2.0 * g.ref_radius));
             print_warnings(&w);
+            auto_report = Some((cfg, config));
         }
         Cmd::Aero { config, force, ov, table } => {
             let cfg = load_config(&config, &ov, &table)?;
@@ -265,6 +268,7 @@ fn run() -> Result<()> {
             begin(&cfg, &config, Sub::Aero);
             aero_table_for(&cfg, force, Sub::Aero)?;
             print_warnings(&grid_warnings(&cfg));
+            auto_report = Some((cfg, config));
         }
         Cmd::Sim { config, descent, ov, table } => {
             let cfg = load_config(&config, &ov, &table)?;
@@ -277,14 +281,16 @@ fn run() -> Result<()> {
                     sim_failed(&cfg, &e);
                     return Err(e);
                 }
-            }
+            };
+            auto_report = Some((cfg, config));
         }
         Cmd::Dispersion { config, ov, table } => {
             let cfg = load_config(&config, &ov, &table)?;
             outfile::lock_dir(&cfg.out_dir())?;
             begin(&cfg, &config, Sub::Dispersion);
             remove_stale_dispersion_outputs(&cfg);
-            incomplete = run_dispersion(&cfg)?
+            incomplete = run_dispersion(&cfg)?;
+            auto_report = Some((cfg, config));
         }
         Cmd::CfdCheck { config, mesh } => {
             let cfg = load_config(&config, &ConfigArgs::default(), &TableArg::default())?;
@@ -294,7 +300,7 @@ fn run() -> Result<()> {
         Cmd::Report { config, out, output, no_plots } => {
             let ov = ConfigArgs { set: Vec::new(), out };
             let cfg = load_config(&config, &ov, &TableArg::default())?;
-            run_report(&cfg, &config, output.as_deref(), !no_plots)?;
+            run_report(&cfg, &config, output.as_deref(), !no_plots, false)?;
         }
         Cmd::SampleStl { path } => {
             let tris: Vec<_> = geom::sample::SampleRocket::default().mesh().iter().map(|t| t.map(|v| geom::Vec3::new(v.y, v.z, -v.x) * 1000.0)).collect();
@@ -306,6 +312,9 @@ fn run() -> Result<()> {
             }
             return Ok(());
         }
+    }
+    if let Some((cfg, config)) = &auto_report {
+        write_auto_report(cfg, config);
     }
     ui().finish();
     if let Some(why) = incomplete {
@@ -328,8 +337,20 @@ fn report_epoch() -> u64 {
         .unwrap_or_else(|| std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs()))
 }
 
-/// `ignisyeet report`: reads the result files of the output directory and writes the HTML report.
-fn run_report(cfg: &Config, config_path: &Path, output: Option<&Path>, embed_plots: bool) -> Result<()> {
+/// The report that `output.html = true` adds to the end of a geom, aero, sim or dispersion run. A failure to
+/// write it is a warning: the results of the run are already on disk.
+fn write_auto_report(cfg: &Config, config_path: &Path) {
+    if !cfg.output.html {
+        return;
+    }
+    if let Err(e) = run_report(cfg, config_path, None, true, true) {
+        print_warnings(&[format!("[IY-O546] report.html could not be written: {e:#}")]);
+    }
+}
+
+/// `ignisyeet report`: reads the result files of the output directory and writes the HTML report. With `auto`
+/// (the report of `output.html`) the file is announced like the other outputs of the run instead.
+fn run_report(cfg: &Config, config_path: &Path, output: Option<&Path>, embed_plots: bool, auto: bool) -> Result<()> {
     let dir = cfg.out_dir();
     report::check_dir(&dir)?;
     outfile::lock_dir(&dir)?;
@@ -360,7 +381,12 @@ fn run_report(cfg: &Config, config_path: &Path, output: Option<&Path>, embed_plo
         std::fs::create_dir_all(parent).with_context(|| format!("[IY-O030] cannot create {}", parent.display()))?;
     }
     outfile::write(&path, r.html.as_bytes())?;
-    if ui().mode == ui::Mode::Quiet {
+    if auto {
+        ui().record(&path);
+        if ui().plain() {
+            println!("  -> {}", path.display());
+        }
+    } else if ui().mode == ui::Mode::Quiet {
         println!("{}", path.display());
     } else {
         println!("  -> {} ({} sections, {:.0} kB)", path.display(), r.sections.len(), r.html.len() as f64 / 1024.0);
@@ -3936,6 +3962,32 @@ mod tests {
         write_kml(&cfg, kml::Parts::default(), true).unwrap();
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(!text.contains("STALE_FLIGHT_MARKER") && text.contains("Launch site") && !text.contains("<name>Flight</name>"), "{text}");
+    }
+
+    #[test]
+    fn html_report_is_written_only_when_output_html_is_set() {
+        let (mut cfg, _g_cfg) = sample_config("auto_report");
+        cfg.output.kml = false;
+        let report = cfg.out_dir().join("report.html");
+        let config_path = Path::new("sample.toml");
+        assert_eq!(run_sim(&cfg, Some(Descent::Ballistic)).unwrap(), None);
+        write_auto_report(&cfg, config_path);
+        assert!(!report.exists());
+        cfg.output.html = true;
+        write_auto_report(&cfg, config_path);
+        assert!(std::fs::metadata(&report).unwrap().len() > 0);
+    }
+
+    #[test]
+    fn unwritable_auto_report_is_an_error_of_run_report_not_a_panic() {
+        let (mut cfg, _g_cfg) = sample_config("auto_report_fail");
+        cfg.output.kml = false;
+        cfg.output.html = true;
+        assert_eq!(run_sim(&cfg, Some(Descent::Ballistic)).unwrap(), None);
+        // report.html is a directory: the report cannot be written; the caller prints IY-O546 and goes on.
+        std::fs::create_dir_all(cfg.out_dir().join("report.html")).unwrap();
+        assert!(run_report(&cfg, Path::new("sample.toml"), None, true, true).is_err());
+        write_auto_report(&cfg, Path::new("sample.toml"));
     }
 
     #[test]

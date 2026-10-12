@@ -3,6 +3,7 @@
 [output]
 dir = "out_rans"         # RANS results do not overwrite the Barrowman / panel / Euler outputs
 kml = true                 # also write ignisyeet.kml for Google Earth
+html = false               # also write report.html (as `ignisyeet report`) at the end of geom, aero, sim and dispersion
 
 [rocket]
 stl = "sample_rocket.stl"

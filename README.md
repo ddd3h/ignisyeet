@@ -98,7 +98,7 @@ ignisyeet [-q|--quiet] [--no-progress] <command> ...
 | `aero <config> [--force]` | Builds the aerodynamic coefficient table (reused when the inputs are unchanged) |
 | `sim <config> [--descent ballistic\|parachute]` | Flies once with the configured wind (`trajectory.csv`, `summary.json`) |
 | `dispersion <config>` | Computes the landing dispersion in parallel (`dispersion.mode`) |
-| `report <config> [--out DIR] [--output FILE] [--no-plots]` | Writes one self-contained HTML report (`report.html`) from the result files of the output directory; nothing is recomputed |
+| `report <config> [--out DIR] [--output FILE] [--no-plots]` | Writes one self-contained HTML report (`report.html`) from the result files of the output directory; nothing is recomputed. With `output.html = true` in the configuration, `geom`, `aero`, `sim` and `dispersion` write the same report when they finish |
 | `cfd-check <config> [--mesh]` | Checks the CFD tools; `--mesh` also builds the volume mesh and reports its quality |
 | `sample-stl <path>` | Writes the STL of the bundled sample rocket |
 

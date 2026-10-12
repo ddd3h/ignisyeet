@@ -3,6 +3,7 @@
 [output]
 dir = "out"
 kml = true                 # also write ignisyeet.kml for Google Earth
+html = false               # also write report.html (as `ignisyeet report`) at the end of geom, aero, sim and dispersion
 
 # Compute resources. They never change results (nor the aero-table cache).
 [resources]

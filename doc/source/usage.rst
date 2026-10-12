@@ -35,7 +35,7 @@ IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファ�
    * - ``dispersion <config>``
      - ``dispersion.mode`` に従って落下分散を並列に計算する。``"wind_grid"`` は ``dispersion.csv`` と ``dispersion_meta.json`` を、``"monte_carlo"`` は ``dispersion_mc.csv`` と ``dispersion_summary.json`` を書く。係数表がないか入力が変わったときは、先に ``aero`` を実行する。
    * - ``report <config> [--out DIR] [--output FILE] [--no-plots]``
-     - 出力先にある結果のファイルから、単独で開ける HTML のレポート ``report.html`` を書く（:ref:`sec-cli-report`）。計算は行わない。
+     - 出力先にある結果のファイルから、単独で開ける HTML のレポート ``report.html`` を書く（:ref:`sec-cli-report`）。計算は行わない。``output.html = true`` のときは、他のコマンドも最後に同じレポートを書く。
    * - ``cfd-check <config> [--mesh]``
      - CFD に必要なツール（SU2、MPI、gmsh。``surface = "stl"`` では manifold3d も）の有無と版、ケース数を表示する。``--mesh`` は壁面のメッシュも作って品質を表示する。``surface = "stl"`` では形状の忠実度、``surface = "step"`` では CAD のモデルの読み込みと位置合わせも表示する。必要なツールが足りないときは終了ステータス 1 で終わる。
    * - ``sample-stl <path>``
@@ -75,6 +75,11 @@ IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファ�
 
    $ ignisyeet report examples/sample.toml
      -> examples/out/report.html (7 sections, 126 kB)
+
+``output.html`` を ``true`` にすると、``geom`` ``aero`` ``sim`` ``dispersion`` も、実行の最後に同じレポートを出力先の ``report.html`` に書く（既定は ``false``）。
+各コマンドのレポートには、その時点で出力先にある結果のファイルが載る。
+結果が不完全のまま終わった実行（終了ステータス 3）でもレポートを書き、不完全な状態をそのまま示す。エラーで終わった実行では書かない。
+レポートを書けなかったときは、警告 :ref:`IY-O546` を出して、実行は失敗にしない。``report`` コマンドは ``output.html`` によらず、常に書く。
 
 レポートは、出力先にあるファイルだけを読んで作る。計算し直さないので、数秒で終わる。
 ファイルがない項目は、その節を省く。``sim`` だけを実行した出力先でも、``dispersion`` だけを実行した出力先でも作れる。
@@ -560,7 +565,7 @@ IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファ�
      - ``python/plot.py``
      - 図（:ref:`sec-plots`）
    * - ``report.html``
-     - ``report``
+     - ``report``、``output.html = true`` のときの他のコマンド
      - 結果をまとめた HTML のレポート 1 つ（:ref:`sec-cli-report`）
 
 以下に、形状・飛翔・落下分散の出力の列と項目を示す。

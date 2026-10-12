@@ -1,0 +1,14 @@
+# One flight against the integrator, dt, output_interval and Earth model (4 threads)
+# 12th Gen Intel(R) Core(TM) i7-12700 (20 threads, 12 cores), release binary of commit c60d1ee, examples/sample.toml, 2026-10-12.
+# Median of 3 runs (wall_min/wall_max: range); cpu = user+system time of the process; rss_mb = largest peak resident memory;
+# load = 1-minute load average before the runs (median over the runs). Written by doc/scripts/cost_measure.py.
+integrator,dt,output_interval,earth,trajectory_mb,apogee_m,wall_s,wall_min_s,wall_max_s,cpu_s,rss_mb,load
+rk4,0.001,0.05,flat,3.57419,4440.47,0.65,0.58,0.95,0.64,16.1484,22.24
+rk4,0.002,0.05,flat,3.60057,4440.48,0.41,0.4,0.44,0.39,16.2578,22.24
+rk4,0.005,0.05,flat,3.60053,4440.45,0.23,0.22,0.25,0.22,16.2812,23.26
+rk4,0.01,0.05,flat,3.57419,4440.51,0.19,0.17,0.2,0.16,16.2891,23.26
+rk45,0.002,0.05,flat,3.60058,4440.48,0.18,0.12,0.2,0.16,16.1992,23.26
+rk45,0.002,1.0,flat,0.179086,4440.47,0.04,0.04,0.05,0.04,16.1289,23.26
+dop853,0.002,0.05,flat,3.57429,4440.48,0.22,0.18,0.35,0.18,16.1406,23.26
+rk4,0.002,0.05,ecef,3.57283,4439.6,0.73,0.66,0.76,0.63,16.3125,23.26
+rk45,0.002,0.05,ecef,3.57284,4439.6,0.16,0.11,0.17,0.15,16.1484,24.2

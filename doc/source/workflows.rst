@@ -579,7 +579,7 @@
       ignisyeet sim  sample.toml --set aero.method=panel --aero-table runs/aero_panel \
           --set wind.speed=7 --set wind.direction_deg=90 --out runs/sim_panel_7ms
 
-   1 行目が係数表 ``runs/aero_panel/aero_table.csv`` を書く（サンプルのパネル法で 9 秒ほど。20 スレッドの CPU、既定のパネル数）。
+   1 行目が係数表 ``runs/aero_panel/aero_table.csv`` を書く（所要時間は :ref:`sec-cost-panel` を参照されたい）。
    2 行目は表を作り直さずに飛翔を計算する。パネル法の表を使ったサンプルの着地距離は、風速 1、4、7 m/s の東風でそれぞれ 2477.4 m、8019.8 m、13480.1 m である。
 
    ``--aero-table`` に渡す表は **同じ機体と空力の設定で作ったもの** でなければならない。合わない表を渡すとエラーで止まる（:ref:`IY-O004`）。表を作ったときと同じ ``--set`` で ``aero.*`` を指定するか、``--aero-table`` を外して作り直す。
@@ -636,7 +636,7 @@
      Ballistic: max landing distance 1549.6 m
      Parachute: max landing distance 14315.6 m
 
-``[output] kml = true`` なら ``out/ignisyeet.kml`` も書かれる。時間は CPU により異なる（コストの目安は :ref:`page-theory-dispersion`）。
+``[output] kml = true`` なら ``out/ignisyeet.kml`` も書かれる。時間は CPU により異なる（計算時間の目安は :ref:`sec-cost-dispersion`）。
 
 
 .. _sec-wind-grid-result:
@@ -694,7 +694,7 @@
        max landing distance 18018.1 m (sample 830)
        landing distance P50 7835.0 m, P90 10907.1 m, P99 13666.4 m, P99.9 14999.4 m (landed samples)
 
-結果を :numref:`fig-dispersion-mc` と :numref:`tbl-mc-result` に示す（``examples/out/mc``、1000 サンプル、20 スレッドのマシンで 1.1 s）。
+結果を :numref:`fig-dispersion-mc` と :numref:`tbl-mc-result` に示す（``examples/out/mc``、1000 サンプル）。
 
 .. _fig-dispersion-mc:
 
@@ -835,7 +835,7 @@ Google Earth で見る
 保安の検討には高度別の表（``wind.model = "profile"``）を使う。``power`` と ``log`` は地上の基準風速を上空へ外挿するので、上空の風が強い日の着地点を過小にも過大にも見積もる。例の ``examples/wind_profile_example.csv`` は書式を示す架空の表なので、実際には当日の予報や観測の表に置き換える。
 **bash** と ``python3`` を使う。zsh などを使っているときは先に ``bash`` を起動する。
 
-計算時間の目安：例の高度別の表で手順 0 から 4 のすべてを ``rk45`` で計算すると、20 スレッドの CPU で約 8 分かかる。``rk4`` のままだと 1 時間半ほどかかるので、下の ``P`` に ``--set sim.integrator=rk45`` を加える。4 コアのノート PC では数十分から 1 時間以上を見込む。測定の条件は :ref:`page-vv-performance` にある。
+計算時間の目安は :ref:`sec-cost-keepout` にある。``rk4`` のままでは長くかかるので、下の ``P`` に ``--set sim.integrator=rk45`` を加える。
 
 1 つの設定ファイルを書き換えずに、``--set``、``--out``、``--aero-table`` （:ref:`page-howto-sweeps`）で条件を変えて実行する。
 ``--set`` の組は bash の配列に入れ、``"${P[@]}"`` の形で展開する。こうすると、``[7.8, 11.9]`` のように空白や角かっこを含む値も 1 つの引数のまま渡る。結果は現在のディレクトリの ``runs/`` の下に計算ごとに分けて書く。

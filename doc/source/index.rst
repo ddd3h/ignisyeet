@@ -49,6 +49,7 @@ IgnisYeet ドキュメント
    verification
    validation
    testing
+   cost
    limitations
    development
 

@@ -85,8 +85,8 @@
        ``resources.memory_gb``
           数値、``0``
      - 重い処理のメモリ予算 [GB]。``0`` はこのプロセスが使えるメモリ（Linux では ``MemAvailable``、cgroup の上限、``ulimit -v`` の上限の最小。macOS では物理メモリ）。
-       パネル法は、密行列に必要な量（パネル数 :math:`n` に対して :math:`8n^2+64n` バイト）が予算を超えると、計算の前にエラーで止まる。
-       CFD は、予算に収まるよう同時実行ケース数を減らす。1 ケースの見積もりが予算を超えるときは、メッシュ生成の後、計算の前にエラーで止まる。0 以上（負の値はエラー）（:ref:`sec-cfd-resources`）。
+       パネル法は、密行列に必要な量が予算を超えると、計算の前にエラーで止まる（:ref:`sec-cost-panel`）。
+       CFD は、予算に収まるよう同時実行ケース数を減らす。1 ケースの見積もりが予算を超えるときは、メッシュ生成の後、計算の前にエラーで止まる。0 以上（負の値はエラー）（:ref:`sec-cost-cfd`）。
    * - .. _cfg-resources-nice:
 
        ``resources.nice``
@@ -816,12 +816,12 @@ RANS の既定値は ``model = "rans"`` を選んだときの値である。
 
        ``aero.cfd.ranks_per_case``
           整数、``4``
-     - 1 ケースの MPI ランク数。0 は 4 とスレッド数の小さいほう。0 以上（0 は自動）（:ref:`sec-cfd-resources`）。
+     - 1 ケースの MPI ランク数。0 は 4 とスレッド数の小さいほう。0 以上（0 は自動）（:ref:`sec-cost-cfd`）。
    * - .. _cfg-aero-cfd-parallel_cases:
 
        ``aero.cfd.parallel_cases``
           整数、``4``
-     - 同時に解くケース数。0 はメモリとスレッドの予算に収まる数。``ranks_per_case`` × ``parallel_cases`` が使えるスレッド数を超えると警告する。0 以上（0 は自動）（:ref:`sec-cfd-resources`）。
+     - 同時に解くケース数。0 はメモリとスレッドの予算に収まる数。``ranks_per_case`` × ``parallel_cases`` が使えるスレッド数を超えると警告する。0 以上（0 は自動）（:ref:`sec-cost-cfd`）。
    * - .. _cfg-aero-cfd-timeout_minutes:
 
        ``aero.cfd.timeout_minutes``

@@ -1639,7 +1639,14 @@ def aero_cost_accuracy(f, data):
     """Table time [s] against the C_Nalpha difference [%] to Euler CFD, per method (marker) and Mach number (colour)."""
     vm = pd.read_csv(data / "sample_euler_vs_models.csv", comment="#")
     z = vm[vm.alpha_deg == 0].sort_values("mach")
-    times = {"barrowman": 0.2, "panel": 9.0, "cfd": 9149.0}  # whole table, sample rocket (doc/data/perf, cfd/run_summary.json)
+    cost = data.parent / "cost"
+    st = cost_csv(cost, "stages.csv")
+    qt = pd.read_csv(cost / "cfd_quoted.csv", comment="#").set_index("item")
+    times = {  # whole table, sample rocket: 4 threads (doc/data/cost/stages.csv), CFD 4 ranks (doc/data/cfd/run_summary.json)
+        "barrowman": float(st[(st.stage == "aero") & (st.variant == "barrowman")].wall_s.iloc[0]),
+        "panel": float(st[(st.stage == "aero") & (st.variant == "panel")].wall_s.iloc[0]),
+        "cfd": float(qt.loc["euler_matrix_16_cases", "wall_s"]),
+    }
     fig, ax = plt.subplots(figsize=(6.0, 3.6))
     machs = [0.3, 0.8, 1.2, 2.0]
     for c, m in zip(SERIES, machs):
@@ -1667,22 +1674,16 @@ def aero_cost_accuracy(f, data):
 
 
 def panel_mesh_cost(f, data):
-    """Panel count n against matrix memory and the change of C_Nalpha (change relative to the finest mesh)."""
+    """Panel count n against the change of C_Nalpha (change relative to the finest mesh)."""
     d = pd.read_csv(data / "panel" / "mesh_cost.csv", comment="#")
-    fig, axs = plt.subplots(1, 2, figsize=(7.4, 3.3))
-    n = np.linspace(d.panels.min() * 0.9, d.panels.max() * 1.05, 100)
-    axs[0].plot(n, (8 * n**2 + 64 * n) / 1e6, color=SERIES[0], linewidth=1.2, label="$8n^2+64n$")
-    axs[0].plot(d.panels, d.matrix_mb, "o", color=SERIES[1], markersize=7, label="実測")
-    axs[0].set_xlabel("表面パネル数 $n$")
-    axs[0].set_ylabel("行列のメモリ [MB]")
-    axs[0].legend(loc="upper left")
+    fig, ax = plt.subplots(figsize=(4.6, 3.3))
     for c, col, lab in ((SERIES[0], "cna_m03", "$M=0.3$"), (SERIES[1], "cna_m08", "$M=0.8$")):
         ref = d[col].iloc[-1]
-        axs[1].plot(d.panels, 100.0 * (d[col] / ref - 1.0), "-o", color=c, markersize=7, label=lab)
-    axs[1].axhline(0, color=INK2, linewidth=0.8)
-    axs[1].set_xlabel("表面パネル数 $n$")
-    axs[1].set_ylabel("$C_{N\\alpha}$ の変化 [%]（最も細かいメッシュ基準）")
-    axs[1].legend(loc="lower right")
+        ax.plot(d.panels, 100.0 * (d[col] / ref - 1.0), "-o", color=c, markersize=7, label=lab)
+    ax.axhline(0, color=INK2, linewidth=0.8)
+    ax.set_xlabel("表面パネル数 $n$")
+    ax.set_ylabel("$C_{N\\alpha}$ の変化 [%]（最も細かいメッシュ基準）")
+    ax.legend(loc="lower right")
     fig.tight_layout()
     f.save(fig, "panel_mesh_cost")
 
@@ -1945,6 +1946,145 @@ def xcheck_figures(f, xd):
     xcheck_basic_finner(f, xd)
 
 
+# ---------------------------------------------------------------- cost chapter (doc/data/cost)
+
+def cost_csv(d, name):
+    """A data file of doc/data/cost; the run on a quiet machine (<name>_quiet.csv) is used when it exists."""
+    q = d / name.replace(".csv", "_quiet.csv")
+    return pd.read_csv(q if q.exists() else d / name, comment="#")
+
+
+def cost_stages(f, d, cfd):
+    """Run time of every stage on the sample rocket (log axis): measured here (4 threads) and quoted CFD records."""
+    st = cost_csv(d, "stages.csv")
+    q = pd.read_csv(d / "cfd_quoted.csv", comment="#").set_index("item")
+
+    def t(stage, variant):
+        return float(st[(st.stage == stage) & (st.variant == variant)].wall_s.iloc[0])
+
+    rows = [
+        ("形状の抽出（geom）", t("geom", "-"), "m"),
+        ("係数表：部品積み上げ法", t("aero", "barrowman"), "m"),
+        ("係数表：パネル法", t("aero", "panel"), "m"),
+        ("係数表：CFD（Euler、16 ケース）", float(q.loc["euler_matrix_16_cases", "wall_s"]), "q"),
+        ("係数表：CFD（RANS、20 ケース）", float(q.loc["rans_table_20_cases", "wall_s"]), "q"),
+        ("飛翔 1 回（rk4）", t("sim", "rk4"), "m"),
+        ("飛翔 1 回（rk45）", t("sim", "rk45"), "m"),
+        ("落下分散：風の格子 112 飛翔（rk4）", t("dispersion", "wind_grid 112 flights, rk4"), "m"),
+        ("落下分散：風の格子 112 飛翔（rk45）", t("dispersion", "wind_grid 112 flights, rk45"), "m"),
+        ("落下分散：モンテカルロ 1000×2 飛翔（rk45）", t("dispersion", "monte_carlo 1000 x 2, rk45"), "m"),
+    ]
+    fig, ax = plt.subplots(figsize=(7.2, 3.9))
+    y = np.arange(len(rows))[::-1]
+    for yi, (lab, v, kind) in zip(y, rows):
+        ax.barh(yi, v, left=1e-3, height=0.62, color=SERIES[0] if kind == "m" else SERIES[1], edgecolor="white")
+        txt = f"{v:.2f} s" if v < 10 else (f"{v:.0f} s" if v < 100 else f"{v:.0f} s（{v / 3600:.1f} 時間）" if v >= 3600 else f"{v:.0f} s")
+        ax.text(v * 1.25, yi, txt, va="center", fontsize=8.5, color=INK2)
+    ax.set_yticks(y)
+    ax.set_yticklabels([r[0] for r in rows], fontsize=8.5)
+    ax.set_xscale("log")
+    ax.set_xlim(1e-2, 3e5)
+    ax.set_xticks([1e-2, 1e-1, 1, 10, 60, 600, 3600, 36000])
+    ax.set_xticklabels(["0.01 s", "0.1 s", "1 s", "10 s", "1 分", "10 分", "1 時間", "10 時間"], fontsize=8.5)
+    ax.xaxis.set_minor_locator(matplotlib.ticker.NullLocator())
+    ax.grid(axis="y", visible=False)
+    from matplotlib.patches import Patch
+    ax.legend(handles=[Patch(color=SERIES[0], label="この章で測定（4 スレッド）"), Patch(color=SERIES[1], label="保存した計測の引用（SU2、4 ランク）")], loc="upper right")
+    fig.tight_layout()
+    f.save(fig, "cost_stages")
+
+
+def cost_threads(f, d):
+    """Speed-up against the thread count: the quoted profile of 2026-10-08, this chapter's quiet-machine run and its busy-machine run."""
+    series = (
+        ("panel_table", "panel_table", "パネル法の係数表", SERIES[0], "o"),
+        ("wind_grid_rk4_112", "wind_grid_rk4_224", "風の格子（rk4）", SERIES[1], "s"),
+        ("monte_carlo_rk45_2000", "monte_carlo_rk45_4000", "モンテカルロ（rk45）", SERIES[2], "^"),
+    )
+    sets = [("引用", pd.read_csv(d / "threads_quoted.csv", comment="#"), 0)]
+    if (d / "threads_quiet.csv").exists():
+        q = pd.read_csv(d / "threads_quiet.csv", comment="#")
+        sets.append((f"この章、負荷小（負荷平均 {q.load.min():.0f}〜{q.load.max():.0f}）", q, 1))
+    b = pd.read_csv(d / "threads.csv", comment="#")
+    sets.append((f"この章、負荷大（負荷平均 {b.load.min():.0f}〜{b.load.max():.0f}）", b, 1))
+    sets[0] = (f"引用（負荷平均 12〜15）", sets[0][1], 0)
+    fig, axs = plt.subplots(1, len(sets), figsize=(2.6 * len(sets) + 0.6, 3.5), sharey=True)
+    tt = np.array([1, 2, 4, 8, 20])
+    for ax, (ttl, df, kind) in zip(axs, sets):
+        ax.plot(tt, tt, color=INK2, linewidth=0.9, linestyle="--", label="理想")
+        ax.set_xscale("log", base=2)
+        ax.set_yscale("log", base=2)
+        ax.set_xticks(tt)
+        ax.set_xticklabels([str(v) for v in tt])
+        ax.set_yticks([1, 2, 4, 8, 16])
+        ax.set_yticklabels(["1", "2", "4", "8", "16"])
+        ax.set_xlabel("resources.threads")
+        ax.text(0.04, 0.95, ttl, transform=ax.transAxes, va="top", color=INK2, fontsize=8)
+        for qk, tk, lab, c, mk in series:
+            s = df[df.task == (qk if kind == 0 else tk)].sort_values("threads")
+            ax.plot(s.threads, s.wall_s.iloc[0] / s.wall_s, "-" + mk, color=c, markersize=6, linewidth=1.2, label=lab)
+    axs[0].set_ylabel("速くなる倍率（1 スレッド比）")
+    axs[0].legend(loc="lower right", fontsize=7.5)
+    fig.tight_layout()
+    f.save(fig, "cost_threads")
+
+
+def cost_scaling(f, d, cfd):
+    """Scaling laws: panel count (time, memory), number of flights, CFD cells (time per iteration)."""
+    pm = cost_csv(d, "panel_mesh.csv").sort_values("panels")
+    ds = cost_csv(d, "dispersion_scaling.csv")
+    mc = pd.read_csv(cfd / "mesh_convergence.csv", comment="#")
+    fig, axs = plt.subplots(2, 2, figsize=(7.6, 6.0))
+    ax = axs[0, 0]
+    ax.plot(pm.panels, pm.cpu_s, "o-", color=SERIES[0], markersize=6, linewidth=1.2, label="CPU 時間")
+    ax.plot(pm.panels, pm.wall_s, "s", color=SERIES[1], markersize=6, label="壁時計の時間")
+    n = np.array([pm.panels.min(), pm.panels.max()], dtype=float)
+    n0 = float(pm.panels.iloc[len(pm) // 2])
+    c0 = float(pm.cpu_s.iloc[len(pm) // 2])
+    ax.plot(n, c0 * (n / n0), color=INK2, linewidth=0.8, linestyle=":", label="$n$")
+    ax.plot(n, c0 * (n / n0) ** 2, color=INK2, linewidth=0.8, linestyle="-.", label="$n^2$")
+    ax.plot(n, c0 * (n / n0) ** 3, color=INK2, linewidth=0.8, linestyle="--", label="$n^3$")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("表面パネル数 $n$")
+    ax.set_ylabel("時間 [s]（4 スレッド）")
+    ax.set_xticks([2000, 4000, 8000])
+    ax.set_xticklabels(["2000", "4000", "8000"])
+    ax.xaxis.set_minor_locator(matplotlib.ticker.NullLocator())
+    ax.legend(loc="upper left", fontsize=7.5)
+    ax = axs[0, 1]
+    nn = np.linspace(pm.panels.min() * 0.9, pm.panels.max() * 1.05, 100)
+    ax.plot(nn, (8 * nn**2 + 64 * nn) / 1e6, color=SERIES[0], linewidth=1.2, label="$8n^2+64n$")
+    ax.plot(pm.panels, pm.rss_mb, "o", color=SERIES[1], markersize=7, label="プロセスの最大常駐メモリ")
+    ax.set_xlabel("表面パネル数 $n$")
+    ax.set_ylabel("メモリ [MB]")
+    ax.legend(loc="upper left", fontsize=8)
+    ax = axs[1, 0]
+    for key, lab, c, mk in (("wind_grid", "風の格子", SERIES[0], "o"), ("monte_carlo", "モンテカルロ", SERIES[1], "s")):
+        s = ds[ds["mode"] == key]
+        ax.plot(s.flights, s.wall_s, "-" + mk, color=c, markersize=6, linewidth=1.2, label=lab)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("飛翔の数")
+    ax.set_ylabel("時間 [s]（rk45、4 スレッド）")
+    ax.legend(loc="upper left")
+    ax = axs[1, 1]
+    for m, c, mk in ((0.8, SERIES[0], "o"), (2.0, SERIES[1], "s")):
+        s = mc[np.isclose(mc.mach, m)].copy()
+        it0 = s.iterations.str.split("/").str[0].astype(float)
+        it4 = s.iterations.str.split("/").str[1].astype(float)
+        ax.plot(s.cells / 1e6, s.case_wall_s_a0 / it0, "-" + mk, color=c, markersize=6, linewidth=1.2, label=f"$M={m:g}$、$\\alpha=0$")
+        ax.plot(s.cells / 1e6, s.case_wall_s_a4 / it4, "--" + mk, color=c, markersize=6, linewidth=1.0, mfc="white", label=f"$M={m:g}$、$\\alpha=4^\\circ$")
+    ax.set_xlabel("セル数 [$10^6$]")
+    ax.set_ylabel("1 反復の時間 [s]（Euler、4 ランク）")
+    ax.set_ylim(0, None)
+    ax.legend(loc="upper left", fontsize=7.5)
+    for ax, lab in zip(axs.flat, "abcd"):
+        ax.text(0.97, 0.05, lab, transform=ax.transAxes, ha="right", color=INK2, fontsize=10)
+    fig.tight_layout()
+    f.save(fig, "cost_scaling")
+
+
 def main():
     if sys.argv[1] == "--geometry":
         geometry_figures(Figs(Path(sys.argv[2])))
@@ -1989,6 +2129,10 @@ def main():
         test_order(f, root)
     if (root / "xcheck_tools" / "summary.csv").exists():
         xcheck_figures(f, root / "xcheck_tools")
+    if (root / "cost" / "stages.csv").exists():
+        cost_stages(f, root / "cost", data)
+        cost_threads(f, root / "cost")
+        cost_scaling(f, root / "cost", data)
 
 if __name__ == "__main__":
     main()

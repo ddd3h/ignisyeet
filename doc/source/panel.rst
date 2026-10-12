@@ -256,9 +256,8 @@ Green の恒等式を外部領域に適用すると、:math:`\Phi` は表面 :ma
 **3 つの右辺と解**
 
 係数行列 :math:`A` は密な :math:`n\times n` 行列で、LU 分解で解く。
-必要なメモリは :math:`8n^2+64n` バイトで、パネル数 :math:`n` の 2 乗に比例する。
-解く前に、必要な量を、このプロセスが使えるメモリと比べる。超えるときはエラーで止まり、粗いパネル設定（``body_axial``、``body_circ``、``fin_chord``、``fin_span``）を使うよう促す（:ref:`IY-A018`）。
-``resources.memory_gb`` を指定したときは、それも超えてはならない（:ref:`IY-A019`）。確保に失敗したときもエラーになる（:ref:`IY-A020`）。
+必要なメモリが使える量を超えるときは、解く前にエラーで止まり、粗いパネル設定（``body_axial``、``body_circ``、``fin_chord``、``fin_span``）を使うよう促す（:ref:`IY-A018`、:ref:`IY-A019`、:ref:`IY-A020`）。
+メモリと時間の見積もりは :ref:`sec-cost-panel` にある。
 
 :math:`A` は形状と Mach 数だけで決まり、迎角によらない。右辺 :math:`b` は一様流 :math:`\bm U` の線形関数なので、
 次の三つの単位問題を同時に解けば（一つの LU 分解に右辺 3 列）、任意の迎角と回転が線形結合で表せる。
@@ -729,35 +728,35 @@ Mach 数が :math:`M_{lo}=\min(` ``transonic[0]``\ :math:`,\ ` 最後の亜音�
 
 .. _tbl-choose-panel-mesh:
 
-.. list-table:: メッシュの細かさと結果（サンプル機体、``fin_chord`` 16、``fin_span`` 10、時間は 8 スレッドの測定。``doc/data/panel/mesh_cost.csv``）
+.. list-table:: メッシュの細かさと結果（サンプル機体、``fin_chord`` 16、``fin_span`` 10。``doc/data/panel/mesh_cost.csv``）
    :header-rows: 1
-   :widths: 24 46 30
+   :widths: 30 30 40
 
    * - ``body_axial`` / ``body_circ``
-     - 表面パネル数、行列メモリ、計算時間（亜音速 6 点の解、表全体）
+     - 表面パネル数
      - :math:`C_{N\alpha}`\ （:math:`M=0.3`、:math:`M=0.8`）
    * - 60 / 32（粗）
-     - 3712 枚、110 MB、1.3 s、9.4 s
+     - 3712 枚
      - 14.775、15.993
    * - 80 / 48（既定）
-     - 5888 枚、278 MB、3.9 s、11.3 s
+     - 5888 枚
      - 14.843、16.102
    * - 120 / 64（細）
-     - 9984 枚、798 MB、14.7 s、22.6 s
+     - 9984 枚
      - 14.871、16.154
 
-条件は、``examples/sample.toml``、Mach 0〜3（0.02 刻み）× 迎角 0〜90°（1° 刻み）の表、8 スレッド（Intel Core i7-12700、負荷平均 2〜4）である。
-行列メモリは :math:`8n^2+64n` バイトの式による。:math:`C_{N\alpha}`\ （1/rad）の差は、最も細かいメッシュに対して、粗いメッシュで :math:`-0.65` %（:math:`M=0.3`）と :math:`-1.0` %（:math:`M=0.8`）、既定で :math:`-0.19` %、:math:`-0.32` % である。
+条件は、``examples/sample.toml``、Mach 0〜3（0.02 刻み）× 迎角 0〜90°（1° 刻み）の表である。
+メモリと時間は :ref:`sec-cost-panel` にある。:math:`C_{N\alpha}`\ （1/rad）の差は、最も細かいメッシュに対して、粗いメッシュで :math:`-0.65` %（:math:`M=0.3`）と :math:`-1.0` %（:math:`M=0.8`）、既定で :math:`-0.19` %、:math:`-0.32` % である。
 超音速（:math:`M=1.2,2,3`）では、粗いメッシュでも差は 0.13 % 以下である。
-:numref:`fig-panel-mesh-cost` は、パネル数に対するメモリと :math:`C_{N\alpha}` の変化を示す。
+:numref:`fig-panel-mesh-cost` は、パネル数に対する :math:`C_{N\alpha}` の変化を示す。
 
 .. _fig-panel-mesh-cost:
 
 .. figure:: /_generated/plots/panel_mesh_cost.*
    :width: 80%
 
-   表面パネル数 :math:`n` に対する行列メモリ（左。曲線は :math:`8n^2+64n`、点は実測）と、:math:`C_{N\alpha}` の変化（右。最も細かいメッシュに対する差）。
-   メモリは :math:`n` の 2 乗で増える一方、:math:`C_{N\alpha}` の変化は 1 % 未満にとどまることを読む。
+   表面パネル数 :math:`n` に対する :math:`C_{N\alpha}` の変化（最も細かいメッシュに対する差）。
+   パネル数を 3712 枚まで減らしても、変化は 1 % 前後にとどまることを読む。
 
 尾部フェアリングと後流は、既定のままでよい。
 ``tail_radii = 0``\ （開口）は、胴体のみの :math:`C_{N\alpha}` が細長体理論の値に届かず、圧力中心が機体の前方に出る。

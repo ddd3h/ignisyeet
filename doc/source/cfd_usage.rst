@@ -64,7 +64,7 @@ manifold3d の行は ``surface = "stl"`` のときだけ検査される。
 ``aero`` を CFD モードで実行したときも、計算を始める前に同じ検査が行われる。
 
 ``--mesh`` を付けると、実際にメッシュを作って品質を表示する。節点数、セル数、壁面の三角形数、セルの種類、品質（SICN の最小値と平均、0.05 未満のセル数）が出る。
-``examples/sample_step.toml`` では、節点数 560092、セル数 2690207、壁面の三角形数 479830、SICN の最小値 0.071、平均 0.783、0.05 未満のセル 0 で、メッシュの生成に 101 秒かかった（20 スレッドのマシン）。
+``examples/sample_step.toml`` では、節点数 560092、セル数 2690207、壁面の三角形数 479830、SICN の最小値 0.071、平均 0.783、0.05 未満のセル 0 である。
 このメッシュは本番の計算にも使われる。
 
 .. _sec-cfd-native:
@@ -74,7 +74,7 @@ SU2 の構築
 
 Linux では、``--cfd`` により SU2 8.3.0 がソースから、その場の CPU 向けに構築される。
 構築を省いて移植できる conda-forge のバイナリを使うときは ``--su2-binary``\ （環境変数 ``IGNISYEET_SU2_BINARY=1``）を付ける。macOS では常にバイナリが使われる。
-速さの違いは :ref:`sec-vperf-su2-native` に、インストーラのオプションと環境変数は :ref:`page-reference-installer` にある。どの SU2 が選ばれたかは ``cfd-check`` が表示する ``SU2_CFD`` のパスで分かる。
+速さの違いは :ref:`sec-cost-su2` に、インストーラのオプションと環境変数は :ref:`page-reference-installer` にある。どの SU2 が選ばれたかは ``cfd-check`` が表示する ``SU2_CFD`` のパスで分かる。
 別の CPU に移した構築済みの SU2 は警告の対象になるので、その CPU 上で ``install.sh --cfd --force`` を実行して作り直すか、``--su2-binary`` に切り替える。
 
 インストーラを使わずに、micromamba で同じ環境を作ることもできる。この場合の SU2 は conda-forge のバイナリである。
@@ -127,8 +127,7 @@ CFD で係数表を作る
 
 同時に動かすケース数は、``[resources]`` の ``memory_gb``\ （既定は使えるメモリ）に収まるまで自動で減らされ、``note: aero.cfd: parallel_cases reduced from … to …`` が出る。
 1 ケースの見積もりが予算を超えるときは、メッシュを作ったあと、計算の前にエラーで止まる。``wall_size`` を大きくするか、``ranks_per_case`` を減らす。
-``ranks_per_case`` と ``parallel_cases`` の積は、使えるスレッド数以内にする。どちらも 0 にすると自動になる。資源の考え方は :ref:`sec-cfd-resources` にある。
-サンプル機体の Euler では、1 ケースのメモリは 3.3 から 4.6 GB である。
+``ranks_per_case`` と ``parallel_cases`` の積は、使えるスレッド数以内にする。どちらも 0 にすると自動になる。資源の考え方は :ref:`sec-cost-cfd` にある。
 
 係数表の作成と中断からの再開
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -141,7 +140,7 @@ CFD で係数表を作る
 失敗したケースと未収束のケースがあれば、最後にまとめて表示される。
 続けて ``ignisyeet sim`` や ``ignisyeet dispersion`` を実行すると、この表が使われる。作った表を別の設定でも使うときは、``aero.method = "table"`` で読み込む。
 
-:math:`M=0.3, 0.8, 1.2, 2.0` と :math:`\alpha=0, 4, 8^\circ` の 12 ケース（``sample_cfd.toml`` の行列）を 4 ランクで 1 ケースずつ解く時間は、合計で約 1.9 時間である。:math:`\alpha=0, 2, 4, 8^\circ` の 16 ケースでは全体で約 2.5 時間かかった（20 スレッドのデスクトップ CPU で、他の計算と同時に実行した測定。メッシュは ``wall_size`` 2 mm、142 万セル。``doc/data/cfd/run_summary.json``）。
+所要時間の目安は :ref:`sec-cost-cfd` にある。
 
 途中で止めた（Ctrl-C、SIGTERM、時間切れ）あと、同じ設定で ``ignisyeet aero`` をもう一度実行すると、終わったケースは解き直さず、残りだけが解かれる。
 最初からやり直すには、出力先の下の ``cfd`` ディレクトリ（``workdir`` で変えられる）を削除する。
@@ -211,10 +210,9 @@ RANS で解く
 ``wall_size`` や ``iterations`` を設定しないと、RANS 用の既定値（壁面 5 mm、``yplus`` 1）が使われる。
 使える形状と設定は限られる。``surface = "stl"``、``y=0`` について対称でないフィン配置の ``panel_mesh``、``roll_damping = true``、``yplus`` が 5 より大きく 30 より小さい場合は、計算を始める前にエラーで止まる。条件と理由は :ref:`sec-cfd-rans-use` にある。
 
-1 ケースのメモリは Euler よりずっと大きい。サンプル機体の半モデルで ``wall_size`` 5 mm のとき、``cfd-check --mesh`` の見積もりは約 9.0 GB（73.5 万節点）で、``wall_size`` 4.8 mm（78.7 万節点）の実測のピークは 7804 MiB だった。
-3 mm では見積もりが 22.3 GB になる（``doc/data/cfd/rans_mesh_sweep.csv``）。4 mm より細かくすると、メモリの目安を示す警告が出る。
+1 ケースのメモリと時間は Euler よりずっと大きい（:ref:`sec-cost-cfd`）。4 mm より細かくすると、メモリの目安を示す警告が出る。
 
-``sample_rans.toml`` の 20 ケース（:math:`M=0.3, 0.8, 1.2, 2`、:math:`\alpha=0, \pm4, \pm8^\circ`）を 4 ランク、2 ケースずつ同時に解くと約 4.4 時間かかり、15 ケースが ``converged``、5 ケースが ``unconverged`` だった（``doc/data/cfd/rans_table_run.json``。測定の条件は同ファイルの ``machine`` 欄）。
+``sample_rans.toml`` の 20 ケース（:math:`M=0.3, 0.8, 1.2, 2`、:math:`\alpha=0, \pm4, \pm8^\circ`）を 4 ランク、2 ケースずつ同時に解くと、15 ケースが ``converged``、5 ケースが ``unconverged`` だった（``doc/data/cfd/rans_table_run.json``。測定の条件は同ファイルの ``machine`` 欄）。
 ``unconverged`` が出たら、実行の最後の警告 ``warning[IY-F508]`` と、``cfd_cases.csv`` の ``rans_verdict`` と ``residual_drop`` を読む。
 係数表に使う前に、RANS の検証の範囲を確かめる（:ref:`page-vv-rans-verification`）。
 
@@ -296,7 +294,7 @@ CAD から書き出す
 
    $ ignisyeet cfd-check examples/sample_step.toml --mesh
 
-メッシュを作ったあとに、読み込みと照合の報告が表示される。``examples/sample_step.toml`` の出力は次のとおりである（20 スレッドのマシンでメッシュの作成に 101 秒かかった。長い行は省略した）。
+メッシュを作ったあとに、読み込みと照合の報告が表示される。``examples/sample_step.toml`` の出力は次のとおりである（長い行は省略した）。
 
 .. code-block:: text
 

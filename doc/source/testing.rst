@@ -50,18 +50,20 @@ CI は ``#[ignore]`` のテストを実行しないので、CFD のソルバを�
 .. csv-table:: クレートごとのテスト関数の数
    :delim: ¦
    :header-rows: 1
-   :widths: 30 20 20 15 15
+   :widths: 46 18 18 18
 
-   クレート¦既定で実行¦``#[ignore]``¦計¦本章の節
-   ``aero``¦58¦0¦58¦:ref:`sec-testing-aero`
-   ``geom``¦24¦0¦24¦:ref:`sec-testing-geom`
-   ``panel``¦35¦1¦36¦:ref:`sec-testing-panel`
-   ``sim``¦137¦0¦137¦:ref:`sec-testing-sim`
-   ``cfd``¦165¦16¦181¦:ref:`sec-testing-cfd`
-   ``cli``¦154¦1¦155¦:ref:`sec-testing-cli`
-   Rust の合計¦573¦18¦591¦
-   Python（``python/test_plot.py``）¦41¦0¦41¦:ref:`sec-testing-python`
-   shell（``scripts/test-install-codes.sh``）¦1 本のスクリプト¦¦¦:ref:`sec-testing-python`
+   クレート¦既定で実行¦``#[ignore]``¦計
+   ``aero``¦58¦0¦58
+   ``geom``¦24¦0¦24
+   ``panel``¦35¦1¦36
+   ``sim``¦137¦0¦137
+   ``cfd``¦165¦16¦181
+   ``cli``¦154¦1¦155
+   Rust の合計¦573¦18¦591
+   Python（``python/test_plot.py``）¦41¦0¦41
+   shell（``scripts/test-install-codes.sh``）¦1 本¦¦
+
+各クレートの内容は :ref:`sec-testing-crates` に、Python と shell は :ref:`sec-testing-python` に述べる。
 
 ``cli`` の数には、``crates/cli/tests`` の 3 件（設定キーとエラーコードのドキュメントとの対応）を含む。
 ``cfd`` の 16 件は ``crates/cfd/tests`` にあり、すべて ``#[ignore]`` である。
@@ -162,7 +164,15 @@ DOP853 は、:math:`y'=y\cos t`\ （厳密解 :math:`e^{\sin t}`）を刻み 8 �
    assert!(order > 7.5 && order < 8.5, "observed order {order} (e8 = {e8:e}, e16 = {e16:e})");
 
 姿勢の Lie 群積分は、自由な剛体を 20 秒積分し、刻み幅 :math:`h` と :math:`h/2` の姿勢の誤差を、RKMK の DP5 で細かい刻みで解いた解と比べる（``crates/sim/src/lie.rs``\ 、``convergence_order_rk4``、``convergence_order_dp5``）。
-4 次の方法は 4±0.3、5 次の方法は 5±0.4 を許容する。実際の値は 4.096 と 4.921 であり、:numref:`fig-test-margins` の右の図に示す。
+4 次の方法は 4±0.3、5 次の方法は 5±0.4 を許容する。実際の値は 4.096 と 4.921 である。:numref:`fig-test-order` は、そのときの誤差と、4 次と 5 次の傾きである。
+
+.. _fig-test-order:
+
+.. figure:: /_generated/plots/test_order.*
+   :width: 55%
+
+   Lie 群積分の収束の次数のテストの測定。20 秒後の姿勢の誤差を、刻み幅 0.05 s と 0.025 s で示す。破線は 4 次と 5 次の傾きである。値は ``doc/data/testing/test_order.csv`` による。
+
 ``dop853`` の係数が 8 次の条件を満たすこと（``quadrature_order_conditions``）と、組込みの誤差推定を含む係数表の整合（``tableau_is_consistent``、``dopri5_tableau_is_consistent``、``rk4_is_consistent``）も、別のテストが確かめる。
 
 パネル法のメッシュの収束は、次数ではなく変化の大きさだけを見る（``crates/panel/src/tests.rs``\ 、``mesh_convergence``）。
@@ -324,16 +334,15 @@ SU2 を使うケースには、所要時間が 5 分や 30 分と注記された
 ~~~~~~~~~~~~~~~~~~
 
 テストの許容幅は、実際の偏差よりずっと広いことが多い。
-:numref:`fig-test-margins` は、値を表示するテストについて、測った偏差を許容幅で割った値を示す（左）。
+:numref:`fig-test-margins` は、値を表示するテストについて、測った偏差を許容幅で割った値を示す。
 1 より小さければテストに通り、1 に近いほど余裕がない。
-右は、収束の次数のテストの測定である。
 
 .. _fig-test-margins:
 
 .. figure:: /_generated/plots/test_margins.*
-   :width: 100%
+   :width: 85%
 
-   左：テストが測った偏差を、そのテストの許容幅で割った値（対数軸）。右：Lie 群積分の収束の次数（20 秒後の姿勢の誤差。破線は 4 次と 5 次の傾き）。値は ``-- --nocapture`` の出力であり、出所は ``doc/data/testing/`` の各 CSV の先頭にある。
+   テストが測った偏差を、そのテストの許容幅で割った値（対数軸）。値はテストを ``--nocapture`` つきで実行した出力であり、出所は ``doc/data/testing/test_margins.csv`` の先頭にある。
 
 読み取れることは次のとおりである。
 

@@ -1766,13 +1766,12 @@ def test_counts(f, data):
 
 
 def test_margins(f, data):
-    """Measured deviation divided by the bound of the assertion (left) and the observed order of two integrators (right)."""
+    """Measured deviation divided by the bound of the assertion, for the tests that print their value."""
     d = pd.read_csv(data / "testing" / "test_margins.csv", comment="#")
     d["ratio"] = d["value"] / d["bound"]
     col = {"analytic": SERIES[0], "invariant": SERIES[2], "refine": SERIES[3], "cross": SERIES[1]}
     lab = {"analytic": "解析解・理論式", "invariant": "保存量", "refine": "メッシュの細分", "cross": "他モデルとの相互比較"}
-    fig, axs = plt.subplots(1, 2, figsize=(11.0, 4.4), gridspec_kw={"width_ratios": [2.0, 1]})
-    ax = axs[0]
+    fig, ax = plt.subplots(figsize=(8.0, 4.4))
     y = np.arange(len(d))[::-1]
     for k in ("analytic", "invariant", "refine", "cross"):
         m = d["kind"] == k
@@ -1785,8 +1784,14 @@ def test_margins(f, data):
     ax.set_yticks(y, d["quantity"], fontsize=7.5)
     ax.set_xlabel("測った偏差 ÷ テストの判定幅")
     ax.legend(loc="lower left", fontsize=8.5)
+    fig.tight_layout()
+    f.save(fig, "test_margins")
+
+
+def test_order(f, data):
+    """Attitude error of the Lie-group integrators at the steps h and h/2, with the slopes of orders 4 and 5."""
     o = pd.read_csv(data / "testing" / "test_order.csv", comment="#")
-    ax = axs[1]
+    fig, ax = plt.subplots(figsize=(4.6, 3.4))
     for i, r in o.iterrows():
         c = SERIES[i]
         hs = np.array([r.h, r.h / 2])
@@ -1803,7 +1808,7 @@ def test_margins(f, data):
     ax.set_ylabel("20 s 後の姿勢の誤差 [rad]")
     ax.grid(which="minor", visible=False)
     fig.tight_layout()
-    f.save(fig, "test_margins")
+    f.save(fig, "test_order")
 
 
 # ---------------------------------------------------------------- cross-comparison with OpenRocket and RocketPy
@@ -1981,6 +1986,7 @@ def main():
     if (root / "testing" / "test_counts.csv").exists():
         test_counts(f, root)
         test_margins(f, root)
+        test_order(f, root)
     if (root / "xcheck_tools" / "summary.csv").exists():
         xcheck_figures(f, root / "xcheck_tools")
 

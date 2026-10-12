@@ -102,6 +102,10 @@ ignisyeet [-q|--quiet] [--no-progress] <command> ...
 | `cfd-check <config> [--mesh]` | Checks the CFD tools; `--mesh` also builds the volume mesh and reports its quality |
 | `sample-stl <path>` | Writes the STL of the bundled sample rocket |
 
+The HTML report is one self-contained file (inline SVG, no scripts) with the inputs, geometry, aerodynamics, flight, landing dispersion and warnings:
+
+<p align="center"><img src="doc/figures/report/report_summary.png" width="520" alt="HTML report: summary and inputs"> <img src="doc/figures/report/report_flight.png" width="520" alt="HTML report: flight section"></p>
+
 Every configuration key can be overridden for one run with `--set KEY=VALUE`, and the output directory with `--out DIR`. See the [command-line reference](https://www.ddd3h.com/ignisyeet/usage.html) and the [configuration reference](https://www.ddd3h.com/ignisyeet/config.html).
 
 ## Documentation

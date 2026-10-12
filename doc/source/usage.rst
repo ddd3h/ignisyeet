@@ -114,6 +114,32 @@ IgnisYeet は、コマンド ``ignisyeet`` にサブコマンドと設定ファ�
      - 出力先のファイル
      - ファイルの一覧と大きさ。レポートを出力先に置いたときは、各ファイルへのリンク
 
+レポートの例を示す。図 :numref:`fig-report-summary` は先頭で、条件の一覧と主な数値、各節へのリンクが並ぶ。図 :numref:`fig-report-flight` は飛翔の節、図 :numref:`fig-report-dispersion` は落下分散と警告の節である。どれも付属のサンプル（``examples/sample.toml``）の結果から作ったものである。
+
+.. _fig-report-summary:
+
+.. figure:: /../figures/report/report_summary.png
+   :width: 100%
+   :alt: レポートの先頭: 見出し、4 つの主な数値、入力の一覧
+
+   レポートの先頭。頂点高度、最大速度、最小の静安定余裕、着地距離を最初に示し、その下に入力の設定値を並べる。
+
+.. _fig-report-flight:
+
+.. figure:: /../figures/report/report_flight.png
+   :width: 100%
+   :alt: レポートの飛翔の節: 上昇と降下の数値、高度と航跡、速度と静安定余裕の時刻歴
+
+   飛翔の節。数値の表と、高度、地上の航跡、速度、Mach 数、静安定余裕の時刻歴を示す。
+
+.. _fig-report-dispersion:
+
+.. figure:: /../figures/report/report_dispersion.png
+   :width: 100%
+   :alt: レポートの落下分散の節と警告
+
+   落下分散と警告の節。風速ごとの最大距離と、風向ごとの着地点を無誘導と開傘で示す。警告は、コードの説明へのリンクとともに載る。
+
 ``plots/`` に ``make plot`` が書いた PNG のうち、レポートが自分で描かない図（3 次元の飛翔経路、方式の比較）は、結果より古くなければ折りたたみの節に埋め込む。``--no-plots`` で埋め込まない。
 
 オプションは次のとおりである。

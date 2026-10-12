@@ -16,7 +16,7 @@
    "dispersion_scaling.csv": "wind grid and Monte Carlo time, memory and output size against the number of flights (rk45, 4 threads); last two rows: rk4 and dop853 with 112 flights",
    "sim_cost.csv": "one flight against integrator, dt, output_interval and earth.model (flat / ecef)",
    "example_run.csv": "panel table, 36 x 6 wind grid and 10^4 Monte Carlo samples in a row (the worked estimate of the chapter)",
-   "cad_mesh.csv": "geom from the STEP file (cold and cached tessellation) and cfd-check --mesh (gmsh, one thread) for sample_cfd.toml and sample_step.toml, one run each, on a copy of the example files in the scratch directory",
+   "cad_mesh.csv": "geom from the STEP file (cold and cached tessellation) and cfd-check --mesh (gmsh, one thread) for sample_cfd.toml and sample_step.toml, one run each, on a copy of the example files in the scratch directory (second run, load 16-20; an earlier run at load 43-54 gave 118 s and 355 s for the two meshes and was overwritten)",
    "plots.csv": "python/plot.py (doc/.venv interpreter) on the result files of one run",
    "threads_quiet.csv": "the same experiment in a quiet period (load average 2 to 13; the 8-thread Monte Carlo row has a wide range because the load rose during it)",
    "dispersion_scaling_quiet.csv": "the same sweep as dispersion_scaling.csv in a quieter period (load average 7 to 27)"
@@ -25,7 +25,7 @@
  },
  "quoted": {
   "cfd_quoted.csv": "CFD times and cells quoted from doc/data/cfd/run_summary.json (Euler, 16 cases: total_wall_s 9149, mesh_s 25), doc/data/cfd/sample_euler_cases.csv (case wall_seconds), doc/data/cfd/rans_table_run.json (run_wall_h 4.4404), doc/data/cfd/rans_table_cases.csv, doc/data/cfd/rans_mesh_sweep.csv; SU2 was not run for this chapter",
-  "threads_quoted.csv": "thread scaling quoted from doc/data/perf/profile_2026-10-08.md (commit b6a9bf5, load average 12-15); the 20-thread panel time (8.1-9.7 s) from the retired timing table of the validation chapter",
+  "threads_quoted.csv": "thread scaling quoted from doc/data/perf/profile_2026-10-08.md (commit b6a9bf5, load average 12-15); the 20-thread panel time of the retired timing table of the validation chapter (8.1-9.7 s) is not used because it came from another run than the 1-thread time",
   "not_in_csv": [
    "CFD memory and per-case numbers of the mesh convergence runs: doc/data/cfd/mesh_convergence.csv, rans_memory.csv, resource_plan.csv, rans_mesh_sweep.csv",
    "CFD workdir disk of one Euler run (mesh 72 MB, 52 MB per case): du of an existing run of sample_cfd.toml (1415504 cells), not committed",

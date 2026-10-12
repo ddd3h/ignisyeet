@@ -46,14 +46,14 @@ def load1() -> float:
     return float(Path("/proc/loadavg").read_text().split()[0])
 
 
-def run(args, scratch: Path, sets=(), cwd=ROOT):
+def run(args, scratch: Path, sets=(), cwd=ROOT, env=None):
     """One run: returns dict(wall, cpu, rss_mb, load, text)."""
     cmd = ["/usr/bin/time", "-f", "%e %U %S %M", "-o", str(scratch / "time.txt"), str(BIN), "--no-progress"]
     cmd += [str(a) for a in args]
     for s in sets:
         cmd += ["--set", s]
     ld = load1()
-    p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+    p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, env=env)
     tl = (scratch / "time.txt").read_text().strip().splitlines()[-1].split()
     wall, user, sys_, rss = float(tl[0]), float(tl[1]), float(tl[2]), float(tl[3])
     return dict(wall=wall, cpu=user + sys_, rss_mb=rss / 1024.0, load=ld, code=p.returncode, text=p.stdout + p.stderr)
@@ -280,11 +280,19 @@ def cad(S: Path):
     text = text.replace('stl = "sample_rocket.stl"', 'cad = "sample_rocket.step"').replace("stl_scale = 0.001", "")
     (cfg / "sample_cad.toml").write_text(text)
     rows = []
+    # rocket.cad is read through the gmsh python of the CFD environment (COST_CFD_PREFIX, or the default micromamba environment)
+    prefix = os.environ.get("COST_CFD_PREFIX", str(Path.home() / ".local/share/micromamba/envs/ignisyeet-cfd"))
+    env = dict(os.environ, IGNISYEET_CFD_PREFIX=prefix)
+    out = fresh(S / "o_cad")
     for label in ("geom_from_cad_cold", "geom_from_cad_cached"):
-        r = run(["geom", cfg / "sample_cad.toml", "--out", S / "o_cad"], S, ["resources.threads=4"])
+        r = run(["geom", cfg / "sample_cad.toml", "--out", out], S, ["resources.threads=4"], env=env)
+        if r["code"] != 0:
+            raise SystemExit(f"geom from CAD failed: {r['text'][-500:]}")
         rows.append([label, r["wall"], r["cpu"], r["rss_mb"], r["load"]])
     for label, name in (("cfd_mesh_euler_sample_cfd_toml", "sample_cfd.toml"), ("cfd_mesh_step_sample_step_toml", "sample_step.toml")):
-        r = run(["cfd-check", cfg / name, "--mesh"], S, [])
+        r = run(["cfd-check", cfg / name, "--mesh"], S, [], env=env)
+        if r["code"] != 0:
+            raise SystemExit(f"cfd-check failed: {r['text'][-500:]}")
         rows.append([label, r["wall"], r["cpu"], r["rss_mb"], r["load"]])
         print(r["text"][-700:], flush=True)
     write("cad_mesh.csv", "CAD geometry (cold and cached tessellation) and CFD mesh generation (gmsh, one thread), one run each", ["step", "wall_s", "cpu_s", "rss_mb", "load"], rows)

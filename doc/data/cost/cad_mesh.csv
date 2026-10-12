@@ -1,9 +1,9 @@
 # CAD geometry (cold and cached tessellation) and CFD mesh generation (gmsh, one thread), one run each
-# 12th Gen Intel(R) Core(TM) i7-12700 (20 threads, 12 cores), release binary of commit 2a345c2, examples/sample.toml, 2026-10-12.
+# 12th Gen Intel(R) Core(TM) i7-12700 (20 threads, 12 cores), release binary of commit 65604a8, examples/sample.toml, 2026-10-12.
 # Median of 3 runs (wall_min/wall_max: range); cpu = user+system time of the process; rss_mb = largest peak resident memory;
 # load = 1-minute load average before the runs (median over the runs). Written by doc/scripts/cost_measure.py.
 step,wall_s,cpu_s,rss_mb,load
-geom_from_cad_cold,0.46,0.24,32.4844,42.69
-geom_from_cad_cached,0.35,0.18,32.4023,42.69
-cfd_mesh_euler_sample_cfd_toml,117.71,84.9,1120.34,42.69
-cfd_mesh_step_sample_step_toml,354.99,314.21,2057.8,54.52
+geom_from_cad_cold,12.12,14.54,218.234,19.94
+geom_from_cad_cached,0.13,0.13,64.4922,18.16
+cfd_mesh_euler_sample_cfd_toml,37.22,41.8,1120.7,18.16
+cfd_mesh_step_sample_step_toml,147.23,152.51,2057.93,15.62

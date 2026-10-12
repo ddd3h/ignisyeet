@@ -1,11 +1,10 @@
-# Thread scaling quoted from the run-time profile of 2026-10-08 (doc/data/perf/profile_2026-10-08.md, sections 2 and 4; the 20-thread panel time from the retired timing table of the validation chapter: 8.1-9.7 s).
+# Thread scaling quoted from the run-time profile of 2026-10-08 (doc/data/perf/profile_2026-10-08.md, sections 2 and 4). The 20-thread panel time of the retired timing table of the validation chapter (8.1-9.7 s) is left out: it came from another run than the 1-thread time.
 # Intel Core i7-12700 (20 threads, 12 cores) shared with SU2 jobs, load average 12-15, release v0.4.0 (commit b6a9bf5), examples/sample.toml. wall_s = middle of the two or three runs, wall_lo_s / wall_hi_s = their range.
 # panel_table: whole table (151 x 91), 2 threads = sum of the phase times; wind_grid_rk4_112: 112 flights, rk4; monte_carlo_rk45_2000: 1000 samples x 2, rk45.
 task,threads,wall_s,wall_lo_s,wall_hi_s
 panel_table,1,113,110,116
 panel_table,2,60.2,59.6,60.7
 panel_table,4,33,32,34
-panel_table,20,8.9,8.1,9.7
 wind_grid_rk4_112,1,17.2,17.2,23.4
 wind_grid_rk4_112,2,8.9,8.65,9.07
 wind_grid_rk4_112,4,4.7,4.56,4.85

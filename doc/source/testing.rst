@@ -43,7 +43,8 @@
 
 CI（``.github/workflows/ci.yml``）は、``cargo test --release --locked``、作図のテスト、インストーラのコードの検査を実行する。
 続けて例題を ``ignisyeet geom``、``aero``、``sim``、``dispersion`` で通しで計算し、``sim.max_time`` を短くした飛翔の終了ステータスが 3 になることを確かめる。
-CI は ``#[ignore]`` のテストを実行しないので、CFD のソルバを実際に走らせるテストは CI の対象外である。
+リリースのワークフロー（``release.yml``）も、Linux（x86_64、musl）と macOS（Intel と Apple Silicon）のビルドで ``cargo test --release --locked`` を実行する。
+どちらも ``#[ignore]`` のテストを実行しないので、CFD のソルバを実際に走らせるテストは CI の対象外である。
 
 .. _tbl-test-counts:
 
@@ -67,7 +68,7 @@ CI は ``#[ignore]`` のテストを実行しないので、CFD のソルバを�
 
 ``cli`` の数には、``crates/cli/tests`` の 3 件（設定キーとエラーコードのドキュメントとの対応）を含む。
 ``cfd`` の 16 件は ``crates/cfd/tests`` にあり、すべて ``#[ignore]`` である。
-:numref:`fig-test-counts` は、同じ数を棒グラフにしたものである。数は ``cargo test --release --workspace -- --list`` と ``-- --list --ignored`` の出力から数えた（出所は ``doc/data/testing/test_counts.csv`` の先頭の行にある）。
+:numref:`fig-test-counts` は、同じ数を棒グラフにしたものである。数は ``cargo test --release --workspace -- --list`` と ``-- --list --ignored`` の出力による（出所は ``doc/data/testing/test_counts.csv`` の先頭の行にある）。
 
 .. _fig-test-counts:
 
@@ -76,8 +77,8 @@ CI は ``#[ignore]`` のテストを実行しないので、CFD のソルバを�
 
    クレートごとのテスト関数の数。橙は ``#[ignore]`` のテストである。
 
-既定で実行されるテストの所要時間は、このドキュメントの作成時の 1 回の測定で、``cfd`` が約 95 秒、``cli`` が約 17 秒、``panel`` が約 13 秒、そのほかのクレートが 2 秒以内だった。
-``cfd`` が長いのは、ソルバを擬似のスクリプトに置き換えた実行制御のテスト（:ref:`sec-testing-double`）が多いためである。
+既定で実行されるテストの所要時間は、1 回の測定で、``cfd`` が約 95 秒、``cli`` が約 17 秒、``panel`` が約 13 秒、そのほかのクレートが 2 秒以内だった。
+``cfd`` のテストには、ソルバを擬似のスクリプトに置き換えた実行制御のテスト（:ref:`sec-testing-double`）が多い。
 
 .. _sec-testing-patterns:
 
@@ -173,7 +174,7 @@ DOP853 は、:math:`y'=y\cos t`\ （厳密解 :math:`e^{\sin t}`）を刻み 8 �
 
    Lie 群積分の収束の次数のテストの測定。20 秒後の姿勢の誤差を、刻み幅 0.05 s と 0.025 s で示す。破線は 4 次と 5 次の傾きである。値は ``doc/data/testing/test_order.csv`` による。
 
-``dop853`` の係数が 8 次の条件を満たすこと（``quadrature_order_conditions``）と、組込みの誤差推定を含む係数表の整合（``tableau_is_consistent``、``dopri5_tableau_is_consistent``、``rk4_is_consistent``）も、別のテストが確かめる。
+``dop853`` の係数が 8 次の条件を満たすこと（``quadrature_order_conditions``）と、係数表の整合（``tableau_is_consistent``、``dopri5_tableau_is_consistent``、``rk4_is_consistent``）も、別のテストが確かめる。
 
 パネル法のメッシュの収束は、次数ではなく変化の大きさだけを見る（``crates/panel/src/tests.rs``\ 、``mesh_convergence``）。
 サンプル機体のメッシュを細かくしたときの :math:`C_{N\alpha}` の変化が 5 % 以内であることだけを確かめ、収束の次数は測らない。
@@ -207,7 +208,7 @@ STL は、ASCII 形式と二進形式が同じ三角形になること、80 バ�
    assert_eq!(f.count, 4);
    assert!(close(f.span, rk.span, 0.002), "span {}", f.span);
 
-設定ファイルは、有効な例題が読めること、範囲外の値や NaN、旧形式の節、組合せの矛盾が決まったコードのエラーになることを ``crates/cli/src/config.rs`` の 41 件が確かめる。
+設定ファイルは、有効な例題が読めること、範囲外の値や NaN、旧形式の節、組合せの矛盾が決まったコードのエラーになることを、``crates/cli/src/config.rs`` の 41 件が確かめる（コードを個別に確かめるのは、そのうちの一部である）。
 ``--set KEY=VALUE`` の書式の誤りは、使い方の誤り（終了ステータス 2）になる（``malformed_set_is_a_usage_error_with_exit_status_2``）。
 KML は、書き出したファイルを読み戻して同じ値になることを確かめる（``crates/cli/src/kml.rs``\ 、``loaders_round_trip_written_files``）。
 
@@ -275,14 +276,14 @@ CFD の SU2 設定ファイルの文字列は、そのハッシュ値を固定�
 * 再現性：落下分散のモンテカルロは、シードが同じなら結果が一致し、シードが違えば違う（``crates/sim/src/dispersion.rs``\ 、``seed_reproducibility``）。
   サンプル i の乱数がシードと添字だけで決まることも確かめる。スレッド数を 1、4、7 に変えても結果が変わらない（``thread_count_does_not_change_results``）。
 * 統計量：既知の共分散を持つ 4 点から、平均、共分散、誤差楕円の半軸と方位を、閉じた式と比べる（``statistics_of_known_covariance``）。
-* 固定の掃引：Mach 数を 0 から 3 まで 0.05 刻みの 61 点に固定し、フィンの法線力が検証角で値と傾きについて連続であることを確かめる。迎角 20°、30°、45°、60°、90° では Mach 数を 0.002 刻みで掃引し、法線力と圧力中心に飛びがないことを確かめる（``fin_normal_force_is_c1_in_alpha_and_continuous_in_mach``）。
+* 固定の掃引：Mach 数を 0 から 3 まで 0.05 刻みの 61 点に固定し、フィンの法線力が線形理論の適用限界の角度で値と傾きについて連続であることを確かめる。迎角 20°、30°、45°、60°、90° では Mach 数を 0.002 刻みで掃引し、法線力と圧力中心に飛びがないことを確かめる（``fin_normal_force_is_c1_in_alpha_and_continuous_in_mach``）。
 
 .. _sec-testing-double:
 
 擬似の SU2 と外部ツールのテスト
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-CFD の実行制御（``crates/cfd/src/runner.rs`` の 29 件）は、SU2 を使わずに確かめる。
+CFD の実行制御（``crates/cfd/src/runner.rs`` の 29 件の多く）は、SU2 を使わずに確かめる。
 テストは、設定ファイルから ``MACH_NUMBER``、``AOA``、``RESTART_SOL`` を読み、擬似の ``history.csv`` を書く shell スクリプトを SU2 の代わりに実行する。
 スクリプトの動作は、同じ場所の ``mode`` ファイルで切り替える。
 
@@ -320,7 +321,7 @@ SU2 を使うケースには、所要時間が 5 分や 30 分と注記された
 例題の設定（``examples/sample.toml``）を読み、形状の抽出、係数表の作成、飛翔までを実際に計算するものがある。
 
 * 例題の飛翔が着地し、外挿した風についてのワーニングを出す（``sample_flight_lands_and_warns_about_the_extrapolated_wind``）。
-* CAD の機体から、STL の機体と同じ形状と部品積み上げ法の表ができる（``a_cad_rocket_gives_the_geometry_and_barrowman_table_of_its_stl``）。
+* CAD の機体から、同じ機体を STL に書き出したものと同じ形状と部品積み上げ法の表ができる（``a_cad_rocket_gives_the_geometry_and_barrowman_table_of_its_stl``）。
 * 設定の同一性（ハッシュ）は、設定が変わると変わり、出力先と計算資源の指定では変わらない（``run_hash_follows_the_configuration_but_not_output_or_resources``）。係数表を使い回す条件もここで確かめる。
 * 失敗した飛翔は、古い結果を残さず、失敗の印を書く（``a_failed_sim_leaves_a_failure_marker_not_the_old_results``）。
 * ``--set`` と ``--out`` は、値を設定と同じ規則で検査し、ハッシュに入る（``overrides_enter_the_run_hash_but_out_does_not``）。
@@ -358,7 +359,7 @@ SU2 を使うケースには、所要時間が 5 分や 30 分と注記された
 クレートごとのテストの内容
 --------------------------
 
-各節は、モジュールごとのテスト関数の数と、確かめる内容である。数は ``cargo test -- --list`` の出力から数えた。
+各節は、モジュールごとのテスト関数の数と、確かめる内容である。数は ``cargo test -- --list`` の出力による。
 
 .. _sec-testing-geom:
 
@@ -494,8 +495,8 @@ Python と shell のテスト
 * エラーコードの対応は、コードの文字列がソースにあることの検査であり、各コードのエラーを起こせることは、一部のコードについて個別のテストが確かめるだけである。
 * 設定キーの対応は、構造体のフィールド宣言を文字列として読んで求める。読み方が壊れた場合の保護は、``key_lists_are_not_empty`` による最小数の検査だけである。
 * 実際の ``ignisyeet`` の実行ファイルを起動するテストはなく、起動は CI の smoke test が受け持つ。終了ステータス 1（エラー）を確かめるテストはなく、2（使い方の誤り）は引数の解析（``Cli::try_parse_from``）だけを確かめる。
-* 実機の飛翔データとの比較、風の実況との比較、複数の OS や CPU での結果の一致は、テストにない。固定した値（回帰テスト）は、浮動小数点の演算の順序に依存するので、環境が変わると最後の桁が動きうる。
-  実際にビットまでの一致を求めるのは、準定常の切り替えのテストの 1 件だけである。
+* 実機の飛翔データとの比較と風の実況との比較は、テストにない。固定した値（回帰テスト）は、リリースのビルドで 3 つの環境（Linux x86_64、macOS の Intel と Apple Silicon）の同じ値に対して実行される。
+  ただし、固定した値は許容幅つきなので、環境による最後の桁の違いは許容される。固定したビット列と比べるのは、準定常の切り替えのテストの 1 件だけである。
 * テストの数は、網羅の程度を表さない。行や分岐の網羅率は測っていない。
 
 テストの追加や変更の手順は :ref:`sec-dev-build` にある。

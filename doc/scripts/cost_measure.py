@@ -37,7 +37,7 @@ BIN = Path(os.environ.get("COST_BIN", ROOT / "target" / "release" / "ignisyeet")
 SAMPLE = Path(os.environ.get("COST_SAMPLE", ROOT / "examples" / "sample.toml"))
 DATA = Path(os.environ.get("COST_DATA", ROOT / "doc" / "data" / "cost"))
 REPEATS = int(os.environ.get("COST_REPEATS", "3"))
-# Thread counts of the `threads` experiment and a tag for its file name (threads_<tag>.csv), e.g. for another machine.
+# Thread counts of the `threads` experiment; a tag for all file names (stages_<tag>.csv, ...), e.g. for a run on a quiet machine.
 THREADS = [int(v) for v in os.environ.get("COST_THREADS", "1,2,4,8,20").split(",")]
 TAG = os.environ.get("COST_TAG", "")
 
@@ -95,7 +95,13 @@ def header(f, title):
     f.write("# load = 1-minute load average before the runs (median over the runs). Written by doc/scripts/cost_measure.py.\n")
 
 
+def tagged(name):
+    """File name with the COST_TAG (e.g. quiet) before the extension, so that runs under different loads keep their own files."""
+    return name if not TAG else name.replace(".csv", f"_{TAG}.csv")
+
+
 def write(name, title, cols, rows):
+    name = tagged(name)
     DATA.mkdir(parents=True, exist_ok=True)
     with open(DATA / name, "w", newline="") as f:
         header(f, title)
@@ -165,7 +171,7 @@ def threads(S: Path):
         rows.append(["wind_grid_rk4_224", t] + fmt(m))
         m = median_run(["dispersion", SAMPLE, "--aero-table", bar, "--out", S / "o_mt"], S, T + ["output.kml=false", "sim.integrator=rk45", "dispersion.mode=monte_carlo", "dispersion.monte_carlo.samples=2000"])
         rows.append(["monte_carlo_rk45_4000", t] + fmt(m))
-        write(f"threads_{TAG}.csv" if TAG else "threads.csv", "Run time against the thread count (resources.threads)", ["task", "threads"] + COLS, rows)
+        write("threads.csv", "Run time against the thread count (resources.threads)", ["task", "threads"] + COLS, rows)
 
 
 PANEL_COLS = ["body_axial", "body_circ", "fin_chord", "fin_span", "panels", "wake_panels", "subsonic_s"] + COLS
@@ -174,7 +180,7 @@ PANEL_TITLE = "Panel table time against the panel mesh (4 threads); subsonic_s =
 
 def panel(S: Path):
     """Meshes already in panel_mesh.csv are kept; only the missing ones are measured (the sweep takes about 40 minutes)."""
-    path = DATA / "panel_mesh.csv"
+    path = DATA / tagged("panel_mesh.csv")
     rows = []
     if path.exists():
         old = list(csv.reader(l for l in path.read_text().splitlines() if not l.startswith("#")))
@@ -219,17 +225,17 @@ def disp(S: Path):
         out = S / "o_gd"
         m = median_run(["dispersion", SAMPLE, "--aero-table", bar, "--out", out], S, T + [f"dispersion.directions={d}"])
         rows.append(["wind_grid", 7 * d * 2] + fmt(m) + [sum(f.stat().st_size for f in out.glob("dispersion*")) / 1e6])
-        write(f"dispersion_scaling_{TAG}.csv" if TAG else "dispersion_scaling.csv", "Dispersion time against the number of flights (rk45, 4 threads)", ["mode", "flights"] + COLS + ["out_mb"], rows)
+        write("dispersion_scaling.csv", "Dispersion time against the number of flights (rk45, 4 threads)", ["mode", "flights"] + COLS + ["out_mb"], rows)
     for n in (250, 500, 1000, 2000, 4000, 10000, 20000):
         out = S / "o_mc2"
         m = median_run(["dispersion", SAMPLE, "--aero-table", bar, "--out", out], S, T + ["dispersion.mode=monte_carlo", f"dispersion.monte_carlo.samples={n}"])
         rows.append(["monte_carlo", n * 2] + fmt(m) + [sum(f.stat().st_size for f in out.glob("dispersion*")) / 1e6])
-        write(f"dispersion_scaling_{TAG}.csv" if TAG else "dispersion_scaling.csv", "Dispersion time against the number of flights (rk45, 4 threads)", ["mode", "flights"] + COLS + ["out_mb"], rows)
+        write("dispersion_scaling.csv", "Dispersion time against the number of flights (rk45, 4 threads)", ["mode", "flights"] + COLS + ["out_mb"], rows)
     out = S / "o_gd4"
     for ig in ("rk4", "dop853"):
         m = median_run(["dispersion", SAMPLE, "--aero-table", bar, "--out", out], S, ["resources.threads=4", "output.kml=false", f"sim.integrator={ig}"])
         rows.append([f"wind_grid_{ig}", 112] + fmt(m) + [sum(f.stat().st_size for f in out.glob("dispersion*")) / 1e6])
-    write(f"dispersion_scaling_{TAG}.csv" if TAG else "dispersion_scaling.csv", "Dispersion time against the number of flights (rk45, 4 threads)", ["mode", "flights"] + COLS + ["out_mb"], rows)
+    write("dispersion_scaling.csv", "Dispersion time against the number of flights (rk45, 4 threads)", ["mode", "flights"] + COLS + ["out_mb"], rows)
 
 
 def sim(S: Path):
@@ -237,14 +243,15 @@ def sim(S: Path):
     if not (bar / "aero_table.csv").exists():
         run(["aero", SAMPLE, "--force", "--out", bar], S, ["resources.threads=4"])
     rows = []
-    cases = [("rk4", f"sim.dt={dt}", "sim.output_interval=0.05") for dt in (0.001, 0.002, 0.005, 0.01)]
-    cases += [("rk45", "sim.dt=0.002", "sim.output_interval=0.05"), ("rk45", "sim.dt=0.002", "sim.output_interval=1.0"), ("dop853", "sim.dt=0.002", "sim.output_interval=0.05")]
-    for ig, dt, oi in cases:
+    cases = [("rk4", f"sim.dt={dt}", "sim.output_interval=0.05", "flat") for dt in (0.001, 0.002, 0.005, 0.01)]
+    cases += [("rk45", "sim.dt=0.002", "sim.output_interval=0.05", "flat"), ("rk45", "sim.dt=0.002", "sim.output_interval=1.0", "flat"), ("dop853", "sim.dt=0.002", "sim.output_interval=0.05", "flat")]
+    cases += [("rk4", "sim.dt=0.002", "sim.output_interval=0.05", "ecef"), ("rk45", "sim.dt=0.002", "sim.output_interval=0.05", "ecef")]
+    for ig, dt, oi, earth in cases:
         out = S / "o_sim_x"
-        m = median_run(["sim", SAMPLE, "--aero-table", bar, "--out", out], S, ["resources.threads=4", f"sim.integrator={ig}", dt, oi])
+        m = median_run(["sim", SAMPLE, "--aero-table", bar, "--out", out], S, ["resources.threads=4", f"sim.integrator={ig}", dt, oi, f'earth.model="{earth}"'])
         s = json.loads((out / "summary.json").read_text())
-        rows.append([ig, dt.split("=")[1], oi.split("=")[1], (out / "trajectory.csv").stat().st_size / 1e6, s["apogee"]] + fmt(m))
-        write("sim_cost.csv", "One flight against the integrator, dt and output_interval (4 threads)", ["integrator", "dt", "output_interval", "trajectory_mb", "apogee_m"] + COLS, rows)
+        rows.append([ig, dt.split("=")[1], oi.split("=")[1], earth, (out / "trajectory.csv").stat().st_size / 1e6, s["apogee"]] + fmt(m))
+        write("sim_cost.csv", "One flight against the integrator, dt, output_interval and Earth model (4 threads)", ["integrator", "dt", "output_interval", "earth", "trajectory_mb", "apogee_m"] + COLS, rows)
 
 
 def example(S: Path):

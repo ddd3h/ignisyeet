@@ -19,7 +19,7 @@
   \draw[arr] (s) -- (d);
   % column 2: the aero methods (when no table exists)
   \node[me] (b) at (8.6,-1.2) {\texttt{barrowman}\\{\footnotesize $N_M N_\alpha$ に比例、約 0.2 s}};
-  \node[me] (p) at (8.6,-3.0) {\texttt{panel}\\{\footnotesize $n^2$ から $n^3$、約 30 s、メモリ $8n^2+64n$ バイト}};
+  \node[me] (p) at (8.6,-3.0) {\texttt{panel}\\{\footnotesize $n^2$ から $n^3$、約 20〜40 s、メモリ $8n^2+64n$ バイト}};
   \node[me] (c) at (8.6,-5.0) {\texttt{cfd}\\{\footnotesize $N_c\,t_{\mathrm{case}}/N_{\mathrm{par}}$、時間から日、\\メモリは 1 ケースごとに $\approx 3.3\,\mathrm{kB}\times N$}};
   \draw[bus] (a.east) -- (3.6,-2.8);
   \draw[bus] (3.6,-1.2) -- (3.6,-5.0);

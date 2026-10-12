@@ -1640,7 +1640,7 @@ def aero_cost_accuracy(f, data):
     vm = pd.read_csv(data / "sample_euler_vs_models.csv", comment="#")
     z = vm[vm.alpha_deg == 0].sort_values("mach")
     cost = data.parent / "cost"
-    st = pd.read_csv(cost / "stages.csv", comment="#")
+    st = cost_csv(cost, "stages.csv")
     qt = pd.read_csv(cost / "cfd_quoted.csv", comment="#").set_index("item")
     times = {  # whole table, sample rocket: 4 threads (doc/data/cost/stages.csv), CFD 4 ranks (doc/data/cfd/run_summary.json)
         "barrowman": float(st[(st.stage == "aero") & (st.variant == "barrowman")].wall_s.iloc[0]),
@@ -1948,9 +1948,15 @@ def xcheck_figures(f, xd):
 
 # ---------------------------------------------------------------- cost chapter (doc/data/cost)
 
+def cost_csv(d, name):
+    """A data file of doc/data/cost; the run on a quiet machine (<name>_quiet.csv) is used when it exists."""
+    q = d / name.replace(".csv", "_quiet.csv")
+    return pd.read_csv(q if q.exists() else d / name, comment="#")
+
+
 def cost_stages(f, d, cfd):
     """Run time of every stage on the sample rocket (log axis): measured here (4 threads) and quoted CFD records."""
-    st = pd.read_csv(d / "stages.csv", comment="#")
+    st = cost_csv(d, "stages.csv")
     q = pd.read_csv(d / "cfd_quoted.csv", comment="#").set_index("item")
 
     def t(stage, variant):
@@ -1989,17 +1995,22 @@ def cost_stages(f, d, cfd):
 
 
 def cost_threads(f, d):
-    """Speed-up against the thread count: the quoted profile of 2026-10-08 (left) and this chapter's measurement (right)."""
-    qt = pd.read_csv(d / "threads_quoted.csv", comment="#")
-    th = pd.read_csv(d / "threads.csv", comment="#")
+    """Speed-up against the thread count: the quoted profile of 2026-10-08, this chapter's quiet-machine run and its busy-machine run."""
     series = (
         ("panel_table", "panel_table", "パネル法の係数表", SERIES[0], "o"),
         ("wind_grid_rk4_112", "wind_grid_rk4_224", "風の格子（rk4）", SERIES[1], "s"),
         ("monte_carlo_rk45_2000", "monte_carlo_rk45_4000", "モンテカルロ（rk45）", SERIES[2], "^"),
     )
-    fig, axs = plt.subplots(1, 2, figsize=(7.6, 3.4), sharey=True)
+    sets = [("引用", pd.read_csv(d / "threads_quoted.csv", comment="#"), 0)]
+    if (d / "threads_quiet.csv").exists():
+        q = pd.read_csv(d / "threads_quiet.csv", comment="#")
+        sets.append((f"この章、負荷小（負荷平均 {q.load.min():.0f}〜{q.load.max():.0f}）", q, 1))
+    b = pd.read_csv(d / "threads.csv", comment="#")
+    sets.append((f"この章、負荷大（負荷平均 {b.load.min():.0f}〜{b.load.max():.0f}）", b, 1))
+    sets[0] = (f"引用（負荷平均 12〜15）", sets[0][1], 0)
+    fig, axs = plt.subplots(1, len(sets), figsize=(2.6 * len(sets) + 0.6, 3.5), sharey=True)
     tt = np.array([1, 2, 4, 8, 20])
-    for ax, ttl in zip(axs, ("引用（負荷平均 12〜15）", "この章で測定（負荷平均 18〜41）")):
+    for ax, (ttl, df, kind) in zip(axs, sets):
         ax.plot(tt, tt, color=INK2, linewidth=0.9, linestyle="--", label="理想")
         ax.set_xscale("log", base=2)
         ax.set_yscale("log", base=2)
@@ -2008,22 +2019,20 @@ def cost_threads(f, d):
         ax.set_yticks([1, 2, 4, 8, 16])
         ax.set_yticklabels(["1", "2", "4", "8", "16"])
         ax.set_xlabel("resources.threads")
-        ax.text(0.04, 0.95, ttl, transform=ax.transAxes, va="top", color=INK2, fontsize=9)
-    for qk, tk, lab, c, mk in series:
-        s = qt[qt.task == qk].sort_values("threads")
-        axs[0].plot(s.threads, s.wall_s.iloc[0] / s.wall_s, "-" + mk, color=c, markersize=6, linewidth=1.2, label=lab)
-        s = th[th.task == tk].sort_values("threads")
-        axs[1].plot(s.threads, s.wall_s.iloc[0] / s.wall_s, "-" + mk, color=c, markersize=6, linewidth=1.2, label=lab)
+        ax.text(0.04, 0.95, ttl, transform=ax.transAxes, va="top", color=INK2, fontsize=8)
+        for qk, tk, lab, c, mk in series:
+            s = df[df.task == (qk if kind == 0 else tk)].sort_values("threads")
+            ax.plot(s.threads, s.wall_s.iloc[0] / s.wall_s, "-" + mk, color=c, markersize=6, linewidth=1.2, label=lab)
     axs[0].set_ylabel("速くなる倍率（1 スレッド比）")
-    axs[0].legend(loc="lower right", fontsize=8)
+    axs[0].legend(loc="lower right", fontsize=7.5)
     fig.tight_layout()
     f.save(fig, "cost_threads")
 
 
 def cost_scaling(f, d, cfd):
     """Scaling laws: panel count (time, memory), number of flights, CFD cells (time per iteration)."""
-    pm = pd.read_csv(d / "panel_mesh.csv", comment="#").sort_values("panels")
-    ds = pd.read_csv(d / "dispersion_scaling.csv", comment="#")
+    pm = cost_csv(d, "panel_mesh.csv").sort_values("panels")
+    ds = cost_csv(d, "dispersion_scaling.csv")
     mc = pd.read_csv(cfd / "mesh_convergence.csv", comment="#")
     fig, axs = plt.subplots(2, 2, figsize=(7.6, 6.0))
     ax = axs[0, 0]

@@ -1,0 +1,8 @@
+# Number of test functions per crate at commit cfe7395 (release/v0.4.0). Obtained with `cargo test --release --workspace -- --list` and `-- --list --ignored`; the two guard tests of testutil/tmp.rs, which are compiled into eight test binaries (16 listed entries), are not counted. default: run by `cargo test --release`; ignored: run only with `-- --ignored` (external tools or timing). cli includes the three tests of crates/cli/tests.
+crate,default,ignored
+aero,58,0
+geom,24,0
+panel,35,1
+sim,137,0
+cfd,165,16
+cli,154,1

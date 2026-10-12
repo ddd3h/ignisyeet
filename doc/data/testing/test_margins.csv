@@ -1,0 +1,14 @@
+# Value that a test measures and the bound its assertion allows, for tests that print the value. Values: output of `cargo test --release -p panel -p sim -- --nocapture --test-threads=1` at commit cfe7395 (derived quantities are noted); bounds: the assert! of the same test. kind: analytic = closed-form reference, invariant = conserved quantity, refine = same model on a finer mesh, cross = cross-comparison with another model. Every value is a non-negative deviation (relative unless noted). The "worst of six" rows are the largest of the six integrator/attitude pairs of that test.
+test,quantity,kind,value,bound
+panel::tests::sphere_cp,球の表面 Cp（最大の絶対誤差）,analytic,0.0119,0.05
+panel::tests::prolate_spheroid_axial_flow,回転楕円体の表面 Cp（最大の絶対誤差）,analytic,0.0007,0.05
+panel::tests::slender_body_cna_is_two,オジーブ円筒の CNα（2 との絶対差）,analytic,0.0206,0.2
+panel::tests::thin_wing_matches_helmbold,薄い翼の CLα（Helmbold との相対差。3.7952 と 3.9175 から算出）,analytic,0.0312,0.1
+panel::supersonic::tests::cone_10deg_mach2,円すいの Cp（Mach 2。0.098 との絶対差。0.1045 から算出）,analytic,0.0065,0.01
+sim::lie::tests::free_rigid_body_rkmk_rk4,自由剛体の姿勢クォータニオンのノルムのずれ,invariant,5.77e-15,1e-14
+sim::lie::tests::free_rigid_body_rkmk_rk4,自由剛体のエネルギー（RKMK-RK4）,invariant,7.09e-12,1e-6
+sim::lie::tests::free_rigid_body_rkmk_rk4,自由剛体の角運動量（RKMK-RK4）,invariant,4.58e-12,1e-6
+sim::flight::tests::torque_free_asymmetric_body_conserves_energy_and_momentum,非対称剛体の飛翔の角運動量（6 通りの最悪）,invariant,1.78e-8,1e-6
+sim::flight::tests::torque_free_asymmetric_body_conserves_energy_and_momentum,非対称剛体の飛翔のエネルギー（6 通りの最悪）,invariant,3.94e-8,1e-6
+panel::tests::mesh_convergence,メッシュを細かくしたときの CNα の変化,refine,0.0061,0.05
+panel::tests::sample_rocket_vs_barrowman,パネル法の CNα と Barrowman 法の相対差（14.775 と 11.692 から算出）,cross,0.2637,0.30

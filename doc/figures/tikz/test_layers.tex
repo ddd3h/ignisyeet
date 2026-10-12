@@ -1,0 +1,28 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+\begin{tikzpicture}[font=\small,
+  hd/.style={draw=cink2, fill=white, thick, minimum height=8mm, align=center},
+  lb/.style={draw=cblue, fill=cfill, thick, minimum width=44mm, minimum height=16mm, text width=41mm, align=center},
+  lo/.style={draw=corange, fill=cfillo, thick, minimum width=44mm, minimum height=16mm, text width=41mm, align=center},
+  ds/.style={draw=cgrid, fill=white, minimum width=76mm, minimum height=16mm, text width=73mm, align=left, inner xsep=2mm},
+  rn/.style={draw=cgrid, fill=white, minimum width=56mm, minimum height=16mm, text width=53mm, align=left, inner xsep=2mm},
+  arr/.style={->, thick, cink2}]
+  \node[hd, minimum width=44mm] at (0,0) {層};
+  \node[hd, minimum width=76mm] at (6.0,0) {何を確かめるか};
+  \node[hd, minimum width=56mm] at (12.7,0) {実行のしかた};
+  \node[lb] (a) at (0,-1.9) {単体テスト\\\footnotesize 各クレートの \texttt{\#[test]}};
+  \node[ds] at (6.0,-1.9) {式、アルゴリズム、設定の検査、ファイルの読み書きを関数の単位で。擬似の SU2 も含む};
+  \node[rn] at (12.7,-1.9) {\texttt{cargo test --release}\\\footnotesize CI で毎回};
+  \node[lb] (b) at (0,-3.8) {結合テスト\\\footnotesize \texttt{crates/cli/tests}};
+  \node[ds] at (6.0,-3.8) {設定キー、エラーコードと、ドキュメントの対応};
+  \node[rn] at (12.7,-3.8) {\texttt{cargo test --release}\\\footnotesize CI で毎回};
+  \node[lb] (c) at (0,-5.7) {Python と shell\\\footnotesize \texttt{python/}、\texttt{scripts/}};
+  \node[ds] at (6.0,-5.7) {作図スクリプトの処理、インストーラのエラーコード};
+  \node[rn] at (12.7,-5.7) {\texttt{python -m unittest}、\texttt{bash} でスクリプトを実行\\\footnotesize CI で毎回};
+  \node[lb] (d) at (0,-7.6) {通しの動作確認\\\footnotesize CI の smoke test};
+  \node[ds] at (6.0,-7.6) {実際の \texttt{ignisyeet} コマンドで例題を通しで計算し、図を作る。不完全な飛翔の終了ステータス 3 を確かめる};
+  \node[rn] at (12.7,-7.6) {CI のワークフロー\\\footnotesize 毎回};
+  \node[lo] (e) at (0,-9.5) {既定では実行しないテスト\\\footnotesize \texttt{\#[ignore]} の 18 件};
+  \node[ds] at (6.0,-9.5) {SU2、gmsh、MPI などを使う CFD の 16 件と、計時と集計の 2 件};
+  \node[rn] at (12.7,-9.5) {\texttt{cargo test --release -- --ignored}\\\footnotesize 手元で（CI は実行しない）};
+\end{tikzpicture}

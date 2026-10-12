@@ -1,0 +1,17 @@
+# Run time of each stage on the sample rocket, 4 threads
+# 12th Gen Intel(R) Core(TM) i7-12700 (20 threads, 12 cores), release binary of commit 2a345c2, examples/sample.toml, 2026-10-12.
+# Median of 3 runs (wall_min/wall_max: range); cpu = user+system time of the process; rss_mb = largest peak resident memory;
+# load = 1-minute load average before the runs (median over the runs). Written by doc/scripts/cost_measure.py.
+stage,variant,wall_s,wall_min_s,wall_max_s,cpu_s,rss_mb,load
+geom,-,0.03,0.02,0.03,0.02,13.6797,26.22
+aero,barrowman,0.17,0.17,0.17,0.16,14.3711,26.22
+aero,"barrowman, cached table",0.06,0.05,0.06,0.05,14.4141,26.22
+aero,panel,36.85,35.42,37.09,126.37,302.695,23.84
+aero,"panel, cached table",0.04,0.04,0.06,0.04,14.4609,21.55
+sim,rk4,0.44,0.43,0.45,0.43,16.1055,21.55
+sim,rk45,0.18,0.18,0.19,0.17,16.2266,21.55
+sim,dop853,0.22,0.22,0.24,0.22,16.2383,21.55
+dispersion,"wind_grid 112 flights, rk4",5.24,5.22,5.33,18.73,16.2109,21.19
+dispersion,"wind_grid 112 flights, rk45",0.44,0.43,0.46,1.38,14.5273,20.72
+dispersion,"monte_carlo 1000 x 2, rk45",6.01,5.97,6.08,22.96,16.3203,20.98
+report,-,0.11,0.11,0.13,0.1,21.8711,20.7

@@ -1,0 +1,8 @@
+# Panel table, 36 x 6 wind grid and 10^4 Monte Carlo samples, one after the other (rk45, 4 threads)
+# 12th Gen Intel(R) Core(TM) i7-12700 (20 threads, 12 cores), release binary of commit 2a345c2, examples/sample.toml, 2026-10-12.
+# Median of 3 runs (wall_min/wall_max: range); cpu = user+system time of the process; rss_mb = largest peak resident memory;
+# load = 1-minute load average before the runs (median over the runs). Written by doc/scripts/cost_measure.py.
+step,flights,wall_s,wall_min_s,wall_max_s,cpu_s,rss_mb,load
+panel_table,0,35.31,35.3,35.93,124.97,302.562,20.26
+wind_grid_36x6,432,1.35,1.33,1.41,4.99,14.5234,20.09
+monte_carlo_10000,20000,59.38,57.9,62.18,229.22,41.8359,20.09

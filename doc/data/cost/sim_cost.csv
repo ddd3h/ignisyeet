@@ -1,0 +1,12 @@
+# One flight against the integrator, dt and output_interval (4 threads)
+# 12th Gen Intel(R) Core(TM) i7-12700 (20 threads, 12 cores), release binary of commit 2a345c2, examples/sample.toml, 2026-10-12.
+# Median of 3 runs (wall_min/wall_max: range); cpu = user+system time of the process; rss_mb = largest peak resident memory;
+# load = 1-minute load average before the runs (median over the runs). Written by doc/scripts/cost_measure.py.
+integrator,dt,output_interval,trajectory_mb,apogee_m,wall_s,wall_min_s,wall_max_s,cpu_s,rss_mb,load
+rk4,0.001,0.05,3.57419,4440.47,0.99,0.94,1.11,0.76,16.1758,22.16
+rk4,0.002,0.05,3.60057,4440.48,0.55,0.5,1.07,0.45,16.1875,22.16
+rk4,0.005,0.05,3.60053,4440.45,0.3,0.29,0.48,0.26,16.207,22.07
+rk4,0.01,0.05,3.57419,4440.51,0.26,0.23,0.32,0.19,16.2344,22.07
+rk45,0.002,0.05,3.60058,4440.48,0.34,0.28,0.36,0.26,16.1094,22.07
+rk45,0.002,1.0,0.179086,4440.47,0.12,0.11,0.13,0.07,16.1836,22.07
+dop853,0.002,0.05,3.57429,4440.48,0.26,0.25,0.34,0.21,16.1602,22.07

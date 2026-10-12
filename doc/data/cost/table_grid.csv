@@ -1,0 +1,12 @@
+# Barrowman table time and file size against the Mach x alpha grid (4 threads)
+# 12th Gen Intel(R) Core(TM) i7-12700 (20 threads, 12 cores), release binary of commit 2a345c2, examples/sample.toml, 2026-10-12.
+# Median of 3 runs (wall_min/wall_max: range); cpu = user+system time of the process; rss_mb = largest peak resident memory;
+# load = 1-minute load average before the runs (median over the runs). Written by doc/scripts/cost_measure.py.
+mach_step,alpha_step_deg,n_mach,n_alpha,points,csv_mb,wall_s,wall_min_s,wall_max_s,cpu_s,rss_mb,load
+0.02,1,151,91,13741,3.67785,0.17,0.15,0.18,0.16,14.5078,30.35
+0.01,1,301,91,27391,7.33457,0.29,0.25,0.3,0.28,14.4492,30.35
+0.01,0.5,301,181,54481,14.6572,0.52,0.51,0.56,0.52,20.0039,30.35
+0.005,0.5,601,181,108781,29.3336,0.99,0.97,1,0.97,26.2422,29.36
+0.005,0.25,601,361,216961,58.7536,1.95,1.95,1.98,1.94,38.5664,29.36
+0.0025,0.25,1201,361,433561,117.743,3.88,3.86,3.89,3.83,63.1562,27.62
+general,-,-,-,-,56.552,0.57,0.57,0.59,0.56,37.0312,26.22

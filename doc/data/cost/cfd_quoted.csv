@@ -1,0 +1,13 @@
+# CFD costs quoted from the committed CFD records (nothing here was measured for this chapter; SU2 was not run). The source column names the file below doc/data/.
+# i7-12700 shared with other SU2 jobs (load average about 12-15), SU2 8.3.0, Open MPI 5.0.11, gmsh 4.15.2.
+item,model,wall_s,cases,cells,nodes,ranks_per_case,parallel_cases,source
+euler_matrix_16_cases,euler,9149,16,1415504,302867,4,1,cfd/run_summary.json
+euler_case_median,euler,522.7,1,1415504,302867,4,1,cfd/sample_euler_cases.csv
+euler_case_min,euler,372.2,1,1415504,302867,4,1,cfd/sample_euler_cases.csv
+euler_case_max,euler,903.8,1,1415504,302867,4,1,cfd/sample_euler_cases.csv
+euler_mesh_generation,euler,25,1,1415504,302867,1,1,cfd/run_summary.json
+rans_table_20_cases,rans,15985,20,1676105,735366,4,2,cfd/rans_table_run.json
+rans_case_median,rans,1344.2,1,1676105,735366,4,2,cfd/rans_table_cases.csv
+rans_case_min,rans,853.6,1,1676105,735366,4,2,cfd/rans_table_cases.csv
+rans_case_max,rans,3678.0,1,1676105,735366,4,2,cfd/rans_table_cases.csv
+rans_mesh_generation,rans,21.7,1,1676105,735366,1,1,cfd/rans_mesh_sweep.csv

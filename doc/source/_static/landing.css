@@ -224,7 +224,9 @@ a.iy-badge:hover { border-color: var(--iy-accent); color: var(--iy-accent) !impo
   .iy-tagline { font-size: 1.12rem; }
   .iy-name-mark { width: 76px; height: 76px; border-radius: 17px; }
   .iy-cta .iy-btn { flex: 1 1 auto; justify-content: center; }
-  .iy-cards, .iy-gallery, .iy-map { grid-template-columns: minmax(0, 1fr); }
+  .iy-cards, .iy-gallery { grid-template-columns: minmax(0, 1fr); }
+  .iy-map { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 16px; }
+  .iy-cta .iy-btn-ghost { flex-basis: 100%; border-color: var(--color-background-border); }
   .iy-flow { grid-template-columns: minmax(0, 1fr); row-gap: 0; }
   .iy-flow li { padding: 0 0 22px; }
   .iy-flow li::after { top: auto; bottom: 3px; right: auto; left: 28px; transform: rotate(135deg); }
@@ -251,3 +253,25 @@ a.iy-badge:hover { border-color: var(--iy-accent); color: var(--iy-accent) !impo
 .iy-built-item svg { flex: none; width: 28px; height: 28px; color: var(--color-foreground-primary); }
 .iy-built-item span { font-weight: 700; font-size: 1rem; color: var(--color-foreground-primary); }
 .iy-built-item small { font-size: 0.78rem; padding: 1px 8px; border: 1px solid var(--color-background-border); border-radius: 999px; }
+
+/* chips and the two-row difference list */
+.iy-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.iy-tags span { padding: 2px 10px; font-size: 0.8rem; border-radius: 999px; background: var(--iy-soft); color: var(--color-foreground-secondary); }
+.iy-diff { display: grid; gap: 6px; margin: 10px 0; padding: 0; list-style: none; }
+.iy-diff li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 8px 12px; border-radius: 8px; background: var(--iy-soft); font-size: 0.9rem; }
+.iy-diff b { font-size: 1.05rem; white-space: nowrap; }
+
+/* phone: the pipeline as a compact list (name and command on one row) */
+@media (max-width: 40em) {
+  .iy-flow a { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; }
+  .iy-flow span { display: none; }
+  .iy-flow code { align-self: center; margin-top: 0; }
+  .iy-flow li { padding-bottom: 16px; }
+  .iy-flow li::after { bottom: 1px; }
+}
+
+/* copy button: icon only, a check mark after copying */
+.iy-copy { display: inline-flex; align-items: center; justify-content: center; padding: 8px; min-width: 36px; line-height: 0; }
+.iy-copy .iy-ico-done { display: none; }
+.iy-copy.is-done .iy-ico-copy { display: none; }
+.iy-copy.is-done .iy-ico-done { display: block; color: #6fdc8c; }

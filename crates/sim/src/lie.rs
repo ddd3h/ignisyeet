@@ -166,14 +166,7 @@ impl LieStages {
 /// `K~_i = dexpinv(-Theta_i, w_i)`. Final `Theta = h sum b_i K~_i`, `q_new = q (x) exp(Theta)`.
 /// (The sign comes from the body-frame convention `R_dot = R w^`.) The full closed-form dexpinv is
 /// used, so the classical order of the tableau is preserved.
-pub fn rkmk_step_with_stages(
-    tab: &RkTableau,
-    f: &mut impl FnMut(f64, &[f64], Quat) -> (Vec<f64>, Vec3),
-    t: f64,
-    x: &[f64],
-    q: Quat,
-    h: f64,
-) -> LieStages {
+pub fn rkmk_step_with_stages(tab: &RkTableau, f: &mut impl FnMut(f64, &[f64], Quat) -> (Vec<f64>, Vec3), t: f64, x: &[f64], q: Quat, h: f64) -> LieStages {
     let s = tab.stages();
     let m = x.len();
     let mut kx: Vec<Vec<f64>> = Vec::with_capacity(s);
@@ -217,14 +210,7 @@ pub fn rkmk_step_with_stages(
 }
 
 /// One RKMK step for any explicit tableau. See [`rkmk_step_with_stages`].
-pub fn rkmk_step(
-    tab: &RkTableau,
-    f: &mut impl FnMut(f64, &[f64], Quat) -> (Vec<f64>, Vec3),
-    t: f64,
-    x: &[f64],
-    q: Quat,
-    h: f64,
-) -> LieStep {
+pub fn rkmk_step(tab: &RkTableau, f: &mut impl FnMut(f64, &[f64], Quat) -> (Vec<f64>, Vec3), t: f64, x: &[f64], q: Quat, h: f64) -> LieStep {
     rkmk_step_with_stages(tab, f, t, x, q, h).step
 }
 
@@ -261,10 +247,7 @@ mod tests {
     fn euler(_t: f64, x: &[f64], _q: Quat) -> (Vec<f64>, Vec3) {
         let [i1, i2, i3] = INERTIA;
         let (w1, w2, w3) = (x[0], x[1], x[2]);
-        (
-            vec![(i2 - i3) / i1 * w2 * w3, (i3 - i1) / i2 * w3 * w1, (i1 - i2) / i3 * w1 * w2],
-            Vec3::new(w1, w2, w3),
-        )
+        (vec![(i2 - i3) / i1 * w2 * w3, (i3 - i1) / i2 * w3 * w1, (i1 - i2) / i3 * w1 * w2], Vec3::new(w1, w2, w3))
     }
 
     fn energy(x: &[f64]) -> f64 {
@@ -439,7 +422,12 @@ mod tests {
         let (qe, de_e, _) = run_rk4_normalise(h, 20.0);
         println!(
             "h={h}: RKMK-RK4 attitude err {:.3e} rad (energy {:.2e}, |L| {:.2e}, norm {:.1e}); RK4+normalise err {:.3e} rad (energy {:.2e})",
-            rel_angle(qr, ql), de_l, dl, dn, rel_angle(qr, qe), de_e
+            rel_angle(qr, ql),
+            de_l,
+            dl,
+            dn,
+            rel_angle(qr, qe),
+            de_e
         );
         // Both are 4th order; the Lie-group variant must not be worse by an order of magnitude.
         assert!(rel_angle(qr, ql) < 10.0 * rel_angle(qr, qe) + 1e-9);

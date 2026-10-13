@@ -1,0 +1,33 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+\begin{tikzpicture}[font=\small, scale=1.2]
+  % side view: x_b to the right (nose), z_b up, y_b into the page (drawn up-left)
+  \begin{scope}[x={(1cm,0cm)}, y={(-0.6cm,0.42cm)}, z={(0cm,1cm)}]
+    % body silhouette in the x-z plane, nose tip at the origin
+    \fill[cfill] (-5.6,0,-0.4) -- (-1.6,0,-0.4) .. controls (-0.9,0,-0.35) and (-0.3,0,-0.12) .. (0,0,0) .. controls (-0.3,0,0.12) and (-0.9,0,0.35) .. (-1.6,0,0.4) -- (-5.6,0,0.4) -- cycle;
+    \draw[cblue, thick] (-5.6,0,-0.4) -- (-1.6,0,-0.4) .. controls (-0.9,0,-0.35) and (-0.3,0,-0.12) .. (0,0,0) .. controls (-0.3,0,0.12) and (-0.9,0,0.35) .. (-1.6,0,0.4) -- (-5.6,0,0.4) -- cycle;
+    \draw[cblue, thick, fill=cfill] (-5.6,0,0.4) -- (-5.6,0,1.1) -- (-5.2,0,1.1) -- (-4.6,0,0.4);
+    \draw[cblue, thick, fill=cfill] (-5.6,0,-0.4) -- (-5.6,0,-1.1) -- (-5.2,0,-1.1) -- (-4.6,0,-0.4);
+    % centre of gravity
+    \fill[cink2] (-3.1,0,0) circle (1.6pt);
+    \node[cink2, font=\footnotesize, anchor=north] at (-3.1,0,-0.45) {重心 CG};
+    \draw[cink2, <->] (-3.1,0,-1.25) -- node[below, font=\footnotesize] {$x_{cg}$} (0,0,-1.25);
+    \draw[cink2, dotted] (0,0,0) -- (0,0,-1.3);
+    % axes at the nose tip, forces (orange) along them, moments (blue arcs) further out
+    \draw[->, thick, cink] (0,0,0) -- (3.4,0,0) node[right] {$x_b$};
+    \draw[->, thick, cink] (0,0,0) -- (0,3.4,0) node[above left] {$y_b$};
+    \draw[->, thick, cink] (0,0,0) -- (0,0,2.8) node[above] {$z_b$};
+    \draw[->, very thick, corange] (0,0,0) -- (1.3,0,0) node[below right, font=\footnotesize] {$F_x$};
+    \draw[->, very thick, corange] (0,0,0) -- (0,1.3,0) node[above right, inner sep=1.5pt, font=\footnotesize] {$F_y$};
+    \draw[->, very thick, corange] (0,0,0) -- (0,0,1.2) node[left, font=\footnotesize] {$F_z$};
+    % right-handed rotations: about x (y to z), about y (z to x), about z (x to y)
+    \draw[->, thick, cblue] plot[domain=30:300, samples=40] ({2.2},{0.4*cos(\x)},{0.4*sin(\x)});
+    \node[cblue, font=\footnotesize] at (2.65,-0.1,-0.65) {$M_x$};
+    \draw[->, thick, cblue] plot[domain=30:300, samples=40] ({0.4*sin(\x)},{2.6},{0.4*cos(\x)});
+    \node[cblue, font=\footnotesize] at (0.2,2.6,0.75) {$M_y$};
+    \draw[->, thick, cblue] plot[domain=30:300, samples=40] ({0.4*cos(\x)},{0.4*sin(\x)},{2.0});
+    \node[cblue, font=\footnotesize] at (0.55,0.0,2.45) {$M_z$};
+    \fill[cink] (0,0,0) circle (1.6pt);
+    \node[cink2, font=\footnotesize, anchor=north east] at (-0.08,0,-0.78) {基準点（ノーズ先端）};
+  \end{scope}
+\end{tikzpicture}

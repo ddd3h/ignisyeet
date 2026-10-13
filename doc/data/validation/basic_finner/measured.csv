@@ -1,0 +1,249 @@
+source,table,pdf_page,fit,mach,shots,quantity,value,probable_error_pct,held_fixed,obtained,ref_point_cal,normalization,note
+DREV-TM-9703,IX,48,6DOF multiple fit,1.077,DA95022230 DA95022010 DA95022219,CX0,0.863,0,0,table,,-,
+DREV-TM-9703,IX,48,6DOF multiple fit,1.077,DA95022230 DA95022010 DA95022219,CX2,6.5,,1,table,,per rad^2 (CX = CX0 + CX2 sin^2 alpha_t),
+DREV-TM-9703,IX,48,6DOF multiple fit,1.077,DA95022230 DA95022010 DA95022219,CNa,18.47,2,0,table,,per rad,
+DREV-TM-9703,IX,48,6DOF multiple fit,1.077,DA95022230 DA95022010 DA95022219,Cma,-52.648,0,0,table,5.5,per rad,
+DREV-TM-9703,IX,48,6DOF multiple fit,1.077,DA95022230 DA95022010 DA95022219,CmaM,-65.2,6,0,table,5.5,d Cma / d Mach,
+DREV-TM-9703,IX,48,6DOF multiple fit,1.077,DA95022230 DA95022010 DA95022219,Cmq,-322.4,5,0,table,5.5,"per q d/(2V) [inferred, see sources.md]",Cmq + Cmalphadot (free flight); range data cannot separate the two
+DREV-TM-9703,IX,48,6DOF multiple fit,1.077,DA95022230 DA95022010 DA95022219,Cnpa,0.0,,1,table,,per rad per p d/(2V) [inferred],
+DREV-TM-9703,IX,48,6DOF multiple fit,1.077,DA95022230 DA95022010 DA95022219,Clp,-18.16,0,0,table,,"per p d/(2V) [inferred, see sources.md]",
+DREV-TM-9703,IX,48,6DOF multiple fit,1.077,DA95022230 DA95022010 DA95022219,CXM,-0.24,3,0,table,,d CX0 / d Mach,
+DREV-TM-9703,IX (derived),48,6DOF multiple fit,1.077,DA95022230 DA95022010 DA95022219,xcp,8.35,,0,derived: 5.50 - Cma/CNa,,cal from nose tip,centre of pressure from the tabulated CNa and Cma
+DREV-TM-9703,IX,48,6DOF multiple fit,1.293,DA95022009 DA95030613,CX0,0.731,0,0,table,,-,
+DREV-TM-9703,IX,48,6DOF multiple fit,1.293,DA95022009 DA95030613,CX2,6.5,,1,table,,per rad^2 (CX = CX0 + CX2 sin^2 alpha_t),
+DREV-TM-9703,IX,48,6DOF multiple fit,1.293,DA95022009 DA95030613,CNa,18.27,3,0,table,,per rad,
+DREV-TM-9703,IX,48,6DOF multiple fit,1.293,DA95022009 DA95030613,Cma,-50.968,0,0,table,5.5,per rad,
+DREV-TM-9703,IX,48,6DOF multiple fit,1.293,DA95022009 DA95030613,CmaM,40.85,4,0,table,5.5,d Cma / d Mach,
+DREV-TM-9703,IX,48,6DOF multiple fit,1.293,DA95022009 DA95030613,Cmq,-487.4,6,0,table,5.5,"per q d/(2V) [inferred, see sources.md]",Cmq + Cmalphadot (free flight); range data cannot separate the two
+DREV-TM-9703,IX,48,6DOF multiple fit,1.293,DA95022009 DA95030613,Cnpa,-321.97,3,0,table,,per rad per p d/(2V) [inferred],
+DREV-TM-9703,IX,48,6DOF multiple fit,1.293,DA95022009 DA95030613,Clp,-23.57,0,0,table,,"per p d/(2V) [inferred, see sources.md]",
+DREV-TM-9703,IX,48,6DOF multiple fit,1.293,DA95022009 DA95030613,CXM,-0.75,1,0,table,,d CX0 / d Mach,
+DREV-TM-9703,IX (derived),48,6DOF multiple fit,1.293,DA95022009 DA95030613,xcp,8.29,,0,derived: 5.50 - Cma/CNa,,cal from nose tip,centre of pressure from the tabulated CNa and Cma
+DREV-TM-9703,IX,48,6DOF multiple fit,1.832,DA95021318 DA95021529 DA95021308,CX0,0.585,,1,table,,-,a CX0 per shot was solved in this group (report Sec. 5.2); the listed group value is printed as held
+DREV-TM-9703,IX,48,6DOF multiple fit,1.832,DA95021318 DA95021529 DA95021308,CX2,4.3,,1,table,,per rad^2 (CX = CX0 + CX2 sin^2 alpha_t),
+DREV-TM-9703,IX,48,6DOF multiple fit,1.832,DA95021318 DA95021529 DA95021308,CNa,11.78,4,0,table,,per rad,
+DREV-TM-9703,IX,48,6DOF multiple fit,1.832,DA95021318 DA95021529 DA95021308,Cma,-27.976,0,0,table,5.5,per rad,
+DREV-TM-9703,IX,48,6DOF multiple fit,1.832,DA95021318 DA95021529 DA95021308,CmaM,29.48,7,0,table,5.5,d Cma / d Mach,
+DREV-TM-9703,IX,48,6DOF multiple fit,1.832,DA95021318 DA95021529 DA95021308,Cmq,-377.7,4,0,table,5.5,"per q d/(2V) [inferred, see sources.md]",Cmq + Cmalphadot (free flight); range data cannot separate the two
+DREV-TM-9703,IX,48,6DOF multiple fit,1.832,DA95021318 DA95021529 DA95021308,Cnpa,-35.61,7,0,table,,per rad per p d/(2V) [inferred],
+DREV-TM-9703,IX,48,6DOF multiple fit,1.832,DA95021318 DA95021529 DA95021308,Clp,-22.35,0,0,table,,"per p d/(2V) [inferred, see sources.md]",
+DREV-TM-9703,IX,48,6DOF multiple fit,1.832,DA95021318 DA95021529 DA95021308,CXM,-0.29,,1,table,,d CX0 / d Mach,
+DREV-TM-9703,IX (derived),48,6DOF multiple fit,1.832,DA95021318 DA95021529 DA95021308,xcp,7.875,,0,derived: 5.50 - Cma/CNa,,cal from nose tip,centre of pressure from the tabulated CNa and Cma
+DREV-TM-9703,IX,48,6DOF multiple fit,2.375,DA95021328 DA95020907 DA95021317,CX0,0.484,,1,table,,-,a CX0 per shot was solved in this group (report Sec. 5.2); the listed group value is printed as held
+DREV-TM-9703,IX,48,6DOF multiple fit,2.375,DA95021328 DA95020907 DA95021317,CX2,3.3,,1,table,,per rad^2 (CX = CX0 + CX2 sin^2 alpha_t),
+DREV-TM-9703,IX,48,6DOF multiple fit,2.375,DA95021328 DA95020907 DA95021317,CNa,10.52,2,0,table,,per rad,
+DREV-TM-9703,IX,48,6DOF multiple fit,2.375,DA95021328 DA95020907 DA95021317,Cma,-18.904,0,0,table,5.5,per rad,
+DREV-TM-9703,IX,48,6DOF multiple fit,2.375,DA95021328 DA95020907 DA95021317,CmaM,19.24,5,0,table,5.5,d Cma / d Mach,
+DREV-TM-9703,IX,48,6DOF multiple fit,2.375,DA95021328 DA95020907 DA95021317,Cmq,-306.5,4,0,table,5.5,"per q d/(2V) [inferred, see sources.md]",Cmq + Cmalphadot (free flight); range data cannot separate the two
+DREV-TM-9703,IX,48,6DOF multiple fit,2.375,DA95021328 DA95020907 DA95021317,Cnpa,-24.33,7,0,table,,per rad per p d/(2V) [inferred],
+DREV-TM-9703,IX,48,6DOF multiple fit,2.375,DA95021328 DA95020907 DA95021317,Clp,-18.31,0,0,table,,"per p d/(2V) [inferred, see sources.md]",
+DREV-TM-9703,IX,48,6DOF multiple fit,2.375,DA95021328 DA95020907 DA95021317,CXM,-0.16,,1,table,,d CX0 / d Mach,
+DREV-TM-9703,IX (derived),48,6DOF multiple fit,2.375,DA95021328 DA95020907 DA95021317,xcp,7.297,,0,derived: 5.50 - Cma/CNa,,cal from nose tip,centre of pressure from the tabulated CNa and Cma
+DREV-TM-9703,IX,48,6DOF multiple fit,2.718,DA95020916 DA95020906 DA95020927,CX0,0.435,,1,table,,-,a CX0 per shot was solved in this group (report Sec. 5.2); the listed group value is printed as held
+DREV-TM-9703,IX,48,6DOF multiple fit,2.718,DA95020916 DA95020906 DA95020927,CX2,2.9,,1,table,,per rad^2 (CX = CX0 + CX2 sin^2 alpha_t),
+DREV-TM-9703,IX,48,6DOF multiple fit,2.718,DA95020916 DA95020906 DA95020927,CNa,9.01,2,0,table,,per rad,
+DREV-TM-9703,IX,48,6DOF multiple fit,2.718,DA95020916 DA95020906 DA95020927,Cma,-15.199,0,0,table,5.5,per rad,
+DREV-TM-9703,IX,48,6DOF multiple fit,2.718,DA95020916 DA95020906 DA95020927,CmaM,13.77,3,0,table,5.5,d Cma / d Mach,
+DREV-TM-9703,IX,48,6DOF multiple fit,2.718,DA95020916 DA95020906 DA95020927,Cmq,-335.5,3,0,table,5.5,"per q d/(2V) [inferred, see sources.md]",Cmq + Cmalphadot (free flight); range data cannot separate the two
+DREV-TM-9703,IX,48,6DOF multiple fit,2.718,DA95020916 DA95020906 DA95020927,Cnpa,-22.68,4,0,table,,per rad per p d/(2V) [inferred],
+DREV-TM-9703,IX,48,6DOF multiple fit,2.718,DA95020916 DA95020906 DA95020927,Clp,-16.65,0,0,table,,"per p d/(2V) [inferred, see sources.md]",
+DREV-TM-9703,IX,48,6DOF multiple fit,2.718,DA95020916 DA95020906 DA95020927,CXM,-0.15,,1,table,,d CX0 / d Mach,
+DREV-TM-9703,IX (derived),48,6DOF multiple fit,2.718,DA95020916 DA95020906 DA95020927,xcp,7.187,,0,derived: 5.50 - Cma/CNa,,cal from nose tip,centre of pressure from the tabulated CNa and Cma
+DREV-TM-9703,IX,49,6DOF multiple fit,3.147,DA95030603 DA95022726 DA95022205 DA95022215,CX0,0.373,,1,table,,-,a CX0 per shot was solved in this group (report Sec. 5.2); the listed group value is printed as held
+DREV-TM-9703,IX,49,6DOF multiple fit,3.147,DA95030603 DA95022726 DA95022205 DA95022215,CX2,2.5,,1,table,,per rad^2 (CX = CX0 + CX2 sin^2 alpha_t),
+DREV-TM-9703,IX,49,6DOF multiple fit,3.147,DA95030603 DA95022726 DA95022205 DA95022215,CNa,8.69,1,0,table,,per rad,
+DREV-TM-9703,IX,49,6DOF multiple fit,3.147,DA95030603 DA95022726 DA95022205 DA95022215,Cma,-12.456,0,0,table,5.5,per rad,
+DREV-TM-9703,IX,49,6DOF multiple fit,3.147,DA95030603 DA95022726 DA95022205 DA95022215,CmaM,5.92,1,0,table,5.5,d Cma / d Mach,
+DREV-TM-9703,IX,49,6DOF multiple fit,3.147,DA95030603 DA95022726 DA95022205 DA95022215,Cmq,-260.1,3,0,table,5.5,"per q d/(2V) [inferred, see sources.md]",Cmq + Cmalphadot (free flight); range data cannot separate the two
+DREV-TM-9703,IX,49,6DOF multiple fit,3.147,DA95030603 DA95022726 DA95022205 DA95022215,Cnpa,-19.58,5,0,table,,per rad per p d/(2V) [inferred],
+DREV-TM-9703,IX,49,6DOF multiple fit,3.147,DA95030603 DA95022726 DA95022205 DA95022215,Clp,-13.5,0,0,table,,"per p d/(2V) [inferred, see sources.md]",
+DREV-TM-9703,IX,49,6DOF multiple fit,3.147,DA95030603 DA95022726 DA95022205 DA95022215,CXM,-0.04,,1,table,,d CX0 / d Mach,
+DREV-TM-9703,IX (derived),49,6DOF multiple fit,3.147,DA95030603 DA95022726 DA95022205 DA95022215,xcp,6.933,,0,derived: 5.50 - Cma/CNa,,cal from nose tip,centre of pressure from the tabulated CNa and Cma
+DREV-TM-9703,IX,49,6DOF multiple fit,3.734,DA95022702 DA95022712 DA95030121,CX0,0.309,0,0,table,,-,
+DREV-TM-9703,IX,49,6DOF multiple fit,3.734,DA95022702 DA95022712 DA95030121,CX2,2.129,9,0,table,,per rad^2 (CX = CX0 + CX2 sin^2 alpha_t),
+DREV-TM-9703,IX,49,6DOF multiple fit,3.734,DA95022702 DA95022712 DA95030121,CNa,8.32,1,0,table,,per rad,
+DREV-TM-9703,IX,49,6DOF multiple fit,3.734,DA95022702 DA95022712 DA95030121,Cma,-9.533,0,0,table,5.5,per rad,
+DREV-TM-9703,IX,49,6DOF multiple fit,3.734,DA95022702 DA95022712 DA95030121,Cma3,-90.425,2,0,table,5.5,per rad^3 (term in sin^3 alpha_t),
+DREV-TM-9703,IX,49,6DOF multiple fit,3.734,DA95022702 DA95022712 DA95030121,CmaM,5.48,2,0,table,5.5,d Cma / d Mach,
+DREV-TM-9703,IX,49,6DOF multiple fit,3.734,DA95022702 DA95022712 DA95030121,Cmq,-239.8,1,0,table,5.5,"per q d/(2V) [inferred, see sources.md]",Cmq + Cmalphadot (free flight); range data cannot separate the two
+DREV-TM-9703,IX,49,6DOF multiple fit,3.734,DA95022702 DA95022712 DA95030121,Cnpa,-13.92,2,0,table,,per rad per p d/(2V) [inferred],
+DREV-TM-9703,IX,49,6DOF multiple fit,3.734,DA95022702 DA95022712 DA95030121,Clp,-13.18,0,0,table,,"per p d/(2V) [inferred, see sources.md]",
+DREV-TM-9703,IX,49,6DOF multiple fit,3.734,DA95022702 DA95022712 DA95030121,CXM,-0.02,33,0,table,,d CX0 / d Mach,
+DREV-TM-9703,IX (derived),49,6DOF multiple fit,3.734,DA95022702 DA95022712 DA95030121,xcp,6.646,,0,derived: 5.50 - Cma/CNa,,cal from nose tip,centre of pressure from the tabulated CNa and Cma
+DREV-TM-9703,IX,49,6DOF multiple fit,4.3,DA95031523 DA95030111,CX0,0.271,0,0,table,,-,
+DREV-TM-9703,IX,49,6DOF multiple fit,4.3,DA95031523 DA95030111,CX2,2.0,,1,table,,per rad^2 (CX = CX0 + CX2 sin^2 alpha_t),
+DREV-TM-9703,IX,49,6DOF multiple fit,4.3,DA95031523 DA95030111,CNa,7.74,1,0,table,,per rad,
+DREV-TM-9703,IX,49,6DOF multiple fit,4.3,DA95031523 DA95030111,Cma,-7.853,0,0,table,5.5,per rad,
+DREV-TM-9703,IX,49,6DOF multiple fit,4.3,DA95031523 DA95030111,Cma3,-93.319,4,0,table,5.5,per rad^3 (term in sin^3 alpha_t),
+DREV-TM-9703,IX,49,6DOF multiple fit,4.3,DA95031523 DA95030111,CmaM,2.94,3,0,table,5.5,d Cma / d Mach,
+DREV-TM-9703,IX,49,6DOF multiple fit,4.3,DA95031523 DA95030111,Cmq,-247.0,2,0,table,5.5,"per q d/(2V) [inferred, see sources.md]",Cmq + Cmalphadot (free flight); range data cannot separate the two
+DREV-TM-9703,IX,49,6DOF multiple fit,4.3,DA95031523 DA95030111,Cnpa,-13.72,3,0,table,,per rad per p d/(2V) [inferred],
+DREV-TM-9703,IX,49,6DOF multiple fit,4.3,DA95031523 DA95030111,Clp,-11.71,1,0,table,,"per p d/(2V) [inferred, see sources.md]",
+DREV-TM-9703,IX,49,6DOF multiple fit,4.3,DA95031523 DA95030111,CXM,-0.08,3,0,table,,d CX0 / d Mach,
+DREV-TM-9703,IX (derived),49,6DOF multiple fit,4.3,DA95031523 DA95030111,xcp,6.515,,0,derived: 5.50 - Cma/CNa,,cal from nose tip,centre of pressure from the tabulated CNa and Cma
+DREV-TM-9703,VII,43,"linear theory, single shot",1.056,DA95022010,CD0,0.868,,0,table,,-,"linear theory, mean squared yaw 0.4 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.056,DA95022010,CDSQ,23.141,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 0.4 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.056,DA95022010,CNa,16.391,,0,table,,per rad,"linear theory, mean squared yaw 0.4 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.056,DA95022010,Cma,-50.786,,0,table,5.5,per rad,"linear theory, mean squared yaw 0.4 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.056,DA95022010,Cmq,-319.4,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 0.4 deg^2; Cmq + Cmalphadot"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.056,DA95022010,Cnpa,63.737,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 0.4 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.057,DA95022219,CD0,0.866,,0,table,,-,"linear theory, mean squared yaw 2.1 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.057,DA95022219,CDSQ,25.14,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 2.1 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.057,DA95022219,CNa,18.39,,0,table,,per rad,"linear theory, mean squared yaw 2.1 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.057,DA95022219,Cma,-52.022,,0,table,5.5,per rad,"linear theory, mean squared yaw 2.1 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.057,DA95022219,Cmq,-333.3,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 2.1 deg^2; Cmq + Cmalphadot"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.057,DA95022219,Cnpa,29.49,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 2.1 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.116,DA95022230,CD0,0.853,,0,table,,-,"linear theory, mean squared yaw 0.1 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.116,DA95022230,CDSQ,29.087,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 0.1 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.116,DA95022230,CNa,22.337,,0,table,,per rad,"linear theory, mean squared yaw 0.1 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.116,DA95022230,Cma,-54.772,,0,table,5.5,per rad,"linear theory, mean squared yaw 0.1 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.116,DA95022230,Cmq,-289.2,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 0.1 deg^2; Cmq + Cmalphadot"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.116,DA95022230,Cnpa,-8.039,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 0.1 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.254,DA95030613,CD0,0.756,,0,table,,-,"linear theory, mean squared yaw 2.4 deg^2; precession arm not damped in the linear theory fit (shots DA13, DA22, DA23 of report Sec. 5.1)"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.254,DA95030613,CDSQ,25.862,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 2.4 deg^2; precession arm not damped in the linear theory fit (shots DA13, DA22, DA23 of report Sec. 5.1)"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.254,DA95030613,CNa,18.522,,0,table,,per rad,"linear theory, mean squared yaw 2.4 deg^2; precession arm not damped in the linear theory fit (shots DA13, DA22, DA23 of report Sec. 5.1)"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.254,DA95030613,Cma,-51.982,,0,table,5.5,per rad,"linear theory, mean squared yaw 2.4 deg^2; precession arm not damped in the linear theory fit (shots DA13, DA22, DA23 of report Sec. 5.1)"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.254,DA95030613,Cmq,-416.1,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 2.4 deg^2; Cmq + Cmalphadot; precession arm not damped in the linear theory fit (shots DA13, DA22, DA23 of report Sec. 5.1)"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.254,DA95030613,Cnpa,-407.288,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 2.4 deg^2; precession arm not damped in the linear theory fit (shots DA13, DA22, DA23 of report Sec. 5.1)"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.332,DA95022009,CD0,0.701,,0,table,,-,"linear theory, mean squared yaw 0.7 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.332,DA95022009,CDSQ,18.762,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 0.7 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.332,DA95022009,CNa,11.422,,0,table,,per rad,"linear theory, mean squared yaw 0.7 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.332,DA95022009,Cma,-49.282,,0,table,5.5,per rad,"linear theory, mean squared yaw 0.7 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.332,DA95022009,Cmq,-475.1,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 0.7 deg^2; Cmq + Cmalphadot"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.332,DA95022009,Cnpa,356.002,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 0.7 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.38,DA95030622,CD0,0.625,,0,table,,-,"linear theory, mean squared yaw 17.9 deg^2; precession arm not damped in the linear theory fit (shots DA13, DA22, DA23 of report Sec. 5.1)"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.38,DA95030622,CDSQ,22.321,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 17.9 deg^2; precession arm not damped in the linear theory fit (shots DA13, DA22, DA23 of report Sec. 5.1)"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.38,DA95030622,CNa,15.371,,0,table,,per rad,"linear theory, mean squared yaw 17.9 deg^2; precession arm not damped in the linear theory fit (shots DA13, DA22, DA23 of report Sec. 5.1)"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.38,DA95030622,Cma,-42.073,,0,table,5.5,per rad,"linear theory, mean squared yaw 17.9 deg^2; precession arm not damped in the linear theory fit (shots DA13, DA22, DA23 of report Sec. 5.1)"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.38,DA95030622,Cmq,418.7,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 17.9 deg^2; Cmq + Cmalphadot; precession arm not damped in the linear theory fit (shots DA13, DA22, DA23 of report Sec. 5.1)"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.38,DA95030622,Cnpa,-282.505,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 17.9 deg^2; precession arm not damped in the linear theory fit (shots DA13, DA22, DA23 of report Sec. 5.1)"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.799,DA95021318,CD0,0.593,,0,table,,-,"linear theory, mean squared yaw 0.5 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.799,DA95021318,CDSQ,17.859,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 0.5 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.799,DA95021318,CNa,12.039,,0,table,,per rad,"linear theory, mean squared yaw 0.5 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.799,DA95021318,Cma,-28.524,,0,table,5.5,per rad,"linear theory, mean squared yaw 0.5 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.799,DA95021318,Cmq,-331.7,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 0.5 deg^2; Cmq + Cmalphadot"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.799,DA95021318,Cnpa,-45.396,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 0.5 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.846,DA95021529,CD0,0.596,,0,table,,-,"linear theory, mean squared yaw 0.6 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.846,DA95021529,CDSQ,16.643,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 0.6 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.846,DA95021529,CNa,10.823,,0,table,,per rad,"linear theory, mean squared yaw 0.6 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.846,DA95021529,Cma,-27.076,,0,table,5.5,per rad,"linear theory, mean squared yaw 0.6 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.846,DA95021529,Cmq,-277.2,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 0.6 deg^2; Cmq + Cmalphadot"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.846,DA95021529,Cnpa,-43.383,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 0.6 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.85,DA95021308,CD0,0.565,,0,table,,-,"linear theory, mean squared yaw 0.9 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.85,DA95021308,CDSQ,22.083,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 0.9 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.85,DA95021308,CNa,16.263,,0,table,,per rad,"linear theory, mean squared yaw 0.9 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.85,DA95021308,Cma,-27.085,,0,table,5.5,per rad,"linear theory, mean squared yaw 0.9 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.85,DA95021308,Cmq,-330.3,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 0.9 deg^2; Cmq + Cmalphadot"
+DREV-TM-9703,VII,43,"linear theory, single shot",1.85,DA95021308,Cnpa,269.034,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 0.9 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.348,DA95021328,CD0,0.498,,0,table,,-,"linear theory, mean squared yaw 0.3 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.348,DA95021328,CDSQ,15.208,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 0.3 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.348,DA95021328,CNa,10.181,,0,table,,per rad,"linear theory, mean squared yaw 0.3 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.348,DA95021328,Cma,-18.764,,0,table,5.5,per rad,"linear theory, mean squared yaw 0.3 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.348,DA95021328,Cmq,-338.2,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 0.3 deg^2; Cmq + Cmalphadot"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.348,DA95021328,Cnpa,-29.411,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 0.3 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.364,DA95020907,CD0,0.478,,0,table,,-,"linear theory, mean squared yaw 0.4 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.364,DA95020907,CDSQ,12.456,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 0.4 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.364,DA95020907,CNa,7.532,,0,table,,per rad,"linear theory, mean squared yaw 0.4 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.364,DA95020907,Cma,-18.945,,0,table,5.5,per rad,"linear theory, mean squared yaw 0.4 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.364,DA95020907,Cmq,-360.2,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 0.4 deg^2; Cmq + Cmalphadot"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.364,DA95020907,Cnpa,3.039,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 0.4 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.413,DA95021317,CD0,0.471,,0,table,,-,"linear theory, mean squared yaw 2.0 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.413,DA95021317,CDSQ,14.794,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 2.0 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.413,DA95021317,CNa,9.87,,0,table,,per rad,"linear theory, mean squared yaw 2.0 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.413,DA95021317,Cma,-18.096,,0,table,5.5,per rad,"linear theory, mean squared yaw 2.0 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.413,DA95021317,Cmq,-278.8,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 2.0 deg^2; Cmq + Cmalphadot"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.413,DA95021317,Cnpa,-25.793,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 2.0 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.663,DA95020927,CD0,0.441,,0,table,,-,"linear theory, mean squared yaw 3.4 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.663,DA95020927,CDSQ,13.344,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 3.4 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.663,DA95020927,CNa,8.804,,0,table,,per rad,"linear theory, mean squared yaw 3.4 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.663,DA95020927,Cma,-15.71,,0,table,5.5,per rad,"linear theory, mean squared yaw 3.4 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.663,DA95020927,Cmq,-307.3,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 3.4 deg^2; Cmq + Cmalphadot"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.663,DA95020927,Cnpa,-26.194,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 3.4 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.741,DA95020906,CD0,0.398,,0,table,,-,"linear theory, mean squared yaw 1.9 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.741,DA95020906,CDSQ,13.231,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 1.9 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.741,DA95020906,CNa,8.691,,0,table,,per rad,"linear theory, mean squared yaw 1.9 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.741,DA95020906,Cma,-14.888,,0,table,5.5,per rad,"linear theory, mean squared yaw 1.9 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.741,DA95020906,Cmq,-242.1,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 1.9 deg^2; Cmq + Cmalphadot"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.741,DA95020906,Cnpa,-126.322,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 1.9 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.749,DA95020916,CD0,0.451,,0,table,,-,"linear theory, mean squared yaw 0.1 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.749,DA95020916,CDSQ,6.497,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 0.1 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.749,DA95020916,CNa,1.957,,0,table,,per rad,"linear theory, mean squared yaw 0.1 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.749,DA95020916,Cma,-14.543,,0,table,5.5,per rad,"linear theory, mean squared yaw 0.1 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.749,DA95020916,Cmq,-89.7,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 0.1 deg^2; Cmq + Cmalphadot"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.749,DA95020916,Cnpa,-0.333,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 0.1 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.969,DA95030603,CD0,0.385,,0,table,,-,"linear theory, mean squared yaw 0.1 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.969,DA95030603,CDSQ,15.758,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 0.1 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.969,DA95030603,CNa,11.638,,0,table,,per rad,"linear theory, mean squared yaw 0.1 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.969,DA95030603,Cma,-13.31,,0,table,5.5,per rad,"linear theory, mean squared yaw 0.1 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.969,DA95030603,Cmq,-319.3,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 0.1 deg^2; Cmq + Cmalphadot"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.969,DA95030603,Cnpa,-56.54,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 0.1 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.97,DA95022205,CD0,0.376,,0,table,,-,"linear theory, mean squared yaw 1.6 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.97,DA95022205,CDSQ,11.063,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 1.6 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.97,DA95022205,CNa,6.942,,0,table,,per rad,"linear theory, mean squared yaw 1.6 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.97,DA95022205,Cma,-13.489,,0,table,5.5,per rad,"linear theory, mean squared yaw 1.6 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.97,DA95022205,Cmq,-250.8,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 1.6 deg^2; Cmq + Cmalphadot"
+DREV-TM-9703,VII,43,"linear theory, single shot",2.97,DA95022205,Cnpa,150.009,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 1.6 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.312,DA95022215,CD0,0.348,,0,table,,-,"linear theory, mean squared yaw 2.8 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.312,DA95022215,CDSQ,12.228,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 2.8 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.312,DA95022215,CNa,8.3,,0,table,,per rad,"linear theory, mean squared yaw 2.8 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.312,DA95022215,Cma,-11.331,,0,table,5.5,per rad,"linear theory, mean squared yaw 2.8 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.312,DA95022215,Cmq,-263.6,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 2.8 deg^2; Cmq + Cmalphadot"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.312,DA95022215,Cnpa,-22.203,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 2.8 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.337,DA95022726,CD0,0.375,,0,table,,-,"linear theory, mean squared yaw 0.4 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.337,DA95022726,CDSQ,12.628,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 0.4 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.337,DA95022726,CNa,8.7,,0,table,,per rad,"linear theory, mean squared yaw 0.4 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.337,DA95022726,Cma,-11.036,,0,table,5.5,per rad,"linear theory, mean squared yaw 0.4 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.337,DA95022726,Cmq,-205.7,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 0.4 deg^2; Cmq + Cmalphadot"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.337,DA95022726,Cnpa,-9.448,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 0.4 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.681,DA95022702,CD0,0.304,,0,table,,-,"linear theory, mean squared yaw 8.0 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.681,DA95022702,CDSQ,11.842,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 8.0 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.681,DA95022702,CNa,8.17,,0,table,,per rad,"linear theory, mean squared yaw 8.0 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.681,DA95022702,Cma,-10.106,,0,table,5.5,per rad,"linear theory, mean squared yaw 8.0 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.681,DA95022702,Cmq,-209.0,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 8.0 deg^2; Cmq + Cmalphadot"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.681,DA95022702,Cnpa,1139.35,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 8.0 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.741,DA95030121,CD0,0.297,,0,table,,-,"linear theory, mean squared yaw 17.0 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.741,DA95030121,CDSQ,11.881,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 17.0 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.741,DA95030121,CNa,8.209,,0,table,,per rad,"linear theory, mean squared yaw 17.0 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.741,DA95030121,Cma,-10.256,,0,table,5.5,per rad,"linear theory, mean squared yaw 17.0 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.741,DA95030121,Cmq,-244.4,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 17.0 deg^2; Cmq + Cmalphadot"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.741,DA95030121,Cnpa,-17.207,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 17.0 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.774,DA95022712,CD0,0.305,,0,table,,-,"linear theory, mean squared yaw 4.7 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.774,DA95022712,CDSQ,11.302,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 4.7 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.774,DA95022712,CNa,7.694,,0,table,,per rad,"linear theory, mean squared yaw 4.7 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.774,DA95022712,Cma,-9.419,,0,table,5.5,per rad,"linear theory, mean squared yaw 4.7 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.774,DA95022712,Cmq,-228.2,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 4.7 deg^2; Cmq + Cmalphadot"
+DREV-TM-9703,VII,43,"linear theory, single shot",3.774,DA95022712,Cnpa,-22.274,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 4.7 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",4.127,DA95031523,CD0,0.283,,0,table,,-,"linear theory, mean squared yaw 2.6 deg^2; precession arm not damped in the linear theory fit (shots DA13, DA22, DA23 of report Sec. 5.1)"
+DREV-TM-9703,VII,43,"linear theory, single shot",4.127,DA95031523,CDSQ,10.897,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 2.6 deg^2; precession arm not damped in the linear theory fit (shots DA13, DA22, DA23 of report Sec. 5.1)"
+DREV-TM-9703,VII,43,"linear theory, single shot",4.127,DA95031523,CNa,7.482,,0,table,,per rad,"linear theory, mean squared yaw 2.6 deg^2; precession arm not damped in the linear theory fit (shots DA13, DA22, DA23 of report Sec. 5.1)"
+DREV-TM-9703,VII,43,"linear theory, single shot",4.127,DA95031523,Cma,-8.243,,0,table,5.5,per rad,"linear theory, mean squared yaw 2.6 deg^2; precession arm not damped in the linear theory fit (shots DA13, DA22, DA23 of report Sec. 5.1)"
+DREV-TM-9703,VII,43,"linear theory, single shot",4.127,DA95031523,Cmq,-195.3,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 2.6 deg^2; Cmq + Cmalphadot; precession arm not damped in the linear theory fit (shots DA13, DA22, DA23 of report Sec. 5.1)"
+DREV-TM-9703,VII,43,"linear theory, single shot",4.127,DA95031523,Cnpa,-18.088,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 2.6 deg^2; precession arm not damped in the linear theory fit (shots DA13, DA22, DA23 of report Sec. 5.1)"
+DREV-TM-9703,VII,43,"linear theory, single shot",4.422,DA95030101,CD0,0.243,,0,table,,-,"linear theory, mean squared yaw 45.3 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",4.422,DA95030101,CDSQ,11.941,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 45.3 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",4.422,DA95030101,CNa,8.721,,0,table,,per rad,"linear theory, mean squared yaw 45.3 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",4.422,DA95030101,Cma,-8.845,,0,table,5.5,per rad,"linear theory, mean squared yaw 45.3 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",4.422,DA95030101,Cmq,-261.0,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 45.3 deg^2; Cmq + Cmalphadot"
+DREV-TM-9703,VII,43,"linear theory, single shot",4.422,DA95030101,Cnpa,-267.211,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 45.3 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",4.471,DA95030111,CD0,0.249,,0,table,,-,"linear theory, mean squared yaw 16.3 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",4.471,DA95030111,CDSQ,10.856,,0,table,,per rad^2 (CD = CD0 + CDSQ delta^2),"linear theory, mean squared yaw 16.3 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",4.471,DA95030111,CNa,7.701,,0,table,,per rad,"linear theory, mean squared yaw 16.3 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",4.471,DA95030111,Cma,-8.034,,0,table,5.5,per rad,"linear theory, mean squared yaw 16.3 deg^2"
+DREV-TM-9703,VII,43,"linear theory, single shot",4.471,DA95030111,Cmq,-214.1,,0,table,5.5,"per q d/(2V) [inferred, see sources.md]","linear theory, mean squared yaw 16.3 deg^2; Cmq + Cmalphadot"
+DREV-TM-9703,VII,43,"linear theory, single shot",4.471,DA95030111,Cnpa,-9.275,,0,table,,per rad per p d/(2V) [inferred],"linear theory, mean squared yaw 16.3 deg^2"
+NAVORD-6652,2,17,"wind tunnel spin decay, 50-150 rps",1.53,,Clp_regan,-0.532,,0,"table (average; sign: damping, magnitudes tabulated)",,"C_l = L/(q A_p b n), per p b/(2V)",max 0.535 min 0.522
+NAVORD-6652,2 (converted),17,"wind tunnel spin decay, 50-150 rps",1.53,,Clp,-24.39,1.2,0,converted: x n A_p b^2/(S d^2) = 144/pi,,"per p d/(2V) [inferred, see sources.md]","range of max/min given as half-spread in percent; b = 3 cal assumed (overall span), see sources.md"
+NAVORD-6652,2,17,"wind tunnel spin decay, 50-150 rps",2.03,,Clp_regan,-0.422,,0,"table (average; sign: damping, magnitudes tabulated)",,"C_l = L/(q A_p b n), per p b/(2V)",max 0.426 min 0.412
+NAVORD-6652,2 (converted),17,"wind tunnel spin decay, 50-150 rps",2.03,,Clp,-19.34,1.7,0,converted: x n A_p b^2/(S d^2) = 144/pi,,"per p d/(2V) [inferred, see sources.md]","range of max/min given as half-spread in percent; b = 3 cal assumed (overall span), see sources.md"
+NAVORD-6652,2,17,"wind tunnel spin decay, 50-150 rps",2.27,,Clp_regan,-0.371,,0,"table (average; sign: damping, magnitudes tabulated)",,"C_l = L/(q A_p b n), per p b/(2V)",max 0.397 min 0.350
+NAVORD-6652,2 (converted),17,"wind tunnel spin decay, 50-150 rps",2.27,,Clp,-17.01,6.3,0,converted: x n A_p b^2/(S d^2) = 144/pi,,"per p d/(2V) [inferred, see sources.md]","range of max/min given as half-spread in percent; b = 3 cal assumed (overall span), see sources.md"
+NAVORD-6652,2,17,"wind tunnel spin decay, 50-150 rps",2.54,,Clp_regan,-0.352,,0,"table (average; sign: damping, magnitudes tabulated)",,"C_l = L/(q A_p b n), per p b/(2V)",max 0.359 min 0.340
+NAVORD-6652,2 (converted),17,"wind tunnel spin decay, 50-150 rps",2.54,,Clp,-16.13,2.7,0,converted: x n A_p b^2/(S d^2) = 144/pi,,"per p d/(2V) [inferred, see sources.md]","range of max/min given as half-spread in percent; b = 3 cal assumed (overall span), see sources.md"
+NAVORD-6652,2,17,"wind tunnel spin decay, 50-150 rps",2.76,,Clp_regan,-0.315,,0,"table (average; sign: damping, magnitudes tabulated)",,"C_l = L/(q A_p b n), per p b/(2V)",max 0.328 min 0.304
+NAVORD-6652,2 (converted),17,"wind tunnel spin decay, 50-150 rps",2.76,,Clp,-14.44,3.8,0,converted: x n A_p b^2/(S d^2) = 144/pi,,"per p d/(2V) [inferred, see sources.md]","range of max/min given as half-spread in percent; b = 3 cal assumed (overall span), see sources.md"
+NAVORD-6652,2,17,"wind tunnel spin decay, 50-150 rps",3.51,,Clp_regan,-0.273,,0,"table (average; sign: damping, magnitudes tabulated)",,"C_l = L/(q A_p b n), per p b/(2V)",max 0.280 min 0.257
+NAVORD-6652,2 (converted),17,"wind tunnel spin decay, 50-150 rps",3.51,,Clp,-12.51,4.2,0,converted: x n A_p b^2/(S d^2) = 144/pi,,"per p d/(2V) [inferred, see sources.md]","range of max/min given as half-spread in percent; b = 3 cal assumed (overall span), see sources.md"
+NAVORD-6652,2,17,"wind tunnel spin decay, 50-150 rps",4.1,,Clp_regan,-0.219,,0,"table (average; sign: damping, magnitudes tabulated)",,"C_l = L/(q A_p b n), per p b/(2V)",max 0.259 min 0.188
+NAVORD-6652,2 (converted),17,"wind tunnel spin decay, 50-150 rps",4.1,,Clp,-10.04,16.2,0,converted: x n A_p b^2/(S d^2) = 144/pi,,"per p d/(2V) [inferred, see sources.md]","range of max/min given as half-spread in percent; b = 3 cal assumed (overall span), see sources.md"
+NAVORD-6652,2,17,"wind tunnel spin decay, 50-150 rps",4.81,,Clp_regan,-0.181,,0,"table (average; sign: damping, magnitudes tabulated)",,"C_l = L/(q A_p b n), per p b/(2V)",max 0.192 min 0.167
+NAVORD-6652,2 (converted),17,"wind tunnel spin decay, 50-150 rps",4.81,,Clp,-8.3,6.9,0,converted: x n A_p b^2/(S d^2) = 144/pi,,"per p d/(2V) [inferred, see sources.md]","range of max/min given as half-spread in percent; b = 3 cal assumed (overall span), see sources.md"

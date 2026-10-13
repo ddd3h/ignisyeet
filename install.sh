@@ -20,7 +20,14 @@ REPO="${IGNISYEET_REPO:-ddd3h/ignisyeet}"
 REPO_URL="${IGNISYEET_REPO_URL:-https://github.com/$REPO.git}"
 DOWNLOAD_BASE="${IGNISYEET_DOWNLOAD_BASE:-https://github.com/$REPO/releases/download}"
 CFD_ENV_NAME="ignisyeet-cfd"
-CFD_PACKAGES="python=3.10 su2 gmsh python-gmsh openmpi"
+CFD_PACKAGES="python=3.10 su2=8.3.0 gmsh=4.15.2 python-gmsh=4.15.2 openmpi=5"
+# Compilers for the SU2 source build (Linux only): conda-forge gcc/g++ with their own sysroot, so no system compiler is needed.
+CFD_COMPILER_PACKAGES="cxx-compiler"
+MICROMAMBA_VERSION="2.9.0"
+MANIFOLD3D_VERSION="3.5.4"
+# SU2 is built from source for this CPU (-march=native) with mixed-precision linear algebra; --su2-binary keeps the conda-forge binary
+SU2_NATIVE_TAG="v8.3.0"
+SU2_NATIVE_URL="https://github.com/su2code/SU2/archive/refs/tags/v8.3.0.tar.gz"
 
 ROLE="${IGNISYEET_ROLE:-}"                 # user | developer | "" (ask)
 VERSION="${IGNISYEET_VERSION:-}"           # vX.Y.Z | "" (latest release)
@@ -28,6 +35,8 @@ PREFIX="${IGNISYEET_PREFIX:-$HOME/.local}"
 DEV_DIR="${IGNISYEET_DIR:-}"
 WANT_CFD="${IGNISYEET_CFD:-}"              # 1 | 0 | "" (ask; default no)
 WANT_TEST=""                               # 1 | 0 | "" (ask; default yes)
+WANT_SU2_SRC=1                             # 1: build SU2 from source for this CPU (Linux, with the CFD env) | 0: conda-forge binary
+[ "${IGNISYEET_SU2_BINARY:-0}" = 1 ] && WANT_SU2_SRC=0
 ASSUME_YES="${IGNISYEET_YES:-0}"
 NO_COLOR_FLAG="${IGNISYEET_NO_COLOR:-0}"
 DRY_RUN="${IGNISYEET_DRY_RUN:-0}"
@@ -96,7 +105,9 @@ say() { printf '%s\n' "$*"; }
 logf() { [ "$LOG_READY" = 1 ] && printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" >>"$LOG_FILE" || true; }
 
 ok()   { say "  ${GREEN}${G_OK}${RESET} $*"; logf "ok: $*"; }
-warn() { say "  ${YELLOW}${G_WARN}${RESET} $*"; logf "warn: $*"; }
+# warn CODE MESSAGE: "warning[IY-Innn]: MESSAGE"; warn_more continues the same warning on a further line.
+warn() { local code="$1"; shift; say "  ${YELLOW}${G_WARN}${RESET} warning[${code}]: $*"; logf "warn[${code}]: $*"; }
+warn_more() { say "    $*"; logf "warn: $*"; }
 note() { say "  ${GREY}${G_DOT} $*${RESET}"; }
 skip() { say "  ${GREY}${G_SKIP}${RESET} $*"; }
 info() { say "  ${BLUE}${G_INFO}${RESET} $*"; logf "info: $*"; }
@@ -332,12 +343,14 @@ first_version() { grep -Eo '[0-9]+(\.[0-9]+)+' | head -n 1; }
 tool_version() { # tool_version CMD [FLAG]
   "$1" "${2:---version}" </dev/null 2>&1 | head -n 3 | first_version || true
 }
+# die CODE MESSAGE: "error[IY-Innn]: MESSAGE", then exit 1.
 die() {
+  local code="$1"; shift
   ERR_REPORTED=1
   say ""
-  say "  ${RED}${G_ERR} error:${RESET} $*"
+  say "  ${RED}${G_ERR} error[${code}]:${RESET} $*"
   [ "$LOG_READY" = 1 ] && say "  ${GREY}log: $LOG_FILE${RESET}"
-  logf "FATAL: $*"
+  logf "FATAL[${code}]: $*"
   exit 1
 }
 
@@ -346,7 +359,7 @@ on_err() {
   [ "$ERR_REPORTED" = 1 ] && exit "$rc"
   ERR_REPORTED=1
   say ""
-  say "  ${RED}${G_ERR} unexpected error${RESET} (line $line, status $rc)"
+  say "  ${RED}${G_ERR} error[IY-I090]:${RESET} unexpected error (line $line, status $rc)"
   [ "$LOG_READY" = 1 ] && say "  ${GREY}details: $LOG_FILE${RESET}"
   exit "$rc"
 }
@@ -355,11 +368,13 @@ on_exit() {
 }
 on_int() {
   printf '%s\n' "${SHOW_CUR:-}"
-  say "  ${YELLOW}${G_WARN} interrupted${RESET}"
+  say "  ${YELLOW}${G_WARN} warning[IY-I501]:${RESET} interrupted"
   exit 130
 }
 
-normalize_version() { case "$1" in v*) printf '%s' "$1" ;; *) printf 'v%s' "$1" ;; esac; }
+validate_version() {
+  [[ "$1" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || die IY-I003 "version must match vX.Y.Z (got '$1')"
+}
 
 sha256_of() {
   if have sha256sum; then sha256sum "$1" | awk '{print $1}'; else shasum -a 256 "$1" | awk '{print $1}'; fi
@@ -379,7 +394,11 @@ Roles:
   --developer          git clone, build from source, tests, python/doc environments
 
 Options:
-  --cfd / --no-cfd     install (or skip) the optional CFD tools: SU2, gmsh, Open MPI (~3 GB, conda-forge)
+  --cfd / --no-cfd     install (or skip) the optional CFD tools: SU2, gmsh, Open MPI (~3 GB, conda-forge) and manifold3d (pip); on Linux SU2 is then compiled for this CPU
+  --su2-binary         with --cfd: use the portable conda-forge SU2 binary and skip the source build. By default SU2
+                       $SU2_NATIVE_TAG is compiled for this CPU (-march=native, mixed precision; Linux; compilers come from
+                       the CFD env; 3-10 min depending on the cores, ~0.5 GB of disk during the build) into
+                       PREFIX/share/ignisyeet-su2-native, and ignisyeet finds it there; it runs only on CPUs like this one
   --version vX.Y.Z     release to install (default: latest GitHub release); developer: tag to check out
   --prefix DIR         install prefix (default: ~/.local; binary in DIR/bin, data in DIR/share/ignisyeet)
   --dir DIR            developer clone location (default: current clone, else ~/ignisyeet)
@@ -390,15 +409,17 @@ Options:
   --no-color           plain output (also honours NO_COLOR)
   --dry-run            show what would be done and exit
   --uninstall          remove what this installer installed (asks before optional parts)
-  --purge              with --uninstall: also remove the plotting venv and the CFD environment
+  --purge              with --uninstall: also remove the plotting venv, the CFD environment and the SU2 source build
   -h, --help           this help
 
 Environment variables:
-  IGNISYEET_ROLE, IGNISYEET_VERSION, IGNISYEET_PREFIX, IGNISYEET_DIR, IGNISYEET_CFD (1/0),
-  IGNISYEET_YES, IGNISYEET_NO_COLOR, IGNISYEET_DRY_RUN, IGNISYEET_FORCE, IGNISYEET_ADD_PATH,
+  IGNISYEET_ROLE, IGNISYEET_VERSION, IGNISYEET_PREFIX, IGNISYEET_DIR, IGNISYEET_CFD (1/0), IGNISYEET_SU2_BINARY (1),
+  IGNISYEET_SU2_JOBS (compile jobs, default: all cores), IGNISYEET_YES, IGNISYEET_NO_COLOR, IGNISYEET_DRY_RUN, IGNISYEET_FORCE, IGNISYEET_ADD_PATH,
   IGNISYEET_DOWNLOAD_BASE (release download base URL), IGNISYEET_REPO_URL (git URL)
 
 Supported platforms: Linux x86_64 / aarch64, macOS Intel / Apple Silicon.
+
+Errors and warnings are printed as error[IY-Innn] / warning[IY-Innn]; the codes are explained in the documentation (errors/install).
 EOF
 }
 
@@ -409,11 +430,13 @@ parse_args() {
       --developer | --dev) ROLE=developer ;;
       --cfd) WANT_CFD=1 ;;
       --no-cfd) WANT_CFD=0 ;;
-      --version) shift; [ $# -gt 0 ] || die "--version needs a value"; VERSION="$1" ;;
-      --version=*) VERSION="${1#*=}" ;;
-      --prefix) shift; [ $# -gt 0 ] || die "--prefix needs a value"; PREFIX="$1" ;;
+      --su2-binary) WANT_SU2_SRC=0 ;;
+      --su2-native) WANT_SU2_SRC=1 ;; # the default; accepted so that existing command lines keep working
+      --version) shift; [ $# -gt 0 ] || die IY-I002 "--version needs a value"; VERSION="$1"; validate_version "$VERSION" ;;
+      --version=*) VERSION="${1#*=}"; validate_version "$VERSION" ;;
+      --prefix) shift; [ $# -gt 0 ] || die IY-I002 "--prefix needs a value"; PREFIX="$1" ;;
       --prefix=*) PREFIX="${1#*=}" ;;
-      --dir) shift; [ $# -gt 0 ] || die "--dir needs a value"; DEV_DIR="$1" ;;
+      --dir) shift; [ $# -gt 0 ] || die IY-I002 "--dir needs a value"; DEV_DIR="$1" ;;
       --dir=*) DEV_DIR="${1#*=}" ;;
       --no-test) WANT_TEST=0 ;;
       --add-path) ADD_PATH=1 ;;
@@ -424,14 +447,26 @@ parse_args() {
       --uninstall) ACTION=uninstall ;;
       --purge) PURGE=1 ;;
       -h | --help) HELP=1 ;;
-      *) die "unknown option: $1 (see --help)" ;;
+      *) die IY-I001 "unknown option: $1 (see --help)" ;;
     esac
     shift
   done
-  case "$ROLE" in "" | user | developer) ;; *) die "role must be 'user' or 'developer' (got '$ROLE')" ;; esac
-  case "$WANT_CFD" in "" | 0 | 1) ;; *) die "IGNISYEET_CFD must be 1 or 0" ;; esac
-  [ -n "$VERSION" ] && VERSION=$(normalize_version "$VERSION")
+  case "$ROLE" in "" | user | developer) ;; *) die IY-I004 "role must be 'user' or 'developer' (got '$ROLE')" ;; esac
+  case "$WANT_CFD" in "" | 0 | 1) ;; *) die IY-I005 "IGNISYEET_CFD must be 1 or 0" ;; esac
+  [ -n "$VERSION" ] && validate_version "$VERSION"
+  # Relative paths would give broken symlinks (they are resolved against the link's own directory).
+  PREFIX=$(abs_path "$PREFIX")
+  [ -n "$DEV_DIR" ] && DEV_DIR=$(abs_path "$DEV_DIR")
   return 0
+}
+
+# Absolute path of $1 (which need not exist yet); "~" is expanded.
+abs_path() {
+  local p="$1"
+  # The quoted "~" patterns match a literal tilde on purpose (the expansion is done here), so SC2088 does not apply.
+  # shellcheck disable=SC2088
+  case "$p" in "~") p="$HOME" ;; "~/"*) p="$HOME/${p#"~/"}" ;; esac
+  case "$p" in /*) printf '%s' "$p" ;; *) printf '%s/%s' "$PWD" "${p#./}" ;; esac
 }
 
 # ----------------------------------------------------------------------------------------------
@@ -450,7 +485,7 @@ detect_platform() {
         TARGET=x86_64-apple-darwin; MM_PLAT=osx-64; OS_NAME="macOS Intel"
       fi ;;
     Darwin/arm64) TARGET=aarch64-apple-darwin; MM_PLAT=osx-arm64; OS_NAME="macOS Apple Silicon" ;;
-    *) die "unsupported platform: $OS/$ARCH (supported: Linux x86_64/aarch64, macOS Intel/Apple Silicon)" ;;
+    *) die IY-I010 "unsupported platform: $OS/$ARCH (supported: Linux x86_64/aarch64, macOS Intel/Apple Silicon)" ;;
   esac
   [ -n "${IGNISYEET_TARGET:-}" ] && TARGET="$IGNISYEET_TARGET"
   return 0
@@ -591,7 +626,7 @@ show_environment() {
   fi
   if [ -n "$CFD_PREFIX" ]; then
     row_found "CFD env" "$CFD_ENV_NAME  su2 ${CFD_SU2_VER:-?}  $(tilde "$CFD_PREFIX")"
-    [ "$CFD_SU2_BAD" = 1 ] && warn "su2 $CFD_SU2_VER needs AVX-512, which this CPU lacks (SU2_CFD will crash); recreate the env with su2=8.3.0"
+    [ "$CFD_SU2_BAD" = 1 ] && warn IY-I510 "su2 $CFD_SU2_VER needs AVX-512, which this CPU lacks (SU2_CFD will crash); recreate the env with su2=8.3.0"
   elif [ -n "$SU2_PATH" ]; then
     row_found "SU2_CFD" "$SU2_PATH"
   else
@@ -628,8 +663,8 @@ init_paths() {
   STATE_FILE="$DATA_ROOT/state"
   VENV_DIR="$DATA_ROOT/venv"
   if [ "$DRY_RUN" = 1 ]; then LOG_FILE=/dev/null; return 0; fi
-  mkdir -p "$DATA_ROOT" 2>/dev/null || die "cannot create $DATA_ROOT"
-  : >>"$LOG_FILE" || die "cannot write $LOG_FILE"
+  mkdir -p "$DATA_ROOT" 2>/dev/null || die IY-I011 "cannot create $DATA_ROOT"
+  : >>"$LOG_FILE" || die IY-I012 "cannot write $LOG_FILE"
   LOG_READY=1
   printf '\n===== install.sh %s  %s  args: %s =====\n' "$(date '+%F %T')" "$(uname -a)" "${ORIG_ARGS:-}" >>"$LOG_FILE"
 }
@@ -659,12 +694,13 @@ decide() {
   # release version (user role: required; developer: only when pinned)
   if [ "$ROLE" = user ] && [ -z "$VERSION" ]; then
     if [ -n "${IGNISYEET_DOWNLOAD_BASE:-}" ]; then
-      die "IGNISYEET_DOWNLOAD_BASE is set; also give --version vX.Y.Z"
+      die IY-I020 "IGNISYEET_DOWNLOAD_BASE is set; also give --version vX.Y.Z"
     fi
     VERSION=$(resolve_latest_version)
+    [ -z "$VERSION" ] || validate_version "$VERSION"
     if [ -z "$VERSION" ]; then
       if [ "$DRY_RUN" = 1 ]; then VERSION="(latest)"; else
-        die "could not determine the latest release of $REPO (no release published yet, or no network). Use --version vX.Y.Z or --developer."
+        die IY-I021 "could not determine the latest release of $REPO (no release published yet, or no network). Use --version vX.Y.Z or --developer."
       fi
     fi
   fi
@@ -679,7 +715,7 @@ decide() {
     if ask_yn "uv (fast Python manager) is not installed. Install it from astral.sh? (No: use python3 -m venv + pip)" y; then USE_UV=1; INSTALL_UV=1; fi
   fi
   if [ "$USE_UV" = 0 ] && [ "$PY_OK" != 1 ]; then
-    die "Python >= 3.10 is required for plotting; install python3 (>= 3.10) or allow uv to be installed."
+    die IY-I022 "Python >= 3.10 is required for plotting; install python3 (>= 3.10) or allow uv to be installed."
   fi
 
   # rust
@@ -697,7 +733,7 @@ decide() {
   if [ -z "$WANT_CFD" ]; then
     if [ -n "$CFD_PREFIX" ] || [ -n "$SU2_PATH" ]; then
       WANT_CFD=0 # already available; nothing to ask
-    elif ask_yn "Install the optional CFD tools (SU2, gmsh, Open MPI via conda-forge, ~3 GB)?" n; then WANT_CFD=1; else WANT_CFD=0; fi
+    elif ask_yn "Install the optional CFD tools (SU2, gmsh, Open MPI; ~3 GB, SU2 built here 3-10 min)?" n; then WANT_CFD=1; else WANT_CFD=0; fi
   fi
   CFD_ACTION=none # none | reuse | create
   if [ "$CFD_DISABLED" = 1 ]; then
@@ -707,11 +743,14 @@ decide() {
   elif [ "$WANT_CFD" = 1 ]; then
     if [ -n "$SU2_PATH" ] && [ -n "$GMSH_PATH" ] && [ -n "$MPI_PATH" ] && [ "$FORCE" != 1 ]; then CFD_ACTION=reuse; else CFD_ACTION=create; fi
   fi
-  SU2_PIN=""
-  if [ "$CFD_ACTION" = create ] && [ "$OS" = Linux ] && [ "$ARCH" = x86_64 ] && ! cpu_has_avx512; then SU2_PIN="su2=8.3.0"; fi
   CFD_NEED_MM=0
   [ "$CFD_ACTION" = create ] && [ -z "$CONDA_MGR" ] && CFD_NEED_MM=1
-
+  SU2_NATIVE_DIR="$PREFIX/share/ignisyeet-su2-native"
+  # The source build runs when the CFD tools are requested (--cfd, or the answer to the question), not on every re-run.
+  BUILD_SU2=0
+  if [ "$CFD_ACTION" != none ] && [ "$WANT_CFD" = 1 ] && [ "$WANT_SU2_SRC" = 1 ]; then
+    if [ "$OS" = Linux ]; then BUILD_SU2=1; else SU2_SRC_NOTE="SU2 is compiled from source on Linux only; this platform uses the conda-forge binary"; fi
+  fi
   # user: already installed?
   SAME_VERSION=0
   if [ "$ROLE" = user ] && [ -n "$IGN_VER" ] && [ "v$IGN_VER" = "$VERSION" ] && [ -d "$DATA_ROOT/$VERSION" ] && [ "$FORCE" != 1 ]; then
@@ -731,11 +770,11 @@ show_plan() {
     else p "download ${CYAN}ignisyeet-$VERSION-$TARGET.tar.gz${RESET}, verify sha256, install to ${CYAN}$(tilde "$DATA_ROOT")/$VERSION${RESET}"
       p "link ${CYAN}$(tilde "$BIN_DIR")/ignisyeet${RESET} and ${CYAN}ignisyeet-plot${RESET}"; fi
     [ "$INSTALL_UV" = 1 ] && p "install ${CYAN}uv${RESET} (astral.sh installer)"
-    if [ "$USE_UV" = 1 ]; then p "plotting env (numpy, pandas, matplotlib) with uv ${GREY}${UV_VER:+(reusing uv $UV_VER)}${RESET} in $(tilde "$VENV_DIR")"
-    else p "plotting env with python3 -m venv + pip in $(tilde "$VENV_DIR")"; fi
+    if [ "$USE_UV" = 1 ]; then p "plotting env: uv sync --frozen --project $DATA_ROOT/current/python ${GREY}${UV_VER:+(reusing uv $UV_VER)}${RESET} in $(tilde "$VENV_DIR")"
+    else p "plotting env with python3 -m venv + pip -r requirements.txt -c plot-constraints.txt in $(tilde "$VENV_DIR")"; fi
   else
     say "  ${GREY}directory${RESET}    $(tilde "$DEV_DIR")"
-    if [ -d "$DEV_DIR/.git" ]; then p "reuse clone ${CYAN}$(tilde "$DEV_DIR")${RESET}; ${GREY}git pull --ff-only if clean${RESET}"
+    if [ -e "$DEV_DIR/.git" ]; then p "reuse clone ${CYAN}$(tilde "$DEV_DIR")${RESET}; ${GREY}git pull --ff-only if clean${RESET}"
     else p "git clone ${CYAN}$REPO_URL${RESET} -> $(tilde "$DEV_DIR")"; fi
     [ -n "$VERSION" ] && p "check out ${CYAN}$VERSION${RESET}"
     if [ "$INSTALL_RUST" = 1 ]; then p "install ${CYAN}Rust${RESET} via rustup (sh.rustup.rs, minimal profile)"
@@ -743,19 +782,27 @@ show_plan() {
     [ "$INSTALL_UV" = 1 ] && p "install ${CYAN}uv${RESET} (astral.sh installer)"
     p "cargo build --release"
     [ "$WANT_TEST" = 1 ] && p "cargo test --release"
-    if [ "$USE_UV" = 1 ]; then p "uv sync: python/ (plotting) and doc/ (Sphinx) environments"
-    else p "venv + pip: .venv with python/ and doc/ requirements"; fi
+    if [ "$USE_UV" = 1 ]; then p "uv sync --frozen --project $(tilde "$DEV_DIR")/python (plotting); uv sync --project $(tilde "$DEV_DIR")/doc (Sphinx)"
+    else p "venv + pip: .venv with python/requirements.txt constrained by scripts/plot-constraints.txt, then doc/requirements.txt"; fi
     if [ -n "$DOC_MISSING_NAMES" ]; then p "documentation tools missing (${DOC_MISSING_NAMES}); the exact install command is printed at the end"
     else p "documentation tools: ${GREEN}all found${RESET}"; fi
   fi
   case "$CFD_ACTION" in
     reuse) p "CFD: ${GREEN}reuse${RESET} $(tilde "${CFD_PREFIX:-$SU2_PATH}")" ;;
     create)
-      [ "$CFD_NEED_MM" = 1 ] && p "install ${CYAN}micromamba${RESET} to $(tilde "$BIN_DIR")/micromamba"
-      p "CFD: create conda-forge env ${CYAN}$CFD_ENV_NAME${RESET} with ${CFD_PACKAGES/su2/${SU2_PIN:-su2}} ${GREY}(~3 GB)${RESET}"
-      [ -n "$SU2_PIN" ] && note "no AVX-512 on this CPU: su2 is pinned to 8.3.0 (8.5.0 crashes with SIGILL)" ;;
+      [ "$CFD_NEED_MM" = 1 ] && p "install ${CYAN}micromamba $MICROMAMBA_VERSION${RESET} to $(tilde "$BIN_DIR")/micromamba"
+      p "CFD: create conda-forge env ${CYAN}$CFD_ENV_NAME${RESET} with $CFD_PACKAGES ${GREY}(~3 GB)${RESET}"
+      p "CFD: pip install ${CYAN}manifold3d $MANIFOLD3D_VERSION${RESET} into it ${GREY}(union of STL shells, surface = \"stl\")${RESET}"
+      note "SU2 is pinned to 8.3.0 on all platforms" ;;
     none) skip "CFD: not requested" ;;
   esac
+  if [ "$BUILD_SU2" = 1 ]; then
+    p "SU2: compile ${CYAN}SU2 $SU2_NATIVE_TAG${RESET} from source (-march=native, -Denable-mixedprec=true, compilers and Open MPI of the CFD env) into ${CYAN}$(tilde "$SU2_NATIVE_DIR")${RESET} ${GREY}(3-10 min depending on the cores)${RESET}"
+    note "the compiled SU2 runs only on CPUs with the instruction set of this one; --su2-binary keeps the portable conda-forge SU2"
+  elif [ "$CFD_ACTION" != none ] && [ "$WANT_CFD" = 1 ]; then
+    p "SU2: use the conda-forge binary ${GREY}(--su2-binary)${RESET}"
+    if [ -n "${SU2_SRC_NOTE:-}" ]; then note "$SU2_SRC_NOTE"; fi
+  fi
 }
 
 # ----------------------------------------------------------------------------------------------
@@ -763,33 +810,41 @@ show_plan() {
 # ----------------------------------------------------------------------------------------------
 ensure_uv() {
   [ "$INSTALL_UV" = 1 ] || return 0
-  step "Installing uv" sh -c 'curl -LsSf https://astral.sh/uv/install.sh | sh' || die "uv installation failed"
+  step "Installing uv" sh -c 'curl -LsSf https://astral.sh/uv/install.sh | sh' || die IY-I030 "uv installation failed"
   UV_PATH=""
   for p in "$HOME/.local/bin/uv" "$HOME/.cargo/bin/uv"; do [ -x "$p" ] && UV_PATH="$p" && break; done
-  [ -n "$UV_PATH" ] || die "uv was installed but cannot be found"
+  [ -n "$UV_PATH" ] || die IY-I031 "uv was installed but cannot be found"
   UV_VER=$("$UV_PATH" --version | first_version || true)
 }
 
 # Create a venv at DIR with the requirements file REQ (uv or venv+pip).
 make_venv() { # DIR REQ LABEL
   local dir="$1" req="$2" label="$3"
-  if [ -x "$dir/bin/python" ] && "$dir/bin/python" -c 'import numpy, pandas, matplotlib' >/dev/null 2>&1; then
-    row_found "$label" "already set up ($dir)"
-    return 0
-  fi
-  if [ "$USE_UV" = 1 ]; then
-    step "$label: creating environment (uv)" "$UV_PATH" venv --quiet --allow-existing --python '>=3.10' "$dir" || die "uv venv failed"
-    step "$label: installing numpy, pandas, matplotlib" "$UV_PATH" pip install --quiet --python "$dir/bin/python" -r "$req" || die "uv pip install failed"
+  local project constraints
+  project=$(dirname "$req")
+  if [ "$USE_UV" = 1 ] && [ -f "$project/uv.lock" ]; then
+    step "$label: syncing locked environment (uv)" env UV_PROJECT_ENVIRONMENT="$dir" "$UV_PATH" sync --frozen --project "$project" || die IY-I032 "uv sync failed"
+  elif [ "$USE_UV" = 1 ]; then
+    # Releases up to v0.3.0 ship no uv.lock: unpinned requirements.
+    step "$label: creating environment (uv)" "$UV_PATH" venv --quiet --allow-existing --python '>=3.10' "$dir" || die IY-I033 "uv venv failed"
+    step "$label: installing numpy, pandas, matplotlib" "$UV_PATH" pip install --quiet --python "$dir/bin/python" -r "$req" || die IY-I034 "uv pip install failed"
   else
-    step "$label: creating environment (venv)" python3 -m venv "$dir" || die "python3 -m venv failed (on Debian/Ubuntu: apt install python3-venv)"
-    step "$label: installing numpy, pandas, matplotlib" "$dir/bin/python" -m pip install --quiet -r "$req" || die "pip install failed"
+    constraints="$project/plot-constraints.txt"
+    [ -f "$constraints" ] || constraints="$project/../scripts/plot-constraints.txt"
+    step "$label: creating environment (venv)" python3 -m venv "$dir" || die IY-I035 "python3 -m venv failed (on Debian/Ubuntu: apt install python3-venv)"
+    if [ -f "$constraints" ]; then
+      step "$label: installing locked plotting requirements" "$dir/bin/python" -m pip install --quiet -r "$req" -c "$constraints" || die IY-I036 "pip install failed"
+    else
+      # Releases up to v0.3.0 ship no constraints file: unpinned requirements.
+      step "$label: installing numpy, pandas, matplotlib" "$dir/bin/python" -m pip install --quiet -r "$req" || die IY-I036 "pip install failed"
+    fi
   fi
 }
 
 install_user() {
   section "Installing ignisyeet $VERSION"
-  [ "$HAVE_CURL" = 1 ] && [ "$HAVE_TAR" = 1 ] || die "curl and tar are required"
-  have sha256sum || have shasum || die "sha256sum or shasum is required to verify the download"
+  [ "$HAVE_CURL" = 1 ] && [ "$HAVE_TAR" = 1 ] || die IY-I040 "curl and tar are required"
+  have sha256sum || have shasum || die IY-I041 "sha256sum or shasum is required to verify the download"
   TMP=$(mktemp -d "${TMPDIR:-/tmp}/ignisyeet-install.XXXXXX")
   trap 'rm -rf "$TMP"; printf "%s" "${SHOW_CUR:-}"' EXIT
   local name="ignisyeet-$VERSION-$TARGET" url
@@ -798,18 +853,18 @@ install_user() {
     row_found "ignisyeet" "$VERSION already installed; skipping download"
   else
     download "$url" "$TMP/$name.tar.gz" "Downloading ignisyeet $VERSION" ||
-      die "download failed: $url (does release $VERSION exist for $TARGET?)"
-    download "$url.sha256" "$TMP/$name.tar.gz.sha256" "Downloading checksum" || die "checksum download failed"
+      die IY-I042 "download failed: $url (does release $VERSION exist for $TARGET?)"
+    download "$url.sha256" "$TMP/$name.tar.gz.sha256" "Downloading checksum" || die IY-I043 "checksum download failed"
     local want got
     want=$(awk '{print $1; exit}' "$TMP/$name.tar.gz.sha256")
     got=$(sha256_of "$TMP/$name.tar.gz")
     if [ -z "$want" ] || [ "$want" != "$got" ]; then
       say "  ${RED}${G_ERR}${RESET} checksum mismatch"
-      die "sha256 mismatch for $name.tar.gz (expected $want, got $got); refusing to install"
+      die IY-I044 "sha256 mismatch for $name.tar.gz (expected $want, got $got); refusing to install"
     fi
     ok "sha256 verified ${GREY}${got:0:16}...${RESET}"
-    step "Extracting" tar -xzf "$TMP/$name.tar.gz" -C "$TMP" || die "extraction failed"
-    [ -x "$TMP/$name/bin/ignisyeet" ] || die "archive has an unexpected layout (no $name/bin/ignisyeet)"
+    step "Extracting" tar -xzf "$TMP/$name.tar.gz" -C "$TMP" || die IY-I045 "extraction failed"
+    [ -x "$TMP/$name/bin/ignisyeet" ] || die IY-I046 "archive has an unexpected layout (no $name/bin/ignisyeet)"
     step "Installing files" sh -c '
       set -e
       rm -rf "$2/$3.new" "$2/$3"
@@ -818,7 +873,7 @@ install_user() {
       mv "$2/$3.new" "$2/$3"
       ln -sfn "$2/$3" "$2/current"
       ln -sfn "$2/current/bin/ignisyeet" "$1/ignisyeet"
-    ' sh "$BIN_DIR" "$DATA_ROOT" "$VERSION" "$TMP/$name" || die "installation failed"
+    ' sh "$BIN_DIR" "$DATA_ROOT" "$VERSION" "$TMP/$name" || die IY-I047 "installation failed"
   fi
   write_plot_wrapper
   ok "linked ${CYAN}$BIN_DIR/ignisyeet${RESET}"
@@ -844,34 +899,34 @@ EOF
 ensure_rust() {
   if [ "$INSTALL_RUST" = 1 ]; then
     step "Installing Rust (rustup, minimal profile)" sh -c 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal' ||
-      die "rustup installation failed"
+      die IY-I050 "rustup installation failed"
   fi
   # shellcheck disable=SC1091
   [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
-  have cargo || die "cargo not found after installing Rust"
+  have cargo || die IY-I051 "cargo not found after installing Rust"
   CARGO_PATH=$(command -v cargo)
   CARGO_VER=$(cargo --version | first_version || true)
 }
 
 install_developer() {
-  [ -n "$GIT_VER" ] || die "git is required for the developer install (apt install git / xcode-select --install)"
+  [ -n "$GIT_VER" ] || die IY-I052 "git is required for the developer install (apt install git / xcode-select --install)"
   section "Source tree"
   local dirty
-  if [ -d "$DEV_DIR/.git" ]; then
+  if [ -e "$DEV_DIR/.git" ]; then
     ok "reusing clone ${CYAN}$DEV_DIR${RESET}"
     dirty=$(git -C "$DEV_DIR" status --porcelain 2>/dev/null | head -n 1 || true)
     if [ -n "$dirty" ]; then
-      warn "working tree has local changes; not updating it"
+      warn IY-I520 "working tree has local changes; not updating it"
     elif git -C "$DEV_DIR" rev-parse --abbrev-ref '@{upstream}' >/dev/null 2>&1; then
-      step "git pull --ff-only" git -C "$DEV_DIR" pull --ff-only || warn "git pull failed; continuing with the current checkout"
+      step "git pull --ff-only" git -C "$DEV_DIR" pull --ff-only || warn IY-I521 "git pull failed; continuing with the current checkout"
     fi
   else
-    if [ -e "$DEV_DIR" ] && [ -n "$(ls -A "$DEV_DIR" 2>/dev/null)" ]; then die "$DEV_DIR exists and is not an IgnisYeet clone"; fi
-    step "git clone $REPO" git clone "$REPO_URL" "$DEV_DIR" || die "git clone failed"
+    if [ -e "$DEV_DIR" ] && [ -n "$(ls -A "$DEV_DIR" 2>/dev/null)" ]; then die IY-I053 "$DEV_DIR exists and is not an IgnisYeet clone"; fi
+    step "git clone $REPO" git clone "$REPO_URL" "$DEV_DIR" || die IY-I054 "git clone failed"
   fi
   if [ -n "$VERSION" ]; then
     step "Checking out $VERSION" sh -c 'git -C "$1" fetch --tags --quiet 2>/dev/null; git -C "$1" checkout --quiet "$2"' sh "$DEV_DIR" "$VERSION" ||
-      die "cannot check out $VERSION"
+      die IY-I055 "cannot check out $VERSION"
   fi
   state_set role developer
   state_set dev_dir "$DEV_DIR"
@@ -882,27 +937,27 @@ install_developer() {
   [ "$INSTALL_RUST" = 0 ] && row_found cargo "$CARGO_VER (reused)"
 
   section "Build"
-  step "cargo build --release" sh -c 'cd "$1" && cargo build --release' sh "$DEV_DIR" || die "build failed"
+  step "cargo build --release" sh -c 'cd "$1" && cargo build --release' sh "$DEV_DIR" || die IY-I056 "build failed"
   ok "binary: ${CYAN}$DEV_DIR/target/release/ignisyeet${RESET}"
   if [ "$WANT_TEST" = 1 ]; then
-    step "cargo test --release" sh -c 'cd "$1" && cargo test --release' sh "$DEV_DIR" || die "tests failed (see the log)"
+    step "cargo test --release" sh -c 'cd "$1" && cargo test --release' sh "$DEV_DIR" || die IY-I057 "tests failed (see the log)"
   fi
 
   section "Python environments"
   if [ "$USE_UV" = 1 ]; then
-    step "uv sync (python/ plotting)" "$UV_PATH" sync --quiet --project "$DEV_DIR/python" || die "uv sync python failed"
-    step "uv sync (doc/ Sphinx)" "$UV_PATH" sync --quiet --project "$DEV_DIR/doc" || die "uv sync doc failed"
+    step "uv sync (python/ plotting)" "$UV_PATH" sync --frozen --project "$DEV_DIR/python" || die IY-I032 "uv sync python failed"
+    step "uv sync (doc/ Sphinx)" "$UV_PATH" sync --quiet --project "$DEV_DIR/doc" || die IY-I032 "uv sync doc failed"
   else
     make_venv "$DEV_DIR/.venv" "$DEV_DIR/python/requirements.txt" "plotting"
     [ -f "$DEV_DIR/doc/requirements.txt" ] &&
-      { step "doc requirements (pip)" "$DEV_DIR/.venv/bin/python" -m pip install --quiet -r "$DEV_DIR/doc/requirements.txt" || warn "doc requirements failed"; }
+      { step "doc requirements (pip)" "$DEV_DIR/.venv/bin/python" -m pip install --quiet -r "$DEV_DIR/doc/requirements.txt" -c "$DEV_DIR/scripts/plot-constraints.txt" || warn IY-I522 "doc requirements failed"; }
   fi
 
   section "Documentation tools"
   if [ -z "$DOC_MISSING_NAMES" ]; then
     ok "TeX Live (luatexja, uplatex), dvisvgm, mutool, inkscape, IPAex fonts: all found"
   else
-    warn "missing: ${DOC_MISSING_NAMES}"
+    warn IY-I523 "missing: ${DOC_MISSING_NAMES}"
     if [ "$OS" = Darwin ]; then
       say "    ${GREY}install with Homebrew:${RESET}"
       say "      ${CYAN}brew install $(printf '%s' "$DOC_MISSING_BREW" | sed 's/mactex-no-gui/--cask mactex-no-gui/')${RESET}"
@@ -921,7 +976,10 @@ install_cfd() {
     reuse)
       if [ -n "$CFD_PREFIX" ]; then
         ok "reusing existing environment ${CYAN}$CFD_PREFIX${RESET} ${GREY}(su2 ${CFD_SU2_VER:-?})${RESET}"
-        [ "$CFD_SU2_BAD" = 1 ] && warn "su2 $CFD_SU2_VER needs AVX-512; recreate with: $CONDA_MGR create -y -n $CFD_ENV_NAME -c conda-forge --override-channels $CFD_PACKAGES su2=8.3.0"
+        [ "$CFD_SU2_BAD" = 1 ] && warn IY-I510 "su2 $CFD_SU2_VER needs AVX-512; recreate with: $CONDA_MGR create -y -n $CFD_ENV_NAME -c conda-forge --override-channels $CFD_PACKAGES"
+        if [ -x "$CFD_PREFIX/bin/python" ] && ! "$CFD_PREFIX/bin/python" -c 'import manifold3d' >/dev/null 2>&1; then
+          note "manifold3d is not installed in this environment (only needed for surface = \"stl\"): $CFD_PREFIX/bin/python -m pip install manifold3d==$MANIFOLD3D_VERSION"
+        fi
       else
         ok "reusing SU2/gmsh/mpirun found in PATH"
         CFD_PREFIX=$(dirname "$(dirname "$SU2_PATH")")
@@ -936,29 +994,146 @@ install_cfd() {
     step "Installing micromamba ($MM_PLAT)" sh -c '
       set -e
       d=$(mktemp -d); trap "rm -rf $d" EXIT
-      curl -fsSL "https://micro.mamba.pm/api/micromamba/$1/latest" | tar -xj -C "$d" bin/micromamba
+      curl -fsSL "https://micro.mamba.pm/api/micromamba/$1/$3" | tar -xj -C "$d" bin/micromamba
       install -m 755 "$d/bin/micromamba" "$2"
-    ' sh "$MM_PLAT" "$mm" || { warn "micromamba installation failed; CFD skipped"; return 0; }
+    ' sh "$MM_PLAT" "$mm" "$MICROMAMBA_VERSION" || { warn IY-I530 "micromamba installation failed; CFD skipped"; return 0; }
     state_set micromamba "$mm"
   else
     ok "reusing $(basename "$mm") ${GREY}$mm${RESET}"
   fi
   local pkgs="$CFD_PACKAGES"
-  [ -n "$SU2_PIN" ] && pkgs="${pkgs/su2/$SU2_PIN}"
+  [ "$BUILD_SU2" = 1 ] && pkgs="$pkgs $CFD_COMPILER_PACKAGES"
+  CFD_MM="$mm"
   note "this downloads about 3 GB; progress is in $LOG_FILE"
   # shellcheck disable=SC2086
   if ! step "Creating conda env $CFD_ENV_NAME (conda-forge)" "$mm" $root_args create -y -n "$CFD_ENV_NAME" -c conda-forge --override-channels $pkgs; then
-    warn "CFD environment could not be created (SU2 may be unavailable for $MM_PLAT); CFD skipped"
+    warn IY-I531 "CFD environment could not be created (SU2 may be unavailable for $MM_PLAT); CFD skipped"
     return 0
   fi
   CFD_PREFIX=$(find_cfd_env || true)
   if [ -z "$CFD_PREFIX" ] && [ -n "$root_args" ] && [ -x "$HOME/.local/share/micromamba/envs/$CFD_ENV_NAME/bin/SU2_CFD" ]; then
     CFD_PREFIX="$HOME/.local/share/micromamba/envs/$CFD_ENV_NAME"
   fi
-  if [ -z "$CFD_PREFIX" ]; then warn "environment created but SU2_CFD was not found in it"; return 0; fi
+  if [ -z "$CFD_PREFIX" ]; then warn IY-I532 "environment created but SU2_CFD was not found in it"; return 0; fi
   CFD_SU2_VER=$(conda_pkg_version "$CFD_PREFIX" su2)
   ok "SU2 ${CFD_SU2_VER:-?} installed in ${CYAN}$CFD_PREFIX${RESET}"
   state_set cfd_env "$CFD_PREFIX"
+  # manifold3d (pip only): the exact union of the overlapping STL shells for surface = "stl". The environment is
+  # removed as a whole by --uninstall --purge, so nothing else has to be tracked.
+  if ! step "Installing manifold3d (pip)" "$CFD_PREFIX/bin/python" -m pip install --quiet "manifold3d==$MANIFOLD3D_VERSION"; then
+    warn IY-I533 "manifold3d could not be installed; surface = \"stl\" will not be available (retry: $CFD_PREFIX/bin/python -m pip install manifold3d==$MANIFOLD3D_VERSION)"
+  fi
+}
+
+# --- SU2 compiled for this CPU --------------------------------------------------------------------------
+# SU2's own meson.py / ninja (they download meson, ninja and the CoDiPack / MeDiPack headers into externals/).
+# Compilers: the conda-forge gcc/g++ of the CFD env (installed into it when missing; the system gcc/g++ otherwise).
+# The MPI compiler wrappers of the env (Open MPI 5) are pointed at that compiler, and the binary is linked against
+# the env's libmpi and libstdc++ with an rpath, so it runs with the env's mpirun. `-include cstdint`: CLI11 in
+# SU2 8.3.0 misses that header for gcc >= 13. build-info.txt next to the binary records the toolchain and the
+# CPU model; ignisyeet compares the latter with the running CPU.
+cpu_model() { sed -n 's/^model name[[:space:]]*:[[:space:]]*//p' /proc/cpuinfo 2>/dev/null | head -n 1; }
+
+# Compile jobs: IGNISYEET_SU2_JOBS, else all cores limited to one job per 2 GB of available memory.
+su2_jobs() {
+  local n mem_kb j
+  if [ -n "${IGNISYEET_SU2_JOBS:-}" ]; then printf '%s' "$IGNISYEET_SU2_JOBS"; return 0; fi
+  n=$(nproc 2>/dev/null || echo 4)
+  mem_kb=$(sed -n 's/^MemAvailable:[[:space:]]*\([0-9]*\).*/\1/p' /proc/meminfo 2>/dev/null)
+  j=$(( ${mem_kb:-0} / 2000000 ))
+  [ "$j" -ge 1 ] || j=1
+  [ "$j" -lt "$n" ] && n=$j
+  printf '%s' "$n"
+}
+
+su2_conda_cxx() { # the conda-forge g++ of the CFD env, if present
+  local c
+  for c in "$CFD_PREFIX"/bin/*-conda-linux-gnu-c++; do [ -x "$c" ] && { printf '%s' "$c"; return 0; }; done
+  return 1
+}
+
+# A failed source build leaves the conda-forge SU2 (always installed) in use. Say so loudly and carry on.
+su2_build_failed() { # REASON
+  SU2_BUILD_FAILED="$1"
+  rmdir "$SU2_NATIVE_DIR" 2>/dev/null || true
+  warn IY-I540 "SU2 could not be compiled: $1"
+  warn_more "the portable conda-forge SU2 (no -march=native, no mixed precision) stays in use; the rest of the CFD tools are installed"
+  warn_more "details: $LOG_FILE; retry with: bash install.sh --cfd --force   (or keep the conda-forge SU2 for good with --su2-binary)"
+  return 0
+}
+
+install_su2_native() {
+  if [ "$BUILD_SU2" != 1 ]; then
+    # --su2-binary: an earlier source build would still be found by ignisyeet, so it is removed.
+    if [ "$WANT_SU2_SRC" = 0 ] && [ "$CFD_ACTION" != none ] && [ "$WANT_CFD" = 1 ] && [ -d "$SU2_NATIVE_DIR" ]; then
+      rm -rf "$SU2_NATIVE_DIR"
+      note "removed the earlier SU2 source build $SU2_NATIVE_DIR; the conda-forge SU2 is used"
+    fi
+    return 0
+  fi
+  section "SU2 $SU2_NATIVE_TAG compiled for this CPU"
+  if [ -z "$CFD_PREFIX" ] || [ ! -x "$CFD_PREFIX/bin/mpicxx" ] || [ ! -x "$CFD_PREFIX/bin/python" ]; then
+    su2_build_failed "the CFD environment has no Open MPI compiler wrappers or python"; return 0
+  fi
+  local cpu; cpu=$(cpu_model)
+  if [ -x "$SU2_NATIVE_DIR/bin/SU2_CFD" ] && [ "$FORCE" != 1 ] && [ -f "$SU2_NATIVE_DIR/build-info.txt" ] \
+    && grep -qx "su2: $SU2_NATIVE_TAG" "$SU2_NATIVE_DIR/build-info.txt" && grep -qxF "cpu: $cpu" "$SU2_NATIVE_DIR/build-info.txt"; then
+    ok "reusing ${CYAN}$SU2_NATIVE_DIR/bin/SU2_CFD${RESET} ${GREY}(built for this CPU; --force rebuilds)${RESET}"
+    state_set su2_native "$SU2_NATIVE_DIR"
+    return 0
+  fi
+  # compilers
+  local cxx cc mm
+  cxx=$(su2_conda_cxx || true)
+  if [ -z "$cxx" ]; then
+    mm="${CFD_MM:-$CONDA_MGR}"; [ -n "$mm" ] || mm=$(find_conda_manager || true)
+    if [ -n "$mm" ]; then
+      step "Adding conda-forge compilers to the CFD env" "$mm" install -y -p "$CFD_PREFIX" -c conda-forge --override-channels $CFD_COMPILER_PACKAGES \
+        || note "the compilers could not be installed into the CFD environment"
+      cxx=$(su2_conda_cxx || true)
+    fi
+  fi
+  if [ -n "$cxx" ]; then
+    cc="${cxx%c++}gcc"
+  elif have gcc && have g++; then
+    cc=$(command -v gcc); cxx=$(command -v g++)
+    note "using the system compilers $cc / $cxx"
+  else
+    su2_build_failed "no C++ compiler (conda-forge cxx-compiler could not be installed, no system g++)"; return 0
+  fi
+  local src="$SU2_NATIVE_DIR/src" jobs
+  jobs=$(su2_jobs)
+  rm -rf "$src"
+  mkdir -p "$src"
+  step "Downloading SU2 $SU2_NATIVE_TAG" sh -c 'curl -fsSL "$1" | tar -xz --strip-components=1 -C "$2"' sh "$SU2_NATIVE_URL" "$src" \
+    || { su2_build_failed "SU2 $SU2_NATIVE_TAG could not be downloaded from $SU2_NATIVE_URL (no network?)"; rm -rf "$src"; return 0; }
+  note "configure and compile with $jobs jobs (IGNISYEET_SU2_JOBS); progress is in $LOG_FILE"
+  local t0; t0=$(date +%s)
+  if ! step "Configuring SU2 (meson, downloads CoDiPack and MeDiPack)" env -C "$src" OMPI_CC="$cc" OMPI_CXX="$cxx" CC="$CFD_PREFIX/bin/mpicc" CXX="$CFD_PREFIX/bin/mpicxx" \
+    "$CFD_PREFIX/bin/python" ./meson.py setup build --prefix="$SU2_NATIVE_DIR" --buildtype=release --optimization=3 \
+    -Dwith-mpi=enabled -Dcustom-mpi=true -Dwith-omp=false -Denable-mixedprec=true -Denable-pywrapper=false \
+    -Denable-tests=false "-Dc_args=-march=native -mtune=native" "-Dcpp_args=-march=native -mtune=native -include cstdint"; then
+    su2_build_failed "the SU2 configuration (meson) failed"; return 0
+  fi
+  if ! step "Compiling SU2 (ninja)" env -C "$src" OMPI_CC="$cc" OMPI_CXX="$cxx" ./ninja -j "$jobs" -C build install; then
+    su2_build_failed "the SU2 compilation failed"; return 0
+  fi
+  if ! env -u LD_LIBRARY_PATH "$SU2_NATIVE_DIR/bin/SU2_CFD" --help </dev/null 2>&1 | grep -q 'SU2 v8\.3'; then
+    su2_build_failed "the compiled SU2_CFD does not start on this machine"; return 0
+  fi
+  {
+    echo "su2: $SU2_NATIVE_TAG"
+    echo "cpu: $cpu"
+    echo "built: $(date -u +%Y-%m-%dT%H:%M:%SZ) in $(elapsed_since "$t0") with $jobs jobs on $(uname -sr)"
+    echo "cxx: $("$cxx" --version 2>&1 | head -n 1)"
+    echo "mpi: $("$CFD_PREFIX/bin/mpirun" --version 2>&1 | head -n 1)"
+    echo "flags: --buildtype=release --optimization=3 -Dwith-mpi=enabled -Dcustom-mpi=true -Dwith-omp=false -Denable-mixedprec=true -Denable-pywrapper=false -Denable-tests=false"
+    echo "c_args: -march=native -mtune=native"
+    echo "cpp_args: -march=native -mtune=native -include cstdint"
+  } >"$SU2_NATIVE_DIR/build-info.txt"
+  rm -rf "$src"
+  ok "SU2 $SU2_NATIVE_TAG (mixed precision, ${cpu:-this CPU}) installed in ${CYAN}$SU2_NATIVE_DIR${RESET} ${GREY}($(elapsed_since "$t0"))${RESET}"
+  state_set su2_native "$SU2_NATIVE_DIR"
 }
 
 # --- PATH hint -------------------------------------------------------------------------------------
@@ -1025,9 +1200,18 @@ summary() {
     say "    ${CYAN}prefix = \"$CFD_PREFIX\"${RESET}"
     say "  ${GREY}or: export IGNISYEET_CFD_PREFIX=\"$CFD_PREFIX\"${RESET}"
   fi
+  if [ "$BUILD_SU2" = 1 ] && [ -x "$SU2_NATIVE_DIR/bin/SU2_CFD" ] && [ -z "${SU2_BUILD_FAILED:-}" ]; then
+    say "  ${BOLD}SU2${RESET} ${GREY}- compiled for this CPU; ignisyeet uses it automatically:${RESET}"
+    say "    ${CYAN}$SU2_NATIVE_DIR/bin/SU2_CFD${RESET}"
+    say "  ${GREY}it runs only on CPUs like this one; run the installer again after moving to another CPU${RESET}"
+  fi
+  if [ -n "${SU2_BUILD_FAILED:-}" ]; then
+    say ""
+    warn IY-I541 "SU2 was not compiled ($SU2_BUILD_FAILED); the portable conda-forge SU2 is used"
+  fi
   if [ "${PATH_MISSING:-0}" = 1 ]; then
     say ""
-    warn "$BIN_DIR is not in your PATH. Add this line to your shell rc file:"
+    warn IY-I542 "$BIN_DIR is not in your PATH. Add this line to your shell rc file:"
     say "    ${CYAN}export PATH=\"$BIN_DIR:\$PATH\"${RESET}"
   fi
   say ""
@@ -1040,14 +1224,17 @@ summary() {
 # ----------------------------------------------------------------------------------------------
 do_uninstall() {
   section "Uninstall"
-  local ver dev venv cfd mm
+  local ver dev venv cfd mm su2n
   ver=$(state_get version); dev=$(state_get dev_dir); venv=$(state_get venv); cfd=$(state_get cfd_env); mm=$(state_get micromamba)
+  su2n=$(state_get su2_native)
+  [ -z "$su2n" ] && [ -d "$PREFIX/share/ignisyeet-su2-native" ] && su2n="$PREFIX/share/ignisyeet-su2-native"
   [ -z "$venv" ] && [ -d "$VENV_DIR" ] && venv="$VENV_DIR"
   say "  ${GREY}prefix${RESET}  $PREFIX"
   [ -e "$BIN_DIR/ignisyeet" ] || [ -L "$BIN_DIR/ignisyeet" ] && say "  ${GREY}binary${RESET}  $BIN_DIR/ignisyeet"
   [ -d "$DATA_ROOT" ] && say "  ${GREY}data${RESET}    $DATA_ROOT ${GREY}(${ver:-no state file})${RESET}"
   [ -n "$venv" ] && say "  ${GREY}venv${RESET}    $venv"
   [ -n "$cfd" ] && say "  ${GREY}cfd env${RESET} $cfd"
+  [ -n "$su2n" ] && say "  ${GREY}su2 build${RESET} $su2n"
   [ -n "$dev" ] && say "  ${GREY}clone${RESET}   $dev"
   if [ "$DRY_RUN" = 1 ]; then say ""; say "  ${GREY}dry run: nothing removed${RESET}"; return 0; fi
   if ! ask_yn "Remove the installed binary, links and release data?" y && [ "$HAVE_TTY" = 1 ]; then say "  aborted"; return 0; fi
@@ -1074,6 +1261,9 @@ do_uninstall() {
       ok "removed $cfd"
     fi
   fi
+  if [ -n "$su2n" ] && [ -d "$su2n" ]; then
+    if [ "$PURGE" = 1 ] || ask_yn "Remove the compiled SU2 ($su2n)?" n; then rm -rf "$su2n"; ok "removed $su2n"; fi
+  fi
   if [ -n "$mm" ] && [ -x "$mm" ]; then note "micromamba ($mm) was installed by this installer and is kept; remove it manually if unused"; fi
   if [ -n "$dev" ] && [ -d "$dev" ]; then
     if [ "$HAVE_TTY" = 1 ] && ask_yn "Also DELETE the developer clone $dev (any uncommitted work will be lost)?" n; then
@@ -1095,6 +1285,10 @@ main() {
   ORIG_ARGS="$*"
   HELP=0
   parse_args "$@"
+  # Anchor relative paths before any directory changes; no mkdir in dry runs.
+  [ -n "$PREFIX" ] || die IY-I006 "--prefix must not be empty"
+  case "$PREFIX" in /*) ;; *) PREFIX="$PWD/$PREFIX" ;; esac
+  case "$DEV_DIR" in "" | /*) ;; *) DEV_DIR="$PWD/$DEV_DIR" ;; esac
   setup_ui
   if [ "$HELP" = 1 ]; then usage; exit 0; fi
   trap 'on_err $LINENO' ERR
@@ -1136,6 +1330,7 @@ main() {
   PATH_MISSING=0
   if [ "$ROLE" = user ]; then install_user; else install_developer; fi
   install_cfd
+  install_su2_native
   [ "$ROLE" = user ] && path_hint
   summary
 }

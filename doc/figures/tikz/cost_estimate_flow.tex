@@ -1,0 +1,38 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+% How the cost of a run is estimated: the aero table (built once, reusable), then the flights.
+\begin{tikzpicture}[
+  font=\small,
+  st/.style={draw=cblue, fill=cfill, thick, rounded corners=3pt, minimum width=44mm, minimum height=12mm, text width=41mm, align=center},
+  me/.style={draw=corange, fill=cfillo, thick, rounded corners=3pt, minimum width=64mm, minimum height=13mm, text width=61mm, align=center},
+  tot/.style={draw=cink2, fill=cfillg, thick, rounded corners=3pt, minimum width=64mm, minimum height=13mm, text width=61mm, align=center},
+  arr/.style={->, thick, cink2},
+  bus/.style={thick, cink2},
+  lab/.style={font=\footnotesize\bfseries, cblue, inner sep=2pt}]
+  % column 1: the stages
+  \node[st] (g) at (0,0)    {\textbf{形状の抽出}\\{\footnotesize 三角形数 $T$ に比例}};
+  \node[st] (a) at (0,-2.8) {\textbf{係数表}\\{\footnotesize 方式で桁が変わる}};
+  \node[st] (s) at (0,-7.2) {\textbf{飛翔 1 回}\\{\footnotesize 積分法と刻み幅で決まる}};
+  \node[st] (d) at (0,-10.0) {\textbf{落下分散}\\{\footnotesize 飛翔の数 $F$ に比例}};
+  \draw[arr] (g) -- (a);
+  \draw[arr] (a) -- node[lab, right=2pt, text width=34mm, align=left]{同じ入力の表があれば\\読み込むだけ（約 0.05 s）} (s);
+  \draw[arr] (s) -- (d);
+  % column 2: the aero methods (when no table exists)
+  \node[me] (b) at (8.6,-1.2) {\texttt{barrowman}\\{\footnotesize $N_M N_\alpha$ に比例、約 0.2 s}};
+  \node[me] (p) at (8.6,-3.0) {\texttt{panel}\\{\footnotesize $n^2$ から $n^3$、約 20〜40 s、メモリ $8n^2+64n$ バイト}};
+  \node[me] (c) at (8.6,-5.0) {\texttt{cfd}\\{\footnotesize $N_c\,t_{\mathrm{case}}/N_{\mathrm{par}}$、時間から日、\\メモリは 1 ケースごとに $\approx 3.3\,\mathrm{kB}\times N$}};
+  \draw[bus] (a.east) -- (3.6,-2.8);
+  \draw[bus] (3.6,-1.2) -- (3.6,-5.0);
+  \draw[arr] (3.6,-1.2) -- (b.west);
+  \draw[arr] (3.6,-3.0) -- (p.west);
+  \draw[arr] (3.6,-5.0) -- (c.west);
+  \node[lab, anchor=south west] at (3.7,-0.5) {表がないとき};
+  \draw[bus] (b.east) -- (12.5,-1.2);
+  \draw[bus] (p.east) -- (12.5,-3.0);
+  \draw[bus] (c.east) -- (12.5,-5.0);
+  \draw[bus] (12.5,-1.2) -- (12.5,-7.2);
+  \draw[arr] (12.5,-7.2) -- (s.east);
+  % total
+  \node[tot] (t) at (8.6,-10.0) {$t \approx t_0 + F\,t_f / P_{\mathrm{eff}}$\\{\footnotesize $t_f$：1 飛翔の CPU 時間、$P_{\mathrm{eff}}$：有効なスレッド数}};
+  \draw[arr] (d) -- (t);
+\end{tikzpicture}

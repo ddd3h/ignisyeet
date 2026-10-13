@@ -6,6 +6,30 @@
 //! The flight dynamics are implemented once (`Simulation::deriv`); every combination calls it
 //! through the closure `f(t, &State) -> (State, A)`.
 //!
+//! # Events inside a step
+//! Launch-rail exit, apogee, main deployment and landing are located inside the step on the cubic
+//! Hermite interpolation of the position (`x0, v0, x1, v1` of the step end points): the rail
+//! distance and the height are root-found on `s` in `[0, 1]` by bisection down to a bracket of
+//! `2^-52` of the step; the apogee is the root of the vertical velocity (the time derivative of
+//! the interpolant). The state at the event takes the position from the interpolant, the velocity
+//! from its derivative and the remaining components (attitude, angular velocity) from the linear
+//! interpolation of the end points. After the rail exit the integration restarts from the exit
+//! state (the end state of the step that crossed the rail end is discarded); after a deployment
+//! it continues from the interpolated state with the new drag area. Several events inside one
+//! step are handled in time order and landing wins over events at the same time.
+//!
+//! Steps never straddle `sim.max_time`, a thrust-curve breakpoint (burnout included: one step
+//! uses one linear thrust interval, and the power-on and power-off axial coefficients do not switch
+//! inside a step) or, before a parachute opens, the deployment time. The adaptive step is also
+//! capped by `output_interval` (0.05 s), by 0.05 s on the rail and during the burn, and on the
+//! rail by the step that reaches the rail end exactly (constant-acceleration estimate plus
+//! `1e-6` s). A step cut by a cap does not shrink the controlled step: the next step is
+//! `max(h_ctrl, h f)`; otherwise (rejections included) it is `h f`. The right-hand side saved
+//! by the FSAL property is discarded (the first stage is re-evaluated) after a phase change and
+//! after a thrust-curve interval change. For `rk45` the quaternion of the 5th-order solution is
+//! normalised before `k7` is evaluated; for `dop853` with `attitude = "normalize"` `k13` is
+//! evaluated on the state before normalisation.
+//!
 //! # Lie-group attitude
 //! The state is split into the Euclidean part `x = (pos, vel, w)` (9 numbers) and the attitude
 //! `q`. The quaternion kinematics of the flight code are `q_dot = 1/2 q (x) (0, w)` with

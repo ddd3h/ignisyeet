@@ -3,8 +3,11 @@
 /out/
 /examples/out/
 /examples/out_cfd/
+/examples/out_rans/
+/runs/
 .venv/
 __pycache__/
 .claude/
 .serena/
 /dist/
+/examples/basic_finner/out*/

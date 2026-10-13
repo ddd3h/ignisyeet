@@ -1,0 +1,27 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+% Panel method: the method used in each Mach range (boundaries are the defaults) and what it gives.
+\begin{tikzpicture}[
+  font=\footnotesize,
+  band/.style={draw=cblue, fill=cfill, thick, rounded corners=2pt, align=center, text width=#1, minimum height=22mm},
+  bandt/.style={draw=cblue, pattern=north east lines, pattern color=cink2!60, thick, rounded corners=2pt, minimum height=22mm},
+  axial/.style={draw=corange, fill=cfillo, thick, rounded corners=2pt, align=center, minimum height=9mm},
+  note/.style={font=\scriptsize, cink2, align=center},
+  tick/.style={font=\scriptsize, cink2}]
+  \def\sx{6}
+  % Mach axis
+  \draw[->, thick, cink] (0,-0.6) -- ({2.45*\sx},-0.6) node[right] {$M$};
+  \foreach \m/\l in {0/0, 0.8/0.8, 1.2/1.2, 2/2} { \draw[cink] ({\m*\sx},-0.5) -- ({\m*\sx},-0.7); \node[tick, anchor=north] at ({\m*\sx},-0.7) {\l}; }
+  % bands
+  \node[band=44mm, minimum width=4.8cm, anchor=south west] (sub) at (0,0) {\textbf{亜音速}\\Morino の定式化\\+ Göthert の変換\\\scriptsize 表面のパネルを解く};
+  \fill[white] ({0.8*\sx},0) rectangle ({1.2*\sx},2.2);
+  \node[bandt, minimum width=2.4cm, anchor=south west] (tr) at ({0.8*\sx},0) {};
+  \node[font=\footnotesize, align=center, fill=white, inner sep=1pt] at ({1.0*\sx},1.1) {\textbf{遷音速}\\Hermite\\補間};
+  \node[band=60mm, minimum width=7.2cm, anchor=south west] (sup) at ({1.2*\sx},0) {\textbf{超音速}\\局所傾斜法\\\scriptsize 各パネルの傾きから圧力を決める};
+  % axial force
+  \node[axial, minimum width=14.7cm, anchor=south west] at (0,2.5) {軸力（全 Mach 数）：パネルで積分した表面摩擦 + 超音速の造波抗力 + 部品積み上げ法の底面・フィン縁・ボートテール・追加抗力};
+  % setting labels
+  \node[note, anchor=north] at ({0.4*\sx},-1.35) {\texttt{aero.panel.subsonic\_machs}\\（解く Mach 数。間は内挿）};
+  \node[note, anchor=north] at ({1.0*\sx},-1.35) {\texttt{aero.panel.transonic}\\\texttt{[lo, hi]}};
+  \node[note, anchor=north] at ({1.9*\sx},-1.35) {$M\ge$ \texttt{hi}};
+\end{tikzpicture}

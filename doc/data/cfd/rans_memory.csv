@@ -1,0 +1,6 @@
+# Peak resident set size of SU2 8.3.0 RANS cases (both stages) on the capped boundary-layer meshes, sampled once per second from VmRSS of every SU2_CFD rank (doc/scripts/rans_sample.py run). sum = largest sum over the ranks at one sample (largest case of the run); bytes_per_node = (sum - 40 MB per rank) / nodes. Open MPI 5.0.11, commit 599e9f8, 2026-10-07. Earlier meshes: rans_before_memory.csv.
+geometry,wall_size_m,mesh_nodes,ranks,rank_peak_mib,sum_peak_mib,bytes_per_node
+sample_rocket,0.008,347876,4,975.8,3635.5,10498
+sample_rocket,0.0048,787490,4,2046.4,7804.1,10188
+sample_body_finless,0.005,579716,4,1475.3,5733.7,10095
+cone_10deg,0.002,1049501,4,2652.3,10384.0,10222

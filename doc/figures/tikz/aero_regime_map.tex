@@ -1,0 +1,66 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+% Mach ranges of each aero.method and the kind of evidence available in each range.
+\begin{tikzpicture}[
+  font=\small,
+  lab/.style={font=\small, anchor=east, align=right},
+  tick/.style={font=\footnotesize, cink2},
+  note/.style={font=\scriptsize, cink2, align=center}]
+  \def\sx{2.5}    % cm per Mach
+  \def\h{0.9}
+  % Mach axis
+  \foreach \m in {0,1,2,3,4,5} {
+    \draw[cgrid] ({\m*\sx},0.5) -- ({\m*\sx},-5.6);
+    \node[tick] at ({\m*\sx},-5.95) {\m};
+  }
+  \node[tick] at ({2.5*\sx},-6.5) {Mach 数 $M$};
+  % measured range (Basic Finner)
+  \fill[cfillo, opacity=0.55] ({1.08*\sx},0.5) rectangle ({4.30*\sx},-5.6);
+  \draw[corange, thick, dashed] ({1.08*\sx},0.5) -- ({1.08*\sx},-5.6);
+  \draw[corange, thick, dashed] ({4.30*\sx},0.5) -- ({4.30*\sx},-5.6);
+  \node[font=\footnotesize, corange, align=center] at ({2.69*\sx},0.95) {Basic Finner の実測がある範囲（$M$ 1.08〜4.30）};
+  % rows: y centre
+  \def\yb{-0.7} \def\yp{-1.9} \def\yc{-3.1} \def\yt{-4.3}
+  \node[lab] at (-0.2,\yb) {部品積み上げ法};
+  \node[lab] at (-0.2,\yp) {パネル法};
+  \node[lab] at (-0.2,\yc) {CFD（Euler）};
+  \node[lab] at (-0.2,\yt) {外部の表};
+  % row: barrowman  (subsonic <=0.9, blend 0.9-1.5, supersonic >=1.5)
+  \filldraw[draw=cblue, fill=cblue!25] (0,{\yb-0.35}) rectangle ({0.9*\sx},{\yb+0.35});
+  \filldraw[draw=cblue, pattern=north east lines, pattern color=cink2] ({0.9*\sx},{\yb-0.35}) rectangle ({1.5*\sx},{\yb+0.35});
+  \filldraw[draw=cblue, fill=cblue!65] ({1.5*\sx},{\yb-0.35}) rectangle ({4.30*\sx},{\yb+0.35});
+  \draw[cblue, dashed] ({4.30*\sx},{\yb-0.35}) rectangle ({5*\sx},{\yb+0.35});
+  % row: panel (subsonic <=0.8, blend 0.8-1.2, supersonic >=1.2)
+  \filldraw[draw=cblue, fill=cblue!25] (0,{\yp-0.35}) rectangle ({0.8*\sx},{\yp+0.35});
+  \filldraw[draw=cblue, pattern=north east lines, pattern color=cink2] ({0.8*\sx},{\yp-0.35}) rectangle ({1.2*\sx},{\yp+0.35});
+  \filldraw[draw=cblue, fill=cblue!65] ({1.2*\sx},{\yp-0.35}) rectangle ({4.30*\sx},{\yp+0.35});
+  \draw[cblue, dashed] ({4.30*\sx},{\yp-0.35}) rectangle ({5*\sx},{\yp+0.35});
+  % row: CFD Euler (direct in all ranges)
+  \filldraw[draw=cblue, fill=cblue!25] (0,{\yc-0.35}) rectangle ({1.08*\sx},{\yc+0.35});
+  \filldraw[draw=cblue, fill=cblue!65] ({1.08*\sx},{\yc-0.35}) rectangle ({4.30*\sx},{\yc+0.35});
+  \draw[cblue, dashed] ({4.30*\sx},{\yc-0.35}) rectangle ({5*\sx},{\yc+0.35});
+  % row: external table
+  \filldraw[draw=cink2, fill=cfillg] (0,{\yt-0.35}) rectangle ({5*\sx},{\yt+0.35});
+  \node[note] at ({2.5*\sx},\yt) {表を作った試験や解析の範囲に依存する};
+  % in-box notes
+  \node[note, text=cink] at ({0.45*\sx},\yb) {亜音速};
+  \node[note, text=white] at ({2.9*\sx},\yb) {超音速};
+  \node[note, text=cink] at ({0.4*\sx},\yp) {亜音速};
+  \node[note, text=white] at ({2.75*\sx},\yp) {超音速（局所傾斜法）};
+  \node[note, text=cink] at ({0.54*\sx},\yc) {相互比較};
+  \node[note, text=white] at ({2.7*\sx},\yc) {実測との比較あり};
+  \node[note] at ({4.65*\sx},\yb) {根拠なし};
+  \node[note] at ({4.65*\sx},\yp) {根拠なし};
+  \node[note] at ({4.65*\sx},\yc) {根拠なし};
+  % legend
+  \def\ly{-7.4}
+  \def\lw{0.6}
+  \filldraw[draw=cblue, fill=cblue!65] (-2,{\ly-0.2}) rectangle (-2+\lw,{\ly+0.2});
+  \node[tick, anchor=west] at (-1.3,\ly) {実測との比較あり};
+  \filldraw[draw=cblue, fill=cblue!25] (1.9,{\ly-0.2}) rectangle (1.9+\lw,{\ly+0.2});
+  \node[tick, anchor=west] at (2.6,\ly) {手法どうしの相互比較のみ};
+  \filldraw[draw=cblue, pattern=north east lines, pattern color=cink2] (7.1,{\ly-0.2}) rectangle (7.1+\lw,{\ly+0.2});
+  \node[tick, anchor=west] at (7.8,\ly) {補間（物理を解かない）};
+  \draw[cblue, dashed] (11.6,{\ly-0.2}) rectangle (11.6+\lw,{\ly+0.2});
+  \node[tick, anchor=west] at (12.3,\ly) {比較の根拠なし};
+\end{tikzpicture}

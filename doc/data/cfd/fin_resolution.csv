@@ -1,0 +1,16 @@
+# Sample rocket, Euler, Roe, residual target 1e-6, tail fairing 6 base radii (stl/step: base_treatment = "fairing"), alpha_mode = "single", SU2 8.3.0 on 4 MPI ranks, one case at a time (other jobs on the machine), mesher of commit 2658137 (fin_size).
+# cad: half model (symmetry = true, z_mirror_mesh = false); stl: shape_symmetry = "none" (full domain, unstructured); step: examples/sample_rocket.step, full domain (lug and rail buttons, not mirror symmetric). fin_size_mm = wall_size_mm: fins at wall_size; 1 mm: fin_size = "auto" (fin thickness 4 mm / 4).
+# cy0, cn_yaw0, cn0: side force, yaw moment (stl/step) and normal force at alpha = 0 (true value 0 for cad and stl). cna_per_rad = (cn4 - cn0) / 4 deg. ca0, ca4: pressure axial force integrated by CFD (viscous and base terms excluded). case_s: SU2 wall time [s] (alpha = 4 is warm-started from alpha = 0). peak_su2_rss_mb: largest sum of the 4 SU2 ranks during the run. mesh_s: gmsh setup + mesh time [s] (stl/step: volume mesh only). status: alpha 0 / alpha 4 (accepted = early stop with flat coefficients).
+run,surface,domain,wall_size_mm,fin_size_mm,cells,nodes,mesh_s,mach,status,cy0,cn_yaw0,cn0,cn4,cna_per_rad,ca0,ca4,case_s_a0,case_s_a4,peak_su2_rss_mb
+e6w,cad,half,6,6,165673,36067,15.7,0.8,converged/converged,0,0,-0.082914,1.1031,16.989,-0.064227,-0.067616,21.8,12.4,509
+e6w,cad,half,6,6,165673,36067,15.7,2,converged/converged,0,0,0.0057864,0.8826,12.559,0.088709,0.090148,26.6,27.6,509
+e6auto,cad,half,6,1,813027,174859,29.5,0.8,converged/converged,0,0,-0.011017,1.143,16.531,-0.017963,-0.024278,148.2,35.2,1981
+e6auto,cad,half,6,1,813027,174859,29.5,2,converged/converged,0,0,-0.00042014,0.92507,13.257,0.10907,0.11043,106,104,1981
+e2w,cad,half,2,2,920760,197333,32.3,0.8,converged/converged,0,0,0.05215,1.2332,16.917,-0.024803,-0.032277,110.5,103,2258
+e2w,cad,half,2,2,920760,197333,32.3,2,accepted/converged,0,0,-0.0016751,0.93018,13.348,0.10671,0.10804,204.8,202.8,2258
+e2auto,cad,half,2,1,1393002,298665,44.6,0.8,converged/converged,0,0,0.0017703,1.1702,16.737,-0.0091831,-0.018879,363.8,144.2,3279
+e2auto,cad,half,2,1,1393002,298665,44.6,2,accepted/converged,0,0,0.0014866,0.94014,13.445,0.11061,0.11275,338,339,3279
+stl5w,stl,full,5,5,444163,90713,177.6,0.8,converged/accepted,-0.048607,0.70351,-0.01852,1.0956,15.959,-0.050374,-0.056081,119.6,101.7,1155
+stl5,stl,full,5,1,1823555,382424,371.4,0.8,converged/converged,-0.0055813,0.082735,0.0046584,1.1442,16.323,0.11812,0.11214,422.7,188.2,4188
+step6w,step,full,6,6,336839,68166,54.9,0.8,converged/accepted,0.025008,-0.36964,-0.081308,1.0706,16.5,-0.06654,-0.07041,68.6,66.7,910
+step6,step,full,6,1,1621372,339715,93.2,0.8,converged/converged,-0.0038463,0.0060237,0.021981,1.1018,15.467,-0.017941,-0.024335,521.6,140.7,3839

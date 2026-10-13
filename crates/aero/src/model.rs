@@ -4,7 +4,7 @@
 //! described in S. Niskanen, "Development of an Open Source model rocket simulation
 //! software", 2009 — the basis of OpenRocket).
 //!
-//! Coordinates: x is measured aft from the nose tip [m]. Coefficients use the maximum
+//! Coordinates: x is measured aft from the nose tip \[m\]. Coefficients use the maximum
 //! body cross-section as reference area.
 
 use crate::atmosphere::AtmosphereModel;
@@ -24,7 +24,7 @@ pub struct AeroOptions {
     pub reference_altitude: f64,
     /// Atmosphere used for the Reynolds number of the skin-friction model.
     pub atmosphere: AtmosphereModel,
-    /// Equivalent sand roughness [m].
+    /// Equivalent sand roughness \[m\].
     pub roughness: f64,
     /// Rounded (true) or sharp (false) fin leading edges.
     pub fin_le_rounded: bool,
@@ -42,7 +42,7 @@ impl Default for AeroOptions {
             mach_min: 0.0,
             mach_max: 3.0,
             mach_step: 0.05,
-            alpha_max_deg: 30.0,
+            alpha_max_deg: 90.0,
             alpha_step_deg: 1.0,
             reference_altitude: 0.0,
             atmosphere: AtmosphereModel::default(),
@@ -73,8 +73,126 @@ pub struct AeroModel {
 const TRANSONIC_LO: f64 = 0.9;
 const TRANSONIC_HI: f64 = 1.5;
 
+/// Upper angle of attack \[rad\] of the attached-flow fin theory (Barrowman linear, Busemann cubic).
+///
+/// Linear fin theory assumes small angles; OpenRocket's fin model (FinSetCalc, after Niskanen 2009) caps the
+/// fin angle of attack at a 20° stall angle. 15° keeps a margin below that and
+/// keeps the Busemann cubic term a correction (it adds at most about 20 % to the linear term at 15°, at
+/// M ≈ 1.2 through the transonic blend) instead of letting it dominate, as it does at large angles where
+/// the expansion is no longer valid (the shock detaches once alpha exceeds the maximum wedge deflection,
+/// 12° at M = 1.5, 23° at M = 2).
+pub const FIN_ALPHA_LINEAR: f64 = 15.0 * PI / 180.0;
+
+/// Compressibility factor `sqrt(|1 - M^2|)` of the fin formulas. The `1e-3` floor keeps the formulas
+/// finite at `M = 1`; the user documentation only states the formulas.
 fn beta(m: f64) -> f64 {
     (1.0 - m * m).abs().sqrt().max(1e-3)
+}
+
+/// Drag coefficient of a finite flat plate normal to the flow, on its planform area.
+///
+/// Subsonic: 1.2 for plates of aspect ratio 1–5 (Hoerner, Fluid-Dynamic Drag, 1965, ch. 3: 1.17–1.2;
+/// the two-dimensional value 2.0 applies only to very long plates). Supersonic: 1.7, within the
+/// range 1.6–1.8 of plates and disks normal to supersonic flow (Hoerner 1965); the windward face carries
+/// at most the pitot pressure behind the normal shock (pressure coefficient 1.66 at M = 2, 1.76 at M = 3)
+/// and the base adds a suction that falls with Mach. C1 Hermite rise between M = 0.8 and 1.2.
+pub fn plate_cd(m: f64) -> f64 {
+    const SUB: f64 = 1.2;
+    const SUP: f64 = 1.7;
+    if m <= 0.8 {
+        SUB
+    } else if m >= 1.2 {
+        SUP
+    } else {
+        hermite(m, 0.8, 1.2, SUB, SUP, 0.0, 0.0)
+    }
+}
+
+/// Supersonic fin centre of pressure as a fraction of the mean aerodynamic chord, from `ab = A beta`.
+///
+/// For `A beta >= 1.2` the expression of Fleeman (Tactical Missile Design, 2001), used by Niskanen
+/// (2009) for M >= 2: `(A beta - 0.67) / (2 A beta - 1)`, which rises from 0.38 at 1.2 to 0.5 as
+/// `A beta -> inf`. It has a pole at `A beta = 0.5` and falls to the quarter chord at `A beta = 0.84`,
+/// so it is not used for small `A beta`. There the low-aspect-ratio (slender-wing) limit applies: the
+/// loading of a low-aspect-ratio wing does not depend on Mach number (R. T. Jones, "Properties of
+/// low-aspect-ratio pointed wings at speeds below and above the speed of sound", NACA Report 835,
+/// 1946), so the centre of pressure keeps its subsonic position, the quarter chord, for
+/// `A beta <= 0.84`. Between 0.84 and 1.2 a monotone C1 cubic Hermite in `A beta` joins the two
+/// (zero slope at 0.84, the slope of the expression at 1.2). The result is continuous in Mach and in
+/// the fin geometry and lies in [0.25, 0.5].
+pub fn supersonic_fin_cp_fraction(ab: f64) -> f64 {
+    const LO: f64 = 0.84;
+    const HI: f64 = 1.2;
+    let fleeman = |x: f64| (x - 0.67) / (2.0 * x - 1.0);
+    if ab <= LO {
+        0.25
+    } else if ab >= HI {
+        fleeman(ab).min(0.5)
+    } else {
+        let d_hi = 0.34 / (2.0 * HI - 1.0).powi(2);
+        hermite(ab, LO, HI, 0.25, fleeman(HI), 0.0, d_hi)
+    }
+}
+
+/// Bounds of the shape parameter `u = k t_end` of [`crossflow_blend`]. Within them the transition is the
+/// pure exponential saturation; beyond them (the attached-flow value close to the crossflow value, or
+/// an attached-flow slope near zero) `u` is held and the remaining slope goes into a bump that vanishes
+/// at both ends. The sample rocket stays inside (u = 3.7 .. 7.4 over Mach 0 .. 3).
+const BLEND_U_MIN: f64 = -20.0;
+const BLEND_U_MAX: f64 = 20.0;
+
+/// C1 transition from the attached-flow normal force to the crossflow value, continuous in its parameters.
+///
+/// `t` is the angle beyond the validity angle, `t_end = T` the span up to 90°, `cn1` and `d0` the value
+/// and slope at the validity angle, `cn90` the crossflow value at 90°, `delta = cn90 - cn1`. With
+/// `tau = T sin(pi t / (2 T))`, `s = t / T` and the bump `b(t) = t (1 - s)^2` (b = 0 at both ends,
+/// b'(0) = 1, b'(T) = 0) it returns
+///
+/// `cn1 + delta (1 - e^{-u tau / T}) / (1 - e^{-u}) + (d0 - d_e) b(t)`,  `d_e = delta (pi / 2) g(u) / T`,
+///
+/// with `g(u) = u / (1 - e^{-u})` the slope factor of the exponential term at `t = 0`. For `delta > 0`
+/// `u` solves `g(u) = d0 T / (delta pi / 2)`, so that the exponential alone carries the slope `d0` and
+/// the bump vanishes; the curve is then monotone (any `u`, positive or negative). `u` is held in
+/// [`BLEND_U_MIN`, `BLEND_U_MAX`], and the slope the exponential cannot carry goes into the bump. For
+/// `delta <= 0` (the attached-flow value at or above the crossflow value: large-aspect-ratio fins, which
+/// stall) the exponential term is replaced by `delta (3 s^2 - 2 s^3)`, which makes the whole expression
+/// the cubic Hermite with zero end slope: a bounded overshoot that relaxes to `cn90`.
+///
+/// Value and slope match at `t = 0`, the value is `cn90` and the slope zero at `t = T`. Both branches
+/// tend to `cn1 + d0 b(t)` as `delta -> 0` (the exponential term and `d_e` are bounded multiples of
+/// `delta` because `u` is bounded), so the result is continuous in `cn1`, `cn90` and `d0`.
+fn crossflow_blend(t: f64, t_end: f64, cn1: f64, d0: f64, cn90: f64) -> f64 {
+    let t = t.clamp(0.0, t_end);
+    let s = t / t_end;
+    let bump = t * (1.0 - s) * (1.0 - s);
+    let delta = cn90 - cn1;
+    if delta <= 0.0 {
+        return cn1 + delta * s * s * (3.0 - 2.0 * s) + d0 * bump;
+    }
+    // d/dt at t = 0 of the exponential term: delta (pi/2) g(u) / T.
+    let r = d0 * t_end / (delta * PI / 2.0);
+    let g = |u: f64| if u.abs() < 1e-12 { 1.0 } else { u / -(-u).exp_m1() };
+    // g increases from 0 (u -> -inf) through 1 (u = 0) to ~u (u -> +inf).
+    let u = if r <= g(BLEND_U_MIN) {
+        BLEND_U_MIN
+    } else if r >= g(BLEND_U_MAX) {
+        BLEND_U_MAX
+    } else {
+        let (mut lo, mut hi) = (BLEND_U_MIN, BLEND_U_MAX);
+        for _ in 0..200 {
+            let mid = 0.5 * (lo + hi);
+            if g(mid) < r {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        0.5 * (lo + hi)
+    };
+    let d_e = delta * (PI / 2.0) * g(u) / t_end;
+    let tau = t_end * (PI * t / (2.0 * t_end)).sin();
+    let frac = if u.abs() < 1e-12 { tau / t_end } else { (-u * tau / t_end).exp_m1() / (-u).exp_m1() };
+    cn1 + delta * frac + (d0 - d_e) * bump
 }
 
 impl AeroModel {
@@ -109,7 +227,11 @@ impl AeroModel {
     }
 
     pub fn body_xcp(&self) -> f64 {
-        if self.body_s[0].abs() > 1e-12 { self.body_s[1] / self.body_s[0] } else { 0.0 }
+        if self.body_s[0].abs() > 1e-12 {
+            self.body_s[1] / self.body_s[0]
+        } else {
+            0.0
+        }
     }
 
     pub fn body_part_count(&self) -> usize {
@@ -133,8 +255,53 @@ impl AeroModel {
         kfb * Self::fin_count_factor(f.count)
     }
 
-    /// Fin-set normal force (including body interference) at Mach `m`, angle `a` [rad].
+    /// Fin-set normal force (including body interference) at Mach `m`, angle `a` \[rad\].
+    ///
+    /// Up to [`FIN_ALPHA_LINEAR`] this is the attached-flow theory of `fin_cn_attached`
+    /// (Barrowman linear subsonic, Busemann linear + cubic supersonic). Beyond it the fins are treated as
+    /// flat plates in crossflow: the normal force rises monotonically, C1 at the validity angle, to the
+    /// flat-plate value at 90°,
+    ///
+    /// `CN(90°) = k_N C_D,plate(M) A_fin / A_ref`,
+    ///
+    /// where `k_N` is the Barrowman fin-count factor (N/2 fins effective, the projection of N fins evenly
+    /// spaced in roll) and `C_D,plate` the drag coefficient of a flat plate normal to the flow
+    /// ([`plate_cd`]). The body-interference factor K_fb is a small-angle potential-flow upwash and is not
+    /// applied to the crossflow value. Between the two the curve is the exponential saturation
+    ///
+    /// `CN = CN_1 + (CN_90 - CN_1) (1 - e^{-k tau}) / (1 - e^{-k T})`,  `tau = T sin(pi t / (2 T))`,
+    ///
+    /// with `t = alpha - alpha_1`, `T = 90° - alpha_1`; `k` is chosen so that the slope at `alpha_1` equals the
+    /// attached-flow slope there, and `tau` makes the slope zero at 90° (flat plate symmetric about 90°).
+    /// When `CN_1` approaches or exceeds `CN_90` the curve turns continuously into a cubic Hermite with
+    /// a bounded overshoot (see `crossflow_blend`), so the force stays continuous in Mach and geometry.
+    /// The resulting shape — a knee above the validity angle levelling off to the crossflow value — follows
+    /// the measured normal force of low-aspect-ratio flat plates, which per unit plate area reaches about
+    /// 1.0 at 30° and 1.1–1.2 between 45° and 90° (Hoerner, Fluid-Dynamic Drag, 1965, ch. 3; Fluid-Dynamic
+    /// Lift, 1985). For the sample fins (4 fins, aspect ratio of an opposing pair 1.3) this model gives 1.05
+    /// per unit area at 30° and M = 0.3. Angles above 90° (reverse flow) are mirrored about 90°; the
+    /// function is odd in `a`.
     pub fn fin_cn(&self, m: f64, a: f64) -> f64 {
+        let sign = a.signum();
+        let a = a.abs().min(PI);
+        let a = if a > PI / 2.0 { PI - a } else { a };
+        if a <= FIN_ALPHA_LINEAR {
+            return sign * self.fin_cn_attached(m, a);
+        }
+        let Some(f) = &self.geom.fins else { return 0.0 };
+        if f.span <= 0.0 || f.area() <= 0.0 {
+            return 0.0;
+        }
+        let a1 = FIN_ALPHA_LINEAR;
+        let cn1 = self.fin_cn_attached(m, a1);
+        let h = 1e-5;
+        let d0 = (cn1 - self.fin_cn_attached(m, a1 - h)) / h;
+        let cn90 = Self::fin_count_factor(f.count) * plate_cd(m) * f.area() / self.geom.ref_area;
+        sign * crossflow_blend(a - a1, PI / 2.0 - a1, cn1, d0, cn90)
+    }
+
+    /// Attached-flow fin-set normal force (Barrowman / Busemann, valid at small `a`).
+    fn fin_cn_attached(&self, m: f64, a: f64) -> f64 {
         let Some(f) = &self.geom.fins else { return 0.0 };
         if f.span <= 0.0 || f.area() <= 0.0 {
             return 0.0;
@@ -164,22 +331,23 @@ impl AeroModel {
         let b = beta(m);
         let m2 = m * m;
         let k1 = 2.0 / b;
-        let k3 = ((g + 1.0) * m2.powi(4) + (2.0 * g * g - 7.0 * g - 5.0) * m2.powi(3) + 10.0 * (g + 1.0) * m2 * m2 + 8.0)
-            / (6.0 * b.powi(7));
-        // Flat-plate Busemann (both surfaces) with a linear-theory tip-loss factor.
+        let k3 = ((g + 1.0) * m2.powi(4) + (2.0 * g * g - 7.0 * g - 5.0) * m2.powi(3) + 10.0 * (g + 1.0) * m2 * m2 + 8.0) / (6.0 * b.powi(7));
+        // Flat-plate Busemann (both surfaces) with a linear-theory tip-loss factor. The expansion in alpha
+        // holds only for small angles (attached shock); `fin_cn` uses it up to FIN_ALPHA_LINEAR only.
         let ar = 2.0 * f.span * f.span / f.area();
         let tip = (1.0 - 1.0 / (2.0 * b * ar)).clamp(0.5, 1.0);
         self.fin_scale(f) * f.area() / self.geom.ref_area * (2.0 * k1 * a + 2.0 * k3 * a * a * a) * tip
     }
 
     /// Fin centre of pressure (distance aft of the nose tip) at Mach `m`.
+    ///
+    /// Subsonic (M <= 0.5): the quarter chord of the mean aerodynamic chord (Barrowman). Supersonic
+    /// (M >= 2): the fraction [`supersonic_fin_cp_fraction`] of the MAC from `A beta`, `A` the aspect
+    /// ratio of an opposing fin pair `2 s^2 / A_fin`. In between a C1 Hermite in Mach (Niskanen 2009).
     pub fn fin_xcp(&self, m: f64) -> f64 {
         let Some(f) = &self.geom.fins else { return 0.0 };
         let ar = 2.0 * f.span * f.span / f.area().max(1e-12);
-        let sup = |m: f64| {
-            let ab = ar * beta(m);
-            ((ab - 0.67) / (2.0 * ab - 1.0)).clamp(0.25, 0.5)
-        };
+        let sup = |m: f64| supersonic_fin_cp_fraction(ar * beta(m));
         let frac = if m <= 0.5 {
             0.25
         } else if m >= 2.0 {
@@ -191,14 +359,41 @@ impl AeroModel {
         f.x_le_root + f.mac_le_offset() + frac * f.mac()
     }
 
-    /// Total normal force coefficient and centre of pressure at Mach `m`, angle `a` [rad].
+    /// Fin centre of pressure at Mach `m` and angle `a` \[rad\].
+    ///
+    /// Equal to [`fin_xcp`](Self::fin_xcp) up to [`FIN_ALPHA_LINEAR`]; beyond it the chordwise position
+    /// moves with a C1 smoothstep to the planform centroid at 90°, where the crossflow pressure of a flat
+    /// plate normal to the flow is symmetric about it. For a trapezoidal fin the centroid lies at half the
+    /// mean aerodynamic chord. Above 90° (reverse flow, trailing edge leading) the fraction is mirrored to
+    /// `1 - frac(180° - a)`, reaching three quarters of the mean aerodynamic chord at 180° in subsonic flow.
+    ///
+    /// The reverse-flow branch only fills table rows above 90° (`aero.alpha_max_deg > 90`). The flight
+    /// never reads them: the axisymmetric flight model, the six-component lookup and the general-table
+    /// expansion fold the total angle to `min(a, 180° - a)`, so tail-first flight uses the nose-first
+    /// coefficients (centre of pressure included) mirrored about 90°.
+    pub fn fin_xcp_at(&self, m: f64, a: f64) -> f64 {
+        let x0 = self.fin_xcp(m);
+        let Some(f) = &self.geom.fins else { return x0 };
+        let base = f.x_le_root + f.mac_le_offset();
+        let mac = f.mac();
+        if mac <= 0.0 {
+            return x0;
+        }
+        let a = a.abs().min(PI);
+        let (a, rev) = if a > PI / 2.0 { (PI - a, true) } else { (a, false) };
+        let frac0 = (x0 - base) / mac;
+        let frac = if a <= FIN_ALPHA_LINEAR { frac0 } else { hermite(a, FIN_ALPHA_LINEAR, PI / 2.0, frac0, 0.5, 0.0, 0.0) };
+        base + if rev { 1.0 - frac } else { frac } * mac
+    }
+
+    /// Total normal force coefficient and centre of pressure at Mach `m`, angle `a` \[rad\].
     pub fn normal(&self, m: f64, a: f64) -> (f64, f64) {
         let a = a.max(1e-6);
         let (sa, ca) = a.sin_cos();
         let cn_body = self.body_s[0] * sa * ca;
         let cn_lift = 1.1 * self.geom.planform_area / self.geom.ref_area * sa * sa;
         let cn_fin = self.fin_cn(m, a);
-        let xf = self.fin_xcp(m);
+        let xf = self.fin_xcp_at(m, a);
         let cn = cn_body + cn_lift + cn_fin;
         let mom = self.body_s[1] * sa * ca + cn_lift * self.geom.planform_centroid + cn_fin * xf;
         (cn, if cn.abs() > 1e-12 { mom / cn } else { 0.0 })
@@ -210,12 +405,167 @@ impl AeroModel {
         self.normal(m, h).0 / h
     }
 
+    /// Roll terms of the fin set at Mach `m`: (d Cl / d delta per radian of cant, d Cl / d p_hat).
+    ///
+    /// Cant forcing (Niskanen 2009): each fin's lift slope acts at the spanwise position of its
+    /// mean aerodynamic chord, `Cl_delta = N (y_MAC + r) CNa1 / d`. Roll damping by strip theory:
+    /// a strip at radius xi sees the extra angle `p xi / V`, giving
+    /// `Clp = -(2 a N / (A d^2)) * integral(xi^2 c(xi) dxi)`. The strip lift slope `a` is the
+    /// three-dimensional slope of one fin per unit fin area, `CNa1 A / A_fin`, so that the finite
+    /// span (tip loss) is included; the two-dimensional slope would overestimate the damping of
+    /// low-aspect-ratio fins several times. A and d are the reference area and diameter.
+    pub fn roll_terms(&self, m: f64) -> (f64, f64) {
+        let Some(f) = &self.geom.fins else { return (0.0, 0.0) };
+        if f.span <= 0.0 || f.area() <= 0.0 || f.count == 0 {
+            return (0.0, 0.0);
+        }
+        let d = 2.0 * self.geom.ref_radius;
+        let n = f.count as f64;
+        let (cr, ct, s, r) = (f.root_chord, f.tip_chord, f.span, f.body_radius);
+        let y_mac = if cr + ct > 0.0 { s / 3.0 * (cr + 2.0 * ct) / (cr + ct) } else { 0.5 * s };
+        // integral of xi^2 c(xi) over the span, c linear from cr at xi = r to ct at xi = r + s.
+        let k = (ct - cr) / s;
+        let prim = |xi: f64| (cr - k * r) * xi.powi(3) / 3.0 + k * xi.powi(4) / 4.0;
+        let i2 = prim(r + s) - prim(r);
+        // Single-fin normal-force slope (reference area A), blended like `fin_cn`.
+        // `CN_alpha` values in this file are finite differences over a small angle (1e-4 rad).
+        let a = 1e-4;
+        let cna1 = self.fin_cn(m, a) / (a * self.fin_scale(f));
+        let cl_delta = n * (y_mac + r) * cna1 / d;
+        let slope = cna1 * self.geom.ref_area / f.area();
+        let clp = -2.0 * slope * n * i2 / (self.geom.ref_area * d * d);
+        (cl_delta, clp)
+    }
+
+    /// Centre of pressure at zero angle of attack [m aft of the nose tip]: Σ CNa_i x_i / Σ CNa_i of
+    /// [`damping_sums`](Self::damping_sums); at the nose tip (0) when the slopes sum to zero (a
+    /// finless body closing to a point), as [`body_xcp`](Self::body_xcp).
+    pub fn xcp0(&self, m: f64) -> f64 {
+        let s = self.damping_sums(m);
+        if s[0].abs() > 1e-12 {
+            s[1] / s[0]
+        } else {
+            0.0
+        }
+    }
+
     /// Sums Σ CNa_i, Σ CNa_i x_i, Σ CNa_i x_i² used for pitch damping.
     pub fn damping_sums(&self, m: f64) -> [f64; 3] {
         let h = 1e-4;
         let cnf = self.fin_cn(m, h) / h;
         let xf = self.fin_xcp(m);
         [self.body_s[0] + cnf, self.body_s[1] + cnf * xf, self.body_s[2] + cnf * xf * xf]
+    }
+
+    /// Lag (apparent-mass) sums `(L0 [m], L1 [m^2])` at Mach `m`: the air mass `(rho S / 2) L0`
+    /// carried along by the lateral motion, centred `L1 / L0` aft of the nose tip.
+    ///
+    /// Slender-body theory (Munk; Nielsen, Missile Aerodynamics, ch. 3 and 5): a cross-section
+    /// carries the air mass `rho A(x)` per unit length, `A = pi r^2` on the body and
+    /// `A = pi (s^2 - r^2 + r^4 / s^2)` on a wing-body section of semi-span `s` (the same for a
+    /// planar and a cruciform set). The section force is `f = -rho D/Dt [A w_c]`,
+    /// `D/Dt = d/dt + V d/dx` (x aft), with the local crossflow `w_c = w + q l`, `l = x - x_cg`:
+    ///
+    /// `D/Dt [A w_c] = A (dw/dt + l dq/dt) + V A' (w + q l) + V A q`.
+    ///
+    /// * `V A' w`: the static normal force, in the table (body: Barrowman = slender-body `2 dA/S`;
+    ///   fins: Barrowman `CNa_f` with body interference instead of the slender-body slope).
+    /// * `V A' q l`: the local-incidence strip sum of [`damping_sums`](Self::damping_sums) (fins:
+    ///   `CNa_f l_f^2` at the Barrowman fin centre of pressure).
+    /// * `A dw/dt` (lag) and `V A q` (convective rotation): neither is in the table or the strip
+    ///   sums; both are `A` times a lateral acceleration and are applied by the flight model from
+    ///   `L0 = (2/S) int A dx`, `L1 = (2/S) int A x dx`.
+    /// * `A l dq/dt` (added inertia): neglected.
+    ///
+    /// Integrated by parts, the sum of the q terms is `-rho V q [A_e l_e^2 - int A l dx]` and that of
+    /// the alpha-dot term `-rho dw/dt int A l dx` (`e` the aft end), so in a pitching motion with
+    /// `dw/dt = V q` the total is `-rho V q A_e l_e^2`: `Cmq + Cmalphadot = -2 CNa (l_e / d)^2`.
+    ///
+    /// Body: `A = pi r^2`, so `L0 = K_B = 2 Vol / S`, `L1 = K_B x_vol` (x_vol the volume centroid).
+    /// Fins: [`fin_lag_sums`](Self::fin_lag_sums), the wing-body increment over the fin chord.
+    pub fn lag_sums(&self, m: f64) -> (f64, f64) {
+        let (vol, moment) = self.body_volume_moment();
+        let s = self.geom.ref_area;
+        let (fl0, fl1) = self.fin_lag_sums(m);
+        if s.is_nan() || s <= 0.0 {
+            return (fl0, fl1);
+        }
+        (2.0 * vol / s + fl0, 2.0 * moment / s + fl1)
+    }
+
+    /// Apparent-mass sums of the fins at Mach `m`: the wing-body increment
+    /// `A_f(x) = pi (s - r^2 / s)^2` (the wing-body section `pi (s^2 - r^2 + r^4 / s^2)` minus the
+    /// body `pi r^2`, `r` the body radius at the fins, `s` the local semi-span) over the planform,
+    /// from the most forward leading edge to the most aft trailing edge (root or tip). The
+    /// semi-span grows along the leading edge from `r` at the root leading edge to `r + span` at the
+    /// tip leading edge and is held there to the end (in slender-body theory a section aft of the
+    /// largest span carries the same apparent mass).
+    ///
+    /// The increment is scaled so that its value at the largest span equals the apparent mass of
+    /// the fin normal force the table uses: `(S / 2) CNa_f` with `CNa_f` the Barrowman slope of the
+    /// fin set with body interference (slender-body theory: `CNa_f = 2 A_f,max / S`). The lag and
+    /// convective terms of the fins are then consistent with their static normal force and strip
+    /// damping at every Mach number and fin count (the slender-body slope overestimates the lift of
+    /// fins of finite aspect ratio). `L0_f = CNa_f int phi dx`, `L1_f = CNa_f int phi x dx`,
+    /// `phi = A_f / A_f,max`.
+    ///
+    /// Not included: the downwash lag of an aft surface in the wake of a forward lifting surface
+    /// (Etkin, Dynamics of Flight, ch. 5): a single fin set has no surface ahead of it.
+    pub fn fin_lag_sums(&self, m: f64) -> (f64, f64) {
+        let Some(f) = &self.geom.fins else { return (0.0, 0.0) };
+        if f.span <= 0.0 || f.root_chord <= 0.0 || f.count == 0 {
+            return (0.0, 0.0);
+        }
+        let h = 1e-4;
+        let cna_f = self.fin_cn(m, h) / h;
+        let r = f.body_radius.max(0.0);
+        let a_of = |s: f64| if s > 0.0 { (s - r * r / s).powi(2) } else { 0.0 };
+        let a_max = a_of(r + f.span);
+        if a_max <= 0.0 {
+            return (0.0, 0.0);
+        }
+        // From the most forward leading edge to the most aft trailing edge of the planform (root or
+        // tip: a fin swept by more than its root chord reaches its full span only behind the root).
+        let x0 = f.x_le_root.min(f.x_le_root + f.sweep);
+        let x1 = (f.x_le_root + f.root_chord).max(f.x_le_root + f.sweep + f.tip_chord);
+        let n = 400;
+        let dx = (x1 - x0) / n as f64;
+        let (mut i0, mut i1) = (0.0, 0.0);
+        for i in 0..n {
+            let x = x0 + (i as f64 + 0.5) * dx;
+            // Largest semi-span reached at or ahead of x (slender-body theory holds it aft of there):
+            // along a backward-swept leading edge it grows to the tip; a forward-swept (or
+            // unswept) tip leading edge is reached first.
+            let grow = if f.sweep > 0.0 { ((x - f.x_le_root) / f.sweep).clamp(0.0, 1.0) } else { 1.0 };
+            let phi = a_of(r + f.span * grow) / a_max;
+            i0 += phi * dx;
+            i1 += phi * x * dx;
+        }
+        (cna_f * i0, cna_f * i1)
+    }
+
+    /// Volume of the body of revolution [m^3] and its first moment about the nose tip [m^4] from
+    /// the profile (conical frustums between the profile points, the nose tip at radius 0 and the
+    /// base at `base_radius`).
+    pub fn body_volume_moment(&self) -> (f64, f64) {
+        let g = &self.geom;
+        let mut pts = vec![(0.0, 0.0)];
+        pts.extend(g.profile.iter().map(|p| (p.x, p.r)));
+        pts.push((g.length, g.base_radius));
+        let (mut vol, mut mom) = (0.0, 0.0);
+        for w in pts.windows(2) {
+            let ((x1, r1), (x2, r2)) = (w[0], w[1]);
+            let l = x2 - x1;
+            if l <= 0.0 {
+                continue;
+            }
+            // Integrals of pi r^2 and pi r^2 (x - x1) over the frustum, r linear in x.
+            let v = PI * l / 3.0 * (r1 * r1 + r1 * r2 + r2 * r2);
+            let t = PI * l * l / 12.0 * (r1 * r1 + 2.0 * r1 * r2 + 3.0 * r2 * r2);
+            vol += v;
+            mom += x1 * v + t;
+        }
+        (vol, mom)
     }
 
     /// Zero-lift axial (drag) coefficient at Mach `m`.
@@ -257,7 +607,13 @@ impl AeroModel {
         let mut boattail = 0.0;
         if let Some(b) = &g.boattail {
             let gamma = b.length / (2.0 * (b.r_fore - b.r_aft)).max(1e-9);
-            let k = if gamma < 1.0 { 1.0 } else if gamma > 3.0 { 0.0 } else { (3.0 - gamma) / 2.0 };
+            let k = if gamma < 1.0 {
+                1.0
+            } else if gamma > 3.0 {
+                0.0
+            } else {
+                (3.0 - gamma) / 2.0
+            };
             boattail = k * base_cd(m) * PI * (b.r_fore.powi(2) - b.r_aft.powi(2)) / aref;
         }
 
@@ -272,11 +628,7 @@ impl AeroModel {
         let sj = n.joint_half_angle_deg.to_radians().sin();
         let sub = 0.8 * sj * sj;
         let phi = (n.base_radius / n.length).atan();
-        let shape = if n.volume_ratio <= 1.0 / 3.0 {
-            1.0
-        } else {
-            (1.0 - 0.4 * (n.volume_ratio - 1.0 / 3.0) / (0.55 - 1.0 / 3.0)).max(0.6)
-        };
+        let shape = if n.volume_ratio <= 1.0 / 3.0 { 1.0 } else { (1.0 - 0.4 * (n.volume_ratio - 1.0 / 3.0) / (0.55 - 1.0 / 3.0)).max(0.6) };
         let sup = |m: f64| shape * (2.1 * phi.sin().powi(2) + 0.5 * phi.sin() / (m * m - 1.0).sqrt());
         if m <= 0.8 {
             sub
@@ -323,7 +675,11 @@ pub fn skin_friction(re: f64, m: f64, rel_rough: f64) -> f64 {
 
 /// Base drag coefficient (relative to base area).
 pub fn base_cd(m: f64) -> f64 {
-    if m < 1.0 { 0.12 + 0.13 * m * m } else { 0.25 / m }
+    if m < 1.0 {
+        0.12 + 0.13 * m * m
+    } else {
+        0.25 / m
+    }
 }
 
 /// Rounded leading-edge pressure drag (relative to frontal area).
@@ -420,5 +776,435 @@ mod tests {
         assert!((axial_alpha_factor(0.0) - 1.0).abs() < 1e-12);
         assert!((axial_alpha_factor(17f64.to_radians()) - 1.3).abs() < 1e-12);
         assert!(axial_alpha_factor(PI / 2.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn fin_normal_force_is_bounded_at_large_alpha() {
+        let (m, _) = model();
+        let f = m.geom.fins.clone().unwrap();
+        for i in 0..=60 {
+            let mach = 0.05 * i as f64;
+            let cn90 = m.fin_cn(mach, PI / 2.0);
+            // Flat-plate crossflow: k_N C_D,plate A_fin / A_ref, C_D,plate 1.2 subsonic .. 1.7 supersonic.
+            let expect = AeroModel::fin_count_factor(f.count) * plate_cd(mach) * f.area() / m.geom.ref_area;
+            assert!((cn90 - expect).abs() < 1e-9 * expect, "M={mach}: fin CN(90) {cn90} vs {expect}");
+            assert!(cn90 > 2.0 * 1.2 * f.area() / m.geom.ref_area - 1e-9 && cn90 < 2.0 * 1.7 * f.area() / m.geom.ref_area + 1e-9);
+            // Monotone non-decreasing from 0 to 90 deg, never above the 90 deg value.
+            let mut prev = 0.0;
+            for k in 1..=900 {
+                let a = (0.1 * k as f64).to_radians();
+                let cn = m.fin_cn(mach, a);
+                assert!(cn >= prev - 1e-12, "M={mach}: fin CN decreases at {} deg: {prev} -> {cn}", 0.1 * k as f64);
+                assert!(cn <= cn90 + 1e-12, "M={mach}: fin CN {cn} above its 90 deg value {cn90}");
+                prev = cn;
+            }
+            // Total normal force stays within the crossflow estimate of the whole rocket.
+            let (cn_tot, _) = m.normal(mach, PI / 2.0);
+            assert!(cn_tot < 30.0, "M={mach}: total CN(90) {cn_tot}");
+        }
+        // Mirrored above 90 deg and odd in alpha.
+        let a = 70f64.to_radians();
+        assert!((m.fin_cn(1.2, PI - a) - m.fin_cn(1.2, a)).abs() < 1e-12);
+        assert!((m.fin_cn(1.2, -a) + m.fin_cn(1.2, a)).abs() < 1e-12);
+    }
+
+    #[test]
+    fn small_alpha_fin_normal_force_is_unchanged() {
+        let (m, _) = model();
+        // CNa of the sample rocket before the large-alpha fin model (body + Barrowman/Busemann fins).
+        for (mach, cna) in [(0.3, 11.692), (0.8, 12.239), (1.2, 13.966), (1.5, 14.091), (2.0, 11.193), (3.0, 8.230)] {
+            assert!((m.cna(mach) - cna).abs() < 6e-4, "M={mach}: CNa {} vs {cna}", m.cna(mach));
+        }
+        let f = m.geom.fins.clone().unwrap();
+        for i in 0..=60 {
+            let mach = 0.05 * i as f64;
+            for k in 0..=150 {
+                let a = (0.1 * k as f64).to_radians();
+                assert_eq!(m.fin_cn(mach, a), m.fin_cn_attached(mach, a), "M={mach}, alpha {} deg", 0.1 * k as f64);
+                assert_eq!(m.fin_xcp_at(mach, a), m.fin_xcp(mach));
+            }
+            // Slope at zero: the Barrowman / Busemann linear term.
+            let lin = if mach <= TRANSONIC_LO {
+                m.fin_cn_sub(&f, mach, 1.0)
+            } else if mach >= TRANSONIC_HI {
+                m.fin_cn_sup(&f, mach, 1e-6) / 1e-6
+            } else {
+                continue;
+            };
+            assert!((m.fin_cn(mach, 1e-6) / 1e-6 - lin).abs() < 1e-6 * lin, "M={mach}");
+        }
+    }
+
+    #[test]
+    fn fin_normal_force_is_c1_in_alpha_and_continuous_in_mach() {
+        let (m, _) = model();
+        let a1 = FIN_ALPHA_LINEAR;
+        let h = 1e-6;
+        for i in 0..=60 {
+            let mach = 0.05 * i as f64;
+            // Value and slope match at the validity angle.
+            let (l, r) = (m.fin_cn(mach, a1 - h), m.fin_cn(mach, a1 + h));
+            let c = m.fin_cn(mach, a1);
+            let (dl, dr) = ((c - l) / h, (r - c) / h);
+            assert!((r - l).abs() < 1e-4 * c, "M={mach}: jump at the validity angle");
+            assert!((dl - dr).abs() < 1e-3 * dl, "M={mach}: slope {dl} -> {dr} at the validity angle");
+            // Zero slope at 90 deg (C1 with the mirrored branch).
+            let d90 = (m.fin_cn(mach, PI / 2.0) - m.fin_cn(mach, PI / 2.0 - h)) / h;
+            assert!(d90.abs() < 1e-3, "M={mach}: slope at 90 deg {d90}");
+            let (xl, xr) = (m.fin_xcp_at(mach, a1 - h), m.fin_xcp_at(mach, a1 + h));
+            assert!((xl - xr).abs() < 1e-6);
+        }
+        for deg in [20.0f64, 30.0, 45.0, 60.0, 90.0] {
+            let a = deg.to_radians();
+            let mut prev = m.fin_cn(0.0, a);
+            let mut prev_x = m.fin_xcp_at(0.0, a);
+            let mut mach = 0.0;
+            while mach < 3.0 {
+                mach += 0.002;
+                let cn = m.fin_cn(mach, a);
+                let x = m.fin_xcp_at(mach, a);
+                assert!((cn - prev).abs() < 0.01 * prev, "alpha {deg} deg: fin CN jump at M={mach}: {prev} -> {cn}");
+                assert!((x - prev_x).abs() < 1e-3, "alpha {deg} deg: fin xcp jump at M={mach}");
+                prev = cn;
+                prev_x = x;
+            }
+        }
+    }
+
+    #[test]
+    fn fin_cp_moves_to_the_planform_centroid_at_90_deg() {
+        let (m, _) = model();
+        let f = m.geom.fins.clone().unwrap();
+        let (cr, ct, sw) = (f.root_chord, f.tip_chord, f.sweep);
+        // Area centroid of the trapezoid: integral of c(eta) (x_le(eta) + c(eta)/2) over its area.
+        let xc = f.x_le_root + (sw * (cr + 2.0 * ct) + cr * cr + cr * ct + ct * ct) / (3.0 * (cr + ct));
+        for mach in [0.3, 1.2, 2.0, 3.0] {
+            assert!((m.fin_xcp_at(mach, PI / 2.0) - xc).abs() < 1e-12);
+            let x180 = m.fin_xcp_at(mach, PI);
+            let (base, mac) = (f.x_le_root + f.mac_le_offset(), f.mac());
+            let frac0 = (m.fin_xcp(mach) - base) / mac;
+            assert!((x180 - (base + (1.0 - frac0) * mac)).abs() < 1e-12, "reverse flow at M={mach}");
+        }
+    }
+
+    #[test]
+    fn crossflow_blend_is_monotone_and_matches_its_ends() {
+        let t_end = 75f64.to_radians();
+        for &(cn1, d0, cn90) in &[(2.5, 9.7, 4.6), (3.7, 25.0, 6.5), (1.0, 0.5, 6.0), (1.0, 1e-3, 6.0), (1.0, 10.0, 1.5)] {
+            assert!((crossflow_blend(0.0, t_end, cn1, d0, cn90) - cn1).abs() < 1e-12);
+            assert!((crossflow_blend(t_end, t_end, cn1, d0, cn90) - cn90).abs() < 1e-9);
+            let h = 1e-7;
+            let s0 = (crossflow_blend(h, t_end, cn1, d0, cn90) - cn1) / h;
+            assert!((s0 - d0).abs() < 1e-3 * d0.max(1.0), "slope {s0} vs {d0}");
+            let mut prev = cn1;
+            for k in 1..=1000 {
+                let v = crossflow_blend(t_end * k as f64 / 1000.0, t_end, cn1, d0, cn90);
+                assert!(v >= prev - 1e-12 && v <= cn90 + 1e-12, "({cn1}, {d0}, {cn90}) at step {k}: {v}");
+                prev = v;
+            }
+        }
+        // Attached value above the crossflow value, or just below it with a steep attached slope
+        // (beyond the exponential's range): bounded relaxation to cn90, slope matched at the start.
+        for &(cn1, d0, cn90) in &[(6.0, 10.0, 4.0), (1.0, 200.0, 1.01), (1.0, 200.0, 1.0)] {
+            let v: Vec<f64> = (0..=100).map(|k| crossflow_blend(t_end * k as f64 / 100.0, t_end, cn1, d0, cn90)).collect();
+            assert!((v[100] - cn90).abs() < 1e-12);
+            // Bounded by the Hermite bump: cn1 + |delta| + d0 * max b = cn1 + |delta| + d0 * 4 T / 27.
+            assert!(v.iter().all(|x| x.is_finite() && *x <= cn1.max(cn90) + d0 * 4.0 * t_end / 27.0 + 1e-9), "({cn1}, {d0}, {cn90})");
+            let h = 1e-7;
+            let s0 = (crossflow_blend(h, t_end, cn1, d0, cn90) - cn1) / h;
+            assert!((s0 - d0).abs() < 1e-4 * d0, "slope {s0} vs {d0}");
+        }
+    }
+
+    #[test]
+    fn sample_rocket_stays_in_the_exponential_regime_of_the_crossflow_blend() {
+        // The sample's fin force beyond the validity angle is the pure exponential saturation (no bump).
+        let (m, _) = model();
+        let f = m.geom.fins.clone().unwrap();
+        let g = |u: f64| u / -(-u).exp_m1();
+        let t_end = PI / 2.0 - FIN_ALPHA_LINEAR;
+        for i in 0..=150 {
+            let mach = 0.02 * i as f64;
+            let cn1 = m.fin_cn_attached(mach, FIN_ALPHA_LINEAR);
+            let d0 = (cn1 - m.fin_cn_attached(mach, FIN_ALPHA_LINEAR - 1e-5)) / 1e-5;
+            let cn90 = AeroModel::fin_count_factor(f.count) * plate_cd(mach) * f.area() / m.geom.ref_area;
+            let r = d0 * t_end / ((cn90 - cn1) * PI / 2.0);
+            assert!(cn90 > cn1 && r > g(BLEND_U_MIN) && r < g(BLEND_U_MAX), "M={mach}: r = {r}");
+        }
+    }
+
+    #[test]
+    fn roll_terms_signs_and_scaling() {
+        let g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
+        let m4 = AeroModel::new(g.clone(), AeroOptions::default());
+        let (cd, cp) = m4.roll_terms(0.8);
+        assert!(cd > 0.0, "positive cant gives a positive roll moment");
+        assert!(cp < 0.0, "roll damping opposes the roll rate");
+        let mut g3 = g.clone();
+        g3.fins.as_mut().unwrap().count = 3;
+        let m3 = AeroModel::new(g3, AeroOptions::default());
+        assert!((m3.roll_terms(0.8).1 / cp - 0.75).abs() < 1e-12, "damping is proportional to the fin count");
+        // Strip theory with the fin's own lift slope: Clp = -2 (CNa1 A / A_fin) N I2 / (A d^2).
+        let f = g.fins.as_ref().unwrap();
+        let (cr, ct, s, r) = (f.root_chord, f.tip_chord, f.span, f.body_radius);
+        let n = 20000;
+        let i2: f64 = (0..n)
+            .map(|i| {
+                let xi = r + (i as f64 + 0.5) * s / n as f64;
+                xi * xi * (cr + (ct - cr) * (xi - r) / s) * s / n as f64
+            })
+            .sum();
+        let d = 2.0 * g.ref_radius;
+        let cna1 = m4.fin_cn(0.8, 1e-4) / (1e-4 * m4.fin_scale(f));
+        let expect = -2.0 * cna1 / f.area() * 4.0 * i2 / (d * d);
+        assert!((cp / expect - 1.0).abs() < 1e-6);
+        // Continuous through the transonic blend.
+        let (a, b) = (m4.roll_terms(0.899).1, m4.roll_terms(0.901).1);
+        assert!((a - b).abs() < 1e-2 * a.abs());
+    }
+
+    #[test]
+    fn lag_sums_of_an_ogive_cylinder_and_a_cone() {
+        // Tangent ogive (0.30 m) on a cylinder of radius 0.05 m, 1.5 m long: apparent mass of the
+        // volume, K_B = 2 Vol / S. The 72-facet mesh has the area of a polygon, (72 / 2pi) sin(2pi / 72)
+        // = 0.99873 of the circle.
+        let (m, rk) = model();
+        let (r, ln, l) = (rk.radius, rk.nose_length, rk.length);
+        let rho = (r * r + ln * ln) / (2.0 * r);
+        let v_nose = PI * (ln * rho * rho - ln.powi(3) / 3.0 - (rho - r) * rho * rho * (ln / rho).asin());
+        let v_cyl = PI * r * r * (l - ln);
+        let vol = v_nose + v_cyl;
+        let (vm, _) = m.body_volume_moment();
+        assert!((vm / vol - 1.0).abs() < 0.01, "volume {vm} vs {vol}");
+        let (l0b, l1b) = (m.lag_sums(0.5).0 - m.fin_lag_sums(0.5).0, m.lag_sums(0.5).1 - m.fin_lag_sums(0.5).1);
+        let s = m.geom.ref_area;
+        assert!((l0b - 2.0 * vm / s).abs() < 1e-12);
+        let (l0, l1) = (l0b, l1b);
+        // Centroid: the nose part of the ogive and the cylinder about the nose tip (nose centroid by quadrature).
+        let n = 20000;
+        let nose_mom: f64 = (0..n)
+            .map(|i| {
+                let x = (i as f64 + 0.5) * ln / n as f64;
+                x * PI * rk.nose_radius(x).powi(2) * ln / n as f64
+            })
+            .sum();
+        let x_vol = (nose_mom + v_cyl * 0.5 * (ln + l)) / vol;
+        assert!((l1 / l0 - x_vol).abs() < 0.005 * l, "x_vol {} vs {x_vol}", l1 / l0);
+        // Without fins the sums are those of the body volume alone.
+        let mut finless = m.geom.clone();
+        finless.fins = None;
+        let finless = AeroModel::new(finless, AeroOptions::default());
+        assert_eq!(finless.fin_lag_sums(0.5), (0.0, 0.0));
+        assert!((finless.lag_sums(0.5).0 - 2.0 * vm / s).abs() < 1e-12);
+        // A cone: centroid 3 L / 4 from the tip, volume pi R^2 L / 3 (exact for the frustum sum).
+        let mut g = m.geom.clone();
+        let (cl, cr) = (0.8, 0.06);
+        g.profile = (1..=40).map(|i| geom::extract::ProfilePoint { x: cl * i as f64 / 40.0, r: cr * i as f64 / 40.0, fin_span: 0.0 }).collect();
+        g.length = cl;
+        g.base_radius = cr;
+        g.fins = None;
+        let cone = AeroModel::new(g, AeroOptions::default());
+        let (l0, l1) = cone.lag_sums(1.2);
+        assert!((l1 / l0 - 0.75 * cl).abs() < 1e-12, "cone centroid {}", l1 / l0);
+        assert!((l0 * cone.geom.ref_area / 2.0 - PI * cr * cr * cl / 3.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn fin_apparent_mass_follows_the_wing_body_section_and_the_fin_normal_force() {
+        // Sample fins: root chord 0.20 m from 1.30 m, tip leading edge 0.08 m aft, span 0.10 m on r = 0.05 m.
+        let (m, _) = model();
+        let f = m.geom.fins.clone().unwrap();
+        let cna_f = m.fin_cn(0.5, 1e-4) / 1e-4;
+        let (l0, l1) = m.fin_lag_sums(0.5);
+        // Independent quadrature of the wing-body increment pi (s - r^2/s)^2 normalised to (S/2) CNa_f.
+        let r = f.body_radius;
+        let am = |s: f64| (s - r * r / s).powi(2);
+        let n = 100_000;
+        let (mut i0, mut i1) = (0.0, 0.0);
+        for i in 0..n {
+            let x = f.x_le_root + (i as f64 + 0.5) * f.root_chord / n as f64;
+            let s = r + f.span * ((x - f.x_le_root) / f.sweep).min(1.0);
+            let w = am(s) / am(r + f.span) * f.root_chord / n as f64;
+            i0 += w;
+            i1 += w * x;
+        }
+        assert!((l0 / (cna_f * i0) - 1.0).abs() < 1e-4 && (l1 / (cna_f * i1) - 1.0).abs() < 1e-4, "{l0} {l1}");
+        // The centroid lies inside the fin chord, aft of the half chord (the span grows along the leading edge).
+        let xc = l1 / l0;
+        assert!(xc > f.x_le_root + 0.5 * f.root_chord && xc < f.x_le_root + f.root_chord, "{xc}");
+        // Proportional to the fin normal-force slope (Mach, fin count).
+        let (l0s, _) = m.fin_lag_sums(2.0);
+        assert!((l0s / l0 - (m.fin_cn(2.0, 1e-4) / m.fin_cn(0.5, 1e-4))).abs() < 1e-9);
+    }
+
+    #[test]
+    fn fin_apparent_mass_of_a_fin_swept_beyond_its_root_chord_reaches_the_full_span() {
+        // Root chord 0.20 m, tip leading edge 0.30 m aft of the root leading edge, tip chord 0.10 m:
+        // the full span is reached behind the root trailing edge, the planform ends at the tip
+        // trailing edge 0.40 m aft of the root leading edge.
+        let (m0, _) = model();
+        let mut g = m0.geom.clone();
+        let f = g.fins.as_mut().unwrap();
+        (f.root_chord, f.tip_chord, f.sweep, f.x_le_root) = (0.20, 0.10, 0.30, 1.10);
+        let m = AeroModel::new(g, AeroOptions::default());
+        let f = m.geom.fins.clone().unwrap();
+        let r = f.body_radius;
+        let am = |s: f64| (s - r * r / s).powi(2);
+        let n = 200_000;
+        let (x0, x1) = (1.10, 1.50);
+        let (mut i0, mut i1) = (0.0, 0.0);
+        for i in 0..n {
+            let x = x0 + (i as f64 + 0.5) * (x1 - x0) / n as f64;
+            let w = am(r + f.span * ((x - x0) / 0.30).min(1.0)) / am(r + f.span) * (x1 - x0) / n as f64;
+            i0 += w;
+            i1 += w * x;
+        }
+        let cna_f = m.fin_cn(0.5, 1e-4) / 1e-4;
+        let (l0, l1) = m.fin_lag_sums(0.5);
+        assert!((l0 / (cna_f * i0) - 1.0).abs() < 1e-4 && (l1 / (cna_f * i1) - 1.0).abs() < 1e-4, "{l0} {l1} vs {} {}", cna_f * i0, cna_f * i1);
+        // The full-span stretch (1.40 to 1.50 m) is included: more than the root chord alone gives.
+        assert!(i0 > 0.1 && l1 / l0 > 1.35, "{i0} {}", l1 / l0);
+    }
+
+    /// Sample body with rectangular fins of span `span` and chord `chord` on a body of radius 0.05 m.
+    fn rect_fins(span: f64, chord: f64) -> AeroModel {
+        let mut g = extract(&SampleRocket::default().mesh(), &ExtractOptions::default()).unwrap();
+        let f = g.fins.as_mut().unwrap();
+        (f.span, f.root_chord, f.tip_chord, f.sweep, f.body_radius) = (span, chord, chord, 0.0, 0.05);
+        AeroModel::new(g, AeroOptions::default())
+    }
+
+    #[test]
+    fn large_alpha_fin_force_is_continuous_where_the_attached_value_meets_the_crossflow_value() {
+        // Rectangular fins (span 0.15 m, chord 0.10 m, body radius 0.05 m): the attached-flow value
+        // at the validity angle crosses the crossflow value near Mach 0.59.
+        let m = rect_fins(0.15, 0.10);
+        let (a1, h) = (FIN_ALPHA_LINEAR, 1e-6);
+        let f = m.geom.fins.clone().unwrap();
+        let cn90 = |mach: f64| AeroModel::fin_count_factor(f.count) * plate_cd(mach) * f.area() / m.geom.ref_area;
+        let gap = |mach: f64| cn90(mach) - m.fin_cn_attached(mach, a1);
+        let (mut lo, mut hi) = (0.3, 0.9);
+        assert!(gap(lo) * gap(hi) < 0.0, "no crossover in [{lo}, {hi}]: {} {}", gap(lo), gap(hi));
+        for _ in 0..200 {
+            let mid = 0.5 * (lo + hi);
+            if gap(lo) * gap(mid) <= 0.0 {
+                hi = mid;
+            } else {
+                lo = mid;
+            }
+        }
+        let mc = 0.5 * (lo + hi);
+        assert!((mc - 0.590458).abs() < 1e-3, "crossover at Mach {mc}");
+        for deg in [20.0f64, 30.0, 40.0, 60.0, 80.0] {
+            let a = deg.to_radians();
+            let (l, r) = (m.fin_cn(mc - h, a), m.fin_cn(mc + h, a));
+            assert!((r - l).abs() < 1e-3 * l.abs(), "alpha {deg} deg: fin CN jumps {l} -> {r} at Mach {mc}");
+        }
+        // Mach sweep through the crossover: no jump at any angle.
+        for deg in [16.0f64, 25.0, 40.0, 55.0, 75.0, 89.0] {
+            let a = deg.to_radians();
+            let mut mach = 0.3;
+            let mut prev = m.fin_cn(mach, a);
+            while mach < 0.9 {
+                mach += 1e-4;
+                let cn = m.fin_cn(mach, a);
+                assert!((cn - prev).abs() < 2e-3 * prev.abs(), "alpha {deg} deg: fin CN jump at Mach {mach}: {prev} -> {cn}");
+                prev = cn;
+            }
+        }
+    }
+
+    #[test]
+    fn crossflow_blend_is_continuous_in_its_parameters() {
+        let t_end = 75f64.to_radians();
+        // Through cn90 = cn1 (the attached value meeting the crossflow value) and through d0 = 0.
+        for &(cn1, d0) in &[(2.0, 5.0), (2.0, 0.3), (1.0, 40.0)] {
+            for k in 0..=50 {
+                let t = t_end * k as f64 / 50.0;
+                let (l, r) = (crossflow_blend(t, t_end, cn1, d0, cn1 - 1e-9), crossflow_blend(t, t_end, cn1, d0, cn1 + 1e-9));
+                assert!((l - r).abs() < 1e-6, "({cn1}, {d0}) t = {t}: {l} vs {r}");
+            }
+        }
+        for k in 0..=50 {
+            let t = t_end * k as f64 / 50.0;
+            let (l, r) = (crossflow_blend(t, t_end, 1.0, -1e-9, 3.0), crossflow_blend(t, t_end, 1.0, 1e-9, 3.0));
+            assert!((l - r).abs() < 1e-6, "d0 through 0, t = {t}: {l} vs {r}");
+        }
+    }
+
+    #[test]
+    fn supersonic_fin_cp_is_continuous_for_small_aspect_ratio() {
+        // Aspect ratio of an opposing pair 2 s^2 / A = 0.25: AR beta passes 0.5 at Mach sqrt(5).
+        let m = rect_fins(0.0125, 0.10);
+        let f = m.geom.fins.clone().unwrap();
+        assert!((2.0 * f.span * f.span / f.area() - 0.25).abs() < 1e-12);
+        let (base, mac) = (f.x_le_root + f.mac_le_offset(), f.mac());
+        let frac = |mach: f64| (m.fin_xcp(mach) - base) / mac;
+        let mut mach = 0.0;
+        let mut prev = frac(mach);
+        while mach < 6.0 {
+            mach += 1e-3;
+            let x = frac(mach);
+            assert!((0.25 - 1e-12..=0.5 + 1e-12).contains(&x), "Mach {mach}: CP fraction {x}");
+            assert!((x - prev).abs() < 2e-3, "fin CP jumps at Mach {mach}: {prev} -> {x} of the MAC");
+            prev = x;
+        }
+        // The fraction itself: monotone, in [0.25, 0.5], C1 at the joins, Fleeman's value beyond 1.2.
+        let mut prev = supersonic_fin_cp_fraction(0.0);
+        for k in 1..=10000 {
+            let x = supersonic_fin_cp_fraction(k as f64 * 1e-3);
+            assert!(x >= prev - 1e-15 && (0.25..=0.5).contains(&x), "A beta {}: {x}", k as f64 * 1e-3);
+            prev = x;
+        }
+        for x0 in [0.84, 1.2] {
+            let h = 1e-7;
+            let (l, c, r) = (supersonic_fin_cp_fraction(x0 - h), supersonic_fin_cp_fraction(x0), supersonic_fin_cp_fraction(x0 + h));
+            assert!(((c - l) / h - (r - c) / h).abs() < 1e-4, "slope jump at A beta = {x0}");
+        }
+        assert!((supersonic_fin_cp_fraction(2.25) - (2.25 - 0.67) / 3.5).abs() < 1e-15);
+        // Other aspect ratios: continuous as well.
+        for (span, chord) in [(0.03, 0.10), (0.05, 0.10), (0.15, 0.10)] {
+            let m = rect_fins(span, chord);
+            let mut prev = m.fin_xcp(0.0);
+            let mut mach = 0.0;
+            while mach < 6.0 {
+                mach += 1e-3;
+                let x = m.fin_xcp(mach);
+                assert!((x - prev).abs() < 2e-3 * chord, "span {span}: fin CP jumps at Mach {mach}");
+                prev = x;
+            }
+        }
+    }
+
+    /// Basic Finner of examples/basic_finner (DREV-TM-9703 Fig. 2: 10 deg cone, 10 cal, four 1 x 1 cal
+    /// rectangular fins flush with the base) from its STL. In the supersonic branch the
+    /// component build-up model is the linear-theory build-up of Barrowman / Niskanen:
+    ///
+    /// `CNa = 2 + 2 (4 / beta) (1 - 1 / (2 beta A)) (A_fin / S) (1 + r / (s + r))`
+    ///
+    /// (slender-body nose, Ackeret slope of two effective fins with the tip-loss of one free tip,
+    /// `A = 2 s^2 / A_fin` the aspect ratio of a fin pair, Barrowman's fin-in-body factor). With
+    /// r = s = c = 1 cal: 8.71 /rad at Mach 2 and 6.38 at Mach 3. The measured values (Table IX of
+    /// DREV-TM-9703) are about 11.4 and 8.8: the model leaves out the supersonic lift of the
+    /// cylindrical afterbody, the body carry-over of the fins and the thickness term of the wedge
+    /// section (doc/data/validation/basic_finner/cna_decomposition.csv), and the remaining 11-13 %
+    /// is beyond linear theory; it is not meant to reach the measurement.
+    #[test]
+    fn basic_finner_supersonic_cna_is_the_linear_theory_build_up() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/basic_finner/basic_finner.stl");
+        let tris: Vec<geom::stl::Triangle> = geom::stl::read_stl(&path).unwrap().iter().map(|t| t.map(|v| v * 0.001)).collect();
+        let opt = ExtractOptions { nose_direction: Some(geom::Vec3::new(-1.0, 0.0, 0.0)), ..Default::default() };
+        let m = AeroModel::new(extract(&tris, &opt).unwrap(), AeroOptions::default());
+        let (r, s, c) = (0.015, 0.030, 0.030);
+        let aref = PI * r * r;
+        assert!((m.body_cna() - 2.0).abs() < 0.01, "body {}", m.body_cna());
+        for (mach, expect) in [(2.0, 8.71), (3.0, 6.38)] {
+            let b = (mach * mach - 1.0f64).sqrt();
+            let ar = 2.0 * s * s / (s * c);
+            let textbook = 2.0 + 2.0 * (4.0 / b) * (1.0 - 1.0 / (2.0 * b * ar)) * (s * c / aref) * (1.0 + r / (s + r));
+            assert!((textbook - expect).abs() < 0.005, "M={mach}: textbook {textbook}");
+            let cna = m.cna(mach);
+            assert!((cna / textbook - 1.0).abs() < 0.01, "M={mach}: CNa {cna} vs {textbook}");
+        }
     }
 }

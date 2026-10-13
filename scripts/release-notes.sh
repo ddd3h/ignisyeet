@@ -17,6 +17,8 @@ if [ -n "$prev" ]; then echo "Changes since ${prev}."; else echo "First release.
 
 section() { # TITLE REGEX
   local lines
+  # The backticks in the sed replacement are Markdown code quotes, not command substitution (SC2016).
+  # shellcheck disable=SC2016
   lines=$(git log --no-merges --format='%s|%h' "$range" | grep -E "^($2)(\([^)]*\))?!?: " |
     sed -E 's/^[a-z]+(\(([^)]*)\))?!?: (.*)\|([0-9a-f]+)$/- \3 (`\4`)/' || true)
   if [ -n "$lines" ]; then printf '\n### %s\n\n%s\n' "$1" "$lines"; fi

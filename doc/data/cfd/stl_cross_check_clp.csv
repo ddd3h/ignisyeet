@@ -1,0 +1,8 @@
+# Roll damping Clp of the sample rocket (Euler rotating-frame pair p_hat = +-0.01, wall_size 2 mm, fin_size auto, full domain; ignisyeet merge 8efaabf / 2f31ab9, 2026-10-08) and of the component build-up.
+method,mach,clp
+stl,0.8,-19.454374164999997
+stl,2.0,-24.470031246346156
+cad,0.8,-19.44295306
+cad,2.0,-23.962308465
+barrowman,0.8,-29.873744379404926
+barrowman,2.0,-26.822516682698073

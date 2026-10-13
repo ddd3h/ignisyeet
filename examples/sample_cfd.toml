@@ -3,6 +3,7 @@
 [output]
 dir = "out_cfd"          # CFD results do not overwrite the Barrowman / panel outputs in out/
 kml = true                 # also write ignisyeet.kml for Google Earth
+html = false               # also write report.html (as `ignisyeet report`) at the end of geom, aero, sim and dispersion
 
 [rocket]
 stl = "sample_rocket.stl"
@@ -51,32 +52,57 @@ method = "cfd"             # "barrowman" | "panel" | "table" | "cfd"
 mach_min = 0.0
 mach_max = 3.0
 mach_step = 0.02
-alpha_max_deg = 30.0
+alpha_max_deg = 90.0
 alpha_step_deg = 1.0
 n_slices = 600
 fin_threshold = 0.05
 extrapolation = "linear"   # "linear" | "clamp"
 
-# SU2 CFD aerodynamics (needs SU2 >= 8, MPI and gmsh; see `ignisyeet cfd-check examples/sample_cfd.toml`).
+# SU2 CFD aerodynamics (needs SU2 8.3.0, MPI and gmsh; 8.5.0 crashes on CPUs without AVX-512, so the installer
+# pins 8.3.0). `surface = "stl"` also needs manifold3d, see `ignisyeet cfd-check examples/sample_cfd.toml`.
 # Each (Mach, alpha) case is a steady SU2 run on a half-model mesh (one fin in the pitch plane); the
 # solved points are interpolated onto the regular table grid above. This reduced default matrix
-# (4 Mach x 3 alpha, Euler, 2 mm surface mesh) takes about 15-20 minutes on a 20-thread desktop. Cases are cached in
+# (4 Mach x 3 alpha, Euler, 2 mm surface mesh, 1.4 M cells) took about 1.9 hours solved one case at a time on 4 ranks
+# of a 20-thread desktop (measured while other jobs shared the machine; 3.3 to 4.6 GB per case). Cases are cached in
 # out_cfd/cfd/ and re-used when nothing changed (delete the directory to start over).
 [aero.cfd]
 prefix = "~/.local/share/micromamba/envs/ignisyeet-cfd"  # <prefix>/bin/SU2_CFD, mpirun, python (with gmsh)
-model = "euler"            # "euler" | "rans" (Spalart-Allmaras)
+model = "euler"            # "euler" | "rans" (Spalart-Allmaras). For RANS start from examples/sample_rans.toml: the explicit
+                           # wall_size = 0.002 and iterations = 3000 below override the RANS defaults (5 mm, 4000), and a
+                           # 2 mm RANS mesh needs far more than the 19 GB per case of 3 mm
 machs = [0.3, 0.8, 1.2, 2.0]   # solved Mach numbers (increasing)
 alphas_deg = [0, 4, 8]         # solved angles of attack (must contain 0)
-surface = "panel_mesh"     # geometry rebuilt from the extracted profile + fins as one fused solid ("stl" is not supported)
-symmetry = true            # half model about the pitch plane (required: the full domain cannot be meshed yet)
+surface = "cad"            # "cad" (alias "panel_mesh"): geometry rebuilt from the extracted profile + fins as one fused solid;
+                           # "stl": the STL itself (overlapping closed shells are united, needs base_treatment for Euler)
+symmetry = true            # allow the half model about the pitch plane. It is used while the case matrix permits (shape symmetric
+                           # about y = 0, betas_deg = [0], no roll cases); otherwise the full domain is solved. false = always full domain.
+# betas_deg = [0, 4, 8]    # sideslip angles [deg] (increasing, start with 0); anything but [0] makes the table a six-component (general) table
+# roll_damping = true      # solve a roll pair per Mach number (rotating frame, alpha = beta = 0) and take Clp from CFD; full domain
+# roll_rate_hat = 0.01     # p d / (2 V) of the roll pair
+# shape_symmetry = "auto"  # "auto" | "axisymmetric" (mirror planes y = 0 and z = 0) | "pitch_plane" (y = 0 only) | "none": which mirror
+                           # images are not solved. stl: auto uses the planes that the mirror check of the united surface verifies (both:
+                           # quarter mesh, y = 0 only: half mesh, none: full domain); an explicit axisymmetric / pitch_plane that fails the
+                           # check is an error, "none" forces the full domain. "pitch_plane" / "none" give a general table.
+# base_treatment = "fairing"  # surface = "stl" + euler (required): "fairing" appends a cone behind the base (modifies the input STL),
+                           # "flat" keeps the flat base (the Euler solution is likely not to converge)
+# stl_remesh = "classify" # stl: "classify" (gmsh remeshes the united surface at wall_size) | "none" (the STL triangles as they are: fins under-resolved)
+# max_geometry_error = 0.002  # stl: fail when the CFD wall is farther than this [m] from the input STL (default wall_size)
+# general_mach_step = 0.1  # general table: Mach step of the output grid (0 = [aero] mach_step)
 z_mirror_mesh = true       # mesh a quarter and mirror it about the x-y plane: exactly z-symmetric mesh, no spurious CN at alpha = 0
 alpha_mode = "mirror"      # "mirror" | "offset" | "single": odd/even combination of +alpha and -alpha runs (-alpha is skipped when
                            # z_mirror_mesh makes it redundant), "offset" subtracts the alpha = 0 values, "single" uses the raw results
 tail_fairing = 6.0         # euler: conical fairing behind the flat base [base radii], 0 = flat base (rans always flat)
 farfield = 20.0            # farfield radius [body lengths]
-wall_size = 0.002          # surface element size [m]: about 0.9 M cells, CN within ~2 % of the mesh-converged value (0.005 = coarse, 5x cheaper, CN up to ~7 % low at M 2)
+wall_size = 0.002          # surface element size [m]: about 1.4 M cells (fins at 1 mm, see fin_size), sample CN within 0.1 % of a 1.8 mm mesh (0.005: 0.86 M cells as the fins stay at 1 mm, CN about 1 % lower at M 2)
+# fin_size = "auto"       # fin surface element size [m]: "auto" = min(wall_size, fin thickness / 4) for euler (removes the spurious
+                           # subsonic fin lift at alpha = 0 of fins meshed coarser than their thickness), wall_size for rans
 yplus = 1.0                # rans: target y+ of the first prism layer
 iterations = 3000
+# min_iterations = 100     # early stop: no case is stopped before this iteration; the Euler slope limiter is frozen here (LIMITER_ITER)
+# stable_window = 60       # early stop: the force coefficients must be flat over this many last iterations (<= min_iterations)
+# multigrid = 0            # SU2 agglomeration multigrid levels (MGLEVEL, 0..4). SU2 builds no coarse grids on the wall-dominated tetrahedral
+                           # meshes of this mode, so it has no effect there (see the CFD chapter)
+# multigrid_cycle = "w"    # "w" | "v"
 cfl = 5.0
 convergence = 1e-6         # target RMS density residual
 scheme = "roe"             # "roe" | "jst"
@@ -98,12 +124,14 @@ viscosity = 1.789e-5       # constant only [Pa s]
 
 [wind]
 model = "power"            # "constant" | "power" | "log" | "profile"
-speed = 4.0                # m/s at reference height
-direction_deg = 0.0        # direction the wind blows FROM, clockwise from north
+speed = 4.0                # m/s at reference height (ignored for model = "profile": set profile_mean_speed)
+direction_deg = 0.0        # direction the wind blows FROM, clockwise from north (ignored for model = "profile": set profile_mean_direction_deg)
 ref_height = 2.0
+# speed is the wind speed at ref_height (2 m) [m/s]; the power/log models extrapolate it upward to apogee (x3-4 at several km).
+# For real predictions use model = "profile" with measured winds aloft.
 exponent = 6.0             # power law v = v_ref (h/h_ref)^(1/n)
 roughness_length = 0.03    # log model [m]
-# profile = "wind.csv"     # profile model: CSV with columns altitude_m,speed,direction_deg
+# profile = "wind_profile_example.csv"  # profile model: CSV altitude_m,speed,direction_deg (path relative to this file)
 
 [sim]
 integrator = "rk4"         # "rk4" | "rk45" | "dop853"
@@ -111,7 +139,7 @@ integrator = "rk4"         # "rk4" | "rk45" | "dop853"
 dt = 0.002
 rtol = 1e-7                # rk45 only
 atol = 1e-6                # rk45 only
-max_time = 1200.0
+max_time = 3600.0          # runs that do not land within max_time are reported as failures
 output_interval = 0.05
 # descent = "parachute"    # default: parachute if recovery.enabled else ballistic
 
@@ -132,10 +160,15 @@ thrust_scale = 0.03        # relative: thrust (total impulse scales, propellant 
 burn_time_scale = 0.02     # relative: burn time stretch at constant impulse
 dry_mass = 0.1             # relative: dry mass (inertia scales with it)
 cg = 0.01                  # absolute [m]: dry centre of gravity
+# cn_scale is the uncertainty of one aero method. sigma = 0.10 does not cover the gap between the methods: the
+# Barrowman fin normal force is 23-32 % lower than panel/CFD for this geometry. For keep-out work that gap is covered
+# separately by running both aero methods, barrowman and panel, and taking the larger maximum
+# (step 6 of the keep-out procedure in the documentation, dispersion chapter).
 cn_scale = 0.10            # relative: normal force CN, CN_alpha and pitch damping
 ca_scale = 0.15            # relative: axial force / drag CA, power on and off
-elevation_deg = 0.5        # absolute [deg]: rail elevation
-azimuth_deg = 1.0          # absolute [deg]: rail azimuth
+elevation_deg = 0.5        # absolute [deg]: rail tilt (pointing error), isotropic: one normal in the
+                           # rail's vertical plane and one across it; the tilt angle is Rayleigh distributed
+azimuth_deg = 1.0          # absolute [deg]: azimuth setting error, rotation of the rail about the vertical
 wind_speed = 1.0           # absolute [m/s]: around [wind] speed (clamped at 0)
 wind_direction_deg = 15.0  # absolute [deg]: around [wind] direction_deg
 parachute_cd_s_scale = 0.1 # relative: parachute Cd*S

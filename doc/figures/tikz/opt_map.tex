@@ -1,0 +1,54 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+\begin{tikzpicture}[
+  font=\footnotesize,
+  hdr/.style={draw=cblue, fill=cblue, text=white, thick, rounded corners=2pt, minimum width=52mm, minimum height=6.5mm, align=center, font=\small\bfseries\ttfamily},
+  hdro/.style={draw=corange, fill=corange, text=white, thick, rounded corners=2pt, minimum width=52mm, minimum height=6.5mm, align=center, font=\small\bfseries\ttfamily},
+  body/.style={draw=cink2, fill=cfillg, text width=48mm, minimum height=21mm, align=left, inner sep=2mm},
+  chap/.style={draw=cblue, fill=cfill, thick, rounded corners=2pt, text width=48mm, minimum height=6.5mm, align=center, inner sep=1.5mm},
+  chapo/.style={draw=corange, fill=cfillo, thick, rounded corners=2pt, text width=48mm, minimum height=6.5mm, align=center, inner sep=1.5mm},
+  arr/.style={->, thick, cink2}]
+  % 3 x 3 grid; column pitch 58 mm, row pitch 53 mm
+  \def\px{5.8}\def\py{5.3}
+
+  % row 1: geometry, motor, earth
+  \node[hdr]  (h1) at (0*\px,0*\py) {rocket（形状）};
+  \node[body, below=0mm of h1] (b1) {\texttt{stl\_scale}\\\texttt{nose\_direction}\\\texttt{fin\_override}\\\texttt{aero.n\_slices}\\\texttt{aero.fin\_threshold}};
+  \node[chap, below=2mm of b1] (c1) {形状の取り込みと抽出};
+
+  \node[hdr]  (h2) at (1*\px,0*\py) {motor / rocket（推進）};
+  \node[body, below=0mm of h2] (b2) {\texttt{motor.eng}（推力曲線）\\\texttt{dry\_mass}, \texttt{cg\_dry}\\\texttt{ixx\_dry}, \texttt{iyy\_dry}\\\texttt{cg\_lateral\_dry}\\\texttt{motor.misalignment\_*}};
+  \node[chap, below=2mm of b2] (c2) {推力と質量特性};
+
+  \node[hdr]  (h3) at (2*\px,0*\py) {earth};
+  \node[body, below=0mm of h3] (b3) {\texttt{model} = flat / ecef\\\texttt{gravity} = constant /\\\hspace*{12mm}inverse\_square / j2};
+  \node[chap, below=2mm of b3] (c3) {座標系と地球};
+
+  % row 2: atmosphere, wind, aero
+  \node[hdr]  (h4) at (0*\px,-1*\py) {atmosphere};
+  \node[body, below=0mm of h4] (b4) {\texttt{model} = us1976 / constant\\\texttt{temperature\_offset}\\\texttt{density}, \texttt{sound\_speed},\\\texttt{viscosity}（constant のみ）};
+  \node[chap, below=2mm of b4] (c4) {環境モデル};
+
+  \node[hdr]  (h5) at (1*\px,-1*\py) {wind};
+  \node[body, below=0mm of h5] (b5) {\texttt{model} = constant / power /\\\hspace*{12mm}log / profile\\\texttt{ref\_height}, \texttt{exponent},\\\texttt{roughness\_length}\\\texttt{profile\_mean\_speed}};
+  \node[chap, below=2mm of b5] (c5) {環境モデル};
+
+  \node[hdro] (h6) at (2*\px,-1*\py) {aero};
+  \node[body, below=0mm of h6] (b6) {\texttt{method} = barrowman / panel /\\\hspace*{12mm}cfd / table\\\texttt{table\_kind}, \texttt{panel.*}, \texttt{cfd.*}};
+  \node[chapo, below=2mm of b6] (c6) {空力解析};
+
+  % row 3: sim, recovery, dispersion
+  \node[hdro] (h7) at (0*\px,-2*\py) {sim};
+  \node[body, below=0mm of h7] (b7) {\texttt{integrator} = rk4 / rk45 / dop853\\\texttt{attitude} = normalize / lie\_group\\\texttt{quasi\_steady}};
+  \node[chapo, below=2mm of b7] (c7) {運動方程式と数値積分};
+
+  \node[hdro] (h8) at (1*\px,-2*\py) {recovery};
+  \node[body, below=0mm of h8] (b8) {\texttt{enabled}, \texttt{delay}\\\texttt{cd\_s}\\\texttt{main\_cd\_s}, \texttt{main\_altitude}};
+  \node[chapo, below=2mm of b8] (c8) {降下方式};
+
+  \node[hdro] (h9) at (2*\px,-2*\py) {dispersion};
+  \node[body, below=0mm of h9] (b9) {\texttt{mode} = wind\_grid / monte\_carlo\\\texttt{wind\_speeds}, \texttt{directions}\\\texttt{monte\_carlo.samples}, \texttt{seed}\\\texttt{monte\_carlo.*}（ばらつき）};
+  \node[chapo, below=2mm of b9] (c9) {落下分散};
+
+  \foreach \i in {1,...,9} {\draw[arr] (b\i.south) -- (c\i.north);}
+\end{tikzpicture}

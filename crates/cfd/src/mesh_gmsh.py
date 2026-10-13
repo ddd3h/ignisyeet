@@ -4,8 +4,16 @@
 #
 # Builds the rocket as an OpenCASCADE solid (body of revolution united with the fins), cuts it out
 # of the farfield ball (or half ball with the y = 0 symmetry plane), meshes the volume with
-# tetrahedra graded away from the wall and writes an SU2 mesh with the markers wall, base, farfield,
-# symmetry. (No prismatic boundary layer: gmsh 4.15 can extrude one from OpenCASCADE surfaces only in 2D.)
+# tetrahedra graded away from the wall (finer on the fin faces when fin_size < wall_size) and writes an SU2 mesh with the markers wall, base, farfield,
+# symmetry. Full domain: a y-symmetric layout is meshed as the half ball and mirrored about y = 0
+# (the `symmetry` marker is dropped; a full ball fails in HXT at the periodic seam), any other layout
+# uses a box farfield (the OpenCASCADE box shares its edges between the faces). Without `bl` the volume is all
+# tetrahedra.
+#
+# With `bl` (RANS): prismatic boundary layer. The half solid y >= 0 (both halves for a layout that is not symmetric
+# about y = 0) is meshed on its surface, the layers are extruded along node normals
+# (gmsh.model.geo.extrudeBoundaryLayer), the rest of the box farfield is filled with tetrahedra and the mesh is
+# written by su2_writer (see boundary_layer_mesh).
 import json
 import math
 import sys
@@ -30,7 +38,7 @@ occ = gmsh.model.occ
 L = p["length"]
 R = p["farfield_radius"]
 x0 = p["center_x"]
-half = bool(p["symmetry"])
+half = bool(p["symmetry"]) or bool(p["y_mirror"])
 # z_mirror: mesh only the quarter y >= 0, z >= 0 and mirror it about z = 0 afterwards, so the half-model mesh
 # is exactly symmetric about the x-y plane (a Delaunay mesh of the half model is not).
 zmirror = bool(p["z_mirror"]) and half
@@ -38,6 +46,10 @@ h0 = p["wall_size"]
 hmax = p["max_size"]
 grow = p["growth"]
 fins = p["fins"]
+bl = p.get("bl")
+if bl:
+    # The default relative tolerance (1e-8 of the 2 R domain) merges the micrometre-close nodes of the first layers.
+    gmsh.option.setNumber("Geometry.Tolerance", 1e-12)
 
 # ---- rocket solid ----------------------------------------------------------------------------------
 # Body of revolution: the profile lies in a half plane at azimuth `seam`, away from the fin planes
@@ -47,23 +59,39 @@ roll = math.radians(p["fin_roll_deg"])
 seam = math.radians(45.0 if nf == 0 else 90.0 + 180.0 / nf) + roll
 if abs(math.sin(seam)) < 0.2:
     seam += math.radians(30.0)
-cs, sn = math.cos(seam), math.sin(seam)
 prof = p["profile"]
-pts = [occ.addPoint(x, r * cs, r * sn) for x, r in prof]
-axis0 = pts[0] if abs(prof[0][1]) < 1e-12 else occ.addPoint(prof[0][0], 0, 0)
-axis1 = pts[-1] if abs(prof[-1][1]) < 1e-12 else occ.addPoint(prof[-1][0], 0, 0)
-segs = [occ.addLine(pts[i], pts[i + 1]) for i in range(len(pts) - 1)]
-if axis1 != pts[-1]:
-    segs.append(occ.addLine(pts[-1], axis1))
-segs.append(occ.addLine(axis1, axis0))
-if abs(prof[0][1]) > 1e-12:
-    segs.append(occ.addLine(axis0, pts[0]))
-loop = occ.addWire(segs)
-face = occ.addPlaneSurface([loop])
-rev = occ.revolve([(2, face)], 0, 0, 0, 1, 0, 0, 2 * math.pi)
-bodies = [t for d, t in rev if d == 3]
-occ.remove([(2, face)], recursive=False)
-parts = [(3, bodies[0])]
+
+
+def profile_face(az):
+    """Planar face of the body profile in the half plane at azimuth `az`."""
+    cs, sn = math.cos(az), math.sin(az)
+    pts = [occ.addPoint(x, r * cs, r * sn) for x, r in prof]
+    axis0 = pts[0] if abs(prof[0][1]) < 1e-12 else occ.addPoint(prof[0][0], 0, 0)
+    axis1 = pts[-1] if abs(prof[-1][1]) < 1e-12 else occ.addPoint(prof[-1][0], 0, 0)
+    segs = [occ.addLine(pts[i], pts[i + 1]) for i in range(len(pts) - 1)]
+    if axis1 != pts[-1]:
+        segs.append(occ.addLine(pts[-1], axis1))
+    segs.append(occ.addLine(axis1, axis0))
+    if abs(prof[0][1]) > 1e-12:
+        segs.append(occ.addLine(axis0, pts[0]))
+    return occ.addPlaneSurface([occ.addWire(segs)])
+
+
+def revolve(az, angle):
+    face = profile_face(az)
+    rev = occ.revolve([(2, face)], 0, 0, 0, 1, 0, 0, angle)
+    occ.remove([(2, face)], recursive=False)
+    return [(3, t) for d, t in rev if d == 3][0]
+
+
+if half or bl:
+    parts = [revolve(seam, 2 * math.pi)]
+else:
+    # A full body of revolution is a periodic surface with a degenerate apex: HXT rejects its surface
+    # mesh ("overlapping facets"). Two half revolutions give non-periodic faces. They (and the fins)
+    # are all cut from the farfield box, which unites them implicitly; fusing the halves first fails
+    # in OpenCASCADE (BOPAlgo_AlertUnableToOrientTheShape).
+    parts = [revolve(seam, math.pi), revolve(seam + math.pi, math.pi)]
 
 
 def lens(x_le, x_te, r_pos, phi, thick):
@@ -71,6 +99,8 @@ def lens(x_le, x_te, r_pos, phi, thick):
     u = (math.cos(phi), math.sin(phi))  # span direction in (y, z)
     w = (-math.sin(phi), math.cos(phi))  # thickness direction
     n = 8
+    if bl and bl["edge_blunt"] > 0.0:
+        return blunt_lens(x_le, x_te, r_pos, u, w, thick, n, bl["edge_blunt"])
 
     def pt(xi, side):
         x = x_le + xi * (x_te - x_le)
@@ -86,6 +116,23 @@ def lens(x_le, x_te, r_pos, phi, thick):
     return occ.addWire([c1, c2])
 
 
+def blunt_lens(x_le, x_te, r_pos, u, w, thick, n, b):
+    """Biconvex section with blunt edges: the thickness 4 xi (1 - xi) for xi in [b, 1 - b] stretched over the chord,
+    closed by short straight edges at the leading and trailing edge (prism layers fold at a knife edge)."""
+
+    def pt(s, side):
+        xi = b + (1.0 - 2.0 * b) * s
+        x = x_le + s * (x_te - x_le)
+        h = 0.5 * thick * 4.0 * xi * (1.0 - xi) * side
+        return occ.addPoint(x, r_pos * u[0] + h * w[0], r_pos * u[1] + h * w[1])
+
+    up = [pt(i / n, 1) for i in range(n + 1)]
+    lo = [pt(i / n, -1) for i in range(n + 1)]
+    c1 = occ.addSpline(up)
+    c2 = occ.addSpline(lo)
+    return occ.addWire([occ.addLine(lo[0], up[0]), c1, occ.addLine(up[-1], lo[-1]), c2])
+
+
 if fins:
     f = fins
     for k in range(nf):
@@ -96,22 +143,133 @@ if fins:
         w2 = lens(f["x_le"] + f["sweep"], f["x_le"] + f["sweep"] + f["tip_chord"], r_tip, phi, f["thickness"])
         fin = occ.addThruSections([w1, w2], makeSolid=True, makeRuled=True)
         parts.append(fin[0] if not isinstance(fin[0], int) else (3, fin[0]))
-    if len(parts) > 1:
-        u_out, _ = occ.fuse([parts[0]], parts[1:], removeObject=True, removeTool=True)
-        parts = [t for t in u_out if t[0] == 3]
+if (half or bl) and len(parts) > 1:
+    u_out, _ = occ.fuse([parts[0]], parts[1:], removeObject=True, removeTool=True)
+    parts = [t for t in u_out if t[0] == 3]
+occ.synchronize()
+
+
+# ---- size field ------------------------------------------------------------------------------------
+# Tetrahedra graded from the wall: wall_size on the wall, growing by `growth` per element row up to max_size. With
+# fin_size < wall_size (Euler default: a quarter of the fin thickness) a second threshold of the distance to the fin
+# faces gives fin_size on the fins, graded the same way up to wall_size and beyond (the minimum of both fields).
+hf = min(p["fin_size"], h0)
+fin_refine = bool(fins) and hf < h0 * (1.0 - 1e-9)
+
+
+def profile_radius(x):
+    """Body radius of the CFD profile (tail fairing included) at station x."""
+    if x <= prof[0][0]:
+        return prof[0][1]
+    for (xa, ra), (xb, rb) in zip(prof[:-1], prof[1:]):
+        if x <= xb:
+            return ra + (rb - ra) * (x - xa) / max(xb - xa, 1e-300)
+    return prof[-1][1]
+
+
+def fin_faces(faces):
+    """The faces of `faces` that belong to a fin: their centre of mass lies outside the body by more than a tenth of the
+    span (a face of the body of revolution, also a narrow sector of it, has its centre of mass inside the body)."""
+    out = []
+    for t in faces:
+        cx, cy, cz = occ.getCenterOfMass(2, t)
+        if math.hypot(cy, cz) > profile_radius(cx) + 0.1 * fins["span"]:
+            out.append(t)
+    return out
+
+
+def size_field(surfaces, wall_faces):
+    f = gmsh.model.mesh.field
+    f.add("Distance", 1)
+    f.setNumbers(1, "SurfacesList", surfaces)
+    f.setNumber(1, "Sampling", 200)
+    f.add("Threshold", 2)
+    f.setNumber(2, "InField", 1)
+    f.setNumber(2, "SizeMin", h0)
+    f.setNumber(2, "SizeMax", hmax)
+    f.setNumber(2, "DistMin", 0.0)
+    f.setNumber(2, "DistMax", (hmax - h0) / (grow - 1.0))
+    hmin = h0 / p["min_size_divisor"]
+    finf = fin_faces(wall_faces) if fin_refine else []
+    if finf:
+        f.add("Distance", 3)
+        f.setNumbers(3, "SurfacesList", finf)
+        f.setNumber(3, "Sampling", 200)
+        f.add("Threshold", 4)
+        f.setNumber(4, "InField", 3)
+        f.setNumber(4, "SizeMin", hf)
+        f.setNumber(4, "SizeMax", hmax)
+        f.setNumber(4, "DistMin", 0.0)
+        f.setNumber(4, "DistMax", (hmax - hf) / (grow - 1.0))
+        f.add("Min", 5)
+        f.setNumbers(5, "FieldsList", [2, 4])
+        f.setAsBackgroundMesh(5)
+        hmin = min(hmin, hf)
+        print("fin faces: %d of %d wall faces meshed at fin_size %.4g m (wall_size %.4g m)" % (len(finf), len(wall_faces), hf, h0))
+    else:
+        if fin_refine:
+            print("fin faces: none identified; fin_size %.4g m not applied" % hf)
+        f.setAsBackgroundMesh(2)
+    gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
+    gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", int(p["curvature_elements"]))
+    gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
+    gmsh.option.setNumber("Mesh.MeshSizeMin", hmin)
+    gmsh.option.setNumber("Mesh.MeshSizeMax", hmax)
+    gmsh.option.setNumber("Mesh.Algorithm", 6)
+
+
+# ---- prismatic boundary layer (RANS) ----------------------------------------------------------------
+# The layer itself is bl_layer.py (shared with the STEP surface mesher).
+def boundary_layer_mesh(parts):
+    """Half model y >= 0: wall and base faces and their surface mesh; the prism layer, the tetrahedra in the half box
+    farfield and the SU2 file (mirrored to the full domain for y_mirror) come from bl_layer.build (exits)."""
+    import bl_layer
+
+    if not half or zmirror:
+        raise SystemExit("[IY-F020] mesh error: the prismatic boundary layer needs the half model (a fin layout symmetric about y = 0) without z_mirror")
+    tol = 1e-4 * L
+    box = occ.addBox(-L, 0.0, -2.0 * L, 3.0 * L, 2.0 * L, 4.0 * L)
+    occ.intersect(parts, [(3, box)])
     occ.synchronize()
+    vols = gmsh.model.getEntities(3)
+    if len(vols) != 1:
+        raise SystemExit("[IY-F021] mesh error: boolean operations produced %d volumes (expected 1); the geometry may be invalid" % len(vols))
+    wall, cap, cut = [], [], []
+    for _, t in gmsh.model.getBoundary(vols, oriented=False):
+        b = gmsh.model.getBoundingBox(2, t)
+        if b[4] - b[1] < tol and abs(b[1]) < tol:
+            cut.append(t)
+        elif b[0] > L - tol:
+            cap.append(t)
+        else:
+            wall.append(t)
+    print("faces: wall %d, base %d, cut %d" % (len(wall), len(cap), len(cut)))
+    if not wall or not cap or not cut:
+        raise SystemExit("[IY-F022] mesh error: could not classify the boundary faces")
+    occ.remove(vols)
+    occ.remove([(2, t) for t in cut])
+    occ.synchronize()
+
+    size_field(wall + cap, wall)
+    t1 = time.time()
+    gmsh.model.mesh.generate(2)
+    bl_layer.build(p, wall, cap, True, t0, t1)
+
+
+if bl:
+    boundary_layer_mesh(parts)
 
 if half:
     # Half ball y >= 0 as a sphere sector (azimuth 0..pi about the z axis): no boolean on the sphere.
     # Quarter ball (z >= 0 too) for z_mirror: latitude 0..pi/2.
     domain = [(3, occ.addSphere(x0, 0, 0, R, angle1=0.0 if zmirror else -math.pi / 2, angle2=math.pi / 2, angle3=math.pi))]
 else:
-    domain = [(3, occ.addSphere(x0, 0, 0, R))]
+    domain = [(3, occ.addBox(x0 - R, -R, -R, 2 * R, 2 * R, 2 * R))]
 fluid, _ = occ.cut(domain, parts)
 occ.synchronize()
 vols = [t for d, t in gmsh.model.getEntities(3)]
 if len(vols) != 1:
-    raise SystemExit("mesh error: boolean operations produced %d volumes (expected 1); the geometry may be invalid" % len(vols))
+    raise SystemExit("[IY-F021] mesh error: boolean operations produced %d volumes (expected 1); the geometry may be invalid" % len(vols))
 vol = vols[0]
 
 # ---- classify the boundary faces -------------------------------------------------------------------
@@ -123,7 +281,7 @@ for d, t in gmsh.model.getEntities(2):
         symm.append(t)
     elif zmirror and b[5] - b[2] < tol and abs(b[2]) < tol:
         symz.append(t)
-    elif b[3] - b[0] > 0.5 * R:
+    elif max(b[3] - b[0], b[4] - b[1], b[5] - b[2]) > 0.5 * R:
         far.append(t)
     elif b[0] > L - tol:
         cap.append(t)  # flat base cap or tail fairing (everything aft of the base plane)
@@ -131,26 +289,10 @@ for d, t in gmsh.model.getEntities(2):
         wallsurf.append(t)
 print("faces: wall %d, base %d, farfield %d, symmetry %d" % (len(wallsurf), len(cap), len(far), len(symm)))
 if not wallsurf or not far or not cap or (half and not symm):
-    raise SystemExit("mesh error: could not classify the boundary faces")
+    raise SystemExit("[IY-F022] mesh error: could not classify the boundary faces")
 
-# ---- size field ------------------------------------------------------------------------------------
-f = gmsh.model.mesh.field
-f.add("Distance", 1)
-f.setNumbers(1, "SurfacesList", wallsurf + cap)
-f.setNumber(1, "Sampling", 200)
-f.add("Threshold", 2)
-f.setNumber(2, "InField", 1)
-f.setNumber(2, "SizeMin", h0)
-f.setNumber(2, "SizeMax", hmax)
-f.setNumber(2, "DistMin", 0.0)
-f.setNumber(2, "DistMax", (hmax - h0) / (grow - 1.0))
-f.setAsBackgroundMesh(2)
-gmsh.option.setNumber("Mesh.MeshSizeFromPoints", 0)
-gmsh.option.setNumber("Mesh.MeshSizeFromCurvature", int(p["curvature_elements"]))
-gmsh.option.setNumber("Mesh.MeshSizeExtendFromBoundary", 0)
-gmsh.option.setNumber("Mesh.MeshSizeMin", h0 / p["min_size_divisor"])
-gmsh.option.setNumber("Mesh.MeshSizeMax", hmax)
-gmsh.option.setNumber("Mesh.Algorithm", 6)
+# ---- size field (see size_field) -------------------------------------------------------------------
+size_field(wallsurf + cap, wallsurf)
 
 # ---- physical groups -------------------------------------------------------------------------------
 pg = gmsh.model.addPhysicalGroup
@@ -182,8 +324,8 @@ gmsh.option.setNumber("Mesh.SaveAll", 0)
 gmsh.write(p["out_su2"])
 
 
-def mirror_su2(path, tol):
-    """Mirrors a quarter mesh (z >= 0) about z = 0 into the half mesh; the marker `symz` is dropped."""
+def mirror_su2(path, axis, drop, tol):
+    """Mirrors a mesh about the plane x[axis] = 0 (keeping the nodes on it) and drops the marker `drop`."""
     lines = open(path).read().split("\n")
     i = 0
     elems, nodes, marks = [], [], []
@@ -206,10 +348,12 @@ def mirror_su2(path, tol):
     nn = len(nodes)
     m = list(range(nn))
     extra = []
-    for k, (x, y, z) in enumerate(nodes):
-        if abs(z) > tol:
+    for k, c in enumerate(nodes):
+        if abs(c[axis]) > tol:
             m[k] = nn + len(extra)
-            extra.append((x, y, -z))
+            r = list(c)
+            r[axis] = -r[axis]
+            extra.append(r)
     out = ["NDIME= 3"]
     # Tetrahedra (type 10): swapping two vertices keeps the orientation of the mirrored cells positive.
     allel = elems + [[e[0], m[e[1]], m[e[3]], m[e[2]], m[e[4]]] + [0] for e in elems]
@@ -218,7 +362,7 @@ def mirror_su2(path, tol):
     out.append("NPOIN= %d" % (nn + len(extra)))
     allp = nodes + extra
     out += ["%.12g %.12g %.12g %d" % (x, y, z, k) for k, (x, y, z) in enumerate(allp)]
-    keep = [(t, e) for t, e in marks if t != "symz"]
+    keep = [(t, e) for t, e in marks if t != drop]
     out.append("NMARK= %d" % len(keep))
     for t, e in keep:
         both = e + [[x[0], m[x[1]], m[x[3]], m[x[2]]] for x in e]
@@ -229,7 +373,14 @@ def mirror_su2(path, tol):
     return len(allel), nn + len(extra)
 
 
-mirrored = mirror_su2(p["out_su2"], 1e-9 * L) if zmirror else None
+mirrored = None
+wall_mult = 1
+if zmirror:
+    mirrored = mirror_su2(p["out_su2"], 2, "symz", 1e-9 * L)
+    wall_mult *= 2
+if p["y_mirror"]:
+    mirrored = mirror_su2(p["out_su2"], 1, "symmetry", 1e-9 * L)
+    wall_mult *= 2
 
 # ---- statistics ------------------------------------------------------------------------------------
 ntags = gmsh.model.mesh.getNodes()[0]
@@ -260,8 +411,10 @@ stats = {
     "seconds_mesh": t2 - t1,
 }
 if mirrored:
-    stats["cells"], stats["nodes"], stats["wall_triangles"] = mirrored[0], mirrored[1], 2 * nwall
+    stats["cells"], stats["nodes"], stats["wall_triangles"] = mirrored[0], mirrored[1], wall_mult * nwall
     stats["by_type"] = {"Tetrahedron 4": mirrored[0]}
+if stats["cells"] == 0:
+    raise SystemExit("[IY-F023] mesh error: the volume mesh is empty (3D meshing failed)")
 json.dump(stats, open(p["stats_json"], "w"), indent=1)
 print("MESH_OK nodes=%d cells=%d minSICN=%.4f surface %.1fs volume %.1fs" % (stats["nodes"], stats["cells"], q_min, t_surf - t1, t2 - t_surf))
 gmsh.finalize()

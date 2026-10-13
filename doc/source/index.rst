@@ -1,43 +1,76 @@
-:og:description: IgnisYeet は、ロケットの 3D モデル（STL）から空力特性を推算し、6 自由度の飛翔シミュレーションと落下分散解析までを一貫して行うオープンソースの飛翔シミュレータである。
+:og:title: IgnisYeet - CAD データから飛ばすロケット飛翔シミュレータ
+:og:description: IgnisYeet は、ロケットの CAD データから空力特性を推算し、6 自由度の剛体運動の飛翔シミュレーションと落下分散解析までを一貫して行うオープンソースの飛翔シミュレータである。
 
 .. meta::
-   :description: IgnisYeet は、ロケットの 3D モデル（STL）から空力特性を推算し、6 自由度の飛翔シミュレーションと落下分散解析までを一貫して行うオープンソースの飛翔シミュレータである。
+   :description: IgnisYeet は、ロケットの CAD データから空力特性を推算し、6 自由度の剛体運動の飛翔シミュレーションと落下分散解析までを一貫して行うオープンソースの飛翔シミュレータである。
 
 IgnisYeet ドキュメント
 ======================
 
-.. image:: _generated/logo/IgnisYeet-logo.*
-   :width: 260px
-   :align: center
-   :alt: IgnisYeet logo
+.. only:: html
 
-**IgnisYeet** は、ロケットの 3D モデル（STL ファイル）から空力特性を推算し、
-6 自由度の飛翔シミュレーションと落下分散解析までを一貫して行うオープンソースの飛翔シミュレータである。
+   .. raw:: html
+      :file: _landing/landing.html
 
-* STL を読み込み、機体の外形（胴体の断面形状とフィン）を自動で取り出す。
-* 取り出した形状から、Mach 数と迎角の格子上で空力係数を **一度だけ** 計算して保存する。
-* 保存した係数表を内挿・外挿しながら、ランチャ滑走から着地までを 6 自由度で数値積分する。
-* 風速と風向を組み合わせた全ケースを並列に計算し、落下分散を求める。
+.. only:: latex
 
-計算の重い部分は Rust、作図は Python で実装している。
+   .. image:: _generated/logo/IgnisYeet-logo.*
+      :width: 260px
+      :align: center
+      :alt: IgnisYeet logo
+
+   **IgnisYeet** は、ロケットの CAD データから空力特性を推算し、
+   6 自由度の剛体運動の飛翔シミュレーションと落下分散解析までを一貫して行うオープンソースの飛翔シミュレータである。
+
+   * 機体の CAD モデルから、外形（胴体の断面形状とフィン）を自動で取り出す。
+   * 取り出した形状から、Mach 数と迎角の格子上で空力係数を **一度だけ** 計算して保存する。
+   * 保存した係数表を内挿・外挿しながら、ランチャ滑走から着地までを 6 自由度の剛体運動として数値積分する。
+   * 風速と風向を組み合わせた全ケースを並列に計算し、落下分散を求める。
+
+   計算の重い部分は Rust、作図は Python で実装している。
 
 .. toctree::
    :maxdepth: 2
    :numbered:
+   :hidden:
    :caption: 目次
 
    intro
+   quickstart
+   install
    usage
-   overview
+   config
+   workflows
+   cfd_usage
    coordinates
    geometry
    aerodynamics
    barrowman
    panel
    cfd
+   cfd_methods
    environment
    propulsion
    dynamics
+   integrators
+   descent
    dispersion
    verification
+   validation
+   testing
+   cost
    limitations
+   development
+
+.. raw:: latex
+
+   \setcounter{secnumdepth}{-1}
+   \renewcommand{\chaptermark}[1]{\markboth{#1}{}}
+
+.. toctree::
+   :maxdepth: 1
+   :hidden:
+   :caption: 付録
+
+   errors/index
+   references

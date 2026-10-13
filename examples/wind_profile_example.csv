@@ -1,0 +1,21 @@
+altitude_m,speed,direction_deg
+# ILLUSTRATIVE wind profile - NOT measured data; it only shows the format expected by wind.model = "profile".
+# altitude_m is the height above the launch site [m] and must be strictly increasing; speed is in m/s.
+# direction_deg is the direction the wind comes FROM, clockwise from north (0 = north, 90 = east, 270 = west).
+# For a real launch, replace this file with a forecast or sounding for the launch day
+# (for example GFS/ECMWF model output or a radiosonde ascent).
+0,3.0,10
+10,3.2,12
+50,3.5,15
+100,3.8,18
+200,4.3,25
+300,4.8,35
+500,5.6,55
+750,6.5,80
+1000,7.3,100
+1500,8.8,130
+2000,10.2,160
+3000,12.5,200
+4000,14.5,230
+5000,17.0,255
+6000,18.5,265

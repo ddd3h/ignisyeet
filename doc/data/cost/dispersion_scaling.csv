@@ -1,0 +1,20 @@
+# Dispersion time against the number of flights (rk45, 4 threads)
+# 12th Gen Intel(R) Core(TM) i7-12700 (20 threads, 12 cores), release binary of commit 2a345c2, examples/sample.toml, 2026-10-12.
+# Median of 3 runs (wall_min/wall_max: range); cpu = user+system time of the process; rss_mb = largest peak resident memory;
+# load = 1-minute load average before the runs (median over the runs). Written by doc/scripts/cost_measure.py.
+mode,flights,wall_s,wall_min_s,wall_max_s,cpu_s,rss_mb,load,out_mb
+wind_grid,112,0.63,0.6,0.66,1.42,16.3008,22.07,0.015487
+wind_grid,224,1.16,1.16,1.25,2.76,16.2969,22.22,0.0299
+wind_grid,448,1.83,1.82,1.84,5.45,16.1797,22.36,0.058942
+wind_grid,896,3.45,3.35,3.9,10.82,16.1914,22.57,0.117439
+wind_grid,1792,6.58,6.5,8.54,21.57,16.3438,23.2,0.235309
+wind_grid,5040,18.11,17.79,19.86,60.61,18.582,23.9,0.639223
+monte_carlo,500,2.08,2.03,2.3,5.89,16.2188,24.15,0.216714
+monte_carlo,1000,4.11,3.64,4.22,11.79,16.1797,24.3,0.429419
+monte_carlo,2000,7.35,7.26,7.42,23.77,16.25,24.51,0.855277
+monte_carlo,4000,14.89,13.85,15.21,47.58,19.8906,24.46,1.70856
+monte_carlo,8000,29.28,28.7,30.38,97.56,26.4727,25.13,3.41598
+monte_carlo,20000,72.47,70.92,73.11,245.77,48.6758,24.93,8.53479
+monte_carlo,40000,105.8,88.82,118.66,420.69,79.9492,20.67,17.0881
+wind_grid_rk4,112,5.12,5.1,5.15,18.66,14.4062,17.23,0.015489
+wind_grid_dop853,112,1.16,1.16,1.17,4.14,14.4844,17.12,0.015487

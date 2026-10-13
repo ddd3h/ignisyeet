@@ -1,0 +1,14 @@
+# RANS table of the sample rocket vs the Euler CFD table (doc/scripts/rans_table.py). examples/sample_cfd.toml with model rans, wall_size 5 mm, machs [0.3, 0.8, 1.2, 2.0], alphas [0, 4, 8] (+ -4, -8 solved), RANS defaults, 4 ranks x 2 cases, release daa8b2f (worktree 6568e81), SU2 8.3.0, 2026-10-07. Euler: 2 mm, sample_euler_vs_models.csv. Cases: 20 solved, 15 converged, 5 unconverged (accepted), 0 failed; run wall time 4.44 h; mesh 735366 nodes. ca_off: RANS = CFx(wall) of a smooth wall + Barrowman base + extra; Euler = pressure CA + Barrowman friction of the configured 60 um roughness + base + fin terms, so the ca_off difference is mostly the roughness, which the RANS mode does not apply. Euler columns: sample_euler_vs_models.csv and mesh_convergence.csv of the current Euler default (fin_size auto, coefficient-trend acceptance; ignisyeet commit b6a9bf5, 2026-10-08); the RANS columns are unchanged.
+mach,alpha_deg,rans_ca_off,euler_ca_off,ca_off_diff_percent,rans_cn,euler_cn,rans_xcp_m,euler_xcp_m,cn_diff_percent,xcp_diff_m
+0.3,0,0.40956,0.4618,-11.3123,,,,,,
+0.3,4,0.40657,0.4756,-14.5143,1.2039,1.1791,1.2068,1.2102,2.1033,-0.0034
+0.3,8,0.404,0.5078,-20.4411,2.4972,2.4797,1.2063,1.2194,0.705731,-0.0131
+0.8,0,0.4354,0.6093,-28.5409,,,,,,
+0.8,4,0.43193,0.6272,-31.1336,1.2776,1.2021,1.2234,1.2206,6.28068,0.0028
+0.8,8,0.43617,0.6672,-34.6268,2.7361,2.6194,1.2273,1.2349,4.45522,-0.0076
+1.2,0,0.54512,0.7515,-27.4624,,,,,,
+1.2,4,0.5515,0.777,-29.0219,1.4067,1.3291,1.2438,1.2396,5.83854,0.0042
+1.2,8,0.57154,0.8349,-31.5439,2.8819,2.7849,1.239,1.248,3.48307,-0.009
+2,0,0.39836,0.5992,-33.518,,,,,,
+2,4,0.40647,0.6205,-34.4932,0.97187,0.9347,1.1566,1.157,3.97668,-0.0004
+2,8,0.42439,0.6692,-36.5825,2.0269,1.9143,1.1332,1.1428,5.88205,-0.0096

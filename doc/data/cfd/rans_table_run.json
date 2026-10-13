@@ -1,0 +1,150 @@
+{
+ "cases": 20,
+ "converged": 15,
+ "unconverged": 5,
+ "accepted": 0,
+ "failed": 0,
+ "converged_fraction": 0.75,
+ "threshold": 0.9,
+ "pass": false,
+ "run_wall_h": 4.44040334575706,
+ "mesh_nodes": 735366,
+ "comparison": [
+  {
+   "mach": 0.3,
+   "alpha_deg": 0.0,
+   "rans_ca_off": 0.409561947583,
+   "euler_ca_off": 0.4174,
+   "ca_off_diff_percent": -1.8778276034978392
+  },
+  {
+   "mach": 0.3,
+   "alpha_deg": 4.0,
+   "rans_cn": 1.20385631,
+   "euler_cn": 1.1646,
+   "rans_xcp_m": 1.20682698,
+   "euler_xcp_m": 1.1942,
+   "rans_ca_off": 0.40656517102627765,
+   "euler_ca_off": 0.4312,
+   "cn_diff_percent": 3.370797698780681,
+   "xcp_diff_m": 0.012626980000000065,
+   "ca_off_diff_percent": -5.713086496688858
+  },
+  {
+   "mach": 0.3,
+   "alpha_deg": 8.0,
+   "rans_cn": 2.49717675,
+   "euler_cn": 2.4872,
+   "rans_xcp_m": 1.20629735,
+   "euler_xcp_m": 1.2049,
+   "rans_ca_off": 0.40400206777493297,
+   "euler_ca_off": 0.4627,
+   "cn_diff_percent": 0.40112375361851527,
+   "xcp_diff_m": 0.001397349999999964,
+   "ca_off_diff_percent": -12.685958985318136
+  },
+  {
+   "mach": 0.8,
+   "alpha_deg": 0.0,
+   "rans_ca_off": 0.435401421161,
+   "euler_ca_off": 0.5714,
+   "ca_off_diff_percent": -23.8009413438922
+  },
+  {
+   "mach": 0.8,
+   "alpha_deg": 4.0,
+   "rans_cn": 1.27763536,
+   "euler_cn": 1.2183,
+   "rans_xcp_m": 1.223407,
+   "euler_xcp_m": 1.2203,
+   "rans_ca_off": 0.43192771589648893,
+   "euler_ca_off": 0.5901,
+   "cn_diff_percent": 4.870340638594772,
+   "xcp_diff_m": 0.003106999999999971,
+   "ca_off_diff_percent": -26.804318607610757
+  },
+  {
+   "mach": 0.8,
+   "alpha_deg": 8.0,
+   "rans_cn": 2.73605185,
+   "euler_cn": 2.6058,
+   "rans_xcp_m": 1.2272962,
+   "euler_xcp_m": 1.2343,
+   "rans_ca_off": 0.4361703076397313,
+   "euler_ca_off": 0.6322,
+   "cn_diff_percent": 4.998535958246997,
+   "xcp_diff_m": -0.0070037999999998934,
+   "ca_off_diff_percent": -31.007543872234844
+  },
+  {
+   "mach": 1.2,
+   "alpha_deg": 0.0,
+   "rans_ca_off": 0.5451209322333334,
+   "euler_ca_off": 0.7158,
+   "ca_off_diff_percent": -23.844519106826855
+  },
+  {
+   "mach": 1.2,
+   "alpha_deg": 4.0,
+   "rans_cn": 1.4067241,
+   "euler_cn": 1.3147,
+   "rans_xcp_m": 1.24384477,
+   "euler_xcp_m": 1.2388,
+   "rans_ca_off": 0.5515049375015605,
+   "euler_ca_off": 0.7415,
+   "cn_diff_percent": 6.99962729139727,
+   "xcp_diff_m": 0.005044770000000032,
+   "ca_off_diff_percent": -25.623069790753817
+  },
+  {
+   "mach": 1.2,
+   "alpha_deg": 8.0,
+   "rans_cn": 2.88193702,
+   "euler_cn": 2.7243,
+   "rans_xcp_m": 1.2389565,
+   "euler_xcp_m": 1.245,
+   "rans_ca_off": 0.5715359601601194,
+   "euler_ca_off": 0.7982,
+   "cn_diff_percent": 5.7863311676394025,
+   "xcp_diff_m": -0.0060435000000000905,
+   "ca_off_diff_percent": -28.39689800048617
+  },
+  {
+   "mach": 2.0,
+   "alpha_deg": 0.0,
+   "rans_ca_off": 0.39836234285874994,
+   "euler_ca_off": 0.573,
+   "ca_off_diff_percent": -30.4777761154014
+  },
+  {
+   "mach": 2.0,
+   "alpha_deg": 4.0,
+   "rans_cn": 0.971866901,
+   "euler_cn": 0.9188,
+   "rans_xcp_m": 1.15661178,
+   "euler_xcp_m": 1.1537,
+   "rans_ca_off": 0.4064726164309179,
+   "euler_ca_off": 0.5934,
+   "cn_diff_percent": 5.775674902046157,
+   "xcp_diff_m": 0.0029117800000000305,
+   "ca_off_diff_percent": -31.501075761557484
+  },
+  {
+   "mach": 2.0,
+   "alpha_deg": 8.0,
+   "rans_cn": 2.02687268,
+   "euler_cn": 1.8786,
+   "rans_xcp_m": 1.13318388,
+   "euler_xcp_m": 1.1384,
+   "rans_ca_off": 0.424391800518105,
+   "euler_ca_off": 0.6399,
+   "cn_diff_percent": 7.8927222399659325,
+   "xcp_diff_m": -0.005216120000000046,
+   "ca_off_diff_percent": -33.678418421924526
+  }
+ ],
+ "note": "examples/sample_cfd.toml with model rans, wall_size 5 mm, machs [0.3, 0.8, 1.2, 2.0], alphas [0, 4, 8] (+ -4, -8 solved), RANS defaults, 4 ranks x 2 cases, release daa8b2f (worktree 6568e81), SU2 8.3.0, 2026-10-07. Euler: 2 mm, sample_euler_vs_models.csv.",
+ "provenance": "rans_table.csv",
+ "ca_note": "ca_off of RANS is 24-34 % below the Euler table at M >= 0.8: the Euler table adds the Barrowman friction of the configured 60 um roughness (0.2925 at M 0.8, 0.1817 at M 2), the RANS wall is hydraulically smooth (its friction agrees with the smooth-wall Barrowman term within 10 %, rans_vs_euler.csv) and the configured roughness is not applied in RANS mode.",
+ "unconverged_cases": "M0.3 alpha 0, -4, -8 (limit cycle), M0.8 alpha 0 (limit cycle), M2 alpha 0 (stalled); all accepted, coefficients averaged over the last 200 iterations"
+}

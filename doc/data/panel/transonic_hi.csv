@@ -1,0 +1,5 @@
+# Sample rocket, panel method. Upper bound of the transonic range, aero.panel.transonic = [0.8, hi]; cna_m12 = C_N-alpha [1/rad] at Mach 1.2. cfd_euler_cna_m12 = Euler CFD at the same Mach number.
+transonic_hi,cna_m12,cfd_euler_cna_m12
+1.2,21.93,18.50
+1.4,18.00,18.50
+1.6,16.58,18.50

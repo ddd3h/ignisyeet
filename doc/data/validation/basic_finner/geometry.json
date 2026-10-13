@@ -1,0 +1,64 @@
+{
+  "name": "Army-Navy Basic Finner reference projectile (model of the DREV aeroballistic range tests)",
+  "primary_source": "Dupuis & Hathaway, DREV-TM-9703 (1997): Sec. 3.1 (PDF p. 16), Fig. 2 (PDF p. 53), Table I (PDF p. 36), Table II (PDF p. 37)",
+  "pdf_pages": "page numbers of the DTIC scan ADA636861 (153 pages), see sources.md",
+  "calibre_m": 0.030,
+  "reference": {
+    "diameter_m": 0.030,
+    "area_m2": 7.0686e-4,
+    "area_definition": "pi d^2 / 4",
+    "length_for_moments": "d",
+    "moment_reference_cal_from_nose": 5.50,
+    "moment_reference_m_from_nose": 0.165,
+    "moment_reference_source": "Sec. 5.2 (PDF p. 22): 'at 55 % of the length from the nose of the projectile (5.50 cal)'; Table I CG 16.50 cm; Table II CG 5.485-5.541 cal per model"
+  },
+  "body": {
+    "overall_length_cal": 10.0,
+    "nose": {"type": "cone", "full_angle_deg": 20.0, "half_angle_deg": 10.0, "length_cal": 2.84,
+             "tip": "meplat of radius 0.004 cal (text Sec. 3.1: 'The meplat of the nose was also at a radius of a 0.004 cal'; Fig. 2 marks the tip 'R 0.004')"},
+    "cylinder_diameter_cal": 1.0,
+    "base": "flat, square edge; the fin trailing edges are flush with the base (Fig. 2)"
+  },
+  "fins": {
+    "count": 4,
+    "arrangement": "cruciform; nominal cant 0, 2 and 4 deg on different models (Table III), all four fins of a model at the same cant",
+    "planform": "rectangular",
+    "root_chord_cal": 1.0,
+    "tip_chord_cal": 1.0,
+    "span_from_body_cal": 1.0,
+    "overall_span_cal": 3.0,
+    "sweep_cal": 0.0,
+    "trailing_edge_x_cal": 10.0,
+    "section": "single wedge ('conical in shape'): thickness 0.08 cal at the base of the fin (blunt trailing edge), sharp leading edge of radius 0.004 cal (Sec. 3.1, Fig. 2)",
+    "tip": "flat (Fig. 2)"
+  },
+  "mass_properties_nominal": {
+    "source": "Table I (PDF p. 36)",
+    "mass_kg": 1.58,
+    "ixx_kg_m2": 1.92e-4,
+    "iyy_kg_m2": 9.785e-3,
+    "length_cm": 30.00,
+    "cg_cm_from_nose": 16.50,
+    "per_model": "Table II (PDF p. 37): d 29.746-29.979 mm, mass 1.58-1.59 kg, Ix 0.191e-3-0.193e-3 kg m^2, Iy 0.962e-2-0.984e-2 kg m^2, length 299.364-300.127 mm, CG 5.485-5.541 cal"
+  },
+  "test_conditions": {
+    "facility": "DREV Aeroballistic Range (free flight, spark shadowgraph stations, 6DOF maximum likelihood reduction with BARDAS)",
+    "mach_range": "1.05-4.47 (mid-range Mach of each shot, Table VII)",
+    "reynolds_length": "7.0e6-30.0e6 (based on the projectile length, Table V)",
+    "air_density_kg_m3": "1.156-1.203 (Table V)",
+    "speed_of_sound_m_s": "343.4-344.0 (Table V)",
+    "transition_and_roughness": "not stated (steel models; shadowgraphs show the boundary-layer growth, Sec. 3.3)",
+    "max_angle_of_attack_deg": "0.7-9.0 (Sec. 5.1)",
+    "spin": "0, about 65 and about 125 deg/m steady spin for 0, 2 and 4 deg cant (Sec. 8.0)",
+    "note": "fins of shot DA14 (about 1520 m/s) ablated, no data; slight ablation suspected on DA01 and DA11 (Sec. 5.2)"
+  },
+  "model_in_this_repository": {
+    "files": "examples/basic_finner/basic_finner.step, basic_finner.stl (make_basic_finner.py, gmsh OCC)",
+    "units": "STEP declares millimetres; STL in millimetres; x from the nose tip (x = 0) to the base (x = 0.300 m), the nose points to -x",
+    "fins": "the '+' arrangement (fins in the planes y = 0 and z = 0), no cant",
+    "nose": "flat meplat of radius 0.12 mm at x = 0, cone to (85.2 mm, 15 mm): half angle atan(14.88 / 85.2) = 9.907 deg (the drawing's 10 deg, 2.84 cal and the 0.004 cal meplat are not exactly consistent; the difference is below 0.01 cal in radius)",
+    "fin_section": "wedge with a leading-edge arc of radius 0.12 mm tangent to both faces, front of the arc at x = 270 mm, faces through the trailing-edge corners (x = 300 mm, +-1.2 mm); flat fin tip at r = 45 mm",
+    "volume_m3": 1.768e-4,
+    "faces": 20
+  }
+}

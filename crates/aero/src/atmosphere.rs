@@ -38,25 +38,15 @@ impl Atmosphere {
     }
 }
 
-/// Atmospheric state at geometric altitude `z` [m] above mean sea level.
+/// Atmospheric state at geometric altitude `z` \[m\] above mean sea level.
 pub fn us76(z: f64) -> Atmosphere {
     let h = geopotential(z);
     let layer = LAYERS.iter().rev().find(|l| h >= l.0).unwrap_or(&LAYERS[0]);
     let (hb, tb, lr, pb) = *layer;
     let t = tb + lr * (h - hb);
-    let p = if lr == 0.0 {
-        pb * (-G0 * (h - hb) / (R_AIR * tb)).exp()
-    } else {
-        pb * (tb / t).powf(G0 / (R_AIR * lr))
-    };
+    let p = if lr == 0.0 { pb * (-G0 * (h - hb) / (R_AIR * tb)).exp() } else { pb * (tb / t).powf(G0 / (R_AIR * lr)) };
     let density = p / (R_AIR * t);
-    Atmosphere {
-        temperature: t,
-        pressure: p,
-        density,
-        sound_speed: (GAMMA * R_AIR * t).sqrt(),
-        viscosity: 1.458e-6 * t.powf(1.5) / (t + 110.4),
-    }
+    Atmosphere { temperature: t, pressure: p, density, sound_speed: (GAMMA * R_AIR * t).sqrt(), viscosity: 1.458e-6 * t.powf(1.5) / (t + 110.4) }
 }
 
 /// Layer index, geopotential height and local temperature offset handling shared by `us76` and
@@ -86,16 +76,20 @@ fn offset_pressure(h: f64, dt: f64) -> f64 {
             break;
         }
         let tb = tb + dt;
-        p *= if lr == 0.0 {
-            (-G0 * (hh - hb) / (R_AIR * tb)).exp()
-        } else {
-            ((tb + lr * (hh - hb)) / tb).powf(-G0 / (R_AIR * lr))
-        };
+        p *= if lr == 0.0 { (-G0 * (hh - hb) / (R_AIR * tb)).exp() } else { ((tb + lr * (hh - hb)) / tb).powf(-G0 / (R_AIR * lr)) };
         if h <= top {
             break;
         }
     }
     p
+}
+
+/// Lowest standard temperature [K] over the supported altitude range (the profile is piecewise
+/// linear, so the minimum is at a layer boundary or at the top of the range).
+fn min_standard_temperature() -> f64 {
+    let top = 84_852.0; // upper clamp of `geopotential`
+    let at_top = LAYERS.iter().rev().find(|l| top >= l.0).map_or(f64::NAN, |l| l.1 + l.2 * (top - l.0));
+    LAYERS.iter().map(|l| l.1).chain([at_top]).fold(f64::INFINITY, f64::min)
 }
 
 /// Standard atmosphere with the temperature profile shifted by `dt` K at every altitude; the
@@ -114,7 +108,7 @@ pub fn us76_offset(z: f64, dt: f64) -> Atmosphere {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "model", rename_all = "lowercase")]
 pub enum AtmosphereModel {
-    /// US 1976 standard atmosphere with a temperature offset [K].
+    /// US 1976 standard atmosphere with a temperature offset \[K\].
     Us1976 { temperature_offset: f64 },
     /// Altitude-independent density, speed of sound and dynamic viscosity.
     Constant { density: f64, sound_speed: f64, viscosity: f64 },
@@ -128,15 +122,25 @@ impl Default for AtmosphereModel {
 
 impl AtmosphereModel {
     pub fn us1976(temperature_offset: f64) -> Result<Self> {
-        if !temperature_offset.is_finite() || temperature_offset <= -200.0 {
-            bail!("atmosphere.temperature_offset must be finite and greater than -200 K");
+        if !temperature_offset.is_finite() {
+            bail!("[IY-A001] atmosphere.temperature_offset must be finite, got {temperature_offset}");
+        }
+        let t_min = min_standard_temperature();
+        if t_min + temperature_offset <= 0.0 {
+            bail!(
+                "[IY-A002] atmosphere.temperature_offset = {temperature_offset} K gives a non-positive absolute temperature \
+                 (the standard profile reaches {t_min:.3} K at the top of the supported altitude range); it must be greater than {:.3} K",
+                -t_min
+            );
         }
         Ok(Self::Us1976 { temperature_offset })
     }
 
     pub fn constant(density: f64, sound_speed: f64, viscosity: f64) -> Result<Self> {
-        if !(density > 0.0 && sound_speed > 0.0 && viscosity > 0.0) {
-            bail!("constant atmosphere needs positive density, sound_speed and viscosity");
+        for (name, v) in [("density", density), ("sound_speed", sound_speed), ("viscosity", viscosity)] {
+            if !(v.is_finite() && v > 0.0) {
+                bail!("[IY-A003] atmosphere.{name} must be finite and positive for the constant atmosphere, got {v}");
+            }
         }
         Ok(Self::Constant { density, sound_speed, viscosity })
     }
@@ -217,5 +221,24 @@ mod tests {
             assert!(((GAMMA * R_AIR * a.temperature).sqrt() - 345.0).abs() < 1e-9);
         }
         assert!(AtmosphereModel::constant(0.0, 340.0, 1e-5).is_err());
+    }
+
+    #[test]
+    fn rejects_non_physical_atmosphere_settings() {
+        for bad in [f64::INFINITY, f64::NAN, -190.0, -200.0, -187.0] {
+            let e = AtmosphereModel::us1976(bad).unwrap_err().to_string();
+            assert!(e.contains("atmosphere.temperature_offset"), "{e}");
+            assert!(e.starts_with(if bad.is_finite() { "[IY-A002] " } else { "[IY-A001] " }), "{e}");
+        }
+        // the coldest standard point (about 186.9 K at 84.85 km) stays positive
+        let m = AtmosphereModel::us1976(-180.0).unwrap();
+        for z in (0..=100).map(|i| i as f64 * 1_000.0) {
+            let a = m.at(z);
+            assert!(a.temperature > 0.0 && a.pressure > 0.0 && a.density > 0.0, "z {z}");
+        }
+        for (d, c, v, name) in [(f64::INFINITY, 340.0, 1e-5, "density"), (1.2, f64::INFINITY, 1e-5, "sound_speed"), (1.2, 340.0, f64::NAN, "viscosity")] {
+            let e = AtmosphereModel::constant(d, c, v).unwrap_err().to_string();
+            assert!(e.contains(name) && e.starts_with("[IY-A003] "), "{e}");
+        }
     }
 }

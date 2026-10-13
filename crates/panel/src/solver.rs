@@ -14,8 +14,11 @@
 
 use crate::influence::{doublet, influence};
 use crate::mesh::Mesh;
-use faer::linalg::solvers::Solve;
-use faer::Mat;
+use anyhow::{anyhow, Result};
+use faer::dyn_stack::{MemBuffer, MemStack};
+use faer::linalg::lu::partial_pivoting::factor::{lu_in_place, lu_in_place_scratch};
+use faer::linalg::lu::partial_pivoting::solve::{solve_transpose_in_place_scratch, solve_transpose_in_place_with_conj};
+use faer::{Conj, Mat, MatMut};
 use geom::Vec3;
 use rayon::prelude::*;
 
@@ -37,10 +40,38 @@ fn unit_velocity(k: usize, c: Vec3) -> Vec3 {
     }
 }
 
+/// Allocates the dense `n x n` matrix fallibly: an error with the size instead of an allocation
+/// failure inside the solver. The matrix is the only large allocation of the solve (it is factored
+/// in place), see [`crate::dense_solve_bytes`]; a probe first reserves it together with headroom for
+/// the solver's workspaces (1/16 of the matrix and 256 MB) and is released before the matrix is
+/// allocated.
+pub fn reserve_dense(n: usize) -> Result<Vec<f64>> {
+    let fail = || {
+        anyhow!(
+            "[IY-A020] could not allocate the dense panel matrix: about {:.2} GB for {n} panels; \
+             use coarser panel settings (body_axial, body_circ, fin_chord, fin_span) or free memory",
+            crate::dense_solve_bytes(n) as f64 / 1e9
+        )
+    };
+    let nn = n.checked_mul(n).ok_or_else(fail)?;
+    // Let every worker thread map its malloc arena first (under an address-space limit they count),
+    // so that the probe below sees the address space the parallel assembly and solve will use.
+    rayon::broadcast(|_| drop(std::hint::black_box(Box::new(0u8))));
+    // Headroom in f64 elements: 1/16 of the matrix and 256 MB.
+    let headroom = nn / 16 + (256 << 20) / 8;
+    let mut probe: Vec<f64> = Vec::new();
+    probe.try_reserve_exact(nn.checked_add(headroom).ok_or_else(fail)?).map_err(|_| fail())?;
+    drop(probe);
+    let mut a: Vec<f64> = Vec::new();
+    a.try_reserve_exact(nn).map_err(|_| fail())?;
+    a.resize(nn, 0.0);
+    Ok(a)
+}
+
 /// Assembles and solves the unit problems on `mesh`.
-pub fn solve_potential(mesh: &Mesh) -> Potential {
+pub fn solve_potential(mesh: &Mesh) -> Result<Potential> {
     let n = mesh.panels.len();
-    let mut a = vec![0.0f64; n * n];
+    let mut a = reserve_dense(n)?;
     let mut rhs = vec![[0.0f64; 3]; n];
     a.par_chunks_mut(n).zip(rhs.par_iter_mut()).enumerate().for_each(|(i, (row, rh))| {
         let xi = mesh.panels[i].centroid;
@@ -61,14 +92,44 @@ pub fn solve_potential(mesh: &Mesh) -> Potential {
         }
         *rh = b;
     });
-    let m = Mat::<f64>::from_fn(n, n, |i, j| a[i * n + j]);
-    drop(a);
-    let lu = m.partial_piv_lu();
+    // Cost and memory: one dense LU per subsonic Mach number, O(n^3) time; the matrix is factored in place,
+    // so the only n x n array is the matrix itself, 8 n^2 + 64 n bytes (computed in 128-bit integers and
+    // saturated at u64::MAX, so any panel count can be compared with the memory limit without overflow).
+    // The comparison with `memory::available_bytes` and `resources.memory_gb` happens before the allocation
+    // (errors IY-A018/IY-A019); a failed allocation is IY-A020 (a margin of 1/16 of the matrix and 256 MB
+    // is added for the work space).
+    // The row-major matrix `a` read column-major is its transpose `B = A^T`. `B` is LU-factored in
+    // place (`B = P^T L U`, partial pivoting) and `A x = B^T x = b` is solved with the transposed
+    // factors, so the solve needs no second `n x n` matrix.
+    let par = faer::get_global_parallelism();
+    let mut perm_fwd = vec![0usize; n];
+    let mut perm_bwd = vec![0usize; n];
     let mut sol = Mat::<f64>::from_fn(n, 3, |i, k| rhs[i][k]);
-    lu.solve_in_place(sol.as_mut());
+    {
+        let mut b = MatMut::from_column_major_slice_mut(&mut a, n, n);
+        let (_, perm) = lu_in_place(
+            b.as_mut(),
+            &mut perm_fwd,
+            &mut perm_bwd,
+            par,
+            MemStack::new(&mut MemBuffer::new(lu_in_place_scratch::<usize, f64>(n, n, par, Default::default()))),
+            Default::default(),
+        );
+        // The unit lower and the upper triangle share the factored storage; each solve reads its own triangle.
+        solve_transpose_in_place_with_conj(
+            b.as_ref(),
+            b.as_ref(),
+            perm,
+            Conj::No,
+            sol.as_mut(),
+            par,
+            MemStack::new(&mut MemBuffer::new(solve_transpose_in_place_scratch::<usize, f64>(n, 3, par))),
+        );
+    }
+    drop(a);
     let mu: [Vec<f64>; 3] = std::array::from_fn(|k| (0..n).map(|i| sol[(i, k)]).collect());
     let vel = std::array::from_fn(|k| tangential_velocity(mesh, &mu[k], k));
-    Potential { mu, vel }
+    Ok(Potential { mu, vel })
 }
 
 /// Total tangential velocity: tangential part of `U` plus the surface gradient of `mu`.
@@ -135,7 +196,7 @@ pub fn surface_gradient(mesh: &Mesh, mu: &[f64]) -> Vec<Vec3> {
 pub struct PotentialCoeffs {
     /// dCN/dalpha [1/rad].
     pub cna: f64,
-    /// Moment about the nose per radian of uniform incidence, `sum CNa_i x_i` [m/rad].
+    /// Moment about the nose per radian of uniform incidence, `sum(x dFz - z dFx)` [m/rad].
     pub m_alpha: f64,
     /// Normal force per unit nondimensional pitch rate about the nose [m/rad].
     pub n_rot: f64,
@@ -151,16 +212,21 @@ pub fn coefficients(real: &Mesh, pot: &Potential, beta: f64, s_ref: f64) -> Pote
         let vx = pot.vel[0][i];
         let cp_a = -2.0 * vx.dot(pot.vel[1][i]) / beta;
         let cp_r = -2.0 * vx.dot(pot.vel[2][i]) / beta;
+        // Force per unit Cp, `-n A / S`, and its nose moment `x Fz - z Fx` (the pitching moment of
+        // the complete `r x F`, in the sign convention `xcp = M / CN`): the axial pressure force on
+        // sloped surfaces (nose, boattail, fin edges) has a transverse lever arm.
         let fz = -p.normal.z * p.area / s_ref;
+        let fx = -p.normal.x * p.area / s_ref;
+        let mom = p.centroid.x * fz - p.centroid.z * fx;
         c.cna += cp_a * fz;
-        c.m_alpha += cp_a * fz * p.centroid.x;
+        c.m_alpha += cp_a * mom;
         c.n_rot += cp_r * fz;
-        c.m_rot += cp_r * fz * p.centroid.x;
+        c.m_rot += cp_r * mom;
     }
     c
 }
 
-/// Pressure coefficient at every panel for angle of attack `alpha` [rad] in incompressible flow.
+/// Pressure coefficient at every panel for angle of attack `alpha` \[rad\] in incompressible flow.
 pub fn cp_at_alpha(pot: &Potential, alpha: f64) -> Vec<f64> {
     let (sa, ca) = alpha.sin_cos();
     pot.vel[0].iter().zip(&pot.vel[1]).map(|(vx, vz)| 1.0 - (*vx * ca + *vz * sa).dot(*vx * ca + *vz * sa)).collect()

@@ -6,13 +6,16 @@
   arr/.style={->, thick, cink2}, lab/.style={font=\footnotesize, align=center, cink2}]
   \node[st] (rail) {ランチャ滑走\\{\footnotesize 1自由度拘束}};
   \node[st, right=26mm of rail] (free) {自由飛行\\{\footnotesize 6自由度}};
-  \node[st, right=26mm of free] (para) {パラシュート降下\\{\footnotesize 質点（3自由度）}};
+  \node[st, right=26mm of free] (para) {パラシュート降下\\{\footnotesize 質点（3自由度）}\\{\footnotesize $C_DS=$ \texttt{cd\_s}}};
+  \node[st, below=16mm of para] (main) {メイン降下（2段開傘）\\{\footnotesize 質点（3自由度）}\\{\footnotesize $C_DS=$ \texttt{main\_cd\_s}}};
   \node[en, below=16mm of free] (land1) {着地\\{\footnotesize 弾道落下}};
-  \node[en, below=16mm of para] (land2) {着地};
+  \node[en, below=12mm of main] (land2) {着地};
   \draw[arr] (rail) -- node[above, lab] {$\bm{x}\cdot\bm{d}\ge L_{\mathrm{rail}}$} node[below, lab] {ランチャ離脱} (free);
   \draw[arr] (free) -- node[above, lab] {$t\ge t_{\mathrm{apo}}+\Delta t$} node[below, lab] {開傘} (para);
-  \draw[arr] (free) -- node[left, lab] {$z\le 0$\\（弾道モード）} (land1);
-  \draw[arr] (para) -- node[right, lab] {$z\le 0$} (land2);
+  \draw[arr] (free) -- node[left, lab] {$z\le 0$\\（弾道モード、\\または開傘前）} (land1);
+  \draw[arr] (para) -- node[left, lab] {$z\le$ \texttt{main\_altitude}} (main);
+  \draw[arr] (main) -- node[left, lab] {$z\le 0$} (land2);
+  \draw[arr] (para.east) -- ++(6mm,0) |- node[pos=0.25, right, lab] {$z\le 0$\\（1段開傘）} (land2.east);
   \node[above=3mm of free, lab, draw=cgrid, rounded corners=2pt, inner sep=3pt] {頂点の検出: $v_z$ の符号が正 $\to$ 負 になった時刻を $t_{\mathrm{apo}}$ とする};
   \draw[arr] (-24mm,0) -- node[above, lab] {$t=0$} (rail);
 \end{tikzpicture}

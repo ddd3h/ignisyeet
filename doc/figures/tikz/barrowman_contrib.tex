@@ -1,0 +1,55 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+% Barrowman method: each part contributes a normal force at its own centre of pressure; the moment balance gives x_cp.
+\begin{tikzpicture}[font=\footnotesize, x=0.9cm, y=0.9cm]
+  % body silhouette (nose tip at x=0): nose, cylinder, shoulder, cylinder, boat tail; two fins
+  \draw[cblue, very thick, fill=cfill] (0,0) .. controls (1.2,0.55) and (2.2,0.6) .. (3,0.6)
+    -- (6,0.6) -- (7.5,1.0) -- (11,1.0) -- (13,0.6) -- (13,-0.6) -- (11,-1.0) -- (7.5,-1.0) -- (6,-0.6) -- (3,-0.6)
+    .. controls (2.2,-0.6) and (1.2,-0.55) .. (0,0) -- cycle;
+  \draw[cblue, very thick, fill=cfill] (10.4,1.0) -- (11.4,2.3) -- (12.2,2.3) -- (12.8,0.65);
+  \draw[cblue, very thick, fill=cfill] (10.4,-1.0) -- (11.4,-2.3) -- (12.2,-2.3) -- (12.8,-0.65);
+  \draw[cink2, dashed] (-0.5,0) -- (13.8,0);
+  % section boundaries
+  \foreach \xb in {3,6,7.5,11} {\draw[cgrid] (\xb,1.0) -- (\xb,2.35);}
+  % part names (above the sign row)
+  \node[cink2] at (1.5,3.9) {ノーズ};
+  \node[cink2] at (4.5,3.9) {円筒};
+  \node[cink2] at (6.75,3.9) {肩};
+  \node[cink2] at (9.25,3.9) {円筒};
+  \node[cink2, align=center] at (12.0,3.9) {ボートテール};
+  % sign of the contribution
+  \node[cblue, font=\normalsize\bfseries] at (1.5,3.2) {$+$};
+  \node[cink2] at (1.5,2.7) {$\mathrm{d}A/\mathrm{d}x>0$};
+  \node[cink2, font=\normalsize\bfseries] at (4.5,3.2) {$\approx 0$};
+  \node[cink2] at (4.5,2.7) {$\mathrm{d}A/\mathrm{d}x=0$};
+  \node[cblue, font=\normalsize\bfseries] at (6.75,3.2) {$+$};
+  \node[cink2] at (6.75,2.7) {$\mathrm{d}A/\mathrm{d}x>0$};
+  \node[cink2, font=\normalsize\bfseries] at (9.25,3.2) {$\approx 0$};
+  \node[cink2] at (9.25,2.7) {$\mathrm{d}A/\mathrm{d}x=0$};
+  \node[corange, font=\normalsize\bfseries] at (12.0,3.2) {$-$};
+  \node[cink2] at (12.0,2.7) {$\mathrm{d}A/\mathrm{d}x<0$};
+  % normal forces of the parts (upward for a positive angle of attack)
+  \draw[->, thick, cblue] (1.4,0.9) -- (1.4,2.0);
+  \draw[->, thick, cblue] (6.75,1.1) -- (6.75,2.0);
+  \draw[->, thick, corange] (12.3,0.45) -- (12.3,-0.45);
+  % fin lift
+  \draw[->, thick, caqua] (11.45,1.1) -- (11.45,2.2);
+  \node[caqua, anchor=west, align=left] at (13.2,1.6) {フィンの揚力\\（翼として働く）};
+  \draw[caqua, ->] (13.2,1.6) -- (11.6,1.6);
+  % ruler with x_i and x_cp
+  \draw[->, cink2] (0,-3.3) -- (13.8,-3.3) node[right] {$x$};
+  \draw[cink2] (0,-3.2) -- (0,-3.4);
+  \node[cink2, below] at (0,-3.4) {ノーズ先端};
+  \foreach \xi/\lab/\col in {1.4/{x_1}/cblue, 6.75/{x_2}/cblue, 12.3/{x_3}/corange, 11.45/{x_f}/caqua} {
+    \draw[\col, dotted] (\xi,-1.0) -- (\xi,-3.3);
+    \fill[\col] (\xi,-3.3) circle (1.5pt);
+  }
+  \node[cblue, below=2pt] at (1.4,-3.3) {$x_1$};
+  \node[cblue, below=2pt] at (6.75,-3.3) {$x_2$};
+  \node[corange, below=2pt] at (12.3,-3.3) {$x_3$};
+  \node[caqua, below=2pt] at (11.45,-3.3) {$x_f$};
+  % moment balance result
+  \draw[cink, thick] (9.0,-3.0) -- (9.0,-3.6);
+  \node[cink, below=2pt] at (9.0,-3.6) {$x_{cp}$};
+  \node[cink2, anchor=west] at (0,-4.7) {$x_{cp}=\sum_i C_{N,i}\,x_i\big/\sum_i C_{N,i}$\quad（各部品の法線力がノーズ先端まわりに作るモーメントの釣り合い）};
+\end{tikzpicture}

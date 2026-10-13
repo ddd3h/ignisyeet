@@ -1,0 +1,37 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+% CFD pipeline: STL (repaired in Rust, united in Python) or rebuilt body of revolution -> volume mesh -> SU2 cases -> post-processing -> coefficient table.
+\begin{tikzpicture}[
+  font=\footnotesize,
+  rust/.style={draw=cblue, fill=cfill, thick, rounded corners=3pt, minimum width=32mm, minimum height=12mm, align=center},
+  py/.style={draw=corange, fill=cfillo, thick, rounded corners=3pt, minimum width=32mm, minimum height=12mm, align=center},
+  file/.style={draw=cink2, fill=cfillg, minimum width=32mm, minimum height=9mm, align=center},
+  arr/.style={->, thick, cink2}]
+  % branch surface = "stl"
+  \node[file] (stl) at (0,0) {入力の STL};
+  \node[rust] (repair) at (4.2,0) {修復\\\scriptsize 溶接・向き・水密};
+  \node[py] (union) at (8.4,0) {和\\\scriptsize Manifold};
+  \node[py] (remesh) at (12.6,0) {壁面の再メッシュ\\\scriptsize gmsh};
+  % branch surface = "panel_mesh"
+  \node[file] (geo) at (0,-3) {半径分布・フィン寸法\\\scriptsize geometry.json};
+  \node[py] (rebuild) at (4.2,-3) {立体の再構成\\\scriptsize OpenCASCADE};
+  % common
+  \node[py] (vol) at (12.6,-2.0) {体積メッシュ\\\scriptsize gmsh、遠方境界};
+  \node[rust] (su2) at (12.6,-4.7) {SU2 で各ケースを解く\\\scriptsize $(M,\alpha,\beta)$};
+  \node[rust] (post) at (8.4,-4.7) {後処理\\\scriptsize 機体軸の係数に変換};
+  \node[file] (tab) at (4.2,-4.7) {係数表\\\scriptsize aero\_table.csv};
+  \draw[arr] (stl) -- (repair);
+  \draw[arr] (repair) -- (union);
+  \draw[arr] (union) -- (remesh);
+  \draw[arr] (remesh) -- (vol);
+  \draw[arr] (geo) -- (rebuild);
+  \draw[arr] (rebuild.east) -| ($(vol.west)+(-0.7,0)$) -- (vol.west);
+  \draw[arr] (vol) -- (su2);
+  \draw[arr] (su2) -- (post);
+  \draw[arr] (post) -- (tab);
+  \node[font=\scriptsize, cink2, anchor=south west] at (-1.6,0.7) {\texttt{surface = "stl"}};
+  \node[font=\scriptsize, cink2, anchor=north west] at (-1.6,-3.55) {\texttt{surface = "panel\_mesh"}};
+  \node[font=\scriptsize, cink2, anchor=north] at (4.2,-5.4) {モデルで補う項を足し、解いた範囲の外はモデルで埋める};
+  \node[font=\scriptsize, cink2, anchor=south] at (4.2,0.7) {Euler のとき底面にフェアリングを足す};
+  \node[font=\scriptsize, cink2, anchor=south, align=center] at (4.2,-2.3) {Euler のとき底面にフェアリング};
+\end{tikzpicture}

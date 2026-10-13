@@ -1,0 +1,4 @@
+# Observed order of the Lie-group integrators of the free rigid body (crates/sim/src/lie.rs, tests convergence_order_rk4 and convergence_order_dp5). Output of `cargo test --release -p sim lie::tests::convergence -- --nocapture --test-threads=1` at commit cfe7395: attitude error after 20 s at the steps h and h/2 against the RKMK DP5 solution (reference step 0.001 s for RK4, 0.002 s for DP5). order = log2(err_h / err_h2). The tests accept order in [lo, hi].
+method,h,err_h,err_h2,order,lo,hi
+RKMK-RK4,0.05,1.573e-7,9.195e-9,4.096,3.7,4.3
+RKMK-DP5,0.05,8.277e-10,2.732e-11,4.921,4.6,5.4

@@ -3,6 +3,9 @@
 pub mod atmosphere;
 pub mod model;
 pub mod table;
+#[cfg(test)]
+#[path = "../../../testutil/tmp.rs"]
+mod test_tmp;
 
 pub use model::{AeroModel, AeroOptions};
 pub use table::{AeroCoeffs, AeroTable, Extrapolation};

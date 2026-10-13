@@ -21,11 +21,7 @@ impl Vec3 {
         self.x * o.x + self.y * o.y + self.z * o.z
     }
     pub fn cross(self, o: Vec3) -> Vec3 {
-        Vec3::new(
-            self.y * o.z - self.z * o.y,
-            self.z * o.x - self.x * o.z,
-            self.x * o.y - self.y * o.x,
-        )
+        Vec3::new(self.y * o.z - self.z * o.y, self.z * o.x - self.x * o.z, self.x * o.y - self.y * o.x)
     }
     pub fn norm(self) -> f64 {
         self.dot(self).sqrt()
@@ -106,24 +102,67 @@ impl Mat3 {
     }
     pub fn mul_vec(&self, v: Vec3) -> Vec3 {
         let m = &self.0;
-        Vec3::new(
-            m[0][0] * v.x + m[0][1] * v.y + m[0][2] * v.z,
-            m[1][0] * v.x + m[1][1] * v.y + m[1][2] * v.z,
-            m[2][0] * v.x + m[2][1] * v.y + m[2][2] * v.z,
-        )
+        Vec3::new(m[0][0] * v.x + m[0][1] * v.y + m[0][2] * v.z, m[1][0] * v.x + m[1][1] * v.y + m[1][2] * v.z, m[2][0] * v.x + m[2][1] * v.y + m[2][2] * v.z)
     }
     pub fn transpose_mul_vec(&self, v: Vec3) -> Vec3 {
         let m = &self.0;
-        Vec3::new(
-            m[0][0] * v.x + m[1][0] * v.y + m[2][0] * v.z,
-            m[0][1] * v.x + m[1][1] * v.y + m[2][1] * v.z,
-            m[0][2] * v.x + m[1][2] * v.y + m[2][2] * v.z,
-        )
+        Vec3::new(m[0][0] * v.x + m[1][0] * v.y + m[2][0] * v.z, m[0][1] * v.x + m[1][1] * v.y + m[2][1] * v.z, m[0][2] * v.x + m[1][2] * v.y + m[2][2] * v.z)
+    }
+    pub fn identity() -> Mat3 {
+        Mat3::diag(1.0, 1.0, 1.0)
+    }
+    pub fn diag(a: f64, b: f64, c: f64) -> Mat3 {
+        Mat3([[a, 0.0, 0.0], [0.0, b, 0.0], [0.0, 0.0, c]])
+    }
+    pub fn transpose(&self) -> Mat3 {
+        let m = &self.0;
+        Mat3([[m[0][0], m[1][0], m[2][0]], [m[0][1], m[1][1], m[2][1]], [m[0][2], m[1][2], m[2][2]]])
+    }
+    pub fn mul(&self, o: &Mat3) -> Mat3 {
+        let mut r = [[0.0; 3]; 3];
+        for (i, row) in r.iter_mut().enumerate() {
+            for (j, v) in row.iter_mut().enumerate() {
+                *v = (0..3).map(|k| self.0[i][k] * o.0[k][j]).sum();
+            }
+        }
+        Mat3(r)
+    }
+    pub fn add(&self, o: &Mat3) -> Mat3 {
+        let mut r = self.0;
+        for (i, row) in r.iter_mut().enumerate() {
+            for (j, v) in row.iter_mut().enumerate() {
+                *v += o.0[i][j];
+            }
+        }
+        Mat3(r)
+    }
+    pub fn scale(&self, k: f64) -> Mat3 {
+        Mat3(self.0.map(|row| row.map(|v| v * k)))
+    }
+    pub fn det(&self) -> f64 {
+        let m = &self.0;
+        m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1]) - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+            + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0])
+    }
+    /// Inverse by the adjugate; `None` when the matrix is singular relative to its scale.
+    pub fn inverse(&self) -> Option<Mat3> {
+        let m = &self.0;
+        let d = self.det();
+        let scale = m.iter().flatten().fold(0.0f64, |a, v| a.max(v.abs()));
+        if !d.is_finite() || d.abs() <= 1e-14 * scale.powi(3) {
+            return None;
+        }
+        let c = |r0: usize, c0: usize, r1: usize, c1: usize| m[r0][c0] * m[r1][c1] - m[r0][c1] * m[r1][c0];
+        let adj =
+            [[c(1, 1, 2, 2), -c(0, 1, 2, 2), c(0, 1, 1, 2)], [-c(1, 0, 2, 2), c(0, 0, 2, 2), -c(0, 0, 1, 2)], [c(1, 0, 2, 1), -c(0, 0, 2, 1), c(0, 0, 1, 1)]];
+        Some(Mat3(adj).scale(1.0 / d))
     }
 }
 
 /// Eigen decomposition of a symmetric 3x3 matrix (cyclic Jacobi).
-/// Returns eigenvalues in descending order with matching unit eigenvectors.
+/// Returns eigenvalues in descending order with matching unit eigenvectors. Used for the principal
+/// axis of a rocket mesh (largest eigenvalue of the vertex covariance); see Golub & Van Loan,
+/// "Matrix Computations", for the Jacobi method.
 pub fn sym_eigen(a: [[f64; 3]; 3]) -> ([f64; 3], [Vec3; 3]) {
     let mut a = a;
     let mut v = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
@@ -141,15 +180,13 @@ pub fn sym_eigen(a: [[f64; 3]; 3]) -> ([f64; 3], [Vec3; 3]) {
             let t = if theta == 0.0 { 1.0 } else { t };
             let c = 1.0 / (t * t + 1.0).sqrt();
             let s = t * c;
-            for k in 0..3 {
-                let akp = a[k][p];
-                let akq = a[k][q];
-                a[k][p] = c * akp - s * akq;
-                a[k][q] = s * akp + c * akq;
+            for row in a.iter_mut() {
+                let (akp, akq) = (row[p], row[q]);
+                row[p] = c * akp - s * akq;
+                row[q] = s * akp + c * akq;
             }
-            for k in 0..3 {
-                let apk = a[p][k];
-                let aqk = a[q][k];
+            let (rp, rq) = (a[p], a[q]);
+            for (k, (&apk, &aqk)) in rp.iter().zip(rq.iter()).enumerate() {
                 a[p][k] = c * apk - s * aqk;
                 a[q][k] = s * apk + c * aqk;
             }
@@ -162,7 +199,7 @@ pub fn sym_eigen(a: [[f64; 3]; 3]) -> ([f64; 3], [Vec3; 3]) {
         }
     }
     let mut idx = [0usize, 1, 2];
-    idx.sort_by(|&i, &j| a[j][j].partial_cmp(&a[i][i]).unwrap());
+    idx.sort_by(|&i, &j| a[j][j].total_cmp(&a[i][i]));
     let vals = [a[idx[0]][idx[0]], a[idx[1]][idx[1]], a[idx[2]][idx[2]]];
     let vecs = idx.map(|j| Vec3::new(v[0][j], v[1][j], v[2][j]).normalized());
     (vals, vecs)
@@ -232,10 +269,7 @@ pub fn hermite(x: f64, x0: f64, x1: f64, f0: f64, f1: f64, d0: f64, d1: f64) -> 
     let t = (x - x0) / h;
     let t2 = t * t;
     let t3 = t2 * t;
-    (2.0 * t3 - 3.0 * t2 + 1.0) * f0
-        + (t3 - 2.0 * t2 + t) * h * d0
-        + (-2.0 * t3 + 3.0 * t2) * f1
-        + (t3 - t2) * h * d1
+    (2.0 * t3 - 3.0 * t2 + 1.0) * f0 + (t3 - 2.0 * t2 + t) * h * d0 + (-2.0 * t3 + 3.0 * t2) * f1 + (t3 - t2) * h * d1
 }
 
 #[cfg(test)]
@@ -255,6 +289,21 @@ mod tests {
         let (vals, vecs) = sym_eigen([[2.0, 1.0, 0.0], [1.0, 2.0, 0.0], [0.0, 0.0, 1.0]]);
         assert!((vals[0] - 3.0).abs() < 1e-10);
         assert!((vecs[0].x.abs() - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-10);
+    }
+
+    #[test]
+    fn mat3_inverse_and_products() {
+        let a = Mat3([[2.0, -0.3, 0.1], [-0.3, 1.5, 0.2], [0.1, 0.2, 1.1]]);
+        let i = a.inverse().unwrap();
+        let p = a.mul(&i);
+        for r in 0..3 {
+            for c in 0..3 {
+                assert!((p.0[r][c] - if r == c { 1.0 } else { 0.0 }).abs() < 1e-12);
+            }
+        }
+        assert!((a.transpose().det() - a.det()).abs() < 1e-12);
+        assert!(Mat3([[1.0, 2.0, 3.0], [2.0, 4.0, 6.0], [0.0, 1.0, 1.0]]).inverse().is_none());
+        assert_eq!(Mat3::diag(1.0, 2.0, 3.0).add(&Mat3::identity()).0[1][1], 3.0);
     }
 
     #[test]

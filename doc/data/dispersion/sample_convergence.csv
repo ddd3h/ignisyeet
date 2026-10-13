@@ -1,0 +1,6 @@
+# Sample (power wind), safety step 3, vehicle scatter only, seed = 1. ballistic: panel method, 7 m/s from 270 deg; parachute: Barrowman, 7 m/s from 90 deg. Landing distance [m] from the launch site.
+samples,ballistic_p99,ballistic_p999,ballistic_max,parachute_p99,parachute_p999,parachute_max
+1000,2626.7,3001.9,3015.3,20267.9,24167.2,28927.8
+10000,2567.9,2992.4,3935.2,20152.8,23086.8,28927.8
+40000,2584.8,3101.5,3935.2,20104.7,23240.3,28927.8
+100000,2595.9,3129.1,5296.8,20183.0,23271.7,36278.6

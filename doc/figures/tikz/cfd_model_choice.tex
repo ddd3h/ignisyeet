@@ -1,0 +1,36 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+% Decision tree for aero.cfd.model: Euler or RANS.
+\begin{tikzpicture}[
+  font=\footnotesize,
+  q/.style={draw=cblue, fill=cfill, thick, rounded corners=3pt, minimum width=62mm, minimum height=11mm, align=center, text width=58mm},
+  r/.style={draw=corange, fill=cfillo, thick, rounded corners=3pt, minimum width=50mm, minimum height=11mm, align=center, text width=46mm},
+  rr/.style={draw=caqua, fill=cfillg, thick, rounded corners=3pt, minimum width=50mm, minimum height=11mm, align=center, text width=46mm},
+  rc/.style={draw=cyellow, fill=cyellow!15, thick, rounded corners=3pt, minimum width=50mm, minimum height=11mm, align=center, text width=46mm},
+  arr/.style={->, thick, cink2},
+  lab/.style={font=\scriptsize, cink2}]
+  \node[q] (q1) at (0,0) {摩擦抗力を CFD から得る必要があるか\\\scriptsize （軸力の粘性の寄与を、部品積み上げ法の式でなく解で出したい）};
+  \node[q] (q2) at (0,-2.5) {壁面は \texttt{panel\_mesh} か \texttt{step} か\\\scriptsize （\texttt{stl} では RANS を使えない）};
+  \node[q] (q3) at (0,-5.0) {フィンの配置が $y=0$ について対称か\\\scriptsize （\texttt{panel\_mesh} のとき。\texttt{step} は不問）};
+  \node[q] (q4) at (0,-7.5) {1 ケースのメモリを確保できるか\\\scriptsize 5 mm で約 9 GB、3 mm で約 22 GB};
+  \node[q] (q5) at (0,-10.0) {Mach 0.8〜2、$|\alpha|\le 4^\circ$ 付近か\\\scriptsize （検証した範囲）};
+  \node[rr] (e1) at (8.6,0) {\textbf{Euler}\\\scriptsize 圧力の力だけ。摩擦・底面・縁の抗力は\\部品積み上げ法の項で補う};
+  \node[r] (e2) at (8.6,-2.5) {\textbf{Euler}\\\scriptsize \texttt{surface} を変えるか、\\摩擦を補う項に任せる};
+  \node[r] (e3) at (8.6,-5.0) {\textbf{Euler}\\\scriptsize \texttt{fin\_roll\_deg} を対称な値にするか、\\\texttt{step} を使う};
+  \node[r] (e4) at (8.6,-7.5) {\textbf{Euler}\\\scriptsize または \texttt{wall\_size} を粗くする};
+  \node[rr] (r1) at (-0.0,-12.6) {\textbf{RANS}\\\scriptsize \texttt{yplus = 1}、\texttt{rans\_base = "model"}\\（検証した使い方）};
+  \node[rc] (r2) at (8.6,-10.0) {\textbf{RANS}（要確認）\\\scriptsize 範囲外は収束と係数を自分で確かめる。\\$M=0.3$ は未収束になりうる};
+  \draw[arr] (q1) -- node[lab, right] {必要} (q2);
+  \draw[arr] (q2) -- node[lab, right] {はい} (q3);
+  \draw[arr] (q3) -- node[lab, right] {はい} (q4);
+  \draw[arr] (q4) -- node[lab, right] {はい} (q5);
+  \draw[arr] (q5) -- node[lab, right] {はい} (r1);
+  \draw[arr] (q1.east) -- node[lab, above] {不要} (e1.west);
+  \draw[arr] (q2.east) -- node[lab, above] {\texttt{stl}} (e2.west);
+  \draw[arr] (q3.east) -- node[lab, above] {いいえ} (e3.west);
+  \draw[arr] (q4.east) -- node[lab, above] {いいえ} (e4.west);
+  \draw[arr] (q5.east) -- node[lab, above] {いいえ} (r2.west);
+  \node[draw=caqua, fill=cfillg, thick, minimum width=5mm, minimum height=3.5mm, label={[font=\scriptsize, cink2, anchor=west, xshift=1mm]right:選んだ結果（Euler または RANS）}] (l1) at (-1.5,-14.9) {};
+  \node[draw=corange, fill=cfillo, thick, minimum width=5mm, minimum height=3.5mm, label={[font=\scriptsize, cink2, anchor=west, xshift=1mm]right:条件を満たさないので Euler}] (l2) at (3.6,-14.9) {};
+  \node[draw=cyellow, fill=cyellow!15, thick, minimum width=5mm, minimum height=3.5mm, label={[font=\scriptsize, cink2, anchor=west, xshift=1mm]right:RANS だが範囲外（要確認）}] (l3) at (8.4,-14.9) {};
+\end{tikzpicture}

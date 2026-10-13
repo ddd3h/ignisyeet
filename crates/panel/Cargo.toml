@@ -13,3 +13,6 @@ rayon.workspace = true
 faer.workspace = true
 geom.workspace = true
 aero.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

@@ -1,0 +1,10 @@
+# Sample rocket, Euler, M 0.8, alpha 4 deg, the default 2 mm half-model mesh (fins at 1 mm, 1415504 cells, z-symmetric). CN(4 deg) of the wall marker for different starts. new_rule rows: the accepted value of the current acceptance (settled trend, window average) of the table runs (warm start from alpha 0 and from alpha 2 deg) and of a standalone freestream-start run of 300 iterations (log10 RMS density -8.1 at the end; iteration-300 value). residual_1e-6 rows: the value at the moment the density residual first reached 1e-6 (earlier acceptance rule, kept for comparison); residual_1e-9 rows: SU2 restarted to 1e-9. ignisyeet merge 8efaabf, 2026-10-08, SU2 8.3.0, 4 ranks.
+start,criterion,cn
+"alpha 0 warm start (mesh_convergence.csv, 2 mm)",settled trend,1.20209
+"alpha 2 warm start (sample_euler_cases.csv)",settled trend,1.20214
+"freestream start, 300 iterations (fields/)",iteration 300,1.20232
+"alpha 0 warm start",residual 1e-6,1.18512
+"alpha 2 warm start",residual 1e-6,1.19285
+"freestream start (iteration 102)",residual 1e-6,1.19556
+"freestream start, continued",residual 1e-9,1.20218
+"warm start from the alpha 0 solution",residual 1e-9,1.20209

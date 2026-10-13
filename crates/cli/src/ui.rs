@@ -7,10 +7,50 @@
 //! `Quiet` (`--quiet`: only errors and the paths of the written files).
 
 use console::{measure_text_width, style, truncate_str, Term};
-use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressState, ProgressStyle};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime};
+
+/// Splits a leading `[IY-Xnnn] ` error code off a message: (code without brackets, rest).
+pub fn split_code(s: &str) -> Option<(&str, &str)> {
+    let body = s.strip_prefix("[IY-")?;
+    let (code, rest) = body.split_once("] ")?;
+    (!code.is_empty() && code.chars().all(|c| c.is_ascii_alphanumeric())).then_some((&s[1..4 + code.len()], rest))
+}
+
+/// The plain/quiet line of a warning: `warning[IY-Xnnn]: text` for a coded message, `warning: text` otherwise.
+pub fn warning_line(s: &str) -> String {
+    match split_code(s) {
+        Some((code, rest)) => format!("warning[{code}]: {rest}"),
+        None => format!("warning: {s}"),
+    }
+}
+
+/// The report of a fatal error: `error[IY-Xnnn]: headline` (the first coded message of the chain gives the code,
+/// shown once) followed by the causes; `Error: ...` in anyhow's layout when no message of the chain is coded.
+pub fn error_report(e: &anyhow::Error) -> String {
+    let chain: Vec<String> = e.chain().map(|c| c.to_string()).collect();
+    let Some(code) = chain.iter().find_map(|m| split_code(m).map(|(c, _)| c.to_string())) else {
+        return format!("Error: {e:?}");
+    };
+    let strip = |m: &str| match split_code(m) {
+        Some((c, rest)) if c == code => rest.to_string(),
+        _ => m.to_string(),
+    };
+    let mut out = format!("error[{code}]: {}", strip(&chain[0]));
+    if chain.len() > 1 {
+        out.push_str("\n\nCaused by:");
+        for (i, c) in chain[1..].iter().enumerate() {
+            if chain.len() > 2 {
+                out.push_str(&format!("\n    {i}: {}", strip(c)));
+            } else {
+                out.push_str(&format!("\n    {}", strip(c)));
+            }
+        }
+    }
+    out
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Mode {
@@ -68,6 +108,28 @@ const ASCII: Glyphs = Glyphs {
     spinner: &["|", "/", "-", "\\", "+"],
 };
 
+/// Remaining time shown in the progress bars: the mean time per finished step times the steps left,
+/// or `--` before the first step has finished and when the figure is not meaningful. (indicatif's own
+/// estimate explodes to u64::MAX seconds when the first step takes a long time, as a CFD case does.)
+pub(crate) fn eta_text(elapsed: Duration, pos: u64, len: Option<u64>) -> String {
+    let Some(len) = len else { return "--".into() };
+    if pos == 0 || len == 0 {
+        return "--".into();
+    }
+    let left = len.saturating_sub(pos);
+    let secs = elapsed.as_secs_f64() / pos as f64 * left as f64;
+    if !secs.is_finite() || secs > 100.0 * 86400.0 {
+        return "--".into();
+    }
+    let t = secs.round() as u64;
+    let (d, h, m, s) = (t / 86400, t / 3600 % 24, t / 60 % 60, t % 60);
+    if d > 0 {
+        format!("{d}d {h:02}:{m:02}:{s:02}")
+    } else {
+        format!("{h:02}:{m:02}:{s:02}")
+    }
+}
+
 pub struct Ui {
     pub mode: Mode,
     progress: bool,
@@ -110,11 +172,7 @@ pub fn init(quiet: bool, no_progress: bool) {
     let progress = mode == Mode::Rich && !no_progress && Term::stderr().is_term();
     let linux_console = std::env::var("TERM").is_ok_and(|t| t == "linux");
     let unicode = !dumb && !linux_console && locale_is_utf8() && Term::stdout().features().is_attended();
-    let width = Term::stdout()
-        .size_checked()
-        .map(|(_, w)| w as usize)
-        .or_else(|| std::env::var("COLUMNS").ok().and_then(|c| c.parse().ok()))
-        .unwrap_or(80);
+    let width = Term::stdout().size_checked().map(|(_, w)| w as usize).or_else(|| std::env::var("COLUMNS").ok().and_then(|c| c.parse().ok())).unwrap_or(80);
     let ui = Ui { mode, progress, unicode, width, start: Instant::now(), start_wall: SystemTime::now(), files: Mutex::new(Vec::new()) };
     let _ = UI.set(ui);
 }
@@ -252,8 +310,22 @@ impl Ui {
             format!("     {}", style("/\\").white().bold()),
             format!("    {}", style("/  \\").white().bold()),
             format!("   {}{}{}", style("|").white().bold(), style(" ** ").red().bold(), style("|").white().bold()),
-            format!("  {}{}{}{}{}", style("/").white().bold(), style("|").white().bold(), style("    ").white(), style("|").white().bold(), style("\\").white().bold()),
-            format!(" {}{}{}{}{}", style("/_").white().bold(), style("|").white().bold(), style("_/\\_").white().bold(), style("|").white().bold(), style("_\\").white().bold()),
+            format!(
+                "  {}{}{}{}{}",
+                style("/").white().bold(),
+                style("|").white().bold(),
+                style("    ").white(),
+                style("|").white().bold(),
+                style("\\").white().bold()
+            ),
+            format!(
+                " {}{}{}{}{}",
+                style("/_").white().bold(),
+                style("|").white().bold(),
+                style("_/\\_").white().bold(),
+                style("|").white().bold(),
+                style("_\\").white().bold()
+            ),
             format!("    {}{}{}", style("(").yellow().bold(), style("vv").red().bold(), style(")").yellow().bold()),
         ];
         let text = [
@@ -323,9 +395,21 @@ impl Ui {
         }
         let pb = ProgressBar::with_draw_target(Some(len), ProgressDrawTarget::stderr_with_hz(15));
         let g = self.g();
-        let bar_w = if self.width >= 110 { 32 } else if self.width >= 90 { 24 } else { 16 };
+        let bar_w = if self.width >= 110 {
+            32
+        } else if self.width >= 90 {
+            24
+        } else {
+            16
+        };
         let t = template.replace("{bar}", &format!("{{bar:{bar_w}.cyan/blue.dim}}"));
-        pb.set_style(tweak(ProgressStyle::with_template(&t).unwrap().progress_chars(g.bar_chars).tick_strings(g.spinner)));
+        let style = ProgressStyle::with_template(&t).unwrap().progress_chars(g.bar_chars).tick_strings(g.spinner).with_key(
+            "eta_safe",
+            |st: &ProgressState, w: &mut dyn std::fmt::Write| {
+                let _ = w.write_str(&eta_text(st.elapsed(), st.pos(), st.len()));
+            },
+        );
+        pb.set_style(tweak(style));
         pb.set_prefix(prefix.to_string());
         pb.enable_steady_tick(Duration::from_millis(90));
         pb
@@ -361,7 +445,7 @@ impl Ui {
             if self.rich() {
                 println!("  {} {}", style(self.g().warn).yellow().bold(), style(s).yellow());
             } else {
-                println!("warning: {s}");
+                println!("{}", warning_line(s));
             }
         }
     }
@@ -431,6 +515,18 @@ impl Drop for Step {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn eta_is_a_mean_rate_estimate_and_never_absurd() {
+        let s = |n| Duration::from_secs(n);
+        assert_eq!(eta_text(s(100), 0, Some(16)), "--", "no step finished yet");
+        assert_eq!(eta_text(s(600), 1, Some(16)), "02:30:00", "15 steps of 600 s");
+        assert_eq!(eta_text(s(10), 16, Some(16)), "00:00:00");
+        assert_eq!(eta_text(s(10), 3, None), "--", "unknown length");
+        assert_eq!(eta_text(s(86400 * 3), 1, Some(3)), "6d 00:00:00");
+        assert_eq!(eta_text(s(86400 * 60), 1, Some(10)), "--", "more than 100 days is not an estimate");
+        assert_eq!(eta_text(Duration::MAX, 1, Some(2)), "--");
+    }
+
     use super::*;
 
     #[test]
@@ -440,5 +536,21 @@ mod tests {
         assert_eq!(fmt_dur(Duration::from_secs(125)), "2m 05s");
         assert_eq!(fmt_size(2048), "2.0 KB");
         assert_eq!(pad("ab", 4), "ab  ");
+    }
+
+    #[test]
+    fn coded_messages_render_with_the_code_once() {
+        assert_eq!(split_code("[IY-O542] x y"), Some(("IY-O542", "x y")));
+        assert_eq!(split_code("plain"), None);
+        assert_eq!(warning_line("[IY-O500] aero.mach_step is coarse"), "warning[IY-O500]: aero.mach_step is coarse");
+        assert_eq!(warning_line("plain"), "warning: plain");
+        let inner = anyhow::anyhow!("[IY-S002] bad number");
+        let e = inner.context("cannot read motor file m.eng");
+        assert_eq!(error_report(&e), "error[IY-S002]: cannot read motor file m.eng\n\nCaused by:\n    bad number");
+        let e = anyhow::anyhow!("[IY-O001] --descent parachute needs recovery.enabled = true");
+        assert_eq!(error_report(&e), "error[IY-O001]: --descent parachute needs recovery.enabled = true");
+        let e = anyhow::anyhow!("[IY-G003] unrecognised").context("[IY-O013] cannot read").context("outer");
+        assert_eq!(error_report(&e), "error[IY-O013]: outer\n\nCaused by:\n    0: cannot read\n    1: [IY-G003] unrecognised");
+        assert!(error_report(&anyhow::anyhow!("boom")).starts_with("Error: boom"));
     }
 }

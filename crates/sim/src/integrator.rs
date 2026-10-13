@@ -7,8 +7,8 @@
 //! an arbitrary auxiliary value `A` (the flight code uses it for telemetry). Every step function
 //! returns the auxiliary value of its last evaluation so callers can reuse it.
 
-use anyhow::{bail, Result};
 use crate::tableau::RkTableau;
+use anyhow::{bail, Result};
 use geom::{Quat, Vec3};
 
 #[derive(Debug, Clone, Copy)]
@@ -26,9 +26,7 @@ impl State {
     pub const ZERO_DERIV: State = State { pos: Vec3::ZERO, vel: Vec3::ZERO, q: Quat { w: 0.0, x: 0.0, y: 0.0, z: 0.0 }, w: Vec3::ZERO };
 
     pub fn to_arr(&self) -> [f64; N] {
-        [
-            self.pos.x, self.pos.y, self.pos.z, self.vel.x, self.vel.y, self.vel.z, self.q.w, self.q.x, self.q.y, self.q.z, self.w.x, self.w.y, self.w.z,
-        ]
+        [self.pos.x, self.pos.y, self.pos.z, self.vel.x, self.vel.y, self.vel.z, self.q.w, self.q.x, self.q.y, self.q.z, self.w.x, self.w.y, self.w.z]
     }
 
     pub fn from_arr(a: &[f64; N]) -> State {
@@ -96,7 +94,7 @@ pub fn dopri5_tableau() -> RkTableau {
 pub const SAFETY: f64 = 0.9;
 pub const MIN_FACTOR: f64 = 0.2;
 pub const MAX_FACTOR: f64 = 5.0;
-/// Smallest step the adaptive integrator will take before giving up [s].
+/// Smallest step the adaptive integrator will take before giving up \[s\].
 pub const MIN_STEP: f64 = 1e-6;
 
 pub struct Dopri5Step<A> {
@@ -165,7 +163,7 @@ pub fn step_factor(err: f64) -> f64 {
 /// Checks that a rejected step may still be shrunk.
 pub fn check_min_step(h_new: f64, t: f64) -> Result<()> {
     if h_new < MIN_STEP {
-        bail!("adaptive integrator step size fell below {MIN_STEP:e} s at t = {t:.4} s; loosen sim.rtol/sim.atol or use rk4");
+        bail!("[IY-S020] adaptive integrator step size fell below {MIN_STEP:e} s at t = {t:.4} s; loosen sim.rtol/sim.atol or use rk4");
     }
     Ok(())
 }

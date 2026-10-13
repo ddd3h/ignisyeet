@@ -1,0 +1,294 @@
+{
+ "description": "Sample STL: direct-STL Euler CFD vs rebuilt (CAD) geometry, M 0.8 and 2.0, alpha 0/4/8 deg, beta 0/4 deg (STL), roll pair p_hat = +-0.01, wall_size 2 mm, fin_size auto (fins at 1 mm), base_treatment fairing; settled-trend acceptance; STL: ignisyeet merge 8efaabf, 2026-10-08, 4 ranks, one case at a time on a 20-thread i7-12700; CAD: commit 2f31ab9 on a 32-thread node (16 ranks x 2 cases, M 0.8 and M 2.0 as two runs)",
+ "final": {
+  "stl": {
+   "cases": 16,
+   "failed": 0,
+   "accepted": 2,
+   "cells": 2793280,
+   "seconds": 7582.1
+  },
+  "cad": {
+   "cases": 10,
+   "failed": 0,
+   "accepted": 0,
+   "cells": 2831184,
+   "seconds": 1662.4,
+   "note": "two runs on a 32-thread node (1098.4 s for M 0.8, 564.0 s for M 2.0), 16 ranks x 2 cases"
+  }
+ },
+ "before_speedups": {
+  "stl": {
+   "cases": 24,
+   "failed": 0,
+   "accepted": 17,
+   "cells": 1943324,
+   "seconds": 8919.1
+  },
+  "cad": {
+   "cases": 10,
+   "failed": 0,
+   "accepted": 2,
+   "cells": 1883732,
+   "seconds": 2236.4
+  },
+  "note": "fins at 2 mm (fin_size = wall_size), 4 ranks x 4 cases; before min_iterations 100 / stable_window 60 and the verified STL mirror symmetry (STL solved +-alpha on a directly meshed full domain, shape_symmetry axisymmetric only skipped beta < 0)"
+ },
+ "stl_mesh_seconds": {
+  "final_quarter_mirrored_fins_1mm": 70,
+  "fins_2mm_quarter_mirrored": 42.3,
+  "fins_2mm_direct_full": 320.0
+ },
+ "fidelity": {
+  "fidelity": {
+   "cfd": {
+    "area": 0.6096862764666147,
+    "bbox_max": [
+     1.76999998093,
+     0.107480235398,
+     0.107480235398
+    ],
+    "bbox_min": [
+     -0.0,
+     -0.107480235398,
+     -0.107480235398
+    ],
+    "triangles": 472884,
+    "volume": 0.011695286220174772
+   },
+   "cfd_base_triangles": 17932,
+   "cfd_vs_union": {
+    "max": 0.0005208292658958149,
+    "max_at": [
+     1.7652408534058333,
+     0.004067578219903096,
+     0.004108342605444248
+    ],
+    "p99": 4.188813312673211e-05,
+    "rms": 8.840164181568067e-06,
+    "samples": 1869100
+   },
+   "cfd_wall_triangles": 454952,
+   "cfd_wall_vs_input": {
+    "max": 0.0014446927000000276,
+    "max_at": [
+     1.5014446927,
+     -0.00198661866249,
+     -0.0496724801963
+    ],
+    "p99": 2.496300689748991e-05,
+    "rms": 8.647415468617674e-06,
+    "samples": 1564856
+   },
+   "fail_above": 0.002,
+   "genus": 0,
+   "input": {
+    "area": 0.5849673440056901,
+    "bbox_max": [
+     1.5,
+     0.10748023223876953,
+     0.10748023223876953
+    ],
+    "bbox_min": [
+     -0.0,
+     -0.10748023223876953,
+     -0.10748023223876953
+    ],
+    "triangles": 14448,
+    "volume": null
+   },
+   "symmetry": {
+    "chosen": "axisymmetric",
+    "meshed": "quarter",
+    "reason": "auto: symmetric about y = 0 and z = 0",
+    "requested": "auto",
+    "y": {
+     "max_mismatch": 6.1223241899204784e-09,
+     "plane": "y",
+     "reason": null,
+     "symmetric": true,
+     "tolerance": 1.5e-06,
+     "triangulation_identical": false,
+     "vertices": 8410,
+     "vertices_matched": 8410
+    },
+    "z": {
+     "max_mismatch": 6.1223241899204784e-09,
+     "plane": "z",
+     "reason": null,
+     "symmetric": true,
+     "tolerance": 1.5e-06,
+     "triangulation_identical": false,
+     "vertices": 8410,
+     "vertices_matched": 8410
+    }
+   },
+   "union": {
+    "area": 0.6098637782726022,
+    "bbox_max": [
+     1.7699999809265137,
+     0.1074802353978157,
+     0.1074802353978157
+    ],
+    "bbox_min": [
+     -0.0,
+     -0.1074802353978157,
+     -0.1074802353978157
+    ],
+    "triangles": 16816,
+    "volume": 0.011699092886054908
+   },
+   "wall_size": 0.002,
+   "warn_above": 0.001,
+   "warnings": [
+    "geometry error 1.445e-3 m exceeds half the wall size (1.000e-3 m)"
+   ]
+  },
+  "repair": {
+   "components": [
+    {
+     "bbox_max": [
+      1.5,
+      0.05,
+      0.05
+     ],
+     "bbox_min": [
+      -0.0,
+      -0.05,
+      -0.05
+     ],
+     "flipped": true,
+     "reoriented_facets": 0,
+     "triangles": 14400,
+     "volume": 0.010677630954426044
+    },
+    {
+     "bbox_max": [
+      1.5,
+      -0.030405591964721677,
+      -0.03040559196472168
+     ],
+     "bbox_min": [
+      1.296,
+      -0.10748023223876953,
+      -0.10748023223876953
+     ],
+     "flipped": true,
+     "reoriented_facets": 0,
+     "triangles": 12,
+     "volume": 6.384004404825622e-05
+    },
+    {
+     "bbox_max": [
+      1.5,
+      -0.030405591964721677,
+      0.10748023223876953
+     ],
+     "bbox_min": [
+      1.296,
+      -0.10748023223876953,
+      0.03040559196472168
+     ],
+     "flipped": true,
+     "reoriented_facets": 0,
+     "triangles": 12,
+     "volume": 6.384004404825616e-05
+    },
+    {
+     "bbox_max": [
+      1.5,
+      0.10748023223876953,
+      0.10748023223876953
+     ],
+     "bbox_min": [
+      1.296,
+      0.030405591964721684,
+      0.03040559196472168
+     ],
+     "flipped": true,
+     "reoriented_facets": 0,
+     "triangles": 12,
+     "volume": 6.384004404825618e-05
+    },
+    {
+     "bbox_max": [
+      1.5,
+      0.10748023223876953,
+      -0.03040559196472168
+     ],
+     "bbox_min": [
+      1.296,
+      0.030405591964721684,
+      -0.10748023223876953
+     ],
+     "flipped": true,
+     "reoriented_facets": 0,
+     "triangles": 12,
+     "volume": 6.384004404825618e-05
+    }
+   ],
+   "degenerate_dropped": 0,
+   "duplicate_dropped": 0,
+   "input_triangles": 14448,
+   "vertices": 7234,
+   "weld_tolerance": 1.5e-06
+  },
+  "union": {
+   "bbox_max": [
+    1.7699999809265137,
+    0.1074802353978157,
+    0.1074802353978157
+   ],
+   "bbox_min": [
+    -0.0,
+    -0.1074802353978157,
+    -0.1074802353978157
+   ],
+   "components": [
+    {
+     "index": 0,
+     "status": "Error.NoError",
+     "triangles": 14400,
+     "volume": 0.010677631236062898
+    },
+    {
+     "index": 1,
+     "status": "Error.NoError",
+     "triangles": 12,
+     "volume": 6.384006889159454e-05
+    },
+    {
+     "index": 2,
+     "status": "Error.NoError",
+     "triangles": 12,
+     "volume": 6.384006889159454e-05
+    },
+    {
+     "index": 3,
+     "status": "Error.NoError",
+     "triangles": 12,
+     "volume": 6.384006889159454e-05
+    },
+    {
+     "index": 4,
+     "status": "Error.NoError",
+     "triangles": 12,
+     "volume": 6.384006889159454e-05
+    },
+    {
+     "index": 5,
+     "status": "Error.NoError",
+     "triangles": 2528,
+     "volume": 0.0007820842139741209
+    }
+   ],
+   "genus": 0,
+   "overlap_volume": 1.598283954848921e-05,
+   "surface_area": 0.6098637736873799,
+   "triangles": 16816,
+   "vertices": 8410,
+   "volume": 0.011699092886054908,
+   "volume_sum_of_components": 0.011715075725603395
+  }
+ }
+}

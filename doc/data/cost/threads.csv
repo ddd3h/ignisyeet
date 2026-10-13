@@ -1,0 +1,20 @@
+# Run time against the thread count (resources.threads)
+# 12th Gen Intel(R) Core(TM) i7-12700 (20 threads, 12 cores), release binary of commit 2a345c2, examples/sample.toml, 2026-10-12.
+# Median of 3 runs (wall_min/wall_max: range); cpu = user+system time of the process; rss_mb = largest peak resident memory;
+# load = median 1-minute load average before the runs (the machine was shared with SU2 jobs). Written by doc/scripts/cost_measure.py.
+task,threads,wall_s,wall_min_s,wall_max_s,cpu_s,rss_mb,load
+panel_table,1,114.710,112.850,116.540,114.340,297.070,18.010
+wind_grid_rk4_224,1,35.630,35.250,42.990,35.300,14.352,17.900
+monte_carlo_rk45_4000,1,57.430,57.370,62.740,48.890,16.230,25.220
+panel_table,2,104.440,97.580,106.070,140.220,302.277,26.750
+wind_grid_rk4_224,2,25.000,24.570,25.840,38.450,14.270,28.880
+monte_carlo_rk45_4000,2,31.260,29.580,32.640,47.770,18.543,28.830
+panel_table,4,68.930,65.150,69.180,135.810,302.938,30.080
+wind_grid_rk4_224,4,14.970,13.640,15.470,42.010,14.426,29.080
+monte_carlo_rk45_4000,4,17.710,16.350,19.540,48.070,19.527,29.460
+panel_table,8,49.200,47.360,50.000,138.710,302.914,31.200
+wind_grid_rk4_224,8,8.970,8.880,9.530,42.060,16.301,31.940
+monte_carlo_rk45_4000,8,9.520,9.040,10.250,48.750,17.828,32.340
+panel_table,20,40.060,39.570,42.990,158.520,304.621,35.870
+wind_grid_rk4_224,20,5.520,5.470,5.880,41.570,16.340,40.360
+monte_carlo_rk45_4000,20,5.720,5.720,5.980,50.300,19.195,41.470

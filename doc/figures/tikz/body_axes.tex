@@ -1,0 +1,44 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+\begin{tikzpicture}[font=\small, scale=1.25]
+  % ---- left: body axes, alpha and beta (oblique view) ----
+  \begin{scope}[x={(1cm,0cm)}, y={(-0.6cm,0.42cm)}, z={(0cm,1cm)}]
+    \def\al{34}\def\be{30}
+    % body silhouette in the x-z plane, nose at +x; the centre of gravity at the origin
+    \fill[cfill] (-2.6,0,-0.4) -- (1.6,0,-0.4) .. controls (2.3,0,-0.35) and (2.9,0,-0.12) .. (3.2,0,0) .. controls (2.9,0,0.12) and (2.3,0,0.35) .. (1.6,0,0.4) -- (-2.6,0,0.4) -- cycle;
+    \draw[cblue, thick] (-2.6,0,-0.4) -- (1.6,0,-0.4) .. controls (2.3,0,-0.35) and (2.9,0,-0.12) .. (3.2,0,0) .. controls (2.9,0,0.12) and (2.3,0,0.35) .. (1.6,0,0.4) -- (-2.6,0,0.4) -- cycle;
+    \draw[cblue, thick, fill=cfill] (-2.6,0,0.4) -- (-2.6,0,1.1) -- (-2.2,0,1.1) -- (-1.6,0,0.4);
+    \draw[cblue, thick, fill=cfill] (-2.6,0,-0.4) -- (-2.6,0,-1.1) -- (-2.2,0,-1.1) -- (-1.6,0,-0.4);
+    \draw[cink2, dash pattern=on 4pt off 2pt] (-3.1,0,0) -- (0,0,0);
+    % body axes
+    \draw[->, thick, cink] (0,0,0) -- (3.9,0,0) node[right] {$x_b$};
+    \draw[->, thick, cink] (0,0,0) -- (0,3.0,0) node[above left] {$y_b$};
+    \draw[->, thick, cink] (0,0,0) -- (0,0,2.9) node[above] {$z_b$};
+    \fill[cink] (0,0,0) circle (1.6pt);
+    \node[cink2, font=\footnotesize, anchor=north east] at (-0.1,0,-0.45) {CG};
+    % airspeed vector: u/V = (cos b cos a, sin b, cos b sin a)
+    \coordinate (U) at ({4.2*cos(\be)*cos(\al)},{4.2*sin(\be)},{4.2*cos(\be)*sin(\al)});
+    \coordinate (P) at ({4.2*cos(\be)*cos(\al)},0,{4.2*cos(\be)*sin(\al)});
+        \draw[dashed, cink2] (0,0,0) -- (P) -- (U);
+    \draw[->, very thick, caqua] (0,0,0) -- (U) node[above right] {$\bm{v}_a=\bm{v}-\bm{w}$};
+    % alpha: in the x-z plane, from x_b to the projection of v_a
+    \draw[->, corange, thick] plot[domain=0:\al, samples=24] ({1.6*cos(\x)},0,{1.6*sin(\x)});
+    \node[corange] at ({2.0*cos(\al/2)},0,{2.0*sin(\al/2)-0.05}) {$\alpha$};
+    % beta: from the projection to v_a
+    \draw[->, cblue, thick] plot[domain=0:\be, samples=24] ({3.0*cos(\x)*cos(\al)},{3.0*sin(\x)},{3.0*cos(\x)*sin(\al)});
+    \node[cblue] at ({3.45*cos(\be/2)*cos(\al)},{3.45*sin(\be/2)},{3.45*cos(\be/2)*sin(\al)}) {$\beta$};
+  \end{scope}
+  % ---- right: end view from the nose, thrust tilt ----
+  \begin{scope}[shift={(8.6,0.1)}]
+    \draw[cblue, thick, fill=cfill] (0,0) circle (1.0);
+    \draw[->, thick, cink] (0,0) -- (2.2,0) node[right] {$y_b$};
+    \draw[->, thick, cink] (0,0) -- (0,2.2) node[above] {$z_b$};
+    \fill[cink] (0,0) circle (1.6pt);
+    \def\ph{50}
+    \draw[->, very thick, corange] (0,0) -- ({1.7*cos(\ph)},{1.7*sin(\ph)}) node[above right, align=left] {推力の横成分\\ $T\sin\varepsilon$};
+    \draw[->, cblue, thick] plot[domain=0:\ph, samples=24] ({0.6*cos(\x)},{0.6*sin(\x)});
+    \node[cblue] at ({0.85*cos(\ph/2)+0.05},{0.85*sin(\ph/2)-0.05}) {$\phi$};
+    \node[font=\footnotesize, cink2, align=center] at (0.2,-1.75) {機首側から見た図\\ ($x_b$ は紙面手前向き)};
+    \node[font=\footnotesize, cink2, align=center] at (0.2,-2.6) {推力の方向 $\bm{e}_T$ は $x_b$ から $\varepsilon$ 傾く};
+  \end{scope}
+\end{tikzpicture}

@@ -1,14 +1,15 @@
-# Sample rocket, Euler, alpha=4 deg, half model, z-symmetric mesh. cn/xcp: alpha=4 result; ca_cfd: pressure axial coefficient (viscous/base terms excluded). Error: cn vs the extrapolated value f0 of the fit f = f0 + C*h^p, h = cells^(-1/3). case_wall_s: SU2 wall time of the alpha=4 case (4 ranks, 4 cases concurrent). peak_rss_per_rank_mb: largest SU2 rank. Fit: M0.8 and M2.0 see mesh_convergence_summary.json
-mach,wall_size_m,cells,cn,cn_err_vs_extrapolated_percent,xcp_m,ca_cfd,case_wall_s,mesh_s,peak_rss_per_rank_mb
-0.8,0.01,92668,1.17607,-3.12,1.20212,-0.0932914,4.6,4.58109,265.926
-0.8,0.005,222158,1.19389,-1.65,1.22019,-0.0718789,11.9,7.02239,331.594
-0.8,0.0035,379374,1.22589,0.98,1.22535,-0.0554228,23,8.78824,443.742
-0.8,0.0025,649110,1.21452,0.05,1.22186,-0.0449964,38.2,11.2039,628.5
-0.8,0.002,941082,1.20979,-0.34,1.21626,-0.0382895,55.9,13.5978,800.188
-0.8,0.0018,1124342,1.20209,-0.98,1.21248,-0.0349084,65.8,14.6962,922.605
-2,0.01,92668,0.796177,-15.25,1.08829,0.0725524,17.6,4.58109,265.926
-2,0.005,222158,0.872953,-7.07,1.13594,0.0890332,40.1,7.02239,331.594
-2,0.0035,379374,0.899619,-4.23,1.14721,0.0980016,47.5,8.78824,443.742
-2,0.0025,649110,0.912331,-2.88,1.15251,0.102236,124.8,11.2039,628.5
-2,0.002,941082,0.918849,-2.19,1.15364,0.105384,184.8,13.5978,800.188
-2,0.0018,1124342,0.925942,-1.43,1.15507,0.106495,141.6,14.6962,922.605
+# Sample rocket, Euler, alpha=4 deg, half model, z-symmetric mesh, alpha_mode mirror, fin_size auto (fin faces at 1 mm = fin thickness / 4 for every wall_size), acceptance with the coefficient-trend check. Cases alpha 0 then alpha 4 (warm start from alpha 0) per Mach, machs [0.8, 2.0]. ignisyeet commit b6a9bf5, 2026-10-08, SU2 8.3.0, 4 MPI ranks, two levels at a time (two concurrent cases; other SU2 jobs on the same 20-thread machine).
+# cn/xcp: alpha=4 result; ca_cfd: pressure axial coefficient (viscous/base terms excluded). cn_diff_vs_finest_percent: cn against the 1.8 mm mesh. iterations, status: alpha 0 / alpha 4 (accepted = practically converged, residual not at the target). case_wall_s_a0/a4: SU2 wall time [s]. mesh_s: gmsh mesh time [s]. peak_su2_rss_mb: largest sum of the VmRSS of the 4 SU2 ranks in MiB (sampled every 5 s).
+mach,wall_size_m,cells,cn,cn_diff_vs_finest_percent,xcp_m,ca_cfd,status,iterations,case_wall_s_a0,case_wall_s_a4,mesh_s,peak_su2_rss_mb
+0.8,0.01,768962,1.14018,-5.28,1.1860,-0.02855,converged/converged,402/102,599.9,128.7,32.0,1880
+0.8,0.005,859860,1.18285,-1.74,1.2123,-0.02552,converged/converged,303/103,331.0,88.7,18.3,2089
+0.8,0.0035,981110,1.19547,-0.69,1.2190,-0.02422,converged/converged,402/152,769.8,284.0,34.5,2352
+0.8,0.0025,1187762,1.19949,-0.35,1.2190,-0.02220,converged/converged,452/152,1025.9,363.1,42.3,2817
+0.8,0.002,1415504,1.20209,-0.14,1.2206,-0.02209,converged/converged,352/152,1106.5,443.1,41.4,3331
+0.8,0.0018,1560672,1.20374,0.00,1.2204,-0.02212,converged/converged,402/152,1496.1,418.1,35.2,3626
+2,0.01,768962,0.91015,-2.76,1.1265,0.10909,converged/accepted,152/102,252.9,158.8,32.0,1880
+2,0.005,859860,0.92490,-1.18,1.1499,0.11031,converged/accepted,103/102,77.7,115.0,18.3,2089
+2,0.0035,981110,0.93085,-0.55,1.1553,0.11084,converged/converged,152/152,220.9,304.4,34.5,2352
+2,0.0025,1187762,0.93435,-0.17,1.1564,0.11188,converged/converged,202/152,452.5,330.0,42.3,2817
+2,0.002,1415504,0.93472,-0.13,1.1570,0.11163,converged/converged,152/152,433.2,349.0,41.4,3331
+2,0.0018,1560672,0.93598,0.00,1.1576,0.11125,converged/converged,252/152,730.7,471.2,35.2,3626

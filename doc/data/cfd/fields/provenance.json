@@ -1,0 +1,7 @@
+{
+ "source": "sample rocket, Euler, half model, wall_size 2 mm, fin_size auto (1 mm), 1415504 cells, z-symmetric mesh (the mesh of sample_euler_cases.csv)",
+ "cases": "M 0.8 and 2.0, alpha 0 and 4 deg, each solved from the freestream (no warm start) with the case.cfg of the table run, RESTART_SOL = NO, ITER = 300 (CONV_RESIDUAL_MINVAL -14, so all 300 iterations run); residual 1e-6 reached at iteration 99, 102, 81, 101; final log10 RMS density -8.16, -8.12, -9.04, -12.63; CN(4 deg) of the wall marker (CFz) 1.20232 (M 0.8) and 0.93474 (M 2.0)",
+ "commit": "8efaabf",
+ "date": "2026-10-08",
+ "tools": "SU2 8.3.0, 4 MPI ranks; extracted with doc/scripts/extract_cfd_fields.py"
+}

@@ -108,6 +108,7 @@ mathjax3_config = {
 html_theme = "furo"
 html_title = "IgnisYeet ドキュメント"
 html_logo = "../IgnisYeet-logo.svg"
+html_favicon = "_static/landing/logo-mark.svg"
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
 html_theme_options = {

@@ -248,15 +248,15 @@ a.iy-badge:hover { border-color: var(--iy-accent); color: var(--iy-accent) !impo
 .iy-video-link { margin-top: .75rem; font-size: .9rem; }
 
 /* built with */
-.iy-built { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px; margin-top: 1.4rem; color: var(--color-foreground-secondary); }
-.iy-built-item { display: inline-flex; align-items: center; gap: 8px; }
+.iy-built { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-top: 1.4rem; color: var(--color-foreground-secondary); }
+.iy-built-item { display: inline-flex; align-items: center; gap: 6px; }
 .iy-built-item svg { flex: none; width: 28px; height: 28px; color: var(--color-foreground-primary); }
 .iy-built-item span { font-weight: 700; font-size: 1rem; color: var(--color-foreground-primary); }
 .iy-built-item small { font-size: 0.78rem; padding: 1px 8px; border: 1px solid var(--color-background-border); border-radius: 999px; }
 
 /* logos of the CFD tools sit on a light tile so the dark marks stay visible in the dark theme */
-.iy-logo-tile { display: inline-flex; align-items: center; justify-content: center; height: 38px; min-width: 38px; padding: 5px 8px; border: 1px solid var(--color-background-border); border-radius: 8px; background: #fff; }
-.iy-logo-tile img { height: 28px; width: auto; max-width: none; }
+.iy-logo-tile { display: inline-flex; align-items: center; justify-content: center; height: 34px; min-width: 34px; padding: 4px 6px; border: 1px solid var(--color-background-border); border-radius: 8px; background: #fff; }
+.iy-logo-tile img { height: 22px; width: auto; max-width: none; }
 .iy-built-item .iy-logo-tile { font-weight: 400; }
 
 /* phone: the pipeline as a compact list (name and command on one row) */

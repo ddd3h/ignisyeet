@@ -2749,6 +2749,9 @@ mod tests {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let dir = TempDir::new("makefile");
         std::fs::create_dir_all(&dir).unwrap();
+        // A second makefile instead of --eval, which GNU make 3.81 (macOS) does not have.
+        let show = dir.join("show.mk");
+        std::fs::write(&show, "show: ; @echo \"$(OUT)\"\n").unwrap();
         let cases = [
             ("[rocket]\nx = 1\n  [ output ]  # c\n  \"dir\" = \"res dir\"\n", "res dir"),
             ("[output]\ndir='lit'\n", "lit"),
@@ -2762,7 +2765,9 @@ mod tests {
             let out = std::process::Command::new("make")
                 .args(["-s", "--no-print-directory", "-f"])
                 .arg(root.join("Makefile"))
-                .args(["--eval", "show: ; @echo \"$(OUT)\"", "show"])
+                .arg("-f")
+                .arg(&show)
+                .arg("show")
                 .arg(format!("CONFIG={}", cfg.display()))
                 .output()
                 .unwrap();

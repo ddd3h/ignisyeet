@@ -227,7 +227,7 @@ KML は、書き出したファイルを読み戻して同じ値になること�
    assert!((s.apogee - 4440.48).abs() < 0.05 && (s.apogee_time - 26.10).abs() < 0.005, "{} at {}", s.apogee, s.apogee_time);
    assert!((s.landing_east + 655.57).abs() < 0.05 && (s.landing_north + 7707.70).abs() < 0.05, "{} {}", s.landing_east, s.landing_north);
 
-準定常の空力に切り替えた飛翔は、六成分の項を加える前の結果とビットまで一致する（``crates/sim/src/flight_dyn_tests.rs``\ 、``quasi_steady_switch_reproduces_the_quasi_steady_trajectory_bit_for_bit``）。
+準定常の空力に切り替えた飛翔は、六成分の項を加える前の結果と相対 1e-10 以内で一致する（``crates/sim/src/flight_dyn_tests.rs``\ 、``quasi_steady_switch_reproduces_the_quasi_steady_trajectory``）。
 頂点高度、着地点の東と北、最大 Mach 数の IEEE 754 のビット列を ``u64`` で書いて比べる。
 CFD の SU2 設定ファイルの文字列は、そのハッシュ値を固定する（``crates/cfd/src/su2cfg.rs``\ 、``euler_config_text_is_frozen``）。
 設定の文章が変わると既存のキャッシュの計算が無効になるので、変えたことを意識的に確かめさせる意図である。

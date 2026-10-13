@@ -435,9 +435,10 @@ fn sample_sim<'a>(table: &'a AeroTable, motor: &'a Motor, wind: f64) -> Simulati
 }
 
 #[test]
-fn quasi_steady_switch_reproduces_the_quasi_steady_trajectory_bit_for_bit() {
+fn quasi_steady_switch_reproduces_the_quasi_steady_trajectory() {
     // Reference: the flight model without the lag, Magnus and rotation-induced terms (the summary of
-    // this flight before they existed, bit patterns of apogee, landing east/north and max Mach), in a
+    // this flight before they existed, bit patterns of apogee, landing east/north and max Mach, compared to
+    // 1e-10 relative because fused multiply-add on aarch64 rounds the last bits differently), in a
     // crosswind with fin cant and a lateral CG offset, for the axisymmetric table and its general expansion.
     let (table, motor) = sample_parts();
     let general = table.to_general(aero::table::angle_axis(180.0, 30.0, 2.0, 10.0), aero::table::angle_axis(90.0, 30.0, 2.0, 10.0));
@@ -451,8 +452,11 @@ fn quasi_steady_switch_reproduces_the_quasi_steady_trajectory_bit_for_bit() {
         sim.mass.cg_lateral_dry = [0.001, 0.0];
         sim.aero_scale = AeroScale::quasi_steady();
         let s = sim.run(Descent::Ballistic, false).unwrap().summary;
-        let got = [s.apogee.to_bits(), s.landing_east.to_bits(), s.landing_north.to_bits(), s.max_mach.to_bits()];
-        assert_eq!(got, bits, "{name}: apogee {} landing ({}, {})", s.apogee, s.landing_east, s.landing_north);
+        let got = [s.apogee, s.landing_east, s.landing_north, s.max_mach];
+        for (g, b) in got.iter().zip(bits) {
+            let want = f64::from_bits(b);
+            assert!((g - want).abs() <= 1e-10 * want.abs(), "{name}: {g} vs {want}");
+        }
         // The full model differs (the Barrowman table has lag sums and the damping sums give a force).
         sim.aero_scale = AeroScale::default();
         let full = sim.run(Descent::Ballistic, false).unwrap().summary;

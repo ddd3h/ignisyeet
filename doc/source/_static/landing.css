@@ -82,7 +82,7 @@ code, .iy code { font-family: var(--font-stack--monospace); }
     display: flex; align-items: center; gap: 2rem; max-width: 1120px; margin: 0 auto; padding: 14px 64px 14px 24px;
   }
   .iy-nav-brand { display: flex; align-items: center; gap: 0.6rem; font-weight: 700; font-size: 1.05rem; color: var(--color-foreground-primary) !important; text-decoration: none; }
-  .iy-nav-brand img { border-radius: 6px; }
+  .iy-nav-brand img { flex: none; width: 32px; height: 32px; border-radius: 8px; box-shadow: 0 0 0 1px var(--color-background-border); }
   .iy-nav ul { display: flex; gap: 1.6rem; margin-left: auto; }
   .iy-nav ul a { color: var(--color-foreground-secondary); text-decoration: none; font-size: 0.95rem; }
   .iy-nav ul a:hover { color: var(--color-foreground-primary); text-decoration: underline; }
@@ -98,7 +98,9 @@ code, .iy code { font-family: var(--font-stack--monospace); }
   font-size: 0.8rem; line-height: 1.7; color: var(--color-foreground-secondary) !important; background: var(--color-background-primary); text-decoration: none;
 }
 a.iy-badge:hover { border-color: var(--iy-accent); color: var(--iy-accent) !important; }
-.iy-name { font-size: clamp(2.8rem, 6vw, 4.4rem); font-weight: 800; line-height: 1.05; letter-spacing: -0.02em; margin-bottom: 0.9rem; }
+.iy-name-row { display: flex; align-items: flex-end; gap: 0.25em; margin-bottom: 0.9rem; }
+.iy-name-mark { flex: none; width: 112px; height: 112px; border-radius: 24px; box-shadow: 0 0 0 1px var(--color-background-border), var(--iy-shadow); }
+.iy-name { margin: 0; font-size: clamp(2.8rem, 6vw, 4.4rem); font-weight: 800; line-height: 1.05; letter-spacing: -0.02em; }
 .iy-tagline { font-size: 1.2rem; line-height: 1.6; font-weight: 600; }
 .iy-lead { margin-top: 1rem; color: var(--color-foreground-secondary); }
 .iy-cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 1.6rem; }
@@ -198,7 +200,9 @@ a.iy-badge:hover { border-color: var(--iy-accent); color: var(--iy-accent) !impo
 .iy-footer { padding: 48px 0 56px; font-size: 0.88rem; line-height: 1.75; color: var(--color-foreground-secondary); }
 .iy-footer-grid { display: grid; grid-template-columns: 1.3fr 1.3fr 0.7fr; gap: 32px; }
 .iy-footer p + p, .iy-footer p + ul { margin-top: 0.6rem; }
-.iy-footer-name { font-size: 1.2rem; font-weight: 800; color: var(--color-foreground-primary); }
+.iy-footer-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 0.6rem; }
+.iy-footer-brand img { flex: none; width: 40px; height: 40px; border-radius: 10px; box-shadow: 0 0 0 1px var(--color-background-border); }
+.iy-footer-name { margin: 0; font-size: 1.2rem; font-weight: 800; color: var(--color-foreground-primary); }
 .iy-footer-h { font-weight: 700; color: var(--color-foreground-primary); }
 
 /* ---- narrower screens ---- */
@@ -218,6 +222,7 @@ a.iy-badge:hover { border-color: var(--iy-accent); color: var(--iy-accent) !impo
   .iy-section h2 { font-size: 1.5rem; }
   .iy-hero { padding: 12px 0 48px; }
   .iy-tagline { font-size: 1.12rem; }
+  .iy-name-mark { width: 76px; height: 76px; border-radius: 17px; }
   .iy-cta .iy-btn { flex: 1 1 auto; justify-content: center; }
   .iy-cards, .iy-gallery, .iy-map { grid-template-columns: minmax(0, 1fr); }
   .iy-flow { grid-template-columns: minmax(0, 1fr); row-gap: 0; }
@@ -239,3 +244,10 @@ a.iy-badge:hover { border-color: var(--iy-accent); color: var(--iy-accent) !impo
 .iy-video { position: relative; width: 100%; max-width: 56rem; aspect-ratio: 16 / 9; margin-top: 1.5rem; border: 1px solid var(--color-background-border); border-radius: 12px; overflow: hidden; background: #000; }
 .iy-video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 .iy-video-link { margin-top: .75rem; font-size: .9rem; }
+
+/* built with */
+.iy-built { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 28px; margin-top: 1.4rem; color: var(--color-foreground-secondary); }
+.iy-built-item { display: inline-flex; align-items: center; gap: 8px; }
+.iy-built-item svg { flex: none; width: 28px; height: 28px; color: var(--color-foreground-primary); }
+.iy-built-item span { font-weight: 700; font-size: 1rem; color: var(--color-foreground-primary); }
+.iy-built-item small { font-size: 0.78rem; padding: 1px 8px; border: 1px solid var(--color-background-border); border-radius: 999px; }

@@ -102,7 +102,7 @@ setup_ui() {
 
 # Print a line to stdout (the terminal, even under `curl | bash`).
 say() { printf '%s\n' "$*"; }
-logf() { [ "$LOG_READY" = 1 ] && printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" >>"$LOG_FILE" || true; }
+logf() { if [ "$LOG_READY" = 1 ]; then printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*" >>"$LOG_FILE" || true; fi; }
 
 ok()   { say "  ${GREEN}${G_OK}${RESET} $*"; logf "ok: $*"; }
 # warn CODE MESSAGE: "warning[IY-Innn]: MESSAGE"; warn_more continues the same warning on a further line.
@@ -669,10 +669,10 @@ init_paths() {
   printf '\n===== install.sh %s  %s  args: %s =====\n' "$(date '+%F %T')" "$(uname -a)" "${ORIG_ARGS:-}" >>"$LOG_FILE"
 }
 
-state_get() { [ -f "$STATE_FILE" ] && sed -n "s/^$1=//p" "$STATE_FILE" | tail -n 1 || true; }
+state_get() { if [ -f "$STATE_FILE" ]; then sed -n "s/^$1=//p" "$STATE_FILE" | tail -n 1 || true; fi; }
 state_set() { # KEY VALUE
   local tmp="$STATE_FILE.tmp"
-  { [ -f "$STATE_FILE" ] && grep -v "^$1=" "$STATE_FILE" || true; printf '%s=%s\n' "$1" "$2"; } >"$tmp"
+  { if [ -f "$STATE_FILE" ]; then grep -v "^$1=" "$STATE_FILE" || true; fi; printf '%s=%s\n' "$1" "$2"; } >"$tmp"
   mv "$tmp" "$STATE_FILE"
 }
 
@@ -843,7 +843,7 @@ make_venv() { # DIR REQ LABEL
 
 install_user() {
   section "Installing ignisyeet $VERSION"
-  [ "$HAVE_CURL" = 1 ] && [ "$HAVE_TAR" = 1 ] || die IY-I040 "curl and tar are required"
+  if [ "$HAVE_CURL" != 1 ] || [ "$HAVE_TAR" != 1 ]; then die IY-I040 "curl and tar are required"; fi
   have sha256sum || have shasum || die IY-I041 "sha256sum or shasum is required to verify the download"
   TMP=$(mktemp -d "${TMPDIR:-/tmp}/ignisyeet-install.XXXXXX")
   trap 'rm -rf "$TMP"; printf "%s" "${SHOW_CUR:-}"' EXIT

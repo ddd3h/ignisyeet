@@ -67,6 +67,13 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # rust-toolchain.toml pins the toolchain, so the target must be installed for that one, not for stable.
+      - name: Install the pinned toolchain with the target
+        run: |
+          channel=$(sed -n 's/^channel[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' rust-toolchain.toml)
+          echo "toolchain from rust-toolchain.toml: $channel"
+          rustup toolchain install "$channel" --profile minimal --target "${{ matrix.target }}" --no-self-update
+
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:
           key: ${{ matrix.target }}

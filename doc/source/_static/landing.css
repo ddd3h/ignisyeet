@@ -254,11 +254,6 @@ a.iy-badge:hover { border-color: var(--iy-accent); color: var(--iy-accent) !impo
 .iy-built-item span { font-weight: 700; font-size: 1rem; color: var(--color-foreground-primary); }
 .iy-built-item small { font-size: 0.78rem; padding: 1px 8px; border: 1px solid var(--color-background-border); border-radius: 999px; }
 
-/* the two-row difference list */
-.iy-diff { display: grid; gap: 6px; margin: 10px 0; padding: 0; list-style: none; }
-.iy-diff li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 8px 12px; border-radius: 8px; background: var(--iy-soft); font-size: 0.9rem; }
-.iy-diff b { font-size: 1.05rem; white-space: nowrap; }
-
 /* phone: the pipeline as a compact list (name and command on one row) */
 @media (max-width: 40em) {
   .iy-flow a { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; }

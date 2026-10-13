@@ -7,7 +7,7 @@
 //! `Quiet` (`--quiet`: only errors and the paths of the written files).
 
 use console::{measure_text_width, style, truncate_str, Term};
-use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressState, ProgressStyle};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime};
@@ -107,6 +107,28 @@ const ASCII: Glyphs = Glyphs {
     bar_chars: "#>-",
     spinner: &["|", "/", "-", "\\", "+"],
 };
+
+/// Remaining time shown in the progress bars: the mean time per finished step times the steps left,
+/// or `--` before the first step has finished and when the figure is not meaningful. (indicatif's own
+/// estimate explodes to u64::MAX seconds when the first step takes a long time, as a CFD case does.)
+pub(crate) fn eta_text(elapsed: Duration, pos: u64, len: Option<u64>) -> String {
+    let Some(len) = len else { return "--".into() };
+    if pos == 0 || len == 0 {
+        return "--".into();
+    }
+    let left = len.saturating_sub(pos);
+    let secs = elapsed.as_secs_f64() / pos as f64 * left as f64;
+    if !secs.is_finite() || secs > 100.0 * 86400.0 {
+        return "--".into();
+    }
+    let t = secs.round() as u64;
+    let (d, h, m, s) = (t / 86400, t / 3600 % 24, t / 60 % 60, t % 60);
+    if d > 0 {
+        format!("{d}d {h:02}:{m:02}:{s:02}")
+    } else {
+        format!("{h:02}:{m:02}:{s:02}")
+    }
+}
 
 pub struct Ui {
     pub mode: Mode,
@@ -381,7 +403,13 @@ impl Ui {
             16
         };
         let t = template.replace("{bar}", &format!("{{bar:{bar_w}.cyan/blue.dim}}"));
-        pb.set_style(tweak(ProgressStyle::with_template(&t).unwrap().progress_chars(g.bar_chars).tick_strings(g.spinner)));
+        let style = ProgressStyle::with_template(&t).unwrap().progress_chars(g.bar_chars).tick_strings(g.spinner).with_key(
+            "eta_safe",
+            |st: &ProgressState, w: &mut dyn std::fmt::Write| {
+                let _ = w.write_str(&eta_text(st.elapsed(), st.pos(), st.len()));
+            },
+        );
+        pb.set_style(tweak(style));
         pb.set_prefix(prefix.to_string());
         pb.enable_steady_tick(Duration::from_millis(90));
         pb
@@ -487,6 +515,18 @@ impl Drop for Step {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn eta_is_a_mean_rate_estimate_and_never_absurd() {
+        let s = |n| Duration::from_secs(n);
+        assert_eq!(eta_text(s(100), 0, Some(16)), "--", "no step finished yet");
+        assert_eq!(eta_text(s(600), 1, Some(16)), "02:30:00", "15 steps of 600 s");
+        assert_eq!(eta_text(s(10), 16, Some(16)), "00:00:00");
+        assert_eq!(eta_text(s(10), 3, None), "--", "unknown length");
+        assert_eq!(eta_text(s(86400 * 3), 1, Some(3)), "6d 00:00:00");
+        assert_eq!(eta_text(s(86400 * 60), 1, Some(10)), "--", "more than 100 days is not an estimate");
+        assert_eq!(eta_text(Duration::MAX, 1, Some(2)), "--");
+    }
+
     use super::*;
 
     #[test]

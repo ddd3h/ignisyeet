@@ -1233,7 +1233,7 @@ fn aero_table(cfg: &Config, force: bool) -> Result<AeroTable> {
     aero_table_for(cfg, force, Sub::Sim)
 }
 
-const BAR_T: &str = "  {spinner:.cyan} {prefix:<12.bold} {bar} {pos}/{len} {percent:>3}%  {elapsed:.dim}  ETA {eta_precise:.yellow}\n      {msg:.dim}";
+const BAR_T: &str = "  {spinner:.cyan} {prefix:<12.bold} {bar} {pos}/{len} {percent:>3}%  {elapsed:.dim}  ETA {eta_safe:.yellow}\n      {msg:.dim}";
 
 /// Axis grids of the general tables expanded from axisymmetric ones.
 fn general_axes() -> (Vec<f64>, Vec<f64>) {
@@ -1738,7 +1738,7 @@ pub(crate) fn chute_speed(mass: f64, cd_s: f64) -> f64 {
     (2.0 * mass * 9.80665 / (1.225 * cd_s.max(1e-3))).sqrt()
 }
 
-const SIM_T: &str = "  {spinner:.cyan} {prefix:<12.bold} {bar} {percent:>3}%  T+{simt:.cyan}  {elapsed:.dim}  ETA {eta_precise:.yellow}\n      {msg}";
+const SIM_T: &str = "  {spinner:.cyan} {prefix:<12.bold} {bar} {percent:>3}%  T+{simt:.cyan}  {elapsed:.dim}  ETA {eta_safe:.yellow}\n      {msg}";
 
 /// Flies the configured rocket once, with a live progress bar when a terminal is attached.
 fn fly(cfg: &Config, sim: &Simulation, descent: Descent) -> Result<sim::SimResult> {
@@ -2069,7 +2069,7 @@ fn write_trajectory_to(f: &mut impl Write, samples: &[sim::flight::Sample]) -> R
     Ok(())
 }
 
-const DISP_T: &str = "  {spinner:.cyan} {prefix:<12.bold} {bar} {pos}/{len} {percent:>3}%  {rate:.dim}  {elapsed:.dim}  ETA {eta_precise:.yellow}\n      {msg}";
+const DISP_T: &str = "  {spinner:.cyan} {prefix:<12.bold} {bar} {pos}/{len} {percent:>3}%  {rate:.dim}  {elapsed:.dim}  ETA {eta_safe:.yellow}\n      {msg}";
 
 /// Template key `{rate}`: finished runs per second.
 fn rate_key(st: indicatif::ProgressStyle) -> indicatif::ProgressStyle {

@@ -275,3 +275,33 @@ a.iy-badge:hover { border-color: var(--iy-accent); color: var(--iy-accent) !impo
 .iy-copy .iy-ico-done { display: none; }
 .iy-copy.is-done .iy-ico-copy { display: none; }
 .iy-copy.is-done .iy-ico-done { display: block; color: #6fdc8c; }
+
+/* ---- top bar on phones and narrow windows: logo, colour theme, menu; Furo's own header is not used here ---- */
+.mobile-header { display: none !important; }
+.iy-nav-tools { display: none; }
+@media (max-width: 66.99em) {
+  .iy-nav {
+    display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 20;
+    padding: 10px 16px; background: var(--color-background-primary); border-bottom: 1px solid var(--color-background-border);
+  }
+  .iy-nav-brand { display: flex; align-items: center; gap: 0.6rem; font-weight: 700; font-size: 1.05rem; color: var(--color-foreground-primary) !important; text-decoration: none; }
+  .iy-nav-brand img { flex: none; width: 32px; height: 32px; border-radius: 8px; box-shadow: 0 0 0 1px var(--color-background-border); }
+  .iy-nav-tools { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+  .iy-nav-tools .theme-toggle-container { margin: 0; }
+  .iy-nav-tools button { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--color-foreground-secondary); cursor: pointer; }
+  .iy-nav-tools button:hover { background: var(--color-background-hover); color: var(--color-foreground-primary); }
+  .iy-nav-tools .theme-toggle svg { width: 1.4rem; height: 1.4rem; color: inherit; }
+  .iy-menu .iy-menu-close { display: none; }
+  .iy-nav.is-open .iy-menu .iy-menu-open { display: none; }
+  .iy-nav.is-open .iy-menu .iy-menu-close { display: inline; }
+  .iy-nav ul {
+    display: none; position: absolute; top: 100%; left: 0; right: 0; margin: 0; padding: 8px 16px 16px;
+    background: var(--color-background-primary); border-bottom: 1px solid var(--color-background-border); box-shadow: 0 12px 24px rgba(0, 0, 0, 0.12);
+  }
+  .iy-nav.is-open ul { display: block; }
+  .iy-nav ul a { display: block; padding: 12px 4px; color: var(--color-foreground-primary); text-decoration: none; font-size: 1rem; border-bottom: 1px solid var(--color-background-border); }
+  .iy-nav ul li:last-child a { border-bottom: 0; }
+  .content-icon-container { display: none; }
+}
+/* Furo's .content clips overflow, which stops the sticky top bar from sticking */
+.content { overflow: visible; }

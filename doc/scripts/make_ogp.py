@@ -34,7 +34,7 @@ def main() -> None:
     d.text((x, 150), "IgnisYeet", font=ImageFont.truetype(FONT, 104), fill=INK)
     d.rectangle((x, 285, x + 120, 293), fill=ACCENT)
     body = ImageFont.truetype(FONT, 38)
-    for i, line in enumerate(["STL からの空力推算と", "6 自由度飛翔・落下分散解析"]):
+    for i, line in enumerate(["CAD データからの空力推算と", "6 自由度飛翔・落下分散解析"]):
         d.text((x, 325 + 56 * i), line, font=body, fill=INK2)
     d.text((x, 470), "オープンソースのロケット飛翔シミュレータ", font=ImageFont.truetype(FONT, 28), fill=INK2)
 

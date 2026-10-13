@@ -1,0 +1,294 @@
+<div class="iy">
+
+<nav class="iy-nav" aria-label="トップページのナビゲーション">
+  <a class="iy-nav-brand" href="index.html"><img src="_static/landing/logo.svg" alt="" width="28" height="28"><span>IgnisYeet</span></a>
+  <ul>
+    <li><a href="#iy-features">機能</a></li>
+    <li><a href="#iy-pipeline">仕組み</a></li>
+    <li><a href="#iy-verified">検証</a></li>
+    <li><a href="#iy-docs">ドキュメント</a></li>
+    <li><a href="search.html">検索</a></li>
+    <li><a href="https://github.com/ddd3h/ignisyeet" rel="noopener">GitHub</a></li>
+  </ul>
+</nav>
+
+<header class="iy-hero">
+  <div class="iy-wrap iy-hero-grid">
+    <div class="iy-hero-text">
+      <p class="iy-badges">
+        <a class="iy-badge" href="https://github.com/ddd3h/ignisyeet/blob/main/CITATION.cff" rel="noopener">version 0.4.0</a>
+        <a class="iy-badge" href="https://github.com/ddd3h/ignisyeet/blob/main/LICENSE" rel="noopener">GPL-3.0-or-later</a>
+        <span class="iy-badge">Linux / macOS</span>
+      </p>
+      <p class="iy-name" role="presentation">IgnisYeet</p>
+      <p class="iy-tagline">ロケットの CAD データから空力特性を推算し、6 自由度で飛ばし、落下分散まで求めるオープンソースの飛翔シミュレータ。</p>
+      <p class="iy-lead">機体の外形は CAD モデルから取り出し、空力係数は Mach 数と迎角の格子で一度だけ計算して表に保存する。飛翔計算はその表を使って、ランチャ滑走から着地までを数値積分する。計算の重い部分は Rust、作図は Python で実装している。</p>
+      <p class="iy-cta">
+        <a class="iy-btn iy-btn-primary" href="quickstart.html">はじめる</a>
+        <a class="iy-btn" href="intro.html">ドキュメント</a>
+        <a class="iy-btn iy-btn-ghost" href="https://github.com/ddd3h/ignisyeet" rel="noopener"><svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>GitHub</a>
+      </p>
+      <div class="iy-install">
+        <p class="iy-install-label" id="iy-install-label">インストール（Linux x86_64 / aarch64、macOS Intel / Apple Silicon）</p>
+        <div class="iy-code">
+          <pre tabindex="0" aria-labelledby="iy-install-label"><code id="iy-install-cmd">curl -fsSL https://raw.githubusercontent.com/ddd3h/ignisyeet/main/install.sh | bash</code></pre>
+          <button type="button" class="iy-copy" data-target="iy-install-cmd" aria-label="インストールのコマンドをコピーする">コピー</button>
+        </div>
+      </div>
+    </div>
+
+    <figure class="iy-shot">
+      <div class="iy-window">
+        <div class="iy-window-bar"><i></i><i></i><i></i><span>report.html</span></div>
+        <img src="_static/landing/report_summary.webp" width="1000" height="509" alt="HTML レポートの先頭。頂点高度 4440 m、最大速度 519 m/s、最小静安定余裕 1.99 cal、着地距離 7736 m と、入力の一覧が並ぶ">
+      </div>
+      <div class="iy-window iy-window-term">
+        <div class="iy-window-bar"><i></i><i></i><i></i><span>ignisyeet sim examples/sample.toml</span></div>
+        <img src="_static/landing/screen_sim_result.webp" width="1000" height="335" alt="端末の表示。形状抽出、空力表、飛翔の各段階が完了し、飛翔結果のパネルに頂点高度 4440.5 m と着地点が出る">
+      </div>
+      <figcaption>同梱のサンプル機体の結果（Barrowman 法、パラシュート降下、風 4 m/s）。<a href="quickstart.html">クイックスタート</a>で同じ画面を再現できる。</figcaption>
+    </figure>
+  </div>
+</header>
+
+<section class="iy-section" id="iy-features">
+  <div class="iy-wrap">
+    <h2>できること</h2>
+    <p class="iy-sub">CAD データを入力にして、形状の抽出から落下分散のレポートまでを一つの流れで計算する。各カードは、その内容を説明する章へのリンクである。</p>
+    <ul class="iy-cards">
+      <li><a class="iy-card" href="geometry.html">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 4 7.5v9L12 21l8-4.5v-9L12 3Z"/><path d="m4 7.5 8 4.5 8-4.5M12 12v9"/></svg>
+        <h3>CAD から形状を取り出す</h3>
+        <p>STEP、IGES、BREP の CAD データ（STL も可）から、胴体の半径分布とフィンの寸法を取り出す。主軸の検出とフィンの自動検出を備え、フィンは手動で指定することもできる。</p>
+        <span class="iy-more">形状の取り込みと抽出</span></a></li>
+      <li><a class="iy-card" href="aerodynamics.html">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8c4-3 6 3 9 0s5-3 9 0M3 14c4-3 6 3 9 0s5-3 9 0M3 20c4-3 6 3 9 0s5-3 9 0"/></svg>
+        <h3>空力の推算</h3>
+        <p>部品積み上げ法（Barrowman）、パネル法、CFD、外部の係数表から選ぶ。係数は Mach 数と迎角の格子で一度だけ計算して保存し、減衰、見かけ質量、Magnus 力、誘導ロールを含む六分力も扱う。</p>
+        <span class="iy-more">空力解析</span></a></li>
+      <li><a class="iy-card" href="cfd_usage.html">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3h18v18H3z"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/></svg>
+        <h3>SU2 による CFD</h3>
+        <p>Euler と RANS の CFD で係数表を作る。表面は、抽出した形状、STL、STEP のモデルから作る。SU2 8.3.0 を使い、残差と係数の変化から収束を判定する。</p>
+        <span class="iy-more">CFD による空力表の作成</span></a></li>
+      <li><a class="iy-card" href="dynamics.html">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M2 12h20"/><path d="m12 2-3 3m3-3 3 3M22 12l-3-3m3 3-3 3M12 22l3-3m-3 3-3-3M2 12l3 3m-3-3 3-3"/></svg>
+        <h3>6 自由度の飛翔</h3>
+        <p>ランチャ滑走から着地までを剛体の 6 自由度で積分する。平らな地球と自転する地球、US Standard Atmosphere 1976、一定・べき乗則・対数・プロファイルの風、RK4・RK45・DOP853 から選べる。</p>
+        <span class="iy-more">運動方程式</span></a></li>
+      <li><a class="iy-card" href="descent.html">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11a9 9 0 0 1 18 0c-1.5-1.5-3-1.5-4.5 0-1.5-1.5-3-1.5-4.5 0-1.5-1.5-3-1.5-4.5 0C6 9.5 4.5 9.5 3 11Z"/><path d="m3 11 9 9 9-9M12 11v9"/></svg>
+        <h3>降下とパラシュート</h3>
+        <p>頂点のあとの降下を、弾道落下、単一のパラシュート、二段開傘（ドローグとメイン）から選ぶ。降下の方式は着地点を最も大きく左右する。</p>
+        <span class="iy-more">降下方式</span></a></li>
+      <li><a class="iy-card" href="dispersion.html">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="6" transform="rotate(-25 12 12)"/><circle cx="10" cy="11" r=".9"/><circle cx="13" cy="13" r=".9"/><circle cx="14" cy="9.5" r=".9"/><circle cx="9" cy="14" r=".9"/></svg>
+        <h3>落下分散と保安距離</h3>
+        <p>風速と風向の格子、または Monte Carlo で着地点の広がりを求める。誤差楕円と着地距離のパーセンタイルを出し、保安距離を決める手順も文書にしてある。</p>
+        <span class="iy-more">落下分散</span></a></li>
+      <li><a class="iy-card" href="usage.html">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M14 2v6h6M9 13h8M9 17h8"/></svg>
+        <h3>レポート、KML、プロット</h3>
+        <p>結果は CSV と JSON に書き出す。計算結果をまとめた一つの HTML レポート、Google Earth 用の KML、プロットも出力する。端末には進捗と結果を読みやすく表示する。</p>
+        <span class="iy-more">使い方</span></a></li>
+      <li><a class="iy-card" href="verification.html">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 5v6c0 5 3.4 9.2 8 11 4.6-1.8 8-6 8-11V5l-8-3Z"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>
+        <h3>再現性と検証</h3>
+        <p>入力が変わらなければ係数表を再利用する。レポートには設定と飛翔結果のハッシュを記す。式と数値解法の検証、他のプログラムとの相互比較、実測との比較（妥当性確認）をそれぞれ章にまとめている。</p>
+        <span class="iy-more">検証</span></a></li>
+    </ul>
+  </div>
+</section>
+
+<section class="iy-section iy-alt" id="iy-pipeline">
+  <div class="iy-wrap">
+    <h2>計算の流れ</h2>
+    <p class="iy-sub">各段階は独立したコマンドで、一つの設定ファイルを共有する。<code>make all</code> で通しても実行できる。</p>
+    <ol class="iy-flow">
+      <li><a href="geometry.html"><b>CAD</b><span>STEP / IGES / BREP、または STL</span><code>rocket.cad</code></a></li>
+      <li><a href="geometry.html"><b>形状</b><span>半径分布とフィンの抽出</span><code>geom</code></a></li>
+      <li><a href="aerodynamics.html"><b>空力</b><span>Mach 数と迎角の係数表</span><code>aero</code></a></li>
+      <li><a href="dynamics.html"><b>飛翔</b><span>6 自由度、ランチャから着地まで</span><code>sim</code></a></li>
+      <li><a href="dispersion.html"><b>落下分散</b><span>風の格子または Monte Carlo</span><code>dispersion</code></a></li>
+      <li><a href="usage.html"><b>レポート</b><span>HTML、KML、プロット</span><code>report</code></a></li>
+    </ol>
+  </div>
+</section>
+
+<section class="iy-section" id="iy-results">
+  <div class="iy-wrap">
+    <h2>出力の例</h2>
+    <p class="iy-sub">いずれも同梱のサンプル機体（全長 1.5 m、直径 0.1 m、フィン 4 枚）を計算した結果である。</p>
+    <div class="iy-gallery">
+      <figure class="iy-fig iy-fig-wide">
+        <a href="dispersion.html"><img loading="lazy" src="_static/landing/dispersion_mc.webp" width="1100" height="477" alt="Monte Carlo の落下分散。左は弾道落下、右はパラシュート降下で、1000 点の着地点と 1σ、3σ の楕円を示す"></a>
+        <figcaption>Monte Carlo による落下分散（1000 ケース）。左が弾道落下、右がパラシュート降下で、橙の線が 1σ と 3σ の楕円。</figcaption>
+      </figure>
+      <figure class="iy-fig">
+        <a href="cfd.html"><img loading="lazy" src="_static/landing/cfd_mach_field.webp" width="1000" height="589" alt="サンプル機体まわりの Mach 数の分布。上が Mach 0.8、下が Mach 2.0、迎角はどちらも 4 度"></a>
+        <figcaption>Euler の CFD による Mach 数の分布（上：M = 0.8、下：M = 2.0、迎角 4°）。</figcaption>
+      </figure>
+      <figure class="iy-fig">
+        <a href="usage.html"><img loading="lazy" src="_static/landing/report_flight.webp" width="1000" height="582" alt="HTML レポートの飛翔の節。高度、地上の軌跡、速さの時間変化のグラフ"></a>
+        <figcaption>HTML レポートの飛翔の節。高度、地上の軌跡、速さの時間変化。</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section class="iy-section iy-alt" id="iy-verified">
+  <div class="iy-wrap">
+    <h2>検証の状況</h2>
+    <p class="iy-sub">この結果はモデルの計算結果である。何をどこまで確かめたかを、確かめ方の種類ごとに分けて示す。</p>
+    <ul class="iy-verify">
+      <li>
+        <p class="iy-kicker">検証とテスト</p>
+        <p class="iy-big"><b>593</b> + <b>41</b></p>
+        <p>Rust のテスト関数 593 本と Python のテスト関数 41 本。式と数値解法は、解析解や理論との比較で検証している。</p>
+        <p class="iy-links"><a href="verification.html">検証</a><a href="testing.html">テスト</a></p>
+      </li>
+      <li>
+        <p class="iy-kicker">相互比較</p>
+        <p class="iy-big"><b>OpenRocket</b> / <b>RocketPy</b></p>
+        <p>サンプル機体の上昇を、OpenRocket 24.12 と RocketPy 1.13.0 でも計算した。抗力を共通にした二組の頂点高度の差は +0.01 % と +0.04 %。抗力の組み立てが違う OpenRocket とは 6.7 % の差がある。相互比較は、どれが実機に近いかを決めない。</p>
+        <p class="iy-links"><a href="validation.html">相互比較と妥当性確認</a></p>
+      </li>
+      <li>
+        <p class="iy-kicker">妥当性確認</p>
+        <p class="iy-big"><b>Basic Finner</b></p>
+        <p>実測との比較は、Basic Finner の超音速の範囲に限られる。それ以外の比較はすべて、手法どうしまたはプログラムどうしの相互比較である。</p>
+        <p class="iy-links"><a href="validation.html#sec-validation">妥当性確認</a><a href="limitations.html">仮定と適用範囲</a></p>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<section class="iy-section" id="iy-docs">
+  <div class="iy-wrap">
+    <h2>ドキュメント</h2>
+    <p class="iy-sub">一冊の本として順に読める。必要な章へは、ここから直接移れる。<a href="search.html">全文検索</a>もある。</p>
+    <div class="iy-map">
+      <div>
+        <h3>使い始める</h3>
+        <ul>
+          <li><a href="intro.html">はじめに</a></li>
+          <li><a href="quickstart.html">クイックスタート</a></li>
+          <li><a href="install.html">インストール</a></li>
+          <li><a href="usage.html">使い方</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>設定と手順</h3>
+        <ul>
+          <li><a href="config.html">設定ファイル</a></li>
+          <li><a href="workflows.html">計算の進め方</a></li>
+          <li><a href="cfd_usage.html">CFD による空力表の作成</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>モデル：形状と空力</h3>
+        <ul>
+          <li><a href="coordinates.html">座標系と地球</a></li>
+          <li><a href="geometry.html">形状の取り込みと抽出</a></li>
+          <li><a href="aerodynamics.html">空力解析</a></li>
+          <li><a href="barrowman.html">部品積み上げ法</a></li>
+          <li><a href="panel.html">パネル法</a></li>
+          <li><a href="cfd.html">CFD</a></li>
+          <li><a href="cfd_methods.html">CFD の係数表</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>モデル：飛翔と落下</h3>
+        <ul>
+          <li><a href="environment.html">環境モデル</a></li>
+          <li><a href="propulsion.html">推力と質量特性</a></li>
+          <li><a href="dynamics.html">運動方程式</a></li>
+          <li><a href="integrators.html">数値積分</a></li>
+          <li><a href="descent.html">降下方式</a></li>
+          <li><a href="dispersion.html">落下分散</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>検証と品質</h3>
+        <ul>
+          <li><a href="verification.html">検証</a></li>
+          <li><a href="validation.html">相互比較と妥当性確認</a></li>
+          <li><a href="testing.html">テスト</a></li>
+          <li><a href="cost.html">計算量</a></li>
+          <li><a href="limitations.html">仮定と適用範囲</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>付録と開発</h3>
+        <ul>
+          <li><a href="errors/index.html">エラーとワーニングの一覧</a></li>
+          <li><a href="references.html">参考文献</a></li>
+          <li><a href="development.html">開発者向け</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="iy-section iy-alt iy-start">
+  <div class="iy-wrap">
+    <h2>最初の 1 回を飛ばす</h2>
+    <p class="iy-sub">インストールのあと、同梱のサンプル機体を 1 回飛ばす。手順は<a href="quickstart.html">クイックスタート</a>に書いてある。</p>
+    <div class="iy-code iy-code-block">
+      <pre tabindex="0" aria-label="サンプル機体を飛ばすコマンド"><code id="iy-run-cmd">ignisyeet sim examples/sample.toml</code></pre>
+      <button type="button" class="iy-copy" data-target="iy-run-cmd" aria-label="サンプル機体を飛ばすコマンドをコピーする">コピー</button>
+    </div>
+    <p class="iy-cta">
+      <a class="iy-btn iy-btn-primary" href="quickstart.html">クイックスタートへ</a>
+      <a class="iy-btn" href="workflows.html">自分の機体を計算する</a>
+    </p>
+  </div>
+</section>
+
+<footer class="iy-footer">
+  <div class="iy-wrap iy-footer-grid">
+    <div>
+      <p class="iy-footer-name">IgnisYeet</p>
+      <p>IgnisYeet by 西濱大将 (NISHIHAMA Daisuke)<br>Copyright &copy; 2025-2026 西濱大将 (NISHIHAMA Daisuke)</p>
+      <p>GNU General Public License, version 3 or later（GPL-3.0-or-later）。追加条件は <a href="https://github.com/ddd3h/ignisyeet/blob/main/NOTICE" rel="noopener">NOTICE</a> にある。全文は <a href="https://github.com/ddd3h/ignisyeet/blob/main/LICENSE" rel="noopener">LICENSE</a>。</p>
+    </div>
+    <div>
+      <p class="iy-footer-h">引用と連絡</p>
+      <p>論文、報告書、発表で使う場合は <a href="https://github.com/ddd3h/ignisyeet/blob/main/CITATION.cff" rel="noopener">CITATION.cff</a> の情報で引用してほしい（GitHub の「Cite this repository」からも取れる）。</p>
+      <p>不具合や要望は <a href="https://github.com/ddd3h/ignisyeet/issues" rel="noopener">Issue</a> へ、または <a href="mailto:daisukenishihama63@gmail.com">daisukenishihama63@gmail.com</a> へ。</p>
+    </div>
+    <div>
+      <p class="iy-footer-h">リンク</p>
+      <ul>
+        <li><a href="https://github.com/ddd3h/ignisyeet" rel="noopener">GitHub のリポジトリ</a></li>
+        <li><a href="quickstart.html">クイックスタート</a></li>
+        <li><a href="search.html">検索</a></li>
+        <li><a href="genindex.html">索引</a></li>
+      </ul>
+    </div>
+  </div>
+</footer>
+
+</div>
+<script>
+(function () {
+  var buttons = document.querySelectorAll(".iy-copy");
+  for (var i = 0; i < buttons.length; i++) {
+    buttons[i].addEventListener("click", function () {
+      var btn = this, el = document.getElementById(btn.getAttribute("data-target"));
+      if (!el) { return; }
+      var done = function () {
+        btn.textContent = "コピーした";
+        setTimeout(function () { btn.textContent = "コピー"; }, 1800);
+      };
+      var select = function () {
+        var r = document.createRange(); r.selectNodeContents(el);
+        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(el.textContent).then(done, select);
+      } else { select(); }
+    });
+  }
+})();
+</script>

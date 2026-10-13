@@ -1340,9 +1340,10 @@ if [ $live = 1 ]; then
       r=$((100 + 2 * i))
       printf '%d,-%d.%02d,0.3,%s,%s\n' $i $((r / 100)) $((r % 100)) $fz $my >> history.csv
     else
-      # residual 1e-6 at row 500; CFz (1e-9 units) still falling by 3e-5 per row until row 700 (trendlimit: on)
-      r=$((100 + i))
-      d=$((700 - i)); [ $d -lt 0 ] && [ "$mode" = trend ] && d=0
+      # residual 1e-6 at row 200; CFz (1e-9 units) still falling by 3e-5 per row until row 300 (trendlimit: until 600)
+      r=$((100 + 5 * i / 2))
+      flat=300; [ "$mode" = trendlimit ] && flat=600
+      d=$((flat - i)); [ $d -lt 0 ] && d=0
       c=$((200000000 + 30000 * d))
       printf '%d,-%d.%02d,0.3,%d.%09d,-0.32\n' $i $((r / 100)) $((r % 100)) $((c / 1000000000)) $((c % 1000000000)) >> history.csv
     fi
@@ -2195,8 +2196,9 @@ exit 0
     fn euler_runs_past_the_target_until_the_coefficient_trend_has_settled() {
         let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
         // CFz still falls by 3e-5 per iteration (0.2 % of the force scale over 20 iterations) when the residual
-        // reaches the 1e-6 target at row 500, and is flat from row 700: the case runs on and is accepted once the
-        // trend has settled.
+        // reaches the 1e-6 target at row 200, and is flat from row 300: the case runs on and is accepted once the
+        // trend has settled. The rows are few so that the runner, which looks at the history once a second, stops the
+        // mock well before its last row even on a machine on which the mock writes rows quickly.
         let mut e = env("euler_trend", "trend");
         e.opt.machs = vec![0.8];
         e.opt.alphas_deg = vec![0.0, 4.0];
@@ -2205,7 +2207,7 @@ exit 0
         let out = run_all(&e.setup(), &|_| {}).unwrap();
         let r = out[1].result.as_ref().unwrap_or_else(|| panic!("{:?}", out[1].error));
         assert!(r.converged && r.warnings.is_empty(), "{r:?}");
-        assert!(r.iterations > 700 && r.iterations < 1000, "{}", r.iterations);
+        assert!(r.iterations > 300 && r.iterations < 1000, "{}", r.iterations);
         assert!((r.coeffs.cn - 0.2).abs() < 1e-6, "{}", r.coeffs.cn);
         let _ = std::fs::remove_dir_all(&e.dir);
         // Still trending at the iteration limit: accepted with the residual target reached, but not converged, with
@@ -2214,13 +2216,13 @@ exit 0
         e.opt.machs = vec![0.8];
         e.opt.alphas_deg = vec![0.0, 4.0];
         e.opt.alpha_mode = AlphaMode::Single;
-        e.opt.iterations = 600;
+        e.opt.iterations = 400;
         let out = run_all(&e.setup(), &|_| {}).unwrap();
         let r = out[1].result.as_ref().unwrap_or_else(|| panic!("{:?}", out[1].error));
-        assert!(!r.converged && r.iterations == 600, "{r:?}");
+        assert!(!r.converged && r.iterations == 400, "{r:?}");
         assert!(r.warnings.iter().any(|w| w.contains("still trend") && w.contains("averaged over the last 100 iterations")), "{r:?}");
-        // Not settled: the window average (rows 500..599, CFz = 0.2 + 3e-5 (700 - i)), not the last row (0.20303).
-        assert!((r.coeffs.cn - (0.2 + 3e-5 * 150.5)).abs() < 1e-6, "{}", r.coeffs.cn);
+        // Not settled: the window average (rows 300..399, CFz = 0.2 + 3e-5 (600 - i)), not the last row (0.20603).
+        assert!((r.coeffs.cn - (0.2 + 3e-5 * 250.5)).abs() < 1e-6, "{}", r.coeffs.cn);
         let _ = std::fs::remove_dir_all(&e.dir);
     }
 }

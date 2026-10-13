@@ -45,7 +45,16 @@ article[role="main"] > section > h1 {
 }
 @media (min-width: 67em) {
   .sidebar-drawer, .toc-drawer { display: none; }
-  .content-icon-container { position: absolute; top: 0.7rem; right: 1rem; z-index: 5; }
+  /* The colour-theme button sits in the top bar, vertically centred on its links. */
+  .content-icon-container {
+    position: absolute; top: 0; right: max(0.75rem, calc(50% - 560px + 12px)); z-index: 5;
+    height: 58px; display: flex; align-items: center; margin: 0; padding: 0;
+  }
+  .content-icon-container .theme-toggle-container { margin: 0; }
+  .content-icon-container .theme-toggle { padding: 0.45rem; border-radius: 8px; color: var(--color-foreground-secondary); }
+  .content-icon-container .theme-toggle:hover { color: var(--color-foreground-primary); background: var(--color-background-hover); }
+  .content-icon-container .theme-toggle svg { width: 1.5rem; height: 1.5rem; color: var(--color-foreground-secondary); }
+  .content-icon-container .theme-toggle:hover svg { color: var(--color-foreground-primary); }
 }
 @media (max-width: 66.99em) {
   .content-icon-container { display: none; }

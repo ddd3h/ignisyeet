@@ -254,6 +254,11 @@ a.iy-badge:hover { border-color: var(--iy-accent); color: var(--iy-accent) !impo
 .iy-built-item span { font-weight: 700; font-size: 1rem; color: var(--color-foreground-primary); }
 .iy-built-item small { font-size: 0.78rem; padding: 1px 8px; border: 1px solid var(--color-background-border); border-radius: 999px; }
 
+/* logos of the CFD tools sit on a light tile so the dark marks stay visible in the dark theme */
+.iy-logo-tile { display: inline-flex; align-items: center; justify-content: center; height: 38px; min-width: 38px; padding: 5px 8px; border: 1px solid var(--color-background-border); border-radius: 8px; background: #fff; }
+.iy-logo-tile img { height: 28px; width: auto; max-width: none; }
+.iy-built-item .iy-logo-tile { font-weight: 400; }
+
 /* phone: the pipeline as a compact list (name and command on one row) */
 @media (max-width: 40em) {
   .iy-flow a { flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; }

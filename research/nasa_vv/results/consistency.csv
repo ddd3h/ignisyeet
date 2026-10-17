@@ -1,0 +1,39 @@
+# Consistency checks of spec section 6.3, read from the committed CFD results; no CFD was run for this file.
+# This is verification, not validation: it asks whether relations physics requires hold in the data.
+# Source files and the last commit that changed each:
+#   doc/data/cfd/asymmetry_study.csv @ c0de310
+#   doc/data/cfd/sample_euler_cases.csv @ 4c20dbe
+# cn_zero_alpha and cn_antisymmetry share one tolerance, 1 % of |cn_odd_4deg| of the same
+#   configuration: cn_odd_4deg = (CN(+4) - CN(-4))/2 is the mirror-combined normal force, the
+#   scale that the alpha = 0 and the 4 deg offsets spoil. passed is |value| <= tolerance.
+# cn_zero_alpha uses the z-symmetric rows of asymmetry_study.csv, where the mesh symmetry makes the
+#   true CN(0) exactly 0; value is that file's cn0 column.
+# cn_antisymmetry uses every +4 / -4 pair. asymmetry_study.csv gives only the already-combined
+#   cn_even_4deg = (CN(+4) + CN(-4))/2, not the separate +4 and -4 values, so the value is the
+#   CSV's number and antisymmetry() is not re-run on it; each row's source says so.
+# ca_dalembert has tolerance and passed blank: whether |CA(M=0.3, alpha=0)| shrinks as the grid is
+#   refined is decided by the refined Euler runs of Task 14, not by a threshold here, so no pass/fail
+#   is claimed. The expected value is 0 (d'Alembert's paradox).
+# ca_dalembert_refined rows are omitted until Task 14's refined Euler grid family exists.
+# The farfield mass-flux balance check of spec section 6.3 is not in this file; it belongs to Task 19.
+# passed is the string True or False, or blank when the check has no criterion.
+check,case,mach,alpha_deg,model,quantity,value,expected,tolerance,passed,source
+cn_zero_alpha,zm,0.3,0,euler,cn0,0,0,0.012143,True,doc/data/cfd/asymmetry_study.csv config=zm mach=0.3 @ c0de310
+cn_zero_alpha,zm,0.8,0,euler,cn0,0,0,0.0117607,True,doc/data/cfd/asymmetry_study.csv config=zm mach=0.8 @ c0de310
+cn_zero_alpha,zm,2,0,euler,cn0,0,0,0.0079617,True,doc/data/cfd/asymmetry_study.csv config=zm mach=2 @ c0de310
+cn_antisymmetry,base,0.3,4,euler,cn_even_4deg,-0.05537,0,0.011788,False,doc/data/cfd/asymmetry_study.csv config=base mach=0.3 @ c0de310 (cn_even_4deg is the CSV's already-combined (CN(+4)+CN(-4))/2; the CSV gives no separate +4 and -4 values; antisymmetry() is not re-run on it)
+cn_antisymmetry,base,0.8,4,euler,cn_even_4deg,-0.06877,0,0.0116374,False,doc/data/cfd/asymmetry_study.csv config=base mach=0.8 @ c0de310 (cn_even_4deg is the CSV's already-combined (CN(+4)+CN(-4))/2; the CSV gives no separate +4 and -4 values; antisymmetry() is not re-run on it)
+cn_antisymmetry,base,2,4,euler,cn_even_4deg,-0.01881,0,0.0080208,False,doc/data/cfd/asymmetry_study.csv config=base mach=2 @ c0de310 (cn_even_4deg is the CSV's already-combined (CN(+4)+CN(-4))/2; the CSV gives no separate +4 and -4 values; antisymmetry() is not re-run on it)
+cn_antisymmetry,roll45,0.3,4,euler,cn_even_4deg,-0.05349,0,0.0120468,False,doc/data/cfd/asymmetry_study.csv config=roll45 mach=0.3 @ c0de310 (cn_even_4deg is the CSV's already-combined (CN(+4)+CN(-4))/2; the CSV gives no separate +4 and -4 values; antisymmetry() is not re-run on it)
+cn_antisymmetry,roll45,0.8,4,euler,cn_even_4deg,-0.04232,0,0.0116284,False,doc/data/cfd/asymmetry_study.csv config=roll45 mach=0.8 @ c0de310 (cn_even_4deg is the CSV's already-combined (CN(+4)+CN(-4))/2; the CSV gives no separate +4 and -4 values; antisymmetry() is not re-run on it)
+cn_antisymmetry,roll45,2,4,euler,cn_even_4deg,-0.05987,0,0.0080192,False,doc/data/cfd/asymmetry_study.csv config=roll45 mach=2 @ c0de310 (cn_even_4deg is the CSV's already-combined (CN(+4)+CN(-4))/2; the CSV gives no separate +4 and -4 values; antisymmetry() is not re-run on it)
+cn_antisymmetry,jst,0.3,4,euler,cn_even_4deg,0.08504,0,0.0103984,False,doc/data/cfd/asymmetry_study.csv config=jst mach=0.3 @ c0de310 (cn_even_4deg is the CSV's already-combined (CN(+4)+CN(-4))/2; the CSV gives no separate +4 and -4 values; antisymmetry() is not re-run on it)
+cn_antisymmetry,jst,0.8,4,euler,cn_even_4deg,-0.03955,0,0.0106551,False,doc/data/cfd/asymmetry_study.csv config=jst mach=0.8 @ c0de310 (cn_even_4deg is the CSV's already-combined (CN(+4)+CN(-4))/2; the CSV gives no separate +4 and -4 values; antisymmetry() is not re-run on it)
+cn_antisymmetry,jst,2,4,euler,cn_even_4deg,-0.01383,0,0.0073359,False,doc/data/cfd/asymmetry_study.csv config=jst mach=2 @ c0de310 (cn_even_4deg is the CSV's already-combined (CN(+4)+CN(-4))/2; the CSV gives no separate +4 and -4 values; antisymmetry() is not re-run on it)
+cn_antisymmetry,tight,0.3,4,euler,cn_even_4deg,-0.05514,0,0.0117891,False,doc/data/cfd/asymmetry_study.csv config=tight mach=0.3 @ c0de310 (cn_even_4deg is the CSV's already-combined (CN(+4)+CN(-4))/2; the CSV gives no separate +4 and -4 values; antisymmetry() is not re-run on it)
+cn_antisymmetry,tight,0.8,4,euler,cn_even_4deg,-0.06877,0,0.0116375,False,doc/data/cfd/asymmetry_study.csv config=tight mach=0.8 @ c0de310 (cn_even_4deg is the CSV's already-combined (CN(+4)+CN(-4))/2; the CSV gives no separate +4 and -4 values; antisymmetry() is not re-run on it)
+cn_antisymmetry,tight,2,4,euler,cn_even_4deg,-0.01891,0,0.0080205,False,doc/data/cfd/asymmetry_study.csv config=tight mach=2 @ c0de310 (cn_even_4deg is the CSV's already-combined (CN(+4)+CN(-4))/2; the CSV gives no separate +4 and -4 values; antisymmetry() is not re-run on it)
+cn_antisymmetry,zm,0.3,4,euler,cn_even_4deg,0.00012,0,0.012143,True,doc/data/cfd/asymmetry_study.csv config=zm mach=0.3 @ c0de310 (cn_even_4deg is the CSV's already-combined (CN(+4)+CN(-4))/2; the CSV gives no separate +4 and -4 values; antisymmetry() is not re-run on it)
+cn_antisymmetry,zm,0.8,4,euler,cn_even_4deg,0,0,0.0117607,True,doc/data/cfd/asymmetry_study.csv config=zm mach=0.8 @ c0de310 (cn_even_4deg is the CSV's already-combined (CN(+4)+CN(-4))/2; the CSV gives no separate +4 and -4 values; antisymmetry() is not re-run on it)
+cn_antisymmetry,zm,2,4,euler,cn_even_4deg,1e-05,0,0.0079617,True,doc/data/cfd/asymmetry_study.csv config=zm mach=2 @ c0de310 (cn_even_4deg is the CSV's already-combined (CN(+4)+CN(-4))/2; the CSV gives no separate +4 and -4 values; antisymmetry() is not re-run on it)
+ca_dalembert,sample rocket,0.3,0,euler,ca_cfd,-0.031369846,0,,,doc/data/cfd/sample_euler_cases.csv mach=0.3 alpha_deg=0 (converged) @ 4c20dbe

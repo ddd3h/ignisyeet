@@ -1,0 +1,39 @@
+{# Top bar shared by the landing page and the research page. #}
+{%- set top = pathto(master_doc) %}
+<nav class="iy-nav" id="iy-nav" aria-label="サイトのナビゲーション">
+  <a class="iy-nav-brand" href="{{ top }}"><img src="{{ pathto('_static/landing/logo-mark.svg', 1) }}" alt="" width="32" height="32"><span>IgnisYeet</span></a>
+  <ul id="iy-nav-links">
+    <li><a href="{{ top }}#iy-video">動画</a></li>
+    <li><a href="{{ top }}#iy-features">機能</a></li>
+    <li><a href="{{ top }}#iy-pipeline">仕組み</a></li>
+    <li><a href="{{ top }}#iy-verified">検証</a></li>
+    <li><a href="{{ top }}#iy-docs">ドキュメント</a></li>
+    <li><a href="{{ pathto('research/index') }}"{% if pagename == 'research/index' %} aria-current="page"{% endif %}>研究</a></li>
+    <li><a href="{{ pathto('search') }}">検索</a></li>
+    <li><a href="https://github.com/ddd3h/ignisyeet" rel="noopener">GitHub</a></li>
+  </ul>
+  <div class="iy-nav-tools">
+    <div class="theme-toggle-container">
+      <button class="theme-toggle" aria-label="配色を切り替える">
+        <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+        <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+        <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+        <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+      </button>
+    </div>
+    <button type="button" class="iy-menu" aria-label="メニュー" aria-expanded="false" aria-controls="iy-nav-links">
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path class="iy-menu-open" d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path class="iy-menu-close" d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+</nav>
+<script>
+(function () {
+  var nav = document.getElementById("iy-nav"), menu = nav && nav.querySelector(".iy-menu");
+  if (menu) {
+    var set = function (open) { nav.classList.toggle("is-open", open); menu.setAttribute("aria-expanded", open ? "true" : "false"); };
+    menu.addEventListener("click", function () { set(!nav.classList.contains("is-open")); });
+    nav.querySelectorAll("#iy-nav-links a").forEach(function (a) { a.addEventListener("click", function () { set(false); }); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") { set(false); } });
+  }
+})();
+</script>

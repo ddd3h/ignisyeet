@@ -51,7 +51,7 @@
 </nav>
 <section id="summary">
 <h2 id="summary">要旨</h2>
-<!-- PENDING Task 14,15,16,18,20: the abstract. State, at the strength the finished sections support, (1) what band each layer-2 coefficient carries or why it carries none, (2) the layer 0 result that the GCI bounded the true error on 7 of 12 rows and what that means for layer 2, (3) the layer 0 against layer 1 difference called "パイプラインの誤差（3 次元の非構造メッシュ生成を含む）", (4) the validation overlap judgement. Do not write it before those sections are filled. -->
+<!-- PENDING Task 14,15,16,20: the abstract. Layer 1 is written in section 3 and its limits in section 5; summarise them (fine level refused, no layer-1 GCI, no pipeline contribution, cut surface output files) and do not repeat their numbers. State, at the strength the finished sections support, (1) what band each layer-2 coefficient carries or why it carries none, (2) the layer 0 result that the GCI bounded the true error on 7 of 12 rows and what that means for layer 2, (3) the layer 1 outcome as above, (4) the validation overlap judgement. Do not write it before those sections are filled. -->
 </section>
 <section id="s1">
 <h2 id="s1">1. 目的と読み方</h2>
@@ -664,7 +664,72 @@
 </section>
 <section id="s3">
 <h2 id="s3">3. 層 1：円すいを製品の鎖で解く</h2>
-<!-- PENDING Task 18: layer 1. The cone through the product pipeline (CAD, gmsh, SU2, coefficient extraction), M = 2.35, alpha = 0, three grids, cone-part Cp, shock angle and cone-part axial force against Taylor-Maccoll, with the GCI of the family or the refusal and its residual drop. Include the layer 0 against layer 1 difference, worded as "パイプラインの誤差（3 次元の非構造メッシュ生成を含む）" and never as meshing error alone. State that product grids are not geometrically similar (see 4.4) so both h definitions apply. -->
+<h3 id="s3-1">3.1 設定</h3>
+<p>半頂角 10°、底面半径 0.05 m の円すい-円筒（円すいの長さ L = 0.28356 m）を、M = 2.35、迎え角 0 の Euler で、IgnisYeet の鎖（CAD 形状、gmsh、SU2、係数の抽出）の全体を通して解いた。メッシュは 3 次元の非構造格子（四面体、半モデル）である（<code>layer1_cone.csv</code>）。層 0 と同じ厳密解（Taylor–Maccoll）と比べる。厳密解との比較は検証であり、層 0 と層 1 を互いに比べるのは、二つのモデルの相互比較である。</p>
+<p>格子は 3 段で、壁のセル寸法は 3.92 mm、2.8 mm、2 mm（比 1.4）、節点数は 28887、45258、75796、セル数は 132328、209052、350868 である。セル数は 1.58 倍と 1.68 倍にしか増えない。壁の寸法を 1.4 倍ずつ縮めたとき、相似な細分ならセル数は 1.4³ = 2.74 倍になるはずである。<a href="#s4-4-1">4.4.1 節</a>で述べた、製品の格子が相似に細かくならない性質が、ここでも現れている。したがって GCI は h の二つの定義（節点数の −1/3 乗と、壁寸法の 1.4 倍の比）の両方で求める。この物体にフィンはなく、設定できる寸法は壁のセル寸法だけである。</p>
+<p>Cp は、円すい表面の壁の節点（半径が x tan 10° から 1 % 以内のもの）を、x/L の 0.1 ごとの区間に分けて平均した。層 0 の比較窓（壁の節点の 0.4 ≦ x ≦ 0.9）と同じ位置にあたるのは、x/L が 0.4 から 0.9 の区間で、これを比較に使う。x/L が 0.2 から 0.9 の平均と、先端に最も近い区間（0.2 から 0.3）は、層 0 に対応する量がない。</p>
+<p>層 0 と層 1 は、次の点で違う。</p>
+<ul>
+<li>メッシュの種類（2 次元と軸対称の構造格子と、3 次元の非構造四面体）。</li>
+<li>領域の形。層 0 の円すいは先端から x = 1 まで続く裸の壁で、円筒も尾部もない。層 1 の物体は、円すいのあとに円筒、底面、Euler 用の尾部整形（長さ 0.3 m）が続く。製品は物体を抽出した断面から組み直すので、円すいと円筒の接合点が 0.02 % 短くなる。</li>
+<li>SU2 の設定ファイルを書く経路。</li>
+<li>壁の Cp の取り出し方。</li>
+<li>一様流の状態（層 1 は高度 20 m の標準大気、p = 101084.97 Pa、T = 288.02 K。層 0 は 101325 Pa、288.15 K）。Mach 数と比熱比は同じである。</li>
+<li>先端の誤差の影響が、セルの大きさに対してどこに現れるか。層 0 の円すいの Cp の誤差は、先端の過渡が支配的である（<a href="#s2-3">2.3 節</a>）。</li>
+</ul>
+<h3 id="s3-2">3.2 結果</h3>
+<div class="tablewrap" tabindex="0" role="region" aria-label="表"><table>
+<thead>
+<tr>
+<th>格子</th>
+<th>節点</th>
+<th>残差の落ち幅（桁）</th>
+<th>ソルバの判定</th>
+<th>壁面 Cp（x/L 0.4〜0.9）</th>
+<th>厳密解との差 %</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>粗</td>
+<td>28887</td>
+<td>5.52</td>
+<td>収束</td>
+<td>0.094301</td>
+<td>−2.51</td>
+</tr>
+<tr>
+<td>中</td>
+<td>45258</td>
+<td>4.80</td>
+<td>収束</td>
+<td>0.095513</td>
+<td>−1.26</td>
+</tr>
+<tr>
+<td>細</td>
+<td>75796</td>
+<td>2.44</td>
+<td><strong>未収束</strong></td>
+<td>0.096310</td>
+<td>−0.435</td>
+</tr>
+</tbody>
+</table></div>
+<p>出典：<code>layer1_cone.csv</code>。厳密解は Cp = 0.096731。残差の落ち幅は、密度の残差の対数の最大値と最終値の差である。</p>
+<p><strong>細かい格子は、製品の判定で未収束である。</strong> 密度の残差は、最後の 40 反復で −6.00 から −4.85 の間を動き、目標の −6 に履歴の上では届かなかった。抗力係数は、同じ 40 反復で相対 2.2×10⁻⁴ の幅で変動した（<code>layer1_cone.csv</code>）。格子ごとに並列計算のランク数が違い（8、10、14）、領域分割が格子とともに変わっている。細かい格子のこの挙動が分割に依存するかどうかは、試験していない。</p>
+<p><strong>層 1 の GCI は求められない。</strong> 3 つの量（x/L 0.4〜0.9 の平均、0.2〜0.9 の平均、先端に最も近い区間）と二つの h の定義の 6 行は、すべて入口の条件で拒否された。細かい格子の解が収束していないためである（残差の落ち幅は細 2.44 桁、中 4.8 桁、粗 5.52 桁）。拒否した行には数値を付けない（<code>layer1_gci.csv</code>）。</p>
+<p><strong>したがって、パイプラインの寄与は求めていない。</strong> 層 0 の誤差と層 1 の誤差の差は、3 次元非構造格子の生成を含むパイプラインの誤差を表すはずのものだが、収束していない解の誤差はパイプラインの誤差ではない。層 0 の最細格子の誤差は −0.188 % で、その GCI（0.059 %）は自分の誤差を押さえていない（<a href="#s2-5">2.5 節</a>）。この寄与の値、およびそれが GCI より大きいか小さいかは、この研究では評価していない（<code>layer0_vs_layer1.csv</code>）。</p>
+<p>格子ごとの厳密解との差は、描写としてだけ示す。壁面 Cp（x/L 0.4〜0.9）の差は −2.51、−1.26、−0.435 % で、細分のたびにおよそ半分になる。0.2 から 0.9 の平均では −3.74、−1.88、−0.861 %、先端に最も近い区間では −10.19、−6.59、−4.17 % である。中から細へ、壁面 Cp（x/L 0.4〜0.9）の値は +0.83 % 動いた。これは差の縮み方の記述であり、収束の証拠でも不確かさでもない。</p>
+<h3 id="s3-3">3.3 製品の出力ファイルが途中で切れる</h3>
+<p>観測した製品の挙動を、原因を推測せずに記す。ランナーが SU2 を止めたとき、SU2 が最後に書く表面の出力ファイルが、途中で切れることがある。</p>
+<ul>
+<li>中の格子の最初の実行では、<code>surface_flow.vtk</code> の Pressure_Coefficient の欄が途中で切れ、Cp を読めなかった。同じ設定の再実行で得たファイルを使った。その vtk でも、Velocity の欄は 15468 点のうち 816 点分しか完全でなかった。</li>
+<li>細かい格子では、<code>surface_flow.vtk</code> は 200 反復目の周期的な書き出しで、履歴は 210 反復まである。<code>surface_flow.csv</code> は 28265 行のうち完全な行が 1255 行で、1 行が途中で切れていた。csv の行はより後の状態を持つので、最終反復の完全な Cp の出力はない。両方のファイルが持つ円すい壁の 213 節点では、csv の Cp と vtk の Cp の差は平均 5.8×10⁻⁶（Cp の平均に対して 6×10⁻⁵）だった。これは描写であり、試験ではない。</li>
+</ul>
+<p>層 1 の Cp に使った vtk の Cp の欄は、どの格子でも完全だった。切れ方の原因は、書き込みが停止時に切れること以上には、確かめていない。</p>
+<h3 id="s3-4">3.4 層 1 が示すこと</h3>
+<p>層 1 から言えるのは、製品の鎖が与える円すいの壁面 Cp が、どの格子でも厳密解より低く、格子を細かくすると差が小さくなる、という記述までである。細かい格子が収束しないので、層 1 の GCI も、パイプラインの寄与も得られていない。格子ごとに並列分割が違う影響は、試験していない。</p>
 </section>
 <section id="s4">
 <h2 id="s4">4. 層 2：サンプル機体と Basic Finner に六つの段階を適用する</h2>
@@ -1003,10 +1068,11 @@
 <li>サンプル機体の RANS の格子収束（V6）は、入口の条件で 4 つの族がすべて拒否された。公表値の誤りは主張しないが、帯もない。</li>
 <li>層流平板は、乱流モデルを切った RANS の離散化であり、製品が書く設定ではない。起動の段階の違いが定常解を変えないことは、試験していない。</li>
 <li>壁面のエントロピーの偏りと、境界の接合点の停滞点が、製品の 3 次元の非構造格子に及ぶかどうかは、試験していない。</li>
+<li>層 1 の細かい格子は未収束で、層 1 の GCI も、3 次元非構造格子の生成を含むパイプラインの誤差の寄与も、求めていない。製品が書く表面の出力ファイルが、停止時に切れることがあった。原因は確かめていない。</li>
 <li>サンプルの飛翔の積分器には、観測次数が得られていない。次数 4 は制御の実験でだけ観測された。</li>
 <li>妥当性確認は Basic Finner の 1 つの実測データ（DREV-TM-9703）に限る。</li>
 </ul>
-<!-- PENDING Task 14,15,16,18,20: the conclusion. Re-read 要旨 and this list after the pending sections are filled, and add the model-uncertainty limit (only Euler and RANS-SA exist, so the tutorial's several-turbulence-model request is answered only in part). -->
+<!-- PENDING Task 14,15,16,20: the conclusion. Re-read 要旨 and this list after the pending sections are filled, and add the model-uncertainty limit (only Euler and RANS-SA exist, so the tutorial's several-turbulence-model request is answered only in part). -->
 </section>
 <section id="appx-a">
 <h2 id="appx-a">付録 A：数値の出典</h2>
@@ -1033,6 +1099,21 @@
 <td><code>layer0_plate.csv</code></td>
 <td>層流平板の値、Blasius との差、前縁、領域の感度、残差の落ち幅</td>
 <td>2.6、4.2</td>
+</tr>
+<tr>
+<td><code>layer1_cone.csv</code></td>
+<td>層 1 の円すい-円筒の各格子の壁面 Cp、厳密解との差、収束の判定、表面の出力ファイルの状態</td>
+<td>3</td>
+</tr>
+<tr>
+<td><code>layer1_gci.csv</code></td>
+<td>層 1 の GCI の行（すべて拒否）と拒否の理由</td>
+<td>3</td>
+</tr>
+<tr>
+<td><code>layer0_vs_layer1.csv</code></td>
+<td>層 0 と層 1 の誤差の比較（寄与は評価していない）</td>
+<td>3</td>
 </tr>
 <tr>
 <td><code>cone10_reference_check.csv</code></td>

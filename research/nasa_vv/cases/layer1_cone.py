@@ -270,11 +270,14 @@ def pipeline_contribution_pct(layer1_diff_pct: float, layer0_diff_pct: float) ->
     return layer1_diff_pct - layer0_diff_pct
 
 
-def reading(contribution: float | None, gci0: float | None, gci1: float | None) -> str:
+def reading(contribution: float | None, gci0: float | None, gci1: float | None, fine_accepted: bool = True) -> str:
     """What the contribution can be said to be, given the two layers' GCI (percent, None where there is none).
 
     The difference is called indistinguishable at this resolution when it is smaller than the GCI of either
     layer, i.e. when at least one layer's uncertainty exceeds it. No number is quoted in that case."""
+    if not fine_accepted:
+        return (f"not assessed: the fine level was not accepted by the solver, so its error is not that of a converged solution"
+                f" and the {CONTRIBUTION_NAME} is not quoted")
     if contribution is None:
         return "no layer 0 counterpart: nothing to subtract"
     c = abs(contribution)
@@ -315,9 +318,13 @@ def comparison_rows(levels: dict[str, LevelData], fd: FamilyData, grows: list[di
                 d0 = float(l0["difference_pct"])
                 gci0 = float(layer0["gci"]["gci_fine_pct"]) if layer0["gci"]["gci_fine_pct"] != "" else None
                 c = pipeline_contribution_pct(d1, d0)
+                accepted = fine.grid.solver_converged is True
                 row.update(layer0_fine=l0["cfd"], layer0_diff_pct=l0["difference_pct"],
                            layer0_gci_pct=_f(gci0), layer0_gci_bounds_error=layer0["gci"]["gci_bounds_error"],
-                           pipeline_contribution_pct=_f(c, ".6g"), reading=reading(c, gci0, gci1))
+                           pipeline_contribution_pct=_f(c, ".6g") if accepted else "",
+                           reading=reading(c, gci0, gci1, accepted))
+                if not accepted:
+                    notes.append(f"layer 1 fine level: solver verdict {fine.grid.solver_converged}, residual drop {fine.grid.residual_drop_orders:.3g} orders; the contribution it would give is left out")
                 if layer0["gci"]["gci_bounds_error"] == "False":
                     notes.append("the layer 0 GCI does not bound its own finest-grid error (layer0_gci.csv), so it is a lower bound on layer 0's uncertainty")
             else:
@@ -376,7 +383,7 @@ def _levels_text(levels: dict[str, LevelData]) -> list[str]:
         out.append(
             f"{name}: wall_size {wall * 1000:g} mm, {lv.grid.nodes} nodes, {lv.cells} cells, residual drop {lv.grid.residual_drop_orders:.4g} orders, "
             f"solver verdict {lv.grid.solver_converged}, job {d.get('jobid', '?')} on {d.get('node', '?')} ({d.get('ppn', '?')} cores, {d.get('wall_seconds', '?')} s, "
-            f"binary commit {d.get('ignisyeet_commit', '?')}), binned Cp sha256 {lv.cp_sha}")
+            f"binary {d.get('binary', '?')}), binned Cp sha256 {lv.cp_sha}")
     return out
 
 
@@ -409,7 +416,7 @@ def header_common(levels: dict[str, LevelData], work: pathlib.Path, extra: list[
         f"The difference of the two layers' errors is reported as '{CONTRIBUTION_NAME}', never as meshing error alone: the layers differ in mesh type (structured axisymmetric against 3-D unstructured tetrahedra), in the geometry of the domain, in the code path that writes the SU2 configuration, and in how the wall Cp is extracted.",
         "",
         "Binaries. " + " | ".join(versions) if versions else "Binaries: no versions.txt in the work directory.",
-        "Run: virgo_run.sh -l on virgo02, 32 cores per level, the three levels as separate jobs; each level solves the alpha = 0 and alpha = 4 cases (see below).",
+        "Run: virgo_run.sh -l, the three levels as three concurrent jobs on one node (node, cores, wall time and binary of each below); each level solves the alpha = 0 and alpha = 4 cases (see below).",
     ] + _levels_text(levels) + [
         "",
         "Geometry. doc/scripts/rans_geometry.py cone (called directly with r = 0.05, delta_deg = 10.0, lb = 0.3): a 10 degree half-angle cone of base radius 0.05 m, cone length L_cone = 0.05 / tan 10 deg = 0.28356 m, a cylinder of radius 0.05 m to x = 0.58356 m, a flat base.",
@@ -425,8 +432,8 @@ def header_common(levels: dict[str, LevelData], work: pathlib.Path, extra: list[
         _growth_text(levels) + ".",
         "family.check_similar sees only the knobs (wall_size_m, which scales by 1.4 exactly), so it passes whether or not the grids are similar; it cannot detect this. Every GCI is therefore computed twice, once with h = nodes^(-1/3) (the family's h) and once with h = wall_size (a refinement ratio of 1.4), each with its own row and an h_basis column, and the spread between them is part of the uncertainty. Neither is the effective grid size of these grids.",
         "fin_size: the body has no fins and records none (params.json: \"fins\": null). In the mesher fin_refine = bool(fins) and hf < h0 (crates/cfd/src/mesh_gmsh.py:156-157) and the fin field is only built under it (mesh_gmsh.py:208-211 prints 'fin faces: none identified' otherwise); crates/cfd/src/mesh.rs:395 only copies fin_size_for (crates/cfd/src/config.rs:538-545) into the parameters, where it changes the case hash. A coarse mesh with fin_size = 0.00196 and one without it are identical (28887 nodes, 132328 cells). Only wall_size is therefore a knob here and fin_size is not set.",
-        "alphas_deg = [0.0, 4.0] instead of the brief's [0]: both binaries refuse a single angle (aero.cfd.alphas_deg needs at least one angle above 0, crates/cfd/src/config.rs:575). Only the alpha = 0 case is used; a level's convergence is read from that case alone, a failure of the alpha = 4 case does not decide it.",
-        "Generated tomls: rans_sample.py setup was run with --model euler --machs 2.35 --alphas 0 4 --wall W --ranks 16 --parallel 2 --threads 32 --memory-gb 100 --cg 0.3 --stl-scale 1; the generated case.toml has a stale duplicate wall_size line (rans_sample.py's key replacement matched a comment of examples/sample_cfd.toml), which was removed; stl and eng were made relative for the remote copy; the remote binary does not know output.html, which was removed. No SU2 setting was changed; iterations is the product's Euler default, 3000.",
+        "alphas_deg = [0.0, 4.0] instead of the brief's [0]: the product refuses a single angle (aero.cfd.alphas_deg needs at least one angle above 0, crates/cfd/src/config.rs:575). Only the alpha = 0 case is used; a level's convergence is read from that case alone, a failure of the alpha = 4 case does not decide it.",
+        "Generated tomls: rans_sample.py setup was run with --model euler --machs 2.35 --alphas 0 4 --wall W --parallel 2 --threads 32 --memory-gb 100 and --ranks 8, 10 and 14 for the coarse, medium and fine level (16, 20 and 28 cores of the node) --cg 0.3 --stl-scale 1; the generated case.toml has a stale duplicate wall_size line (rans_sample.py's key replacement matched a comment of examples/sample_cfd.toml), which was removed; stl and eng were made relative for the remote copy; html = false was removed from [output]. No SU2 setting was changed; iterations is the product's Euler default, 3000.",
         "residual_drop_orders is the peak of log10 rms[Rho] over the alpha = 0 history minus its final value (the convention of layer0.csv). solver_converged is the product's own verdict on that case (done.json 'converged', or 'not converged' in the job log of a rejected case). family.check_converged gates every level: a level the solver did not accept refuses the GCI rows, which then carry the refusal and no numbers, while the per-level Cp comparison still appears.",
     ] + notes + extra
     return ["# " + ln if ln else "#" for ln in lines]
@@ -454,6 +461,7 @@ def header_gci(levels, work, rows) -> list[str]:
 def header_comparison(levels, work, rows, layer0) -> list[str]:
     extra = [
         "One row per quantity and layer 1 h basis (layer1_h_basis); layer 0 has one basis (cells^-1/2, 2-D, refinement ratio exactly 2) and the same layer 0 values repeat in both rows. layer1_fine is the fine level; its own convergence verdict is in layer1_cone.csv.",
+        "If the fine level was not accepted by the solver, pipeline_contribution_pct is left empty (the reading says so), because the error of a solution that did not converge is not the error of the pipeline.",
         "diff_pct = 100 (value - exact) / exact; pipeline_contribution_pct = layer1_diff_pct - layer0_diff_pct, in percentage points, against the same Taylor-Maccoll Cp, for cp_mean_0.4_0.9 only (the like-for-like window).",
         "Reading rule: |pipeline_contribution_pct| smaller than layer0_gci_pct or layer1_gci_pct (either, i.e. smaller than the larger of the two) is called indistinguishable at this resolution and no difference is quoted. 'not assessed' means layer 1 has no GCI and layer 0's does not exceed the contribution. A GCI is an uncertainty, so 'exceeds the GCI of both layers' is the only reading that supports quoting a difference.",
         f"layer0_gci_bounds_error is the flag of layer0_gci.csv: {layer0['gci']['gci_bounds_error']} for the layer 0 cone wall_cp, whose GCI ({layer0['gci']['gci_fine_pct']} %) does not bound its own error ({layer0['fine']['difference_pct']} %), so the indistinguishable test against it is a weak one.",

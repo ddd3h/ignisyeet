@@ -130,7 +130,7 @@ def _level(work, name, nodes, cells, *, peak=-3.0, final=-9.0, converged=True, c
     _history(case / "history.csv", peak, final)
     (run / "done.json").write_text(json.dumps(
         {"state": "done", "exit_code": 0, "wall_seconds": 12.5, "node": "virgo02", "ppn": 32,
-         "jobid": "1.virgo", "ignisyeet_commit": "abc1234"}))
+         "jobid": "1.virgo", "binary": "ignisyeet-glibc-a8dff9c"}))
     if converged is True:
         (case / "done.json").write_text(json.dumps({"converged": True, "iterations": 39, "residual_last": final}))
         (run / "job.log").write_text("Aero table: CFD, 2 cases (0 failed, 0 unconverged)\n")
@@ -153,14 +153,15 @@ def _level(work, name, nodes, cells, *, peak=-3.0, final=-9.0, converged=True, c
     (cp / "cone_cp.csv").write_text("\n".join(out) + "\n")
 
 
-def _work(tmp_path, *, coarse_converged=True):
+def _work(tmp_path, *, coarse_converged=True, fine_converged=True):
     work = tmp_path / "work"
     work.mkdir()
     (work / "versions.txt").write_text("remote: IgnisYeet 0.4.0 (commit 2f31ab9)\nlocal: IgnisYeet 0.4.0\n")
     _level(work, "coarse", 28887, 132328, converged=coarse_converged,
            peak=-2.5, final=-4.6 if not coarse_converged else -9.0, cp_scale=0.97)
     _level(work, "medium", 45258, 209052, cp_scale=0.99)
-    _level(work, "fine", 75796, 350868, cp_scale=1.0)
+    _level(work, "fine", 75796, 350868, cp_scale=1.0, converged=fine_converged,
+           final=-9.0 if fine_converged else -5.9)
     return work
 
 
@@ -274,6 +275,20 @@ def test_the_comparison_names_a_refused_layer1_instead_of_inventing_its_uncertai
             assert "GCI refused" in r["note"] or "not assessed" in r["reading"] or "indistinguishable" in r["reading"]
 
 
+def test_a_fine_level_the_solver_did_not_accept_gives_no_pipeline_contribution(tmp_path):
+    work = _work(tmp_path, fine_converged=False)
+    out = tmp_path / "out"
+    L1.main(["--work", str(work), "--out", str(out)])
+    for r in _read_csv(out / "layer1_gci.csv"):
+        assert r["note"].startswith("refused:") and "fine" in r["note"]
+    rows = [r for r in _read_csv(out / "layer0_vs_layer1.csv") if r["quantity"] == "cp_mean_0.4_0.9"]
+    assert rows
+    for r in rows:
+        assert r["layer1_diff_pct"] != "" and r["pipeline_contribution_pct"] == ""
+        assert "not assessed" in r["reading"] and "fine level" in r["reading"]
+    assert "not accepted" in L1.reading(0.3, 0.5, None, fine_accepted=False)
+
+
 def test_rerunning_the_collector_gives_byte_identical_files(tmp_path):
     work = _work(tmp_path)
     a, b = tmp_path / "a", tmp_path / "b"
@@ -293,6 +308,7 @@ def test_the_header_states_the_scope_wording_and_the_versions(tmp_path):
     assert "check_similar" in head and "1.4^3" in head
     assert "remote: IgnisYeet 0.4.0 (commit 2f31ab9)" in head
     assert "fin_size" in head and "mesh_gmsh.py:156" in head
+    assert "binary ignisyeet-glibc-a8dff9c)" in head
 
 
 def test_paths_are_resolved_from_the_module_and_not_from_the_working_directory(tmp_path, monkeypatch):

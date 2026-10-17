@@ -1,0 +1,52 @@
+# Temporal convergence of the 6-DOF flight integrator of IgnisYeet (spec 6.5).
+# The CFD is steady, so the tutorial's temporal convergence does not apply to it: there is no time step in the SU2 runs. This study applies the step to the 6-DOF integrator instead.
+# Product: IgnisYeet 0.4.0 (target/release/ignisyeet). Sources and the last commit that changed each:
+#   crates/cli/src/config.rs @ 2e06c65
+#   crates/sim/src/flight.rs @ 95030c8
+#   crates/sim/src/stepper.rs @ d7d0e2f
+#   examples/sample.toml @ 8baf03e
+#   examples/sample_motor.eng @ 3e46cf0
+# Runs: examples/sample.toml with sim.integrator = "rk4" and sim.dt = 0.008, 0.004, 0.002, 0.001 s (crates/cli/src/config.rs:378-384), parachute descent, wind 4 m/s. Refinement ratio r = 2, constant_ratio (NASA tutorial form) with Fs = 1.25.
+# dt1 is the finest step of a triplet and f1 its value. Each quantity has two triplets: dt 0.001/0.002/0.004 (the finest three, the result) and dt 0.002/0.004/0.008 (the coarsest three, a stability check).
+# gci_fine_pct is relative to f1 (percent). asymptotic_ratio is r^p GCI21/GCI32; near 1 means the asymptotic range.
+# Event quantities (summary.json, full precision): apogee_m, apogee_time_s, landing_distance_m, flight_time_s (= landing time).
+# Fixed-time quantities (trajectory.csv, resolution 1e-3 m for alt and 1e-4 m/s for airspeed): alt_m and airspeed_ms at t = 1 s (a thrust-curve knot) and t = 10 s (the run is cut at sim.max_time = 10 s, crates/cli/src/config.rs:390; sim exits with status 3 by design). Every step reaches these times exactly.
+# How events are located: rail exit, apogee, main deployment and landing are found inside the step on a cubic Hermite interpolant of the position (bisection or the zero of the interpolated vertical velocity: crates/sim/src/flight.rs:1357, :1388, :1414; crates/sim/src/stepper.rs:5-20), so they do not snap to the step. The parachute opens at apogee time + delay exactly. Steps are cut to end on the thrust-curve knots, sim.max_time and the deployment time (flight.rs:1267-1279).
+# Thrust-curve knots of examples/sample_motor.eng: dt = 0.008 s does not divide 0.05, 2.9, 3.1; dt = 0.004 s does not divide 0.05. For those the step is cut short to end on the knot (it is not skipped), so the step grids of the four runs are not nested there; the apogee-delay deployment time is another such cut.
+# Lift-off: the sample motor starts at 0 N and reaches 2300 N at 0.05 s. The rail model holds the rocket at rest while the thrust is below its weight (a = 0 for v <= 0, crates/sim/src/flight.rs:826), so the acceleration has a kink at about 2.3 ms that the integrator does not locate. It falls in the first step for dt = 0.008 and 0.004, the second for 0.002 and the third for 0.001, so it sits differently against the step ends in each run.
+# Rows with the prefix noramp_ are a control: the same runs with a copy of sample_motor.eng whose thrust at t = 0 is 2300 N (first sample changed, nothing else), so the rocket leaves at once and that kink is absent. The copy is written to the work directory; the product and examples/ are untouched.
+# A note flags an observed order more than 1 away from the formal order 4, a difference within 2 units of the trajectory.csv resolution (fixed-time rows), and a difference at round-off (relative below 1e-11; event rows, which are full precision). A refused row (constant_ratio's screen) carries the reason in note and has no order, extrapolated value or GCI.
+# This is verification of the integrator by step refinement. It is not a comparison with measured data.
+quantity,dt1,dt2,dt3,f1,f2,f3,order,extrapolated,gci_fine_pct,asymptotic_ratio,note
+apogee_m,0.001,0.002,0.004,4440.47483490314,4440.47636348615,4440.46733364303,,,,,oscillatory convergence: the differences change sign
+apogee_time_s,0.001,0.002,0.004,26.1011389540128,26.1011412919117,26.1011274292467,,,,,oscillatory convergence: the differences change sign
+landing_distance_m,0.001,0.002,0.004,7735.52308101201,7735.52568470689,7735.51000466552,,,,,oscillatory convergence: the differences change sign
+flight_time_s,0.001,0.002,0.004,684.954680809363,684.954885089439,684.953678402196,,,,,oscillatory convergence: the differences change sign
+alt_m_at_t1,0.001,0.002,0.004,119.323,119.323,119.322,,,,,no change between two of the grids; the order is undefined; a difference is within 2 units of the output resolution of trajectory.csv (0.001); the rounding of the file limits this order
+airspeed_ms_at_t1,0.001,0.002,0.004,206.5436,206.5438,206.5425,,,,,oscillatory convergence: the differences change sign
+alt_m_at_t10,0.001,0.002,0.004,3057.331,3057.332,3057.326,,,,,oscillatory convergence: the differences change sign; a difference is within 2 units of the output resolution of trajectory.csv (0.001); the rounding of the file limits this order
+airspeed_ms_at_t10,0.001,0.002,0.004,199.2577,199.2578,199.2576,,,,,oscillatory convergence: the differences change sign; a difference is within 2 units of the output resolution of trajectory.csv (0.0001); the rounding of the file limits this order
+apogee_m,0.002,0.004,0.008,4440.47636348615,4440.46733364303,4440.48558698501,,,,,oscillatory convergence: the differences change sign
+apogee_time_s,0.002,0.004,0.008,26.1011412919117,26.1011274292467,26.1011556970749,,,,,oscillatory convergence: the differences change sign
+landing_distance_m,0.002,0.004,0.008,7735.52568470689,7735.51000466552,7735.54199641447,,,,,oscillatory convergence: the differences change sign
+flight_time_s,0.002,0.004,0.008,684.954885089439,684.953678402196,684.956117849996,,,,,oscillatory convergence: the differences change sign
+alt_m_at_t1,0.002,0.004,0.008,119.323,119.322,119.324,,,,,oscillatory convergence: the differences change sign; a difference is within 2 units of the output resolution of trajectory.csv (0.001); the rounding of the file limits this order
+airspeed_ms_at_t1,0.002,0.004,0.008,206.5438,206.5425,206.5451,,,,,oscillatory convergence: the differences change sign
+alt_m_at_t10,0.002,0.004,0.008,3057.332,3057.326,3057.339,,,,,oscillatory convergence: the differences change sign
+airspeed_ms_at_t10,0.002,0.004,0.008,199.2578,199.2576,199.258,,,,,oscillatory convergence: the differences change sign
+noramp_apogee_m,0.001,0.002,0.004,4479.30227260563,4479.30227729043,4479.30226732444,,,,,oscillatory convergence: the differences change sign
+noramp_apogee_time_s,0.001,0.002,0.004,26.1626661805769,26.1626661783573,26.1626661187488,4.74716,26.1626661806627,4.10146e-10,1,
+noramp_landing_distance_m,0.001,0.002,0.004,7806.14979115576,7806.14973358595,7806.14972471122,,,,,the finer pair changes at least as much as the coarser pair; the solution is not converging under refinement
+noramp_flight_time_s,0.001,0.002,0.004,690.139140426536,690.139141063949,690.139139692374,,,,,oscillatory convergence: the differences change sign
+noramp_alt_m_at_t1,0.001,0.002,0.004,124.574,124.574,124.574,,,,,no change between two of the grids; the order is undefined; a difference is within 2 units of the output resolution of trajectory.csv (0.001); the rounding of the file limits this order
+noramp_airspeed_ms_at_t1,0.001,0.002,0.004,211.9531,211.9531,211.9531,,,,,no change between two of the grids; the order is undefined; a difference is within 2 units of the output resolution of trajectory.csv (0.0001); the rounding of the file limits this order
+noramp_alt_m_at_t10,0.001,0.002,0.004,3084.708,3084.708,3084.708,,,,,no change between two of the grids; the order is undefined; a difference is within 2 units of the output resolution of trajectory.csv (0.001); the rounding of the file limits this order
+noramp_airspeed_ms_at_t10,0.001,0.002,0.004,200.2602,200.2602,200.2602,,,,,no change between two of the grids; the order is undefined; a difference is within 2 units of the output resolution of trajectory.csv (0.0001); the rounding of the file limits this order
+noramp_apogee_m,0.002,0.004,0.008,4479.30227729043,4479.30226732444,4479.30210663109,4.01115,4479.30227794938,1.83886e-08,1,
+noramp_apogee_time_s,0.002,0.004,0.008,26.1626661783573,26.1626661187488,26.1626660803381,,,,,the finer pair changes at least as much as the coarser pair; the solution is not converging under refinement
+noramp_landing_distance_m,0.002,0.004,0.008,7806.14973358595,7806.14972471122,7806.14983363215,,,,,oscillatory convergence: the differences change sign
+noramp_flight_time_s,0.002,0.004,0.008,690.139141063949,690.139139692374,690.139118383349,3.95756,690.139141158305,1.709e-08,1,
+noramp_alt_m_at_t1,0.002,0.004,0.008,124.574,124.574,124.574,,,,,no change between two of the grids; the order is undefined; a difference is within 2 units of the output resolution of trajectory.csv (0.001); the rounding of the file limits this order
+noramp_airspeed_ms_at_t1,0.002,0.004,0.008,211.9531,211.9531,211.9531,,,,,no change between two of the grids; the order is undefined; a difference is within 2 units of the output resolution of trajectory.csv (0.0001); the rounding of the file limits this order
+noramp_alt_m_at_t10,0.002,0.004,0.008,3084.708,3084.708,3084.708,,,,,no change between two of the grids; the order is undefined; a difference is within 2 units of the output resolution of trajectory.csv (0.001); the rounding of the file limits this order
+noramp_airspeed_ms_at_t10,0.002,0.004,0.008,200.2602,200.2602,200.2602,,,,,no change between two of the grids; the order is undefined; a difference is within 2 units of the output resolution of trajectory.csv (0.0001); the rounding of the file limits this order

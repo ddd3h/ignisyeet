@@ -110,10 +110,15 @@ def prandtl_meyer_nu(mach: float, gamma: float = 1.4) -> float:
     )
 
 
+_MAX_BRACKET_MACH = 1.0e12
+
+
 def prandtl_meyer_expansion(
     mach: float, turn_deg: float, gamma: float = 1.4
 ) -> Expansion:
     """Isentropic turn through turn_deg; solves nu(M2) = nu(M1) + turn."""
+    if mach < 1.0:
+        raise ValueError("prandtl_meyer_expansion needs a supersonic free stream")
     nu_inf = 90.0 * (math.sqrt((gamma + 1.0) / (gamma - 1.0)) - 1.0)
     max_turn = nu_inf - prandtl_meyer_nu(mach, gamma)
     if turn_deg > max_turn:
@@ -127,7 +132,16 @@ def prandtl_meyer_expansion(
             f"a turn of {turn_deg} deg from M = {mach} would go below sonic "
             "(nu < 0)"
         )
+    # Grow the upper bracket until it covers the target. nu(inf) - nu(M) falls
+    # only as ~286/M deg, so turns close to the physical maximum need a large M2.
     lo, hi = 1.0, 100.0
+    while prandtl_meyer_nu(hi, gamma) < target:
+        if hi >= _MAX_BRACKET_MACH:
+            raise ValueError(
+                f"a turn of {turn_deg} deg from M = {mach} needs M2 beyond "
+                f"{_MAX_BRACKET_MACH:g}, which this solver does not bracket"
+            )
+        hi *= 2.0
     for _ in range(300):
         mid = 0.5 * (lo + hi)
         if prandtl_meyer_nu(mid, gamma) < target:

@@ -115,10 +115,37 @@ def test_prandtl_meyer_rejects_a_turn_below_sonic():
         prandtl_meyer_expansion(2.5, -50.0)
 
 
+def test_prandtl_meyer_solves_turns_near_the_maximum_instead_of_clamping():
+    """From M = 2.5 the turn is limited by nu(inf) - nu(2.5) = 91.33 deg. A
+    solver bracketed at M = 100 would only reach 88.47 deg and return 100.0 as
+    though it were a root for 89, 91 and 91.33 deg; each must be a true root."""
+    nu1 = prandtl_meyer_nu(2.5)
+    for turn in (89.0, 91.0, 91.33):
+        e = prandtl_meyer_expansion(2.5, turn)
+        assert e.mach2 > 100.0
+        assert prandtl_meyer_nu(e.mach2) == pytest.approx(nu1 + turn, abs=1e-9)
+
+
+def test_prandtl_meyer_refuses_the_unreachable_limit_itself():
+    """A turn of exactly nu(inf) - nu(M1) needs M2 = infinity."""
+    g = 1.4
+    limit = 90.0 * (math.sqrt((g + 1.0) / (g - 1.0)) - 1.0) - prandtl_meyer_nu(2.5)
+    with pytest.raises(ValueError, match="bracket"):
+        prandtl_meyer_expansion(2.5, limit)
+
+
+def test_prandtl_meyer_rejects_a_subsonic_free_stream():
+    with pytest.raises(ValueError, match="prandtl_meyer_expansion needs a supersonic"):
+        prandtl_meyer_expansion(0.8, 5.0)
+
+
 def test_prandtl_meyer_maximum_turn_follows_gamma():
     """nu(inf) = 90*(sqrt((g+1)/(g-1)) - 1) deg, so the limit moves with gamma."""
     g = 1.67
     limit = 90.0 * (math.sqrt((g + 1.0) / (g - 1.0)) - 1.0) - prandtl_meyer_nu(2.5, g)
-    prandtl_meyer_expansion(2.5, limit - 1.0, g)
+    nu1 = prandtl_meyer_nu(2.5, g)
+    e = prandtl_meyer_expansion(2.5, limit - 1.0, g)
+    assert e.mach2 > 100.0
+    assert prandtl_meyer_nu(e.mach2, g) == pytest.approx(nu1 + limit - 1.0, abs=1e-9)
     with pytest.raises(ValueError, match="exceeds the maximum turn"):
         prandtl_meyer_expansion(2.5, limit + 1.0, g)

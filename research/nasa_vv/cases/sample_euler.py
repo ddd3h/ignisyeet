@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Grid convergence of the sample rocket's Euler solution on a new three-level grid family.
 
-The CFD itself is run with ``ignisyeet aero`` (see the commands in the header of
-``results/gci_sample_euler.csv``); this module only collects the output of those runs from a
+The CFD itself is run with ``ignisyeet aero`` on a case.toml per level (doc/scripts/rans_sample.py
+``setup`` writes it; the work directory is $HOME/.cache/nasa_vv_sample); this module only collects the output of those runs from a
 work directory and writes two CSVs. Collecting is deterministic: the same work directory gives
 byte-identical files, and running it needs no solver.
 
@@ -121,7 +121,7 @@ class Solve:
     residual_drop_orders: float | None
     wall_s: float | None
     history_gap: int | None = None
-    """Rows of history.csv after the judged iteration (0 when the history ends where the runner judged)."""
+    """Rows of history.csv after the judged row (0 when the history ends where the runner judged)."""
 
 
 @dataclass
@@ -154,16 +154,26 @@ def _opt(row: dict[str, str], col: str) -> float | None:
     return float(s) if s else None
 
 
-HISTORY_TOLERANCE = 1e-5
+HISTORY_TOLERANCE = 1e-6
 """Largest difference between residual_last of cfd_cases.csv and the history row it names, in log10 units."""
 
 
-def _check_history(path: pathlib.Path, iterations: int, residual_last: float | None) -> tuple[float | None, int | None, str]:
-    """Peak rms[Rho], the rows beyond the judged iteration, and the reason the file is unusable ('' if fine).
+FORCE_WINDOW_ROWS = 120
+"""Rows up to the judged row among which the recorded axial force must lie: a converged case takes the CFx of the
+judged row itself, an accepted or window-averaged case the mean over a window of its last rows."""
 
-    The runner stops SU2 while it may be writing, so the file is checked, not trusted: it must end in a newline,
-    every row must be complete and finite, it must reach the judged iteration, and the row at that iteration must
-    carry the residual that cfd_cases.csv records. Rows after the judged iteration are counted (the gap), not hidden.
+
+def _check_history(path: pathlib.Path, iterations: int, residual_last: float | None,
+                   ca: float | None) -> tuple[float | None, int | None, str]:
+    """Peak rms[Rho], the rows after the judged row, and the reason the file is unusable ('' if fine).
+
+    The runner stops SU2 early and SU2 keeps writing until its next periodic output, so the history can run
+    past the row the case is judged on; cfd_cases.csv records the residual and the force coefficients of that
+    judged row, not of the last one. The file is checked, not trusted: it must end in a newline, every row must
+    be complete and finite, it must hold at least ``iterations`` rows (a shorter file is older than the case
+    record), a row must exist whose rms[Rho] equals residual_last of cfd_cases.csv (that row is the judged one),
+    and ca_cfd must lie within the CFx of the rows up to it (it is that row's CFx, or a window mean of the rows
+    before it). The rows written after the judged row are counted as the gap and reported, not hidden.
     """
     if not path.exists():
         return None, None, f"{path.name} not found"
@@ -172,10 +182,11 @@ def _check_history(path: pathlib.Path, iterations: int, residual_last: float | N
         return None, None, f"{path.name} does not end in a newline (truncated)"
     rows = list(csv.reader(text.splitlines()))
     head = [h.strip().strip('"') for h in rows[0]]
-    if "rms[Rho]" not in head:
-        return None, None, f"{path.name} has no rms[Rho] column"
-    col = head.index("rms[Rho]")
-    vals = []
+    for need in ("rms[Rho]", "CFx"):
+        if need not in head:
+            return None, None, f"{path.name} has no {need} column"
+    col, cx = head.index("rms[Rho]"), head.index("CFx")
+    vals, forces = [], []
     for i, r in enumerate(rows[1:], start=2):
         if len(r) != len(head):
             return None, None, f"{path.name} row {i} has {len(r)} of {len(head)} fields (truncated)"
@@ -186,13 +197,25 @@ def _check_history(path: pathlib.Path, iterations: int, residual_last: float | N
         if not all(math.isfinite(x) for x in f):
             return None, None, f"{path.name} row {i} has a non-finite field"
         vals.append(f[col])
+        forces.append(f[cx])
     if len(vals) < iterations:
         return None, None, (f"{path.name} has {len(vals)} rows but cfd_cases.csv records {iterations} "
                             "iterations (the history is older than the case record, or truncated)")
-    if residual_last is not None and abs(vals[iterations - 1] - residual_last) > HISTORY_TOLERANCE:
-        return None, None, (f"{path.name} row {iterations} has rms[Rho] = {vals[iterations - 1]:.6g} but "
-                            f"cfd_cases.csv records residual_last = {residual_last:.6g}")
-    return max(vals), len(vals) - iterations, ""
+    judged = None
+    if residual_last is not None and ca is not None:
+        for i, v in enumerate(vals, start=1):
+            if abs(v - residual_last) <= HISTORY_TOLERANCE:
+                judged = i
+                break
+        if judged is None:
+            return None, None, (f"{path.name} has no row with rms[Rho] = {residual_last:.6g}, the residual that "
+                                "cfd_cases.csv records for the judged row")
+        window = forces[max(0, judged - FORCE_WINDOW_ROWS):judged]
+        slack = 1e-6 * abs(ca) + 1e-9
+        if not (min(window) - slack <= ca <= max(window) + slack):
+            return None, None, (f"{path.name}: ca_cfd = {ca:.6g} of cfd_cases.csv lies outside the CFx of the "
+                                f"{len(window)} rows up to the judged row {judged} ({min(window):.6g} to {max(window):.6g})")
+    return max(vals), len(vals) - (judged if judged is not None else len(vals)), ""
 
 
 def _json(path: pathlib.Path, problems: list[str], required: bool = True) -> dict:
@@ -259,13 +282,15 @@ def read_level(d: pathlib.Path) -> Level:
             if key not in dirs:
                 problems.append(f"no case directory for mach {key[0]:g} alpha {key[1]:g}")
             else:
-                peak, gap, why = _check_history(dirs[key] / "history.csv", iterations, last)
+                peak, gap, why = _check_history(dirs[key] / "history.csv", iterations, last, _opt(r, "ca_cfd"))
                 if why:
                     problems.append(f"mach {key[0]:g} alpha {key[1]:g}: {why}")
                 elif last is not None:
                     drop = peak - last
         lv.solves[key] = Solve(r["status"], iterations, _opt(r, "cn_raw"), _opt(r, "ca_cfd"), drop,
                                _opt(r, "wall_seconds"), gap)
+    if "cases" in rep and int(rep["cases"]) != len(lv.solves):
+        problems.append(f"cfd_report.json records {rep['cases']} cases but cfd_cases.csv holds {len(lv.solves)} solves")
     machs = [float(m) for m in cfg.get("machs", [])]
     alphas = [float(a) for a in cfg.get("alphas_deg", [])]
     if not lv.mirror:
@@ -438,9 +463,17 @@ def _header(levels: dict[str, Level]) -> list[str]:
             else f"{lv.binary or 'unknown'} at ignisyeet commit {lv.commit or 'unknown'} (from the job record)"
             for lv in levels.values()})) + ".",
     ]
-    for lv in levels.values():
+    for lv in (*coarse_first, levels[NOMIRROR_LEVEL]):
         if lv.sizing.get("notes"):
-            lines.append(f"{lv.name}: {lv.sizing['notes']}")
+            lines.append(f"{lv.name}: {lv.sizing['notes']}.")
+    if any(lv.sizing.get("est_mem_gb") for lv in levels.values()) and not any(lv.peak_mem_gb for lv in levels.values()):
+        lines.append("Peak SU2 memory was not measured on virgo (the compute nodes cannot be reached from the login node and PBS keeps no accounting); "
+                     "the earlier 2 mm run of doc/data/cfd/mesh_convergence.csv (1.42 M cells, the mesh of level fine) measured 3.3 GB per case.")
+    est = levels["coarse"].sizing.get("est_mem_gb")
+    if est:
+        lines.append(f"Placement rule (coarse peak memory x 1.4^6 against 100 GB): {est:g} GB x {1.4 ** 6:.2f} = {est * 1.4 ** 6:.1f} GB, "
+                     "below 100 GB, so the levels would fit on the local machine (20 threads, 30 GB RAM); they ran on virgo01 at the controller's instruction "
+                     "to run all levels at once, and the coarse memory is the product's estimate, not a measurement.")
     lines += [
         "Celik et al. (2008) with Fs = 1.25. Every level is gated by nasa_vv.family first; a refused family has no numbers, only the refusal in note.",
         "Every quantity is written twice, once per h_basis: nodes^-1/3 and wall_size (the knob ratio). The spread between the two is part of the uncertainty.",
@@ -450,7 +483,7 @@ def _header(levels: dict[str, Level]) -> list[str]:
         f"Measured growth per level, coarse to fine: cells {_ratios(cells)}, nodes {_ratios(nodes)}; wall_size ratio {_ratios([1 / w for w in walls])}. "
         "A geometrically similar 1.4 refinement would grow the cells by 1.4^3 = 2.74x per level.",
         "On grids whose outer cell size is fixed, neither h basis is the effective grid size; the two bracket the question rather than resolve it, so the spread between them is not a bound on the true GCI.",
-        "Completeness: the runner stops SU2 while it may be writing, so every file read here is checked, not trusted: cfd_cases.csv and each history.csv must end in a newline with complete finite rows, the history must reach the judged iteration and carry the residual_last that cfd_cases.csv records, every solve of case.toml must be present, and the job must have finished with exit code 0. A level that fails any check refuses all of its families (the reason is in note and in source_check of sample_euler_levels.csv). Rows of history.csv after the judged iteration are counted in history_gap_*. The surface_flow files are not read.",
+        "Completeness: the runner stops SU2 while it may be writing, so every file read here is checked, not trusted: cfd_cases.csv and each history.csv must end in a newline with complete finite rows, the history must reach the judged iteration and carry the residual_last that cfd_cases.csv records, every solve of case.toml must be present, and the job must have finished with exit code 0. A level that fails any check refuses all of its families (the reason is in note and in source_check of sample_euler_levels.csv). The recorded residual and force coefficients belong to the history row at the runner's stop decision (the judged row), and SU2 keeps writing until its next periodic output, so history.csv can run past it; the rows after the judged row are counted in history_gap_*. The surface_flow files are not read.",
         "n1..n3 are nodes (finest first). gci_fine_pct and gci_coarse_pct are relative to f1 and f2 (percent), including for xcp (a length: multiply by |f1|).",
         "cna: CNa [1/rad] = CN(4)/radians(4) from cn_raw on the z-mirrored mesh (-4 is the exact mirror of +4 and is not solved); the non-mirrored medium level uses (CN(4) - CN(-4))/2/radians(4); see cna_basis in sample_euler_levels.csv. xcp: xcp_m of the combined row. ca_alpha0: ca_cfd at alpha = 0.",
         "A note flags any computed order above 4 (twice the formal second order) or below 0.5 (a quarter of it): the triplet is then not in the asymptotic range and its GCI is not reliable.",

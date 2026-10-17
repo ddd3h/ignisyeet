@@ -25,9 +25,18 @@
 #   CSV's number and antisymmetry() is not re-run on it; each such row's source says
 #   cn_even_4deg combined value.
 # ca_dalembert has tolerance and passed blank: whether |CA(M=0.3, alpha=0)| shrinks as the grid is
-#   refined is decided by the refined Euler runs of Task 14, not by a threshold here, so no pass/fail
+#   refined is read from the refined Euler runs (ca_dalembert_refined below), not decided by a threshold, so no pass/fail
 #   is claimed. The expected value is 0 (d'Alembert's paradox).
-# ca_dalembert_refined rows are omitted until Task 14's refined Euler grid family exists.
+# ca_dalembert_refined has one row per level of the refined Euler grid family (coarse, medium, fine) from
+#   research/nasa_vv/results/sample_euler_levels.csv, whose own header records the runs; value is that level's ca_cfd, tolerance and passed are blank.
+#   |CA| shrinks under refinement at M = 0.3, alpha = 0 (coarse to fine, |ca_cfd|): 0.06279 -> 0.04547 -> 0.03048.
+#   The grids are not geometrically similar (see gci_sample_euler.csv), so this is a trend over three grids, not an order of convergence.
+# cn_antisymmetry also has one row per Mach for the medium level meshed without the z mirror (z_mirror_mesh=false):
+#   +4 and -4 are both solved there, so the even part is a test of the solver; value is (cn_raw(+4) + cn_raw(-4))/2
+#   from the levels file, tolerance 1 % of |(cn_raw(+4) - cn_raw(-4))/2|, passed is |value| <= tolerance.
+#   The even part of a pair is the spurious normal force that a mesh without z symmetry carries at every incidence, so it is of the size of that mesh's alpha = 0 value,
+#   here (levels file, cn_raw_a0): M = 0.3: cn_raw(0) = -0.04036; M = 0.8: cn_raw(0) = -0.02194; M = 2: cn_raw(0) = 0.001597.
+#   A solve with status accepted (the runner's acceptance rule was not met) enters the pair as written; its status is in source.
 # The farfield mass-flux balance check of spec section 6.3 is not in this file; it belongs to Task 19.
 # passed is the string True or False, or blank when the check has no criterion.
 check,case,mach,alpha_deg,model,quantity,value,expected,tolerance,passed,source
@@ -66,3 +75,9 @@ cn_antisymmetry,zm,0.3,4,euler,cn_even_4deg,0.00012,0,0.012143,True,"doc/data/cf
 cn_antisymmetry,zm,0.8,4,euler,cn_even_4deg,0,0,0.0117607,True,"doc/data/cfd/asymmetry_study.csv config=zm mach=0.8 @ c0de310; cn_even_4deg combined value; zm is the quarter-plus-mirror mesh, where -alpha is the exact mirror of +alpha, so this row is near zero partly by construction; value rounded to 5 decimals"
 cn_antisymmetry,zm,2,4,euler,cn_even_4deg,1e-05,0,0.0079617,True,"doc/data/cfd/asymmetry_study.csv config=zm mach=2 @ c0de310; cn_even_4deg combined value; zm is the quarter-plus-mirror mesh, where -alpha is the exact mirror of +alpha, so this row is near zero partly by construction; value rounded to 5 decimals"
 ca_dalembert,sample rocket,0.3,0,euler,ca_cfd,-0.031369846,0,,,doc/data/cfd/sample_euler_cases.csv mach=0.3 alpha_deg=0 (converged) @ 4c20dbe
+ca_dalembert_refined,coarse (3.92 mm),0.3,0,euler,ca_cfd,-0.062794847,0,,,research/nasa_vv/results/sample_euler_levels.csv level=coarse mach=0.3 (converged) nodes=98151
+ca_dalembert_refined,medium (2.8 mm),0.3,0,euler,ca_cfd,-0.0454687595,0,,,research/nasa_vv/results/sample_euler_levels.csv level=medium mach=0.3 (converged) nodes=170830
+ca_dalembert_refined,fine (2 mm),0.3,0,euler,ca_cfd,-0.0304847698,0,,,research/nasa_vv/results/sample_euler_levels.csv level=fine mach=0.3 (converged) nodes=302918
+cn_antisymmetry,medium (z_mirror_mesh=false),0.3,4,euler,cn_even_4deg,-0.038831785,0,0.01144577725,False,research/nasa_vv/results/sample_euler_levels.csv level=medium_nomirror mach=0.3 (converged/accepted); +4 and -4 both solved on a mesh that is not mirrored
+cn_antisymmetry,medium (z_mirror_mesh=false),0.8,4,euler,cn_even_4deg,-0.020078225,0,0.01181870285,False,research/nasa_vv/results/sample_euler_levels.csv level=medium_nomirror mach=0.8 (converged/converged); +4 and -4 both solved on a mesh that is not mirrored
+cn_antisymmetry,medium (z_mirror_mesh=false),2,4,euler,cn_even_4deg,0.001524465,0,0.00933647917,True,research/nasa_vv/results/sample_euler_levels.csv level=medium_nomirror mach=2 (converged/accepted); +4 and -4 both solved on a mesh that is not mirrored

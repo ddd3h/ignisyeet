@@ -34,7 +34,8 @@ def make_level(work, name, wall_mm, fin_mm, nodes, cells, mirror=True, cn_slope=
         f"z_mirror_mesh = {'true' if mirror else 'false'}\nalpha_mode = \"mirror\"\n"
         f"machs = {list(machs)}\nalphas_deg = [0.0, 4.0]\n"
         "ranks_per_case = 4\nparallel_cases = 3\n")
-    (out / "cfd_report.json").write_text(json.dumps({"mesh_nodes": nodes, "mesh_cells": cells}))
+    (out / "cfd_report.json").write_text(json.dumps({"mesh_nodes": nodes, "mesh_cells": cells,
+                                                    "cases": len(machs) * (2 if mirror else 3)}))
     (d / "done.json").write_text(json.dumps({
         "state": "done", "exit_code": 0, "wall_seconds": 1000.0, "node": node, "ppn": ppn,
         "ignisyeet_commit": "abc1234", "binary": "ignisyeet-glibc"}))
@@ -49,8 +50,8 @@ def make_level(work, name, wall_mm, fin_mm, nodes, cells, mirror=True, cn_slope=
             cd.mkdir()
             (cd / "done.json").write_text(json.dumps({"mach": m, "alpha_deg": a, "beta_deg": 0.0}))
             (cd / "history.csv").write_text(
-                '"Time_Iter","Outer_Iter","Inner_Iter","rms[Rho]"\n'
-                "0,0,0,-0.5\n0,0,1,0.5\n" + f"0,0,2,{-drop + 0.5}\n")
+                '"Time_Iter","Outer_Iter","Inner_Iter","rms[Rho]","CFx"\n'
+                f"0,0,0,-0.5,{ca:.8e}\n0,0,1,0.5,{ca:.8e}\n" + f"0,0,2,{-drop + 0.5},{ca:.8e}\n")
     for m in machs:
         rows.append(_combined(m, 4.0, cn_slope * math.radians(4), xcp))
     (out / "cfd_cases.csv").write_text("\n".join(rows) + "\n")
@@ -298,12 +299,12 @@ def test_a_history_older_than_the_case_record_is_refused(work, tmp_path):
 def test_a_history_whose_judged_row_disagrees_with_the_record_is_refused(work, tmp_path):
     h = _history(work, "fine", 0.3, 4.0)
     h.write_text(h.read_text().replace("-7.5", "-6.5"))
-    _refused_for(work, tmp_path, "records residual_last")
+    _refused_for(work, tmp_path, "has no row with rms[Rho]")
 
 
 def test_rows_after_the_judged_iteration_are_recorded_not_hidden(work, tmp_path):
     h = _history(work, "fine", 0.3, 4.0)
-    h.write_text(h.read_text() + "0,0,3,-9.5\n0,0,4,-9.6\n")
+    h.write_text(h.read_text() + "0,0,3,-9.5,-0.0\n0,0,4,-9.6,-0.0\n")
     lv, gci = run(work, tmp_path)
     row = next(r for r in _read(lv) if r["level"] == "fine" and r["mach"] == "0.3")
     assert row["history_gap_a4"] == "2" and row["history_gap_a0"] == "0"
@@ -342,3 +343,33 @@ def test_a_missing_case_directory_refuses_the_level(work, tmp_path):
     import shutil
     shutil.rmtree(_history(work, "fine", 2.0, 0.0).parent)
     _refused_for(work, tmp_path, "no case directory for mach 2 alpha 0")
+
+
+def test_a_report_that_counts_other_cases_than_the_cases_file_refuses_the_level(work, tmp_path):
+    r = work / "fine" / "out" / "cfd_report.json"
+    j = json.loads(r.read_text())
+    j["cases"] = 7
+    r.write_text(json.dumps(j))
+    _refused_for(work, tmp_path, "records 7 cases but cfd_cases.csv holds 6")
+
+
+def _set_cfx(path, values):
+    lines = path.read_text().splitlines()
+    out = [lines[0]]
+    for ln, v in zip(lines[1:], values):
+        f = ln.split(",")
+        f[-1] = f"{v:.8e}"
+        out.append(",".join(f))
+    path.write_text("\n".join(out) + "\n")
+
+
+def test_a_recorded_force_outside_the_history_is_refused(work, tmp_path):
+    _set_cfx(_history(work, "fine", 0.3, 4.0), [-0.09, -0.09, -0.09])  # the record says -0.0150
+    _refused_for(work, tmp_path, "lies outside the CFx")
+
+
+def test_a_window_mean_force_between_the_rows_is_accepted(work, tmp_path):
+    # the record (-0.0150) is a window mean: the rows around the judged one are on both sides of it
+    _set_cfx(_history(work, "fine", 0.3, 4.0), [-0.0170, -0.0160, -0.0130])
+    lv, _ = run(work, tmp_path)
+    assert next(r for r in _read(lv) if r["level"] == "fine" and r["mach"] == "0.3")["source_check"] == "ok"

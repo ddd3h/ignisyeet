@@ -1,0 +1,19 @@
+# Per-level results of the sample-rocket Euler grid family (levels coarse, medium, fine) and the non-mirrored medium level (medium_nomirror); collected from ignisyeet aero output by nasa_vv.cases.sample_euler.
+# wall_size_mm and fin_size_mm are aero.cfd.wall_size and aero.cfd.fin_size; nodes and cells are mesh_nodes and mesh_cells of cfd_report.json.
+# status_*, drop_* and cn_raw_* belong to the alpha = 0, +4 and -4 solves; drop_* are the orders the density residual fell (largest rms[Rho] of the history minus the residual at the judged row).
+# cna: CNa [1/rad]; cna_basis says whether it is (CN(4)-CN(-4))/2/radians(4) (both signs solved) or CN(4)/radians(4). cn_combined_a4 and xcp_m are the combined row of cfd_cases.csv at alpha = 4: CN(4) - CN(0) on a z-mirrored mesh, (CN(4) - CN(-4))/2 when both signs were solved.
+# mesh: z-mirrored = aero.cfd.z_mirror_mesh true (a quarter mesh mirrored about the x-y plane, so -alpha is the exact mirror of +alpha and is not solved); not mirrored = z_mirror_mesh false (+4 and -4 both solved).
+# medium_nomirror is not a member of the grid family; it exists for the CN antisymmetry check in consistency.csv.
+level,machine,ppn,ranks_per_case,mesh,wall_size_mm,fin_size_mm,nodes,cells,mach,status_a0,status_a4,status_am4,drop_a0,drop_a4,drop_am4,cn_raw_a0,cn_raw_a4,cn_raw_am4,cna,cna_basis,cn_combined_a4,xcp_m,ca_alpha0,history_gap_a0,history_gap_a4,history_gap_am4,source_check,job_wall_s,job_peak_mem_gb
+coarse,virgo01,12,4,z-mirrored,3.92,1.96,98151,458640,0.3,converged,converged,,3.64489,8.34731,,5.51355067e-08,1.19774527,,17.15643723,CN(4),1.19774521,1.2060685,-0.062794847,24,31,,ok,476.1,
+coarse,virgo01,12,4,z-mirrored,3.92,1.96,98151,458640,0.8,converged,converged,,9.50317,8.65612,,1.09128234e-06,1.21380368,,17.38645701,CN(4),1.21380259,1.22052397,-0.0325785994,17,50,,ok,476.1,
+coarse,virgo01,12,4,z-mirrored,3.92,1.96,98151,458640,2,converged,converged,,10.5009,7.69217,,-1.71117739e-06,0.918046884,,13.15005296,CN(4),0.918048596,1.1500208,0.104488421,29,48,,ok,476.1,
+medium,virgo01,21,7,z-mirrored,2.8,1.4,170830,798534,0.3,converged,converged,,3.3322,8.12122,,1.33246931e-07,1.19217659,,17.07667176,CN(4),1.19217646,1.21138818,-0.0454687595,3,40,,ok,616.6,
+medium,virgo01,21,7,z-mirrored,2.8,1.4,170830,798534,0.8,converged,converged,,9.665,8.44987,,1.50162923e-05,1.21048724,,17.3389525,CN(4),1.21047223,1.22252226,-0.022568609,50,34,,ok,616.6,
+medium,virgo01,21,7,z-mirrored,2.8,1.4,170830,798534,2,converged,accepted,,10.8771,6.60821,,-1.42876461e-05,0.927112389,,13.27990676,CN(4),0.927126676,1.15594149,0.107934931,38,50,,ok,616.6,
+fine,virgo01,33,11,z-mirrored,2,1,302918,1416454,0.3,converged,converged,,3.22985,7.91678,,3.74259122e-07,1.18068149,,16.91201658,CN(4),1.18068112,1.20859838,-0.0304847698,10,4,,ok,848.4,
+fine,virgo01,33,11,z-mirrored,2,1,302918,1416454,0.8,converged,converged,,9.79458,7.27448,,-1.45362847e-06,1.20317271,,17.23417958,CN(4),1.20317416,1.2204714,-0.0127791365,7,5,,ok,848.4,
+fine,virgo01,33,11,z-mirrored,2,1,302918,1416454,2,converged,converged,,9.29339,8.64159,,1.66364416e-05,0.93558993,,13.40133859,CN(4),0.935573294,1.1571383,0.111449439,40,39,,ok,848.4,
+medium_nomirror,virgo01,21,7,not mirrored,2.8,1.4,167541,779506,0.3,converged,converged,accepted,3.69294,7.96237,5.86139,-0.0403553981,1.10574594,-1.18340951,16.39486824,(CN(4)-CN(-4))/2,1.14457772,1.20369527,-0.0387397075,30,27,11,ok,609.0,
+medium_nomirror,virgo01,21,7,not mirrored,2.8,1.4,167541,779506,0.8,accepted,converged,converged,6.61125,8.56457,8.87239,-0.0219426875,1.16179206,-1.20194851,16.92904482,(CN(4)-CN(-4))/2,1.18187029,1.21753299,-0.017799009,43,34,40,ok,609.0,
+medium_nomirror,virgo01,21,7,not mirrored,2.8,1.4,167541,779506,2,accepted,converged,accepted,6.64907,7.24022,6.51457,0.00159717313,0.935172382,-0.932123452,13.3735213,(CN(4)-CN(-4))/2,0.933647917,1.15652066,0.109366371,2,44,49,ok,609.0,

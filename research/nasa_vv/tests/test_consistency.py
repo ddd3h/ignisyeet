@@ -147,3 +147,60 @@ def test_the_long_note_on_combined_values_is_in_the_header_not_in_each_source(tm
 def test_the_committed_results_file_is_what_main_writes(tmp_path):
     committed = pathlib.Path(consistency.__file__).resolve().parents[1] / "results" / "consistency.csv"
     assert consistency.main(tmp_path / "consistency.csv").read_bytes() == committed.read_bytes()
+
+
+# ---------------------------------------------------------------- refined Euler family (Task 14)
+
+LEVEL_COLS = ["level", "mach", "wall_size_mm", "nodes", "status_a0", "status_a4", "status_am4",
+              "ca_alpha0", "cn_raw_a0", "cn_raw_a4", "cn_raw_am4"]
+
+
+def _levels_csv(path, ca=(-0.030, -0.020, -0.010), plus=1.2, minus=-1.19):
+    rows = [LEVEL_COLS]
+    for name, wall, nodes, c in zip(("coarse", "medium", "fine"), (3.92, 2.8, 2.0),
+                                    (400000, 520000, 700000), ca):
+        for m in (0.3, 0.8, 2):
+            rows.append([name, m, wall, nodes, "converged", "converged", "", c if m == 0.3 else 0.1,
+                         0.0, 1.2, ""])
+    for m in (0.3, 0.8, 2):
+        rows.append(["medium_nomirror", m, 2.8, 520000, "converged", "converged", "converged",
+                     0.1, -0.03, plus, minus])
+    path.write_text("# header\n" + "\n".join(",".join(map(str, r)) for r in rows) + "\n")
+    return path
+
+
+def test_the_refined_dalembert_rows_are_one_per_level_with_blank_tolerance(tmp_path):
+    out = consistency.main(tmp_path / "c.csv", _levels_csv(tmp_path / "l.csv"))
+    rows = [r for r in _rows(out) if r["check"] == "ca_dalembert_refined"]
+    assert [r["case"] for r in rows] == ["coarse (3.92 mm)", "medium (2.8 mm)", "fine (2 mm)"]
+    assert [float(r["value"]) for r in rows] == [-0.03, -0.02, -0.01]
+    assert all(r["tolerance"] == "" and r["passed"] == "" and r["mach"] == "0.3"
+               and r["alpha_deg"] == "0" and r["expected"] == "0" for r in rows)
+
+
+def test_the_header_says_whether_ca_shrinks(tmp_path):
+    shrink = _header_text(consistency.main(tmp_path / "a.csv", _levels_csv(tmp_path / "l.csv")))
+    assert "|CA| shrinks under refinement" in shrink
+    grow = _header_text(consistency.main(
+        tmp_path / "b.csv", _levels_csv(tmp_path / "m.csv", ca=(-0.01, -0.02, -0.03))))
+    assert "|CA| does not shrink under refinement" in grow
+
+
+def test_the_nonmirrored_antisymmetry_rows(tmp_path):
+    out = consistency.main(tmp_path / "c.csv", _levels_csv(tmp_path / "l.csv"))
+    rows = [r for r in _rows(out) if r["check"] == "cn_antisymmetry" and r["case"].startswith("medium")]
+    assert len(rows) == 3
+    for r in rows:
+        assert float(r["value"]) == pytest.approx(0.005)
+        assert float(r["tolerance"]) == pytest.approx(0.01 * 1.195)
+        assert r["passed"] == "True"
+        assert "z_mirror_mesh=false" in r["case"]
+
+
+def test_existing_rows_are_unchanged_by_the_refined_rows(tmp_path):
+    committed = [ln for ln in (pathlib.Path(consistency.__file__).resolve().parents[1] / "results"
+                               / "consistency.csv").read_text().splitlines() if not ln.startswith("#")]
+    new = [ln for ln in consistency.main(tmp_path / "c.csv", _levels_csv(tmp_path / "l.csv"))
+           .read_text().splitlines() if not ln.startswith("#")]
+    old = [ln for ln in committed if not ln.startswith(("ca_dalembert_refined", "cn_antisymmetry,medium"))]
+    assert new[:len(old)] == old

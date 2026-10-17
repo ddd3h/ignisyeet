@@ -2,7 +2,7 @@
 
 | Study | Status | Report | Paper |
 |---|---|---|---|
-| NASA WIND V&V of the aerodynamic methods | written; what it did not obtain is listed below | `../doc/source/research/nasa-vv/` (Japanese) | `nasa_vv/report/en/` |
+| NASA WIND V&V of the aerodynamic methods | written; what it did not obtain is listed below | `../doc/source/research/nasa-vv/` (Japanese) | `nasa_vv/paper/en/`, `nasa_vv/paper/ja/` |
 
 ## nasa_vv
 
@@ -23,7 +23,7 @@ Plan: `../docs/superpowers/plans/2026-10-17-nasa-cfd-vv.md`
 
 ### Status
 
-The Japanese report and the English paper draft are written. The report's numbers come
+The Japanese report and the English and Japanese papers are written. The report's numbers come
 from the files in `nasa_vv/results/`, from the product's data under `../doc/data/`, or from
 the product's documentation; the report names the source next to each table. The report
 states what the study did not obtain (its section 5), and so does the paper:
@@ -91,10 +91,12 @@ figures into `doc/source/_static/research/nasa-vv/`, and the page's styles are i
 
     cd research && uv run --project nasa_vv --group dev python nasa_vv/report/ja/build_page.py
 
-English paper draft (`nasa_vv/report/en/main.pdf`; needs `latexmk` and `rsvg-convert` or
-`inkscape`, which convert the SVG figures to PDF):
+The papers (`nasa_vv/paper/en/main.pdf` in English, `nasa_vv/paper/ja/main.pdf` in Japanese; two-column
+format of `nasa_vv/paper/labreport.cls`; need `latexmk` with LuaLaTeX and `rsvg-convert` or `inkscape`,
+which convert the SVG figures to PDF):
 
-    cd research/nasa_vv/report/en && make
+    cd research/nasa_vv/paper/en && make
+    cd research/nasa_vv/paper/ja && make
 
 The two figures (`nasa_vv/figures/`; `build_page.py` copies them for the report page):
 

@@ -2515,9 +2515,9 @@ git commit -m "research(nasa-vv): publish the Japanese report at /research/nasa-
 ## Task 22: The English paper draft
 
 **Files:**
-- Create: `research/nasa_vv/report/en/main.tex`
-- Create: `research/nasa_vv/report/en/references.bib`
-- Create: `research/nasa_vv/report/en/Makefile`
+- Create: `research/nasa_vv/paper/en/main.tex`
+- Create: `research/nasa_vv/paper/en/references.bib`
+- Create: `research/nasa_vv/paper/en/Makefile`
 
 **Interfaces:**
 - Consumes: the same CSVs and figures as Task 18.
@@ -2547,7 +2547,7 @@ clean:
 - [ ] **Step 3: Build it**
 
 ```bash
-cd research/nasa_vv/report/en && make
+cd research/nasa_vv/paper/en && make
 ```
 
 If `latexmk` is missing, say so and leave the source committed without the PDF; the PDF
@@ -2555,10 +2555,10 @@ is not committed in either case.
 
 - [ ] **Step 4: Add the PDF to the gitignore and commit**
 
-Add `report/en/*.pdf` and the latex aux patterns to `research/.gitignore`, then:
+Add `paper/*/*.pdf` and the latex aux patterns to `research/.gitignore`, then:
 
 ```bash
-git add research/nasa_vv/report/en/ research/.gitignore
+git add research/nasa_vv/paper/en/ research/.gitignore
 git commit -m "research(nasa-vv): add the English paper draft"
 ```
 

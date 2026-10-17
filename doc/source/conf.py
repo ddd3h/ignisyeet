@@ -110,6 +110,8 @@ html_title = "IgnisYeet ドキュメント"
 html_logo = "../IgnisYeet-logo.svg"
 html_favicon = "_static/landing/logo-mark.svg"
 html_static_path = ["_static"]
+# Files served as they are, e.g. the figures and PDF of the R&D reports (research/<id>/).
+html_extra_path = ["../extra"]
 html_css_files = ["custom.css"]
 html_theme_options = {
     "source_repository": "https://github.com/ddd3h/ignisyeet",

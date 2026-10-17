@@ -1409,7 +1409,7 @@ cargo build --release
 WORK=$(mktemp -d -p "$HOME/.cache")   # not /tmp: it is RAM-backed here
 cp examples/sample_cfd.toml "$WORK/case.toml"
 target/release/ignisyeet --no-progress aero "$WORK/case.toml" \
-  --set aero.cfd.machs='[2.0]' --set aero.cfd.alphas='[0.0]' --force || true
+  --set aero.cfd.machs='[2.0]' --set aero.cfd.alphas_deg='[0.0, 4.0]' --force || true
 find "$WORK" -name '*.cfg' | head
 ```
 
@@ -1426,7 +1426,8 @@ once the file exists.
 """The layer 0 configurations must reuse the product's numerics verbatim.
 
 golden_euler.cfg was written by `ignisyeet aero` itself (see the plan, Task 9).
-Only the markers, NDIM and AXISYMMETRIC may differ.
+Only the markers and AXISYMMETRIC may differ. The dimension comes from the mesh file's `NDIME`;
+SU2 8.3.0 has no `NDIM` option and aborts on one.
 """
 import pathlib
 
@@ -1454,7 +1455,7 @@ def test_layer0_may_differ_only_in_dimension_and_markers():
     cfg = layer0_config(ndim=2, axisymmetric=True, mach=2.35,
                         markers={"wall": ["cone"], "far": ["farfield"]},
                         viscous=False, golden=GOLDEN)
-    assert "NDIM= 2" in cfg or "NDIM=2" in cfg
+    assert not any(l.strip().startswith("NDIM") for l in cfg.splitlines())
     assert "AXISYMMETRIC= YES" in cfg
     assert "cone" in cfg
 
@@ -1492,7 +1493,7 @@ NUMERICS_KEYS = (
 
 `product_numerics` parses `KEY= VALUE` lines and raises `KeyError` naming any key in
 `NUMERICS_KEYS` that is absent. `layer0_config` copies every `NUMERICS_KEYS` line from
-`golden` verbatim, then appends the case-specific block: `SOLVER`, `NDIM`,
+`golden` verbatim, then appends the case-specific block: `SOLVER`,
 `AXISYMMETRIC`, `MACH_NUMBER`, the marker lines, the reference values, and the mesh
 and output filenames.
 

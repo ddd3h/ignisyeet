@@ -49,8 +49,8 @@ What the data can say now
 -------------------------
 Every ``rans_mesh_study`` row of gci_existing.csv is refused (levels not converged or without convergence evidence), so
 the sample rocket's RANS band does not exist and the verdict of those rows stays blank whatever Task 14 delivers. The
-only Euler grid study of the Basic Finner (gci_existing.csv, basic_finner_mesh_check) is at M = 2.375 with a fairing
-base, not at M = 1.832 with a flat base, and no task produces another; the Euler band of those rows is missing for good.
+only Euler grid study of the Basic Finner (gci_existing.csv, basic_finner_mesh_check) is at M = 2.375, with fairing and flat
+bases, not at M = 1.832, and no task produces another; the Euler band of those rows is missing for good.
 
 Run it with
 
@@ -201,7 +201,7 @@ class Quantity:
 
 
 EULER_FINNER_NONE = ("the only Euler grid study of the Basic Finner (gci_existing.csv, basic_finner_mesh_check) is at "
-                     "M = 2.375 with a fairing base, not at M = 1.832 with a flat base; no grid study exists for this condition")
+                     "M = 2.375 (with fairing and flat bases), not at M = 1.832; no grid study exists for this condition")
 
 
 def _row_at(rows: list[dict[str, str]], **keys: float | str) -> dict[str, str]:
@@ -229,7 +229,7 @@ def quantities(root: pathlib.Path = ROOT) -> list[Quantity]:
             out.append(Quantity(
                 "sample_rocket", m, SAMPLE_ALPHA, name, _num(r, ec), _num(r, rc),
                 f"{RANS_VS_EULER_CSV} columns {rc} and {ec}",
-                GciRef("sample_euler", m, SAMPLE_ALPHA, eq, "fine"),     # Euler at 2 mm: the fine level of Task 14
+                GciRef("sample_euler", m, SAMPLE_ALPHA, eq, "fine"),     # Euler at wall_size 2 mm: the knobs of Task 14's fine level (cell counts differ, see the header)
                 GciRef("rans_mesh_study", m, SAMPLE_ALPHA, rq, "3 mm"),  # RANS at 3 mm: the finest of the mesh study
             ))
     rans = _read_table(root / FINNER_RANS_CSV, FINNER_RANS_COLUMNS)
@@ -308,11 +308,11 @@ def _header(present: dict[str, bool]) -> list[str]:
         "difference = rans - euler; difference_pct = 100 difference / euler (the Euler value is the base). euler and rans are in the unit of the quantity: CN dimensionless, xcp_m in metres from the nose, xcp_cal in calibres from the nose tip, ca dimensionless.",
         "euler_gci_pct and rans_gci_pct are GCI values in percent of the value (Celik et al. (2008), Fs = 1.25), read from the level the production value was computed on: gci_fine_pct if it is the finest level of the triplet, gci_coarse_pct if the middle one. Where a study has two h_basis rows the larger is used. The relative GCI of CN equals that of CNa.",
         "separable is True when abs(difference_pct) exceeds euler_gci_pct + rans_gci_pct; False when it does not; empty when either GCI is missing. A model difference inside the numerical uncertainty is not a measured model difference. A missing, refused or flagged ('not reliable') GCI is never written as 0 and gives no verdict; the note says which GCI is missing and why.",
-        "sample_rocket: RANS at wall_size 3 mm (1844927 nodes), Euler at 2 mm with fin_size auto (release b6a9bf5), both from rans_vs_euler.csv; the two meshes are not the same. CN and xcp are the mirror-combined values. The Euler band is that of Task 14's fine level (2 mm / 1 mm) and is the band of CNa = CN(4)/radians(4) of the raw solve.",
+        "sample_rocket: RANS at wall_size 3 mm (1844927 nodes), Euler at 2 mm with fin_size auto (release b6a9bf5), both from rans_vs_euler.csv; the two meshes are not the same. CN and xcp are the mirror-combined values. The Euler band, were it available, would be that of Task 14's fine level (wall_size 2 mm, fin_size 1 mm, 1415504 cells); the production Euler value of rans_vs_euler.csv has the same wall_size but 941k cells, so the level is matched by the knob, not shown to be the same mesh. It is the band of CNa = CN(4)/radians(4) of the raw solve.",
         "sample_rocket: every rans_mesh_study triplet of gci_existing.csv is refused (levels recorded as not converged, or without convergence evidence), so the RANS band does not exist for these rows and the verdict stays empty whatever the Euler study delivers. The axial force is not compared: rans_vs_euler.csv holds the RANS wall force without the base and the Euler pressure drag at another angle.",
         "basic_finner: M = 1.832 (the only Mach number at which the RANS converged), flat base for both models, wall_size 1.5 mm. The RANS value is the medium level of Task 15's family (wall_size 2.1 / 1.5 / 1.07 mm), so its band is gci_coarse_pct. CN is at alpha = 2 (CNa = CN/radians(2) has the same relative difference); at alpha = 0 CN is zero and only the axial coefficient is compared.",
         "basic_finner ca: euler is cx0 of cfd_euler.csv (CFD wall pressure with the base excluded, plus the Barrowman friction, base and fin-trailing-edge terms); rans is ca_wall + ca_base_cfd + ca_roughness of cfd_rans.csv (all CFD; ca_roughness is 0 in the file). The difference mixes the flow model with the Barrowman base term and is what the two product modes deliver.",
-        "basic_finner: the Euler band does not exist. The only Euler grid study of the Basic Finner (gci_existing.csv, basic_finner_mesh_check) is at M = 2.375 with a fairing base and is not borrowed for M = 1.832 with a flat base; no task produces another.",
+        "basic_finner: the Euler band does not exist. The only Euler grid study of the Basic Finner (gci_existing.csv, basic_finner_mesh_check) is at M = 2.375 (with fairing and flat bases) and is not borrowed for M = 1.832; no task produces another.",
     ]
     return ["# " + ln for ln in lines]
 

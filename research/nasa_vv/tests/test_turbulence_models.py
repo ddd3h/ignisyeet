@@ -350,3 +350,23 @@ def test_write_is_byte_identical_on_a_rerun_and_does_not_depend_on_the_cwd(tmp_p
     assert any("config.rs:12-18" in ln for ln in head)
     cols = next(csv.reader(l for l in a.decode().splitlines() if not l.startswith("#")))
     assert cols == tm.ROW_COLUMNS
+
+
+REAL_LOG_LINE = '''|   / __| | | |_  )   Release 8.3.0 "Harrier"                           |'''
+
+
+def test_the_su2_version_is_read_from_the_banner_of_a_real_log(tmp_path):
+    d = tm.case_dir(tmp_path, "SA", 0)
+    d.mkdir(parents=True)
+    (d / "log_final.txt").write_text("|   ___ _   _ ___  |\n" + REAL_LOG_LINE + "\n")
+    assert tm.su2_version(tmp_path) == "8.3.0"
+    (d / "log_final.txt").write_text("no banner\n")
+    assert tm.su2_version(tmp_path) == "unknown"
+
+
+def test_the_sst_gci_note_says_it_is_first_order_and_how_far_the_last_refinement_moved_the_value():
+    rs = rows()
+    g = pick(rs, kind="gci", model="SST", quantity="cf_x097")
+    ch = abs(100 * (SST[1][0] - SST[2][0]) / SST[2][0])
+    assert "first order" in g["note"] and f"moved cf_x097 by {ch:.3g} %" in g["note"] and "GCI of" in g["note"]
+    assert "first order" not in pick(rs, kind="gci", model="SA", quantity="cf_x097")["note"]

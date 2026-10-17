@@ -219,7 +219,7 @@ def test_the_basic_finner_rans_value_sits_on_the_medium_level(tmp_path, empty_re
 
 
 def test_the_euler_gci_of_the_basic_finner_at_another_condition_is_not_borrowed(tmp_path):
-    # the real gci_existing.csv has basic_finner_mesh_check rows (Euler, M = 2.375, fairing base)
+    # the real gci_existing.csv has basic_finner_mesh_check rows (Euler, M = 2.375, fairing and flat bases)
     d = tmp_path / "results"
     d.mkdir()
     shutil.copy(RESULTS / "gci_existing.csv", d / "gci_existing.csv")
@@ -227,7 +227,7 @@ def test_the_euler_gci_of_the_basic_finner_at_another_condition_is_not_borrowed(
     for r in rows:
         if r["case"] == "basic_finner":
             assert r["euler_gci_pct"] == "" and r["separable"] == ""
-            assert "2.375" in r["note"]
+            assert "M = 2.375 (with fairing and flat bases)" in r["note"]
 
 
 def test_with_only_the_existing_gcis_every_rans_band_of_the_sample_rocket_is_refused(tmp_path):

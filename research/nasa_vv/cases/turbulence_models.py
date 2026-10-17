@@ -362,6 +362,20 @@ def family(runs: list[Run]) -> FamilyData:
     return FamilyData(GridFamily(levels, ndim=2), {q: [_value(r, q) for r in fine_first] for q in QUANTITIES})
 
 
+def _gci_notes(model: str, runs: list[Run], row: dict[str, str]) -> str:
+    """The grid-convergence note of a study row; for SST (first order here) it says how far the last refinement moved the value."""
+    note = row["note"]
+    if model != "SST" or row["order"] == "":
+        return note
+    fine, mid = sorted(runs, key=lambda r: -r.level)[:2]
+    q = row["quantity"]
+    extra = (f"SST is first order here (observed p = {float(row['order']):.2f}); its last refinement moved {q} by "
+             f"{abs(_pct(_value(mid, q), _value(fine, q))):.3g} % of the fine-grid value, to be read against its "
+             f"GCI of {float(row['gci_fine_pct']):.3g} %" if row["gci_fine_pct"] != "" else
+             f"SST observed p = {float(row['order']):.2f}")
+    return "; ".join(x for x in (note, extra) if x)
+
+
 def gci_by_model(runs: dict[str, list[Run]]) -> dict[str, dict[str, dict[str, str]]]:
     """model -> quantity -> the row of nasa_vv.cases.existing_data._rows (the constant-ratio form, r = 2, Fs = 1.25)."""
     out = {}
@@ -425,7 +439,7 @@ def build_rows(runs: dict[str, list[Run]], reference: dict[str, dict[str, float]
             row = _blank()
             row.update(kind="gci", model=m, quantity=q, grid=g["triplet"], cells=g["n1"], value=g["f1"],
                        order=g["order"], extrapolated=g["extrapolated"], gci_fine_pct=g["gci_fine_pct"],
-                       gci_coarse_pct=g["gci_coarse_pct"], asymptotic_ratio=g["asymptotic_ratio"], note=g["note"])
+                       gci_coarse_pct=g["gci_coarse_pct"], asymptotic_ratio=g["asymptotic_ratio"], note=_gci_notes(m, runs[m], g))
             out.append(row)
     # SST against SA
     for q in QUANTITIES:
@@ -504,7 +518,7 @@ def _sha(path: pathlib.Path) -> str:
 def su2_version(work: pathlib.Path) -> str:
     log = case_dir(work, "SA", 0) / "log_final.txt"
     if log.is_file():
-        m = re.search(r"SU2 v(\S+)", log.read_text(errors="replace"))
+        m = re.search(r"Release (\S+)", log.read_text(errors="replace"))
         if m:
             return m.group(1)
     return "unknown"

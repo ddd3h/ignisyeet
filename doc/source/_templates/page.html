@@ -17,7 +17,7 @@
 {% endblock %}
 {% block content %}
 {%- if (pagename == master_doc or pagename.startswith("research/")) %}
-<div class="iy">{% include "iy-nav.html" %}</div>
+<div class="iy iy-nav-wrap">{% include "iy-nav.html" %}</div>
 {{ body }}
 <div class="iy">{% include "iy-footer.html" %}</div>
 {%- else %}

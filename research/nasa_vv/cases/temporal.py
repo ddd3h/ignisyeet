@@ -31,12 +31,18 @@ resolution it is written with (fixed time):
   apogee, landing and parachute-phase events, located inside a step.
 - ``alt_m_at_t1``, ``airspeed_ms_at_t1``, ``alt_m_at_t10``, ``airspeed_ms_at_t10``:
   altitude above sea level and airspeed at t = 1 s and t = 10 s, times every step
-  reaches exactly, so no event handling enters the quantity itself.
+  reaches exactly, so no event handling enters the quantity itself. Limited by the
+  rounding of trajectory.csv.
+- ``height_m_at_t10``, ``range_m_at_t10``: height above the launch site and horizontal
+  distance from it at t = 10 s, at full precision. The run is cut at ``sim.max_time = 10``
+  while the rocket still climbs, and summary.json's apogee entries then hold the state of
+  the last step, which ends exactly at 10 s.
 """
 from __future__ import annotations
 
 import csv
 import json
+import math
 import pathlib
 import subprocess
 
@@ -68,6 +74,9 @@ EVENT_KEYS = {"apogee_m": "apogee", "apogee_time_s": "apogee_time",
               "landing_distance_m": "landing_distance", "flight_time_s": "landing_time"}
 FIXED_COLUMNS = {"alt_m": ("alt", 1e-3), "airspeed_ms": ("airspeed", 1e-4)}
 """trajectory.csv column and its resolution (the product writes alt with 3 and airspeed with 4 decimals)."""
+FULL_PRECISION_T10 = {"height_m": "height", "range_m": "range"}
+"""Height above the launch site and horizontal range at t = 10 s, read from the summary.json of the
+run cut at sim.max_time = 10 s, so at full precision."""
 
 
 # ------------------------------------------------------------------ the runs
@@ -156,6 +165,24 @@ def read_state_at(run: pathlib.Path, t: float) -> dict[str, float]:
     raise ValueError(f"{path}: no row at t = {t:g}")
 
 
+def read_state_at_max_time(run: pathlib.Path, t: float) -> dict[str, float]:
+    """Height above the launch site and horizontal range at t, of a flight cut at sim.max_time = t.
+
+    While the rocket climbs, summary.json's ``apogee`` entries follow the latest step, and the
+    last step ends exactly on max_time, so they hold the state at t at full precision. They do
+    so only while the rocket has not passed its apogee, which ``apogee_time`` shows.
+    """
+    path = pathlib.Path(run) / "summary.json"
+    data = json.loads(path.read_text())
+    if data.get("landed", True):
+        raise ValueError(f"{path}: the flight landed; it was not cut at max_time")
+    if abs(float(data["apogee_time"]) - t) > 1e-9:
+        raise ValueError(f"{path}: apogee_time {data['apogee_time']} is not {t:g}: "
+                         "the rocket was not still climbing at max_time")
+    return {"height": float(data["apogee"]),
+            "range": math.hypot(float(data["apogee_east"]), float(data["apogee_north"]))}
+
+
 # ------------------------------------------------------------------ rows
 
 def _g(x: float | None, spec: str = ".6g") -> str:
@@ -208,6 +235,7 @@ def case_rows(workdir: pathlib.Path, case: str) -> list[dict[str, str]]:
     for t in T_FIXED:
         for dt in DTS:
             fixed[t, dt] = read_state_at(_require(run_dir(workdir, case, dt, t10=(t == 10.0))), t)
+    cut = {dt: read_state_at_max_time(_require(run_dir(workdir, case, dt, t10=True)), 10.0) for dt in DTS}
     rows = []
     for tri in triplets():
         for name, key in EVENT_KEYS.items():
@@ -216,6 +244,8 @@ def case_rows(workdir: pathlib.Path, case: str) -> list[dict[str, str]]:
             for stem, (col, res) in FIXED_COLUMNS.items():
                 rows.append(_row(f"{prefix}{stem}_at_t{t:g}", tri,
                                  tuple(fixed[t, dt][col] for dt in tri), res))
+        for stem, key in FULL_PRECISION_T10.items():
+            rows.append(_row(f"{prefix}{stem}_at_t10", tri, tuple(cut[dt][key] for dt in tri), None))
     return rows
 
 
@@ -246,6 +276,9 @@ def _header(workdir: pathlib.Path, cases: list[str]) -> list[str]:
         "Fixed-time quantities (trajectory.csv, resolution 1e-3 m for alt and 1e-4 m/s for airspeed): "
         "alt_m and airspeed_ms at t = 1 s (a thrust-curve knot) and t = 10 s (the run is cut at sim.max_time = 10 s, "
         "crates/cli/src/config.rs:390; sim exits with status 3 by design). Every step reaches these times exactly.",
+        "height_m_at_t10 and range_m_at_t10 are the height above the launch site and the horizontal distance from it at t = 10 s at full precision: "
+        "while the rocket still climbs, the apogee entries of summary.json of the run cut at 10 s hold the state of the last step, which ends at 10 s "
+        "(apogee_time = 10 s is checked).",
         "How events are located: rail exit, apogee, main deployment and landing are found inside the step on a cubic Hermite "
         "interpolant of the position (bisection or the zero of the interpolated vertical velocity: "
         "crates/sim/src/flight.rs:1357, :1388, :1414; crates/sim/src/stepper.rs:5-20), so they do not snap to the step. "

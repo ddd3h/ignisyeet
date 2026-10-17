@@ -57,7 +57,9 @@ def make_workdir(root, case="sample", p=4.0, fn=None, alt_c=1e10):
         _summary(d, **base)
         _traj(d, [(0.2, 3.07, 35.65), (1.0, 3000.0 + alt_c * dt**p, 200.0 + 1e9 * dt**p), (1.05, 3.0, 4.0)])
         d10 = root / f"{case}_dt{dt:g}_t10"
-        _summary(d10, landed=False)
+        # a flight cut at max_time: the summary tracks the climb, so its "apogee" is the state at t = 10 s
+        _summary(d10, landed=False, apogee=3000.0 + alt_c * dt**p, apogee_time=10.0,
+                 apogee_east=-300.0 - 1e6 * dt**p, apogee_north=400.0)
         _traj(d10, [(9.9, 1.0, 1.0), (10.0, 3050.0 + alt_c * dt**p, 199.0 + 1e9 * dt**p)])
     return root
 
@@ -95,6 +97,29 @@ def test_read_state_at_refuses_a_time_that_is_not_in_the_file(tmp_path):
     _traj(tmp_path, [(0.2, 3.07, 35.65), (1.05, 110.0, 217.0)])
     with pytest.raises(ValueError, match="t = 1"):
         temporal.read_state_at(tmp_path, 1.0)
+
+
+def test_read_state_at_max_time_takes_the_full_precision_state_of_a_cut_flight(tmp_path):
+    _summary(tmp_path, landed=False, apogee=3037.3271586927804, apogee_time=10.0,
+             apogee_east=-300.0, apogee_north=400.0)
+    s = temporal.read_state_at_max_time(tmp_path, 10.0)
+    assert s == {"height": 3037.3271586927804, "range": 500.0}
+
+
+def test_read_state_at_max_time_refuses_a_flight_that_was_not_cut_at_that_time(tmp_path):
+    _summary(tmp_path, landed=False, apogee=3037.0, apogee_time=9.0, apogee_east=0.0, apogee_north=0.0)
+    with pytest.raises(ValueError, match="apogee_time"):
+        temporal.read_state_at_max_time(tmp_path, 10.0)
+    _summary(tmp_path)  # landed
+    with pytest.raises(ValueError, match="landed"):
+        temporal.read_state_at_max_time(tmp_path, 10.0)
+
+
+def test_read_state_at_max_time_refuses_a_flight_past_its_apogee(tmp_path):
+    # after the apogee the summary's apogee_time is no longer the last time
+    _summary(tmp_path, landed=False, apogee_time=10.0 - 1e-3)
+    with pytest.raises(ValueError, match="apogee_time"):
+        temporal.read_state_at_max_time(tmp_path, 10.0)
 
 
 # ------------------------------------------------------------------ thrust curve
@@ -149,7 +174,8 @@ def test_a_fourth_order_run_gives_order_four_on_every_quantity_and_triplet(tmp_p
     _, rows = _parse(temporal.main(tmp_path / "t.csv", workdir=work))
     names = {r["quantity"] for r in rows if not r["quantity"].startswith("noramp_")}
     assert names == {"apogee_m", "apogee_time_s", "landing_distance_m", "flight_time_s",
-                     "alt_m_at_t1", "airspeed_ms_at_t1", "alt_m_at_t10", "airspeed_ms_at_t10"}
+                     "alt_m_at_t1", "airspeed_ms_at_t1", "alt_m_at_t10", "airspeed_ms_at_t10",
+                     "height_m_at_t10", "range_m_at_t10"}
     for r in rows:
         assert float(r["order"]) == pytest.approx(4.0, abs=0.15), r["quantity"]
 
@@ -219,7 +245,7 @@ def test_the_control_runs_are_labelled_when_present(tmp_path):
     make_workdir(work, case="noramp")
     _, rows = _parse(temporal.main(tmp_path / "t.csv", workdir=work))
     assert any(r["quantity"] == "noramp_apogee_m" for r in rows)
-    assert len([r for r in rows if r["quantity"].startswith("noramp_")]) == 16
+    assert len([r for r in rows if r["quantity"].startswith("noramp_")]) == 20
 
 
 def test_a_missing_run_is_an_error_naming_the_directory(tmp_path):

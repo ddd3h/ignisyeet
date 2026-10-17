@@ -205,6 +205,14 @@ a.iy-badge:hover { border-color: var(--iy-accent); color: var(--iy-accent) !impo
 .iy-entries { display: grid; gap: 16px; }
 .iy-entry { padding: 18px 20px; border: 1px solid var(--color-background-border); border-radius: var(--iy-radius); background: var(--color-background-secondary); }
 .iy-entry h3 { font-size: 1.1rem; line-height: 1.5; }
+.iy-entry { display: grid; grid-template-columns: minmax(0, 1fr) 160px; column-gap: 24px; }
+.iy-entry > * { grid-column: 1; }
+.iy-entry > .iy-entry-thumb { grid-column: 2; grid-row: 1 / span 6; align-self: start; display: block; aspect-ratio: 1; overflow: hidden; border: 1px solid var(--color-background-border); border-radius: 10px; background: #fff; }
+.iy-entry-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: 58% 50%; }
+@media (max-width: 40em) {
+  .iy-entry { grid-template-columns: minmax(0, 1fr) 88px; column-gap: 14px; }
+  .iy-entry > .iy-entry-thumb { grid-row: 1 / span 3; }
+}
 .iy-entry p { margin-top: 0.6rem; }
 .iy-entry .iy-meta { margin-top: 0.2rem; font-size: 0.88rem; color: var(--color-foreground-secondary); }
 .iy-links { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 0.9rem; }

@@ -21,6 +21,7 @@ R&D
        <h2>2026</h2>
        <ul class="iy-entries">
          <li class="iy-entry">
+           <a class="iy-entry-thumb" href="IY-TR-2026-01/" tabindex="-1" aria-hidden="true"><img src="IY-TR-2026-01/fig/layer1_cp.svg" alt="" loading="lazy"></a>
            <p class="iy-entry-id">IY-TR-2026-01</p>
            <h3><a href="IY-TR-2026-01/">NASA CFD verification and validation of IgnisYeet v0.4.0</a></h3>
            <p class="iy-meta">Daisuke Nishihama ／ Technical report ／ October 2026</p>

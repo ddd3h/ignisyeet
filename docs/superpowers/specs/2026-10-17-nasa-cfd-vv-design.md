@@ -6,6 +6,7 @@
   （内容は AIAA G-077-1998 *Guide for the Verification and Validation of Computational Fluid
   Dynamics Simulations* に沿う）
 - 作業場所: `research/IY-TR-2026-01/nasa_vv/`
+- 報告番号: IY-TR-2026-01
 - 公開先: `/research/nasa-vv/`（報告、日本語）と `research/IY-TR-2026-01/paper/en/` と `research/IY-TR-2026-01/paper/ja/`（論文、英語と日本語）
 
 ## 1. 目的
@@ -374,7 +375,7 @@ research/
 
 ## 9. 公開物
 
-- `doc/source/research/index.rst` — 研究の一覧。「掲載準備中」を置き換える。
+- `doc/source/research/index.rst` — R&D の一覧。IY-TR-2026-01 の項目がある。
 - `doc/source/research/nasa-vv/index.rst` — 報告本文（日本語）。図、表、GCI の数値を載せる。
 - `research/IY-TR-2026-01/paper/en/`、`research/IY-TR-2026-01/paper/ja/` — 論文（LaTeX、英語と日本語、2段組）。図表は報告と共通のものを使う。
 

@@ -1,4 +1,4 @@
-{# Top bar shared by the landing page and the research page. #}
+{# Top bar shared by the landing page and the R&D pages. #}
 {%- set top = pathto('', 1) or './' %}
 <nav class="iy-nav" id="iy-nav" aria-label="サイトのナビゲーション">
   <a class="iy-nav-brand" href="{{ top }}"><img src="{{ pathto('_static/landing/logo-mark.svg', 1) }}" alt="" width="32" height="32"><span>IgnisYeet</span></a>
@@ -8,7 +8,7 @@
     <li><a href="{{ top }}#iy-pipeline">仕組み</a></li>
     <li><a href="{{ top }}#iy-verified">検証</a></li>
     <li><a href="{{ top }}#iy-docs">ドキュメント</a></li>
-    <li><a href="{{ top }}research/"{% if pagename.startswith('research/') %} aria-current="page"{% endif %}>研究</a></li>
+    <li><a href="{{ top }}research/"{% if pagename == 'research/index' %} aria-current="page"{% elif pagename.startswith('research/') %} aria-current="true"{% endif %}>R&amp;D</a></li>
     <li><a href="{{ pathto('search') }}" id="iy-search-open" aria-haspopup="dialog">検索</a></li>
     <li><a href="https://github.com/ddd3h/ignisyeet" rel="noopener">GitHub</a></li>
   </ul>

@@ -2,7 +2,7 @@
 
 | Study | Status | Report | Paper |
 |---|---|---|---|
-| NASA WIND V&V of the aerodynamic methods | written; what it did not obtain is listed below | `../doc/source/research/nasa-vv/` (Japanese) | `IY-TR-2026-01/paper/en/`, `IY-TR-2026-01/paper/ja/` |
+| NASA WIND V&V of the aerodynamic methods | written; what it did not obtain is listed below | `IY-TR-2026-01/nasa_vv/report/ja/report.md` (Japanese, not published) | `IY-TR-2026-01/paper/en/`, `IY-TR-2026-01/paper/ja/`; web page `/research/IY-TR-2026-01/` (English) and `/research/IY-TR-2026-01/ja/` (Japanese) |
 
 ## IY-TR-2026-01 (NASA V&V)
 
@@ -20,9 +20,6 @@ AIAA G-077-1998) to the IgnisYeet aerodynamic methods, in three layers:
 - Layer 2: the sample rocket and the Basic Finner, with the tutorial's six steps (program
   check, iterative convergence, consistency, spatial convergence, temporal convergence,
   model uncertainty and validation against the DREV-TM-9703 measurements).
-
-Design: `../docs/superpowers/specs/2026-10-17-nasa-cfd-vv-design.md`
-Plan: `../docs/superpowers/plans/2026-10-17-nasa-cfd-vv.md`
 
 ### Status
 
@@ -87,12 +84,10 @@ Tests:
 
     cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/ -q
 
-Japanese report page (the Sphinx page `doc/source/research/nasa-vv/index.rst`, generated from
-`IY-TR-2026-01/nasa_vv/report/ja/report.md`; `markdown-it-py` is in the `dev` group). The script also copies the two
-figures into `doc/source/_static/research/nasa-vv/`, and the page's styles are in
-`doc/source/_static/research-report.css`:
-
-    cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python nasa_vv/report/ja/build_page.py
+The Japanese report `IY-TR-2026-01/nasa_vv/report/ja/report.md` is the study's long-form record
+and is not published. The papers are published on the R&D page of the documentation, in English
+at `/research/IY-TR-2026-01/` and in Japanese at `/research/IY-TR-2026-01/ja/`; those pages, their
+PDFs and figures are written by `../doc/scripts/make_tr_page.py` (see its docstring).
 
 The papers (`IY-TR-2026-01/paper/en/main.pdf` in English, `IY-TR-2026-01/paper/ja/main.pdf` in Japanese; two-column
 format of `IY-TR-2026-01/paper/labreport.cls`; need `latexmk` with LuaLaTeX and `rsvg-convert` or `inkscape`,
@@ -101,7 +96,7 @@ which convert the SVG figures to PDF):
     cd research/IY-TR-2026-01/paper/en && make
     cd research/IY-TR-2026-01/paper/ja && make
 
-The two figures (`IY-TR-2026-01/nasa_vv/figures/`; `build_page.py` copies them for the report page):
+The two figures (`IY-TR-2026-01/nasa_vv/figures/`; `make_tr_page.py` crops them for the web pages):
 
     cd research/IY-TR-2026-01 && uv run --project nasa_vv python -m nasa_vv.plots
 

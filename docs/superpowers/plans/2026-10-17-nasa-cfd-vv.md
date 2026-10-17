@@ -23,6 +23,13 @@
 - A blank `probable_error_pct` means the error is unknown: draw no error bar. A value of `0` means below 0.5 per cent, not zero. Spec §6.7.
 - Mesh files, SU2 solution files and raw solver output are never committed. Only small CSVs, figures and source are. Spec §8.
 - Scratch space goes on disk, never in `/tmp`, which is RAM-backed here.
+- Every command in this plan runs from `research/`, as `uv run --project nasa_vv ...`.
+  The package is not installed (`package = false`), so `import nasa_vv` only resolves
+  when `research/` is the working directory. Running from `research/nasa_vv` fails with
+  `ModuleNotFoundError: No module named 'nasa_vv'`.
+- No module may open a file by a path relative to the working directory. Resolve every
+  input and output path from `pathlib.Path(__file__)`, so a module behaves the same
+  wherever it is run from. Paths written on a command line are relative to `research/`.
 - SU2 binary: `~/.local/share/ignisyeet-su2-native/bin/SU2_CFD`. The `ignisyeet` release binary: `target/release/ignisyeet`.
 
 ## Review Focus
@@ -48,7 +55,7 @@ These are the failure modes the spec implies but no single task's happy path exe
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: an importable package `nasa_vv`, and `pytest` runnable from `research/nasa_vv/` via `uv run --project . pytest`.
+- Produces: an importable package `nasa_vv`, and `pytest` runnable from `research/` via `uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/`.
 
 - [ ] **Step 1: Create the gitignore**
 
@@ -119,7 +126,7 @@ def test_package_imports():
 - [ ] **Step 5: Run the test to verify it passes**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/ -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/ -v
 ```
 
 Expected: `test_package_imports PASSED`. If `nasa_vv` is not importable, add `pythonpath = [".."]` under `[tool.pytest.ini_options]` and rerun.
@@ -141,12 +148,12 @@ Applies the NASA Glenn WIND/NPARC verification and validation tutorial
 (https://www.grc.nasa.gov/www/wind/valid/tutorial/tutorial.html, following
 AIAA G-077-1998) to the IgnisYeet aerodynamic methods.
 
-Design: `docs/superpowers/specs/2026-10-17-nasa-cfd-vv-design.md`
-Plan: `docs/superpowers/plans/2026-10-17-nasa-cfd-vv.md`
+Design: `../docs/superpowers/specs/2026-10-17-nasa-cfd-vv-design.md`
+Plan: `../docs/superpowers/plans/2026-10-17-nasa-cfd-vv.md`
 
 Run the tests with:
 
-    cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/ -v
+    cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/ -v
 ```
 
 - [ ] **Step 7: Commit**
@@ -203,6 +210,8 @@ Input and reference output: https://www.grc.nasa.gov/www/wind/valid/tutorial/
 printed values differ from the double-precision ones in the fifth digit.
 """
 import math
+import pathlib
+
 import pytest
 
 from nasa_vv.gci import constant_ratio, grid_convergence, representative_h
@@ -279,7 +288,7 @@ def test_representative_h():
 
 
 def test_verify_reference_file_is_the_one_we_pinned_to():
-    text = open("tests/data/prD.out").read()
+    text = (pathlib.Path(__file__).parent / "data" / "prD.out").read_text()
     assert "1.78618479" in text
     assert "0.971300304" in text
     assert "0.103080" in text and "0.356244" in text
@@ -289,7 +298,7 @@ def test_verify_reference_file_is_the_one_we_pinned_to():
 - [ ] **Step 3: Run the test to verify it fails**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_gci.py -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_gci.py -v
 ```
 
 Expected: collection error, `ModuleNotFoundError: No module named 'nasa_vv.gci'`.
@@ -424,7 +433,7 @@ def constant_ratio(
 - [ ] **Step 5: Run the tests to verify they pass**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_gci.py -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_gci.py -v
 ```
 
 Expected: all nine tests PASS. If `test_non_convergent_fixed_point_is_reported` fails because the iteration happens to converge, widen the triplet until `ln(r21)` is small enough to make it wander, and keep the assertion on `converged is False`.
@@ -494,7 +503,7 @@ def test_variable_ratio_matches_the_celik_paper_example():
 - [ ] **Step 3: Run it and reconcile**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_gci.py::test_variable_ratio_matches_the_celik_paper_example -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_gci.py::test_variable_ratio_matches_the_celik_paper_example -v
 ```
 
 If it fails, the discrepancy is information, not a licence to bend the module.
@@ -609,7 +618,7 @@ def test_shock_total_pressure_never_rises():
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_exact.py -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_exact.py -v
 ```
 
 Expected: `ModuleNotFoundError: No module named 'nasa_vv.exact'`.
@@ -747,7 +756,7 @@ def prandtl_meyer_expansion(
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_exact.py -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_exact.py -v
 ```
 
 Expected: all seven PASS. If `test_oblique_shock_reduces_to_a_normal_shock_at_ninety_degrees` fails at the Mach-angle edge, the bisection's lower bound is exactly `asin(1/M)` where the deflection is zero; nudge the assertion tolerance rather than the bound.
@@ -832,7 +841,7 @@ def test_the_nparc_cone10_table_is_internally_inconsistent():
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_exact.py -k taylor -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_exact.py -k taylor -v
 ```
 
 Expected: `ImportError: cannot import name 'taylor_maccoll'`.
@@ -926,7 +935,7 @@ def taylor_maccoll(mach: float, delta_deg: float, gamma: float = 1.4) -> Cone:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_exact.py -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_exact.py -v
 ```
 
 Expected: all PASS, including the four new ones.
@@ -936,7 +945,7 @@ Expected: all PASS, including the four new ones.
 Write `research/nasa_vv/results/cone10_reference_check.csv` by running:
 
 ```bash
-cd research/nasa_vv && uv run --project . python - <<'PY'
+cd research && uv run --project nasa_vv python - <<'PY'
 import csv, pathlib
 from nasa_vv.exact import taylor_maccoll
 c = taylor_maccoll(2.35, 10.0)
@@ -945,7 +954,7 @@ nparc = {"beta_deg": 27.1843, "mach_surface": 2.1469, "p_pinf": 1.4234,
 rows = [{"quantity": k, "nparc_cone10": v, "taylor_maccoll": getattr(c, k),
          "difference": getattr(c, k) - v,
          "difference_pct": (getattr(c, k) - v) / v * 100} for k, v in nparc.items()]
-p = pathlib.Path("results"); p.mkdir(exist_ok=True)
+p = pathlib.Path("nasa_vv/results"); p.mkdir(parents=True, exist_ok=True)
 with open(p / "cone10_reference_check.csv", "w", newline="") as f:
     f.write("# NPARC cone10 (https://www.grc.nasa.gov/www/wind/valid/cone10/cone10.html)\n")
     f.write("# against nasa_vv.exact.taylor_maccoll at M = 2.35, 10 deg half angle, gamma = 1.4.\n")
@@ -1031,7 +1040,7 @@ report it, and do not proceed to Task 9; the Taylor-Maccoll port and the existin
 - [ ] **Step 4: Run the tests**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_exact.py -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_exact.py -v
 ```
 
 - [ ] **Step 5: Commit**
@@ -1123,7 +1132,7 @@ def test_study_returns_one_result_per_quantity():
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_family.py -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_family.py -v
 ```
 
 Expected: `ModuleNotFoundError: No module named 'nasa_vv.family'`.
@@ -1227,7 +1236,7 @@ def study(
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_family.py -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_family.py -v
 ```
 
 Expected: all five PASS.
@@ -1314,7 +1323,7 @@ def test_basic_finner_has_four_euler_levels():
 - [ ] **Step 3: Run the test to verify it fails**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_existing_data.py -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_existing_data.py -v
 ```
 
 Expected: `ModuleNotFoundError: No module named 'nasa_vv.cases'`.
@@ -1341,13 +1350,13 @@ Each `main()` run must be reproducible: no timestamps in the CSV body.
 - [ ] **Step 5: Run the tests to verify they pass**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_existing_data.py -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_existing_data.py -v
 ```
 
 - [ ] **Step 6: Produce the results and read them**
 
 ```bash
-cd research/nasa_vv && uv run --project . python -m nasa_vv.cases.existing_data
+cd research && uv run --project nasa_vv python -m nasa_vv.cases.existing_data
 column -s, -t results/gci_existing.csv | head -40
 ```
 
@@ -1452,7 +1461,7 @@ def test_a_tampered_numerics_key_is_caught():
 - [ ] **Step 3: Run the test to verify it fails**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_su2cfg.py -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_su2cfg.py -v
 ```
 
 Expected: `ModuleNotFoundError: No module named 'nasa_vv.su2cfg'`.
@@ -1483,7 +1492,7 @@ and output filenames.
 - [ ] **Step 5: Run the tests to verify they pass**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_su2cfg.py -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_su2cfg.py -v
 ```
 
 - [ ] **Step 6: Commit**
@@ -1557,7 +1566,7 @@ def test_refining_twice_gives_a_ratio_of_four():
 - [ ] **Step 2: Run it to verify it fails**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_mesh.py -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_mesh.py -v
 ```
 
 Expected: `ModuleNotFoundError: No module named 'nasa_vv.mesh'`.
@@ -1575,7 +1584,7 @@ consecutive pair, so the coarse points survive exactly.
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_mesh.py -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_mesh.py -v
 ```
 
 - [ ] **Step 5: Write the three layer 0 cases**
@@ -1609,7 +1618,7 @@ quantity, using the same column names as Task 8's `gci_existing.csv`.
 - [ ] **Step 6: Run the cases**
 
 ```bash
-cd research/nasa_vv && uv run --project . python -m nasa_vv.cases.layer0 --work "$HOME/.cache/nasa_vv_layer0"
+cd research && uv run --project nasa_vv python -m nasa_vv.cases.layer0 --work "$HOME/.cache/nasa_vv_layer0"
 column -s, -t results/layer0.csv
 ```
 
@@ -1674,7 +1683,7 @@ Add `import math` at the top of the test file if it is not already there.
 - [ ] **Step 2: Run it to verify it fails, then implement**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_exact.py -k blasius -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_exact.py -k blasius -v
 ```
 
 Then append to `research/nasa_vv/exact.py` a `blasius_cf` returning `0.664 / sqrt(re_x)`
@@ -1684,7 +1693,7 @@ and a `blasius_profile` that integrates `f''' + 0.5 f f'' = 0` with RK4, shootin
 - [ ] **Step 3: Run the tests to verify they pass**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_exact.py -k blasius -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_exact.py -k blasius -v
 ```
 
 - [ ] **Step 4: Write and run the case**
@@ -1766,7 +1775,7 @@ def test_a_negative_value_uses_its_magnitude():
 - [ ] **Step 2: Run it to verify it fails**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_plots.py -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_plots.py -v
 ```
 
 - [ ] **Step 3: Write the module**
@@ -1782,8 +1791,8 @@ cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/tes
 - [ ] **Step 4: Run the tests and produce the figure**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_plots.py -v
-cd research/nasa_vv && uv run --project . python -m nasa_vv.plots --out figures/validation_bands.svg
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_plots.py -v
+cd research && uv run --project nasa_vv python -m nasa_vv.plots --out nasa_vv/figures/validation_bands.svg
 ```
 
 Open the SVG and confirm by eye: no zero-length bars, the bound bars are visually
@@ -1840,7 +1849,7 @@ def test_the_even_part_is_signed():
 - [ ] **Step 2: Run it to verify it fails, then implement**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_consistency.py -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_consistency.py -v
 ```
 
 Write `research/nasa_vv/cases/consistency.py` with `antisymmetry` and a `main()` that
@@ -1860,8 +1869,8 @@ traceable. Spec §13.
 - [ ] **Step 3: Run the tests and produce the results**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_consistency.py -v
-cd research/nasa_vv && uv run --project . python -m nasa_vv.cases.consistency
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_consistency.py -v
+cd research && uv run --project nasa_vv python -m nasa_vv.cases.consistency
 column -s, -t results/consistency.csv
 ```
 
@@ -1959,7 +1968,7 @@ Check the real spelling of `alpha_mode` in `crates/cfd/src/config.rs` first.
 - [ ] **Step 5: Run it and check**
 
 ```bash
-cd research/nasa_vv && uv run --project . python -m nasa_vv.cases.sample_euler --work "$HOME/.cache/nasa_vv_sample"
+cd research && uv run --project nasa_vv python -m nasa_vv.cases.sample_euler --work "$HOME/.cache/nasa_vv_sample"
 column -s, -t results/gci_sample_euler.csv
 ```
 
@@ -1970,7 +1979,7 @@ carries its note.
 - [ ] **Step 6: Fill the consistency rows and commit**
 
 ```bash
-cd research/nasa_vv && uv run --project . python -m nasa_vv.cases.consistency
+cd research && uv run --project nasa_vv python -m nasa_vv.cases.consistency
 git add research/nasa_vv/cases/sample_euler.py research/nasa_vv/results/
 git commit -m "research(nasa-vv): add a similar Euler grid family for the sample rocket"
 ```
@@ -2044,7 +2053,7 @@ for `cna`, `ca_alpha0`, `xcp`. Every level's `residual_drop_orders` goes in the 
 whether or not it passed.
 
 ```bash
-cd research/nasa_vv && uv run --project . python -m nasa_vv.cases.basic_finner_rans --work "$HOME/.cache/nasa_vv_bf_rans"
+cd research && uv run --project nasa_vv python -m nasa_vv.cases.basic_finner_rans --work "$HOME/.cache/nasa_vv_bf_rans"
 ```
 
 - [ ] **Step 5: Commit**
@@ -2085,7 +2094,7 @@ Sources:
 - [ ] **Step 2: Run it and judge**
 
 ```bash
-cd research/nasa_vv && uv run --project . python -m nasa_vv.cases.iterative
+cd research && uv run --project nasa_vv python -m nasa_vv.cases.iterative
 column -s, -t results/iterative.csv
 ```
 
@@ -2148,7 +2157,7 @@ the deviation is the finding.
 - [ ] **Step 3: Run it and commit**
 
 ```bash
-cd research/nasa_vv && uv run --project . python -m nasa_vv.cases.temporal
+cd research && uv run --project nasa_vv python -m nasa_vv.cases.temporal
 column -s, -t results/temporal.csv
 git add research/nasa_vv/cases/temporal.py research/nasa_vv/results/temporal.csv
 git commit -m "research(nasa-vv): measure the temporal convergence of the flight integrator"
@@ -2253,7 +2262,7 @@ and its hard-coded `R = 0.05` and 10 degree angle match this body.
 - [ ] **Step 5: Run it and read the result**
 
 ```bash
-cd research/nasa_vv && uv run --project . python -m nasa_vv.cases.layer1_cone --work "$HOME/.cache/nasa_vv_layer1"
+cd research && uv run --project nasa_vv python -m nasa_vv.cases.layer1_cone --work "$HOME/.cache/nasa_vv_layer1"
 column -s, -t results/layer0_vs_layer1.csv
 ```
 
@@ -2317,7 +2326,7 @@ def test_zero_inflow_is_an_error():
 - [ ] **Step 2: Run it to verify it fails, then implement**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_massflux.py -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_massflux.py -v
 ```
 
 `flux_imbalance` returns `abs(inflow - outflow) / abs(inflow)` and raises `ValueError`
@@ -2351,7 +2360,7 @@ which method was used.
 `case,mach,level,inflow_kg_s,outflow_kg_s,imbalance_rel,method,source`.
 
 ```bash
-cd research/nasa_vv && uv run --project . python -m nasa_vv.cases.massflux --work "$HOME/.cache/nasa_vv_layer0"
+cd research && uv run --project nasa_vv python -m nasa_vv.cases.massflux --work "$HOME/.cache/nasa_vv_layer0"
 column -s, -t results/massflux.csv
 ```
 
@@ -2409,7 +2418,7 @@ Conditions, all from committed data:
 - [ ] **Step 3: Run it and commit**
 
 ```bash
-cd research/nasa_vv && uv run --project . python -m nasa_vv.cases.model_uncertainty
+cd research && uv run --project nasa_vv python -m nasa_vv.cases.model_uncertainty
 column -s, -t results/model_uncertainty.csv
 git add research/nasa_vv/cases/model_uncertainty.py research/nasa_vv/results/model_uncertainty.csv
 git commit -m "research(nasa-vv): compare Euler with RANS against the numerical uncertainty"
@@ -2554,7 +2563,7 @@ git commit -m "research(nasa-vv): add the English paper draft"
 - [ ] **Step 1: Run every test**
 
 ```bash
-cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/ -v
+cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/ -v
 ```
 
 Expected: all pass. Record the count.

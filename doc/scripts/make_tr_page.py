@@ -1,17 +1,23 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
-"""Turn the English paper of technical report IY-TR-2026-01 into its R&D web page.
+"""Turn a paper of technical report IY-TR-2026-01 (English or Japanese) into its R&D web page.
 
 The outputs are committed, so the documentation build does not need this script.
-Run it by hand after the paper changes (needs pandoc, LuaLaTeX and pdftocairo):
+Run it by hand after a paper changes, once per language (needs pandoc, LuaLaTeX and pdftocairo):
 
     uv run --project . --with pypandoc_binary python scripts/make_tr_page.py \\
-        [--paper ../research/IY-TR-2026-01/paper/en] [--figures ../research/IY-TR-2026-01/nasa_vv/figures]
+        [--lang en|ja] [--paper ../research/IY-TR-2026-01/paper/<lang>] [--figures ../research/IY-TR-2026-01/nasa_vv/figures]
 
-It writes
-  source/research/IY-TR-2026-01/paper.html        the table of contents and the paper body (HTML fragment, MathML, numbered)
-  extra/research/IY-TR-2026-01/fig/*.svg           the figures, cropped as in the paper
-  extra/research/IY-TR-2026-01/IY-TR-2026-01.pdf   the built paper, when main.pdf exists
+It writes, for --lang en (the default)
+  source/research/IY-TR-2026-01/paper.html           the table of contents and the paper body (HTML fragment, MathML, numbered)
+  extra/research/IY-TR-2026-01/fig/concept.svg        the concept figure (TikZ in the paper), rendered on its own
+  extra/research/IY-TR-2026-01/IY-TR-2026-01.pdf      the built paper, when main.pdf exists
+and for --lang ja
+  source/research/IY-TR-2026-01/paper-ja.html        the same for the Japanese paper (the page is ja/index.rst)
+  extra/research/IY-TR-2026-01/fig/concept-ja.svg     the concept figure with its Japanese labels
+  extra/research/IY-TR-2026-01/IY-TR-2026-01-ja.pdf   the built Japanese paper, when main.pdf exists
+Both write extra/research/IY-TR-2026-01/fig/{layer1_cp,validation_bands}.svg, the plots shared by the
+two papers, cropped as in the paper.
 """
 
 import argparse
@@ -24,19 +30,45 @@ from pathlib import Path
 
 DOC = Path(__file__).resolve().parent.parent
 REPORT = "IY-TR-2026-01"
-OUT_HTML = DOC / "source" / "research" / REPORT / "paper.html"
+OUT_SOURCE = DOC / "source" / "research" / REPORT
 OUT_EXTRA = DOC / "extra" / "research" / REPORT
 
 # The paper cuts the bottom of these figures (their own notes) with \includegraphics[trim=0 <pt> 0 0].
 CROP_BOTTOM_PT = {"layer1_cp": 80, "validation_bands": 112}
 
 # The concept figure is TikZ inside the paper; it is rendered on its own with the colours of labreport.cls.
+# The Japanese labels are set in Harano Aji Gothic (luatexja), the Latin text in the same font as the English.
+CONCEPT_FONTS = {
+    "en": r"\usepackage{fontspec}\setmainfont{TeX Gyre Heros}",
+    "ja": r"\usepackage[match]{luatexja-fontspec}\setmainfont{TeX Gyre Heros}"
+    r"\setmainjfont{HaranoAjiGothic}[Extension=.otf, UprightFont=*-Regular, BoldFont=*-Bold]",
+}
 CONCEPT_PREAMBLE = r"""\documentclass[border=4pt]{standalone}
-\usepackage{fontspec}\setmainfont{TeX Gyre Heros}
+%s
 \usepackage{tikz}\usetikzlibrary{arrows.meta}
 \definecolor{lraccent}{HTML}{1F5F8B}\definecolor{lrdark}{HTML}{0F3B5C}
 \begin{document}
 """
+
+# What differs between the two pages. The Japanese page sits one directory lower (ja/), so its
+# figures are one level up.
+LANGS = {
+    "en": {
+        "html": "paper.html", "pdf": f"{REPORT}.pdf", "concept": "concept.svg", "fig": "fig/",
+        "abstract": "Abstract", "references": "References", "contents": "Contents",
+        "figure": "<strong>Figure {}.</strong> ", "table": "<strong>Table {}.</strong> ",
+    },
+    "ja": {
+        "html": "paper-ja.html", "pdf": f"{REPORT}-ja.pdf", "concept": "concept-ja.svg", "fig": "../fig/",
+        "abstract": "要旨", "references": "参考文献", "contents": "目次",
+        "figure": "<strong>図 {}</strong>\u3000", "table": "<strong>表 {}</strong>\u3000",
+    },
+}
+
+# Japanese characters and full-width punctuation. A line break after one of them is no space in
+# Japanese (LuaTeX-ja drops it), but pandoc would read it as one. Comment lines in between are dropped.
+CJK = "\u3000-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uff00-\uffef"
+CJK_LINE_END = re.compile(rf"^((?:[^%\\\n]|\\.)*[{CJK}])\n(?:[ \t]*%[^\n]*\n)*(?=[^%\n])", re.M)
 
 TIKZ = re.compile(r"\\begin\{tikzpicture\}.*?\\end\{tikzpicture\}", re.S)
 TOKEN = re.compile(
@@ -64,20 +96,21 @@ def crop_svg(src, dst, bottom_pt):
     dst.write_text(svg.replace(m.group(0), f'height="{h:g}pt" viewBox="0 0 {m.group(2)} {h:g}"', 1))
 
 
-def concept_svg(tex, dst, work):
-    (work / "concept.tex").write_text(CONCEPT_PREAMBLE + TIKZ.search(tex).group(0) + "\n\\end{document}\n")
+def concept_svg(tex, dst, work, lang):
+    (work / "concept.tex").write_text(CONCEPT_PREAMBLE % CONCEPT_FONTS[lang] + TIKZ.search(tex).group(0) + "\n\\end{document}\n")
     subprocess.run(["lualatex", "-interaction=nonstopmode", "concept.tex"], cwd=work, check=True, capture_output=True)
     subprocess.run(["pdftocairo", "-svg", str(work / "concept.pdf"), str(dst)], check=True)
 
 
-def prepare(tex):
+def prepare(tex, text):
     """Rewrite the LaTeX into what pandoc reads well: the abstract as the first section, SVG figures."""
     abstract = re.search(r"\\begin\{abstract\}(.*?)\\end\{abstract\}", tex, re.S)
     tex = tex.replace(abstract.group(0), "")
-    tex = tex.replace(r"\maketitle", "\\section*{Abstract}\\label{sec:abstract}\n" + abstract.group(1))
-    tex = TIKZ.sub(lambda _: r"\includegraphics{fig/concept.svg}", tex)
+    tex = tex.replace(r"\maketitle", "\\section*{%s}\\label{sec:abstract}\n" % text["abstract"] + abstract.group(1))
+    tex = TIKZ.sub(lambda _: r"\includegraphics{fig/%s}" % text["concept"], tex)
     tex = re.sub(r"\\includegraphics\[[^\]]*\]\{fig/([^}]*)\.pdf\}", r"\\includegraphics{fig/\1.svg}", tex)
     tex = tex.replace(r"\path{", r"\texttt{")
+    tex = CJK_LINE_END.sub(r"\1", tex)
     return re.sub(r"\\(begin|end)\{(figure|table)\*\}", r"\\\1{\2}", tex)
 
 
@@ -121,8 +154,8 @@ def numbering(tex):
     return labels, alias, headings
 
 
-def convert(tex, bib, pandoc, work):
-    tex = prepare(tex)
+def convert(tex, bib, pandoc, work, text):
+    tex = prepare(tex, text)
     labels, alias, headings = numbering(tex)
     (work / "pre.tex").write_text(tex)
     html = subprocess.run(
@@ -150,23 +183,27 @@ def convert(tex, bib, pandoc, work):
     html = re.sub(r"<h([1-3])([^>]*)>(.*?)</h\1>", heading, html, flags=re.S)
     html = re.sub(
         r'(<figure id="([^"]*)"[^>]*>.*?<figcaption>)',
-        lambda m: f"{m.group(1)}<strong>Figure {labels[m.group(2)]}.</strong> ", html, flags=re.S,
+        lambda m: m.group(1) + text["figure"].format(labels[m.group(2)]), html, flags=re.S,
     )
     html = re.sub(
         r'<div id="(tab:[^"]*)"[^>]*>\s*<table([^>]*)>\s*<caption>',
-        lambda m: f'<div id="{m.group(1)}" class="iy-table"><table{m.group(2)}><caption><strong>Table {labels[m.group(1)]}.</strong> ',
+        lambda m: f'<div id="{m.group(1)}" class="iy-table"><table{m.group(2)}><caption>' + text["table"].format(labels[m.group(1)]),
         html,
     )
     # The paper lists its references before the appendices; pandoc puts them last.
     refs = re.search(r'<div id="refs".*</div>\s*$', html, re.S).group(0)
     html = html.replace(refs, "")
     appendix = html.index(f'<h2 id="{next(k for k, v in labels.items() if v == "A")}"')
-    html = html[:appendix] + '<h2 id="references">References</h2>\n' + refs + "\n" + html[appendix:]
+    html = html[:appendix] + f'<h2 id="references">{text["references"]}</h2>\n' + refs + "\n" + html[appendix:]
     # Each figure opens at full size.
-    return re.sub(r'<img src="(fig/[^"]*)"([^>]*)/>', r'<a href="\1"><img loading="lazy" src="\1"\2/></a>', html)
+    return re.sub(
+        r'<img src="fig/([^"]*)"([^>]*)/>',
+        lambda m: f'<a href="{text["fig"]}{m.group(1)}"><img loading="lazy" src="{text["fig"]}{m.group(1)}"{m.group(2)}/></a>',
+        html,
+    )
 
 
-def contents(html):
+def contents(html, lang, text):
     """The table of contents: sections and subsections, linked to their headings."""
     items = []
     for m in re.finditer(r'<h([23])[^>]*? id="([^"]*)"[^>]*>(.*?)</h\1>', html, re.S):
@@ -175,7 +212,7 @@ def contents(html):
         num = f'<span class="iy-secnum">{number.group(1)}</span>' if number else ""
         items.append(f'<li class="iy-toc-l{int(m.group(1)) - 1}"><a href="#{m.group(2)}">{num}{title}</a></li>')
     return (
-        '<nav class="iy-toc" aria-label="Contents" lang="en"><details open><summary>Contents</summary>\n<ul>\n'
+        f'<nav class="iy-toc" aria-label="{text["contents"]}" lang="{lang}"><details open><summary>{text["contents"]}</summary>\n<ul>\n'
         + "\n".join(items)
         + "\n</ul></details></nav>\n"
     )
@@ -183,23 +220,26 @@ def contents(html):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--paper", type=Path, default=DOC.parent / "research" / REPORT / "paper" / "en")
+    ap.add_argument("--lang", choices=sorted(LANGS), default="en")
+    ap.add_argument("--paper", type=Path, help="the paper's directory (default: ../research/IY-TR-2026-01/paper/<lang>)")
     ap.add_argument("--figures", type=Path, default=DOC.parent / "research" / REPORT / "nasa_vv" / "figures")
     args = ap.parse_args()
-    tex = (args.paper / "main.tex").read_text()
+    lang, text = args.lang, LANGS[args.lang]
+    paper = args.paper or DOC.parent / "research" / REPORT / "paper" / lang
+    tex = (paper / "main.tex").read_text()
     fig = OUT_EXTRA / "fig"
     fig.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
         work = Path(tmp)
-        concept_svg(tex, fig / "concept.svg", work)
-        html = convert(tex, args.paper / "references.bib", find_pandoc(), work)
+        concept_svg(tex, fig / text["concept"], work, lang)
+        html = convert(tex, paper / "references.bib", find_pandoc(), work, text)
     for name, pt in CROP_BOTTOM_PT.items():
         crop_svg(args.figures / f"{name}.svg", fig / f"{name}.svg", pt)
-    OUT_HTML.parent.mkdir(parents=True, exist_ok=True)
-    OUT_HTML.write_text(contents(html) + '<article class="iy-paper" lang="en">\n' + html + "</article>\n")
-    pdf = args.paper / "main.pdf"
+    OUT_SOURCE.mkdir(parents=True, exist_ok=True)
+    (OUT_SOURCE / text["html"]).write_text(contents(html, lang, text) + f'<article class="iy-paper" lang="{lang}">\n' + html + "</article>\n")
+    pdf = paper / "main.pdf"
     if pdf.exists():
-        shutil.copyfile(pdf, OUT_EXTRA / f"{REPORT}.pdf")
+        shutil.copyfile(pdf, OUT_EXTRA / text["pdf"])
     else:
         print(f"no {pdf}: the PDF was not copied", file=sys.stderr)
 

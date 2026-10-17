@@ -1,0 +1,707 @@
+<nav class="iy-toc" aria-label="目次" lang="ja"><details open><summary>目次</summary>
+<ul>
+<li class="iy-toc-l1"><a href="#sec:abstract">要旨</a></li>
+<li class="iy-toc-l1"><a href="#sec:intro"><span class="iy-secnum">1</span>序論</a></li>
+<li class="iy-toc-l1"><a href="#sec:method"><span class="iy-secnum">2</span>方法</a></li>
+<li class="iy-toc-l2"><a href="#sec:layers"><span class="iy-secnum">2.1</span>三つの層と六つの段階</a></li>
+<li class="iy-toc-l2"><a href="#sec:gci"><span class="iy-secnum">2.2</span>格子収束指標と入口の条件</a></li>
+<li class="iy-toc-l2"><a href="#sec:cases"><span class="iy-secnum">2.3</span>算例</a></li>
+<li class="iy-toc-l1"><a href="#sec:results"><span class="iy-secnum">3</span>結果</a></li>
+<li class="iy-toc-l2"><a href="#sec:r1"><span class="iy-secnum">3.1</span>R1. ソルバは非粘性の厳密な圧力を再現するが、GCIは保証ではない</a></li>
+<li class="iy-toc-l2"><a href="#sec:r2"><span class="iy-secnum">3.2</span>R2. パイプライン自身の誤差は定量化できなかった</a></li>
+<li class="iy-toc-l2"><a href="#sec:r3"><span class="iy-secnum">3.3</span>R3. 実用条件では、使える不確かさの帯はほとんど残らない</a></li>
+<li class="iy-toc-l2"><a href="#sec:r4"><span class="iy-secnum">3.4</span>R4. 妥当性確認とモデルの不確かさは、数値不確かさから分けられない</a></li>
+<li class="iy-toc-l1"><a href="#sec:discussion"><span class="iy-secnum">4</span>考察</a></li>
+<li class="iy-toc-l2"><a href="#sec:answer"><span class="iy-secnum">4.1</span>問いへの答え</a></li>
+<li class="iy-toc-l2"><a href="#sec:causes"><span class="iy-secnum">4.2</span>三つの障害とその順位</a></li>
+<li class="iy-toc-l2"><a href="#sec:existence"><span class="iy-secnum">4.3</span>示したのは存在であり、原因ではない</a></li>
+<li class="iy-toc-l2"><a href="#sec:implications"><span class="iy-secnum">4.4</span>知見が示唆することと次の実験</a></li>
+<li class="iy-toc-l2"><a href="#sec:limits"><span class="iy-secnum">4.5</span>本研究の限界</a></li>
+<li class="iy-toc-l1"><a href="#sec:conclusions"><span class="iy-secnum">5</span>結論</a></li>
+<li class="iy-toc-l1"><a href="#データの入手">データの入手</a></li>
+<li class="iy-toc-l1"><a href="#references">参考文献</a></li>
+<li class="iy-toc-l1"><a href="#sec:appA"><span class="iy-secnum">A</span>GCIの手順、格子、副次的な結果</a></li>
+<li class="iy-toc-l1"><a href="#sec:temporalapp"><span class="iy-secnum">B</span>飛翔の積分器</a></li>
+</ul></details></nav>
+<article class="iy-paper" lang="ja">
+<h2 class="unnumbered" id="sec:abstract">要旨</h2>
+<p>CADから力係数までCFDを自動で実行する設計ツールは、その数値をどこまで信頼してよいかを示さないまま返す。本研究は、流れのソルバSU2を動かすロケットシミュレータIgnisYeet（以下、製品）について、NASA WIND/NPARCの手順（AIAA G-077-1998）でその信頼の程度を定量化できるか、できないならなぜかを問う。三つの層で、厳密解に対するソルバ、同じ円錐での鎖の全体、二つのロケットを試験する。結論から言えば、ソルバは非粘性の厳密な圧力を再現するが、自動化した鎖の不確かさは信頼できる形では定量化できなかった。製品の設定で動かしたSU2は、主たる設定で非粘性の表面圧力と衝撃波角を0.2 %以内で再現する。しかし格子収束指標（GCI）が真の誤差を押さえたのは非粘性の7例のうち5例だけである。鎖を通すと最細の段が収束せず、パイプライン自身の誤差は定量化されないまま残った。サンプル機体で使える唯一のGCIはMach 2の法線力傾斜のもので、格子寸法の定義により10.6 %か16.3 %である（後者は旗付き）。Basic Finnerには信頼できるGCIがないので、自由飛翔の実測との比較は差の大きさを報告するだけで、判定を下さない。本研究の判断では、その背後に三つの障害がある。メッシャが相似に細かくできない格子、停滞するかリミットサイクルに陥る解（その理由は確立していない）、そして厳密な答えがなければ条件付きとなるGCIである。これらは、このようなツールが定量化した不確かさを示すために解決すべき点を指し示す。</p>
+<h2 id="sec:intro"><span class="iy-secnum">1</span> 序論</h2>
+<p>ここで扱う種類のツールを使うロケットの設計者は、メッシュを作る必要がない。ツールはロケットのCADの記述を受け取り、非構造の体積メッシュを作り、流れのソルバを実行して力とモーメントの係数を返す。飛翔シミュレータはその係数を軌道、頂点高度、着地点に変える。IgnisYeetはそのようなツールである（以下、製品と呼ぶ）。その空力モジュールはオープンソースのソルバSU2 <span class="citation" data-cites="economon2016">(Economon et al. 2016)</span>を動かし、6自由度の飛翔シミュレーションに係数を渡す。鎖のどの段階も自動であり、出てくるのは、どこまで信頼できるかの記述を伴わない係数である。</p>
+<p>そのような記述を付ける標準の方法は、NASA GlennのWIND/NPARCプロジェクトの検証と妥当性確認の手順<span class="citation" data-cites="nparc_tutorial">(NASA Glenn Research Center n.d.f)</span>であり、これはAIAAのガイド<span class="citation" data-cites="aiaa1998">(American Institute of Aeronautics and Astronautics 1998)</span>に沿う。この手順は作業を六つの段階に分ける。プログラムの点検、反復収束、一貫性、空間（格子）収束、時間収束、そしてより精度の高い解または実測との比較である。中心となる量は<span class="citation" data-cites="roache1998">Roache (1998)</span>の格子収束指標（GCI）であり、細分比が変わる格子には<span class="citation" data-cites="celik2008">Celik et al. (2008)</span>の形で用いる。GCIは、細かくしていく格子の上の解の列を、最細格子の値に付く帯に変える。最後の段階に意味を与えるのはこの帯である。帯のない比較は、どちらが誤りかを言えない。</p>
+<figure id="fig:concept" data-latex-placement="t">
+<a href="../fig/concept-ja.svg"><img loading="lazy" src="../fig/concept-ja.svg" /></a>
+<figcaption><strong>図 1</strong>　何をどの順に検証するか。各層は前の層と共通のものを引き継ぐ。層0と層1は同じ厳密な円錐を解き、層1と層2は同じ製品を動かす。実測と比べる（妥当性確認）のは層2だけであり、層0と層1は検証である。</figcaption>
+</figure>
+<p>これらの手順そのものは確立している。GCIと<span class="citation" data-cites="celik2008">Celik et al. (2008)</span>の報告の手順のほか、ASMEの規格V&amp;V 20 <span class="citation" data-cites="asme2009">(American Society of Mechanical Engineers 2009)</span>は、計算と実験の双方の誤差を考慮して、実験データに対するシミュレーションの精度を定量化する。<span class="citation" data-cites="roy2005">Roy (2005)</span>はコードと解の検証の手順を概観し、<span class="citation" data-cites="oberkampf2010">Oberkampf and Roy (2010)</span>はこの主題を全体として扱う。<span class="citation" data-cites="eca2014">Eça and Hoekstra (2014)</span>は、最小二乗の当てはめによって、ばらつきのある格子細分のデータにまで不確かさの見積もりを広げたが、系統的に細かくした格子の上の解を必要とする点は変わらない。小型ロケットの設計ツールは、CFDを使わずに半経験的な方法で係数を得ることもできる。Barrowman法<span class="citation" data-cites="barrowman1967">(Barrowman 1967)</span>（OpenRocketはこれを拡張した形で使う<span class="citation" data-cites="niskanen2009">(Niskanen 2009)</span>）やMissile DATCOM <span class="citation" data-cites="blake1998">(Blake 1998)</span>である。製品はそうではなくCFDを自動で実行する。本論文が手順を持ち込むのは、この場合である。</p>
+<p>この手順は、解析者が格子の族と各解の収束を制御することを前提にしている。格子は系統的に、理想的には相似に細かくされ、各解は反復誤差が小さくなるまで回される。CADから自動で動くパイプラインでは、利用者はそのどちらも制御しない。細分はツールが公開するセル寸法の設定を通してしかできず、解が収束したかどうかはツールが判断する。したがって、この制約の下で手順を適用することは定型の作業ではなく、そもそも適用できるかどうかも自明ではない。本研究は、自動で作った格子や非構造格子での格子収束の先行研究を概観しない。本研究の寄与は、NASAの手順をそのようなパイプラインの一つに端から端まで適用した一例と、手順がどこで止まるかの記述である。</p>
+<p>本研究はこの点を正面から問う。<strong>本研究の問いは、CADから係数までを自動化したCFDパイプライン、ここではSU2の上のIgnisYeetが、NASAの手順で定量化した数値不確かさを付けて空力係数を返せるか、返せないならなぜか、である。</strong></p>
+<p>この問いに答えるため、本研究は、ソルバがすることと、パイプラインが加えるものと、応用が必要とするものとを三つの層に分ける（図<a href="#fig:concept" class="iy-xref">1</a>）。層0は、製品が書く数値設定でSU2を直接動かし、厳密解と比べる。層1は、その厳密な問題の一つである超音速流中の円錐を製品の鎖の全体で解く。層0との差が、鎖の加える誤差を示すことになる。層2は、チュートリアルの六つの段階を実用条件の製品に適用してサンプル機体とBasic Finnerを解き、自由飛翔の実測とも比べる。</p>
+<p>知見は次の四つであり、それぞれを<a href="#sec:results" class="iy-xref">3</a>節の一部で示す。</p>
+<ul>
+<li><p>厳密解に対する検証で、製品の設定で動かしたSU2は、主たる設定で非粘性の表面圧力と衝撃波角を0.2 %以内で再現する。しかし厳密な答えが分かるところで、GCIは真の誤差をいつも押さえるわけではなく、手元の二つの検査はいずれも、押さえなかった二例の両方を検出することはできない（<a href="#sec:r1" class="iy-xref">3.1</a>節）。</p></li>
+<li><p>パイプライン自身の誤差は定量化できなかった。層1の最細の段は収束せず、それとは独立に、製品の格子は相似に細かくできない（<a href="#sec:r2" class="iy-xref">3.2</a>節）。</p></li>
+<li><p>実用条件では、六つの段階を経ても使える不確かさの帯はほとんど残らない。残るのはサンプル機体の一つの条件の一つの係数だけであり、Basic Finnerには信頼できるGCIがない（<a href="#sec:r3" class="iy-xref">3.3</a>節）。</p></li>
+<li><p>そのため妥当性確認とモデルの比較は、差の大きさを報告するだけで、判定を下せない（<a href="#sec:r4" class="iy-xref">3.4</a>節）。</p></li>
+</ul>
+<p><a href="#sec:discussion" class="iy-xref">4</a>節では、これらをまとめて問いに答え、その背後にある障害を順位づけ、示せたことと示せなかったことを分け、この種のパイプラインへの示唆を述べる。</p>
+<h5 id="用語">用語</h5>
+<p><strong>検証</strong>（verification）は、式を正しく解いているかを問い、結果を厳密解または高精度の解と比べる。<strong>相互比較</strong>（cross-comparison）は、ある手法やプログラムを別のものと比べる。両者が違うか合うかは示すが、どちらが現実に近いかは示さない。<strong>妥当性確認</strong>（validation）は、モデルが実機に近いかを問い、結果を実測と比べる。妥当性確認にあたるのは自由飛翔の実測との比較（<a href="#sec:validation" class="iy-xref">3.4.1</a>節）だけであり、層0と層1は検証である。</p>
+<h2 id="sec:method"><span class="iy-secnum">2</span> 方法</h2>
+<p>本研究のために行った製品のCFDの計算は、IgnisYeet v0.4.0とSU2 8.3.0を使う。以下で<strong>既存</strong>と呼ぶ製品の研究は、製品とともにすでにコミットされている結果ファイルから、新たなCFDの計算なしに評価し直したものである。本節では、結果を読むのに必要なことだけを述べる。設定の詳細は付録<a href="#sec:appA" class="iy-xref">A</a>に置く。</p>
+<h3 id="sec:layers"><span class="iy-secnum">2.1</span> 三つの層と六つの段階</h3>
+<div id="tab:layers" class="iy-table"><table><caption><strong>表 1</strong>　本研究の三つの層。</caption>
+<thead>
+<tr>
+<th style="text-align: center;">層</th>
+<th style="text-align: left;">実行するもの</th>
+<th style="text-align: left;">比較の種類</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: center;">0</td>
+<td style="text-align: left;">SU2 8.3.0を製品の数値設定で直接実行。2次元と軸対称の構造格子</td>
+<td style="text-align: left;">検証：ソルバと数値設定を厳密解と比べる</td>
+</tr>
+<tr>
+<td style="text-align: center;">1</td>
+<td style="text-align: left;">製品の鎖（CADからメッシュ、SU2、係数まで）で層0の円錐を解く</td>
+<td style="text-align: left;">検証：鎖の全体を同じ厳密解と比べる</td>
+</tr>
+<tr>
+<td style="text-align: center;">2</td>
+<td style="text-align: left;">製品でサンプル機体とBasic Finnerを解く</td>
+<td style="text-align: left;">検証（第1–5段階）、相互比較（Euler対RANS）、妥当性確認（第6段階）</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>表<a href="#tab:layers" class="iy-xref">1</a>に研究の設計をまとめる。層0と層1は、同じ厳密な問題、すなわちMach 2.35の半頂角10<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>∘</mo></msup><annotation encoding="application/x-tex">^\circ</annotation></semantics></math>の円錐を、異なる経路で解く。層0はSU2 8.3.0を直接実行し、層1は製品の鎖を実行する。どちらも同じTaylor–Maccoll解と比べ、両者の誤差の差が、ソルバの周りの鎖に起因する部分を示すことになる。製品が受け付けるのはロケットの形状だけなので、層0は製品のパイプラインを動かさず、パイプラインを検証したという言明は層0には基づかない。層0は2次元と軸対称の構造格子を使い、層1と層2は3次元非構造格子の半モデルを使う。よって層0と層1の差は3次元非構造メッシュ生成の効果を含み、メッシュ生成だけの誤差でなく、<strong>3次元非構造メッシュ生成を含むパイプラインの誤差</strong>として報告する。</p>
+<p>六つの段階のうち二つは、製品に一部しか当てはまらない。第5段階の時間収束は、製品の定常のCFDには当てはまらない。代わりに飛翔シミュレータの時間積分器を調べるが、CFDの問いの外にある（付録<a href="#sec:temporalapp" class="iy-xref">B</a>）。第6段階は複数の乱流モデルとの比較を求める。しかし製品が持つのは非粘性のEulerモデルと、Spalart–Allmarasモデル<span class="citation" data-cites="spalart1992">(Spalart and Allmaras 1992)</span>によるReynolds平均Navier–Stokes（RANS）だけなので、この部分には一部しか答えられない（付録<a href="#sec:appA" class="iy-xref">A</a>）。</p>
+<h3 id="sec:gci"><span class="iy-secnum">2.2</span> 格子収束指標と入口の条件</h3>
+<p>代表格子寸法<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>h</mi><mn>1</mn></msub><mo>&lt;</mo><msub><mi>h</mi><mn>2</mn></msub><mo>&lt;</mo><msub><mi>h</mi><mn>3</mn></msub></mrow><annotation encoding="application/x-tex">h_1&lt;h_2&lt;h_3</annotation></semantics></math>（細かい順）の格子上の三つの解<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>f</mi><mn>1</mn></msub><mo>,</mo><msub><mi>f</mi><mn>2</mn></msub><mo>,</mo><msub><mi>f</mi><mn>3</mn></msub></mrow><annotation encoding="application/x-tex">f_1,f_2,f_3</annotation></semantics></math>について、細分比を<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>r</mi><mn>21</mn></msub><mo>=</mo><msub><mi>h</mi><mn>2</mn></msub><mi>/</mi><msub><mi>h</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">r_{21}=h_2/h_1</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>r</mi><mn>32</mn></msub><mo>=</mo><msub><mi>h</mi><mn>3</mn></msub><mi>/</mi><msub><mi>h</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">r_{32}=h_3/h_2</annotation></semantics></math>とし、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ε</mi><mn>21</mn></msub><mo>=</mo><msub><mi>f</mi><mn>2</mn></msub><mo>−</mo><msub><mi>f</mi><mn>1</mn></msub></mrow><annotation encoding="application/x-tex">\varepsilon_{21}=f_2-f_1</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ε</mi><mn>32</mn></msub><mo>=</mo><msub><mi>f</mi><mn>3</mn></msub><mo>−</mo><msub><mi>f</mi><mn>2</mn></msub></mrow><annotation encoding="application/x-tex">\varepsilon_{32}=f_3-f_2</annotation></semantics></math>とおく。細分比<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>r</mi><annotation encoding="application/x-tex">r</annotation></semantics></math>が一定のとき、チュートリアルは観測次数<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mrow><mi mathvariant="normal">ln</mi><mo>&#8289;</mo></mrow><mspace width="-0.167em"></mspace><mo minsize="120%" maxsize="120%" stretchy="true" form="prefix">[</mo><mo stretchy="false" form="prefix">(</mo><msub><mi>f</mi><mn>3</mn></msub><mo>−</mo><msub><mi>f</mi><mn>2</mn></msub><mo stretchy="false" form="postfix">)</mo><mi>/</mi><mo stretchy="false" form="prefix">(</mo><msub><mi>f</mi><mn>2</mn></msub><mo>−</mo><msub><mi>f</mi><mn>1</mn></msub><mo stretchy="false" form="postfix">)</mo><mo minsize="120%" maxsize="120%" stretchy="true" form="postfix">]</mo><mi>/</mi><mrow><mi mathvariant="normal">ln</mi><mo>&#8289;</mo></mrow><mi>r</mi></mrow><annotation encoding="application/x-tex">p=\ln\!\big[(f_3-f_2)/(f_2-f_1)\big]/\ln r</annotation></semantics></math>、外挿値<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>f</mi><mrow><mi>h</mi><mn>0</mn></mrow></msub><mo>=</mo><msub><mi>f</mi><mn>1</mn></msub><mo>+</mo><mo stretchy="false" form="prefix">(</mo><msub><mi>f</mi><mn>1</mn></msub><mo>−</mo><msub><mi>f</mi><mn>2</mn></msub><mo stretchy="false" form="postfix">)</mo><mi>/</mi><mo stretchy="false" form="prefix">(</mo><msup><mi>r</mi><mi>p</mi></msup><mo>−</mo><mn>1</mn><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">f_{h0}=f_1+(f_1-f_2)/(r^p-1)</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mrow><mi mathvariant="normal">G</mi><mi mathvariant="normal">C</mi><mi mathvariant="normal">I</mi></mrow><mo>=</mo><msub><mi>F</mi><mi>s</mi></msub><mspace width="0.167em"></mspace><mo stretchy="false" form="prefix">|</mo><mi>ε</mi><mo stretchy="false" form="prefix">|</mo><mi>/</mi><mo stretchy="false" form="prefix">(</mo><msup><mi>r</mi><mi>p</mi></msup><mo>−</mo><mn>1</mn><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">\mathrm{GCI}=F_s\,|\varepsilon|/(r^p-1)</annotation></semantics></math>を与える。細分比が変わるときは<span class="citation" data-cites="celik2008">Celik et al. (2008)</span>の手順を使う。<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mo>=</mo><mrow><mi mathvariant="normal">sign</mi><mo>&#8289;</mo></mrow><mo stretchy="false" form="prefix">(</mo><msub><mi>ε</mi><mn>32</mn></msub><mi>/</mi><msub><mi>ε</mi><mn>21</mn></msub><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">s=\operatorname{sign}(\varepsilon_{32}/\varepsilon_{21})</annotation></semantics></math>として<math display="block" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mtable><mtr><mtd columnalign="right" style="text-align: right; padding-right: 0"><mi>p</mi></mtd><mtd columnalign="left" style="text-align: left; padding-left: 0"><mo>=</mo><mfrac><mn>1</mn><mrow><mrow><mi mathvariant="normal">ln</mi><mo>&#8289;</mo></mrow><msub><mi>r</mi><mn>21</mn></msub></mrow></mfrac><mo minsize="180%" maxsize="180%" stretchy="true" form="prefix">|</mo><mrow><mi mathvariant="normal">ln</mi><mo>&#8289;</mo></mrow><mo minsize="180%" maxsize="180%" stretchy="true" form="prefix">|</mo><mfrac><msub><mi>ε</mi><mn>32</mn></msub><msub><mi>ε</mi><mn>21</mn></msub></mfrac><mo minsize="180%" maxsize="180%" stretchy="true" form="prefix">|</mo><mo>+</mo><mi>q</mi><mo stretchy="false" form="prefix">(</mo><mi>p</mi><mo stretchy="false" form="postfix">)</mo><mo minsize="180%" maxsize="180%" stretchy="true" form="prefix">|</mo><mo>,</mo></mtd></mtr><mtr><mtd columnalign="right" style="text-align: right; padding-right: 0"><mi>q</mi><mo stretchy="false" form="prefix">(</mo><mi>p</mi><mo stretchy="false" form="postfix">)</mo></mtd><mtd columnalign="left" style="text-align: left; padding-left: 0"><mo>=</mo><mrow><mi mathvariant="normal">ln</mi><mo>&#8289;</mo></mrow><mfrac><mrow><msubsup><mi>r</mi><mn>21</mn><mi>p</mi></msubsup><mo>−</mo><mi>s</mi></mrow><mrow><msubsup><mi>r</mi><mn>32</mn><mi>p</mi></msubsup><mo>−</mo><mi>s</mi></mrow></mfrac></mtd></mtr></mtable><annotation encoding="application/x-tex">\begin{equation}
+\label{eq:celik}
+\begin{aligned}
+p&amp;=\frac{1}{\ln r_{21}}\Big|\ln\Big|\frac{\varepsilon_{32}}{\varepsilon_{21}}\Big|+q(p)\Big|,\\
+q(p)&amp;=\ln\frac{r_{21}^{p}-s}{r_{32}^{p}-s}
+\end{aligned}
+\end{equation}</annotation></semantics></math> を不動点反復で解き、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>f</mi><mrow><mi mathvariant="normal">e</mi><mi mathvariant="normal">x</mi><mi mathvariant="normal">t</mi></mrow></msub><mo>=</mo><mo stretchy="false" form="prefix">(</mo><msubsup><mi>r</mi><mn>21</mn><mi>p</mi></msubsup><msub><mi>f</mi><mn>1</mn></msub><mo>−</mo><msub><mi>f</mi><mn>2</mn></msub><mo stretchy="false" form="postfix">)</mo><mi>/</mi><mo stretchy="false" form="prefix">(</mo><msubsup><mi>r</mi><mn>21</mn><mi>p</mi></msubsup><mo>−</mo><mn>1</mn><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">f_\mathrm{ext}=(r_{21}^{p}f_1-f_2)/(r_{21}^{p}-1)</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mrow><mi mathvariant="normal">G</mi><mi mathvariant="normal">C</mi><mi mathvariant="normal">I</mi></mrow><mrow><mi mathvariant="normal">f</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">n</mi><mi mathvariant="normal">e</mi></mrow></msub><mo>=</mo><msub><mi>F</mi><mi>s</mi></msub><mspace width="0.167em"></mspace><msub><mi>e</mi><mi>a</mi></msub><mi>/</mi><mo stretchy="false" form="prefix">(</mo><msubsup><mi>r</mi><mn>21</mn><mi>p</mi></msubsup><mo>−</mo><mn>1</mn><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">\mathrm{GCI}_\mathrm{fine}=F_s\,e_a/(r_{21}^{p}-1)</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>e</mi><mi>a</mi></msub><mo>=</mo><mo stretchy="false" form="prefix">|</mo><mo stretchy="false" form="prefix">(</mo><msub><mi>f</mi><mn>1</mn></msub><mo>−</mo><msub><mi>f</mi><mn>2</mn></msub><mo stretchy="false" form="postfix">)</mo><mi>/</mi><msub><mi>f</mi><mn>1</mn></msub><mo stretchy="false" form="prefix">|</mo></mrow><annotation encoding="application/x-tex">e_a=|(f_1-f_2)/f_1|</annotation></semantics></math>とする。安全率<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>F</mi><mi>s</mi></msub><annotation encoding="application/x-tex">F_s</annotation></semantics></math>は、3段の格子で1.25、2段で3である。漸近域の検査は<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msubsup><mi>r</mi><mn>21</mn><mi>p</mi></msubsup><mspace width="0.167em"></mspace><msub><mrow><mi mathvariant="normal">G</mi><mi mathvariant="normal">C</mi><mi mathvariant="normal">I</mi></mrow><mn>21</mn></msub><mi>/</mi><msub><mrow><mi mathvariant="normal">G</mi><mi mathvariant="normal">C</mi><mi mathvariant="normal">I</mi></mrow><mn>32</mn></msub></mrow><annotation encoding="application/x-tex">r_{21}^{p}\,\mathrm{GCI}_{21}/\mathrm{GCI}_{32}</annotation></semantics></math>で、漸近域では1に近い。格子寸法は、3次元の格子では節点数<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>N</mi><annotation encoding="application/x-tex">N</annotation></semantics></math>から<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>h</mi><mo>=</mo><msup><mi>N</mi><mrow><mi>−</mi><mn>1</mn><mi>/</mi><mn>3</mn></mrow></msup></mrow><annotation encoding="application/x-tex">h=N^{-1/3}</annotation></semantics></math>とする（Basic FinnerのEulerの族はセル数しか記録していないので、そこでは<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>N</mi><annotation encoding="application/x-tex">N</annotation></semantics></math>をセル数とする）。各方向にちょうど2倍ずつ細かくした層0の2次元の格子では、セル数から<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>h</mi><mo>=</mo><msubsup><mi>N</mi><mrow><mi mathvariant="normal">c</mi><mi mathvariant="normal">e</mi><mi mathvariant="normal">l</mi><mi mathvariant="normal">l</mi><mi mathvariant="normal">s</mi></mrow><mrow><mi>−</mi><mn>1</mn><mi>/</mi><mn>2</mn></mrow></msubsup></mrow><annotation encoding="application/x-tex">h=N_\mathrm{cells}^{-1/2}</annotation></semantics></math>とする。実装はチュートリアルの例題と<span class="citation" data-cites="celik2008">Celik et al. (2008)</span>の表1の単調な列を再現する（付録<a href="#sec:appA" class="iy-xref">A</a>）。</p>
+<p>問いは帯を信頼できるかどうかなので、数値を報告するかどうか自体を次の三つの規則で決める。</p>
+<ul>
+<li><p><strong>入口の条件：</strong>格子の段は、ソルバが収束と報告したとき、またはソルバが判定を出さない場合に残差が3桁以上落ちたときに研究に入る。ソルバが未収束と報告した段と、どちらの証拠もない段は拒否し、拒否には理由を書く。</p></li>
+<li><p><strong>次数の旗：</strong>計算した次数が4（形式的な2次の2倍）を超えるか0.5（その1/4）を下回るときは旗を立てる。その3段は漸近域の外にあり、GCIは信頼できない。</p></li>
+<li><p><strong>振動収束：</strong>差が符号を変える3段（<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>ε</mi><mn>32</mn></msub><mi>/</mi><msub><mi>ε</mi><mn>21</mn></msub><mo>&lt;</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">\varepsilon_{32}/\varepsilon_{21}&lt;0</annotation></semantics></math>）には名前を付け、不確かさの帯を<strong>付けない</strong>。 <span class="citation" data-cites="celik2008">Celik et al. (2008)</span>はこの場合にも値を計算するが、本研究は計算せず、報告もしない。</p></li>
+</ul>
+<p>細分が幾何学的に相似でなく、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>h</mi><annotation encoding="application/x-tex">h</annotation></semantics></math>の定義を一つに決める根拠がないときは、擁護できるすべての定義、すなわち<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>h</mi><mo>∝</mo><msup><mi>N</mi><mrow><mi>−</mi><mn>1</mn><mi>/</mi><mn>3</mn></mrow></msup></mrow><annotation encoding="application/x-tex">h\propto N^{-1/3}</annotation></semantics></math>と<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>h</mi><mo>∝</mo></mrow><annotation encoding="application/x-tex">h\propto</annotation></semantics></math>壁のセル寸法でGCIを求め、両方の結果を示す。二つの定義は問いを挟むものであり、その差は真のGCIの上限ではない（<a href="#sec:similar" class="iy-xref">3.2.2</a>節）。</p>
+<h3 id="sec:cases"><span class="iy-secnum">2.3</span> 算例</h3>
+<p><span id="sec:exact" data-label="sec:exact"></span> <span id="sec:l0setup" data-label="sec:l0setup"></span> <span id="sec:l12setup" data-label="sec:l12setup"></span></p>
+<p>層0の厳密解は書き写さず、計算する。弱解の斜め衝撃波の関係式、衝撃波から表面まで積分し衝撃波角を射撃法で求める円錐のTaylor–Maccoll方程式、Prandtl–Meyer関数、Blasius相似解<span class="citation" data-cites="blasius1908 schlichting2017">(Blasius 1908; Schlichting and Gersten 2017)</span>であり、いずれも<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>γ</mi><mo>=</mo><mn>1.4</mn></mrow><annotation encoding="application/x-tex">\gamma=1.4</annotation></semantics></math>の理想気体である。斜め衝撃波とPrandtl–Meyer膨張の結果は、NPARCアーカイブのページの表の値<span class="citation" data-cites="nparc_wedge nparc_pm15">(NASA Glenn Research Center n.d.d, n.d.e)</span>と、その表の精度の範囲で合う。円錐の解は独立な表と照合する（付録<a href="#sec:appA" class="iy-xref">A</a>）。算例はNPARCアーカイブ<span class="citation" data-cites="nparc_archive">(NASA Glenn Research Center n.d.c)</span>に従い、Mach 2.5の15<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>∘</mo></msup><annotation encoding="application/x-tex">^\circ</annotation></semantics></math>の楔と15<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>∘</mo></msup><annotation encoding="application/x-tex">^\circ</annotation></semantics></math>の膨張、Mach 2.35の半頂角10<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>∘</mo></msup><annotation encoding="application/x-tex">^\circ</annotation></semantics></math>の円錐、層流平板とする。平板はMach 0.2で解く。Blasius解は非圧縮なので、圧縮性の補正を見積もって併記する。</p>
+<p>層0のEulerの計算は、製品自身が書いた設定ファイルの数値設定を使い、それが製品のものと同一であることを試験で確かめる。製品には層流のモードがないので、層流平板は、乱流モデルなしのNavier–Stokes方程式を、製品が書いたRANSの設定の数値設定で解く。これは乱流モデルを外した製品のRANSの離散化を確かめるものであり、製品が書く設定ではない。各算例は、ちょうど入れ子の構造格子の3段を持つ（<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">r=2</annotation></semantics></math>。付録<a href="#sec:appA" class="iy-xref">A</a>）。</p>
+<p>層1は、層0の円錐（Mach 2.35、迎え角0、Euler）を10<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>∘</mo></msup><annotation encoding="application/x-tex">^\circ</annotation></semantics></math>の円錐-円筒として、製品を通して3次元非構造格子の半モデルで解く。3段の壁のセル寸法は3.92、2.80、2.00 mm（比1.4）である。物体にフィンはないので、壁の寸法が唯一の細分の設定である。壁の節点の表面圧力係数<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>C</mi><mi>p</mi></msub><mo>=</mo><mo stretchy="false" form="prefix">(</mo><mi>p</mi><mo>−</mo><msub><mi>p</mi><mi>∞</mi></msub><mo stretchy="false" form="postfix">)</mo><mi>/</mi><mo stretchy="false" form="prefix">(</mo><mstyle displaystyle="false"><mfrac><mn>1</mn><mn>2</mn></mfrac></mstyle><msub><mi>ρ</mi><mi>∞</mi></msub><msubsup><mi>V</mi><mi>∞</mi><mn>2</mn></msubsup><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">C_p=(p-p_\infty)/(\tfrac12\rho_\infty V_\infty^2)</annotation></semantics></math>を<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mi>/</mi><msub><mi>L</mi><mrow><mi mathvariant="normal">c</mi><mi mathvariant="normal">o</mi><mi mathvariant="normal">n</mi><mi mathvariant="normal">e</mi></mrow></msub></mrow><annotation encoding="application/x-tex">x/L_\mathrm{cone}</annotation></semantics></math>に沿った区間で平均し、Taylor–Maccoll解の値0.09673と比べる。<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0.4</mn><mo>≤</mo><mi>x</mi><mi>/</mi><msub><mi>L</mi><mrow><mi mathvariant="normal">c</mi><mi mathvariant="normal">o</mi><mi mathvariant="normal">n</mi><mi mathvariant="normal">e</mi></mrow></msub><mo>≤</mo><mn>0.9</mn></mrow><annotation encoding="application/x-tex">0.4\le x/L_\mathrm{cone}\le0.9</annotation></semantics></math>の窓が、層0の壁の窓に対応する。</p>
+<p>層2は、サンプル機体（Euler。Mach 0.3、0.8、2.0。0<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>∘</mo></msup><annotation encoding="application/x-tex">^\circ</annotation></semantics></math>と4<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>∘</mo></msup><annotation encoding="application/x-tex">^\circ</annotation></semantics></math>）と、4枚の矩形のフィンを持つ円錐-円筒のBasic Finnerを扱い、後者はMach 2.375のEuler（0<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>∘</mo></msup><annotation encoding="application/x-tex">^\circ</annotation></semantics></math>、2<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>∘</mo></msup><annotation encoding="application/x-tex">^\circ</annotation></semantics></math>、4<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>∘</mo></msup><annotation encoding="application/x-tex">^\circ</annotation></semantics></math>。既存の4段）と、Mach 1.832のRANS（Spalart–Allmaras。0<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>∘</mo></msup><annotation encoding="application/x-tex">^\circ</annotation></semantics></math>と2<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>∘</mo></msup><annotation encoding="application/x-tex">^\circ</annotation></semantics></math>）で解く。RANSにMach 1.832を選んだのは、製品の既存のRANSの妥当性確認の計算（壁の寸法1.5 mm、一つの格子）が収束し、かつ自由飛翔のデータがある唯一の点だからである。Mach 2.375では製品のRANSはリミットサイクルで停滞し、Mach 3.147では発散する。法線力傾斜は、既存の慣例に従い、サンプル機体では<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>C</mi><mrow><mi>N</mi><mi>α</mi></mrow></msub><mo>=</mo><msub><mi>C</mi><mi>N</mi></msub><mo stretchy="false" form="prefix">(</mo><msup><mn>4</mn><mo>∘</mo></msup><mo stretchy="false" form="postfix">)</mo><mi>/</mi><msup><mn>4</mn><mo>∘</mo></msup></mrow><annotation encoding="application/x-tex">C_{N\alpha}=C_N(4^\circ)/4^\circ</annotation></semantics></math>、Basic Finnerでは<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>C</mi><mi>N</mi></msub><mo stretchy="false" form="prefix">(</mo><msup><mn>2</mn><mo>∘</mo></msup><mo stretchy="false" form="postfix">)</mo><mi>/</mi><msup><mn>2</mn><mo>∘</mo></msup></mrow><annotation encoding="application/x-tex">C_N(2^\circ)/2^\circ</annotation></semantics></math>とする。層2の族はすべて製品自身のセル寸法の設定で作る（<a href="#sec:similar" class="iy-xref">3.2.2</a>節）。</p>
+<h2 id="sec:results"><span class="iy-secnum">3</span> 結果</h2>
+<p>結果はソルバから外側へ、四つの部分で問いに答える。ソルバとGCIそのものを信頼できるか（R1）、パイプラインの誤差を測れるか（R2）、どの係数が帯を得るか（R3）、そのとき比較から何が言えるか（R4）である。</p>
+<h3 id="sec:r1"><span class="iy-secnum">3.1</span> R1. ソルバは非粘性の厳密な圧力を再現するが、GCIは保証ではない</h3>
+<p>層0は、本研究で厳密な答えが分かる唯一の場所である。したがって層0では二つのことを試験できる。製品の設定で動かしたSU2が式を正しく解いているか、そして後のすべての結果が依存するGCIが真の誤差を押さえるか、である。一つめの答えは、非粘性の表面圧力と衝撃波角については「はい」である。ただしMach数から求める壁面の量と境界の接合点は例外であり、層流平板はきれいな検証を与えない。二つめの答えは「確実にではない」である。</p>
+<h4 id="sec:l0results"><span class="iy-secnum">3.1.1</span> 層0と厳密解</h4>
+<p>主たる設定では、表面圧力と衝撃波角は厳密な値の0.2 %以内にある（表<a href="#tab:l0" class="iy-xref">2</a>）。Eulerの12回の計算はすべて残差の目標に達し（密度の残差の落ち幅12.7から13.9桁）、層流平板の3回の計算は9.4から10.4桁落ちた。これが後の層の土台であり、その範囲は狭い。ここで検証されるのは構造格子の上で製品の設定で動かしたSU2であって、製品のパイプラインではない。</p>
+<div id="tab:l0" class="iy-table"><table><caption><strong>表 2</strong>　層0と厳密な答え。最細格子の誤差、観測次数<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>p</mi><annotation encoding="application/x-tex">p</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mrow><mi mathvariant="normal">G</mi><mi mathvariant="normal">C</mi><mi mathvariant="normal">I</mi></mrow><mrow><mi mathvariant="normal">f</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">n</mi><mi mathvariant="normal">e</mi></mrow></msub><annotation encoding="application/x-tex">\mathrm{GCI}_\mathrm{fine}</annotation></semantics></math>、および<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mrow><mi mathvariant="normal">G</mi><mi mathvariant="normal">C</mi><mi mathvariant="normal">I</mi></mrow><mrow><mi mathvariant="normal">f</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">n</mi><mi mathvariant="normal">e</mi></mrow></msub><mo>≥</mo><mo stretchy="false" form="prefix">|</mo><mtext mathvariant="normal">誤差</mtext><mo stretchy="false" form="prefix">|</mo></mrow><annotation encoding="application/x-tex">\mathrm{GCI}_\mathrm{fine}\ge|\text{誤差}|</annotation></semantics></math>かどうか（「押さえたか」）。非粘性の行：最細格子は<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>257</mn><mo>×</mo><mn>193</mn></mrow><annotation encoding="application/x-tex">257\times193</annotation></semantics></math>節点で、壁面の量は壁の節点の窓での平均である。平板の行：<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>=</mo><mn>0.5</mn></mrow><annotation encoding="application/x-tex">x=0.5</annotation></semantics></math>でのMach 0.2のBlasius解との比較で、最細格子は<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>336</mn><mo>×</mo><mn>192</mn></mrow><annotation encoding="application/x-tex">336\times192</annotation></semantics></math>セルである。「補正」は速度分布自身の縁の速度を使う。この2行は、補正なしの運動量厚さが押さえられないのを見たあとに加えたもの（事後の分析）であり、平板の5行は互いに独立ではない。<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>†</mo></msup><annotation encoding="application/x-tex">^\dagger</annotation></semantics></math>：次数が0.5を下回り、GCIには信頼できないとして旗を立てる。「窓の次数」：壁の四つの窓<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">[</mo><mn>0.3</mn><mo>,</mo><mn>1</mn><mo stretchy="false" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">[0.3,1]</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">[</mo><mn>0.4</mn><mo>,</mo><mn>1</mn><mo stretchy="false" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">[0.4,1]</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">[</mo><mn>0.5</mn><mo>,</mo><mn>1</mn><mo stretchy="false" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">[0.5,1]</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">[</mo><mn>0.6</mn><mo>,</mo><mn>1</mn><mo stretchy="false" form="postfix">]</mo></mrow><annotation encoding="application/x-tex">[0.6,1]</annotation></semantics></math>での次数で、本文が使うところだけ示す。「安定」は互いに0.5以内であることを表す。</caption>
+<thead>
+<tr>
+<th style="text-align: left;">算例</th>
+<th style="text-align: left;">量</th>
+<th style="text-align: right;">誤差（%）</th>
+<th style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>p</mi><annotation encoding="application/x-tex">p</annotation></semantics></math></th>
+<th style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mrow><mi mathvariant="normal">G</mi><mi mathvariant="normal">C</mi><mi mathvariant="normal">I</mi></mrow><mrow><mi mathvariant="normal">f</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">n</mi><mi mathvariant="normal">e</mi></mrow></msub><annotation encoding="application/x-tex">\mathrm{GCI}_\mathrm{fine}</annotation></semantics></math>（%）</th>
+<th style="text-align: left;">窓の次数</th>
+<th style="text-align: left;">押さえたか</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">楔、Mach 2.5</td>
+<td style="text-align: left;">壁面<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mi>/</mi><msub><mi>p</mi><mi>∞</mi></msub></mrow><annotation encoding="application/x-tex">p/p_\infty</annotation></semantics></math></td>
+<td style="text-align: right;">0.0059</td>
+<td style="text-align: right;">0.82</td>
+<td style="text-align: right;">0.011</td>
+<td style="text-align: left;">0.84–1.04、安定</td>
+<td style="text-align: left;">はい</td>
+</tr>
+<tr>
+<td style="text-align: left;"></td>
+<td style="text-align: left;">衝撃波角</td>
+<td style="text-align: right;">0.037</td>
+<td style="text-align: right;">0.68</td>
+<td style="text-align: right;">0.099</td>
+<td style="text-align: left;"></td>
+<td style="text-align: left;">はい</td>
+</tr>
+<tr>
+<td style="text-align: left;">円錐、Mach 2.35</td>
+<td style="text-align: left;">壁面<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>p</mi></msub><annotation encoding="application/x-tex">C_p</annotation></semantics></math></td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>0.188</mn></mrow><annotation encoding="application/x-tex">-0.188</annotation></semantics></math></td>
+<td style="text-align: right;">3.39</td>
+<td style="text-align: right;">0.059</td>
+<td style="text-align: left;">2.10–4.12、不安定</td>
+<td style="text-align: left;"><strong>いいえ</strong></td>
+</tr>
+<tr>
+<td style="text-align: left;"></td>
+<td style="text-align: left;">壁面Mach数</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>0.80</mn></mrow><annotation encoding="application/x-tex">-0.80</annotation></semantics></math></td>
+<td style="text-align: right;">0.39<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>†</mo></msup><annotation encoding="application/x-tex">^\dagger</annotation></semantics></math></td>
+<td style="text-align: right;">2.48</td>
+<td style="text-align: left;"></td>
+<td style="text-align: left;">はい</td>
+</tr>
+<tr>
+<td style="text-align: left;">円錐（軸を対称境界）</td>
+<td style="text-align: left;">壁面<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>p</mi></msub><annotation encoding="application/x-tex">C_p</annotation></semantics></math></td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>0.75</mn></mrow><annotation encoding="application/x-tex">-0.75</annotation></semantics></math></td>
+<td style="text-align: right;">1.49</td>
+<td style="text-align: right;">0.71</td>
+<td style="text-align: left;">1.36–1.58、安定</td>
+<td style="text-align: left;"><strong>いいえ</strong></td>
+</tr>
+<tr>
+<td style="text-align: left;"></td>
+<td style="text-align: left;">壁面Mach数</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>2.98</mn></mrow><annotation encoding="application/x-tex">-2.98</annotation></semantics></math></td>
+<td style="text-align: right;">0.77</td>
+<td style="text-align: right;">4.50</td>
+<td style="text-align: left;"></td>
+<td style="text-align: left;">はい</td>
+</tr>
+<tr>
+<td style="text-align: left;">膨張、Mach 2.5</td>
+<td style="text-align: left;">壁面<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mi>/</mi><msub><mi>p</mi><mi>∞</mi></msub></mrow><annotation encoding="application/x-tex">p/p_\infty</annotation></semantics></math></td>
+<td style="text-align: right;">0.0097</td>
+<td style="text-align: right;">0.46<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>†</mo></msup><annotation encoding="application/x-tex">^\dagger</annotation></semantics></math></td>
+<td style="text-align: right;">0.077</td>
+<td style="text-align: left;">0.65–2.54、不安定</td>
+<td style="text-align: left;">はい</td>
+</tr>
+<tr>
+<td style="text-align: left;"></td>
+<td style="text-align: left;">壁面Mach数</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>3.55</mn></mrow><annotation encoding="application/x-tex">-3.55</annotation></semantics></math></td>
+<td style="text-align: right;">なし</td>
+<td style="text-align: right;">なし</td>
+<td style="text-align: left;"></td>
+<td style="text-align: left;">–</td>
+</tr>
+<tr>
+<td style="text-align: left;">層流平板</td>
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>f</mi></msub><annotation encoding="application/x-tex">C_f</annotation></semantics></math></td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><mn>0.008</mn></mrow><annotation encoding="application/x-tex">+0.008</annotation></semantics></math></td>
+<td style="text-align: right;">0.80</td>
+<td style="text-align: right;">1.20</td>
+<td style="text-align: left;"></td>
+<td style="text-align: left;">はい（符号の交差）</td>
+</tr>
+<tr>
+<td style="text-align: left;"></td>
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi>δ</mi><mo>*</mo></msup><annotation encoding="application/x-tex">\delta^*</annotation></semantics></math></td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>0.42</mn></mrow><annotation encoding="application/x-tex">-0.42</annotation></semantics></math></td>
+<td style="text-align: right;">1.07</td>
+<td style="text-align: right;">0.89</td>
+<td style="text-align: left;"></td>
+<td style="text-align: left;">はい（符号の交差）</td>
+</tr>
+<tr>
+<td style="text-align: left;"></td>
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">\theta</annotation></semantics></math></td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>1.87</mn></mrow><annotation encoding="application/x-tex">-1.87</annotation></semantics></math></td>
+<td style="text-align: right;">1.11</td>
+<td style="text-align: right;">0.80</td>
+<td style="text-align: left;"></td>
+<td style="text-align: left;"><strong>いいえ</strong></td>
+</tr>
+<tr>
+<td style="text-align: left;"></td>
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi>δ</mi><mo>*</mo></msup><annotation encoding="application/x-tex">\delta^*</annotation></semantics></math>（補正）</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><mn>1.07</mn></mrow><annotation encoding="application/x-tex">+1.07</annotation></semantics></math></td>
+<td style="text-align: right;">1.05</td>
+<td style="text-align: right;">0.92</td>
+<td style="text-align: left;"></td>
+<td style="text-align: left;"><strong>いいえ</strong></td>
+</tr>
+<tr>
+<td style="text-align: left;"></td>
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>θ</mi><annotation encoding="application/x-tex">\theta</annotation></semantics></math>（補正）</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><mn>0.98</mn></mrow><annotation encoding="application/x-tex">+0.98</annotation></semantics></math></td>
+<td style="text-align: right;">1.08</td>
+<td style="text-align: right;">0.84</td>
+<td style="text-align: left;"></td>
+<td style="text-align: left;"><strong>いいえ</strong></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>例外は二つあり、どちらも付録<a href="#sec:appA" class="iy-xref">A</a>に詳しく記す。Mach数から求める壁面の量には0.8から3.6 %の誤差が残り、その誤差はゆっくりとしか減らないか、まったく減らない。そのため膨張では、計算は収束しているが次数もGCIも存在しない。GCIは格子とともに縮む離散化誤差を述べるものであり、この誤差は縮まない。また、境界の接合点が誤差を支配することがある。円錐の対称軸を別の対称境界にすると先端の節点はどの格子でも停滞点になるので、層0の結果には一つの壁の計算を採る。製品の3次元のメッシュにも境界の接合点（壁と底面）があるが、同じ影響を受けるかは試験していない。</p>
+<h4 id="sec:gcibound"><span class="iy-secnum">3.1.2</span> GCIは真の誤差を押さえるか</h4>
+<p>GCIは真の誤差をいつも押さえるわけではない。以降の帯はすべて厳密な答えなしに求めたGCIなので、このことは重い。GCIを計算した非粘性の7行のうち、5行で押さえ、2行で押さえなかった（表<a href="#tab:l0" class="iy-xref">2</a>）。押さえなかったのは、円錐の壁面圧力係数（真の誤差はGCIの3.2倍で、0.059 %に対し0.188 %）と、軸を対称境界にした円錐の同じ量である。「押さえた」ことは、締まっていることを意味しない。膨張の壁面圧力ではGCIは誤差の約8倍であり、これは上限であって見積もりではない。漸近域の外として旗を立てた行も5行に含まれる。</p>
+<p>では、層2でそうしなければならないように、厳密な答えなしにこれらの失敗を見つけられたか。次数の旗は、二つの失敗のどちらも見逃す。円錐の壁面圧力係数の次数は<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mn>3.39</mn></mrow><annotation encoding="application/x-tex">p=3.39</annotation></semantics></math>だからである。四つの壁の窓での次数の安定性は、円錐の失敗は捕らえるが、次数が安定している軸を対称境界にした円錐の失敗を見逃す。さらに、GCIが誤差を押さえていた膨張の壁面圧力を、不安定として捕らえる。観測次数自体（形式的に2次のスキームに対し0.39から3.39）は、スキームの次数の測定ではない。壁の窓は先端や角の過渡を含み、衝撃波角は捕獲され広がった衝撃波から読むからである。</p>
+<p>層流平板は、粘性の量について同じ結論を与える。5行のうち2行で押さえたが、それは数列が中と細の格子の間でBlasius解を横切るからにすぎない。細格子の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>f</mi></msub><annotation encoding="application/x-tex">C_f</annotation></semantics></math>の誤差<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><mn>0.008</mn></mrow><annotation encoding="application/x-tex">+0.008</annotation></semantics></math> %は符号の交差であって、一致ではない。押さえなかった行の次数は1.05から1.11であり、次数の旗はこれを捕らえない。Blasius解との差には、離散化誤差の上限が扱わない効果も混ざっている（付録<a href="#sec:appA" class="iy-xref">A</a>）。よって層流平板は離散化のきれいな検証を与えない。</p>
+<h5 id="副次的な所見自分自身と食い違う参照表">副次的な所見：自分自身と食い違う参照表</h5>
+<p>この円錐のNPARCアーカイブの表<span class="citation" data-cites="nparc_cone10">(NASA Glenn Research Center n.d.a)</span>は、そのままでは使えなかった。その衝撃波角は同じ表の表面Mach数とも印刷された比とも整合せず、さらに三つの資料が、同じ理論に基づくとはいえ、本研究で計算した角を支持する（付録<a href="#sec:appA" class="iy-xref">A</a>）。この円錐では表面Mach数と表面圧力係数だけを比べる。</p>
+<h5 id="r1が示すこと">R1が示すこと</h5>
+<p>製品の設定で動かしたSU2は、非粘性の表面圧力と衝撃波角で厳密解を再現する。その意味で、ソルバとその設定は検証された。例外は、Mach数から求める壁面の量と境界の接合点であり、層流平板はきれいな検証を与えない。しかしGCIが真の誤差を押さえたのは非粘性の7行のうち5行、層流平板の5行のうち2行であり、次数の旗も窓の安定性も、非粘性の二つの失敗の両方は検出しない。以下の製品の結果はすべて、厳密な答えなしに求めたGCIに頼る。そのGCIは条件付きの見積もりであり、次数がもっともらしく窓が安定して見えても、真の誤差を過小評価しうる。</p>
+<h3 id="sec:r2"><span class="iy-secnum">3.2</span> R2. パイプライン自身の誤差は定量化できなかった</h3>
+<p>R1はソルバを試験したが、層0は製品のパイプラインを動かさない。次に問うのは、ソルバの周りの鎖、すなわちCADから非構造メッシュを経て係数に至る部分が、測れる誤差を加えるかどうかである。その誤差は測れなかった。最細の段が収束しなかったためで、その理由は確立していない。さらに製品の格子には、製品のすべてのGCIに及ぶ構造的な第二の限界がある。</p>
+<h4 id="sec:layer1"><span class="iy-secnum">3.2.1</span> 層1：最細の段が収束しなかった</h4>
+<div id="tab:layer1" class="iy-table"><table><caption><strong>表 3</strong>　層1、Mach 2.35の10<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>∘</mo></msup><annotation encoding="application/x-tex">^\circ</annotation></semantics></math>の円錐-円筒。残差の落ち幅（桁）、ソルバの判定、窓<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>0.4</mn><mo>≤</mo><mi>x</mi><mi>/</mi><mi>L</mi><mo>≤</mo><mn>0.9</mn></mrow><annotation encoding="application/x-tex">0.4\le x/L\le0.9</annotation></semantics></math>での壁面<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>p</mi></msub><annotation encoding="application/x-tex">C_p</annotation></semantics></math>の厳密な値0.09673からの差（%）。細かい段はソルバに受け入れられなかったので、その値はどの不確かさの見積もりにも入らない。層0の行は裸の円錐の最細格子である。</caption>
+<thead>
+<tr>
+<th style="text-align: left;">段</th>
+<th style="text-align: right;">節点</th>
+<th style="text-align: right;">落ち幅</th>
+<th style="text-align: left;">判定</th>
+<th style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>p</mi></msub><annotation encoding="application/x-tex">C_p</annotation></semantics></math>の差</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">粗</td>
+<td style="text-align: right;">28887</td>
+<td style="text-align: right;">5.52</td>
+<td style="text-align: left;">収束</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>2.51</mn></mrow><annotation encoding="application/x-tex">-2.51</annotation></semantics></math></td>
+</tr>
+<tr>
+<td style="text-align: left;">中</td>
+<td style="text-align: right;">45258</td>
+<td style="text-align: right;">4.80</td>
+<td style="text-align: left;">収束</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>1.26</mn></mrow><annotation encoding="application/x-tex">-1.26</annotation></semantics></math></td>
+</tr>
+<tr>
+<td style="text-align: left;">細</td>
+<td style="text-align: right;">75796</td>
+<td style="text-align: right;">2.44</td>
+<td style="text-align: left;">未収束</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>0.44</mn></mrow><annotation encoding="application/x-tex">-0.44</annotation></semantics></math></td>
+</tr>
+<tr>
+<td style="text-align: left;">層0</td>
+<td style="text-align: right;">49601</td>
+<td style="text-align: right;">12.73</td>
+<td style="text-align: left;">収束</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>0.19</mn></mrow><annotation encoding="application/x-tex">-0.19</annotation></semantics></math></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>細かい段は収束しなかった。そのため層1のGCIはなく、パイプラインの誤差は作れない（表<a href="#tab:layer1" class="iy-xref">3</a>、図<a href="#fig:layer1cp" class="iy-xref">2</a>）。細かい段の最後の40反復の間、密度の残差は<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>6.00</mn></mrow><annotation encoding="application/x-tex">-6.00</annotation></semantics></math>から<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>4.85</mn></mrow><annotation encoding="application/x-tex">-4.85</annotation></semantics></math>の間にあって目標の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>6</mn></mrow><annotation encoding="application/x-tex">-6</annotation></semantics></math>に届かず、抗力係数は相対<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>2.2</mn><mo>×</mo><msup><mn>10</mn><mrow><mi>−</mi><mn>4</mn></mrow></msup></mrow><annotation encoding="application/x-tex">2.2\times10^{-4}</annotation></semantics></math>の幅で変動しており、リミットサイクルと整合する。製品の判定は「未収束」である。入口の条件は細かい段を拒否し、層1の格子収束の6行（三つの量をそれぞれ二つの格子寸法の定義で求めたもの）はすべて拒否されて数値を持たない。<strong>層1のGCIはない。</strong> 図<a href="#fig:layer1cp" class="iy-xref">2</a>には帯を描けない。これは結果であり欠落ではない。</p>
+<figure id="fig:layer1cp" data-latex-placement="t">
+<a href="../fig/layer1_cp.svg"><img loading="lazy" src="../fig/layer1_cp.svg" /></a>
+<figcaption><strong>図 2</strong>　層1：円錐の表面の壁面<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>p</mi></msub><annotation encoding="application/x-tex">C_p</annotation></semantics></math>。幅0.1の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mi>/</mi><mi>L</mi></mrow><annotation encoding="application/x-tex">x/L</annotation></semantics></math>の区間での平均を3段について示し、Taylor–Maccoll解の値（黒い線）と比べる。塗りの記号はソルバが受け入れた解である。細かい段（白抜きの記号と破線）は受け入れられなかった解（残差の落ち幅2.44桁）で、その値は210反復のうち200反復目の周期的な書き出しであり、記述のためだけに示す。層1の格子収束の6行はすべて拒否されたので、帯は描かない。図中の文は英語である。</figcaption>
+</figure>
+<p>7区間のどれでも、壁面<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>p</mi></msub><annotation encoding="application/x-tex">C_p</annotation></semantics></math>はどの段でも厳密な値より低く、細分のたびに厳密な値に近づく。しかし受け入れた2段の差、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>2.51</mn></mrow><annotation encoding="application/x-tex">-2.51</annotation></semantics></math> %と<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>1.26</mn></mrow><annotation encoding="application/x-tex">-1.26</annotation></semantics></math> %は記述にとどまる。1段が受け入れられておらず格子も相似でないので、ここから次数は引き出さない（ほかの値は付録<a href="#sec:appA" class="iy-xref">A</a>）。したがって、パイプラインの誤差、すなわち同じ厳密解に対する層1の誤差から層0の誤差を引いたものは作れず、引き算の値は示さない。細かい段が受け入れられたとしても、二つの層の違いは鎖だけではない（付録<a href="#sec:appA" class="iy-xref">A</a>）。さらに、同じ窓の層0のGCI 0.059 %は自分の最細格子の誤差（0.188 %）を押さえていないので、層0の不確かさを過小評価することになる。</p>
+<h4 id="sec:similar"><span class="iy-secnum">3.2.2</span> 製品の格子は相似に細かくできない</h4>
+<div id="tab:growth" class="iy-table"><table><caption><strong>表 4</strong>　製品の格子の族の段ごとの増え方。壁の寸法の比1.4で相似に細分したときの<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mn>1.4</mn><mn>3</mn></msup><mo>=</mo><mn>2.74</mn></mrow><annotation encoding="application/x-tex">1.4^3=2.74</annotation></semantics></math>倍と比べる。層1の族は節点数、ほかの族はセル数で測る。</caption>
+<thead>
+<tr>
+<th style="text-align: left;">族</th>
+<th style="text-align: left;">壁の寸法（mm）</th>
+<th style="text-align: left;">段ごとの増え方</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">層1の円錐-円筒</td>
+<td style="text-align: left;">3.92、2.80、2.00</td>
+<td style="text-align: left;">1.57、1.67</td>
+</tr>
+<tr>
+<td style="text-align: left;">サンプル機体、Euler</td>
+<td style="text-align: left;">3.92、2.80、2.00</td>
+<td style="text-align: left;">1.74、1.77</td>
+</tr>
+<tr>
+<td style="text-align: left;">Basic Finner、Euler</td>
+<td style="text-align: left;">4段、比1.4</td>
+<td style="text-align: left;">1.70、1.77、1.83</td>
+</tr>
+<tr>
+<td style="text-align: left;">Basic Finner、RANS</td>
+<td style="text-align: left;">2.1、1.5、1.07</td>
+<td style="text-align: left;">1.56、1.70</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>細かい段が収束したとしても、層1の格子は相似な族ではなかった。製品が作るすべての格子についても同じである。製品の細分の設定は、壁とフィンのセル寸法である。メッシャは体積メッシュを、壁のセル寸法から、遠方境界の半径の1/10である最大セル寸法まで変化させる。この最大寸法は利用者の設定ではなく、壁の寸法とともに変わらない。これを変えるには遠方境界の半径を変える必要があり、それは解く問題を変える。したがって、設定を細かくしても細かくなるのは壁の近くだけである。表<a href="#tab:growth" class="iy-xref">4</a>に、本研究の製品の四つの族すべてについてその帰結を示す。壁の寸法が段ごとに1.4分の1になるとき、数は段ごとに1.56から1.83倍にしか増えず、相似な細分の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msup><mn>1.4</mn><mn>3</mn></msup><mo>=</mo><mn>2.74</mn></mrow><annotation encoding="application/x-tex">1.4^3=2.74</annotation></semantics></math>倍に届かない。このとき、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>h</mi><mo>∝</mo><msup><mi>N</mi><mrow><mi>−</mi><mn>1</mn><mi>/</mi><mn>3</mn></mrow></msup></mrow><annotation encoding="application/x-tex">h\propto N^{-1/3}</annotation></semantics></math>も<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>h</mi><mo>∝</mo></mrow><annotation encoding="application/x-tex">h\propto</annotation></semantics></math>壁寸法も実効的な格子寸法ではない。そこでこのような族のGCIはすべて両方の定義で求め、二つの差は不確かさの上限ではなく、その一部として扱う。</p>
+<h5 id="r2が示すこと">R2が示すこと</h5>
+<p>3次元非構造メッシュ生成を含むパイプライン自身の誤差は、定量化されていない。二つの別々の限界がそれを阻む。一つは層1の細かい段が収束しなかったことで、その理由は確立していない。もう一つは製品の格子が相似でないことで、これはメッシャの構造的な性質であり、すべての段が収束しても残る。問いのうちパイプラインが加える誤差の部分には、本研究は数値を与えられない。</p>
+<h3 id="sec:r3"><span class="iy-secnum">3.3</span> R3. 実用条件では、使える不確かさの帯はほとんど残らない</h3>
+<p>パイプラインの誤差が定量化できなくても、実用上の問いは残る。実用条件のロケットで、六つの段階はどの係数に帯を付けるか。決め手は空間収束の段階で、反復収束と一貫性の段階は得られた帯を信頼できるかを示す。</p>
+<h4 id="sec:grid"><span class="iy-secnum">3.3.1</span> 空間収束</h4>
+<div id="tab:sample" class="iy-table"><table><caption><strong>表 5</strong>　サンプル機体、Euler。<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>h</mi><mo>∝</mo><msup><mi>N</mi><mrow><mi>−</mi><mn>1</mn><mi>/</mi><mn>3</mn></mrow></msup></mrow><annotation encoding="application/x-tex">h\propto N^{-1/3}</annotation></semantics></math>と<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>h</mi><mo>∝</mo></mrow><annotation encoding="application/x-tex">h\propto</annotation></semantics></math>壁寸法での観測次数<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>p</mi><annotation encoding="application/x-tex">p</annotation></semantics></math>と<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mrow><mi mathvariant="normal">G</mi><mi mathvariant="normal">C</mi><mi mathvariant="normal">I</mi></mrow><mrow><mi mathvariant="normal">f</mi><mi mathvariant="normal">i</mi><mi mathvariant="normal">n</mi><mi mathvariant="normal">e</mi></mrow></msub><annotation encoding="application/x-tex">\mathrm{GCI}_\mathrm{fine}</annotation></semantics></math>（%）。「なし」：次数がない。細かい側の変化が粗い側の変化以上であるか、差が符号を変えるためで、帯はない。<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>†</mo></msup><annotation encoding="application/x-tex">^\dagger</annotation></semantics></math>：次数が0.5から4の外にあり、信頼できないとして旗を立てる。「使えない」：GCIが100 %を超えるか、外挿値が厳密な値の向こう側にある。<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>‡</mo></msup><annotation encoding="application/x-tex">^\ddagger</annotation></semantics></math>：<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi>N</mi><mrow><mi>−</mi><mn>1</mn><mi>/</mi><mn>3</mn></mrow></msup><annotation encoding="application/x-tex">N^{-1/3}</annotation></semantics></math>の基準では細分比一定の検査がこの名前を付けるが、細分比は異なり（1.21と1.20）、Celikらの方法では<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mn>0.072</mn></mrow><annotation encoding="application/x-tex">p=0.072</annotation></semantics></math>、GCI 285 %で、どちらでも使えない。</caption>
+<thead>
+<tr>
+<th style="text-align: left;">Mach数</th>
+<th style="text-align: left;">量</th>
+<th style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>p</mi><annotation encoding="application/x-tex">p</annotation></semantics></math>（<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi>N</mi><mrow><mi>−</mi><mn>1</mn><mi>/</mi><mn>3</mn></mrow></msup><annotation encoding="application/x-tex">N^{-1/3}</annotation></semantics></math>）</th>
+<th style="text-align: right;">GCI</th>
+<th style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>p</mi><annotation encoding="application/x-tex">p</annotation></semantics></math>（壁）</th>
+<th style="text-align: right;">GCI</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: left;">0.3</td>
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>N</mi><mi>α</mi></mrow></msub><annotation encoding="application/x-tex">C_{N\alpha}</annotation></semantics></math>、収束しない</td>
+<td style="text-align: right;">なし</td>
+<td style="text-align: right;">–</td>
+<td style="text-align: right;">なし</td>
+<td style="text-align: right;">–</td>
+</tr>
+<tr>
+<td style="text-align: left;">0.3</td>
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>x</mi><mrow><mi>c</mi><mi>p</mi></mrow></msub><annotation encoding="application/x-tex">x_{cp}</annotation></semantics></math>、振動収束</td>
+<td style="text-align: right;">なし</td>
+<td style="text-align: right;">–</td>
+<td style="text-align: right;">なし</td>
+<td style="text-align: right;">–</td>
+</tr>
+<tr>
+<td style="text-align: left;">0.3</td>
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>A</mi></msub><annotation encoding="application/x-tex">C_A</annotation></semantics></math>、使えない</td>
+<td style="text-align: right;">0.95</td>
+<td style="text-align: right;">309</td>
+<td style="text-align: right;">0.43<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>†</mo></msup><annotation encoding="application/x-tex">^\dagger</annotation></semantics></math></td>
+<td style="text-align: right;">393</td>
+</tr>
+<tr>
+<td style="text-align: left;">0.8</td>
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>N</mi><mi>α</mi></mrow></msub><annotation encoding="application/x-tex">C_{N\alpha}</annotation></semantics></math>、収束しない</td>
+<td style="text-align: right;">なし</td>
+<td style="text-align: right;">–</td>
+<td style="text-align: right;">なし</td>
+<td style="text-align: right;">–</td>
+</tr>
+<tr>
+<td style="text-align: left;">0.8</td>
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>x</mi><mrow><mi>c</mi><mi>p</mi></mrow></msub><annotation encoding="application/x-tex">x_{cp}</annotation></semantics></math>、振動収束</td>
+<td style="text-align: right;">なし</td>
+<td style="text-align: right;">–</td>
+<td style="text-align: right;">なし</td>
+<td style="text-align: right;">–</td>
+</tr>
+<tr>
+<td style="text-align: left;">0.8</td>
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>A</mi></msub><annotation encoding="application/x-tex">C_A</annotation></semantics></math>、使えない</td>
+<td style="text-align: right;">0.29<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>†</mo></msup><annotation encoding="application/x-tex">^\dagger</annotation></semantics></math></td>
+<td style="text-align: right;">1654</td>
+<td style="text-align: right;">0.066<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>†</mo></msup><annotation encoding="application/x-tex">^\dagger</annotation></semantics></math></td>
+<td style="text-align: right;">4251</td>
+</tr>
+<tr>
+<td style="text-align: left;">2.0</td>
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>N</mi><mi>α</mi></mrow></msub><annotation encoding="application/x-tex">C_{N\alpha}</annotation></semantics></math></td>
+<td style="text-align: right;">0.53</td>
+<td style="text-align: right;">10.6</td>
+<td style="text-align: right;">0.20<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>†</mo></msup><annotation encoding="application/x-tex">^\dagger</annotation></semantics></math></td>
+<td style="text-align: right;">16.3</td>
+</tr>
+<tr>
+<td style="text-align: left;">2.0</td>
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>x</mi><mrow><mi>c</mi><mi>p</mi></mrow></msub><annotation encoding="application/x-tex">x_{cp}</annotation></semantics></math>、旗</td>
+<td style="text-align: right;">8.7<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>†</mo></msup><annotation encoding="application/x-tex">^\dagger</annotation></semantics></math></td>
+<td style="text-align: right;">0.030</td>
+<td style="text-align: right;">4.75<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>†</mo></msup><annotation encoding="application/x-tex">^\dagger</annotation></semantics></math></td>
+<td style="text-align: right;">0.033</td>
+</tr>
+<tr>
+<td style="text-align: left;">2.0</td>
+<td style="text-align: left;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>A</mi></msub><annotation encoding="application/x-tex">C_A</annotation></semantics></math>、収束しない<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>‡</mo></msup><annotation encoding="application/x-tex">^\ddagger</annotation></semantics></math></td>
+<td style="text-align: right;">なし</td>
+<td style="text-align: right;">–</td>
+<td style="text-align: right;">なし</td>
+<td style="text-align: right;">–</td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>サンプル機体で拒否も使えないともされていない唯一のGCIは、Mach 2の法線力傾斜のものであり、その帯は広く、信頼性が低い（表<a href="#tab:sample" class="iy-xref">5</a>）。サンプル機体のEulerの族の各段は入口の条件を満たす（収束か早期終了の判定と、3.2桁以上の残差の落ち幅）ので、GCIを計算できる。GCIが100 %を超える行と、外挿値が既知の厳密な値の向こう側にある行は、使えないとする。</p>
+<p>Mach 2の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>N</mi><mi>α</mi></mrow></msub><annotation encoding="application/x-tex">C_{N\alpha}</annotation></semantics></math>のGCIは、一方の定義で10.6 %（次数0.53、旗の境界のすぐ上）、他方で16.3 %（次数0.20、旗）である。この帯でさえ、データよりも仮定した次数に依存している。外挿値14.5は最細格子の値13.40より8.5 %上にあるが、細かい2段の差は0.9 %しかない。ほかの行はどれも、帯がないか、GCIに旗が立つか、GCIが使えない（表<a href="#tab:sample" class="iy-xref">5</a>）。Mach 2の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>x</mi><mrow><mi>c</mi><mi>p</mi></mrow></msub><annotation encoding="application/x-tex">x_{cp}</annotation></semantics></math>のGCIは信頼できないとして旗を立てる。Mach 0.3と0.8の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>N</mi><mi>α</mi></mrow></msub><annotation encoding="application/x-tex">C_{N\alpha}</annotation></semantics></math>は収束せず帯を持たない。Mach 0.3と0.8の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>x</mi><mrow><mi>c</mi><mi>p</mi></mrow></msub><annotation encoding="application/x-tex">x_{cp}</annotation></semantics></math>（振動収束）とMach 2の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>A</mi></msub><annotation encoding="application/x-tex">C_A</annotation></semantics></math>も帯を持たない。したがって、サンプル機体のGCIに保証された不確かさはない。</p>
+<p>Mach 2.375のBasic FinnerのEulerの研究はGCIを計算するが、既存の4段を持つのでL1–L3とL2–L4の二つの3段があり、二つの次数はどちらの定義でも合わない（付録<a href="#sec:appA" class="iy-xref">A</a>）。したがって傾斜に使える唯一の帯は感度であって、GCIではない。次数に旗の立つ粗い側の3段は描いた格子について<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>±</mi><mn>0.17</mn></mrow><annotation encoding="application/x-tex">\pm0.17</annotation></semantics></math> %を与えるが、描いた格子からほかの段への観測された最大の変化、すなわちL2からL4への変化は<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><mn>0.47</mn></mrow><annotation encoding="application/x-tex">+0.47</annotation></semantics></math> %である。この4段の研究は、Basic Finnerの信頼できるGCIを確立しない。</p>
+<p>RANSでは、格子ではなく入口の条件が結果を決める。<strong>Mach 1.832ではRANSのGCIは得られなかった。</strong><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>2</mn><mo>∘</mo></msup><annotation encoding="application/x-tex">2^\circ</annotation></semantics></math>の解は3段のどれでも収束せず、最細の段の迎え角0の解も収束しなかった。製品はどれも停滞として記録し、リミットサイクルの旗も立てている。そのためすべての族が拒否される。3段の傾斜11.52、11.57、11.45はいずれも未収束の解から得たもので、その間の1.1 %の広がりは不確かさではない。入口の条件は密度とSpalart–Allmaras方程式の残差の落ち幅の小さい方を使う。一方、製品自身の残差の落ち幅は密度だけのものであり、乱流の残差の落ちが小さい解では大きくなる（最細の段の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>0</mn><mo>∘</mo></msup><annotation encoding="application/x-tex">0^\circ</annotation></semantics></math>で、0.89桁に対し3.91桁）。同じビルドで解いた粗い段の判定は、二つの実行の設定の間で食い違った。8ランク<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>×</mi><annotation encoding="application/x-tex">\times</annotation></semantics></math>2並列ケースを16コアで走らせた実行では<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>0</mn><mo>∘</mo></msup><annotation encoding="application/x-tex">0^\circ</annotation></semantics></math>が未収束で<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>2</mn><mo>∘</mo></msup><annotation encoding="application/x-tex">2^\circ</annotation></semantics></math>が収束、16ランクを32コアで走らせた実行（本研究の粗い段）ではその逆である。二つの設定は、ウォームスタートの順序も異なる。したがって判定の入れ替わりはビルドではなく実行の設定に従うが、設定のどの部分が原因かは確立していない。</p>
+<p>同じ障害が、サンプル機体についての製品の既存のRANSの格子研究も止める。その四つの族はすべて拒否される。解が未収束と記録されているか、Mach 2の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>4</mn><mo>∘</mo></msup><annotation encoding="application/x-tex">4^\circ</annotation></semantics></math>では判定の記録のない再計算だからである（付録<a href="#sec:appA" class="iy-xref">A</a>）。RANSの算例に対する製品の判定「未収束」は、製品のドキュメントが区別する2種類の解を含む。係数は平坦だが残差が必要な落ち幅に届かない<strong>停滞</strong>と、係数が小さな幅で振動する<strong>リミットサイクル</strong>（残差は十分に落ちている）である。したがって停滞はチュートリアルの残差の落ち幅の条件を、リミットサイクルは係数の平坦さの条件を満たさない。記録はどちらだったかを示さない。</p>
+<h4 id="sec:iter"><span class="iy-secnum">3.3.2</span> 反復誤差と一貫性</h4>
+<p><span id="sec:consistency" data-label="sec:consistency"></span></p>
+<p>反復誤差によって無効になるGCIはないが、この検査は狭い。チュートリアルは反復誤差が格子の不確かさに比べて小さいことを求め、比較の38行のうち、<strong>格子と量が対応する行で比が1を超えるものはない</strong>。しかし比べられる使えるGCIを持つ条件は一つしかない。Mach 2の法線力傾斜で、最細格子での反復誤差はGCIの<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>3.2</mn><mo>×</mo><msup><mn>10</mn><mrow><mi>−</mi><mn>5</mn></mrow></msup></mrow><annotation encoding="application/x-tex">3.2\times10^{-5}</annotation></semantics></math>である。参照の状態がソルバの書いた最後の行なので、この反復誤差は下限である。したがってこの結果は、反復誤差がこのGCIを乱す証拠がないことを示すが、反復誤差が小さいことの実証よりは弱い（ほかの行は付録<a href="#sec:appA" class="iy-xref">A</a>）。</p>
+<p>一貫性の検査も、何を分離できるかによって同じように限られる。対称な物体では、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>C</mi><mi>N</mi></msub><mo stretchy="false" form="prefix">(</mo><mn>0</mn><mo stretchy="false" form="postfix">)</mo><mo>=</mo><mn>0</mn></mrow><annotation encoding="application/x-tex">C_N(0)=0</annotation></semantics></math>と<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>C</mi><mi>N</mi></msub><mo stretchy="false" form="prefix">(</mo><mi>−</mi><mi>α</mi><mo stretchy="false" form="postfix">)</mo><mo>=</mo><mi>−</mi><msub><mi>C</mi><mi>N</mi></msub><mo stretchy="false" form="prefix">(</mo><mi>α</mi><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">C_N(-\alpha)=-C_N(\alpha)</annotation></semantics></math>が形状から従う。サンプル機体の本番の計算のように作り方によって鏡映対称にしたメッシュでは、検査は作り方によって合格し、ソルバについては何も言わない。鏡映の対称性がないと、既存の非対称性の調査では24行（<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>C</mi><mi>N</mi></msub><mo stretchy="false" form="prefix">(</mo><mn>0</mn><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">C_N(0)</annotation></semantics></math>の12行と偶関数部分の12行）のすべてで、サンプル機体ではMach 0.3と0.8で不合格になる。これはメッシュの非対称性がどの迎え角にも持ち込むずれと整合するが、そのうちどれだけがメッシュで、どれだけがソルバかは分けていない（付録<a href="#sec:appA" class="iy-xref">A</a>）。Mach 0.3、迎え角0では、非粘性の軸力は0のはずである（d’Alembertの逆説）。サンプル機体の3段では<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">|</mo><msub><mi>C</mi><mi>A</mi></msub><mo stretchy="false" form="prefix">|</mo></mrow><annotation encoding="application/x-tex">|C_A|</annotation></semantics></math>が縮むが、その外挿は厳密な値を越えるので、3段の格子が支持するのは縮む傾向であり0への収束ではない。</p>
+<h4 id="sec:step1"><span class="iy-secnum">3.3.3</span> プログラムの点検と時間収束</h4>
+<p><span id="sec:temporal" data-label="sec:temporal"></span></p>
+<p>残る二つの段階は、この状況を変えない。第1段階について、本研究の前には格子収束の計算の試験はなかった。本研究はGCIの手順、厳密解、層0と製品の数値設定の同一性、一貫性の検査の試験を加える（付録<a href="#sec:appA" class="iy-xref">A</a>）。第5段階は、時間刻みを持たない定常のCFDには当てはまらない。<strong>副次的な所見：</strong>その代わりに調べた飛翔の積分器はサンプル機体で収束の次数を示さない。そのばらつきは、制御の実験を根拠として主にレールのモデルに帰し、第2の寄与は排除しない（付録<a href="#sec:temporalapp" class="iy-xref">B</a>）。これはCFDの不確かさの問いの外にある。</p>
+<h5 id="r3が示すこと">R3が示すこと</h5>
+<p>サンプル機体では、手順を経て拒否も使えないともされていないGCIを持つのは一つの条件の一つの係数、Mach 2の法線力傾斜だけであり、その帯は広く、信頼性が低い。Basic FinnerのEulerの研究はGCIを計算するが、二つの3段が合わず、信頼できるGCIを確立しない。RANSではBasic FinnerにGCIがなく、製品自身が公表したRANSの格子研究も手順の前提を満たさない（<a href="#sec:grid" class="iy-xref">3.3.1</a>節）。問いに照らせば実用条件の係数には使える数値不確かさの帯がほぼ付かない。</p>
+<h3 id="sec:r4"><span class="iy-secnum">3.4</span> R4. 妥当性確認とモデルの不確かさは、数値不確かさから分けられない</h3>
+<p>第6段階では数値の帯が役目を果たす。実測や別のモデルとの差をモデルに帰せるのは、差が数値不確かさを超えるときだけだからである。R3のあとに帯はほとんど残らないので、比較になお何が言えるかを問う。言えるのは各差の大きさであり、どの場合も判定ではない。</p>
+<h4 id="sec:validation"><span class="iy-secnum">3.4.1</span> 自由飛翔の実測との比較</h4>
+<p>Basic FinnerのEulerの<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>N</mi><mi>α</mi></mrow></msub><annotation encoding="application/x-tex">C_{N\alpha}</annotation></semantics></math>は自由飛翔のデータより2.9から10.5 %低く、それがモデルの誤差かどうかは決められない。データは<span class="citation" data-cites="dupuis1997">Dupuis and Hathaway (1997)</span>の自由飛翔の実測である（図<a href="#fig:validation" class="iy-xref">3</a>、表<a href="#tab:validation" class="iy-xref">6</a>）。これは空力弾道射場の試験で、係数は、1.077から4.300までの8つのMach数での発射の組に対する6自由度の最尤の当てはめから得られている。表の各係数は%で表した確率誤差を持つ（空欄と0の意味は表<a href="#tab:validation" class="iy-xref">6</a>に記す。空欄には棒を描かない）。これらの確率誤差は当てはめの統計誤差で、製品の妥当性確認の章によれば、発ごとのばらつきと系統誤差を含まない。確率誤差は慣例では50 %の幅なので、CFDの値が棒の外にあることも内にあることも読んだ印象より弱い言明であり、どちらも実測の不確かさ全体との比較ではない。</p>
+<figure id="fig:validation" data-latex-placement="t">
+<a href="../fig/validation_bands.svg"><img loading="lazy" src="../fig/validation_bands.svg" /></a>
+<figcaption><strong>図 3</strong>　Basic Finnerの<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>N</mi><mi>α</mi></mrow></msub><annotation encoding="application/x-tex">C_{N\alpha}</annotation></semantics></math>（左）と<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>X</mi><mn>0</mn></mrow></msub><annotation encoding="application/x-tex">C_{X0}</annotation></semantics></math>（右）のMach数に対する変化。表の確率誤差を付けた自由飛翔の実測<span class="citation" data-cites="dupuis1997">(Dupuis and Hathaway 1997)</span>、EulerのCFD、Mach 1.832のRANSの点（底面の項の二つの扱い）を示す。Mach 2.375のEulerの点の斜線の箱は格子感度（<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>±</mi><mn>0.17</mn></mrow><annotation encoding="application/x-tex">\pm0.17</annotation></semantics></math> %、この尺度では小さすぎて見えない）で、旗の立つL1–L3の3段の粗いGCIであり、確立したGCIではない。<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>X</mi><mn>0</mn></mrow></msub><annotation encoding="application/x-tex">C_{X0}</annotation></semantics></math>にも、RANSの点にも（Mach 1.832ではRANSのGCIが得られなかった）、ほかのどのMach数にも帯はない。図中の文は英語である。</figcaption>
+</figure>
+<div id="tab:validation" class="iy-table"><table><caption><strong>表 6</strong>　Basic Finner。<span class="citation" data-cites="dupuis1997">Dupuis and Hathaway (1997)</span>（Table IX）の実測の係数と表の確率誤差、CFDの値、差<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">(</mo><mtext mathvariant="normal">CFD</mtext><mo>−</mo><mtext mathvariant="normal">実測</mtext><mo stretchy="false" form="postfix">)</mo><mi>/</mi><mo stretchy="false" form="prefix">|</mo><mtext mathvariant="normal">実測</mtext><mo stretchy="false" form="prefix">|</mo></mrow><annotation encoding="application/x-tex">(\text{CFD}-\text{実測})/|\text{実測}|</annotation></semantics></math>（%）。誤差の欄のダッシュは誤差が表にない（不明）ことを、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mo>&lt;</mo><annotation encoding="application/x-tex">&lt;</annotation></semantics></math>0.5は表の0、すなわち誤差0ではなく0.5 %未満の誤差を表す。RANSの値は数値不確かさを持たない一つの格子の値で、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>X</mi><mn>0</mn></mrow></msub><annotation encoding="application/x-tex">C_{X0}</annotation></semantics></math>の二つの値は底面の項の二つの扱い（モデル、およびCFDの底面圧力）である。</caption>
+<thead>
+<tr>
+<th style="text-align: right;"></th>
+<th colspan="4" style="text-align: center;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>N</mi><mi>α</mi></mrow></msub><annotation encoding="application/x-tex">C_{N\alpha}</annotation></semantics></math>（1/rad）</th>
+<th colspan="4" style="text-align: center;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>X</mi><mn>0</mn></mrow></msub><annotation encoding="application/x-tex">C_{X0}</annotation></semantics></math></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;"><span>2-5</span>(l)<span>6-9</span> Mach数</td>
+<td style="text-align: right;">実測</td>
+<td style="text-align: right;">誤差（%）</td>
+<td style="text-align: right;">Euler</td>
+<td style="text-align: right;">差（%）</td>
+<td style="text-align: right;">実測</td>
+<td style="text-align: right;">誤差（%）</td>
+<td style="text-align: right;">Euler</td>
+<td style="text-align: right;">差（%）</td>
+</tr>
+<tr>
+<td style="text-align: right;">1.077</td>
+<td style="text-align: right;">18.47</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">17.32</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>6.3</mn></mrow><annotation encoding="application/x-tex">-6.3</annotation></semantics></math></td>
+<td style="text-align: right;">0.863</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mo>&lt;</mo><annotation encoding="application/x-tex">&lt;</annotation></semantics></math>0.5</td>
+<td style="text-align: right;">0.6301</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>27.0</mn></mrow><annotation encoding="application/x-tex">-27.0</annotation></semantics></math></td>
+</tr>
+<tr>
+<td style="text-align: right;">1.293</td>
+<td style="text-align: right;">18.27</td>
+<td style="text-align: right;">3</td>
+<td style="text-align: right;">16.74</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>8.4</mn></mrow><annotation encoding="application/x-tex">-8.4</annotation></semantics></math></td>
+<td style="text-align: right;">0.731</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mo>&lt;</mo><annotation encoding="application/x-tex">&lt;</annotation></semantics></math>0.5</td>
+<td style="text-align: right;">0.5444</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>25.5</mn></mrow><annotation encoding="application/x-tex">-25.5</annotation></semantics></math></td>
+</tr>
+<tr>
+<td style="text-align: right;">1.832</td>
+<td style="text-align: right;">11.78</td>
+<td style="text-align: right;">4</td>
+<td style="text-align: right;">11.27</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>4.4</mn></mrow><annotation encoding="application/x-tex">-4.4</annotation></semantics></math></td>
+<td style="text-align: right;">0.585</td>
+<td style="text-align: right;">–</td>
+<td style="text-align: right;">0.4197</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>28.3</mn></mrow><annotation encoding="application/x-tex">-28.3</annotation></semantics></math></td>
+</tr>
+<tr>
+<td style="text-align: right;">2.375</td>
+<td style="text-align: right;">10.52</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">9.411</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>10.5</mn></mrow><annotation encoding="application/x-tex">-10.5</annotation></semantics></math></td>
+<td style="text-align: right;">0.484</td>
+<td style="text-align: right;">–</td>
+<td style="text-align: right;">0.3490</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>27.9</mn></mrow><annotation encoding="application/x-tex">-27.9</annotation></semantics></math></td>
+</tr>
+<tr>
+<td style="text-align: right;">2.718</td>
+<td style="text-align: right;">9.01</td>
+<td style="text-align: right;">2</td>
+<td style="text-align: right;">8.744</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>2.9</mn></mrow><annotation encoding="application/x-tex">-2.9</annotation></semantics></math></td>
+<td style="text-align: right;">0.435</td>
+<td style="text-align: right;">–</td>
+<td style="text-align: right;">0.3173</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>27.0</mn></mrow><annotation encoding="application/x-tex">-27.0</annotation></semantics></math></td>
+</tr>
+<tr>
+<td style="text-align: right;">3.147</td>
+<td style="text-align: right;">8.69</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">8.161</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>6.1</mn></mrow><annotation encoding="application/x-tex">-6.1</annotation></semantics></math></td>
+<td style="text-align: right;">0.373</td>
+<td style="text-align: right;">–</td>
+<td style="text-align: right;">0.2861</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>23.3</mn></mrow><annotation encoding="application/x-tex">-23.3</annotation></semantics></math></td>
+</tr>
+<tr>
+<td style="text-align: right;">3.734</td>
+<td style="text-align: right;">8.32</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">7.550</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>9.3</mn></mrow><annotation encoding="application/x-tex">-9.3</annotation></semantics></math></td>
+<td style="text-align: right;">0.309</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mo>&lt;</mo><annotation encoding="application/x-tex">&lt;</annotation></semantics></math>0.5</td>
+<td style="text-align: right;">0.2535</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>18.0</mn></mrow><annotation encoding="application/x-tex">-18.0</annotation></semantics></math></td>
+</tr>
+<tr>
+<td style="text-align: right;">4.300</td>
+<td style="text-align: right;">7.74</td>
+<td style="text-align: right;">1</td>
+<td style="text-align: right;">7.059</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>8.8</mn></mrow><annotation encoding="application/x-tex">-8.8</annotation></semantics></math></td>
+<td style="text-align: right;">0.271</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mo>&lt;</mo><annotation encoding="application/x-tex">&lt;</annotation></semantics></math>0.5</td>
+<td style="text-align: right;">0.2294</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>15.4</mn></mrow><annotation encoding="application/x-tex">-15.4</annotation></semantics></math></td>
+</tr>
+<tr>
+<td style="text-align: right;">1.832、RANS</td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;">11.46</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>2.7</mn></mrow><annotation encoding="application/x-tex">-2.7</annotation></semantics></math></td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;"></td>
+<td style="text-align: right;">0.4340 / 0.6477</td>
+<td style="text-align: right;"><math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>25.8</mn></mrow><annotation encoding="application/x-tex">-25.8</annotation></semantics></math> / <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><mn>10.7</mn></mrow><annotation encoding="application/x-tex">+10.7</annotation></semantics></math></td>
+</tr>
+</tbody>
+</table>
+</div>
+<p>Eulerの<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>N</mi><mi>α</mi></mrow></msub><annotation encoding="application/x-tex">C_{N\alpha}</annotation></semantics></math>はどのMach数でも実測より低く、Eulerの<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>X</mi><mn>0</mn></mrow></msub><annotation encoding="application/x-tex">C_{X0}</annotation></semantics></math>は15.4から28.3 %低い。<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>N</mi><mi>α</mi></mrow></msub><annotation encoding="application/x-tex">C_{N\alpha}</annotation></semantics></math>では、差は八つのMach数のすべてで表の確率誤差より大きい（Mach 1.832ではわずかで、4.4 %に対し4 %。Mach 2.718では2.9 %に対し2 %で、確率誤差を50 %の幅と読めば標準偏差の約1個分である）。当てはめの統計量を超えることは、実測の不確かさを超えることを意味しない。<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>X</mi><mn>0</mn></mrow></msub><annotation encoding="application/x-tex">C_{X0}</annotation></semantics></math>では、Eulerの値は軸力の圧力成分にモデル化した摩擦、底面、フィンの後縁の項を足したものなので、比較はCFDだけでなくモデル化した項を含む。</p>
+<p>Eulerの差が数値誤差ではなくモデルの形によるものかを決められないのは、Eulerの係数に確立した数値の帯がないからである。描ける唯一の帯、Mach 2.375の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>N</mi><mi>α</mi></mrow></msub><annotation encoding="application/x-tex">C_{N\alpha}</annotation></semantics></math>の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>±</mi><mn>0.17</mn></mrow><annotation encoding="application/x-tex">\pm0.17</annotation></semantics></math> %は、旗の立つ3段の粗いGCIであってGCIではなく、二つの格子の間で観測した0.47 %の変化より小さい。その変化はそのMach数での<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>10.5</mn></mrow><annotation encoding="application/x-tex">-10.5</annotation></semantics></math> %の差の20分の1より小さいので、既存の段の間で観測した大きさの格子の変化では埋まらない。これはその4段についての観測であり、不確かさの見積もりではない。Eulerの結果はモデルの形の差（非粘性の流れ、モデル化した底面と摩擦の項）と整合するが、実証されていない。<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>X</mi><mn>0</mn></mrow></msub><annotation encoding="application/x-tex">C_{X0}</annotation></semantics></math>に帯を描かないのは、格子の研究がある軸力の圧力成分は、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>X</mi><mn>0</mn></mrow></msub><annotation encoding="application/x-tex">C_{X0}</annotation></semantics></math>の項の一つにすぎないからである。</p>
+<p>Mach 1.832の唯一のRANSの点は<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>N</mi><mi>α</mi></mrow></msub><annotation encoding="application/x-tex">C_{N\alpha}</annotation></semantics></math>で<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>2.7</mn></mrow><annotation encoding="application/x-tex">-2.7</annotation></semantics></math> %であり、表の4 %の内にあるが、上に述べた理由で一致の強い証拠ではない。その<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>X</mi><mn>0</mn></mrow></msub><annotation encoding="application/x-tex">C_{X0}</annotation></semantics></math>は底面の扱いによって<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>25.8</mn></mrow><annotation encoding="application/x-tex">-25.8</annotation></semantics></math> %か<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><mn>10.7</mn></mrow><annotation encoding="application/x-tex">+10.7</annotation></semantics></math> %であり、その比較の符号を決めるのは流れの解ではなく底面の項である。この点にも数値の帯はない。RANSの<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>N</mi><mi>α</mi></mrow></msub><annotation encoding="application/x-tex">C_{N\alpha}</annotation></semantics></math> 11.46は既存のRANSの計算の一つの格子の値であり、新しいRANSの族の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>2</mn><mo>∘</mo></msup><annotation encoding="application/x-tex">2^\circ</annotation></semantics></math>の解は収束しなかった（<a href="#sec:grid" class="iy-xref">3.3.1</a>節）。数値不確かさがないのでCFDの帯と実測の棒の重なりは判断できず、CFDと実測が不確かさの範囲で合うか、差が数値誤差で説明されるかについては、何も述べない。</p>
+<h4 id="sec:eulerrans"><span class="iy-secnum">3.4.2</span> Euler対RANS</h4>
+<p>Euler対RANSの七つの条件のどれにも判定はない。差は最大で<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><mn>54</mn></mrow><annotation encoding="application/x-tex">+54</annotation></semantics></math> %に達するにもかかわらずである。同じ条件でEulerとRANS-SAを比べることは二つのモデルの相互比較であり、その差は、二つの数値の帯の和を超えるときにだけモデルの差とみなせる。七つの条件を二つの帯と並べた。サンプル機体のMach 0.8と2、Basic FinnerのMach 1.832である（条件と差は付録<a href="#sec:appA" class="iy-xref">A</a>）。RANSの帯は、サンプル機体ではその調査のすべての3段が拒否されたので存在せず、Basic FinnerではMach 1.832でRANSのGCIが得られなかったので存在しない。Eulerの帯は、サンプル機体ではないか旗付きであり、Basic FinnerのMach 1.832では、唯一のEulerの格子研究がMach 2.375にあるので存在しない。したがって差の大きさは報告するが、モデルの差か数値誤差かは決めない。</p>
+<h5 id="副次的な所見spalartallmaras対sst">副次的な所見：Spalart–Allmaras対SST</h5>
+<p>製品の乱流モデルは一つだけなので、第6段階が求めるモデルの比較は製品の外で、SU2を直接動かした平板で行った。二つのモデルは細格子の表面摩擦で<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>0.79</mn></mrow><annotation encoding="application/x-tex">-0.79</annotation></semantics></math> %違い、この差はSST自身のGCI 1.14 %と分けられない（付録<a href="#sec:appA" class="iy-xref">A</a>）。これは二つのモデルの比較であり、妥当性確認ではない。</p>
+<h5 id="r4が示すこと">R4が示すこと</h5>
+<p>Basic FinnerのEulerの<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>N</mi><mi>α</mi></mrow></msub><annotation encoding="application/x-tex">C_{N\alpha}</annotation></semantics></math>は自由飛翔のデータより2.9から10.5 %低く、EulerとRANSの結果は最大<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><mn>54</mn></mrow><annotation encoding="application/x-tex">+54</annotation></semantics></math> %違い、二つの乱流モデルは表面摩擦で<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>0.79</mn></mrow><annotation encoding="application/x-tex">-0.79</annotation></semantics></math> %違う。どの場合も、差をモデルの差と呼ぶのに必要な数値の帯がないか旗付きであるか、差がその帯を超えない。数値の帯がなければ、手順の最後の段階は差の大きさを報告できても、どちらが誤りかは言えない。</p>
+<h2 id="sec:discussion"><span class="iy-secnum">4</span> 考察</h2>
+<h3 id="sec:answer"><span class="iy-secnum">4.1</span> 問いへの答え</h3>
+<p>問いは、CADから係数までを自動化したパイプラインが、NASAの手順で定量化した数値不確かさを付けて係数を返せるか、であった。現状のSU2の上のIgnisYeetについて、答えは、信頼性の低い広い帯一つを除き「まだできない」である。その帯は、サンプル機体で拒否も使えないともされていない唯一のGCI（Mach 2の法線力傾斜。二つの格子寸法の定義で10.6 %か16.3 %。R3）である。厳密解に対する検証で、製品の設定で動かしたSU2は主たる設定で非粘性の表面圧力と衝撃波角を0.2 %以内で再現する（R1）が、パイプライン自身の誤差は定量化されておらず（R2）、Basic FinnerにはEulerで信頼できるGCIがなく、RANSではGCIがない（R3）。その結果、妥当性確認とモデルの比較は差の大きさを報告するだけで、判定を下せない（R4）。</p>
+<h3 id="sec:causes"><span class="iy-secnum">4.2</span> 三つの障害とその順位</h3>
+<p>この答えの背後にある三つの障害を挙げる。それぞれがどれだけ一般的で、どれだけ恒久的かで順位をつける。第一の障害は製品のすべての族に及び（表<a href="#tab:growth" class="iy-xref">4</a>）、すべての解が収束しても残る。第二の障害は、現れたところでGCIを広げるのではなく、まるごと消す。第三の障害はどの帯も消さないが、ほかの二つを生き延びた帯が何を意味しうるかを限る。原因への帰属も順位も上の証拠に基づく本研究の判断で、別に測ったものではない（<a href="#sec:existence" class="iy-xref">4.3</a>節）。</p>
+<p><strong>第一に、メッシャが最大セル寸法を固定するので、製品の格子は相似に細かくできない。</strong> そのような族のGCIはすべて、正当化できない格子寸法の定義の選択に依存する。サンプル機体では二つの定義が一つの使えるGCIに10.6 %と16.3 %を与え、Basic Finnerではどちらの定義でも二つの3段の次数が合わない。</p>
+<p><strong>第二に、ソルバの収束は、入口の条件に対して十分に頑健ではない。</strong> Basic Finnerの<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>2</mn><mo>∘</mo></msup><annotation encoding="application/x-tex">2^\circ</annotation></semantics></math>のRANSの解はどの段でも停滞として記録され、リミットサイクルの旗が立っている。製品のRANSはMach 2.375ではリミットサイクルで停滞し、Mach 3.147では発散する。既存のサンプル機体のRANSの研究は、未収束と記録された解のために（Mach 2の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>4</mn><mo>∘</mo></msup><annotation encoding="application/x-tex">4^\circ</annotation></semantics></math>では判定の記録のない再計算のために）拒否される。そして層1の最細の段（Eulerの解）も収束しなかった。原因は確立していない。ランク数と領域分割への依存は試験しておらず、RANSの粗い段の判定の入れ替わりはビルドではなく実行の設定に従うが、設定のどの部分が原因かは確立していない。</p>
+<p><strong>第三に、厳密な答えなしに求めたGCIは条件付きである。</strong> 層0には、もっともらしい次数で、また1例では安定した窓で、真の誤差を過小評価するGCIがあった。押さえた上限は、誤差の最大8倍であった。</p>
+<h3 id="sec:existence"><span class="iy-secnum">4.3</span> 示したのは存在であり、原因ではない</h3>
+<p>本研究が示すのは各障害が存在することであり、ある障害が特定の失敗を起こしたことではない。存在は測った。製品のどの族も段ごとの増え方が相似な細分に届かず（表<a href="#tab:growth" class="iy-xref">4</a>）、入口の条件が拒否した解は未収束と記録されているか判定を持たず、層0には真の誤差を押さえないGCIがある。因果は試験していない。相似でないことがBasic Finnerの二つの3段を食い違わせること、あるいはサンプル機体の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>N</mi><mi>α</mi></mrow></msub><annotation encoding="application/x-tex">C_{N\alpha}</annotation></semantics></math>をMach 0.3と0.8で収束させないことは試験しておらず、解が停滞する理由も確立していない。<a href="#sec:answer" class="iy-xref">4.1</a>節の答えは測ったものであり、それを三つの障害に帰するのは、証拠についての本研究の読みである。</p>
+<h3 id="sec:implications"><span class="iy-secnum">4.4</span> 知見が示唆することと次の実験</h3>
+<p>知見は、この種のパイプラインが係数に帯を付けるのに必要な三つの変更を示唆する。どれも本研究では実装も試験もしておらず、実証された対策ではなく示唆である。</p>
+<ul>
+<li><p><strong>場の全体を細かくする制御：</strong>第一の障害は、製品のGCIには、遠方境界の半径を変えずに族を相似に細かくできるよう、最大セル寸法を含む場の全体を壁の寸法とともに細かくするメッシュの制御が必要であることを示唆する。これは製品の変更で、本研究の範囲外である。</p></li>
+<li><p><strong>収束の扱い：</strong>第二の障害は、収束の判定が、起きた未収束が停滞かリミットサイクルかを記録すべきことを示唆する。二つはチュートリアルの前提の異なる条件を満たさないからである（<a href="#sec:grid" class="iy-xref">3.3.1</a>節）。また残差の落ち幅は、密度だけではなく、入口の条件と同じく最も弱い方程式で測るべきことも示唆する。</p></li>
+<li><p><strong>入口の条件を通ったときだけ帯を報告すること：</strong>第二の障害は、前提を満たさない公表されたRANSの格子研究と合わせて、パイプラインは各段が入口の条件を通った族にだけGCIを付け、そうでないときは帯がないと明記すべきことを示唆する。第三の障害は、その場合でも帯を、次数と振動収束の旗を付けた条件付きの見積もりとして示すべきことを示唆する。層0では旗は一部の失敗を見逃した。</p></li>
+</ul>
+<p>決め手となる次の実験は、第一の障害と<a href="#sec:existence" class="iy-xref">4.3</a>節から導かれる。場の全体を細かくする大域的な細分の制御をメッシャに与え、本研究の算例で相似な族を作り、そのGCIが入口の条件を通るかを試験することである。これにより第一の障害は、観測された性質から試験された原因になるか、原因から除かれる。第二の障害については、停滞がランク数と領域分割に依存するかどうかが、なお試験すべきこととして残る。</p>
+<h3 id="sec:limits"><span class="iy-secnum">4.5</span> 本研究の限界</h3>
+<p>層0が検証するのは製品の設定で動かしたSU2であり、製品のパイプラインではない。層流平板が検証するのは製品が書かない設定であり、乱流平板のデータは製品の設定に近いが同一ではない設定から得たものである。2次元での接合点とエントロピーの所見は、3次元のメッシュでは試験していない。層1の最細の段が収束しなかったので、パイプラインの誤差は評価していない。製品の乱流モデルはSpalart–Allmarasだけなので、SSTとの比較は製品を通さずSU2を直接動かし、自作の格子の平板で行った。SSTはそこでは1次であり、二つの帯の一方には旗が立つ。妥当性確認は一つの実測データ（DREV-TM-9703）に基づき、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>X</mi><mn>0</mn></mrow></msub><annotation encoding="application/x-tex">C_{X0}</annotation></semantics></math>にはCFDの帯がないので、実測と重なるかどうかは判断できない。公表された二つの検証の参照（NPARCの10<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>∘</mo></msup><annotation encoding="application/x-tex">^\circ</annotation></semantics></math>の円錐の表と<span class="citation" data-cites="celik2008">Celik et al. (2008)</span>の表1の一つの欄）は、それぞれ内部で整合しない値を含む。本研究が参照値を計算し、独立な表と照合するのはそのためであり、どちらかへの批判ではない。</p>
+<h2 id="sec:conclusions"><span class="iy-secnum">5</span> 結論</h2>
+<p>CADから係数までを自動化したCFDツールは、利用者がその信頼性を判断できない係数を返す。本研究は、NASA WIND/NPARCの手順をSU2の上のIgnisYeetに三つの層で適用し、その信頼性を定量化できるかを問うた。厳密解に対する検証で、製品の数値設定で動かしたSU2は主たる設定で非粘性の表面圧力と衝撃波角を0.2 %以内で再現するが、鎖の全体の不確かさは定量化されなかった。パイプライン自身の誤差は測れず、サンプル機体で拒否も使えないともされていない唯一のGCIはMach 2の法線力傾斜のもので、格子寸法の定義により10.6 %か16.3 %（後者は旗付き）であり、Basic Finnerには信頼できるGCIがない。そのため自由飛翔のデータとの比較は、Euler対RANSのどの比較とも同じく、差の大きさを報告するだけで判定を下さない。したがって、このパイプラインについての答えは、その一つの帯を除いて「まだできない」である。知見は、本研究の判断では三つの障害を指し示す。メッシャが相似に細かくできない格子、収束の入口の条件を通らない解、厳密な答えのないGCIが条件付きであることであり、いずれも存在は示したが、特定の失敗を起こしたことは示していない。厳密な答えが分かるところでは、GCIが真の誤差を押さえたのは非粘性の7例のうち5例、層流平板の5例のうち2例だけであり、次数の旗も窓の安定性も、二つの失敗の両方は検出しない。試験はしていないが、知見は、このようなパイプラインが係数に定量化した不確かさを付けるには、場の全体を細かくする制御、停滞とリミットサイクルを区別する収束の判定、入口の条件を通ったときだけの帯の報告が要ることを示唆する。</p>
+<h2 class="unnumbered" id="データの入手">データの入手</h2>
+<p>コード、結果、図は、IgnisYeetのリポジトリの<code>research/IY-TR-2026-01/</code>にある。結果ファイルは<code>research/IY-TR-2026-01/nasa_vv/results/</code>、図は<code>research/IY-TR-2026-01/nasa_vv/figures/</code>、コードは<code>research/IY-TR-2026-01/nasa_vv/</code>（厳密解は<code>exact.py</code>、GCIの手順は<code>gci.py</code>、算例は<code>cases/</code>、試験は<code>tests/</code>）、両論文のソースは<code>research/IY-TR-2026-01/paper/</code>に置いてある。本論文の数値は、ソースの注記が別のファイルを名指す場合を除き、すべてこれらの結果ファイルと図から得ている。本研究のために行った製品のCFDの計算は、<a href="#sec:method" class="iy-xref">2</a>節に記した一つの例外を除き、IgnisYeet v0.4.0とSU2 8.3.0を使った。要約した表や格子ごとの値を含む結果の全体は、ウェブ版の報告<code>research/IY-TR-2026-01/nasa_vv/report/ja/report.md</code>にある。</p>
+<h2 id="references">参考文献</h2>
+<div id="refs" class="references csl-bib-body hanging-indent" role="list">
+<div id="ref-aiaa1998" class="csl-entry" role="listitem">
+American Institute of Aeronautics and Astronautics. 1998. <em>Guide for the Verification and Validation of Computational Fluid Dynamics Simulations</em>. AIAA g-077-1998. American Institute of Aeronautics; Astronautics. <a href="https://doi.org/10.2514/4.472855">https://doi.org/10.2514/4.472855</a>.
+</div>
+<div id="ref-asme2009" class="csl-entry" role="listitem">
+American Society of Mechanical Engineers. 2009. <em>Standard for Verification and Validation in Computational Fluid Dynamics and Heat Transfer</em>. American Society of Mechanical Engineers.
+</div>
+<div id="ref-ames1953" class="csl-entry" role="listitem">
+Ames Research Staff. 1953. <em>Equations, Tables, and Charts for Compressible Flow</em>. Report No. 1135. National Advisory Committee for Aeronautics. <a href="https://ntrs.nasa.gov/citations/19930091059">https://ntrs.nasa.gov/citations/19930091059</a>.
+</div>
+<div id="ref-barrowman1967" class="csl-entry" role="listitem">
+Barrowman, James S. 1967. <span>“The Practical Calculation of the Aerodynamic Characteristics of Slender Finned Vehicles.”</span> Master’s thesis, Catholic University of America. <a href="https://ntrs.nasa.gov/citations/20010047838">https://ntrs.nasa.gov/citations/20010047838</a>.
+</div>
+<div id="ref-blake1998" class="csl-entry" role="listitem">
+Blake, William B. 1998. <em>Missile <span>DATCOM</span>: User’s Manual – 1997 <span>FORTRAN</span> 90 Revision</em>. AFRL-VA-WP-TR-1998-3009. Air Force Research Laboratory, Air Vehicles Directorate.
+</div>
+<div id="ref-blasius1908" class="csl-entry" role="listitem">
+Blasius, Heinrich. 1908. <span>“Grenzschichten in Fl<span>ü</span>ssigkeiten Mit Kleiner Reibung.”</span> <em>Zeitschrift f<span>ü</span>r Mathematik Und Physik</em> 56: 1–37.
+</div>
+<div id="ref-celik2008" class="csl-entry" role="listitem">
+Celik, Ismail B., Urmila Ghia, Patrick J. Roache, Christopher J. Freitas, H. Coleman, and P. E. Raad. 2008. <span>“Procedure for Estimation and Reporting of Uncertainty Due to Discretization in <span>CFD</span> Applications.”</span> <em>Journal of Fluids Engineering</em> 130 (7): 078001. <a href="https://doi.org/10.1115/1.2960953">https://doi.org/10.1115/1.2960953</a>.
+</div>
+<div id="ref-dupuis1997" class="csl-entry" role="listitem">
+Dupuis, A. D., and W. Hathaway. 1997. <em>Aeroballistic Range Tests of the Basic Finner Reference Projectile at Supersonic Velocities</em>. Technical Memorandum DREV-TM-9703. Defence Research Establishment Valcartier.
+</div>
+<div id="ref-eca2014" class="csl-entry" role="listitem">
+Eça, L., and M. Hoekstra. 2014. <span>“A Procedure for the Estimation of the Numerical Uncertainty of <span>CFD</span> Calculations Based on Grid Refinement Studies.”</span> <em>Journal of Computational Physics</em> 262: 104–30. <a href="https://doi.org/10.1016/j.jcp.2014.01.006">https://doi.org/10.1016/j.jcp.2014.01.006</a>.
+</div>
+<div id="ref-economon2016" class="csl-entry" role="listitem">
+Economon, Thomas D., Francisco Palacios, Sean R. Copeland, Trent W. Lukaczyk, and Juan J. Alonso. 2016. <span>“<span>SU2</span>: An Open-Source Suite for Multiphysics Simulation and Design.”</span> <em>AIAA Journal</em> 54 (3): 828–46. <a href="https://doi.org/10.2514/1.J053813">https://doi.org/10.2514/1.J053813</a>.
+</div>
+<div id="ref-nparc_cone10" class="csl-entry" role="listitem">
+NASA Glenn Research Center. n.d.a. <em>10 Degree Cone at <span>Mach</span> 2.35</em>. NPARC Alliance Verification and Validation archive. <a href="https://www.grc.nasa.gov/www/wind/valid/cone10/cone10.html">https://www.grc.nasa.gov/www/wind/valid/cone10/cone10.html</a>.
+</div>
+<div id="ref-nparc_spatial" class="csl-entry" role="listitem">
+NASA Glenn Research Center. n.d.b. <em>Examining Spatial (Grid) Convergence</em>. NPARC Alliance Verification and Validation archive, tutorial page. <a href="https://www.grc.nasa.gov/www/wind/valid/tutorial/spatconv.html">https://www.grc.nasa.gov/www/wind/valid/tutorial/spatconv.html</a>.
+</div>
+<div id="ref-nparc_archive" class="csl-entry" role="listitem">
+NASA Glenn Research Center. n.d.c. <em><span>NPARC</span> Verification and Validation Web Site Archives Page</em>. <a href="https://www.grc.nasa.gov/www/wind/valid/archive.html">https://www.grc.nasa.gov/www/wind/valid/archive.html</a>.
+</div>
+<div id="ref-nparc_wedge" class="csl-entry" role="listitem">
+NASA Glenn Research Center. n.d.d. <em>Oblique Shock on a 15 Degree Wedge at <span>Mach</span> 2.5</em>. NPARC Alliance Verification and Validation archive. <a href="https://www.grc.nasa.gov/www/wind/valid/wedge/wedge.html">https://www.grc.nasa.gov/www/wind/valid/wedge/wedge.html</a>.
+</div>
+<div id="ref-nparc_pm15" class="csl-entry" role="listitem">
+NASA Glenn Research Center. n.d.e. <em>Prandtl-Meyer Expansion</em>. NPARC Alliance Verification and Validation archive. <a href="https://www.grc.nasa.gov/www/wind/valid/pm15/pm15.html">https://www.grc.nasa.gov/www/wind/valid/pm15/pm15.html</a>.
+</div>
+<div id="ref-nparc_tutorial" class="csl-entry" role="listitem">
+NASA Glenn Research Center. n.d.f. <em>Tutorial on <span>CFD</span> Verification &amp; Validation</em>. NPARC Alliance Verification and Validation archive. <a href="https://www.grc.nasa.gov/www/wind/valid/tutorial/tutorial.html">https://www.grc.nasa.gov/www/wind/valid/tutorial/tutorial.html</a>.
+</div>
+<div id="ref-tmr" class="csl-entry" role="listitem">
+NASA Langley Research Center. n.d. <em><span>NASA</span> Turbulence Modeling Resource</em>. <a href="https://turbmodels.larc.nasa.gov/">https://turbmodels.larc.nasa.gov/</a>.
+</div>
+<div id="ref-niskanen2009" class="csl-entry" role="listitem">
+Niskanen, Sampo. 2009. <span>“Development of an Open Source Model Rocket Simulation Software.”</span> Master’s thesis, Helsinki University of Technology. <a href="https://openrocket.info/documentation.html">https://openrocket.info/documentation.html</a>.
+</div>
+<div id="ref-oberkampf2010" class="csl-entry" role="listitem">
+Oberkampf, William L., and Christopher J. Roy. 2010. <em>Verification and Validation in Scientific Computing</em>. Cambridge University Press. <a href="https://doi.org/10.1017/CBO9780511760396">https://doi.org/10.1017/CBO9780511760396</a>.
+</div>
+<div id="ref-roache1998" class="csl-entry" role="listitem">
+Roache, Patrick J. 1998. <em>Verification and Validation in Computational Science and Engineering</em>. Hermosa Publishers.
+</div>
+<div id="ref-roy2005" class="csl-entry" role="listitem">
+Roy, Christopher J. 2005. <span>“Review of Code and Solution Verification Procedures for Computational Simulation.”</span> <em>Journal of Computational Physics</em> 205 (1): 131–56. <a href="https://doi.org/10.1016/j.jcp.2004.10.036">https://doi.org/10.1016/j.jcp.2004.10.036</a>.
+</div>
+<div id="ref-schlichting2017" class="csl-entry" role="listitem">
+Schlichting, Hermann, and Klaus Gersten. 2017. <em>Boundary-Layer Theory</em>. 9th ed. Springer. <a href="https://doi.org/10.1007/978-3-662-52919-5">https://doi.org/10.1007/978-3-662-52919-5</a>.
+</div>
+<div id="ref-sims1964" class="csl-entry" role="listitem">
+Sims, J. L. 1964. <em>Tables for Supersonic Flow Around Right Circular Cones at Zero Angle of Attack</em>. NASA Special Publication SP-3004. National Aeronautics; Space Administration. <a href="https://ntrs.nasa.gov/citations/19640009035">https://ntrs.nasa.gov/citations/19640009035</a>.
+</div>
+<div id="ref-spalart1992" class="csl-entry" role="listitem">
+Spalart, P. R., and S. R. Allmaras. 1992. <span>“A One-Equation Turbulence Model for Aerodynamic Flows.”</span> <em>30th Aerospace Sciences Meeting and Exhibit</em>. <a href="https://doi.org/10.2514/6.1992-439">https://doi.org/10.2514/6.1992-439</a>.
+</div>
+</div>
+
+<h2 id="sec:appA"><span class="iy-secnum">A</span> GCIの手順、格子、副次的な結果</h2>
+<h5 id="gciの手順の受け入れ試験">GCIの手順の受け入れ試験</h5>
+<p>実装は、チュートリアルの例題<span class="citation" data-cites="nparc_spatial">(NASA Glenn Research Center n.d.b)</span>（3段、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">r=2</annotation></semantics></math>）を再現する。チュートリアル自身のプログラムが印刷した出力、すなわち次数、外挿値、二つのGCI、漸近域の比に、相対<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mi>−</mi><mn>4</mn></mrow></msup><annotation encoding="application/x-tex">10^{-4}</annotation></semantics></math>で合う。そのプログラムは単精度なので、5桁目が倍精度の計算と食い違う。試験が併せて固定している倍精度の値は本研究自身の数値であり、回帰の検査であって、独立に公表された参照ではない。この例題は<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>r</mi><mn>21</mn></msub><mo>=</mo><msub><mi>r</mi><mn>32</mn></msub></mrow><annotation encoding="application/x-tex">r_{21}=r_{32}</annotation></semantics></math>なので、細分比が変わる経路は、細分比の等しくない<span class="citation" data-cites="celik2008">Celik et al. (2008)</span>の表1の単調な2列で、その表が印刷する精度まで試験する。その表の1つの欄、2列目の外挿の相対誤差は、同じ表の他の印刷値から計算し直した値と異なり、この欄は試験に使わない。表の3列目は振動収束であり、実装は表の値を再現せず、<a href="#sec:gci" class="iy-xref">2.2</a>節の規則で拒否する。本研究の前の製品自身の試験には、時間積分器の次数の試験はあるが、メッシュ収束の次数を測るものはなく、CFDのソルバは継続的インテグレーションの試験では実行されない。</p>
+<h5 id="層0">層0</h5>
+<p>製品から写した数値設定は、対流項の離散化、再構成、制限関数、勾配の求め方、CFLの制御、線型ソルバ、打ち切りの条件を含み、気体のモデルは製品のものである。格子は物体適合の構造格子で、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>65</mn><mo>×</mo><mn>49</mn></mrow><annotation encoding="application/x-tex">65\times49</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>129</mn><mo>×</mo><mn>97</mn></mrow><annotation encoding="application/x-tex">129\times97</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>257</mn><mo>×</mo><mn>193</mn></mrow><annotation encoding="application/x-tex">257\times193</annotation></semantics></math>節点の3段である（平板は<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>85</mn><mo>×</mo><mn>49</mn></mrow><annotation encoding="application/x-tex">85\times49</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>169</mn><mo>×</mo><mn>97</mn></mrow><annotation encoding="application/x-tex">169\times97</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>337</mn><mo>×</mo><mn>193</mn></mrow><annotation encoding="application/x-tex">337\times193</annotation></semantics></math>で、単位長さあたりの<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mo>=</mo><msup><mn>10</mn><mn>5</mn></msup></mrow><annotation encoding="application/x-tex">Re=10^5</annotation></semantics></math>）。ちょうど入れ子なので、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">r=2</annotation></semantics></math>がちょうど成り立つ。超音速の算例では入口、出口、上の境界を遠方境界とし、波はすべて出口から出る。上の境界に沿って、12回の計算のそれぞれで<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">|</mo><mi>p</mi><mi>/</mi><msub><mi>p</mi><mi>∞</mi></msub><mo>−</mo><mn>1</mn><mo stretchy="false" form="prefix">|</mo><mo>≤</mo><mn>7.3</mn><mo>×</mo><msup><mn>10</mn><mrow><mi>−</mi><mn>10</mn></mrow></msup></mrow><annotation encoding="application/x-tex">|p/p_\infty-1|\le7.3\times10^{-10}</annotation></semantics></math>である。計算は、密度の残差が<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mi>−</mi><mn>14</mn></mrow></msup><annotation encoding="application/x-tex">10^{-14}</annotation></semantics></math>になるか反復回数の上限に達するまで回す。収束の尺度として示すのは、密度の残差の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mrow><mi mathvariant="normal">log</mi><mo>&#8289;</mo></mrow><mn>10</mn></msub><annotation encoding="application/x-tex">\log_{10}</annotation></semantics></math>の最大値と最終値の差（残差の落ち幅）である。主たる設定での最細格子の誤差は、楔の壁面圧力で0.0059 %、その衝撃波角で0.037 %、円錐の壁面圧力係数で<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>0.188</mn></mrow><annotation encoding="application/x-tex">-0.188</annotation></semantics></math> %、膨張の壁面圧力で0.0097 %であり、Eulerの12回の計算の反復は132から230回であった。製品の設定と違うのは、境界の割り当てと、円錐の軸対称の切り替えだけである。製品はRANSの算例を1次精度の段階で始めて2次精度で再開するが、層0の平板は2次精度で冷たい状態から始めた。定常解がこの経路に依存しないことは、試験していない。</p>
+<h5 id="層0壁面の量接合点質量">層0：壁面の量、接合点、質量</h5>
+<p>膨張では3段の格子が、厳密な3.2368に対し壁面Mach数3.1214、3.1216、3.1218を与える。誤差は<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>3.57</mn></mrow><annotation encoding="application/x-tex">-3.57</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>3.56</mn></mrow><annotation encoding="application/x-tex">-3.56</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>3.55</mn></mrow><annotation encoding="application/x-tex">-3.55</annotation></semantics></math> %で、最細格子の残差の落ち幅は13.1桁である。三つの算例のいずれでも壁に沿ったエントロピーは厳密な値を上回り、壁から10行離れた位置と、角や先端の上流では厳密である。これは、角、前縁、先端で生じたエントロピーが壁面の流線に沿って運ばれることと整合するが、解釈であって証明ではない。壁面圧力から得る量には同程度の誤差が現れない。壁面のエントロピー比<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>s</mi><mi>/</mi><msub><mi>s</mi><mi>∞</mi></msub></mrow><annotation encoding="application/x-tex">s/s_\infty</annotation></semantics></math>は、膨張では3段の格子で約7.8 %の一定の偏りを持つ。楔では格子によらない2.7 %の超過がある（壁は3段とも1.058で、衝撃波背後の厳密な値1.030に対する超過である。1.030は細かい2段では壁から10行離れた所にも現れる）。円錐では超過が格子とともに減る（表面の窓で3.76、1.98、1.06 %）。軸を対称境界にした円錐では、先端の節点が両方の境界に属し（Mach 0、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mn>2.76</mn><mspace width="0.167em"></mspace><msub><mi>p</mi><mi>∞</mi></msub></mrow><annotation encoding="application/x-tex">p=2.76\,p_\infty</annotation></semantics></math>。一つの壁の計算では正則で、Mach 2.23、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mn>1.17</mn><mspace width="0.167em"></mspace><msub><mi>p</mi><mi>∞</mi></msub></mrow><annotation encoding="application/x-tex">p=1.17\,p_\infty</annotation></semantics></math>）、最細格子の誤差は<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>p</mi></msub><annotation encoding="application/x-tex">C_p</annotation></semantics></math>で<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>0.19</mn></mrow><annotation encoding="application/x-tex">-0.19</annotation></semantics></math> %から<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>0.75</mn></mrow><annotation encoding="application/x-tex">-0.75</annotation></semantics></math> %に、壁面Mach数で<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>0.80</mn></mrow><annotation encoding="application/x-tex">-0.80</annotation></semantics></math> %から<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>2.98</mn></mrow><annotation encoding="application/x-tex">-2.98</annotation></semantics></math> %に増える。その計算の誤差の大部分は接合点によるものである。膨張では、下の境界を角の位置で分けると角の節点が停滞点になり、密度の残差は20000回の反復の間<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>1.5</mn></mrow><annotation encoding="application/x-tex">-1.5</annotation></semantics></math>付近に留まった。質量はチュートリアルの求めるとおり保存される（相対不均衡は平面の算例で<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mi>−</mi><mn>9</mn></mrow></msup><annotation encoding="application/x-tex">10^{-9}</annotation></semantics></math>以下、軸対称の円錐で<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4.3</mn><mo>×</mo><msup><mn>10</mn><mrow><mi>−</mi><mn>5</mn></mrow></msup></mrow><annotation encoding="application/x-tex">4.3\times10^{-5}</annotation></semantics></math>まで減り、チュートリアルの<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mi>−</mi><mn>3</mn></mrow></msup><annotation encoding="application/x-tex">10^{-3}</annotation></semantics></math>を下回る）。これが試すのは流束の集計で、離散化誤差ではない。</p>
+<h5 id="層0gciの上限の詳細">層0：GCIの上限の詳細</h5>
+<p>軸を対称境界にした円錐では、上限は0.71 %に対し0.75 %で破れる。押さえた行でのGCIの真の誤差に対する比は、膨張の壁面圧力で約8、円錐の壁面Mach数で3.1、軸を対称境界にした円錐の壁面Mach数で1.5である。層流平板では3段の格子の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>f</mi></msub><annotation encoding="application/x-tex">C_f</annotation></semantics></math>の誤差は<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>1.95</mn></mrow><annotation encoding="application/x-tex">-1.95</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>0.71</mn></mrow><annotation encoding="application/x-tex">-0.71</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><mn>0.008</mn></mrow><annotation encoding="application/x-tex">+0.008</annotation></semantics></math> %であり、外挿のあとに残る<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><mn>0.97</mn></mrow><annotation encoding="application/x-tex">+0.97</annotation></semantics></math> %をGCIは説明できない。Blasius解との差には、縁の速度、圧縮性、収束を示していない領域、収束しない前縁の停滞点、そしてスキームの次数を下流へ運ばれる前縁の誤差から分けられない次数が混ざっている。それぞれ一部は帰属できるが、どれも完全には定量化していない（詳細はウェブ版の報告）。</p>
+<h5 id="sec:cone10">NPARCの10<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>∘</mo></msup><annotation encoding="application/x-tex">^\circ</annotation></semantics></math>の円錐の表</h5>
+<p>層0と層1の円錐は、NPARCアーカイブのMach 2.35の10<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mi></mi><mo>∘</mo></msup><annotation encoding="application/x-tex">^\circ</annotation></semantics></math>の円錐<span class="citation" data-cites="nparc_cone10">(NASA Glenn Research Center n.d.a)</span>である。その表面Mach数2.1469は、本研究で計算したTaylor–Maccoll解の値と約<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>3</mn><mo>×</mo><msup><mn>10</mn><mrow><mi>−</mi><mn>3</mn></mrow></msup></mrow><annotation encoding="application/x-tex">3\times10^{-3}</annotation></semantics></math> %で合う。しかし衝撃波角（<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>26.7367</mn><mo>∘</mo></msup><annotation encoding="application/x-tex">26.7367^\circ</annotation></semantics></math>に対し<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>27.1843</mn><mo>∘</mo></msup><annotation encoding="application/x-tex">27.1843^\circ</annotation></semantics></math>）は合わず、圧力、温度、密度の比も合わない。その衝撃波角は、同じ表の表面Mach数とも印刷された比とも整合しない。さらに三つの資料、すなわち円錐の数表<span class="citation" data-cites="sims1964">(Sims 1964)</span>、<span class="citation" data-cites="ames1953">Ames Research Staff (1953)</span>の図、本研究の実装から部分的にしか独立していない製品内の別のTaylor–Maccoll解の実装が、計算した角を支持し、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>27.18</mn><mo>∘</mo></msup><annotation encoding="application/x-tex">27.18^\circ</annotation></semantics></math>を支持する資料はない（値はウェブ版の報告）。これらは同じ理論に立つので、試験するのは本研究の実装とアーカイブの数値であり、理論ではない。</p>
+<h5 id="層1">層1</h5>
+<p>物体は底面半径0.05 m、円錐の長さ0.2836 mで、0.5836 mまでの円筒と、その後ろの製品のEuler用の尾部整形が続く。層0は矩形の領域の中の裸の円錐で、円筒も尾部もない。3段の節点数は28887、45258、75796（セル数132328、209052、350868）である。製品は迎え角一つだけでは受け付けないので各段で<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>4</mn><mo>∘</mo></msup><annotation encoding="application/x-tex">4^\circ</annotation></semantics></math>も解くが、使うのも収束を判断するのも迎え角0の解だけである。すべての計算は本研究のほかの計算と同じ製品のビルドを使い、一つのノードで走らせた。3段は8、10、14ランクで走らせた。ランク数は領域分割も決めるが、細かい段の挙動がそれに依存するかどうかは試験していない。円錐の半径の1 %以内にある壁の節点の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>p</mi></msub><annotation encoding="application/x-tex">C_p</annotation></semantics></math>を、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mi>/</mi><msub><mi>L</mi><mrow><mi mathvariant="normal">c</mi><mi mathvariant="normal">o</mi><mi mathvariant="normal">n</mi><mi mathvariant="normal">e</mi></mrow></msub></mrow><annotation encoding="application/x-tex">x/L_\mathrm{cone}</annotation></semantics></math>の0.2から0.9まで幅0.1の区間で平均する。ほかの要約（0.2から0.9の平均と、先端に最も近い区間）には、層0に対応する量がない。窓での差は粗から中の段で2.0分の1に減り、受け入れられなかった細かい段でさらに2.9分の1に減る。誤差は先端の近くで最も大きく（先端に最も近い区間で<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>10.19</mn></mrow><annotation encoding="application/x-tex">-10.19</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>6.59</mn></mrow><annotation encoding="application/x-tex">-6.59</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>4.17</mn></mrow><annotation encoding="application/x-tex">-4.17</annotation></semantics></math> %）、層0と同じく下流へ向かって減る。層0と層1は、鎖のほかに、メッシュの種類、領域、円筒と尾部、一様流の状態、壁面<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>p</mi></msub><annotation encoding="application/x-tex">C_p</annotation></semantics></math>の取り出し方、そしてセル単位で測った先端に対する窓の位置が違う。円錐だけの衝撃波角と軸力は、層1では比べていない。層1の一様流は製品の発射高度の状態（20 m、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mn>101085</mn></mrow><annotation encoding="application/x-tex">p=101085</annotation></semantics></math> Pa、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mo>=</mo><mn>288.02</mn></mrow><annotation encoding="application/x-tex">T=288.02</annotation></semantics></math> K）、層0は<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>p</mi><mo>=</mo><mn>101325</mn></mrow><annotation encoding="application/x-tex">p=101325</annotation></semantics></math> Pa、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>T</mi><mo>=</mo><mn>288.15</mn></mrow><annotation encoding="application/x-tex">T=288.15</annotation></semantics></math> Kで、Mach数と<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mi>γ</mi><annotation encoding="application/x-tex">\gamma</annotation></semantics></math>は同じである。ランナーがSU2を止めるとき、最後の表面の出力が不完全になることがある（完全な値の数はウェブ版の報告にある）。細かい段で使ったVTKのファイルは200反復目の周期的な書き出しで、履歴は210反復まであるので、最後の反復の完全な圧力の出力はない。両方のファイルが持つ円錐の壁の213節点では、二つの状態の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>p</mi></msub><annotation encoding="application/x-tex">C_p</annotation></semantics></math>の差は平均の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>p</mi></msub><annotation encoding="application/x-tex">C_p</annotation></semantics></math>に対して<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>6</mn><mo>×</mo><msup><mn>10</mn><mrow><mi>−</mi><mn>5</mn></mrow></msup></mrow><annotation encoding="application/x-tex">6\times10^{-5}</annotation></semantics></math>であり、どの入口の条件も変えない。使った圧力係数の欄は、どの段でも完全だった。</p>
+<h5 id="層2格子">層2：格子</h5>
+<p>サンプル機体のEulerの族は、壁とフィンのセル寸法が3.92/1.96、2.80/1.40、2.00/1.00 mm、節点数が98151、170830、302918（セル数458640、798534、1416454）である。密度の残差は、迎え角0で3.2から10.9桁、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>4</mn><mo>∘</mo></msup><annotation encoding="application/x-tex">4^\circ</annotation></semantics></math>で6.6から8.7桁落ちた。メッシュは対称面で鏡映しているので、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><msup><mn>4</mn><mo>∘</mo></msup></mrow><annotation encoding="application/x-tex">-4^\circ</annotation></semantics></math>は<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><msup><mn>4</mn><mo>∘</mo></msup></mrow><annotation encoding="application/x-tex">+4^\circ</annotation></semantics></math>の厳密な鏡像であり、解かない。<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mrow><mi>N</mi><mi>α</mi></mrow></msub><annotation encoding="application/x-tex">C_{N\alpha}</annotation></semantics></math>は<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><msup><mn>4</mn><mo>∘</mo></msup></mrow><annotation encoding="application/x-tex">+4^\circ</annotation></semantics></math>の解から作り、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>x</mi><mrow><mi>c</mi><mi>p</mi></mrow></msub><annotation encoding="application/x-tex">x_{cp}</annotation></semantics></math>は組み合わせた行のものである。鏡映なしで作った中の段で<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><msup><mn>4</mn><mo>∘</mo></msup></mrow><annotation encoding="application/x-tex">+4^\circ</annotation></semantics></math>と<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><msup><mn>4</mn><mo>∘</mo></msup></mrow><annotation encoding="application/x-tex">-4^\circ</annotation></semantics></math>の両方を解いたものは、反対称性の検査だけに使い、族には入れない。既存のBasic FinnerのEulerの4段は、345736から1891652セルである。Basic FinnerのRANSの族は、フィンの寸法が壁の寸法と同じで、節点数が328364、533985、926390（セル数813498、1265515、2145093）である。<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><msup><mn>2</mn><mo>∘</mo></msup></mrow><annotation encoding="application/x-tex">-2^\circ</annotation></semantics></math>も鏡映の設定で解くが、使わない。当初計画した壁の寸法より小さい（約0.22倍の）フィンの寸法は使えない。RANSとCADの表面では、試したすべてのビルド（粗と中の段。細かい段は試していない）で、製品がメッシュ生成のエラー（メッシャのメモリ破損による中止）で止まる。原因が製品の入力かgmshかは切り分けておらず、製品は変更していない。中の段は既存のRANSのBasic Finnerの計算と壁とフィンの寸法が同じだが、メッシュは異なる（節点が5.3 %、セルが3.4 %少ない）。その計算に最も近い段であって、その計算そのものではない。</p>
+<h5 id="層2格子収束の副次的な結果">層2：格子収束の副次的な結果</h5>
+<p>サンプル機体のMach 2の法線力傾斜では、二つの格子寸法の基準は5.8ポイント違う。Basic FinnerのEulerの研究では、軸力の圧力成分について粗い側の3段が次数1.3と0.5（二つの定義）を与え、細かい側は3.0と1.6を与える。<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>4</mn><mo>∘</mo></msup><annotation encoding="application/x-tex">4^\circ</annotation></semantics></math>の法線力では、0.52と0.07に対して2.24と1.15である。傾斜を作る<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>2</mn><mo>∘</mo></msup><annotation encoding="application/x-tex">2^\circ</annotation></semantics></math>の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>N</mi></msub><annotation encoding="application/x-tex">C_N</annotation></semantics></math>は、粗い側の3段で旗の立つ次数（8.45と4.33）を持ち、細かい側の3段では収束しない。圧力中心の位置はどの3段でも振動収束か収束しない（平らな底面の扱いでは、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>2</mn><mo>∘</mo></msup><annotation encoding="application/x-tex">2^\circ</annotation></semantics></math>と<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>4</mn><mo>∘</mo></msup><annotation encoding="application/x-tex">4^\circ</annotation></semantics></math>の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>N</mi></msub><annotation encoding="application/x-tex">C_N</annotation></semantics></math>と<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>x</mi><mrow><mi>c</mi><mi>p</mi></mrow></msub><annotation encoding="application/x-tex">x_{cp}</annotation></semantics></math>も同様である）。<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>±</mi><mn>0.17</mn></mrow><annotation encoding="application/x-tex">\pm0.17</annotation></semantics></math> %の感度は、二つの定義で0.167から0.173 %である。Basic FinnerのRANSの族では、法線力傾斜と<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>x</mi><mrow><mi>c</mi><mi>p</mi></mrow></msub><annotation encoding="application/x-tex">x_{cp}</annotation></semantics></math>は<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>2</mn><mo>∘</mo></msup><annotation encoding="application/x-tex">2^\circ</annotation></semantics></math>の解のために、軸力とその成分は最細の迎え角0の解のために拒否される。サンプル機体についての既存のRANSの格子研究は、Mach 0.8と2で壁の寸法8、4.8、3 mmを持つ。その族が拒否されるのは、粗いか中の段の解が未収束と記録されているか、Mach 2の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>4</mn><mo>∘</mo></msup><annotation encoding="application/x-tex">4^\circ</annotation></semantics></math>では、細かい段の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><msup><mn>4</mn><mo>∘</mo></msup></mrow><annotation encoding="application/x-tex">-4^\circ</annotation></semantics></math>の解が反復回数を固定した再計算で、判定も残差の落ち幅も記録されていないからである。</p>
+<h5 id="層2反復誤差と一貫性">層2：反復誤差と一貫性</h5>
+<p>Mach 2の法線力傾斜の最細格子での反復誤差は<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>3.3</mn><mo>×</mo><msup><mn>10</mn><mrow><mi>−</mi><mn>4</mn></mrow></msup></mrow><annotation encoding="application/x-tex">3.3\times10^{-4}</annotation></semantics></math> %で、GCIの10.6 %と比べられ、密度の残差は8.6桁落ちていた。28行では、対応するGCIが拒否、振動収束、旗付き、使えないのいずれかなので比がない。反復誤差は分かっていても比べられない。平板の5行は1を超えるが、参考にとどまる。これらは平板の抗力の反復誤差（Mach 0.2で0.12から1.9 %）を表面摩擦の格子の不確かさ（0.038 %）という別の量と比べており、表面摩擦のGCIを無効にしない。鏡映の対称性なしで一貫性の検査が不合格になるところでは、偶関数部分は同じメッシュの<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><msub><mi>C</mi><mi>N</mi></msub><mo stretchy="false" form="prefix">(</mo><mn>0</mn><mo stretchy="false" form="postfix">)</mo></mrow><annotation encoding="application/x-tex">C_N(0)</annotation></semantics></math>と同じ大きさである。サンプル機体のいくつかの解は製品の状態が「早期終了」の早い停止で、そのまま組に入れた（値はウェブ版の報告）。Mach 0.3、迎え角0では、サンプル機体の3段で<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mo stretchy="false" form="prefix">|</mo><msub><mi>C</mi><mi>A</mi></msub><mo stretchy="false" form="prefix">|</mo></mrow><annotation encoding="application/x-tex">|C_A|</annotation></semantics></math>が1.38分の1と1.49分の1に縮む。層2の遠方境界では質量流束の収支を調べていない。</p>
+<h5 id="層2euler対rans">層2：Euler対RANS</h5>
+<p>七つの条件は、サンプル機体のMach 0.8と2の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>4</mn><mo>∘</mo></msup><annotation encoding="application/x-tex">4^\circ</annotation></semantics></math>（<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>N</mi></msub><annotation encoding="application/x-tex">C_N</annotation></semantics></math>と<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>x</mi><mrow><mi>c</mi><mi>p</mi></mrow></msub><annotation encoding="application/x-tex">x_{cp}</annotation></semantics></math>）と、Basic FinnerのMach 1.832（<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>2</mn><mo>∘</mo></msup><annotation encoding="application/x-tex">2^\circ</annotation></semantics></math>の<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>N</mi></msub><annotation encoding="application/x-tex">C_N</annotation></semantics></math>と<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>x</mi><mrow><mi>c</mi><mi>p</mi></mrow></msub><annotation encoding="application/x-tex">x_{cp}</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>0</mn><mo>∘</mo></msup><annotation encoding="application/x-tex">0^\circ</annotation></semantics></math>の軸力）である。差（RANSのEulerに対する差）は、サンプル機体のMach 0.8で<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><mn>4.99</mn></mrow><annotation encoding="application/x-tex">+4.99</annotation></semantics></math> %と<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><mn>0.27</mn></mrow><annotation encoding="application/x-tex">+0.27</annotation></semantics></math> %、Mach 2で<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><mn>3.30</mn></mrow><annotation encoding="application/x-tex">+3.30</annotation></semantics></math> %と<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><mn>0.017</mn></mrow><annotation encoding="application/x-tex">+0.017</annotation></semantics></math> %、Basic Finnerで<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>C</mi><mi>N</mi></msub><annotation encoding="application/x-tex">C_N</annotation></semantics></math>が<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><mn>0.22</mn></mrow><annotation encoding="application/x-tex">+0.22</annotation></semantics></math> %、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msub><mi>x</mi><mrow><mi>c</mi><mi>p</mi></mrow></msub><annotation encoding="application/x-tex">x_{cp}</annotation></semantics></math>が<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>0.73</mn></mrow><annotation encoding="application/x-tex">-0.73</annotation></semantics></math> %、軸力係数が<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><mn>54</mn></mrow><annotation encoding="application/x-tex">+54</annotation></semantics></math> %である。サンプル機体の比較は、さらに3 mmのメッシュのRANSと2 mmのメッシュのEulerを比べており、Basic Finnerの軸力係数は流れのモデルと、Eulerのモードでモデル化した底面の項とを混ぜている。</p>
+<h5 id="sec:model">Spalart–Allmaras対SST</h5>
+<p>製品は二つめの乱流モデルを走らせられないので、SU2を直接動かし、NASA Turbulence Modeling Resource <span class="citation" data-cites="tmr">(NASA Langley Research Center n.d.)</span>の圧力勾配のない平板（Mach 0.2、単位長さあたりの<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>R</mi><mi>e</mi><mo>=</mo><mn>5</mn><mo>×</mo><msup><mn>10</mn><mn>6</mn></msup></mrow><annotation encoding="application/x-tex">Re=5\times10^{6}</annotation></semantics></math>、断熱壁、位置<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>x</mi><mo>=</mo><mn>0.97</mn></mrow><annotation encoding="application/x-tex">x=0.97</annotation></semantics></math>）で、Spalart–AllmarasをMenter SSTモデル（変種V1994m。SU2の既定の変種は走らせていない）と比べた。格子はTurbulence Modeling Resourceのものではなく本研究で作ったちょうど入れ子の格子で、二つのモデルは製品の受け入れ規則ではなく残差の基準で止めた（詳細はウェブ版の報告）。表面摩擦は、粗、中、細の格子で<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>3.70</mn></mrow><annotation encoding="application/x-tex">-3.70</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>1.72</mn></mrow><annotation encoding="application/x-tex">-1.72</annotation></semantics></math>、<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>0.79</mn></mrow><annotation encoding="application/x-tex">-0.79</annotation></semantics></math> %違う（SST対Spalart–Allmaras）。SSTはここでは1次であり（観測次数1.02）、最後の細分で表面摩擦が0.94 %動いた。Spalart–AllmarasのGCIには旗が立つ（観測次数5.3、GCI <math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>8</mn><mo>×</mo><msup><mn>10</mn><mrow><mi>−</mi><mn>5</mn></mrow></msup></mrow><annotation encoding="application/x-tex">8\times10^{-5}</annotation></semantics></math> %）ので、その帯は使わず、判定も書かない。平板の抗力は<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>−</mi><mn>0.46</mn></mrow><annotation encoding="application/x-tex">-0.46</annotation></semantics></math> %違うが、GCIの帯0.67 %（Spalart–Allmaras）と0.48 %（SST）の和を超えないので、格子の不確かさと分けられない。外挿値どうしの差（表面摩擦で<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><mn>0.11</mn></mrow><annotation encoding="application/x-tex">+0.11</annotation></semantics></math> %、抗力で<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><mn>0.46</mn></mrow><annotation encoding="application/x-tex">+0.46</annotation></semantics></math> %）は推定値であり、判定は書かない。この位置のSpalart–Allmarasについて公表されているTurbulence Modeling Resourceの値（別のプログラムと格子）に比べ、ここでの細格子の表面摩擦は<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>+</mi><mn>0.80</mn></mrow><annotation encoding="application/x-tex">+0.80</annotation></semantics></math> %高い。これは格子、数値設定、モデルの変種が異なる相互比較であり、差の原因は帰属していない。この平板の既存の3段の研究や経験式との比較はウェブ版の報告にある。</p>
+<h2 id="sec:temporalapp"><span class="iy-secnum">B</span> 飛翔の積分器</h2>
+<p>製品で時間に依存するのは6自由度の飛翔の積分器で、その収束を刻み幅の細分で調べる。サンプル機体を、4次のRunge–Kutta法を用いて刻み8、4、2、1 ms（<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mi>r</mi><mo>=</mo><mn>2</mn></mrow><annotation encoding="application/x-tex">r=2</annotation></semantics></math>。パラシュート降下、風4 m/s）で飛ばし、1/2/4 msと2/4/8 msの二つの3段を作る。量は、頂点高度、頂点時刻、着地距離、飛翔時間、レール離脱の時刻と速度、固定した時刻での高度と速度である。次数は得られず、差が符号を変えるか、二つの刻みが出力の印刷の分解能で同じ値を与えるため、すべての行が拒否される。四つの刻みで、頂点高度は4440.5 mのうち<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mn>0.018</mn><annotation encoding="application/x-tex">0.018</annotation></semantics></math> m（相対<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4.1</mn><mo>×</mo><msup><mn>10</mn><mrow><mi>−</mi><mn>6</mn></mrow></msup></mrow><annotation encoding="application/x-tex">4.1\times10^{-6}</annotation></semantics></math>）、着地距離は7735.5 mのうち0.032 m、飛翔時間は685 sのうち2.4 ms動く。これは広がりであり誤差の見積もりではなく、次数がないので帯は主張しない。</p>
+<p>このばらつきは、制御の実験を根拠として、レールのモデルに帰する。機体は推力が重量を下回る間レール上で静止させられ、これが約2.3 msに加速度の折れを作る。積分器はこの折れを探さず、折れは刻みの端に対して計算ごとに異なる位置に落ちる。三つの制御は、モータの推力曲線を変える（製品のサンプルは変えない）。保持と0から0.05 sの推力の立ち上がりの両方を除くと、粗い側の3段で頂点高度の次数4.01、飛翔時間の次数3.96を得て、4次のスキームに期待される値になる。保持だけを除くと、8 msと4 msの計算のレール離脱の速度の差は<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4.5</mn><mo>×</mo><msup><mn>10</mn><mrow><mi>−</mi><mn>4</mn></mrow></msup></mrow><annotation encoding="application/x-tex">4.5\times10^{-4}</annotation></semantics></math> m/sから<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>4.1</mn><mo>×</mo><msup><mn>10</mn><mrow><mi>−</mi><mn>8</mn></mrow></msup></mrow><annotation encoding="application/x-tex">4.1\times10^{-8}</annotation></semantics></math> m/sに減り、保持がレール離脱のばらつきの主な原因であることを支持する。完全に入れ子にした掃引は、刻みが割り切らない推力曲線の節を主な原因から除く。小さな第2の寄与は排除できない。保持だけを除いた場合でも、粗い側の3段の頂点高度はなお単調でない。制御の細かい側の3段は、相対<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mi>−</mi><mn>9</mn></mrow></msup><annotation encoding="application/x-tex">10^{-9}</annotation></semantics></math>から<math display="inline" xmlns="http://www.w3.org/1998/Math/MathML"><semantics><msup><mn>10</mn><mrow><mi>−</mi><mn>8</mn></mrow></msup><annotation encoding="application/x-tex">10^{-8}</annotation></semantics></math>程度で収束しなくなり、この床は入れ子の掃引でも残り、原因は特定していない。細かい側の3段から得た唯一の次数（一つめの制御の頂点時刻の4.75）は、差がこの床より小さく、同じ計算の頂点高度は振動するので、4次の収束の証拠ではない。刻みの細分による積分器の検証であり、実測との比較ではない。</p>
+</article>

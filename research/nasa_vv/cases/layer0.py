@@ -45,6 +45,7 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import io
 import math
 import pathlib
 import subprocess
@@ -647,12 +648,42 @@ def write_gci(rows, results: dict, path: pathlib.Path) -> None:
         "Every row's note names what its observed order is consistent with measuring (a discretisation error, a corner or tip transient, a captured shock position, a wall entropy layer), gives the errors against the exact value and, for wall quantities, the order over four other windows. An order that is stable across those windows (within 0.5) is necessary for the GCI to estimate the discretisation error of the quantity, and not sufficient.",
         "The cone is run twice (see above); 'cone' is the layer 0 result and 'cone_sym_axis' is kept to show the effect of the tip node.",
     ]
-    with path.open("w", newline="") as f:
-        for ln in lines:
-            f.write("# " + ln + "\n")
-        w = csv.DictWriter(f, fieldnames=GCI_COLUMNS + ["true_error_pct", "gci_bounds_error"], lineterminator="\n")
-        w.writeheader()
-        w.writerows(rows)
+    foreign = _foreign_lines(path)
+    buf = io.StringIO()
+    for ln in lines:
+        buf.write("# " + ln + "\n")
+    w = csv.DictWriter(buf, fieldnames=GCI_COLUMNS + ["true_error_pct", "gci_bounds_error"], lineterminator="\n")
+    w.writeheader()
+    w.writerows(rows)
+    path.write_bytes(_with_foreign_lines(buf.getvalue(), foreign).encode())
+
+
+FOREIGN_HEADER = "# [plate] "
+"""Header lines of layer0_gci.csv that nasa_vv.cases.layer0_plate owns (it inserts them before the column header)."""
+FOREIGN_ROW = "layer0,plate M="
+"""Rows of layer0_gci.csv that nasa_vv.cases.layer0_plate owns (it appends them)."""
+
+
+def _foreign_lines(path: pathlib.Path) -> tuple[list[str], list[str]]:
+    """(header lines, rows) of an existing layer0_gci.csv that another case owns; empty if there is no file."""
+    if not path.exists():
+        return [], []
+    lines = path.read_bytes().decode().split("\n")
+    return ([ln for ln in lines if ln.startswith(FOREIGN_HEADER)], [ln for ln in lines if ln.startswith(FOREIGN_ROW)])
+
+
+def _with_foreign_lines(text: str, foreign: tuple[list[str], list[str]]) -> str:
+    """The text with the foreign header lines in front of the column header and the foreign rows at the end, verbatim.
+
+    This case rewrites the whole file; the lines it does not own would otherwise be lost (rerunning
+    ``--collect-only`` after layer0_plate had appended its rows erased them).
+    """
+    head, rows = foreign
+    if not head and not rows:
+        return text
+    lines = text.split("\n")
+    at = next(k for k, ln in enumerate(lines) if ln.startswith("study,condition,"))
+    return "\n".join(lines[:at] + head + lines[at:-1] + rows + [""])
 
 
 # ------------------------------------------------------------------ main

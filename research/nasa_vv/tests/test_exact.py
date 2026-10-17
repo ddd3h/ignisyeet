@@ -365,7 +365,7 @@ def test_blasius_profile_matches_tabulated_values():
 
 
 def test_blasius_thicknesses_in_similarity_coordinates():
-    """delta* sqrt(U / nu x) = 1.7208, theta sqrt(U / nu x) = 0.6641 = 2 f''(0) (momentum balance: Cf = 2 theta / x)."""
+    """delta* sqrt(U / nu x) = 1.7208, theta sqrt(U / nu x) = 0.6641 = 2 f''(0) (momentum balance: Cf = 2 dtheta/dx = theta / x for theta proportional to sqrt(x))."""
     delta_star, theta = blasius_thicknesses()
     assert delta_star == pytest.approx(1.72079, abs=2e-5)
     assert theta == pytest.approx(0.66411, abs=2e-5)

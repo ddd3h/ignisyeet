@@ -226,3 +226,61 @@ def test_no_record_of_layer0_gci_spans_two_lines():
     physical = [ln for ln in text.split("\n") if ln and not ln.startswith("#")]
     records = list(csv.reader(io.StringIO("\n".join(physical) + "\n")))   # quoted fields may span lines: one record per line if none does
     assert len(records) == len(physical)
+
+
+def test_rerunning_task10s_writer_keeps_the_plate_lines_and_task10s_bytes(tmp_path):
+    """layer0.write_gci rewrites the whole file; the lines layer0_plate owns must survive it byte for byte."""
+    import re
+    from nasa_vv.cases import layer0 as L
+    committed = (P.RESULTS / "layer0_gci.csv").read_text()
+    plate_head = [ln for ln in committed.split("\n") if ln.startswith(P.PLATE_HEADER)]
+    plate_rows_ = [ln for ln in committed.split("\n") if ln.startswith(P.PLATE_ROW)]
+    assert plate_head and plate_rows_
+    other_rows = [r for r in P.parse_gci_rows(P.strip_plate(committed))]
+    top = re.search(r"along the top boundary is ([0-9.e+-]+)", committed).group(1)
+    runs = int(re.search(r"in each of the (\d+) runs", committed).group(1))
+    results = {"all": {k: {"top_dev": float(top)} for k in range(runs)}}
+    copy = tmp_path / "layer0_gci.csv"
+    copy.write_bytes(committed.encode())
+    L.write_gci(other_rows, results, copy)
+    rewritten = copy.read_bytes().decode()
+    lines = rewritten.split("\n")
+    assert [ln for ln in lines if ln.startswith(P.PLATE_HEADER)] == plate_head
+    assert [ln for ln in lines if ln.startswith(P.PLATE_ROW)] == plate_rows_
+    assert max(k for k, ln in enumerate(lines) if ln.startswith(P.PLATE_HEADER)) < next(k for k, ln in enumerate(lines) if ln.startswith("study,condition,"))
+    # Task 10's own part is byte-identical to what it committed, and the file is the committed one
+    assert hashlib.sha256(P.strip_plate(rewritten).encode()).hexdigest()[:16] == TASK10_SHA
+    assert rewritten == committed
+    # and the same on a file that has no plate lines yet
+    fresh = tmp_path / "fresh.csv"
+    L.write_gci(other_rows, results, fresh)
+    assert fresh.read_text() == P.strip_plate(committed)
+
+
+def test_the_tally_sentence_carries_its_caveat_in_the_same_sentence():
+    text = (P.RESULTS / "layer0_gci.csv").read_text()
+    header = "\n".join(ln for ln in text.split("\n") if ln.startswith("#"))
+    sentence = next(s for s in header.split(". ") if "it held for" in s and "plate rows included" in s)
+    assert "caveat" in sentence and "sign crossing" in sentence and "double count" in sentence
+    rows = P.parse_gci_rows(text)
+    held = sum(r["gci_bounds_error"] == "True" for r in rows)
+    failed = sum(r["gci_bounds_error"] == "False" for r in rows)
+    assert f"it held for {held} and failed for {failed}" in header          # what test_layer0.py requires
+    assert "not independent" in header
+
+
+def test_a_row_that_holds_only_at_a_sign_crossing_leads_with_that_and_post_hoc_rows_say_so():
+    rows = {r["quantity"]: r for r in P.parse_gci_rows((P.RESULTS / "layer0_gci.csv").read_text()) if r["condition"] == P.CONDITION}
+    for q in ("cf_x0.5", "delta_star_eta"):
+        assert rows[q]["gci_bounds_error"] == "True"
+        assert rows[q]["note"].startswith("the GCI (") and "only at a sign crossing: do not quote it as agreement" in rows[q]["note"].split(";")[0]
+    for q in ("delta_star_eta_ue", "theta_eta_ue"):
+        assert "added after the unscaled theta_eta row failed" in rows[q]["note"] and "not independent" in rows[q]["note"]
+
+
+def test_the_csv_header_states_the_cold_start_the_empty_spread_and_the_domain_history():
+    header = "\n".join(ln for ln in (P.RESULTS / "layer0_plate.csv").read_text().split("\n") if ln.startswith("#"))
+    assert "no startup stage and cold-starts at second order with RESTART_SOL= NO" in header
+    assert "window_spread is empty on every row" in header
+    assert "enlarged after the first domain" in header and "x = 8" in header and "x = 16" in header
+    assert "cold-starts at second order" in P.__doc__

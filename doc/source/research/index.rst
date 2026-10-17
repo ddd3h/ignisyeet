@@ -3,7 +3,7 @@
 .. meta::
    :description: IgnisYeet に関する論文と研究内容の一覧。
 
-研究
+R&D
 ====
 
 .. raw:: html
@@ -12,7 +12,7 @@
 
    <header class="iy-hero iy-page-hero">
      <div class="iy-wrap">
-       <p class="iy-page-title" role="presentation">研究</p>
+       <p class="iy-page-title" role="presentation">R&amp;D</p>
        <p class="iy-sub">IgnisYeet に関する論文、発表、研究内容を掲載する。新しいものから順に並べる。</p>
      </div>
    </header>

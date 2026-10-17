@@ -18,21 +18,25 @@ cannot, why not?
 
 ## Answer (two sentences)
 
-Not yet, for this pipeline: the solver with the product's settings is verified against exact
-solutions, but the pipeline's own error is not quantified, on the sample rocket only one coefficient
+Not yet, for this pipeline: in verification against exact solutions, SU2 with the product's
+settings reproduces the inviscid surface pressure and shock angle within 0.2 % in the primary
+setups, but the pipeline's own error is not quantified, on the sample rocket only one coefficient
 at one condition (the Mach 2 normal-force slope, 10.6 % or 16.3 % by grid-size definition, the
 latter flagged) receives a GCI that is neither refused nor unusable, the Basic Finner has no
 reliable GCI with Euler (its GCIs are computed but its two triplets disagree) and none with RANS,
-and the validation comparison cannot separate model error from numerical error. The causes, in the order of how much
-of the study each blocks, are that the product's mesher fixes the largest cell size so grids cannot
-be refined similarly, that solver convergence is not robust enough for the gate (RANS stalls or
-limit cycles, the layer-1 fine level; causes not established), and that even a converged GCI is conditional, as the
-exact-solution layer shows.
+and the validation comparison cannot separate model error from numerical error. In the study's
+judgement three obstacles stand behind this, ranked by how general and how permanent each is: the
+product's mesher fixes the largest cell size so grids cannot be refined similarly (every family,
+and it would remain if every solve converged); solver convergence is not robust enough for the gate
+(RANS stalls or limit cycles, the layer-1 fine level; causes not established), which removes a GCI
+wherever it occurs; and even a converged GCI is conditional, as the exact-solution layer shows. Both
+the attribution and the ranking are judgement, not measurement.
 
 ## Sections
 
 ### Abstract
-Message: question, approach in three layers, answer, the three causes. Same numbers as e377960.
+Message: question, approach in three layers, the answer (fourth sentence), one finding per layer,
+the three obstacles as the study's judgement. Same numbers as e377960.
 
 ### 1 Introduction `sec:intro`
 Message: an automated pipeline returns coefficients with no statement of trust; the NASA procedure
@@ -41,7 +45,8 @@ routine; we ask whether it can be done and find that, for this pipeline, not yet
 - Background: automated CFD in rocket design tools (IgnisYeet as the instance, no external
   citation for the trend); coefficients feed flight simulation.
 - The standard procedure: AIAA G-077-1998, NPARC tutorial, Roache GCI, Celik et al. 2008.
-- Gap: the procedure assumes control of the grid family and of convergence.
+- Gap: the procedure assumes control of the grid family and of convergence. Scope sentence: no
+  survey of earlier grid-convergence studies on automatic or unstructured meshes.
 - The question, explicit.
 - Approach: three layers (solver, pipeline, application).
 - Findings preview: four bullets matching R1–R4.
@@ -52,7 +57,7 @@ routine; we ask whether it can be done and find that, for this pipeline, not yet
 Message: what is needed to read the results: the three layers and their cases, the GCI with its
 acceptance gate, and the two grid-size definitions forced by non-similar grids.
 - 2.1 Three layers and the six steps `sec:layers`. Message: layers 0 and 1 solve the same exact
-  cone by two routes so that their difference would isolate the pipeline; layer 2 applies the six
+  cone by two routes so that their difference would expose the error the chain adds; layer 2 applies the six
   steps. Carrier: `tab:layers` (single column: layer, what is run, kind of comparison).
 - 2.2 The GCI and the gate `sec:gci`. Message: a number is reported only if every level passes
   the convergence gate, the differences are monotone and the order lies in 0.5–4. Carrier:
@@ -63,11 +68,12 @@ acceptance gate, and the two grid-size definitions forced by non-similar grids.
 
 ### 3 Results `sec:results`
 
-#### 3.1 R1. The solver and settings are verified, but the GCI is not a guarantee `sec:r1`
+#### 3.1 R1. The solver reproduces exact inviscid pressures, but the GCI is not a guarantee `sec:r1`
 Message: SU2 with the product's settings reproduces exact inviscid solutions to within 0.2 % on
-surface pressure and shock angle, but where the exact answer is known the GCI bounded the true
-error in only 5 of 7 inviscid and 2 of 5 laminar-plate rows, and the available checks do not
-detect the failures.
+surface pressure and shock angle (wall quantities from the Mach number and boundary junctions are
+the exceptions, and the laminar plate gives no clean verification), but where the exact answer is
+known the GCI bounded the true error in only 5 of 7 inviscid and 2 of 5 laminar-plate rows, and
+neither the order flag nor window stability detects both failures.
 - 3.1.1 Layer 0 against exact solutions `sec:l0results`. Carrier: `tab:l0` (merged: inviscid and
   laminar-plate rows, finest error, order, GCI, bounds, window orders where computed). Wall Mach
   errors, wall entropy and tip junction condensed to one paragraph; mass conservation one sentence.
@@ -121,20 +127,22 @@ bands are missing or flagged.
 ### 4 Discussion `sec:discussion`
 - 4.1 The answer `sec:answer`. Message: not yet, for this pipeline, apart from one wide band of poor
   reliability on the sample rocket.
-- 4.2 Root causes, ranked `sec:causes`. Message: (1) the mesher fixes the largest cell size;
+- 4.2 Three obstacles, ranked `sec:causes`. Message, ranked by how general and how permanent each
+  is, attribution and ranking stated as judgement: (1) the mesher fixes the largest cell size;
   (2) convergence robustness (RANS stalls and limit cycles, layer-1 fine level, causes untested);
   (3) a GCI without an exact answer is conditional (layer-0 evidence).
 - 4.3 What the findings imply `sec:implications`. Message, worded as implications and not as tested
-  fixes: a global refinement control that scales the whole field; convergence handling that
-  separates stalls from limit cycles and applies one residual measure; reporting the band only when
-  the gate passes, with its flags.
+  fixes: a global refinement control that scales the whole field (first obstacle); convergence
+  handling that separates stalls from limit cycles and applies one residual measure (second);
+  reporting the band only when the gate passes (second, with the published RANS study), labelled as
+  conditional with its flags (third).
 - 4.4 Findings about the product `sec:product`. One paragraph: published RANS GCI precondition,
   cut surface output, mesher abort with small fins, Taylor–Maccoll bracket, zero-length bar.
 - 4.5 Limitations `sec:limits`. The e377960 limits paragraph plus the single measured data set,
   the SA-only product and the self-built plate grids.
 
 ### 5 Conclusions `sec:conclusions`
-Five sentences that answer the question.
+Six sentences: five that answer the question and one that states the implications as untested.
 
 ### Data availability
 results/*.csv, figures/, the code, and the full catalogue in the web report
@@ -178,4 +186,6 @@ hold as the main cause on the evidence of controls; a second contribution not ex
 | Consistency detail on the asymmetric meshes (per-row values) | report.md §4.3; results/consistency.csv |
 | Cut surface output detail (counts of complete rows) | report.md §3.3; results/layer1_cone.csv |
 | Flight-integrator detail beyond Appendix B | report.md §4.5; results/temporal.csv |
+| SA–SST setup detail (numerics, y⁺, stop rules) | report.md §4.6.1; results/turbulence_models.csv |
+| Published RANS GCI detail in R3 (kept once, in §4.4) | §4.4 of the paper |
 | Separate "Wall quantities", "Reference data" discussion paragraphs | folded into R1 and the limitations |

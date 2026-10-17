@@ -11,7 +11,9 @@ Work directory layout (one sub-directory per level, each holding a fetched ``ign
     coarse/  medium/  fine/  medium_nomirror/
         case.toml                  aero.cfd.wall_size, fin_size, z_mirror_mesh, ranks_per_case
         done.json                  the job meta of virgo_run.sh (node, ppn, wall_seconds, ...)
-        sizing.json                optional: peak_mem_gb, binary_version, notes
+        sizing.json                optional: peak_mem_gb, binary_version (replaces the binary and commit of
+                                   the job record in the header, which names the checkout of the remote
+                                   directory, not necessarily the binary), notes
         out/cfd_cases.csv          one row per solved case, plus the ``combined`` rows
         out/cfd_report.json        mesh_nodes, mesh_cells
         out/cfd/<case>/done.json   mach, alpha_deg of the case
@@ -83,7 +85,8 @@ LEVEL_COLUMNS = [
     "level", "machine", "ppn", "ranks_per_case", "mesh", "wall_size_mm", "fin_size_mm", "nodes",
     "cells", "mach", "status_a0", "status_a4", "status_am4", "drop_a0", "drop_a4", "drop_am4",
     "cn_raw_a0", "cn_raw_a4", "cn_raw_am4", "cna", "cna_basis", "cn_combined_a4", "xcp_m",
-    "ca_alpha0", "job_wall_s", "job_peak_mem_gb",
+    "ca_alpha0", "history_gap_a0", "history_gap_a4", "history_gap_am4", "source_check", "job_wall_s",
+    "job_peak_mem_gb",
 ]
 
 _STATUS = {"converged": True, "unconverged": False, "accepted": False, "failed": False}
@@ -117,6 +120,8 @@ class Solve:
     ca: float | None
     residual_drop_orders: float | None
     wall_s: float | None
+    history_gap: int | None = None
+    """Rows of history.csv after the judged iteration (0 when the history ends where the runner judged)."""
 
 
 @dataclass
@@ -137,6 +142,8 @@ class Level:
     sizing: dict
     solves: dict[tuple[float, float], Solve] = field(default_factory=dict)
     combined: dict[tuple[float, float], dict[str, float | None]] = field(default_factory=dict)
+    problems: list[str] = field(default_factory=list)
+    """Why the files of this level cannot be trusted (truncated, stale, incomplete); empty when they pass."""
 
     def machs(self) -> list[float]:
         return sorted({m for m, _ in self.solves})
@@ -147,54 +154,130 @@ def _opt(row: dict[str, str], col: str) -> float | None:
     return float(s) if s else None
 
 
-def _history_peak(path: pathlib.Path) -> float | None:
+HISTORY_TOLERANCE = 1e-5
+"""Largest difference between residual_last of cfd_cases.csv and the history row it names, in log10 units."""
+
+
+def _check_history(path: pathlib.Path, iterations: int, residual_last: float | None) -> tuple[float | None, int | None, str]:
+    """Peak rms[Rho], the rows beyond the judged iteration, and the reason the file is unusable ('' if fine).
+
+    The runner stops SU2 while it may be writing, so the file is checked, not trusted: it must end in a newline,
+    every row must be complete and finite, it must reach the judged iteration, and the row at that iteration must
+    carry the residual that cfd_cases.csv records. Rows after the judged iteration are counted (the gap), not hidden.
+    """
     if not path.exists():
-        return None
-    lines = path.read_text().splitlines()
-    head = [h.strip().strip('"') for h in next(csv.reader([lines[0]]))]
+        return None, None, f"{path.name} not found"
+    text = path.read_text()
+    if not text.endswith("\n"):
+        return None, None, f"{path.name} does not end in a newline (truncated)"
+    rows = list(csv.reader(text.splitlines()))
+    head = [h.strip().strip('"') for h in rows[0]]
+    if "rms[Rho]" not in head:
+        return None, None, f"{path.name} has no rms[Rho] column"
     col = head.index("rms[Rho]")
-    vals = [float(r[col]) for r in csv.reader(lines[1:]) if r]
-    return max(vals) if vals else None
+    vals = []
+    for i, r in enumerate(rows[1:], start=2):
+        if len(r) != len(head):
+            return None, None, f"{path.name} row {i} has {len(r)} of {len(head)} fields (truncated)"
+        try:
+            f = [float(x) for x in r]
+        except ValueError:
+            return None, None, f"{path.name} row {i} has a non-numeric field (truncated)"
+        if not all(math.isfinite(x) for x in f):
+            return None, None, f"{path.name} row {i} has a non-finite field"
+        vals.append(f[col])
+    if len(vals) < iterations:
+        return None, None, (f"{path.name} has {len(vals)} rows but cfd_cases.csv records {iterations} "
+                            "iterations (the history is older than the case record, or truncated)")
+    if residual_last is not None and abs(vals[iterations - 1] - residual_last) > HISTORY_TOLERANCE:
+        return None, None, (f"{path.name} row {iterations} has rms[Rho] = {vals[iterations - 1]:.6g} but "
+                            f"cfd_cases.csv records residual_last = {residual_last:.6g}")
+    return max(vals), len(vals) - iterations, ""
+
+
+def _json(path: pathlib.Path, problems: list[str], required: bool = True) -> dict:
+    if not path.exists():
+        if required:
+            problems.append(f"{path.name} not found")
+        return {}
+    try:
+        return json.loads(path.read_text())
+    except ValueError:
+        problems.append(f"{path.name} is not valid JSON (truncated)")
+        return {}
 
 
 def read_level(d: pathlib.Path) -> Level:
     d = pathlib.Path(d)
-    if not (d / "out" / "cfd_cases.csv").exists():
-        raise FileNotFoundError(f"level {d.name!r}: {d / 'out' / 'cfd_cases.csv'} not found")
+    cases_path = d / "out" / "cfd_cases.csv"
+    if not cases_path.exists():
+        raise FileNotFoundError(f"level {d.name!r}: {cases_path} not found")
+    problems: list[str] = []
     cfg = tomllib.loads((d / "case.toml").read_text())["aero"]["cfd"]
-    rep = json.loads((d / "out" / "cfd_report.json").read_text())
-    job = json.loads((d / "done.json").read_text()) if (d / "done.json").exists() else {}
-    sizing = json.loads((d / "sizing.json").read_text()) if (d / "sizing.json").exists() else {}
+    rep = _json(d / "out" / "cfd_report.json", problems)
+    job = _json(d / "done.json", problems, required=False)
+    sizing = _json(d / "sizing.json", problems, required=False)
+    if job and (job.get("state") != "done" or job.get("exit_code") != 0):
+        problems.append(f"done.json records state {job.get('state')!r} and exit code {job.get('exit_code')!r}, not a finished job with exit code 0")
     lv = Level(
         name=d.name, wall_m=float(cfg["wall_size"]), fin_m=float(cfg["fin_size"]),
         mirror=bool(cfg.get("z_mirror_mesh", True)), ranks_per_case=int(cfg.get("ranks_per_case", 0)),
-        nodes=int(rep["mesh_nodes"]), cells=int(rep["mesh_cells"]),
+        nodes=int(rep.get("mesh_nodes", 0)), cells=int(rep.get("mesh_cells", 0)),
         machine=str(job.get("node", "")), ppn=job.get("ppn"), job_wall_s=job.get("wall_seconds"),
         commit=str(job.get("ignisyeet_commit", "")), binary=str(job.get("binary", "")),
-        peak_mem_gb=sizing.get("peak_mem_gb"), sizing=sizing)
+        peak_mem_gb=sizing.get("peak_mem_gb"), sizing=sizing, problems=problems)
+    if lv.nodes <= 0 or lv.cells <= 0:
+        problems.append("cfd_report.json has no positive mesh_nodes / mesh_cells")
     # case directories, found by the mach / alpha in their done.json
     dirs: dict[tuple[float, float], pathlib.Path] = {}
     for cd in sorted((d / "out" / "cfd").iterdir()):
         dj = cd / "done.json"
         if dj.exists():
-            j = json.loads(dj.read_text())
-            if float(j.get("beta_deg", 0.0)) == 0.0:
+            j = _json(dj, problems)
+            if j and float(j.get("beta_deg", 0.0)) == 0.0:
                 dirs[(float(j["mach"]), float(j["alpha_deg"]))] = cd
-    for r in csv.DictReader((d / "out" / "cfd_cases.csv").read_text().splitlines()):
+    text = cases_path.read_text()
+    if not text.endswith("\n"):
+        problems.append("cfd_cases.csv does not end in a newline (truncated)")
+    lines = list(csv.reader(text.splitlines()))
+    head = lines[0]
+    for n, fields in enumerate(lines[1:], start=2):
+        if len(fields) != len(head):
+            problems.append(f"cfd_cases.csv row {n} has {len(fields)} of {len(head)} fields (truncated)")
+            continue
+        r = dict(zip(head, fields))
         key = (float(r["mach"]), float(r["alpha_deg"]))
         if r["status"] == "combined":
             lv.combined[key] = {"cn": _opt(r, "cn"), "xcp_m": _opt(r, "xcp_m"), "ca": _opt(r, "ca_cfd")}
             continue
         if r.get("beta_deg", "0") not in ("0", "0.0", "") or r.get("roll_hat", "0") not in ("0", "0.0", ""):
             continue
-        drop = None
+        iterations = int(r["iterations"])
         last = _opt(r, "residual_last")
-        if key in dirs and last is not None:
-            peak = _history_peak(dirs[key] / "history.csv")
-            if peak is not None:
-                drop = peak - last
-        lv.solves[key] = Solve(r["status"], int(r["iterations"]), _opt(r, "cn_raw"), _opt(r, "ca_cfd"),
-                               drop, _opt(r, "wall_seconds"))
+        drop = gap = None
+        if r["status"] != "failed":
+            if key not in dirs:
+                problems.append(f"no case directory for mach {key[0]:g} alpha {key[1]:g}")
+            else:
+                peak, gap, why = _check_history(dirs[key] / "history.csv", iterations, last)
+                if why:
+                    problems.append(f"mach {key[0]:g} alpha {key[1]:g}: {why}")
+                elif last is not None:
+                    drop = peak - last
+        lv.solves[key] = Solve(r["status"], iterations, _opt(r, "cn_raw"), _opt(r, "ca_cfd"), drop,
+                               _opt(r, "wall_seconds"), gap)
+    machs = [float(m) for m in cfg.get("machs", [])]
+    alphas = [float(a) for a in cfg.get("alphas_deg", [])]
+    if not lv.mirror:
+        alphas += [-a for a in alphas if a > 0]
+    for m in machs:
+        for a in alphas:
+            if (m, a) not in lv.solves:
+                problems.append(f"the solve at mach {m:g} alpha {a:g} is missing from cfd_cases.csv")
+    for m in machs:
+        if lv.solves.get((m, ALPHA)) is not None and lv.solves[(m, ALPHA)].status != "failed" \
+                and (m, ALPHA) not in lv.combined:
+            problems.append(f"the combined row at mach {m:g} alpha {ALPHA:g} is missing from cfd_cases.csv")
     return lv
 
 
@@ -240,6 +323,10 @@ def level_rows(levels: dict[str, Level]) -> list[dict[str, str]]:
                 "cna_basis": "(CN(4)-CN(-4))/2" if sm is not None else "CN(4)",
                 "cn_combined_a4": _g(comb.get("cn")), "xcp_m": _g(comb.get("xcp_m")),
                 "ca_alpha0": _g(s0.ca if s0 else None),
+                "history_gap_a0": _g(s0.history_gap if s0 else None),
+                "history_gap_a4": _g(s4.history_gap if s4 else None),
+                "history_gap_am4": _g(sm.history_gap if sm else None),
+                "source_check": "ok" if not lv.problems else "FAILED: " + " | ".join(lv.problems),
                 "job_wall_s": _g(lv.job_wall_s, ".1f"), "job_peak_mem_gb": _g(lv.peak_mem_gb, ".3g"),
             })
     return rows
@@ -282,9 +369,38 @@ def families(levels: dict[str, Level]) -> list[tuple[str, FamilyData]]:
     return out
 
 
+def _refused(cond: str, quantity: str, trip: str, levels: list[Level], note: str) -> list[dict[str, str]]:
+    """The two rows (one per h basis) of a family that was not computed, with the reason and no numbers."""
+    out = []
+    for basis in ("nodes^-1/3", "wall_size"):
+        row = {c: "" for c in GCI_COLUMNS}
+        row.update(study="sample_euler", condition=cond, quantity=quantity, triplet=trip, h_basis=basis,
+                   n1=str(levels[0].nodes), n2=str(levels[1].nodes), n3=str(levels[2].nodes),
+                   note=f"refused: {note}")
+        out.append(row)
+    return out
+
+
+def _quantities(machs: list[float]) -> list[tuple[str, str]]:
+    out = []
+    for m in machs:
+        out += [(f"M={m:g} alpha=4 (raw)", "cna"), (f"M={m:g} alpha=4 (combined)", "xcp"),
+                (f"M={m:g} alpha=0", "ca_alpha0")]
+    return out
+
+
 def gci_rows(levels: dict[str, Level]) -> list[dict[str, str]]:
     rows = []
     trip = "/".join(n for n in FAMILY_LEVELS)
+    fam = [levels[n] for n in FAMILY_LEVELS]
+    bad = [lv for lv in fam if lv.problems]
+    if bad:
+        note = "the source files of " + "; ".join(
+            f"level {lv.name!r} failed the completeness check ({' | '.join(lv.problems)})" for lv in bad)
+        machs = sorted({m for lv in fam for m in lv.machs()})
+        for cond, q in _quantities(machs):
+            rows += _refused(cond, q, trip, fam, note)
+        return rows
     for cond, fd in families(levels):
         a = _rows("sample_euler", cond, trip, fd, lambda f: study(f.family, f.values), "nodes^-1/3")
         b = _rows("sample_euler", cond, trip, fd, _wall_size_compute, "wall_size")
@@ -318,8 +434,8 @@ def _header(levels: dict[str, Level]) -> list[str]:
             + (f", peak job memory {lv.peak_mem_gb:g} GB" if lv.peak_mem_gb else "")
             for lv in (*coarse_first, levels[NOMIRROR_LEVEL])) + ".",
         "Binary: " + "; ".join(sorted({
-            f"{lv.binary or 'unknown'} at ignisyeet commit {lv.commit or 'unknown'}"
-            + (f", {lv.sizing['binary_version']}" if lv.sizing.get("binary_version") else "")
+            lv.sizing["binary_version"] if lv.sizing.get("binary_version")
+            else f"{lv.binary or 'unknown'} at ignisyeet commit {lv.commit or 'unknown'} (from the job record)"
             for lv in levels.values()})) + ".",
     ]
     for lv in levels.values():
@@ -334,6 +450,7 @@ def _header(levels: dict[str, Level]) -> list[str]:
         f"Measured growth per level, coarse to fine: cells {_ratios(cells)}, nodes {_ratios(nodes)}; wall_size ratio {_ratios([1 / w for w in walls])}. "
         "A geometrically similar 1.4 refinement would grow the cells by 1.4^3 = 2.74x per level.",
         "On grids whose outer cell size is fixed, neither h basis is the effective grid size; the two bracket the question rather than resolve it, so the spread between them is not a bound on the true GCI.",
+        "Completeness: the runner stops SU2 while it may be writing, so every file read here is checked, not trusted: cfd_cases.csv and each history.csv must end in a newline with complete finite rows, the history must reach the judged iteration and carry the residual_last that cfd_cases.csv records, every solve of case.toml must be present, and the job must have finished with exit code 0. A level that fails any check refuses all of its families (the reason is in note and in source_check of sample_euler_levels.csv). Rows of history.csv after the judged iteration are counted in history_gap_*. The surface_flow files are not read.",
         "n1..n3 are nodes (finest first). gci_fine_pct and gci_coarse_pct are relative to f1 and f2 (percent), including for xcp (a length: multiply by |f1|).",
         "cna: CNa [1/rad] = CN(4)/radians(4) from cn_raw on the z-mirrored mesh (-4 is the exact mirror of +4 and is not solved); the non-mirrored medium level uses (CN(4) - CN(-4))/2/radians(4); see cna_basis in sample_euler_levels.csv. xcp: xcp_m of the combined row. ca_alpha0: ca_cfd at alpha = 0.",
         "A note flags any computed order above 4 (twice the formal second order) or below 0.5 (a quarter of it): the triplet is then not in the asymptotic range and its GCI is not reliable.",

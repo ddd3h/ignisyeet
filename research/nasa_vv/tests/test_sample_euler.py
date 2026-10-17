@@ -15,7 +15,7 @@ CASES_HEADER = ("mach,alpha_deg,status,iterations,residual_first,residual_last,c
 
 
 def _case_row(mach, alpha, status, cn_raw, ca, last=-9.0, first=-1.0):
-    return (f"{mach},{alpha},{status},300,{first:.8e},{last:.8e},{cn_raw:.8e},{ca:.8e},0,0.0,,,,"
+    return (f"{mach},{alpha},{status},3,{first:.8e},{last:.8e},{cn_raw:.8e},{ca:.8e},0,0.0,,,,"
             f"100.0,false,0,0,0,0,0,0,0,0,,,")
 
 
@@ -32,6 +32,7 @@ def make_level(work, name, wall_mm, fin_mm, nodes, cells, mirror=True, cn_slope=
     (d / "case.toml").write_text(
         f"[aero.cfd]\nwall_size = {wall_mm / 1000}\nfin_size = {fin_mm / 1000}\n"
         f"z_mirror_mesh = {'true' if mirror else 'false'}\nalpha_mode = \"mirror\"\n"
+        f"machs = {list(machs)}\nalphas_deg = [0.0, 4.0]\n"
         "ranks_per_case = 4\nparallel_cases = 3\n")
     (out / "cfd_report.json").write_text(json.dumps({"mesh_nodes": nodes, "mesh_cells": cells}))
     (d / "done.json").write_text(json.dumps({
@@ -238,3 +239,106 @@ def test_every_blank_result_has_a_note(work, tmp_path):
 def test_the_default_levels_path_resolves_from_the_module_not_the_cwd():
     assert se.LEVELS_CSV.is_absolute() and se.GCI_CSV.is_absolute()
     assert se.LEVELS_CSV.parent.name == "results"
+
+
+def test_a_recorded_binary_version_replaces_the_job_records_commit(work, tmp_path):
+    for n in ("coarse", "medium", "fine", "medium_nomirror"):
+        (work / n / "sizing.json").write_text(json.dumps({
+            "binary_version": "ignisyeet-glibc-a8dff9c (built on virgo from a8dff9c)", "peak_mem_gb": 1.5,
+            "notes": "memory estimate 1.7 GB per case"}))
+    h = _head(run(work, tmp_path)[1])
+    assert "ignisyeet-glibc-a8dff9c (built on virgo from a8dff9c)" in h
+    assert "abc1234" not in h
+    assert "peak job memory 1.5 GB" in h and "memory estimate 1.7 GB per case" in h
+
+
+# ------------------------------------------------------------------ truncated or stale sources
+
+
+def _refused_for(work, tmp_path, needle):
+    lv, gci = run(work, tmp_path)
+    rows = _read(gci)
+    assert rows and all(r["order"] == "" and r["gci_fine_pct"] == "" for r in rows)
+    assert all(r["note"].startswith("refused: ") and needle in r["note"] for r in rows)
+    check = {r["level"]: r["source_check"] for r in _read(lv)}
+    return check
+
+
+def _history(work, level, mach, alpha):
+    return next(p for p in (work / level / "out" / "cfd").iterdir()
+                if f"m{mach:.3f}_a{alpha:+06.2f}" == p.name) / "history.csv"
+
+
+def test_a_history_cut_mid_row_refuses_the_level(work, tmp_path):
+    h = _history(work, "fine", 0.8, 4.0)
+    h.write_text(h.read_text().rstrip("\n").rsplit(",", 1)[0])  # last row loses a field and its newline
+    check = _refused_for(work, tmp_path, "level 'fine' failed the completeness check")
+    assert check["fine"].startswith("FAILED") and check["coarse"] == "ok"
+
+
+def test_a_history_with_a_partial_last_field_is_refused(work, tmp_path):
+    h = _history(work, "coarse", 0.3, 0.0)
+    h.write_text(h.read_text().rstrip("\n")[:-3] + "e")  # '-8.5' cut to '-8e' style garbage, no newline
+    _refused_for(work, tmp_path, "truncated")
+
+
+def test_a_complete_row_missing_its_newline_is_still_refused(work, tmp_path):
+    h = _history(work, "medium", 2.0, 4.0)
+    h.write_text(h.read_text().rstrip("\n"))
+    _refused_for(work, tmp_path, "does not end in a newline")
+
+
+def test_a_history_older_than_the_case_record_is_refused(work, tmp_path):
+    h = _history(work, "fine", 0.3, 4.0)
+    lines = h.read_text().splitlines()
+    h.write_text("\n".join(lines[:-1]) + "\n")  # the last write never happened: the previous one is on disk
+    _refused_for(work, tmp_path, "has 2 rows but cfd_cases.csv records 3 iterations")
+
+
+def test_a_history_whose_judged_row_disagrees_with_the_record_is_refused(work, tmp_path):
+    h = _history(work, "fine", 0.3, 4.0)
+    h.write_text(h.read_text().replace("-7.5", "-6.5"))
+    _refused_for(work, tmp_path, "records residual_last")
+
+
+def test_rows_after_the_judged_iteration_are_recorded_not_hidden(work, tmp_path):
+    h = _history(work, "fine", 0.3, 4.0)
+    h.write_text(h.read_text() + "0,0,3,-9.5\n0,0,4,-9.6\n")
+    lv, gci = run(work, tmp_path)
+    row = next(r for r in _read(lv) if r["level"] == "fine" and r["mach"] == "0.3")
+    assert row["history_gap_a4"] == "2" and row["history_gap_a0"] == "0"
+    assert row["source_check"] == "ok"
+    assert all(r["note"] == "" or not r["note"].startswith("refused") for r in _read(gci))
+
+
+def test_a_cases_file_with_a_cut_last_row_refuses_the_level(work, tmp_path):
+    c = work / "medium" / "out" / "cfd_cases.csv"
+    lines = c.read_text().splitlines()
+    c.write_text("\n".join(lines[:-1] + [lines[-1][:30]]))
+    check = _refused_for(work, tmp_path, "level 'medium' failed the completeness check")
+    assert "fields (truncated)" in check["medium"]
+
+
+def test_a_cases_file_missing_a_solve_refuses_the_level(work, tmp_path):
+    c = work / "coarse" / "out" / "cfd_cases.csv"
+    lines = [ln for ln in c.read_text().splitlines() if not ln.startswith("2.0,4.0,")]
+    c.write_text("\n".join(lines) + "\n")
+    _refused_for(work, tmp_path, "the solve at mach 2 alpha 4 is missing")
+
+
+def test_a_cut_report_refuses_the_level(work, tmp_path):
+    r = work / "fine" / "out" / "cfd_report.json"
+    r.write_text(r.read_text()[:20])
+    _refused_for(work, tmp_path, "cfd_report.json is not valid JSON")
+
+
+def test_a_job_that_did_not_finish_refuses_the_level(work, tmp_path):
+    d = work / "fine" / "done.json"
+    d.write_text(json.dumps({"state": "running", "node": "virgo01"}))
+    _refused_for(work, tmp_path, "state 'running'")
+
+
+def test_a_missing_case_directory_refuses_the_level(work, tmp_path):
+    import shutil
+    shutil.rmtree(_history(work, "fine", 2.0, 0.0).parent)
+    _refused_for(work, tmp_path, "no case directory for mach 2 alpha 0")

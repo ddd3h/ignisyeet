@@ -168,3 +168,94 @@ def test_no_observed_change_where_there_is_no_box():
     assert observed_change("euler", "CNa", 1.832) is None
     assert observed_change("euler", "CX0", 2.375) is None
     assert observed_change("rans", "CNa", 2.375) is None
+
+
+# ---- the figure's text: no implementation names, no overstated error bars ----------------------------------
+
+def test_the_validation_footnote_names_no_file_column_or_code():
+    from nasa_vv.plots import FOOTNOTE
+
+    for name in ("results/", ".csv", "ca_pressure", "cells^-1/3", "wall_size", "gci_existing"):
+        assert name not in FOOTNOTE, name
+    assert "excludes round-to-round scatter and systematic error" in FOOTNOTE
+    assert "50 % bound" in FOOTNOTE
+
+
+def test_the_legend_places_the_triangles_beside_the_symbol_not_at_the_bound():
+    import re
+    from pathlib import Path
+
+    src = Path(__import__("nasa_vv.plots", fromlist=["x"]).__file__).read_text()
+    assert "triangles beside the symbol" in src
+    assert not re.search(r"triangles at the 0\.5", src)
+
+
+def test_the_committed_figures_are_what_the_code_draws(tmp_path):
+    from nasa_vv.plots import DEFAULT_OUT, LAYER1_OUT, layer1_cp_figure, validation_figure
+
+    validation_figure(tmp_path / "v.svg")
+    fig = layer1_cp_figure(tmp_path / "c.svg")
+    import matplotlib.pyplot as plt
+    plt.close(fig)
+    assert (tmp_path / "v.svg").read_bytes() == DEFAULT_OUT.read_bytes()
+    assert (tmp_path / "c.svg").read_bytes() == LAYER1_OUT.read_bytes()
+
+
+# ---- layer 1 Cp figure ------------------------------------------------------------------------------------
+
+def test_layer1_bins_are_read_from_the_committed_results_file():
+    from nasa_vv.plots import read_layer1
+
+    levels, exact = read_layer1()
+    assert [lv.name for lv in levels] == ["coarse", "medium", "fine"]
+    assert exact == pytest.approx(0.0967306, abs=1e-7)
+    for lv in levels:
+        assert lv.x == pytest.approx((0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85))
+        assert len(lv.cp) == len(lv.wall_nodes) == 7
+    coarse, medium, fine = levels
+    assert coarse.cp[0] == pytest.approx(0.08687) and fine.cp[-1] == pytest.approx(0.09658)
+    assert (coarse.converged, medium.converged, fine.converged) == (True, True, False)
+    assert (fine.cp_source, fine.source_iteration, fine.history_iterations) == ("periodic snapshot", 200, 210)
+    assert fine.residual_drop == pytest.approx(2.442)
+
+
+def test_layer1_bins_exclude_the_two_means_over_several_bins():
+    from nasa_vv.plots import read_layer1
+
+    levels, _ = read_layer1()
+    # the 0.2-0.9 and 0.4-0.9 means are not bins: 7 points per level, none at the centre 0.55 of 0.2-0.9
+    assert all(len(lv.x) == 7 for lv in levels)
+
+
+def test_the_layer1_figure_marks_the_fine_level_unaccepted_and_draws_no_band(tmp_path):
+    import matplotlib.pyplot as plt
+
+    from nasa_vv.plots import layer1_cp_figure
+
+    fig = layer1_cp_figure(tmp_path / "c.svg")
+    try:
+        ax = fig.axes[0]
+        labels = [t.get_text() for t in ax.get_legend().get_texts()]
+        assert any("Taylor-Maccoll" in t for t in labels)
+        fine = next(t for t in labels if t.startswith("fine"))
+        assert "NOT accepted" in fine and "iteration-200 snapshot" in fine
+        assert all("NOT accepted" not in t for t in labels if not t.startswith("fine"))
+        assert not ax.patches and not ax.collections          # no band, no fill
+        fine_line = next(l for l in ax.lines if l.get_label().startswith("fine"))
+        assert fine_line.get_linestyle() == "--" and fine_line.get_markerfacecolor() == "white"
+        assert len([l for l in ax.lines if l.get_label().startswith(("coarse", "medium", "fine"))]) == 3
+    finally:
+        plt.close(fig)
+
+
+def test_a_layer1_file_with_one_exact_value_per_level_only(tmp_path):
+    from nasa_vv.plots import LAYER1_CSV, read_layer1
+
+    lines = LAYER1_CSV.read_text().splitlines(True)
+    bad = tmp_path / "l1.csv"
+    head = next(i for i, ln in enumerate(lines) if ln.startswith("level,"))
+    rows = lines[head + 1:]
+    rows[3] = rows[3].replace("0.09673061296", "0.0970")
+    bad.write_text("".join(lines[:head + 1] + rows))
+    with pytest.raises(ValueError, match="cp_exact"):
+        read_layer1(bad)

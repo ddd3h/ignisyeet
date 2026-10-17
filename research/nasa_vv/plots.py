@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Validation figure: CNa and CX0 of the Basic Finner against the measured data.
+"""Figures of the study: CNa and CX0 of the Basic Finner against the measured data (``validation_figure``), and the
+wall Cp of the layer 1 cone for each grid level (``layer1_cp_figure``, below).
+
+Validation figure: CNa and CX0 of the Basic Finner against the measured data.
 
 Comparison with the measured data (DREV-TM-9703 Table IX) is validation; the figure
 compares every CFD point with the measured value only; no difference between CFD models is
@@ -50,6 +53,8 @@ EULER_CSV = ROOT / "doc" / "data" / "validation" / "basic_finner" / "cfd_euler.c
 MESH_CHECK_CSV = ROOT / "doc" / "data" / "validation" / "basic_finner" / "mesh_check.csv"
 GCI_CSV = HERE / "results" / "gci_existing.csv"
 DEFAULT_OUT = HERE / "figures" / "validation_bands.svg"
+LAYER1_CSV = HERE / "results" / "layer1_cone.csv"
+LAYER1_OUT = HERE / "figures" / "layer1_cp.svg"
 
 BOUND_FRACTION = 0.005  # a tabulated probable error of 0 means "below 0.5 %"
 
@@ -211,16 +216,18 @@ def _num(cell: str) -> float | None:
 FOOTNOTE = (
     "Comparison with the measured free-flight data (DREV-TM-9703, Table IX) is validation; every CFD point is compared with "
     "the measured value only, and no difference between CFD models is computed or drawn. Measured bars are the tabulated "
-    "probable error. A hollow diamond with triangles beside it is a tabulated probable error of 0, drawn as the 0.5 % bound "
-    "(smaller than the symbol), not as a measured error; a point with no bar has no probable error tabulated. "
+    "probable error: the statistical error of the fit, which excludes round-to-round scatter and systematic error, and which "
+    "by convention is a 50 % bound. A hollow diamond with triangles beside it is a tabulated probable error of 0 (below 0.5 %, "
+    "smaller than the symbol), not a measured error; a point with no bar has no probable error tabulated. "
     "Hatched box: grid sensitivity of the Euler CNa at Mach 2.375 (fairing) from the Basic Finner mesh check, the envelope "
-    "of the GCI of the plotted grid over both h definitions (cells^-1/3, wall_size) and every triplet that gives a number "
-    "({n} rows); it is not an established GCI: the grids are not geometrically similar and the observed orders disagree "
-    "(results/gci_existing.csv). Its extent, ±{hi:.2g} % of the value, is too small to see at this scale.{change} "
-    "Mapping: CNa = CN(alpha = 2 deg)/alpha of the same runs, so the relative GCI of cn carries over. CX0 = ca_pressure + "
-    "modelled friction, base and fin trailing-edge terms, so the ca_pressure GCI is not a CX0 GCI: no box on CX0. "
+    "of the GCI of the plotted grid over both definitions of the grid size (from the cell count, from the wall cell size) and "
+    "every triplet that gives a number ({n} rows); it is not an established GCI: the grids are not geometrically similar and "
+    "the observed orders disagree. Its extent, ±{hi:.2g} % of the value, is too small to see at this scale.{change} "
+    "Mapping: CNa = CN(alpha = 2 deg)/alpha of the same runs, so the relative GCI of CN carries over. CX0 is the pressure part "
+    "of the axial force plus modelled friction, base and fin trailing-edge terms, so the GCI of the pressure part is not a CX0 "
+    "GCI: no box on CX0. "
     "No box on any other Mach number (no mesh study there), nor on RANS: RANS GCI not obtained at M = 1.832 "
-    "(grid study refused; see the RANS grid study)."
+    "(grid study refused)."
 )
 
 
@@ -283,7 +290,7 @@ def validation_figure(out: Path = DEFAULT_OUT, summary_csv: Path = SUMMARY_CSV, 
                 text = f"grid sensitivity ±{band.high_pct:.2g} % (not a GCI)"
                 if ch is not None:
                     changes.append(ch)
-                    text += f"\n{ch.plotted_level} to {ch.other_level} changes cn by {ch.pct:.2g} %:\nmore than the box"
+                    text += f"\n{ch.plotted_level} to {ch.other_level} changes CN by {ch.pct:.2g} %:\nmore than the box"
                 ax.annotate(text, xy=(m, v), xytext=(28, 34), textcoords="offset points", fontsize=8, color=col,
                             arrowprops={"arrowstyle": "-", "color": col, "lw": 0.8})
         ax.set_xlabel("Mach number")
@@ -296,7 +303,7 @@ def validation_figure(out: Path = DEFAULT_OUT, summary_csv: Path = SUMMARY_CSV, 
     handles = [
         Line2D([], [], marker="D", ls="-", color=ink, ms=5, lw=1.2, label="measured, probable error as tabulated"),
         Line2D([], [], marker="D", ls="", color=ink, mfc="white", mew=1.2, ms=5.5,
-               label="measured, tabulated 0: hollow diamond, triangles at the 0.5 % bound"),
+               label="measured, tabulated 0 (below 0.5 %): hollow diamond, triangles beside the symbol"),
         Line2D([], [], marker="D", ls="", color=ink, ms=5, label="measured, no probable error tabulated (no bar)"),
         Patch(facecolor="none", edgecolor=blue, hatch="//////", label="grid sensitivity (not an established GCI)"),
         Line2D([], [], marker="o", ls="", color=blue, ms=7, label="CFD, Euler"),
@@ -307,7 +314,7 @@ def validation_figure(out: Path = DEFAULT_OUT, summary_csv: Path = SUMMARY_CSV, 
     hi = max((b.high_pct for b in used_bands), default=0.0)
     n = max((b.n_rows for b in used_bands), default=0)
     ch = max(changes, key=lambda c: c.pct) if changes else None
-    change = (f" The box understates the sensitivity: {ch.plotted_level} to {ch.other_level} changes cn by {ch.pct:.2g} %, "
+    change = (f" The box understates the sensitivity: {ch.plotted_level} to {ch.other_level} changes CN by {ch.pct:.2g} %, "
               f"more than the box." if ch else "")
     note = FOOTNOTE.format(n=n, hi=hi, change=change)
     if not used_bands:
@@ -318,10 +325,110 @@ def validation_figure(out: Path = DEFAULT_OUT, summary_csv: Path = SUMMARY_CSV, 
     fig.savefig(out, format=out.suffix.lstrip(".") or "svg", metadata={"Date": None} if out.suffix == ".svg" else None)
 
 
+@dataclass(frozen=True)
+class Layer1Level:
+    """One grid level of layer 1: the binned wall Cp of the cone surface, nose end first."""
+    name: str
+    nodes: int
+    converged: bool
+    residual_drop: float
+    cp_source: str            # "final write" or "periodic snapshot"
+    source_iteration: int
+    history_iterations: int
+    x: tuple[float, ...]      # bin centres in x/L
+    cp: tuple[float, ...]
+    wall_nodes: tuple[int, ...]
+
+
+def read_layer1(path: Path = LAYER1_CSV) -> tuple[list[Layer1Level], float]:
+    """The levels (coarse first) and the Taylor-Maccoll Cp, from results/layer1_cone.csv.
+
+    Only the 0.1-wide bins are read (``bin`` and ``cp_nearest_tip``); the two means over several bins are not."""
+    rows = list(csv.DictReader(_data_lines(path)))
+    exact = {round(float(r["cp_exact"]), 12) for r in rows}
+    if len(exact) != 1:
+        raise ValueError(f"{path}: cp_exact is not one value: {sorted(exact)}")
+    levels = []
+    for name in dict.fromkeys(r["level"] for r in rows):
+        mine = [r for r in rows if r["level"] == name]
+        bins = []
+        for r in mine:
+            if r["quantity"] not in ("bin", "cp_nearest_tip"):
+                continue
+            lo, hi = (float(v) for v in r["x_over_l"].split("-"))
+            bins.append(((lo + hi) / 2.0, float(r["cp_cfd"]), int(r["wall_nodes"])))
+        bins.sort()
+        meta = {(r["nodes"], r["solver_converged"], r["residual_drop_orders"], r["cp_source"], r["cp_source_iteration"],
+                 r["history_iterations"]) for r in mine}
+        if len(meta) != 1 or not bins:
+            raise ValueError(f"{path}: level {name!r} has inconsistent metadata or no bins")
+        nodes, conv, drop, src, it, hist = next(iter(meta))
+        if conv not in ("True", "False"):
+            raise ValueError(f"{path}: solver_converged {conv!r} of level {name!r}")
+        levels.append(Layer1Level(name, int(nodes), conv == "True", float(drop), src, int(it), int(hist),
+                                  tuple(b[0] for b in bins), tuple(b[1] for b in bins), tuple(b[2] for b in bins)))
+    return levels, exact.pop()
+
+
+LAYER1_NOTE = (
+    "Layer 1: 10 degree cone-cylinder at Mach 2.35 through the product's chain (Euler, three-dimensional unstructured half "
+    "model). Each point is the mean wall Cp of the cone-surface nodes in a bin of x/L of width 0.1. Filled symbols are "
+    "solutions the solver accepted. The fine level (hollow symbols, dashed) was not accepted: its residual dropped {drop:.2f} "
+    "orders, and its Cp is the periodic write of iteration {it} of {hist}, so it is shown for description only. "
+    "Layer 1 has no GCI (every row is refused because the fine level did not converge), so no band is drawn."
+)
+
+
+def _spaced(n: int) -> str:
+    return f"{n:,}".replace(",", " ")
+
+
+def layer1_cp_figure(out: Path = LAYER1_OUT, csv_path: Path = LAYER1_CSV):
+    """Wall Cp against x/L for each level, with the Taylor-Maccoll value; no band. Returns the figure (saved to ``out``)."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    levels, exact = read_layer1(csv_path)
+    ink, grey = "#222222", "#6b6b6b"
+    colours = {"coarse": "#0072B2", "medium": "#009E73", "fine": "#D55E00"}
+    plt.rcParams.update({"svg.fonttype": "path", "svg.hashsalt": "nasa-vv", "font.size": 10})
+    fig, ax = plt.subplots(figsize=(8.0, 5.6))
+    fig.subplots_adjust(left=0.11, right=0.975, top=0.97, bottom=0.30)
+    ax.axhline(exact, color=ink, lw=1.2, label=f"Taylor-Maccoll (exact), Cp = {exact:.5f}", zorder=2)
+    for lv in levels:
+        col = colours.get(lv.name, grey)
+        if lv.converged:
+            label = f"{lv.name} ({_spaced(lv.nodes)} nodes), accepted"
+            ax.plot(lv.x, lv.cp, "-o", color=col, ms=6, lw=1.4, zorder=4, label=label)
+        else:
+            label = (f"{lv.name} ({_spaced(lv.nodes)} nodes), NOT accepted: not converged, "
+                     f"iteration-{lv.source_iteration} snapshot")
+            ax.plot(lv.x, lv.cp, "--o", color=col, mfc="white", mew=1.5, ms=6, lw=1.4, zorder=4, label=label)
+    ax.set_xlabel("x/L along the cone surface (bin centre)")
+    ax.set_ylabel(r"wall $C_p$ (mean over the bin)")
+    ax.grid(True, color="#dddddd", lw=0.6)
+    ax.set_axisbelow(True)
+    ax.margins(x=0.04)
+    ax.legend(loc="lower right", frameon=False, fontsize=9)
+    fine = next((lv for lv in levels if not lv.converged), None)
+    note = LAYER1_NOTE.format(drop=fine.residual_drop, it=fine.source_iteration, hist=fine.history_iterations) if fine else \
+        LAYER1_NOTE.split("The fine level")[0] + "Layer 1 has no GCI, so no band is drawn."
+    fig.text(0.11, 0.015, "\n".join(textwrap.wrap(note, 105)), ha="left", va="bottom", fontsize=8, color=grey)
+    out = Path(out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out, format=out.suffix.lstrip(".") or "svg", metadata={"Date": None} if out.suffix == ".svg" else None)
+    return fig
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
-    validation_figure(ap.parse_args().out)
+    ap.add_argument("--layer1-out", type=Path, default=LAYER1_OUT)
+    a = ap.parse_args()
+    validation_figure(a.out)
+    layer1_cp_figure(a.layer1_out)
 
 
 if __name__ == "__main__":

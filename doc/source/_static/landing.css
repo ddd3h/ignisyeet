@@ -211,13 +211,7 @@ a.iy-badge:hover { border-color: var(--iy-accent); color: var(--iy-accent) !impo
 .iy-empty { padding: 18px 20px; border: 1px dashed var(--color-background-border); border-radius: var(--iy-radius); color: var(--color-foreground-secondary); }
 
 /* ---- footer ---- */
-.iy-footer { padding: 48px 0 56px; font-size: 0.88rem; line-height: 1.75; color: var(--color-foreground-secondary); }
-.iy-footer-grid { display: grid; grid-template-columns: 1.3fr 1.3fr 0.7fr; gap: 32px; }
-.iy-footer p + p, .iy-footer p + ul { margin-top: 0.6rem; }
-.iy-footer-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 0.6rem; }
-.iy-footer-brand img { flex: none; width: 40px; height: 40px; border-radius: 10px; box-shadow: 0 0 0 1px var(--color-background-border); }
-.iy-footer-name { margin: 0; font-size: 1.2rem; font-weight: 800; color: var(--color-foreground-primary); }
-.iy-footer-h { font-weight: 700; color: var(--color-foreground-primary); }
+.iy-footer { padding: 32px 0 40px; font-size: 0.88rem; line-height: 1.75; color: var(--color-foreground-secondary); border-top: 1px solid var(--color-background-border); }
 
 /* ---- narrower screens ---- */
 @media (max-width: 66.99em) {
@@ -228,7 +222,6 @@ a.iy-badge:hover { border-color: var(--iy-accent); color: var(--iy-accent) !impo
   .iy-flow li:nth-child(3)::after { display: none; }
   .iy-verify { grid-template-columns: minmax(0, 1fr); }
   .iy-map { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .iy-footer-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 40em) {
   .iy-wrap { padding: 0 16px; }

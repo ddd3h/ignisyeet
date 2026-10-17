@@ -9,7 +9,7 @@ Run it by hand after the paper changes (needs pandoc, LuaLaTeX and pdftocairo):
         [--paper ../research/IY-TR-2026-01/paper/en] [--figures ../research/IY-TR-2026-01/nasa_vv/figures]
 
 It writes
-  source/research/IY-TR-2026-01/paper.html        the paper body (HTML fragment, MathML, numbered)
+  source/research/IY-TR-2026-01/paper.html        the table of contents and the paper body (HTML fragment, MathML, numbered)
   extra/research/IY-TR-2026-01/fig/*.svg           the figures, cropped as in the paper
   extra/research/IY-TR-2026-01/IY-TR-2026-01.pdf   the built paper, when main.pdf exists
 """
@@ -166,6 +166,21 @@ def convert(tex, bib, pandoc, work):
     return re.sub(r'<img src="(fig/[^"]*)"([^>]*)/>', r'<a href="\1"><img loading="lazy" src="\1"\2/></a>', html)
 
 
+def contents(html):
+    """The table of contents: sections and subsections, linked to their headings."""
+    items = []
+    for m in re.finditer(r'<h([23])[^>]*? id="([^"]*)"[^>]*>(.*?)</h\1>', html, re.S):
+        number = re.search(r'<span class="iy-secnum">([^<]*)</span>', m.group(3))
+        title = re.sub(r"<[^>]+>", "", re.sub(r'<span class="iy-secnum">[^<]*</span>', "", m.group(3))).strip()
+        num = f'<span class="iy-secnum">{number.group(1)}</span>' if number else ""
+        items.append(f'<li class="iy-toc-l{int(m.group(1)) - 1}"><a href="#{m.group(2)}">{num}{title}</a></li>')
+    return (
+        '<nav class="iy-toc" aria-label="Contents" lang="en"><details open><summary>Contents</summary>\n<ul>\n'
+        + "\n".join(items)
+        + "\n</ul></details></nav>\n"
+    )
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--paper", type=Path, default=DOC.parent / "research" / REPORT / "paper" / "en")
@@ -181,7 +196,7 @@ def main():
     for name, pt in CROP_BOTTOM_PT.items():
         crop_svg(args.figures / f"{name}.svg", fig / f"{name}.svg", pt)
     OUT_HTML.parent.mkdir(parents=True, exist_ok=True)
-    OUT_HTML.write_text(html)
+    OUT_HTML.write_text(contents(html) + '<article class="iy-paper" lang="en">\n' + html + "</article>\n")
     pdf = args.paper / "main.pdf"
     if pdf.exists():
         shutil.copyfile(pdf, OUT_EXTRA / f"{REPORT}.pdf")

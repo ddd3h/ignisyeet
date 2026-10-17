@@ -249,7 +249,31 @@ a.iy-badge:hover { border-color: var(--iy-accent); color: var(--iy-accent) !impo
 .iy-table th { font-weight: 700; color: var(--color-foreground-secondary); border-bottom-width: 2px; white-space: nowrap; }
 
 /* report body: the paper converted by scripts/make_tr_page.py */
-.iy-paper { max-width: 880px; margin-left: max(0px, calc((100% - 1120px) / 2)); padding-bottom: 56px; font-size: 1rem; line-height: 1.75; }
+.iy-paper-layout { display: grid; grid-template-columns: 220px minmax(0, 860px); gap: 48px; align-items: start; }
+.iy-paper { min-width: 0; padding-bottom: 56px; font-size: 1rem; line-height: 1.75; }
+.iy-paper > h2:first-child { margin-top: 0; }
+
+/* contents: a column that stays in view on wide screens, a collapsible bar under the top bar on narrow ones */
+.iy-toc { position: sticky; top: 24px; max-height: calc(100vh - 48px); overflow-y: auto; padding: 1.6rem 0 1rem; font-size: 0.85rem; line-height: 1.45; }
+.iy-toc summary { margin-bottom: 0.8rem; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-foreground-secondary); list-style: none; pointer-events: none; }
+.iy-toc summary::-webkit-details-marker { display: none; }
+.iy-toc ul { margin: 0; padding: 0; list-style: none; border-left: 1px solid var(--color-background-border); }
+.iy-toc a { display: flex; gap: 0.5em; margin-left: -1px; padding: 4px 0 4px 12px; border-left: 2px solid transparent; color: var(--color-foreground-secondary) !important; text-decoration: none; }
+.iy-toc a:hover { color: var(--color-foreground-primary) !important; }
+.iy-toc a[aria-current] { border-left-color: var(--iy-accent); color: var(--color-foreground-primary) !important; font-weight: 600; }
+.iy-toc .iy-toc-l2 a { padding-left: 24px; font-size: 0.8rem; }
+.iy-toc .iy-secnum { flex: none; margin: 0; }
+@media (max-width: 66.99em) {
+  .iy-paper-layout { display: block; }
+  .iy-toc { top: 61px; z-index: 10; max-height: none; overflow: visible; margin: 0 -24px; padding: 0 24px; background: var(--color-background-primary); border-bottom: 1px solid var(--color-background-border); }
+  .iy-toc summary { margin: 0; padding: 12px 0; pointer-events: auto; cursor: pointer; }
+  .iy-toc summary::after { content: " ▾"; }
+  .iy-toc details[open] summary::after { content: " ▴"; }
+  .iy-toc ul { max-height: 60vh; overflow-y: auto; margin-bottom: 12px; }
+}
+@media (max-width: 40em) {
+  .iy-toc { margin: 0 -16px; padding: 0 16px; }
+}
 .iy-paper :where(h2, h3, h4, h5) { color: var(--color-foreground-primary); line-height: 1.4; }
 .iy-paper h2 { margin: 2.6rem 0 1rem; padding-top: 1.6rem; border-top: 1px solid var(--color-background-border); font-size: 1.45rem; }
 .iy-paper h3 { margin: 2rem 0 0.8rem; font-size: 1.2rem; }
@@ -349,8 +373,10 @@ a.iy-badge:hover { border-color: var(--iy-accent); color: var(--iy-accent) !impo
 .mobile-header { display: none !important; }
 .iy-nav-tools { display: none; }
 @media (max-width: 66.99em) {
+  /* The top bar sits in its own wrapper (_templates/page.html), so the wrapper is what sticks. */
+  .iy-nav-wrap { position: sticky; top: 0; z-index: 20; }
   .iy-nav {
-    display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 20;
+    display: flex; align-items: center; gap: 12px; position: relative;
     padding: 10px 16px; background: var(--color-background-primary); border-bottom: 1px solid var(--color-background-border);
   }
   .iy-nav-brand { display: flex; align-items: center; gap: 0.6rem; font-weight: 700; font-size: 1.05rem; color: var(--color-foreground-primary) !important; text-decoration: none; }

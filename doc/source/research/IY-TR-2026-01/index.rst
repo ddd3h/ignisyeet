@@ -21,13 +21,39 @@ IY-TR-2026-01: NASA CFD verification and validation of IgnisYeet v0.4.0
      </div>
    </header>
 
-   <article class="iy-wrap iy-paper" lang="en">
+   <div class="iy-wrap iy-paper-layout">
 
 .. raw:: html
    :file: paper.html
 
 .. raw:: html
 
-   </article>
+   </div>
+   <script>
+   (function () {
+     var toc = document.querySelector(".iy-toc");
+     if (!toc) { return; }
+     var details = toc.querySelector("details");
+     if (matchMedia("(max-width: 66.99em)").matches) { details.open = false; }
+     var links = {};
+     toc.querySelectorAll("a").forEach(function (a) { links[a.getAttribute("href").slice(1)] = a; });
+     var heads = Array.prototype.filter.call(document.querySelectorAll(".iy-paper h2[id], .iy-paper h3[id]"), function (h) { return links[h.id]; });
+     var current = null;
+     var update = function () {
+       var active = heads[0];
+       for (var i = 0; i < heads.length; i++) { if (heads[i].getBoundingClientRect().top < 120) { active = heads[i]; } else { break; } }
+       if (active === current) { return; }
+       if (current) { links[current.id].removeAttribute("aria-current"); }
+       current = active;
+       var a = links[current.id];
+       a.setAttribute("aria-current", "location");
+       var box = toc.getBoundingClientRect(), r = a.getBoundingClientRect();
+       if (r.top < box.top || r.bottom > box.bottom) { a.scrollIntoView({ block: "nearest" }); }
+     };
+     addEventListener("scroll", update, { passive: true });
+     update();
+     toc.addEventListener("click", function (e) { if (e.target.closest("a") && matchMedia("(max-width: 66.99em)").matches) { details.open = false; } });
+   })();
+   </script>
 
    </div>

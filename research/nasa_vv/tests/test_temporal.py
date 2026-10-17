@@ -21,7 +21,7 @@ REAL_SUMMARY = {
     "landing_distance": 7735.510004665515, "landing_east": -655.567330850025,
     "landing_north": -7707.681007086532, "landing_speed": 7.059229506046819,
     "landing_time": 684.953678402196, "max_time": 3600.0, "rail_exit_time": 0.2471570010032786,
-    "warnings": [],
+    "rail_exit_speed": 45.661153427022754, "warnings": [],
 }
 TRAJ_HEADER = ("t,phase,east,north,up,lat,lon,alt,vel_e,vel_n,vel_u,airspeed,mach,alpha_deg,thrust,"
                "mass,x_cg,x_cp,stability_cal,dyn_pressure,cn,ca,pitch_deg,heading_deg,wx,wy,wz,"
@@ -47,9 +47,11 @@ def _summary(path, **values):
 
 def make_workdir(root, case="sample", p=4.0, fn=None, alt_c=1e10):
     """Runs whose every quantity is f0 + C dt^p; fn(name, dt) overrides a value."""
-    ev0 = {"apogee": 4440.0, "apogee_time": 26.0, "landing_distance": 7735.0, "landing_time": 684.0}
-    ev_c = {"apogee": 5e7, "apogee_time": 1e5, "landing_distance": 3e8, "landing_time": 4e6}
-    for dt in temporal.DTS:
+    ev0 = {"apogee": 4440.0, "apogee_time": 26.0, "landing_distance": 7735.0, "landing_time": 684.0,
+           "rail_exit_time": 0.25, "rail_exit_speed": 45.0}
+    ev_c = {"apogee": 5e7, "apogee_time": 1e5, "landing_distance": 3e8, "landing_time": 4e6,
+            "rail_exit_time": 1e3, "rail_exit_speed": 1e6}
+    for dt in temporal.CASE_DTS[case]:
         base = {k: ev0[k] + ev_c[k] * dt**p for k in ev0}
         if fn:
             base = {k: fn(k, dt, v) for k, v in base.items()}
@@ -70,7 +72,8 @@ def test_read_summary_takes_the_four_event_quantities(tmp_path):
     _summary(tmp_path)
     s = temporal.read_summary(tmp_path)
     assert s == {"apogee": 4440.467333643025, "apogee_time": 26.101127429246667,
-                 "landing_distance": 7735.510004665515, "landing_time": 684.953678402196}
+                 "landing_distance": 7735.510004665515, "landing_time": 684.953678402196,
+                 "rail_exit_time": 0.2471570010032786, "rail_exit_speed": 45.661153427022754}
 
 
 def test_read_summary_refuses_a_flight_that_did_not_land(tmp_path):
@@ -174,7 +177,7 @@ def test_a_fourth_order_run_gives_order_four_on_every_quantity_and_triplet(tmp_p
     _, rows = _parse(temporal.main(tmp_path / "t.csv", workdir=work))
     names = {r["quantity"] for r in rows if not r["quantity"].startswith("noramp_")}
     assert names == {"apogee_m", "apogee_time_s", "landing_distance_m", "flight_time_s",
-                     "alt_m_at_t1", "airspeed_ms_at_t1", "alt_m_at_t10", "airspeed_ms_at_t10",
+                     "rail_exit_time_s", "rail_exit_speed_ms", "alt_m_at_t1", "airspeed_ms_at_t1", "alt_m_at_t10", "airspeed_ms_at_t10",
                      "height_m_at_t10", "range_m_at_t10"}
     for r in rows:
         assert float(r["order"]) == pytest.approx(4.0, abs=0.15), r["quantity"]
@@ -242,10 +245,25 @@ def test_a_second_order_run_is_reported_as_it_is(tmp_path):
 
 def test_the_control_runs_are_labelled_when_present(tmp_path):
     work = make_workdir(tmp_path / "w")
-    make_workdir(work, case="noramp")
-    _, rows = _parse(temporal.main(tmp_path / "t.csv", workdir=work))
-    assert any(r["quantity"] == "noramp_apogee_m" for r in rows)
-    assert len([r for r in rows if r["quantity"].startswith("noramp_")]) == 20
+    for case in ("noramp", "first300", "nested"):
+        make_workdir(work, case=case)
+    out = temporal.main(tmp_path / "t.csv", workdir=work)
+    head, rows = _parse(out)
+    for prefix in ("noramp_", "first300_", "nested_"):
+        assert any(r["quantity"] == prefix + "apogee_m" for r in rows)
+        assert len([r for r in rows if r["quantity"].startswith(prefix)]) == 24
+    nested = [r for r in rows if r["quantity"] == "nested_apogee_m"]
+    assert [(r["dt1"], r["dt2"], r["dt3"]) for r in nested] == [("0.00125", "0.0025", "0.005"),
+                                                              ("0.0025", "0.005", "0.01")]
+    text = "\n".join(head)
+    assert "diagnostics on a modified input, not the product's sample" in text
+    assert "cause is unidentified" in text
+
+
+def test_the_header_names_no_controls_when_there_are_none(tmp_path):
+    work = make_workdir(tmp_path / "w")
+    head, _ = _parse(temporal.main(tmp_path / "t.csv", workdir=work))
+    assert "first300_" not in "\n".join(head)
 
 
 def test_a_missing_run_is_an_error_naming_the_directory(tmp_path):
@@ -278,3 +296,40 @@ def test_a_fixed_time_difference_lost_in_the_file_rounding_is_not_called_round_o
     r = next(r for r in rows if r["quantity"] == "alt_m_at_t10" and r["dt1"] == "0.001")
     assert r["order"] == ""
     assert "output resolution" in r["note"] and "round-off" not in r["note"]
+
+
+def test_a_first_sample_above_the_weight_keeps_the_ramp(tmp_path):
+    src = tmp_path / "m.eng"
+    src.write_text("; c\nIY 75 500 0 3.0 4.5 X\n0.00 0\n0.05 2300\n3.10 0\n")
+    out = temporal.write_first_sample_motor(src, tmp_path / "n.eng", 300.0)
+    assert out.read_text().splitlines()[2:] == ["0.00 300", "0.05 2300", "3.10 0"]
+
+
+def test_the_nested_sweep_divides_every_knot_of_the_sample_motor():
+    bad = temporal.non_dividing(temporal.thrust_times(temporal.MOTOR), temporal.NESTED_DTS)
+    assert all(v == [] for v in bad.values())
+    assert [temporal.NESTED_DTS[i] / temporal.NESTED_DTS[i + 1] for i in range(3)] == [2.0, 2.0, 2.0]
+
+
+def test_the_first_sample_of_the_300_n_control_is_above_the_rocket_weight():
+    # 11 kg on a rail at 85 degrees elevation
+    assert temporal.FIRST300_N > 11.0 * 9.81 * 0.9962
+
+
+def test_an_order_from_differences_below_the_floor_is_labelled_not_evidence(tmp_path):
+    # exact fourth-order differences of about 6e-10 relative: the order is 4 but below the observed floor
+    def tiny(name, dt, v):
+        return 26.0 + 1e3 * dt**4 if name == "apogee_time" else v
+
+    work = make_workdir(tmp_path / "w", fn=tiny)
+    _, rows = _parse(temporal.main(tmp_path / "t.csv", workdir=work))
+    r = next(r for r in rows if r["quantity"] == "apogee_time_s" and r["dt1"] == "0.001")
+    assert float(r["order"]) == pytest.approx(4.0, abs=0.01)
+    assert "not evidence of the formal order" in r["note"]
+
+
+def test_a_difference_above_the_floor_is_not_labelled(tmp_path):
+    work = make_workdir(tmp_path / "w")
+    _, rows = _parse(temporal.main(tmp_path / "t.csv", workdir=work))
+    r = next(r for r in rows if r["quantity"] == "apogee_m" and r["dt1"] == "0.002")
+    assert "floor" not in r["note"]

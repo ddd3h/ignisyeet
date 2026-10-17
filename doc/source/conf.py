@@ -110,6 +110,7 @@ html_title = "IgnisYeet ドキュメント"
 html_logo = "../IgnisYeet-logo.svg"
 html_favicon = "_static/landing/logo-mark.svg"
 html_static_path = ["_static"]
+html_extra_path = ["../extra"]
 html_css_files = ["custom.css"]
 html_theme_options = {
     "source_repository": "https://github.com/ddd3h/ignisyeet",

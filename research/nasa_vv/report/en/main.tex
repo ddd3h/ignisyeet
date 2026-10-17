@@ -25,7 +25,7 @@
 
 \title{Verification and validation of the IgnisYeet aerodynamic pipeline\\
 following the NASA WIND/NPARC procedure}
-\author{IgnisYeet project}
+\author{NISHIHAMA Daisuke}
 \date{Draft, 17 October 2026}
 
 \begin{document}
@@ -56,7 +56,11 @@ triplets disagree.
 The NPARC archive's reference table for a 10$^\circ$ cone is internally inconsistent and disagrees with independent
 tables in every entry except the surface Mach number.
 % source: results/layer0.csv, results/layer0_gci.csv, results/gci_existing.csv, results/cone10_reference_check.csv (every number in this abstract)
-% PENDING Task 18: abstract sentence on the layer 0 against layer 1 difference (pipeline error, including 3-D unstructured meshing)
+Through the product's chain the same cone could not be brought to an accepted finest level: the fine level of the three
+did not converge, so layer~1 has no grid convergence index and no pipeline error, including three-dimensional
+unstructured meshing, is quoted; the differences of the two accepted levels from the exact cone pressure coefficient
+are described only.
+% source: results/layer1_cone.csv, results/layer1_gci.csv, results/layer0_vs_layer1.csv
 % PENDING Task 14: abstract sentence on the sample-rocket Euler grid convergence and the refined d'Alembert check
 % PENDING Task 15: abstract sentence on the Basic Finner RANS grid convergence at Mach 1.832 and the validation overlap judgement
 % PENDING Task 16: abstract sentence on the iterative error relative to the grid uncertainty
@@ -282,9 +286,28 @@ The convergence measure reported below is the peak minus the final value of $\lo
 \subsection{Layers 1 and 2}
 \label{sec:l12setup}
 
+% source: results/layer1_cone.csv (header and level columns)
 Layer~1 solves the layer~0 cone, Mach 2.35, zero incidence, Euler, as a 10$^\circ$ cone-cylinder through the product
-on a three-dimensional unstructured half model at three levels of resolution.
-% PENDING Task 18: the realised layer 1 grids (cell sizes, node counts), the surface-pressure extraction window, and how the cone Cp is compared with Taylor-Maccoll
+on a three-dimensional unstructured half model.
+The body has a base radius of 0.05\,m, a cone length of 0.2836\,m, a cylinder to 0.5836\,m, and the product's Euler tail
+fairing behind it; the product rebuilds the body from the CAD profile.
+Layer~0 has a bare cone in a rectangular domain and no cylinder or tail.
+Three levels have wall cell sizes of 3.92, 2.80 and 2.00\,mm (a factor 1.4); the body has no fins, so the wall size is the
+only refinement setting.
+They have 28\,887, 45\,258 and 75\,796 nodes (132\,328, 209\,052 and 350\,868 cells), a growth of 1.57 and 1.67 in nodes against
+$1.4^3=2.74$ for a similar refinement, so these grids are not similar either.
+The product refuses a single incidence, so each level also solves $4^\circ$; only the zero-incidence case is used, and
+convergence is read from it alone.
+All runs used one build of the product, the study's base commit, and ran concurrently on one node with 8, 10 and 14
+ranks for the three levels; the rank count also sets the domain decomposition, and whether the fine level's behaviour
+depends on it was not tested.
+The surface pressure coefficient $\Cp=(p-\pinf)/(\tfrac12\rho_\infty V_\infty^2)$ of the wall nodes lying within 1\,\% of the
+cone radius is binned along $x/L_\mathrm{cone}$ in bins of 0.1 from 0.2 to 0.9 and compared with the Taylor--Maccoll value
+0.09673.
+The window $0.4\le x/L_\mathrm{cone}\le0.9$ is the like-for-like counterpart of layer~0's wall window; the mean over
+$0.2$--$0.9$ and the bin nearest the tip have no layer~0 counterpart.
+The freestream state of layer~1 is the product's launch altitude (20\,m, $p=101\,085$\,Pa, $T=288.02$\,K), that of layer~0
+$p=101\,325$\,Pa, $T=288.15$\,K; Mach number and $\gamma$ are the same.
 
 % source: results/gci_existing.csv (Basic Finner Euler conditions and levels), results/consistency.csv (sample-rocket Mach numbers)
 Layer~2 treats a sample rocket (Euler, Mach 0.3, 0.8 and 2.0, incidence 0$^\circ$ and 4$^\circ$) and the
@@ -603,8 +626,70 @@ The symmetry-axis variant has 0.52 to 0.59 times the imbalance of the first, a d
 \subsection{Layer 1: the cone through the product}
 \label{sec:layer1}
 
-% PENDING Task 18: layer 1 cone-cylinder results: surface Cp against Taylor-Maccoll on three levels, shock angle, cone-only axial force, GCI per quantity (or the refusal with its residual drop), grid-similarity caveat
-% PENDING Task 18: the layer 0 against layer 1 comparison table and the pipeline contribution, called pipeline error including 3-D unstructured meshing; the statement of whether the two layers are distinguishable at this resolution given each layer's GCI
+% source: results/layer1_cone.csv, results/layer1_gci.csv, results/layer0_vs_layer1.csv
+The three levels were solved through the product (Section~\ref{sec:l12setup}).
+Table~\ref{tab:layer1} gives their convergence and the difference of the cone pressure coefficient from Taylor--Maccoll.
+
+\begin{table}[t]
+\centering
+\caption{Layer~1, 10$^\circ$ cone-cylinder at Mach 2.35: convergence and difference of the surface $\Cp$ from the exact value
+0.09673 (per cent). The fine level was not accepted by the solver, so its values describe a solution that is not accepted
+and enter no uncertainty estimate. Layer~0's finest-grid value is the wall-window $\Cp$ of the bare cone.}
+\label{tab:layer1}
+% source: results/layer1_cone.csv, results/layer0_vs_layer1.csv
+\small
+\begin{tabular}{@{}lrrcrrr@{}}
+\toprule
+Level & Nodes & Residual drop & Solver verdict & $x/L$ 0.4--0.9 & $x/L$ 0.2--0.9 & Nearest tip \\
+\midrule
+Coarse & 28\,887 & 5.52 & converged & $-2.51$ & $-3.74$ & $-10.19$ \\
+Medium & 45\,258 & 4.80 & converged & $-1.26$ & $-1.88$ & $-6.59$ \\
+Fine & 75\,796 & 2.44 & not converged & $-0.44$ & $-0.86$ & $-4.17$ \\
+\midrule
+Layer~0, finest grid & 49\,601 & 12.73 & converged & $-0.19$ & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The fine level did not converge.
+Over its last 40 iterations the density residual stays between $-6.00$ and $-4.85$ and never reaches the target of $-6$, and the
+drag coefficient varies by $2.2\times10^{-4}$ relative; the picture is consistent with a limit cycle.
+The product's solver verdict for it is ``not converged'', with a residual drop of 2.44 orders against 5.52 and 4.80 for the
+other two.
+The gate of Section~\ref{sec:gci} therefore refuses the fine level, and all six layer~1 grid convergence rows (three quantities,
+each under both grid-size definitions) carry that refusal and no number.
+\emph{There is no layer~1 GCI.}
+
+The differences of the two accepted levels from the exact solution are descriptive only.
+In the like-for-like window they are $-2.51$ and $-1.26\,\%$; the fine level, not accepted, gives $-0.44\,\%$.
+The values fall by factors of 2.0 and 2.9 from level to level, but with one level unaccepted and grids that are not similar
+no order is drawn from them.
+The error is largest near the tip ($-10.19$, $-6.59$ and $-4.17\,\%$ in the bin nearest the tip) and falls downstream,
+as in layer~0, where the cone's error is dominated by the tip transient.
+
+\paragraph{Pipeline error.}
+The layer~0 and layer~1 errors against the same exact solution are meant to be subtracted to give the \emph{pipeline error,
+including three-dimensional unstructured meshing}.
+That cannot be done here.
+Layer~1's finest level is not an accepted solution, so its error is not that of a converged solution and no subtraction is
+quoted; there is also no layer~1 uncertainty with which to judge whether the two layers differ.
+Even with an accepted fine level the two layers differ in more than the chain: in mesh type (structured axisymmetric against
+unstructured tetrahedra), in domain, in the cylinder and tail of layer~1, in the freestream state, in the way the wall
+$\Cp$ is extracted, and in the placement of the window relative to the tip in cell units.
+The layer~0 GCI for the same window, 0.059\,\%, does not bound its own finest-grid error (0.188\,\%; Table~\ref{tab:l0}),
+so it would understate layer~0's uncertainty.
+The shock angle and the axial force of the cone alone were not compared in layer~1.
+
+\paragraph{Cut surface output.}
+Observed behaviour of the product, with no cause established beyond that the write is cut when the runner stops SU2:
+when the runner stops a solver run, the final surface output can be incomplete.
+In the medium level the Velocity field of the surface file held 816 whole values of 15\,468 (a first medium run had its pressure-coefficient
+field cut and could not be read, and the level used here is a second run of the same case).
+For the fine level the surface file in CSV form held 1\,255 of 28\,265 complete rows, and the VTK file used is the periodic snapshot of
+iteration 200 while the history has 210 iterations, so there is no complete pressure source at the final iteration.
+On 213 cone-wall nodes held by both files, the $\Cp$ of the two states differs by $6\times10^{-5}$ relative to the mean
+$\Cp$; this does not alter any gate.
+The pressure-coefficient fields used were complete in every level.
 
 %=====================================================================
 \section{Application: the six steps on the sample rocket and the Basic Finner (layer 2)}
@@ -632,6 +717,7 @@ the grid convergence argument fails.
 % source: results/layer0.csv, results/layer0_plate.csv (residual_drop_orders)
 In layer~0 every run reached its residual target, with 12.7 to 13.9 orders of drop for the Euler cases and 9.4 to 10.4
 for the three plate grids (Sections~\ref{sec:l0results} and~\ref{sec:plate}).
+The layer~1 levels dropped the density residual by 5.52, 4.80 and 2.44 orders (the last not accepted; Section~\ref{sec:layer1}).
 % PENDING Task 16: the iterative-error to GCI ratio per layer 2 condition, with any condition above the thresholds stated plainly
 
 \subsection{Step 3: consistency}
@@ -809,7 +895,7 @@ This is verification of the integrator by step refinement; it is not a compariso
 The product offers Euler and Reynolds-averaged Navier--Stokes with the Spalart--Allmaras model, and nothing else.
 The tutorial's request for a comparison of several turbulence models is therefore answered only in part, and the
 limitation is a limit of the product's scope, not an omission.
-The layer~0 comparison of Spalart--Allmaras with a second turbulence model on the turbulent plate was not performed.
+% PENDING Task 20: the layer 0 comparison of Spalart-Allmaras with a second turbulence model on the turbulent plate (SU2 run directly)
 Comparing Euler with RANS-SA on the same condition is a cross-comparison of two models; a difference between
 them counts as a model difference only if it exceeds the sum of the two numerical uncertainty bands.
 % PENDING Task 20: the Euler against RANS-SA differences (sample rocket Mach 0.8 and 2.0 at 4 deg; Basic Finner Mach 1.832 at 0 and 2 deg), each with both GCI bands and the judgement whether the difference is separable from numerical uncertainty
@@ -842,14 +928,57 @@ There is no band on $\CXzero$ and none at any other Mach number.}
 \label{fig:validation}
 \end{figure}
 
+% source: doc/data/validation/basic_finner/summary_vs_measured.csv (measured values, probable errors and CFD values of Table~\ref{tab:validation}; a committed data file outside results/)
 Every CFD point in Fig.~\ref{fig:validation} is compared with the measured value only; no difference between CFD
 models is drawn or computed.
-The Euler $\CNa$ and the Euler $\CXzero$ lie below the measured value at every Mach number plotted.
+Table~\ref{tab:validation} gives the values.
+
+\begin{table}[t]
+\centering
+\caption{Basic Finner: measured coefficients of \citet{dupuis1997} (Table IX) with their tabulated probable error, and CFD values, with the difference
+$(\text{CFD}-\text{measured})/|\text{measured}|$ in per cent. A dash in the error column means the error is not tabulated (unknown); $<$0.5 is a tabulated 0,
+an error below 0.5\,\%, not zero error. The RANS values are single-grid values without a numerical uncertainty; the two $\CXzero$ values are the
+two treatments of the base term (model, and CFD base pressure).}
+\label{tab:validation}
+% source: doc/data/validation/basic_finner/summary_vs_measured.csv
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}rrrrrrrrrr@{}}
+\toprule
+ & \multicolumn{5}{c}{$\CNa$ (1/rad)} & \multicolumn{4}{c}{$\CXzero$} \\
+\cmidrule(lr){2-6}\cmidrule(l){7-10}
+Mach & Measured & Err.\ (\%) & Euler & diff.\ (\%) & Measured & Err.\ (\%) & Euler & diff.\ (\%) \\
+\midrule
+1.077 & 18.47 & 2 & 17.32 & $-6.3$ & 0.863 & $<$0.5 & 0.6301 & $-27.0$ \\
+1.293 & 18.27 & 3 & 16.74 & $-8.4$ & 0.731 & $<$0.5 & 0.5444 & $-25.5$ \\
+1.832 & 11.78 & 4 & 11.27 & $-4.4$ & 0.585 & -- & 0.4197 & $-28.3$ \\
+2.375 & 10.52 & 2 & 9.411 & $-10.5$ & 0.484 & -- & 0.3490 & $-27.9$ \\
+2.718 & 9.01 & 2 & 8.744 & $-2.9$ & 0.435 & -- & 0.3173 & $-27.0$ \\
+3.147 & 8.69 & 1 & 8.161 & $-6.1$ & 0.373 & -- & 0.2861 & $-23.3$ \\
+3.734 & 8.32 & 1 & 7.550 & $-9.3$ & 0.309 & $<$0.5 & 0.2535 & $-18.0$ \\
+4.300 & 7.74 & 1 & 7.059 & $-8.8$ & 0.271 & $<$0.5 & 0.2294 & $-15.4$ \\
+\midrule
+1.832, RANS & & & 11.46 & $-2.7$ & & & 0.4340 / 0.6477 & $-25.8$ / $+10.7$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The Euler $\CNa$ lies below the measured value at every Mach number, by 2.9 to 10.5\,\%, and the Euler $\CXzero$ by 15.4 to 28.3\,\%.
+For $\CNa$ the difference is larger than the tabulated probable error at all eight Mach numbers (at Mach 1.832 narrowly: 4.4 against 4\,\%).
+The probable error is the measurement's own scatter as tabulated; it is not a bound on its error.
+For $\CXzero$ the Euler value is the pressure part of the axial force plus modelled friction, base and fin trailing-edge terms, so the comparison
+includes modelled terms and not CFD alone.
+The single RANS point at Mach 1.832 is $-2.7\,\%$ in $\CNa$, within the tabulated 4\,\%; its $\CXzero$ is $-25.8\,\%$ or $+10.7\,\%$ according to
+the base treatment, so the base term, not the flow solution, decides the sign of that comparison.
 Whether the difference between Euler and measurement can be attributed to model form rather than numerical error
 cannot be decided: there is no established numerical uncertainty band on the Euler coefficients.
 The grids are not geometrically similar, the orders of the two triplets disagree (Section~\ref{sec:grid}),
 and the only band that can be drawn, $\pm0.17\,\%$ on $\CNa$ at Mach 2.375, is not a GCI and is smaller than the
 0.47\,\% change observed between two of the grids.
+That change is more than twenty times smaller than the $-10.5\,\%$ difference at that Mach number, so grid changes of the size observed
+between the existing levels would not close it; this is an observation about those four levels and not an uncertainty estimate.
+At the other Mach numbers there is no grid study at all.
+The Euler results are consistent with a model-form difference (inviscid flow, modelled base and friction terms), which is not demonstrated.
 No band is drawn on $\CXzero$ because the pressure part of the axial force, whose grid study is available, is only one
 of several terms of $\CXzero$.
 % PENDING Task 15: the figure regenerated with the RANS band, the RANS CNalpha at Mach 1.832 with its GCI band (or the statement that none was obtained), and the comparison with the measured value and its probable error
@@ -886,7 +1015,8 @@ resolution; it does not show that the product's three-dimensional meshes are aff
 
 \paragraph{Grids the product can build.}
 % source: results/gci_existing.csv (header and basic_finner_mesh_check rows)
-Because the product fixes the largest cell size, refinement through its settings changes only the near-wall region.
+Because the product fixes the largest cell size, refinement through its settings changes only the near-wall region; the
+layer~1 cone-cylinder levels grow by 1.57 and 1.67 in nodes against 2.74 for a similar refinement.
 Every GCI of such a family depends on an arbitrary choice of the grid-size definition, and on the Basic Finner the
 orders of the two triplets disagree under both.
 A reliable GCI of the product would need a mesh control that scales the whole field together with the wall size;
@@ -904,7 +1034,9 @@ Layer~0 verifies SU2 with the product's settings and not the product's pipeline.
 The laminar plate verifies a configuration the product does not write.
 The turbulent-plate data come from a configuration close to but not identical to the product's.
 The 2-D boundary-junction and entropy findings are untested on the three-dimensional meshes.
-The comparison of Spalart--Allmaras with a second turbulence model was not performed, and the product cannot run one.
+The product cannot run a second turbulence model.
+The pipeline error was not assessed, because the finest layer~1 level did not converge.
+% PENDING Task 20: the layer 0 comparison of Spalart-Allmaras with a second turbulence model on the turbulent plate, if its result is to be stated in this list
 
 %=====================================================================
 \section{Conclusions}
@@ -927,10 +1059,13 @@ The conclusions supported at this stage are the following.
   condition for which it was tested.
 \item The flight integrator shows no convergence order on the sample rocket, attributed on the evidence of controls
   mainly to the rail model, with a second contribution not excluded.
-\item Free-flight comparison of the Euler Basic Finner cannot attribute the difference from measurement to model form,
-  because no established numerical band exists.
+\item The Euler Basic Finner $\CNa$ lies 2.9 to 10.5\,\% below the free-flight measurement and its axial-force coefficient
+  15 to 28\,\% below it; the CNa difference exceeds the tabulated probable error at all eight Mach numbers, but the difference
+  cannot be attributed to model form rather than numerical error, because no established numerical band exists.
+\item Through the product's chain, the 10$^\circ$ cone-cylinder at Mach 2.35 did not converge on its finest level, so layer~1 has no
+  GCI and the pipeline error, including three-dimensional unstructured meshing, is not quantified; the accepted levels differ
+  from the exact cone $\Cp$ by $-2.51$ and $-1.26\,\%$ (descriptive).
 \end{enumerate}
-% PENDING Task 18: conclusion on the pipeline error (layer 0 against layer 1)
 % PENDING Task 14: conclusion on the sample-rocket Euler grid convergence and d'Alembert check
 % PENDING Task 15: conclusion on the Basic Finner RANS grid convergence and the validation overlap
 % PENDING Task 16: conclusion on iterative error against the grid uncertainty

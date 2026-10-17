@@ -314,8 +314,10 @@ OUTPUT_LINE = "OUTPUT_FILES= ( RESTART, SURFACE_CSV )"
 OUTPUT_LINE_ASCII = "OUTPUT_FILES= ( RESTART_ASCII, SURFACE_CSV )"
 
 
-def config_text(case: Case, iterations: int = ITERATIONS) -> str:
+def config_text(case: Case, iterations: int = ITERATIONS, analyze: list[str] | None = None) -> str:
     """layer0_config for the case, with the restart file written as text.
+
+    ``analyze`` names the markers whose mass flux SU2 reports; the default is the inlet and the outlet.
 
     The only change to the generated configuration is the OUTPUT_FILES line, which selects
     the file format of the solution dump; the numerics are asserted unchanged.
@@ -323,7 +325,8 @@ def config_text(case: Case, iterations: int = ITERATIONS) -> str:
     golden = GOLDEN_EULER.read_text()
     cfg = layer0_config(
         ndim=2, axisymmetric=case.axisymmetric, mach=case.mach, markers=case.config_markers,
-        viscous=False, golden=golden, analyze=["inlet", "outlet"], iterations=iterations,
+        viscous=False, golden=golden, analyze=["inlet", "outlet"] if analyze is None else analyze,
+        iterations=iterations,
         pressure=P_INF, temperature=T_INF)
     assert cfg.count(OUTPUT_LINE) == 1, "layer0_config no longer writes the expected OUTPUT_FILES line"
     out = cfg.replace(OUTPUT_LINE, OUTPUT_LINE_ASCII)
@@ -333,14 +336,14 @@ def config_text(case: Case, iterations: int = ITERATIONS) -> str:
     return out
 
 
-def run_level(case: Case, level: int, work: pathlib.Path, su2: pathlib.Path) -> None:
+def run_level(case: Case, level: int, work: pathlib.Path, su2: pathlib.Path, analyze: list[str] | None = None) -> None:
     d = level_dir(work, case, level)
     d.mkdir(parents=True, exist_ok=True)
     for stale in ("history.csv", "restart.csv", "restart.dat", "surface_flow.csv"):
         (d / stale).unlink(missing_ok=True)
     X, Y, k = grid(case, level)
     structured_quad_su2(d / "mesh.su2", X, Y, mesh_markers(case, X.shape[1], k))
-    (d / "case.cfg").write_text(config_text(case))
+    (d / "case.cfg").write_text(config_text(case, analyze=analyze))
     with (d / "su2.log").open("w") as log:
         r = subprocess.run([str(su2), "case.cfg"], cwd=d, stdout=log, stderr=subprocess.STDOUT)
     if r.returncode != 0:

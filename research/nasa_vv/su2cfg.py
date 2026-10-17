@@ -156,6 +156,18 @@ RANS_PER_CASE_KEYS: frozenset[str] = frozenset({
 
 _TURBULENCE_RESIDUALS = ("RMS_NU_TILDE",)
 
+GOLDEN_RANS_STARTUP = pathlib.Path(__file__).resolve().parent / "tests" / "data" / "golden_rans_startup.cfg"
+"""The first-order startup stage `ignisyeet aero` wrote in the same run as golden_rans.cfg."""
+
+# ---- a turbulent case under either turbulence model: the golden's own lines, the model the only difference
+
+SST_KEYS: tuple[str, ...] = ("SST_OPTIONS", "FREESTREAM_TURBULENCEINTENSITY", "FREESTREAM_TURB2LAMVISCRATIO")
+"""The keys SST needs and Spalart-Allmaras does not (SA_OPTIONS and FREESTREAM_NU_FACTOR take their place)."""
+
+RANS_STOP_RULE_KEYS: tuple[str, ...] = ("CONV_FIELD", "CONV_RESIDUAL_MINVAL")
+"""The two numerics keys a verification run may override: when it stops. They name no turbulence quantity once set to
+RMS_DENSITY and a floor, so the stop rule is the same for both models."""
+
 
 def _active_lines(text: str) -> Iterable[str]:
     """The non-empty lines that are not SU2 comments (a leading %)."""
@@ -466,3 +478,70 @@ def _laminar_config(
     c.append("HISTORY_WRT_FREQ_INNER= 1")
     c.append("OUTPUT_WRT_FREQ= 50")
     return "\n".join(c) + "\n"
+
+
+def rans_stage_config(
+    golden: str,
+    *,
+    model: str,
+    case: Mapping[str, str],
+    stop: Mapping[str, str] | None = None,
+    sst: Mapping[str, str] | None = None,
+) -> str:
+    """One stage of a turbulent case under ``model`` ("SA" or "SST"), built from a stage the product wrote.
+
+    Every active line of ``golden`` (golden_rans.cfg, the second-order stage, or golden_rans_startup.cfg) is copied
+    verbatim, in order, except:
+
+    - the keys in ``case``, which must be RANS_PER_CASE_KEYS present in the golden (KeyError if absent, ValueError if
+      the key is a numerics, physics or turbulence key): the case's Mach number, freestream state, reference values,
+      markers, iteration budget and file names;
+    - the keys in ``stop``, which must be in RANS_STOP_RULE_KEYS: when the run stops;
+    - for "SST", the turbulence model: ``KIND_TURB_MODEL= SST``, SA_OPTIONS replaced by SST_OPTIONS and
+      FREESTREAM_NU_FACTOR by the two SST freestream keys (``sst`` must give exactly SST_KEYS). The convection scheme,
+      time discretisation and CFL reduction of the turbulence equations are the golden's, unchanged.
+
+    For "SA" the model lines are the golden's own and ``sst`` must be empty.
+    """
+    if model not in ("SA", "SST"):
+        raise ValueError(f"model {model!r}: only SA and SST are handled")
+    parsed = _parse(golden)
+    if parsed.get("SOLVER", ("", ""))[1] != "RANS":
+        raise ValueError("the golden file is not a RANS configuration")
+    for key in case:
+        if key not in parsed:
+            raise KeyError(f"{key} is not a key of the golden configuration")
+        if key not in RANS_PER_CASE_KEYS:
+            raise ValueError(f"{key} is not a per-case key; the numerics, physics and turbulence keys are copied, not overridden")
+    stop = dict(stop or {})
+    for key in stop:
+        if key not in RANS_STOP_RULE_KEYS:
+            raise ValueError(f"{key} is not a stop-rule key {RANS_STOP_RULE_KEYS}")
+        if key not in parsed:
+            raise KeyError(f"{key} is not a key of the golden configuration")
+    sst = dict(sst or {})
+    if model == "SA" and sst:
+        raise ValueError("SA takes no SST key")
+    if model == "SST" and set(sst) != set(SST_KEYS):
+        raise ValueError(f"SST needs exactly the keys {SST_KEYS}, got {sorted(sst)}")
+
+    out: list[str] = []
+    for line in _active_lines(golden):
+        if "=" not in line:
+            out.append(line)
+            continue
+        key = line.split("=", 1)[0].strip()
+        if key in case:
+            out.append(f"{key}= {case[key]}")
+        elif key in stop:
+            out.append(f"{key}= {stop[key]}")
+        elif model == "SST" and key == "KIND_TURB_MODEL":
+            out.append("KIND_TURB_MODEL= SST")
+        elif model == "SST" and key == "SA_OPTIONS":
+            out.append(f"SST_OPTIONS= {sst['SST_OPTIONS']}")
+        elif model == "SST" and key == "FREESTREAM_NU_FACTOR":
+            out.append(f"FREESTREAM_TURBULENCEINTENSITY= {sst['FREESTREAM_TURBULENCEINTENSITY']}")
+            out.append(f"FREESTREAM_TURB2LAMVISCRATIO= {sst['FREESTREAM_TURB2LAMVISCRATIO']}")
+        else:
+            out.append(line)
+    return "\n".join(out) + "\n"

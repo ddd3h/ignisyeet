@@ -19,14 +19,63 @@ MIN_RESIDUAL_DROP_ORDERS = 3.0
 
 @dataclass
 class GridLevel:
+    """One grid and the evidence that its solution converged.
+
+    There is no default that asserts convergence. Two kinds of evidence exist
+    and a level needs at least one:
+
+    - ``solver_converged``: the solver's own acceptance verdict as recorded, for
+      runs judged against an absolute target. The caller maps any status string
+      to True or False; this module does not parse strings. None means no
+      verdict was recorded.
+    - ``residual_drop_orders``: orders of magnitude the residual fell. None (or
+      NaN) means it was not recorded.
+    """
+
     name: str
     nodes: int
     knobs: dict[str, float] = field(default_factory=dict)
     """Cell-size knobs, as lengths: a coarser grid has larger values."""
     residual_drop_orders: float | None = None
-    """Orders of magnitude the residual fell. None means it was not recorded,
-    which ``check_similar`` treats as not converged."""
-    converged: bool = True
+    solver_converged: bool | None = None
+
+    @property
+    def basis(self) -> str:
+        """What justified this level, derived from the evidence it carries."""
+        if self.solver_converged is not None:
+            return "solver status"
+        if self.residual_drop_orders is not None and not math.isnan(
+            self.residual_drop_orders
+        ):
+            return "residual"
+        return "none"
+
+    def check_converged(self) -> None:
+        """Raise ValueError unless the recorded evidence shows convergence.
+
+        A solver verdict decides on its own: its acceptance is against an
+        absolute target, so the residual-drop floor is not applied on top. Only
+        without a verdict does the drop have to reach MIN_RESIDUAL_DROP_ORDERS.
+        """
+        if self.solver_converged is False:
+            raise ValueError(
+                f"level {self.name!r} was recorded as not converged by the "
+                "solver; it cannot enter a grid convergence study"
+            )
+        if self.solver_converged:
+            return
+        drop = self.residual_drop_orders
+        if drop is None or math.isnan(drop):
+            raise ValueError(
+                f"level {self.name!r} carries no convergence evidence: no "
+                "solver verdict and no residual drop"
+            )
+        if drop < MIN_RESIDUAL_DROP_ORDERS:
+            raise ValueError(
+                f"level {self.name!r} dropped only {drop} orders and has no "
+                f"solver verdict, below the {MIN_RESIDUAL_DROP_ORDERS} the "
+                "tutorial asks for"
+            )
 
 
 def _odd_knobs(factors: dict[str, float], rtol: float) -> list[str]:
@@ -51,9 +100,17 @@ def _odd_knobs(factors: dict[str, float], rtol: float) -> list[str]:
 class GridFamily:
     levels: list[GridLevel]
     """Finest first."""
+    ndim: int = 3
+    """Spatial dimension of the grids; a 2-D grid has h = N**(-1/2)."""
+
+    def __post_init__(self) -> None:
+        if self.ndim not in (2, 3):
+            raise ValueError(f"ndim must be 2 or 3, got {self.ndim}")
 
     def h(self) -> list[float]:
-        return [representative_h(lv.nodes) for lv in self.levels]
+        if self.ndim == 3:
+            return [representative_h(lv.nodes) for lv in self.levels]
+        return [float(lv.nodes) ** -0.5 for lv in self.levels]
 
     def check_similar(self, rtol: float = 0.02) -> None:
         """Raise ValueError unless this is a usable grid family.
@@ -70,23 +127,7 @@ class GridFamily:
                 f"nodes at each coarser level; got node counts {nodes}"
             )
         for lv in self.levels:
-            drop = lv.residual_drop_orders
-            if not lv.converged:
-                raise ValueError(
-                    f"level {lv.name!r} did not converge "
-                    f"(residual drop {drop} orders); "
-                    "it cannot enter a grid convergence study"
-                )
-            if drop is None or math.isnan(drop):
-                raise ValueError(
-                    f"level {lv.name!r} has an unknown residual drop; "
-                    "convergence cannot be confirmed without it"
-                )
-            if drop < MIN_RESIDUAL_DROP_ORDERS:
-                raise ValueError(
-                    f"level {lv.name!r} dropped only {drop} "
-                    f"orders, below the {MIN_RESIDUAL_DROP_ORDERS} the tutorial asks for"
-                )
+            lv.check_converged()
         names = set(self.levels[0].knobs)
         if not names:
             raise ValueError(

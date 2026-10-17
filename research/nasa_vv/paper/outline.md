@@ -2,8 +2,8 @@
 
 Both papers follow this outline section by section. Keys in `code` are the LaTeX labels; the two
 papers use the same labels so that each table and figure maps one to one. The fact base is the
-papers at commit 44cf91c (which carry the final review of
-.superpowers/sdd/2026-10-17-nasa-cfd-vv/paper-final-review.md); no number changes, every
+papers as revised after the final review of
+.superpowers/sdd/2026-10-17-nasa-cfd-vv/paper-final-review.md; no number changes, every
 qualification stays, and every number keeps its `% source:` comment, also where it moves to an
 appendix.
 
@@ -93,12 +93,13 @@ we ask whether it can be done without that control and find that, for this pipel
 Message: what is needed to read the results: the three layers and their cases, the GCI with its
 acceptance gate, and the two grid-size definitions forced by non-similar grids.
 - Software version (user request, both papers), first paragraph of §2: the product's CFD runs
-  made for this study use IgnisYeet v0.4.0 (source commit a8dff9c) with SU2 8.3.0, except one
-  coarse-level rerun with another build, named in §3.3.1; the product studies called "existing"
+  made for this study use IgnisYeet v0.4.0 with SU2 8.3.0, except one coarse-level rerun with
+  another build, named in §3.3.1; the product studies called "existing"
   are re-evaluated from result files already committed with the product, without new CFD. (Layer 0
   and the turbulence-model comparison run SU2 8.3.0 directly, as §2.1 and Appendix A say.) `% source:` the headers of
-  results/basic_finner_rans_levels.csv (binary built from a8dff9c, `--version` prints 0.4.0) and
-  results/gci_existing.csv (no CFD run for that file). Data availability repeats the version.
+  results/basic_finner_rans_levels.csv (the binary's `--version` prints 0.4.0) and
+  results/gci_existing.csv (no CFD run for that file). Data availability repeats the version. No
+  commit hash appears in either paper.
 - 2.1 Three layers and the six steps `sec:layers`. Message: layers 0 and 1 solve the same exact
   cone by two routes so that their difference would expose the error the chain adds; layer 2
   applies the six steps. Carriers: `fig:concept` and `tab:layers`.
@@ -196,12 +197,8 @@ data" (only the Basic Finner has measurements).
   refinement control that scales the whole field, build a similar family on the same cases, and
   test whether its GCI then passes the gate; for the second obstacle, to test the dependence on
   rank count and decomposition.
-- 4.5 Limitations `sec:limits`. As at 44cf91c.
-- 4.6 Significance `sec:significance`. New, closing paragraph: an automated CFD tool must return
-  not only a number but a way to judge its reliability; the findings point to what that would
-  take (worded as "points to", not "shows").
-- The five findings about the product move to Appendix C, `sec:product`, with one pointer
-  sentence in §4.
+- 4.5 Limitations `sec:limits`. The last subsection of the Discussion; no separate significance
+  subsection follows it.
 
 ### 5 Conclusions `sec:conclusions`
 Five steps, one paragraph:
@@ -212,12 +209,11 @@ Five steps, one paragraph:
    reliable on the Basic Finner).
 4. Obstacles: meshing, convergence, the GCI's preconditions (judgement; existence shown, cause of
    each failure not).
-5. Significance, with the implications stated as untested.
+5. Implications, stated as untested.
 
 ### Data availability
 results/*.csv, figures/, the code, the full catalogue in the web report
-research/nasa_vv/report/ja/report.md, and the software version (IgnisYeet v0.4.0, commit a8dff9c;
-SU2 8.3.0).
+research/nasa_vv/report/ja/report.md, and the software version (IgnisYeet v0.4.0 with SU2 8.3.0).
 
 ### Appendix A. Details of the GCI procedure, the grids and the secondary results `sec:appA`
 Acceptance tests of the GCI code; layer-0, layer-1 and layer-2 grid and setup details. Gains the
@@ -232,9 +228,6 @@ secondary results moved from the body, each with its `% source:` comment:
 
 ### Appendix B. The flight integrator `sec:temporalapp`
 Unchanged.
-
-### Appendix C. Findings about the product `sec:product`
-The five findings of the former §4.4, unchanged in wording.
 
 ## References added in revision 2 (each checked; sources in the EN report)
 
@@ -276,7 +269,6 @@ The five findings of the former §4.4, unchanged in wording.
 | The seven Euler–RANS conditions and differences; the 3 mm/2 mm and base-term caveats | Appendix A, "Layer 2: Euler against RANS" |
 | Step-1 detail on the product's own tests | Appendix A, "Acceptance of the GCI procedure" |
 | Spalart–Allmaras against SST and TMR (former §3.4.3) | Appendix A, `sec:model`; one side note in R4 |
-| Findings about the product (former §4.4) | Appendix C, `sec:product` |
 
 ## Cut, and where it lives instead
 

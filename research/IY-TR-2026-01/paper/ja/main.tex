@@ -185,7 +185,7 @@ CADから自動で動くパイプラインでは、利用者はそのどちら�
 \label{sec:method}
 
 % source: results/basic_finner_rans_levels.csv (header: the binary's `--version` prints 0.4.0), results/layer1_cone.csv (header: binaries), results/layer0.csv (header: SU2 version), results/gci_existing.csv (header: no CFD was run for that file)
-本研究のために行った製品のCFDの計算は、IgnisYeet v0.4.0とSU2~8.3.0を使う。ただし粗い段の再計算一つだけは別のビルドで行った（\ref{sec:grid}節）。以下で\textbf{既存}と呼ぶ製品の研究は、製品とともにすでにコミットされている結果ファイルから、新たなCFDの計算なしに評価し直したものである。
+本研究のために行った製品のCFDの計算は、IgnisYeet v0.4.0とSU2~8.3.0を使う。以下で\textbf{既存}と呼ぶ製品の研究は、製品とともにすでにコミットされている結果ファイルから、新たなCFDの計算なしに評価し直したものである。
 本節では、結果を読むのに必要なことだけを述べる。設定の詳細は付録\ref{sec:appA}に置く。
 
 \subsection{三つの層と六つの段階}
@@ -509,7 +509,7 @@ RANSでは、格子ではなく入口の条件が結果を決める。
 \textbf{Mach~1.832ではRANSのGCIは得られなかった。}$2^\circ$の解は3段のどれでも収束せず、最細の段の迎え角0の解も収束しなかった。製品はどれも停滞として記録し、リミットサイクルの旗も立てている。
 そのためすべての族が拒否される。3段の傾斜11.52、11.57、11.45はいずれも未収束の解から得たもので、その間の1.1~\%の広がりは不確かさではない。
 入口の条件は密度とSpalart--Allmaras方程式の残差の落ち幅の小さい方を使う。一方、製品自身の残差の落ち幅は密度だけのものであり、乱流の残差の落ちが小さい解では大きくなる（最細の段の$0^\circ$で、0.89桁に対し3.91桁）。
-粗い段を製品の別のビルドと別の領域分割で解くと、判定が逆になった（$0^\circ$が未収束、$2^\circ$が収束）。判定の入れ替わりは観測したが、比較はビルドと分割で交絡しており、原因は主張しない。
+同じビルドで解いた粗い段の判定は、二つの実行の設定の間で食い違った。8ランク$\times$2並列ケースを16コアで走らせた実行では$0^\circ$が未収束で$2^\circ$が収束、16ランクを32コアで走らせた実行（本研究の粗い段）ではその逆である。二つの設定は、ウォームスタートの順序も異なる。したがって判定の入れ替わりはビルドではなく実行の設定に従うが、設定のどの部分が原因かは確立していない。
 
 % source: results/gci_existing.csv (rans_mesh_study rows, note column)
 同じ障害が、サンプル機体についての製品の既存のRANSの格子研究も止める。その四つの族はすべて拒否される。解が未収束と記録されているか、Mach~2の$4^\circ$では判定の記録のない再計算だからである（付録\ref{sec:appA}）。
@@ -663,7 +663,7 @@ Basic FinnerのEulerの$\CNa$は自由飛翔のデータより2.9から10.5~\%�
 % source: results/basic_finner_rans_levels.csv, results/gci_existing.csv (rans_mesh_study rows), results/layer1_cone.csv; doc/source/validation.rst (Mach 2.375 and 3.147; not a results CSV)
 \textbf{第二に、ソルバの収束は、入口の条件に対して十分に頑健ではない。}
 Basic Finnerの$2^\circ$のRANSの解はどの段でも停滞として記録され、リミットサイクルの旗が立っている。製品のRANSはMach~2.375ではリミットサイクルで停滞し、Mach~3.147では発散する。既存のサンプル機体のRANSの研究は、未収束と記録された解のために（Mach~2の$4^\circ$では判定の記録のない再計算のために）拒否される。そして層1の最細の段（Eulerの解）も収束しなかった。
-原因は確立していない。ランク数と領域分割への依存は試験しておらず、RANSの粗い段の判定の入れ替わりはビルドと分割で交絡している。
+原因は確立していない。ランク数と領域分割への依存は試験しておらず、RANSの粗い段の判定の入れ替わりはビルドではなく実行の設定に従うが、設定のどの部分が原因かは確立していない。
 
 % source: results/layer0_gci.csv (gci_bounds_error, order, note)
 \textbf{第三に、厳密な答えなしに求めたGCIは条件付きである。}

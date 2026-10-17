@@ -328,7 +328,7 @@ def test_both_headers_carry_provenance_the_flip_and_the_product_columns(tmp_path
         head = "\n".join(l for l in f.read_text().splitlines() if l.startswith("#"))
         for needle in ("job.log: 'binary: ~/bin/ignisyeet-glibc-a8dff9c'", "remote x --version: IgnisYeet 0.4.0",
                        "done.json's ignisyeet_commit is 2f31ab9", "not a property of ignisyeet-glibc-a8dff9c",
-                       "PBS job 1627", "no cause is claimed", "t15-bf-coarse-auto", "IY-F011",
+                       "PBS job 1627", "follows the run setup, not the build", "t15-bf-coarse-r8-v040", "IY-F011",
                        "VIRGO_BIN=ignisyeet-glibc-a8dff9c", "memory_gb", "aero.method = cfd"):
             assert needle in head, (f.name, needle)
     for f in (lv, gci):

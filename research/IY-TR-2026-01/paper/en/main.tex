@@ -138,7 +138,7 @@ Only the comparison with free-flight measurements (Section~\ref{sec:validation})
 \label{sec:method}
 
 % source: results/basic_finner_rans_levels.csv (header: the binary's `--version` prints 0.4.0), results/layer1_cone.csv (header: binaries), results/layer0.csv (header: SU2 version), results/gci_existing.csv (header: no CFD was run for that file)
-The product's CFD runs made for this study use IgnisYeet v0.4.0 with SU2~8.3.0, except one coarse-level rerun with another build (Section~\ref{sec:grid}); the product studies called \emph{existing} below are re-evaluated from result files already committed with the product, without new CFD.
+The product's CFD runs made for this study use IgnisYeet v0.4.0 with SU2~8.3.0; the product studies called \emph{existing} below are re-evaluated from result files already committed with the product, without new CFD.
 This section gives only what the results need; setup details are in Appendix~\ref{sec:appA}.
 
 \subsection{Three layers and the six steps}
@@ -462,7 +462,7 @@ With RANS the gate, not the grids, decides.
 \emph{No RANS GCI was obtained at Mach 1.832}: the $2^\circ$ solve did not converge on any of the three levels, nor did the zero-incidence solve of the finest level, and the product records each as stalled, with the limit-cycle flag set.
 Every family is therefore refused; the slopes of the three levels, 11.52, 11.57 and 11.45, all come from not-converged solves, and their 1.1\,\% spread is not an uncertainty.
 The gate uses the smaller of the density and the Spalart--Allmaras residual drops, whereas the product's own residual drop is that of the density alone and is larger wherever the turbulence residual fell less (on the finest level at $0^\circ$, 0.89 against 3.91 orders).
-A run of the coarse level with a different build of the product and a different domain decomposition gave the opposite verdicts at $0^\circ$ (not converged) and $2^\circ$ (converged); that the verdicts flip is observed, the comparison is confounded by build and decomposition, and no cause is claimed.
+With one build, the coarse level's verdicts differ between two run setups: 8 ranks $\times$ 2 parallel cases on 16 cores left $0^\circ$ not converged and $2^\circ$ converged, and 16 ranks on 32 cores (the run tabulated here) gave the opposite; the setups also differ in warm-start order. The flip therefore follows the run setup, not the build; which part of the setup is responsible is not established.
 
 % source: results/gci_existing.csv (rans_mesh_study rows, note column)
 The same obstacle stops the product's existing RANS grid study of the sample rocket: all four of its families are refused, on solves recorded as not converged or, at Mach 2 and $4^\circ$, on a rerun with no recorded verdict (Appendix~\ref{sec:appA}).
@@ -616,7 +616,7 @@ Every GCI of such a family depends on a choice of grid-size definition that cann
 % source: results/basic_finner_rans_levels.csv, results/gci_existing.csv (rans_mesh_study rows), results/layer1_cone.csv; doc/source/validation.rst (Mach 2.375 and 3.147; not a results CSV)
 \emph{Second, solver convergence is not robust enough for the gate.}
 The $2^\circ$ RANS solves of the Basic Finner are recorded as stalled, with the limit-cycle flag set, on every level, the product's RANS stalls in a limit cycle at Mach 2.375 and diverges at Mach 3.147, the existing RANS sample-rocket study is refused on solves recorded as not converged (and, at Mach 2 and $4^\circ$, on a rerun with no recorded verdict), and the finest layer-1 level, an Euler solve, did not converge.
-Its causes were not established: the dependence on rank count and decomposition is untested, and the RANS coarse level's flipped verdicts are confounded by build and decomposition.
+Its causes were not established: the dependence on rank count and decomposition is untested, and the RANS coarse level's flipped verdicts follow the run setup, not the build, without the responsible part of the setup being established.
 
 % source: results/layer0_gci.csv (gci_bounds_error, order, note)
 \emph{Third, a GCI computed without an exact answer is conditional.}

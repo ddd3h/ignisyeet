@@ -93,8 +93,7 @@ we ask whether it can be done without that control and find that, for this pipel
 Message: what is needed to read the results: the three layers and their cases, the GCI with its
 acceptance gate, and the two grid-size definitions forced by non-similar grids.
 - Software version (user request, both papers), first paragraph of §2: the product's CFD runs
-  made for this study use IgnisYeet v0.4.0 with SU2 8.3.0, except one coarse-level rerun with
-  another build, named in §3.3.1; the product studies called "existing"
+  made for this study use IgnisYeet v0.4.0 with SU2 8.3.0; the product studies called "existing"
   are re-evaluated from result files already committed with the product, without new CFD. (Layer 0
   and the turbulence-model comparison run SU2 8.3.0 directly, as §2.1 and Appendix A say.) `% source:` the headers of
   results/basic_finner_rans_levels.csv (the binary's `--version` prints 0.4.0) and

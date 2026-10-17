@@ -227,6 +227,12 @@ def test_the_header_states_that_check_similar_sees_only_the_knobs_and_the_measur
     assert "spread" in h
 
 
+def test_a_home_directory_in_the_job_log_is_written_as_a_tilde(work, tmp_path):
+    (work / "coarse" / "job.log").write_text("binary: /home/someone/ignisyeet-remote/bin/ignisyeet-glibc-a8dff9c\n+ rc=0\n")
+    assert se.read_level(work / "coarse").binary_line == "binary: ~/ignisyeet-remote/bin/ignisyeet-glibc-a8dff9c"
+    assert "/home/" not in _head(run(work, tmp_path)[1])
+
+
 def test_the_header_names_the_binary_its_evidence_and_the_machine(work, tmp_path):
     h = _head(run(work, tmp_path)[1])
     assert "virgo01" in h

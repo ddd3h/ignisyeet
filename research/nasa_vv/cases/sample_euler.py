@@ -75,6 +75,7 @@ from dataclasses import dataclass, field
 from ..family import GridFamily, GridLevel, study
 from ..gci import GridConvergence, grid_convergence  # noqa: F401  (grid_convergence used via existing_data)
 from .existing_data import (COLUMNS as GCI_COLUMNS, FamilyData, _last_commit, _rows, _verdict,
+                            home_to_tilde,
                             _wall_size_compute)
 
 RESULTS = pathlib.Path(__file__).resolve().parents[1] / "results"
@@ -233,7 +234,7 @@ def read_level(d: pathlib.Path) -> Level:
     rep = _json(d / "out" / "cfd_report.json", problems)
     job = _json(d / "done.json", problems, required=False)
     log = d / "job.log"
-    binary_line = next((ln.strip() for ln in log.read_text(errors="replace").splitlines()
+    binary_line = next((home_to_tilde(ln.strip()) for ln in log.read_text(errors="replace").splitlines()
                         if ln.startswith("binary: ")), "") if log.exists() else ""
     if job and (job.get("state") != "done" or job.get("exit_code") != 0):
         problems.append(f"done.json records state {job.get('state')!r} and exit code {job.get('exit_code')!r}, not a finished job with exit code 0")

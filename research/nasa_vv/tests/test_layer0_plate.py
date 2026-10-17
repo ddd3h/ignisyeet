@@ -192,7 +192,9 @@ def test_the_committed_gci_file_keeps_the_other_rows_and_carries_the_plate_rows_
         assert "IgnisYeet has no laminar mode" in r["note"]
 
 
-TASK10_SHA = "310776aa0ac0c8f8"   # sha256 of layer0_gci.csv as Task 10 committed it (bcabad4), the first 16 digits
+TASK10_SHA = "0ab80923c9947eb1"   # sha256 of layer0_gci.csv without the plate lines, the first 16 digits
+# (it was 310776aa0ac0c8f8 as bcabad4 committed it; the only difference is the sha256 of golden_euler.cfg quoted in the
+# header, which changed when the mesh path of that file was replaced by a placeholder)
 
 
 def test_edge_scaling_is_the_identity_in_a_uniform_outer_flow_and_removes_a_uniform_excess():

@@ -93,6 +93,7 @@ from __future__ import annotations
 import csv
 import math
 import pathlib
+import re
 import subprocess
 from dataclasses import dataclass, field
 
@@ -398,6 +399,12 @@ def basic_finner_results(d: dict) -> list[dict[str, str]]:
 
 
 # ------------------------------------------------------------------ driver
+
+
+def home_to_tilde(text: str) -> str:
+    """``text`` with every absolute home directory (``/home/<user>``) written as ``~``: a path quoted from a job log
+    then names the file without naming the account."""
+    return re.sub(r"/home/[^/\s']+", "~", text)
 
 
 def _last_commit(rel: str) -> str:

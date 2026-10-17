@@ -30,6 +30,7 @@ from .existing_data import (
     FamilyData,
     _g,
     _last_commit,
+    home_to_tilde,
     _read_table,
     _rows,
     _wall_size_compute,
@@ -211,7 +212,8 @@ def check_job(run: pathlib.Path, binary: str = EXPECTED_BINARY) -> dict:
     """The job record of a fetched run, refused unless it is a finished job of the expected binary.
 
     ``done.json`` must exist, say state "done" and exit_code 0 and name ``binary``; the first "binary:" line of
-    ``job.log`` must end in the same name. Returns the record with ``log_binary`` and ``log_cmd`` added."""
+    ``job.log`` must end in the same name. Returns the record with ``log_binary`` and ``log_cmd`` added
+    (the two log lines, with the home directory of the account that ran the job written as ``~``)."""
     run = pathlib.Path(run)
     if not (run / "done.json").is_file():
         raise ValueError(f"{run}: no done.json, so the job is not known to have finished")
@@ -231,7 +233,7 @@ def check_job(run: pathlib.Path, binary: str = EXPECTED_BINARY) -> dict:
     if log_binary is None or pathlib.PurePosixPath(log_binary.split(":", 1)[1].strip()).name != binary:
         raise ValueError(f"{run / 'job.log'}: binary line {log_binary!r} does not name {binary!r}")
     cmd = next((ln for ln in lines if ln.startswith("+ ") and " aero " in ln), "")
-    return dict(job, log_binary=log_binary, log_cmd=cmd)
+    return dict(job, log_binary=home_to_tilde(log_binary), log_cmd=home_to_tilde(cmd))
 
 
 def read_level(run: pathlib.Path, binary: str = EXPECTED_BINARY) -> dict:

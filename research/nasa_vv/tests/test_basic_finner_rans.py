@@ -326,11 +326,13 @@ def test_both_headers_carry_provenance_the_flip_and_the_product_columns(tmp_path
     lv, gci = bf.main(tmp_path, tmp_path / "l.csv", tmp_path / "g.csv")
     for f in (lv, gci):
         head = "\n".join(l for l in f.read_text().splitlines() if l.startswith("#"))
-        for needle in ("job.log: 'binary: /home/x/bin/ignisyeet-glibc-a8dff9c'", "remote x --version: IgnisYeet 0.4.0",
+        for needle in ("job.log: 'binary: ~/bin/ignisyeet-glibc-a8dff9c'", "remote x --version: IgnisYeet 0.4.0",
                        "done.json's ignisyeet_commit is 2f31ab9", "not a property of ignisyeet-glibc-a8dff9c",
                        "PBS job 1627", "no cause is claimed", "t15-bf-coarse-auto", "IY-F011",
                        "VIRGO_BIN=ignisyeet-glibc-a8dff9c", "memory_gb", "aero.method = cfd"):
             assert needle in head, (f.name, needle)
+    for f in (lv, gci):
+        assert "/home/" not in f.read_text(), f.name  # the account that ran the job is not named
     head = "\n".join(l for l in lv.read_text().splitlines() if l.startswith("#"))
     assert "min(rho_drop_orders, nu_drop_orders)" in head and "Task 8" in head and "not established" in head
     rows = list(csv.DictReader(l for l in lv.read_text().splitlines() if not l.startswith("#")))

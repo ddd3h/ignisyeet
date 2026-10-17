@@ -9,7 +9,7 @@ RANS (tests/data/golden_rans.cfg), copied verbatim by nasa_vv.su2cfg.layer0_conf
 turbulence model left out. It verifies the product's RANS discretisation with the turbulence model removed. It is
 not a configuration the product itself writes. The product always runs a first-order startup stage first and restarts
 the second-order stage from it; this case has no startup stage and cold-starts at second order (RESTART_SOL= NO).
-The steady solution does not depend on the path, and the runs reach the residual target.
+Whether the steady solution depends on this path was not tested; the runs reach the residual target.
 
 Run everything with
 
@@ -851,7 +851,7 @@ def header_lines(results: dict, est: dict, variants: dict | None = None) -> list
     lines = [
         "Layer 0, laminar flat plate at M = 0.2 against the Blasius solution: SU2 8.3.0 (ignisyeet-su2-native), Navier-Stokes, no turbulence model.",
         NO_LAMINAR + ".",
-        f"Producer: python -m nasa_vv.cases.layer0_plate (research/nasa_vv/cases/layer0_plate.py). Flow numerics and gas model: copied by nasa_vv.su2cfg.layer0_config from tests/data/golden_rans.cfg (sha256 {_sha(GOLDEN_RANS)}), the second-order stage of a cold RANS case written by `ignisyeet aero` (a laminar case needs the keys of its numerics and the gas model, not those of the Spalart-Allmaras model). Unlike the product, which runs a first-order startup stage and restarts the second-order stage from it, this case has no startup stage and cold-starts at second order with RESTART_SOL= NO; the steady solution does not depend on the path, and all runs reach the residual target.",
+        f"Producer: python -m nasa_vv.cases.layer0_plate (research/nasa_vv/cases/layer0_plate.py). Flow numerics and gas model: copied by nasa_vv.su2cfg.layer0_config from tests/data/golden_rans.cfg (sha256 {_sha(GOLDEN_RANS)}), the second-order stage of a cold RANS case written by `ignisyeet aero` (a laminar case needs the keys of its numerics and the gas model, not those of the Spalart-Allmaras model). Unlike the product, which runs a first-order startup stage and restarts the second-order stage from it, this case has no startup stage and cold-starts at second order with RESTART_SOL= NO; whether the steady solution depends on this path was not tested, and all runs reach the residual target.",
         "Every key that exists only because of the turbulence model is not copied (KIND_TURB_MODEL, SA_OPTIONS, FREESTREAM_NU_FACTOR, CONV_NUM_METHOD_TURB, MUSCL_TURB, TIME_DISCRE_TURB). CONV_FIELD is ( RMS_DENSITY, RMS_NU_TILDE ) in the golden: it is neither copied nor dropped but derived, the turbulence residual removed and RMS_DENSITY left (asserted). Neither file sets PRANDTL_LAM, so SU2's default 0.72 applies, as in the product.",
         "Exact reference: nasa_vv.exact.blasius_cf(Re_x) = 0.664 / sqrt(Re_x) and blasius_profile (f''' + f f'' / 2 = 0, f''(0) = 0.332057). Blasius is the incompressible, zero-pressure-gradient boundary-layer solution of a semi-infinite plate; the CFD solution is compressible Navier-Stokes on a plate with a leading edge, in a finite domain.",
         f"Free stream: M = {MACH:g}, T = {fs.t:g} K, p = {fs.p:.4f} Pa from the golden's Sutherland law and gas constants, so that Re = {RE_UNIT:g} per metre (SU2 reports {logn['reynolds']:g}); U = {fs.u:.4f} m/s. Re_x = {RE_UNIT:g} x, x from the leading edge; Cf uses the free-stream dynamic pressure.",

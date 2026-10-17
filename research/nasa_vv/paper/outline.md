@@ -92,10 +92,11 @@ we ask whether it can be done without that control and find that, for this pipel
 ### 2 Method `sec:method`
 Message: what is needed to read the results: the three layers and their cases, the GCI with its
 acceptance gate, and the two grid-size definitions forced by non-similar grids.
-- Software version (user request, both papers): the runs made for this study use IgnisYeet v0.4.0
-  (source commit a8dff9c) with SU2 8.3.0, except one coarse-level rerun with another build, named
-  in §3.3.1; the product studies called "existing" are re-evaluated from result files already
-  committed with the product, without new CFD. `% source:` the headers of
+- Software version (user request, both papers), first paragraph of §2: the product's CFD runs
+  made for this study use IgnisYeet v0.4.0 (source commit a8dff9c) with SU2 8.3.0, except one
+  coarse-level rerun with another build, named in §3.3.1; the product studies called "existing"
+  are re-evaluated from result files already committed with the product, without new CFD. (Layer 0
+  and the turbulence-model comparison run SU2 8.3.0 directly, as §2.1 and Appendix A say.) `% source:` the headers of
   results/basic_finner_rans_levels.csv (binary built from a8dff9c, `--version` prints 0.4.0) and
   results/gci_existing.csv (no CFD run for that file). Data availability repeats the version.
 - 2.1 Three layers and the six steps `sec:layers`. Message: layers 0 and 1 solve the same exact
@@ -116,12 +117,14 @@ question (italic) and the outcome (bold):
 
 | Layer | What is run | Question it answers | Outcome |
 |---|---|---|---|
-| 0 Solver | SU2 8.3.0 with the product's settings, against exact solutions | Does the solver reproduce exact solutions? Does the GCI bound the true error? | Inviscid surface pressure and shock angle within 0.2 % (primary setups); the GCI bound failed in 2 of 7 rows |
-| 1 Whole chain | The product's chain, CAD to coefficients, on the layer-0 cone | What error does the chain add? | Not quantified: finest level not converged, no layer-1 GCI |
-| 2 Application | The six steps on a sample rocket and on the Basic Finner; free-flight range data for the Basic Finner | Which coefficients get a band, and what can validation conclude? | Almost no usable band (one, wide); differences reported, no verdict |
+| 0: the solver | SU2 8.3.0 with the product's numerical settings, on structured grids, against exact solutions | Does the solver reproduce exact solutions? Does the GCI bound the true error? | Inviscid surface pressure and shock angle within 0.2 % (primary setups); the GCI bound failed in 2 of 7 inviscid rows |
+| 1: the whole chain | The product's chain, CAD to mesh to SU2 to coefficients, on the layer 0 cone | What error does the chain around the solver add? | Not quantified: the finest level did not converge, so there is no layer 1 GCI |
+| 2: the application | The six steps on a sample rocket and on the Basic Finner; free-flight data for the Basic Finner only | Which coefficients receive a band, and what can validation conclude? | Almost no usable band (one, wide); differences are reported, without verdicts |
 
-No flat "verified" label (review A3); no "real rockets against flight data" (only the Basic Finner
-has measurements).
+Row labels at the left: "What is run", "Question", "Outcome". Caption: what is verified, in which
+order; layers 0 and 1 share the exact cone, layers 1 and 2 the product; only layer 2 compares with
+measurements (validation). No flat "verified" label (review A3); no "real rockets against flight
+data" (only the Basic Finner has measurements).
 
 ### 3 Results `sec:results`
 
@@ -134,8 +137,10 @@ has measurements).
   inviscid rows; cone wall Cp error 3.2 times its GCI; neither check detects both failures. Why:
   every later band is a GCI without an exact answer. Laminar plate in two or three sentences (2 of
   5, only at sign crossings; no clean verification); its residual effects to Appendix A.
-- Side note in one or two sentences, labelled as such: the NPARC 10° cone table disagrees with
-  itself, so the cone reference is computed (detail in Appendix A, `sec:cone10`).
+- Side note, run-in heading "Side note: a reference table that disagrees with itself", two
+  sentences: the table's shock angle is inconsistent with its own surface Mach number and ratios,
+  and three further sources, which rest on the same theory, support the computed angle; only the
+  surface Mach number and Cp are compared (detail in Appendix A, `sec:cone10`).
 - Closes ("What R1 establishes"): a GCI computed without an exact answer is a conditional
   estimate.
 
@@ -160,8 +165,8 @@ has measurements).
   stays); d'Alembert shrinks but does not demonstrably converge. Row counts, flat-plate rows and
   factors to Appendix A.
 - 3.3.3 Code examination and temporal convergence `sec:step1`, `sec:temporal`. Two or three
-  sentences: step 1 adds tests; step 5 does not apply to steady CFD, side note pointing to
-  Appendix B.
+  sentences: step 1 adds tests; step 5 does not apply to steady CFD; an inline "Side note:" on
+  the flight integrator points to Appendix B.
 - Closes with the A6 sentence: almost no usable band.
 
 #### 3.4 R4. Validation and model uncertainty cannot be separated from numerical uncertainty `sec:r4`
@@ -169,7 +174,7 @@ has measurements).
   `tab:validation`.
 - 3.4.2 Euler against RANS `sec:eulerrans`. Finding: none of seven conditions has a verdict; key
   datum: differences up to +54 %; the per-condition values go to Appendix A.
-- Side note (labelled): Spalart–Allmaras against SST, one or two sentences in the body (−0.79 % in
+- Side note, run-in heading "Side note: Spalart–Allmaras against SST", two sentences in the body (−0.79 % in
   skin friction, not separable from SST's GCI of 1.14 %; cross-comparison, not validation); the
   full comparison, including the TMR cross-comparison, in Appendix A (`sec:model`).
 - Closes: no comparison of this study can say which side is wrong.
@@ -261,13 +266,15 @@ The five findings of the former §4.4, unchanged in wording.
 
 | Moved | To |
 |---|---|
-| Wall-Mach, wall-entropy and junction detail; mass conservation | Appendix A, layer 0 |
-| Laminar-plate residual effects | Appendix A, layer 0 |
+| Layer-0 primary-setup errors in prose (also in `tab:l0`) and the 132–230 iterations | Appendix A, "Layer 0" |
+| Wall-Mach triple and errors, wall entropy, junction values, expansion split stall; mass conservation | Appendix A, "Layer 0: wall quantities, junctions and mass" |
+| GCI/error ratios 3.1 and 1.5; symmetry-axis 0.75 against 0.71 %; plate C_f sequence, +0.97 % and residual effects | Appendix A, "Layer 0: the GCI bounds in detail" |
 | NPARC 10° cone table (former §3.1.3) | Appendix A, `sec:cone10`; one side-note sentence in R1 |
 | Layer-1 tip bins, rank counts, other layer differences | Appendix A, layer 1 |
-| Basic Finner Euler orders per triplet | Appendix A, layer 2 |
-| Iterative-error row counts, flat-plate rows; consistency factors | Appendix A, layer 2 |
-| The seven Euler–RANS differences | Appendix A, layer 2 |
+| Sample-rocket 5.8 percentage points between bases; Basic Finner Euler orders per triplet and 0.167–0.173 %; Basic Finner RANS refusal detail; existing RANS study wall sizes 8, 4.8 and 3 mm and refusal reasons | Appendix A, "Layer 2: secondary grid-convergence results" |
+| Iterative error 3.3e-4 % and 8.6 orders, 28 rows, five flat-plate rows; consistency even part, early stops, factors 1.38/1.49; layer-2 mass flux not checked | Appendix A, "Layer 2: iterative error and consistency" |
+| The seven Euler–RANS conditions and differences; the 3 mm/2 mm and base-term caveats | Appendix A, "Layer 2: Euler against RANS" |
+| Step-1 detail on the product's own tests | Appendix A, "Acceptance of the GCI procedure" |
 | Spalart–Allmaras against SST and TMR (former §3.4.3) | Appendix A, `sec:model`; one side note in R4 |
 | Findings about the product (former §4.4) | Appendix C, `sec:product` |
 

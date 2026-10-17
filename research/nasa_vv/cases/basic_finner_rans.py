@@ -31,6 +31,7 @@ from .existing_data import (
     _g,
     _last_commit,
     home_to_tilde,
+    _STATUS,
     _read_table,
     _rows,
     _wall_size_compute,
@@ -133,15 +134,6 @@ EXPECTED_BINARY = "ignisyeet-glibc-a8dff9c"
 NOT_OBTAINED = "RANS GCI not obtained at M = 1.832"
 CELL_GROWTH_UNIFORM = 1.4 ** 3
 """Cell growth per level of a geometrically similar 1.4 refinement."""
-
-_STATUS: dict[str, bool | None] = {
-    "converged": True,
-    "unconverged": False,  # accepted as a limit cycle or a stall: the product's rule was not met
-    "accepted": None,      # stopped early after >= 3 orders with flat coefficients: the residual drop decides
-    "failed": False,
-}
-"""Mirrors the rule Task 14 adds to existing_data._STATUS (its branch does not exist here yet): 'accepted' is
-None, so family.check_converged applies the 3-order floor to the recorded drop; 'unconverged' stays False."""
 
 LEVEL_COLUMNS = [
     "level", "wall_size_mm", "fin_size_mm", "nodes", "cells", "nodes_growth", "cells_growth",

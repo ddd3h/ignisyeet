@@ -573,3 +573,53 @@ def test_the_flag_reaches_the_note_of_the_written_row(tmp_path):
     rows = [r for r in _read(run(w, tmp_path)[1]) if r["quantity"] == "ca_alpha0" and r["condition"].startswith("M=0.3")]
     assert rows and all("unusable:" in r["note"] for r in rows)
     assert all("other side of the exact value 0" in r["note"] for r in rows)
+
+
+# ---------------------------------------------------------------- the constant-ratio screen on unequal ratios
+
+
+M2_CA = dict(f1="0.111449439", f2="0.107934931", f3="0.104488421", r21="1.210376", r32="1.2028823")
+
+
+def _screened(**kw):
+    from nasa_vv.gci import _NOT_CONVERGING
+
+    return {"note": _NOT_CONVERGING, **M2_CA, **kw}
+
+
+def test_celik_without_the_screen_gives_the_low_order_the_screen_hides():
+    p, ext, gci = se._celik_order(0.111449439, 0.107934931, 0.104488421, 1.210376, 1.2028823)
+    assert p == pytest.approx(0.072, abs=0.0005)
+    assert ext == pytest.approx(0.365, abs=0.0005)
+    assert gci == pytest.approx(285, abs=0.5)
+
+
+def test_the_screened_row_with_unequal_ratios_is_qualified_in_its_note():
+    row = _screened()
+    se._screen_caveat([row])
+    assert row["note"].count("not converging under refinement") == 1
+    for text in ("constant-ratio screen labels this triplet 'not converging'", "p = 0.072", "GCI of 285 %",
+                 "unusable either way"):
+        assert text in row["note"], text
+
+
+def test_equal_ratios_keep_the_screen_label_alone():
+    row = _screened(r21="1.4", r32="1.4")
+    before = row["note"]
+    se._screen_caveat([row])
+    assert row["note"] == before
+
+
+def test_a_triplet_below_the_p_to_zero_limit_is_not_qualified():
+    # |e32/e21| = 0.5 < ln(r32)/ln(r21) = 0.9675: really not converging
+    row = _screened(f1="1.0", f2="1.2", f3="1.3")
+    before = row["note"]
+    se._screen_caveat([row])
+    assert row["note"] == before
+
+
+def test_only_the_nodes_basis_row_of_the_committed_file_is_qualified():
+    lines = [ln for ln in (pathlib.Path(se.__file__).resolve().parents[1] / "results" / "gci_sample_euler.csv")
+             .read_text().splitlines() if not ln.startswith("#")]
+    rows = [r for r in csv.DictReader(lines) if "constant-ratio screen labels" in r["note"]]
+    assert [(r["condition"], r["quantity"], r["h_basis"]) for r in rows] == [("M=2 alpha=0", "ca_alpha0", "nodes^-1/3")]

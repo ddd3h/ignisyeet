@@ -204,10 +204,10 @@ def test_every_row_has_the_columns_and_every_blank_result_has_a_note(tmp_path):
     ed.main(out)
     lines = [ln for ln in out.read_text().splitlines() if not ln.startswith("#")]
     rows = list(csv.DictReader(lines))
-    assert list(rows[0]) == ed.COLUMNS
+    assert list(rows[0]) == ed.COLUMNS + ed.REFERENCE_COLUMNS
     assert rows
     for r in rows:
-        assert len(r) == len(ed.COLUMNS)
+        assert len(r) == len(ed.COLUMNS) + len(ed.REFERENCE_COLUMNS)
         if r["order"] == "":
             assert r["note"] != "", r
     head = [ln for ln in out.read_text().splitlines() if ln.startswith("#")]
@@ -343,3 +343,81 @@ def test_the_header_states_the_conditions_the_numbers_rest_on(tmp_path):
                  "below 0.5"):
         assert text in head, text
     assert "known limiter effect" not in head
+
+
+# ---------------------------------------------------------------- flat-plate references
+
+
+def _plate_rows(tmp_path):
+    import csv
+
+    out = tmp_path / "o.csv"
+    ed.main(out)
+    lines = [ln for ln in out.read_text().splitlines() if not ln.startswith("#")]
+    rows = list(csv.DictReader(lines))
+    return out, rows, {r["condition"]: r for r in rows if r["study"] == "rans_flatplate"}
+
+
+def test_the_reference_columns_carry_the_recorded_differences(tmp_path):
+    _, _, plate = _plate_rows(tmp_path)
+    m02, m2 = plate["M=0.2"], plate["M=2"]
+    # finest, medium, coarsest: the err_vs_* columns of rans_flatplate.csv
+    assert [float(m02[c]) for c in ("tmr_diff_f1_pct", "tmr_diff_f2_pct", "tmr_diff_f3_pct")] == [0.791115, 0.743741, 0.622861]
+    assert [float(m02[c]) for c in ("corr_diff_f1_pct", "corr_diff_f2_pct", "corr_diff_f3_pct")] == [-0.630293, -0.677, -0.796175]
+    assert [float(m2[c]) for c in ("corr_diff_f1_pct", "corr_diff_f2_pct", "corr_diff_f3_pct")] == [-1.18257, -1.25659, -1.41721]
+    assert m02["tmr_sa_cf"] == "0.00270551" and m02["correlation_cf"] == "0.00274421"
+    assert m02["correlation"].startswith("Karman-Schoenherr") and m2["correlation"].startswith("van Driest II")
+
+
+def test_there_is_no_tmr_reference_at_mach_2(tmp_path):
+    _, _, plate = _plate_rows(tmp_path)
+    assert all(plate["M=2"][c] == "" for c in ("tmr_sa_cf", "tmr_diff_f1_pct", "tmr_diff_f2_pct", "tmr_diff_f3_pct",
+                                                "tmr_diff_extrapolated_pct"))
+
+
+def test_the_recorded_differences_agree_with_the_values_they_come_from(tmp_path):
+    """The err_vs_* columns are (cf - reference)/reference of the unrounded values; the rounded cf and reference
+    columns reproduce them to the rounding of 6 significant digits."""
+    _, _, plate = _plate_rows(tmp_path)
+    for r in plate.values():
+        for pre, ref in (("corr", "correlation_cf"), ("tmr", "tmr_sa_cf")):
+            if not r[ref]:
+                continue
+            for col, f in (("f1", "f1"), ("f2", "f2"), ("f3", "f3")):
+                want = (float(r[f]) / float(r[ref]) - 1) * 100
+                assert abs(float(r[f"{pre}_diff_{col}_pct"]) - want) < 5e-4, (r["condition"], pre, col)
+
+
+def test_the_extrapolated_difference_uses_the_row_extrapolated_value(tmp_path):
+    _, _, plate = _plate_rows(tmp_path)
+    m02, m2 = plate["M=0.2"], plate["M=2"]
+    assert float(m02["tmr_diff_extrapolated_pct"]) == pytest.approx((float(m02["extrapolated"]) / 0.00270551 - 1) * 100)
+    assert float(m02["tmr_diff_extrapolated_pct"]) == pytest.approx(0.82, abs=0.005)
+    assert float(m2["corr_diff_extrapolated_pct"]) == pytest.approx(-1.12, abs=0.005)
+
+
+def test_the_reference_columns_are_blank_outside_the_flat_plate(tmp_path):
+    _, rows, _ = _plate_rows(tmp_path)
+    others = [r for r in rows if r["study"] != "rans_flatplate"]
+    assert others
+    assert all(r[c] == "" for r in others for c in ed.REFERENCE_COLUMNS)
+
+
+def test_the_header_labels_the_two_kinds_of_reference(tmp_path):
+    out, _, _ = _plate_rows(tmp_path)
+    head = "\n".join(ln for ln in out.read_text().splitlines() if ln.startswith("#"))
+    for text in ("cross-comparison of two programs", "not validation", "empirical correlation",
+                 "Karman-Schoenherr", "van Driest II", "not an exact solution", "CFL3D and FUN3D"):
+        assert text in head, text
+
+
+def test_a_plate_file_that_no_longer_names_its_correlation_is_refused(tmp_path):
+    bad = tmp_path / "plate.csv"
+    bad.write_text("# no names here\n" + "".join(ln for ln in PLATE.read_text().splitlines(True) if not ln.startswith("#")))
+    with pytest.raises(ValueError, match="no longer names"):
+        read_flatplate(bad)
+
+
+def test_other_collectors_keep_the_base_columns():
+    """The row writer other collectors share is unchanged: the reference columns exist only in gci_existing.csv."""
+    assert "tmr_sa_cf" not in ed.COLUMNS and ed.COLUMNS[-1] == "note"

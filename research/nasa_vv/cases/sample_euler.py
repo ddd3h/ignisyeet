@@ -73,7 +73,7 @@ import tomllib
 from dataclasses import dataclass, field
 
 from ..family import GridFamily, GridLevel, study
-from ..gci import GridConvergence, grid_convergence  # noqa: F401  (grid_convergence used via existing_data)
+from ..gci import GridConvergence, _NOT_CONVERGING, grid_convergence  # noqa: F401  (grid_convergence used via existing_data)
 from .existing_data import (COLUMNS as GCI_COLUMNS, FamilyData, _last_commit, _rows, _verdict,
                             home_to_tilde,
                             _wall_size_compute)
@@ -458,6 +458,52 @@ def _flagged(rows: list[dict[str, str]]) -> list[dict[str, str]]:
     return rows
 
 
+def _celik_order(f1: float, f2: float, f3: float, r21: float, r32: float, fs: float = 1.25,
+                 max_iter: int = 200, tol: float = 1e-12) -> tuple[float, float, float] | None:
+    """Celik's fixed point for a monotone triplet, without the constant-ratio screen of ``gci._screen``:
+    ``(order, extrapolated, gci_fine_pct)``, or None when it does not converge to a positive order."""
+    e21, e32 = f2 - f1, f3 - f2
+    p = 2.0
+    for _ in range(max_iter):
+        try:
+            nxt = abs(math.log(abs(e32 / e21)) + math.log((r21 ** p - 1.0) / (r32 ** p - 1.0))) / math.log(r21)
+        except (ValueError, ZeroDivisionError, OverflowError):
+            return None
+        if abs(nxt - p) < tol:
+            p = nxt
+            break
+        p = nxt
+    else:
+        return None
+    if not p > 0.0:
+        return None
+    ext = (r21 ** p * f1 - f2) / (r21 ** p - 1.0)
+    return p, ext, fs * abs(e21 / f1) / (r21 ** p - 1.0) * 100.0
+
+
+def _screen_caveat(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Qualify a "not converging" row whose refinement ratios differ.
+
+    ``gci._screen`` tests |e32| <= |e21|, which is exact only for r21 = r32; for r32 < r21 a monotone triplet can converge
+    at a low order with |e32/e21| between ln(r32)/ln(r21) and 1. Such a row gets the order and GCI that Celik's method
+    gives, in its note; the screen itself and the row's empty numeric columns are not changed."""
+    for r in rows:
+        if _NOT_CONVERGING not in r["note"] or not r["r21"]:
+            continue
+        r21, r32 = float(r["r21"]), float(r["r32"])
+        f1, f2, f3 = float(r["f1"]), float(r["f2"]), float(r["f3"])
+        if abs(r21 - r32) < 1e-6 or not math.log(r32) / math.log(r21) < abs((f3 - f2) / (f2 - f1)):
+            continue
+        res = _celik_order(f1, f2, f3, r21, r32)
+        if res is None:
+            continue
+        p, ext, gci = res
+        r["note"] += (f"; the constant-ratio screen labels this triplet 'not converging', but its refinement ratios differ "
+                      f"(r21 = {r21:.4g}, r32 = {r32:.4g}) and Celik's method gives p = {p:.3g}, an extrapolated value "
+                      f"{ext:.4g} and a GCI of {gci:.3g} %, so it is unusable either way (order below 0.5, GCI above {GCI_LIMIT_PCT:g} %)")
+    return rows
+
+
 def gci_rows(levels: dict[str, Level]) -> list[dict[str, str]]:
     rows = []
     trip = "/".join(n for n in FAMILY_LEVELS)
@@ -471,7 +517,7 @@ def gci_rows(levels: dict[str, Level]) -> list[dict[str, str]]:
             rows += _refused(cond, q, trip, fam, note)
         return rows
     for cond, fd in families(levels):
-        a = _flagged(_rows("sample_euler", cond, trip, fd, lambda f: study(f.family, f.values), "nodes^-1/3"))
+        a = _screen_caveat(_flagged(_rows("sample_euler", cond, trip, fd, lambda f: study(f.family, f.values), "nodes^-1/3")))
         b = _flagged(_rows("sample_euler", cond, trip, fd, _wall_size_compute, "wall_size"))
         for x, y in zip(a, b):
             rows += [x, y]
@@ -591,6 +637,7 @@ def _header(levels: dict[str, Level]) -> list[str]:
         "n1..n3 are nodes (finest first). gci_fine_pct and gci_coarse_pct are relative to f1 and f2 (percent), including for xcp (a length: multiply by |f1|).",
         "cna: CNa [1/rad] = CN(4)/radians(4) from cn_raw on the z-mirrored mesh (-4 is the exact mirror of +4 and is not solved); the non-mirrored medium level uses (CN(4) - CN(-4))/2/radians(4); see cna_basis in sample_euler_levels.csv. xcp: xcp_m of the combined row. ca_alpha0: ca_cfd at alpha = 0.",
         "A note flags any computed order above 4 (twice the formal second order) or below 0.5 (a quarter of it): the triplet is then not in the asymptotic range and its GCI is not reliable.",
+        "A nodes^-1/3 row labelled 'not converging' by the constant-ratio screen (the finer pair changes at least as much as the coarser) whose refinement ratios differ is qualified in its note with the order and GCI of Celik's method, because the screen is exact only for equal ratios.",
         f"A note marks a computed row unusable when its gci_fine_pct exceeds {GCI_LIMIT_PCT:g} (the uncertainty is larger than the value) or when its Richardson extrapolation lies on the other side of a known exact value than the finest grid "
         "(a shared rule; the known values are in EXACT_VALUES of sample_euler.py: CA at M = 0.3, alpha = 0 is 0 by d'Alembert's paradox, so an extrapolation to positive CA is past the bound).",
     ]

@@ -111,13 +111,24 @@ FINNER_CSV = "doc/data/validation/basic_finner/mesh_check.csv"
 RANS_COLUMNS = ("wall_size_m", "nodes", "mach", "cn", "ca_wall", "xcp_m", "cn0",
                 "status_a0", "status_a4", "status_am4")
 FLATPLATE_COLUMNS = ("mach", "grid", "cells", "h", "cf_x097", "iterations_final",
-                     "rho_drop_orders", "nu_drop_orders")
+                     "rho_drop_orders", "nu_drop_orders", "tmr_sa_cf", "err_vs_tmr_percent",
+                     "correlation_cf", "err_vs_correlation_percent")
 FINNER_COLUMNS = ("level", "base_treatment", "wall_size_mm", "fin_size_mm", "cells",
                   "alpha_deg", "status", "cn", "ca_pressure", "xcp_cal")
 
 COLUMNS = ["study", "condition", "quantity", "triplet", "h_basis", "n1", "n2", "n3", "r21", "r32",
            "f1", "f2", "f3", "order", "extrapolated", "gci_fine_pct", "gci_coarse_pct",
            "asymptotic_ratio", "monotone", "note"]
+
+REFERENCE_COLUMNS = [
+    "tmr_sa_cf", "tmr_diff_f1_pct", "tmr_diff_f2_pct", "tmr_diff_f3_pct", "tmr_diff_extrapolated_pct",
+    "correlation", "correlation_cf", "corr_diff_f1_pct", "corr_diff_f2_pct", "corr_diff_f3_pct",
+    "corr_diff_extrapolated_pct",
+]
+"""Columns appended to ``COLUMNS`` in gci_existing.csv only; filled on the rans_flatplate rows, blank elsewhere."""
+
+CORRELATIONS = {0.2: "Karman-Schoenherr (local)", 2.0: "van Driest II (Hopkins-Inouye)"}
+"""The correlation_cf of rans_flatplate.csv by Mach number; the CSV names them in its header, which the reader checks."""
 
 ITERATION_CAP = 20000
 """Final-stage iteration limit of the flat-plate runs; a grid that stopped here did not reach its target."""
@@ -156,6 +167,16 @@ class FamilyData:
     """Per-level solve statuses, appended to a refusal note."""
     row_note: str = ""
     """Appended to the note of every computed row of this family."""
+    references: dict[str, "Reference"] = field(default_factory=dict)
+    """Reference values the quantity is compared with (flat plate only): ``tmr`` and ``corr``."""
+
+
+@dataclass
+class Reference:
+    """A reference value of the plotted quantity and the recorded difference of each grid from it, finest grid first."""
+    name: str
+    value: float
+    diffs_pct: list[float]
 
 
 def _verdict(statuses: list[str]) -> bool | None:
@@ -230,9 +251,19 @@ def read_rans_mesh_study(path) -> dict[tuple[float, str], FamilyData]:
     return out
 
 
+def _check_flatplate_header(path) -> None:
+    """The correlation of each Mach number is named only in the CSV's header: refuse a file that no longer says it."""
+    head = " ".join(ln for ln in pathlib.Path(path).read_text().splitlines() if ln.startswith("#"))
+    for needle in ("Karman-Schoenherr", "van Driest II", "mean of CFL3D/FUN3D SA on 545x385"):
+        if needle not in head:
+            raise ValueError(f"{path}: the header no longer names {needle!r}; the reference columns cannot be labelled")
+
+
 def read_flatplate(path) -> dict[float, FamilyData]:
-    """One 2-D family per Mach number, quantity cf_x097."""
+    """One 2-D family per Mach number, quantity cf_x097, with the recorded references (TMR SA at Mach 0.2 only, and
+    the empirical correlation)."""
     rows = _read_table(path, FLATPLATE_COLUMNS)
+    _check_flatplate_header(path)
     out: dict[float, FamilyData] = {}
     for m in sorted({float(r["mach"]) for r in rows}):
         lv = sorted((r for r in rows if float(r["mach"]) == m),
@@ -257,8 +288,16 @@ def read_flatplate(path) -> dict[float, FamilyData]:
                 f"{c.residual_drop_orders:.3g} orders (the other grids of this Mach number reached "
                 f"{min(others):.3g} to {max(others):.3g}); it passes the 3-order gate"
                 for c in capped)
+        refs: dict[str, Reference] = {}
+        if m not in CORRELATIONS:
+            raise ValueError(f"M = {m:g}: no name for the correlation of rans_flatplate.csv")
+        refs["corr"] = Reference(CORRELATIONS[m], _num(lv[0], "correlation_cf"),
+                                 [_num(r, "err_vs_correlation_percent") for r in lv])
+        if not math.isnan(float(lv[0]["tmr_sa_cf"])):
+            refs["tmr"] = Reference("TMR SA (CFL3D/FUN3D mean, 545x385)", _num(lv[0], "tmr_sa_cf"),
+                                    [_num(r, "err_vs_tmr_percent") for r in lv])
         out[m] = FamilyData(GridFamily(levels, ndim=2), {"cf_x097": [_num(r, "cf_x097") for r in lv]},
-                            row_note=note)
+                            row_note=note, references=refs)
     return out
 
 
@@ -369,11 +408,32 @@ def _flatplate_compute(fd: FamilyData) -> dict[str, GridConvergence]:
     return {q: constant_ratio(v[0], v[1], v[2], 2.0) for q, v in fd.values.items()}
 
 
+def _reference_columns(fd: FamilyData, extrapolated: str) -> dict[str, str]:
+    """The reference columns of one flat-plate row: the recorded differences of the three grids, and the difference of
+    the Richardson extrapolated value (blank when the family was refused)."""
+    out = {c: "" for c in REFERENCE_COLUMNS}
+
+    def ext(ref: Reference) -> str:
+        return _g((float(extrapolated) / ref.value - 1.0) * 100.0, ".6g") if extrapolated else ""
+
+    tmr, corr = fd.references.get("tmr"), fd.references["corr"]
+    if tmr is not None:
+        out.update(tmr_sa_cf=_g(tmr.value), tmr_diff_f1_pct=_g(tmr.diffs_pct[0]), tmr_diff_f2_pct=_g(tmr.diffs_pct[1]),
+                   tmr_diff_f3_pct=_g(tmr.diffs_pct[2]), tmr_diff_extrapolated_pct=ext(tmr))
+    out.update(correlation=corr.name, correlation_cf=_g(corr.value), corr_diff_f1_pct=_g(corr.diffs_pct[0]),
+               corr_diff_f2_pct=_g(corr.diffs_pct[1]), corr_diff_f3_pct=_g(corr.diffs_pct[2]),
+               corr_diff_extrapolated_pct=ext(corr))
+    return out
+
+
 def flatplate_results(fams) -> list[dict[str, str]]:
     out = []
     for m, fd in sorted(fams.items()):
         trip = "/".join(lv.name for lv in fd.family.levels)
-        out += _rows("rans_flatplate", f"M={m:g}", trip, fd, _flatplate_compute, "cells^-1/2 (2-D)")
+        rows = _rows("rans_flatplate", f"M={m:g}", trip, fd, _flatplate_compute, "cells^-1/2 (2-D)")
+        for r in rows:
+            r.update(_reference_columns(fd, r["extrapolated"]))
+        out += rows
     return out
 
 
@@ -431,6 +491,9 @@ def _header() -> list[str]:
         "gci_fine_pct and gci_coarse_pct are relative to f1 and f2 (percent), including for xcp: multiply by |f1| for a length.",
         "h_basis is the definition of the grid size h: nodes^-1/3 (rans_mesh_study), cells^-1/2 for the 2-D flat plate, cells^-1/3 or wall_size (basic_finner_mesh_check).",
         "rans_flatplate: 2-D grids, h = cells^-1/2 (the cells double exactly in each direction, so r = 2); the residual evidence of a grid is min(rho_drop_orders, nu_drop_orders).",
+        "rans_flatplate: tmr_sa_cf is the mean of the CFL3D and FUN3D SA values on the 545x385 TMR grid (TMR cf_convergence.dat, recorded in rans_flatplate.csv; Mach 0.2 only). tmr_diff_* is a cross-comparison of two programs: it is not an error against an exact solution and not validation.",
+        "rans_flatplate: correlation_cf is an empirical correlation, local Karman-Schoenherr at Mach 0.2 and van Driest II (Hopkins-Inouye) at Mach 2, as recorded in rans_flatplate.csv. It is not an exact solution; corr_diff_* is a difference from a correlation of measurements, whose own uncertainty this file does not record.",
+        "rans_flatplate: *_diff_f1_pct, f2 and f3 are (cf - reference)/reference in percent on the finest, medium and coarsest grid (the err_vs_tmr_percent and err_vs_correlation_percent columns of rans_flatplate.csv); *_diff_extrapolated_pct is the same difference for the Richardson extrapolated value of the row. The reference columns are blank on every row that is not a rans_flatplate row.",
         "rans_flatplate: the observed orders, 1.1 to 1.4, lie below the formal order of 2 and are not flagged by the p > 4 or p < 0.5 rules; a limiter is a possible cause that this study has not tested.",
         "rans_mesh_study: wall_size_m scales by 1.67 and 1.60 while nodes^(1/3) scales by 1.33 and 1.31 (the fixed max_size mechanism below); the only recorded knob is wall_size_m, so the similarity check is vacuous for this study. h = nodes^-1/3, as in the published V6 arithmetic.",
         "basic_finner_mesh_check: order and GCI are conditional on the h definition, so every triplet is written twice, once per h_basis; the spread between the two is part of the uncertainty.",
@@ -455,7 +518,7 @@ def main(out: pathlib.Path | str | None = None) -> pathlib.Path:
     with out.open("w", newline="") as f:
         for ln in _header():
             f.write(ln + "\n")
-        w = csv.DictWriter(f, fieldnames=COLUMNS, lineterminator="\n")
+        w = csv.DictWriter(f, fieldnames=COLUMNS + REFERENCE_COLUMNS, restval="", lineterminator="\n")
         w.writeheader()
         w.writerows(rows)
     return out

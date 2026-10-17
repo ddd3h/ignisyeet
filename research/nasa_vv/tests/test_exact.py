@@ -293,3 +293,30 @@ def test_taylor_maccoll_solves_a_large_attached_cone():
     c = taylor_maccoll(2.0, 38.0)
     assert 59.5 < c.beta_deg < 60.0
     assert 0.0 < c.mach_surface < 1.0
+
+
+# The shock angle from a source independent of this module and of NPARC.
+# Source: J. L. Sims, NASA SP-3004 (1964), Table 11, the 10 degree column
+# (https://ntrs.nasa.gov/citations/19640009035), read as a table lookup at
+# the tabulated Mach numbers 1.75, 2.0, 2.5, 3.0 and 3.5, then Lagrange
+# interpolation in 1/M to M = 2.35 (about 0.01 degree; the table is not
+# tabulated at 2.35). NACA Report 1135 Chart 5 (26.80 +/- 0.15 degrees) and
+# the product's Rust taylor_maccoll (26.7367) agree; NPARC's 27.1843 does not.
+# See results/cone_shock_angle_sources.csv.
+INDEPENDENT_BETA = 26.7366
+
+# The same table at two Mach numbers it tabulates directly (no interpolation):
+# theta_w of the 10 degree column, in radians as printed.
+SP3004_TABLE_NODES = {2.0: 0.54464827, 2.5: 0.44136238}
+
+
+def test_cone_shock_angle_agrees_with_an_independent_source():
+    assert taylor_maccoll(2.35, 10.0).beta_deg == pytest.approx(
+        INDEPENDENT_BETA, abs=0.05
+    )
+
+
+@pytest.mark.parametrize("mach", sorted(SP3004_TABLE_NODES))
+def test_cone_shock_angle_matches_the_sims_table_at_its_own_mach_numbers(mach):
+    expected = math.degrees(SP3004_TABLE_NODES[mach])
+    assert taylor_maccoll(mach, 10.0).beta_deg == pytest.approx(expected, abs=1e-3)

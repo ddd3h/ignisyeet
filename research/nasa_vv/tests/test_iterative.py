@@ -121,8 +121,9 @@ def test_a_gci_above_a_hundred_percent_is_flagged_in_the_note():
 # ------------------------------------------------------------------ judgement and the header
 
 
-def _row(case, ratio, h_basis=""):
-    return {"case": case, "mach": "0.2", "quantity": "cd_plate", "ratio": ratio, "h_basis": h_basis}
+def _row(case, ratio, h_basis="", quantity_match="same", grid_match="same grid"):
+    return {"case": case, "mach": "0.2", "quantity": "cd_plate", "ratio": ratio, "h_basis": h_basis,
+            "quantity_match": quantity_match, "grid_match": grid_match}
 
 
 def test_judge_sorts_the_rows_by_ratio():
@@ -136,17 +137,39 @@ def test_judge_sorts_the_rows_by_ratio():
     assert [n for n in j.blank] == [it.row_name(_row("blank", ""))]
 
 
-def test_the_header_lists_every_row_above_one_by_name_in_plain_words():
-    rows = [_row("rans_flatplate 69x49", "3.1"), _row("rans_flatplate 137x97", "16.6"), _row("ok", "0.02")]
+DIFF = "different (iterative error of cd_plate; GCI of cf_x097)"
+
+
+def test_rows_above_one_split_into_matched_and_indicative():
+    rows = [_row("matched big", "4.0"), _row("plate", "3.1", quantity_match=DIFF),
+            _row("other grid", "2.0", grid_match="different grid (x)"), _row("ok", "0.02")]
+    j = it.judge(rows)
+    assert [n for n, _ in j.above_one] == [it.row_name(_row("matched big", ""))]
+    assert [n for n, _ in j.above_one_indicative] == [it.row_name(_row("plate", "")), it.row_name(_row("other grid", ""))]
+
+
+def test_the_header_lists_matched_rows_above_one_and_the_indicative_ones_separately():
+    rows = [_row("matched big", "4.0"), _row("plate 69x49", "3.1", quantity_match=DIFF),
+            _row("plate 137x97", "16.6", quantity_match=DIFF), _row("ok", "0.02")]
     text = "\n".join(it.judgement_lines(it.judge(rows)))
-    assert "rans_flatplate 69x49" in text and "rans_flatplate 137x97" in text
-    assert "ratio 0.02" not in text  # a row at 0.02 is not listed among those above 1.0
-    assert "ratio above 1.0" in text and "3.1" in text and "16.6" in text
+    a, b = text.split("(b)")
+    assert "matched big" in a and "plate 69x49" not in a and "plate 137x97" not in a
+    assert "plate 69x49" in b and "plate 137x97" in b and "3.1" in b and "16.6" in b
+    assert "indicative" in b and "quantities differ" in b
+    assert "ratio 0.02" not in text
+
+
+def test_the_header_says_none_for_matched_rows_when_only_indicative_rows_exceed_one():
+    text = "\n".join(it.judgement_lines(it.judge([_row("plate", "3.1", quantity_match=DIFF), _row("b", "")])))
+    a, b = text.split("(b)")
+    assert a.rstrip().endswith("none.") or "none" in a.splitlines()[-1] or "none." in a
+    assert "plate" in b
 
 
 def test_the_header_says_none_when_no_row_exceeds_one():
     text = "\n".join(it.judgement_lines(it.judge([_row("a", "0.01"), _row("b", "")])))
-    assert "above 1.0: none" in text
+    a, b = text.split("(b)")
+    assert "none" in a and "none" in b
 
 
 # ------------------------------------------------------------------ flat plate
@@ -174,6 +197,8 @@ def test_flatplate_pairs_the_stop_error_with_the_flatplate_gci_of_the_same_mach(
     assert float(fine["value_at_stop"]) == pytest.approx(0.00297412 * (1 + 1.8943 / 100))
     assert fine["grid_match"].startswith("same grid") and rows[0]["grid_match"].startswith("different grid")
     assert "cf_x097" in fine["note"] and "cd_plate" in fine["note"]  # the quantity differs and is said so
+    assert all(r["quantity_match"].startswith("different") for r in rows)
+    assert "indicative" in fine["note"]
     assert "0.15" in rows[1]["note"]  # the 137x97 grid's own GCI (gci_coarse_pct)
 
 
@@ -214,7 +239,7 @@ def test_level_rows_compare_the_judged_row_with_the_last_written_row(tmp_path):
     fine_cn = next(r for r in rows if "fine" in r["case"] and r["quantity"] == "cn_a4")
     assert float(fine_cn["iterative_error_pct"]) == pytest.approx(100 * 1e-3 / 1.001, rel=1e-5)  # relative to the last row
     assert fine_cn["ratio"] == "" and fine_cn["gci_fine_pct"] == ""
-    assert fine_cn["grid_match"].startswith("same grid")
+    assert fine_cn["grid_match"].startswith("same grid") and fine_cn["quantity_match"] == "same"
     coarse_ca = next(r for r in rows if "coarse" in r["case"] and r["quantity"] == "ca_alpha0")
     assert float(coarse_ca["iterative_error_pct"]) == pytest.approx(100 * 2e-3 / 0.998, rel=1e-5)
     assert float(coarse_ca["ratio"]) == pytest.approx(100 * 2e-3 / 0.998 / 10, rel=1e-5)
@@ -243,8 +268,9 @@ def test_main_is_deterministic(tmp_path):
     assert any("ratio above 1.0" in ln for ln in head)
     rows = list(csv.DictReader(ln for ln in text.splitlines() if not ln.startswith("#")))
     assert rows[0].keys() >= {"case", "mach", "alpha_deg", "model", "quantity", "value_at_stop", "value_converged",
-                              "iterative_error_pct", "gci_fine_pct", "ratio", "grid_match", "source", "h_basis", "note"}
+                              "iterative_error_pct", "gci_fine_pct", "ratio", "grid_match", "quantity_match", "source", "h_basis", "note"}
     for r in rows:
+        assert r["quantity_match"].split(" ")[0] in ("same", "different"), r["case"]
         if r["gci_fine_pct"] == "":
             assert r["ratio"] == "", r["case"]
         assert r["ratio"] != "0" or float(r["iterative_error_pct"]) == 0.0

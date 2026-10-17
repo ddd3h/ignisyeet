@@ -48,8 +48,8 @@ PROVENANCE_JSON = FIELDS_DIR + "/provenance.json"
 REL = lambda p: str(pathlib.Path(p).relative_to(ROOT))  # noqa: E731
 
 COLUMNS = ["case", "mach", "alpha_deg", "model", "quantity", "value_at_stop", "value_converged",
-           "iterative_error_pct", "gci_fine_pct", "ratio", "grid_match", "source", "h_basis", "note"]
-"""The brief's columns, with grid_match before source; h_basis and note are appended."""
+           "iterative_error_pct", "gci_fine_pct", "ratio", "grid_match", "quantity_match", "source", "h_basis", "note"]
+"""The brief's columns, with grid_match and quantity_match before source; h_basis and note are appended."""
 
 NO_DISTURBANCE = 0.1
 INVALIDATES = 1.0
@@ -146,7 +146,7 @@ def _plain(s: str) -> str:
 
 def build_rows(*, case: str, mach: float, alpha_deg: float, model: str, quantity: str, v_stop: float,
                v_conv: float, refs: list[GciRef], grid_match: str, source: str, note: str = "",
-               extra_note=None) -> list[dict[str, str]]:
+               extra_note=None, quantity_match: str = "same") -> list[dict[str, str]]:
     """One row per h_basis of the matching GCI; one row only when no basis has a GCI number.
 
     ``extra_note(ref, error_pct)`` may add a sentence to the note of a row (it may return '').
@@ -154,7 +154,7 @@ def build_rows(*, case: str, mach: float, alpha_deg: float, model: str, quantity
     err = iterative_error_pct(v_stop, v_conv)
     base = {"case": _plain(case), "mach": f"{mach:g}", "alpha_deg": f"{alpha_deg:g}", "model": model,
             "quantity": quantity, "value_at_stop": _f(v_stop, ".10g"), "value_converged": _f(v_conv, ".10g"),
-            "iterative_error_pct": _f(err, ".6g"), "grid_match": _plain(grid_match), "source": _plain(source)}
+            "iterative_error_pct": _f(err, ".6g"), "grid_match": _plain(grid_match), "quantity_match": _plain(quantity_match), "source": _plain(source)}
 
     def one(ref: GciRef | None, reason: str) -> dict[str, str]:
         r = dict(base)
@@ -200,13 +200,21 @@ def row_name(row: dict[str, str]) -> str:
 @dataclass
 class Judgement:
     above_one: list[tuple[str, float]]
+    """Ratio above 1.0 on a matched row (same grid and same quantity): the iterative error invalidates that GCI."""
+    above_one_indicative: list[tuple[str, float]]
+    """Ratio above 1.0 on a row whose grid or quantity differs from the GCI's: indicative only."""
     above_tenth: list[tuple[str, float]]
     below_tenth: list[tuple[str, float]]
     blank: list[str]
 
 
+def is_matched(row: dict[str, str]) -> bool:
+    """Same grid and same quantity as the GCI."""
+    return row.get("grid_match", "same grid").startswith("same") and row.get("quantity_match", "same").startswith("same")
+
+
 def judge(rows: list[dict[str, str]]) -> Judgement:
-    j = Judgement([], [], [], [])
+    j = Judgement([], [], [], [], [])
     for r in rows:
         name = row_name(r)
         if r["ratio"] == "":
@@ -214,7 +222,7 @@ def judge(rows: list[dict[str, str]]) -> Judgement:
             continue
         v = float(r["ratio"])
         if v > INVALIDATES:
-            j.above_one.append((name, v))
+            (j.above_one if is_matched(r) else j.above_one_indicative).append((name, v))
         elif v >= NO_DISTURBANCE:
             j.above_tenth.append((name, v))
         else:
@@ -224,12 +232,26 @@ def judge(rows: list[dict[str, str]]) -> Judgement:
 
 def judgement_lines(j: Judgement) -> list[str]:
     lines = ["Judgement: a ratio below 0.1 means the iterative error does not disturb the grid study; a ratio above 1.0 "
-             "means the iterative error is larger than the grid uncertainty, so that GCI is not valid for the condition."]
+             "on a matched row (same grid and same quantity) means the iterative error is larger than the grid "
+             "uncertainty, so that GCI is not valid for the condition. A ratio on a row whose grid or quantity differs "
+             "is indicative only."]
     if j.above_one:
-        lines.append(f"Rows with a ratio above 1.0, where the iterative error is larger than the grid uncertainty "
-                     f"({len(j.above_one)} rows): " + "; ".join(f"{n} (ratio {v:.3g})" for n, v in j.above_one) + ".")
+        lines.append(f"(a) Matched rows with a ratio above 1.0, where the ratio invalidates that GCI ({len(j.above_one)} rows): "
+                     + "; ".join(f"{n} (ratio {v:.3g})" for n, v in j.above_one) + ".")
     else:
-        lines.append("Rows with a ratio above 1.0: none.")
+        lines.append("(a) Matched rows with a ratio above 1.0, where the ratio invalidates that GCI: none.")
+    if j.above_one_indicative:
+        lines.append(
+            f"(b) Indicative rows with a ratio above 1.0 ({len(j.above_one_indicative)} rows): "
+            + "; ".join(f"{n} (ratio {v:.3g})" for n, v in j.above_one_indicative)
+            + ". Plainly: the CD at the acceptance stop differs from the final CD by more than the Cf grid uncertainty, "
+              "so the published plate's stop rule leaves an iterative error larger than its grid uncertainty would "
+              "suggest. This is indicative because the quantities differ (the iterative error is that of the plate CD, "
+              "the GCI that of cf_x097); it does not invalidate the Cf GCI. No committed source holds a GCI for the "
+              "plate CD itself (gci_existing.csv and layer0_gci.csv carry cf_x097 and other quantities only), so no "
+              "matched pairing exists for these rows.")
+    else:
+        lines.append("(b) Indicative rows with a ratio above 1.0: none.")
     if j.above_tenth:
         lines.append(f"Rows with a ratio from 0.1 to 1.0 ({len(j.above_tenth)} rows): "
                      + "; ".join(f"{n} (ratio {v:.3g})" for n, v in j.above_tenth) + ".")
@@ -353,7 +375,7 @@ def flatplate_rows(path, gci_rows, source) -> list[dict[str, str]]:
         v_stop = v_conv * (1.0 + pct / 100.0)
         refs = find_gci(gci_rows, "rans_flatplate", f"M={mach:g}", "cf_x097")
         if mine == cells[0]:
-            gm = "same grid (the finest grid of the GCI triplet, but not the same quantity: see note)"
+            gm = "same grid (the finest grid of the GCI triplet)"
         else:
             gm = f"different grid (the GCI refers to the finest grid {int(cells[0])} cells; this row is {r['grid']})"
 
@@ -366,9 +388,11 @@ def flatplate_rows(path, gci_rows, source) -> list[dict[str, str]]:
         out += build_rows(
             case=f"rans_flatplate {r['grid']}", mach=mach, alpha_deg=0.0, model="RANS (SA-neg)", quantity="cd_plate",
             v_stop=v_stop, v_conv=v_conv, refs=refs, grid_match=gm, source=source, extra_note=extra,
+            quantity_match="different (iterative error of cd_plate; GCI of cf_x097)",
             note=("iterative error of the plate CD (cd_at_stop_vs_final_percent: CD at the iteration where the product's "
                   "acceptance rule would stop against the last iteration) but the GCI is of cf_x097, a different "
-                  "quantity on the same grid, so the ratio is indicative only; value_at_stop = cd_plate x "
+                  "quantity on the same grid, so the ratio is indicative only because the quantities differ (no committed "
+                  "GCI exists for cd_plate); value_at_stop = cd_plate x "
                   "(1 + cd_at_stop_vs_final_percent / 100)"))
     return out
 
@@ -442,13 +466,13 @@ def _header(rows, depth_cells, fine) -> list[str]:
         *[f"  {s} @ {_last_commit(s)}" for s in srcs],
         "  Task 14 work directory $HOME/.cache/nasa_vv_sample/<level>/out/cfd/<case>/history.csv (levels coarse, medium, fine; medium_nomirror is not a family member and has no row); its judged rows and history_gap_* are those of sample_euler_levels.csv, and a history whose judged row does not match the recorded value is refused.",
         "iterative_error_pct = 100 |value_at_stop - value_converged| / |value_converged|; ratio = iterative_error_pct / gci_fine_pct. gci_fine_pct is in percent of the fine-grid value, as in the GCI files.",
-        "A GCI is paired with an iterative error only for the same body, condition and quantity. grid_match says whether the grid is the same: where it is not, the ratio is indicative only.",
+        "A GCI is paired with an iterative error only for the same body, condition and quantity. grid_match says whether the grid is the same and quantity_match whether the quantity is ('same' or 'different (<which>)'): where either differs, the ratio is indicative only and the judgement below keeps those rows apart from the matched ones.",
         "A matching GCI without a number (refused, oscillatory, not converging under refinement) or whose number the GCI file flags (a note starting 'unusable' or saying the GCI is not reliable) is treated as refused: it leaves gci_fine_pct and ratio blank and the note gives the GCI row's own reason; the ratio is never 0 for lack of a GCI.",
         "h_basis is the h basis of the GCI row (nodes^-1/3 and wall_size for the Euler sample rocket, cells^-1/2 for the flat plate); a condition with two bases has two rows, and the spread between them is part of the uncertainty. When no basis has a number there is one row with h_basis blank. note is appended after source.",
-        "value_converged: convergence_depth.csv rows use its deepest run (freestream start continued to residual 1e-9, CN 1.20218); the fields histories use their last iteration (300), which is not converged either; the Task 14 levels use the last row SU2 wrote after the stop, so their error is a lower bound; rans_flatplate rows have value_at_stop = cd_plate x (1 + cd_at_stop_vs_final_percent / 100) and value_converged = cd_plate (the last iteration).",
+        "value_converged: convergence_depth.csv rows use its deepest run (freestream start continued to residual 1e-9, CN 1.20218); the fields histories use their last iteration (300), which is not converged either, and their M = 2 rows (convergence_depth.csv has no M = 2) compare the earlier residual-1e-6 stop rule against iteration 300; the Task 14 level rows use the last row SU2 wrote after the stop, which is not converged, so their error is a lower bound of the iterative error; rans_flatplate rows have value_at_stop = cd_plate x (1 + cd_at_stop_vs_final_percent / 100) and value_converged = cd_plate (the last iteration).",
         f"Nearest matching family for the Euler sample rocket: results/gci_sample_euler.csv (Task 14), the fine level of which has the settings of convergence_depth.csv and the fields histories (wall_size 2 mm, fin_size 1 mm) but another mesh ({fine['cells']} cells against {depth_cells} cells), so grid_match reads 'different grid' for those rows. The rans_mesh_study rows of gci_existing.csv are not used: they are a different mesh series (3, 4.8 and 8 mm wall_size) and are refused anyway.",
         "convergence_depth.csv holds M = 0.8, alpha = 4 deg only; M = 2 enters through the fields histories (freestream start, residual 1e-6 stop, the earlier rule, against iteration 300). The M = 0.8, alpha = 4 deg history of fields/ is not repeated: its iteration-102 value 1.195565 is the 'freestream start (iteration 102)' row of convergence_depth.csv (1.19556).",
-        "rans_flatplate: the iterative error is that of the plate CD (cd_at_stop_vs_final_percent) and the GCI is that of cf_x097, the quantity of the flat-plate rows of gci_existing.csv, which has no iterative-error record; the ratio pairs two quantities on the same grids and is indicative only. The GCI was built from the final-iteration cf_x097 (5.8 to 8.1 orders of residual drop on the six grids), so this ratio describes a run stopped by the product's acceptance rule, not the inputs of the GCI. The coarse and middle grids are paired with the GCI of the fine grid (gci_fine_pct); the middle grid's own GCI is gci_coarse_pct, given in its note.",
+        "rans_flatplate: the iterative error is that of the plate CD (cd_at_stop_vs_final_percent) and the GCI is that of cf_x097, the quantity of the flat-plate rows of gci_existing.csv, which has no iterative-error record; the ratio pairs two quantities on the same grids, quantity_match reads 'different' on these rows, and the ratio is indicative only; no committed source holds a GCI for the plate CD (gci_existing.csv and layer0_gci.csv carry cf_x097 and other quantities). The GCI was built from the final-iteration cf_x097 (5.8 to 8.1 orders of residual drop on the six grids), so this ratio describes a run stopped by the product's acceptance rule, not the inputs of the GCI. The coarse and middle grids are paired with the GCI of the fine grid (gci_fine_pct); the middle grid's own GCI is gci_coarse_pct, given in its note.",
         "Task 14 levels: history_gap_* counts the rows SU2 wrote after the stop. value_at_stop is the recorded value (the judged row), value_converged the last row. Pairing with the family GCI: the fine level is the grid gci_fine_pct belongs to; the coarse and medium levels are inputs of the same family and read 'different grid'. CN(4 deg) of the wall marker is paired with cna = CN(4)/radians(4) (the same relative error); ca_alpha0 with ca_alpha0. The ca_alpha0 GCIs of M = 0.3 and 0.8 and the wall_size cna GCI of M = 2 are flagged by the GCI file, so those rows are blank; only the nodes^-1/3 cna GCI of M = 2 (observed order 0.53) carries a usable number.",
         "Layer-0 plate (results/layer0_plate.csv): no row. Its header records that window_spread is empty on every row and that the history holds no per-iteration value of the compared quantities (only residuals and integrated force coefficients); the iterative convergence it records is the residual drop, which is not an iterative error in percent.",
         *judgement_lines(j),

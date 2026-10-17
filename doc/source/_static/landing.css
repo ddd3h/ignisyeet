@@ -206,8 +206,8 @@ a.iy-badge:hover { border-color: var(--iy-accent); color: var(--iy-accent) !impo
 .iy-entry { padding: 18px 20px; border: 1px solid var(--color-background-border); border-radius: var(--iy-radius); background: var(--color-background-secondary); }
 .iy-entry h3 { font-size: 1.1rem; line-height: 1.5; }
 .iy-entry-body { display: flex; align-items: flex-start; gap: 24px; }
-.iy-entry-body > p { flex: 1; min-width: 0; }
-.iy-entry-thumb { flex: none; display: block; width: 160px; aspect-ratio: 1; margin-top: 0.6rem; overflow: hidden; border: 1px solid var(--color-background-border); border-radius: 10px; background: #fff; }
+.iy-entry-text { flex: 1; min-width: 0; }
+.iy-entry-thumb { flex: none; display: block; width: 160px; aspect-ratio: 1; margin-top: 0.15rem; overflow: hidden; border: 1px solid var(--color-background-border); border-radius: 10px; background: #fff; }
 .iy-entry-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: 58% 50%; }
 @media (max-width: 40em) {
   .iy-entry-body { gap: 14px; }

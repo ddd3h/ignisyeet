@@ -4,7 +4,7 @@
 
 **Goal:** Put a numerical uncertainty band on IgnisYeet's aerodynamic coefficients by running the NASA WIND/NPARC verification and validation procedure, and publish the result as a Japanese report page and an English paper draft.
 
-**Architecture:** A Python package under `research/nasa_vv/` holds exact solutions and a tested grid-convergence module. The grid-convergence code is lifted unchanged in substance from `doc/scripts/rans_mesh_study.py:43`, which already reproduces NASA's published example, and is given the tests, the constant-ratio path, and the asymptotic ratio it lacks. Three layers of cases feed it: SU2 alone on problems with exact solutions, the IgnisYeet pipeline on a cone-cylinder with the same exact solution, and the full tutorial applied to the sample rocket and the Basic Finner. Most of layer 0 and parts of layer 2 reuse results already committed in `doc/data/`.
+**Architecture:** A Python package under `research/IY-TR-2026-01/nasa_vv/` holds exact solutions and a tested grid-convergence module. The grid-convergence code is lifted unchanged in substance from `doc/scripts/rans_mesh_study.py:43`, which already reproduces NASA's published example, and is given the tests, the constant-ratio path, and the asymptotic ratio it lacks. Three layers of cases feed it: SU2 alone on problems with exact solutions, the IgnisYeet pipeline on a cone-cylinder with the same exact solution, and the full tutorial applied to the sample rocket and the Basic Finner. Most of layer 0 and parts of layer 2 reuse results already committed in `doc/data/`.
 
 **Tech Stack:** Python 3.10+ with numpy and pytest (new dev dependency), SU2 8.3.0 at `~/.local/share/ignisyeet-su2-native/bin/SU2_CFD`, gmsh through IgnisYeet's CFD environment, the `ignisyeet` release binary, PBS/Torque on the virgo cluster for the heavy runs.
 
@@ -23,13 +23,13 @@
 - A blank `probable_error_pct` means the error is unknown: draw no error bar. A value of `0` means below 0.5 per cent, not zero. Spec §6.7.
 - Mesh files, SU2 solution files and raw solver output are never committed. Only small CSVs, figures and source are. Spec §8.
 - Scratch space goes on disk, never in `/tmp`, which is RAM-backed here.
-- Every command in this plan runs from `research/`, as `uv run --project nasa_vv ...`.
+- Every command in this plan runs from `research/IY-TR-2026-01/`, as `uv run --project nasa_vv ...`.
   The package is not installed (`package = false`), so `import nasa_vv` only resolves
-  when `research/` is the working directory. Running from `research/nasa_vv` fails with
+  when `research/IY-TR-2026-01/` is the working directory. Running from `research/IY-TR-2026-01/nasa_vv` fails with
   `ModuleNotFoundError: No module named 'nasa_vv'`.
 - No module may open a file by a path relative to the working directory. Resolve every
   input and output path from `pathlib.Path(__file__)`, so a module behaves the same
-  wherever it is run from. Paths written on a command line are relative to `research/`.
+  wherever it is run from. Paths written on a command line are relative to `research/IY-TR-2026-01/`.
 - SU2 binary: `~/.local/share/ignisyeet-su2-native/bin/SU2_CFD`. The `ignisyeet` release binary: `target/release/ignisyeet`.
 
 ## Review Focus
@@ -48,14 +48,14 @@ These are the failure modes the spec implies but no single task's happy path exe
 
 **Files:**
 - Create: `research/README.md`
-- Create: `research/nasa_vv/__init__.py`
-- Create: `research/nasa_vv/pyproject.toml`
+- Create: `research/IY-TR-2026-01/nasa_vv/__init__.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/pyproject.toml`
 - Create: `research/.gitignore`
-- Test: `research/nasa_vv/tests/test_smoke.py`
+- Test: `research/IY-TR-2026-01/nasa_vv/tests/test_smoke.py`
 
 **Interfaces:**
 - Consumes: nothing.
-- Produces: an importable package `nasa_vv`, and `pytest` runnable from `research/` via `uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/`.
+- Produces: an importable package `nasa_vv`, and `pytest` runnable from `research/IY-TR-2026-01/` via `uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/`.
 
 - [ ] **Step 1: Create the gitignore**
 
@@ -80,7 +80,7 @@ __pycache__/
 
 - [ ] **Step 2: Create the package metadata**
 
-`research/nasa_vv/pyproject.toml`:
+`research/IY-TR-2026-01/nasa_vv/pyproject.toml`:
 
 ```toml
 [project]
@@ -103,7 +103,7 @@ testpaths = ["tests"]
 
 - [ ] **Step 3: Create the package init**
 
-`research/nasa_vv/__init__.py`:
+`research/IY-TR-2026-01/nasa_vv/__init__.py`:
 
 ```python
 # SPDX-License-Identifier: GPL-3.0-or-later
@@ -112,7 +112,7 @@ testpaths = ["tests"]
 
 - [ ] **Step 4: Write the smoke test**
 
-`research/nasa_vv/tests/test_smoke.py`:
+`research/IY-TR-2026-01/nasa_vv/tests/test_smoke.py`:
 
 ```python
 # SPDX-License-Identifier: GPL-3.0-or-later
@@ -126,7 +126,7 @@ def test_package_imports():
 - [ ] **Step 5: Run the test to verify it passes**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/ -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/ -v
 ```
 
 Expected: `test_package_imports PASSED`. If `nasa_vv` is not importable, add `pythonpath = [".."]` under `[tool.pytest.ini_options]` and rerun.
@@ -153,13 +153,13 @@ Plan: `../docs/superpowers/plans/2026-10-17-nasa-cfd-vv.md`
 
 Run the tests with:
 
-    cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/ -v
+    cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/ -v
 ```
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add research/README.md research/.gitignore research/nasa_vv/
+git add research/README.md research/.gitignore research/IY-TR-2026-01/nasa_vv/
 git commit -m "research(nasa-vv): add the study package skeleton"
 ```
 
@@ -168,9 +168,9 @@ git commit -m "research(nasa-vv): add the study package skeleton"
 ## Task 2: Grid convergence module
 
 **Files:**
-- Create: `research/nasa_vv/gci.py`
-- Test: `research/nasa_vv/tests/test_gci.py`
-- Test: `research/nasa_vv/tests/data/prD.out` (NASA VERIFY reference output, copied verbatim)
+- Create: `research/IY-TR-2026-01/nasa_vv/gci.py`
+- Test: `research/IY-TR-2026-01/nasa_vv/tests/test_gci.py`
+- Test: `research/IY-TR-2026-01/nasa_vv/tests/data/prD.out` (NASA VERIFY reference output, copied verbatim)
 - Read for reference: `doc/scripts/rans_mesh_study.py:43-56`
 
 **Interfaces:**
@@ -190,8 +190,8 @@ The file is already downloaded at
 If it is gone, re-fetch it:
 
 ```bash
-mkdir -p research/nasa_vv/tests/data
-curl -s -o research/nasa_vv/tests/data/prD.out \
+mkdir -p research/IY-TR-2026-01/nasa_vv/tests/data
+curl -s -o research/IY-TR-2026-01/nasa_vv/tests/data/prD.out \
   https://www.grc.nasa.gov/www/wind/valid/tutorial/prD.out
 ```
 
@@ -199,7 +199,7 @@ Confirm it contains `Order of Convergence, p =  1.78618479`.
 
 - [ ] **Step 2: Write the failing acceptance test**
 
-`research/nasa_vv/tests/test_gci.py`:
+`research/IY-TR-2026-01/nasa_vv/tests/test_gci.py`:
 
 ```python
 # SPDX-License-Identifier: GPL-3.0-or-later
@@ -298,14 +298,14 @@ def test_verify_reference_file_is_the_one_we_pinned_to():
 - [ ] **Step 3: Run the test to verify it fails**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_gci.py -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_gci.py -v
 ```
 
 Expected: collection error, `ModuleNotFoundError: No module named 'nasa_vv.gci'`.
 
 - [ ] **Step 4: Write the module**
 
-`research/nasa_vv/gci.py`:
+`research/IY-TR-2026-01/nasa_vv/gci.py`:
 
 ```python
 # SPDX-License-Identifier: GPL-3.0-or-later
@@ -433,7 +433,7 @@ def constant_ratio(
 - [ ] **Step 5: Run the tests to verify they pass**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_gci.py -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_gci.py -v
 ```
 
 Expected: all nine tests PASS. If `test_non_convergent_fixed_point_is_reported` fails because the iteration happens to converge, widen the triplet until `ln(r21)` is small enough to make it wander, and keep the assertion on `converged is False`.
@@ -441,7 +441,7 @@ Expected: all nine tests PASS. If `test_non_convergent_fixed_point_is_reported` 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add research/nasa_vv/gci.py research/nasa_vv/tests/test_gci.py research/nasa_vv/tests/data/prD.out
+git add research/IY-TR-2026-01/nasa_vv/gci.py research/IY-TR-2026-01/nasa_vv/tests/test_gci.py research/IY-TR-2026-01/nasa_vv/tests/data/prD.out
 git commit -m "research(nasa-vv): add the grid convergence module, pinned to NASA's VERIFY example"
 ```
 
@@ -450,7 +450,7 @@ git commit -m "research(nasa-vv): add the grid convergence module, pinned to NAS
 ## Task 3: Celik variable-ratio test from the paper
 
 **Files:**
-- Modify: `research/nasa_vv/tests/test_gci.py`
+- Modify: `research/IY-TR-2026-01/nasa_vv/tests/test_gci.py`
 
 **Interfaces:**
 - Consumes: `grid_convergence` from Task 2.
@@ -477,7 +477,7 @@ The example to look for is the turbulent flow over a backward facing step, with
 
 - [ ] **Step 2: Write the failing test**
 
-Append to `research/nasa_vv/tests/test_gci.py`, filling the five `CELIK_*` constants
+Append to `research/IY-TR-2026-01/nasa_vv/tests/test_gci.py`, filling the five `CELIK_*` constants
 from what Step 1 actually read:
 
 ```python
@@ -503,7 +503,7 @@ def test_variable_ratio_matches_the_celik_paper_example():
 - [ ] **Step 3: Run it and reconcile**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_gci.py::test_variable_ratio_matches_the_celik_paper_example -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_gci.py::test_variable_ratio_matches_the_celik_paper_example -v
 ```
 
 If it fails, the discrepancy is information, not a licence to bend the module.
@@ -515,7 +515,7 @@ quantity is the one whose `p` is quoted. Only if the module itself is wrong may
 - [ ] **Step 4: Commit**
 
 ```bash
-git add research/nasa_vv/tests/test_gci.py
+git add research/IY-TR-2026-01/nasa_vv/tests/test_gci.py
 git commit -m "research(nasa-vv): pin the variable-ratio path to the Celik paper example"
 ```
 
@@ -524,8 +524,8 @@ git commit -m "research(nasa-vv): pin the variable-ratio path to the Celik paper
 ## Task 4: Exact solutions — oblique shock and Prandtl-Meyer
 
 **Files:**
-- Create: `research/nasa_vv/exact.py`
-- Test: `research/nasa_vv/tests/test_exact.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/exact.py`
+- Test: `research/IY-TR-2026-01/nasa_vv/tests/test_exact.py`
 - Read for reference: `crates/panel/src/supersonic.rs:37,50,71,77,88`
 
 **Interfaces:**
@@ -539,7 +539,7 @@ git commit -m "research(nasa-vv): pin the variable-ratio path to the Celik paper
 
 - [ ] **Step 1: Write the failing test with the NPARC reference values**
 
-`research/nasa_vv/tests/test_exact.py`:
+`research/IY-TR-2026-01/nasa_vv/tests/test_exact.py`:
 
 ```python
 # SPDX-License-Identifier: GPL-3.0-or-later
@@ -625,14 +625,14 @@ def test_shock_total_pressure_never_rises():
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_exact.py -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_exact.py -v
 ```
 
 Expected: `ModuleNotFoundError: No module named 'nasa_vv.exact'`.
 
 - [ ] **Step 3: Write the module**
 
-`research/nasa_vv/exact.py`:
+`research/IY-TR-2026-01/nasa_vv/exact.py`:
 
 ```python
 # SPDX-License-Identifier: GPL-3.0-or-later
@@ -763,7 +763,7 @@ def prandtl_meyer_expansion(
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_exact.py -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_exact.py -v
 ```
 
 Expected: all seven PASS. If `test_zero_deflection_gives_the_mach_angle` fails at the Mach-angle edge, the bisection's lower bound is exactly `asin(1/M)` where the deflection is zero; nudge the assertion tolerance rather than the bound.
@@ -771,7 +771,7 @@ Expected: all seven PASS. If `test_zero_deflection_gives_the_mach_angle` fails a
 - [ ] **Step 5: Commit**
 
 ```bash
-git add research/nasa_vv/exact.py research/nasa_vv/tests/test_exact.py
+git add research/IY-TR-2026-01/nasa_vv/exact.py research/IY-TR-2026-01/nasa_vv/tests/test_exact.py
 git commit -m "research(nasa-vv): add the oblique shock and Prandtl-Meyer exact solutions"
 ```
 
@@ -780,9 +780,9 @@ git commit -m "research(nasa-vv): add the oblique shock and Prandtl-Meyer exact 
 ## Task 5: Exact solutions — Taylor-Maccoll and the cone10 discrepancy
 
 **Files:**
-- Modify: `research/nasa_vv/exact.py`
-- Modify: `research/nasa_vv/tests/test_exact.py`
-- Create: `research/nasa_vv/results/cone10_reference_check.csv`
+- Modify: `research/IY-TR-2026-01/nasa_vv/exact.py`
+- Modify: `research/IY-TR-2026-01/nasa_vv/tests/test_exact.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/results/cone10_reference_check.csv`
 - Read for reference: `doc/scripts/rans_cone.py:19-68`
 
 **Interfaces:**
@@ -796,7 +796,7 @@ Mc 1.834028` and `M = 2.35 -> Cp 0.096731, beta 26.7367, Mc 2.146831`.
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `research/nasa_vv/tests/test_exact.py`:
+Append to `research/IY-TR-2026-01/nasa_vv/tests/test_exact.py`:
 
 ```python
 from nasa_vv.exact import taylor_maccoll
@@ -848,14 +848,14 @@ def test_the_nparc_cone10_table_is_internally_inconsistent():
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_exact.py -k taylor -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_exact.py -k taylor -v
 ```
 
 Expected: `ImportError: cannot import name 'taylor_maccoll'`.
 
 - [ ] **Step 3: Port the solver**
 
-Append to `research/nasa_vv/exact.py`:
+Append to `research/IY-TR-2026-01/nasa_vv/exact.py`:
 
 ```python
 @dataclass
@@ -942,17 +942,17 @@ def taylor_maccoll(mach: float, delta_deg: float, gamma: float = 1.4) -> Cone:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_exact.py -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_exact.py -v
 ```
 
 Expected: all PASS, including the four new ones.
 
 - [ ] **Step 5: Record the cone10 discrepancy as data**
 
-Write `research/nasa_vv/results/cone10_reference_check.csv` by running:
+Write `research/IY-TR-2026-01/nasa_vv/results/cone10_reference_check.csv` by running:
 
 ```bash
-cd research && uv run --project nasa_vv python - <<'PY'
+cd research/IY-TR-2026-01 && uv run --project nasa_vv python - <<'PY'
 import csv, pathlib
 from nasa_vv.exact import taylor_maccoll
 c = taylor_maccoll(2.35, 10.0)
@@ -977,7 +977,7 @@ other four by more than 1 per cent.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add research/nasa_vv/exact.py research/nasa_vv/tests/test_exact.py research/nasa_vv/results/cone10_reference_check.csv
+git add research/IY-TR-2026-01/nasa_vv/exact.py research/IY-TR-2026-01/nasa_vv/tests/test_exact.py research/IY-TR-2026-01/nasa_vv/results/cone10_reference_check.csv
 git commit -m "research(nasa-vv): port Taylor-Maccoll and record the cone10 reference discrepancy"
 ```
 
@@ -986,8 +986,8 @@ git commit -m "research(nasa-vv): port Taylor-Maccoll and record the cone10 refe
 ## Task 6: Confirm the cone shock angle against an independent source
 
 **Files:**
-- Create: `research/nasa_vv/results/cone_shock_angle_sources.csv`
-- Modify: `research/nasa_vv/tests/test_exact.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/results/cone_shock_angle_sources.csv`
+- Modify: `research/IY-TR-2026-01/nasa_vv/tests/test_exact.py`
 
 **Interfaces:**
 - Consumes: `taylor_maccoll` from Task 5.
@@ -1011,21 +1011,21 @@ Record the source, the value, and how it was read.
 
 - [ ] **Step 2: Write the CSV**
 
-`research/nasa_vv/results/cone_shock_angle_sources.csv`:
+`research/IY-TR-2026-01/nasa_vv/results/cone_shock_angle_sources.csv`:
 
 ```csv
 # Shock angle of a 10 degree half-angle cone at M = 2.35, gamma = 1.4.
 # Collected to settle the disagreement between nasa_vv.exact.taylor_maccoll
 # (26.7367 deg) and the NPARC cone10 page (27.1843 deg). See spec section 4.0.
 source,reference,beta_deg,how_read,note
-nasa_vv.exact,research/nasa_vv/exact.py,26.7367,computed,shooting on beta to theta_c = 10 deg
+nasa_vv.exact,research/IY-TR-2026-01/nasa_vv/exact.py,26.7367,computed,shooting on beta to theta_c = 10 deg
 nparc_cone10,https://www.grc.nasa.gov/www/wind/valid/cone10/cone10.html,27.1843,table text,inconsistent with its own M3
 ...,...,...,...,...
 ```
 
 - [ ] **Step 3: Pin the conclusion in a test**
 
-Append to `research/nasa_vv/tests/test_exact.py`, with `INDEPENDENT_BETA` set to what
+Append to `research/IY-TR-2026-01/nasa_vv/tests/test_exact.py`, with `INDEPENDENT_BETA` set to what
 Step 1 actually found:
 
 ```python
@@ -1047,13 +1047,13 @@ report it, and do not proceed to Task 9; the Taylor-Maccoll port and the existin
 - [ ] **Step 4: Run the tests**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_exact.py -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_exact.py -v
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add research/nasa_vv/results/cone_shock_angle_sources.csv research/nasa_vv/tests/test_exact.py
+git add research/IY-TR-2026-01/nasa_vv/results/cone_shock_angle_sources.csv research/IY-TR-2026-01/nasa_vv/tests/test_exact.py
 git commit -m "research(nasa-vv): settle the cone shock angle against an independent source"
 ```
 
@@ -1062,8 +1062,8 @@ git commit -m "research(nasa-vv): settle the cone shock angle against an indepen
 ## Task 7: Grid family bookkeeping
 
 **Files:**
-- Create: `research/nasa_vv/family.py`
-- Test: `research/nasa_vv/tests/test_family.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/family.py`
+- Test: `research/IY-TR-2026-01/nasa_vv/tests/test_family.py`
 
 **Interfaces:**
 - Consumes: `representative_h`, `grid_convergence`, `GridConvergence` from Task 2.
@@ -1078,7 +1078,7 @@ This is where Review Focus items 3 and 4 are enforced.
 
 - [ ] **Step 1: Write the failing test**
 
-`research/nasa_vv/tests/test_family.py`:
+`research/IY-TR-2026-01/nasa_vv/tests/test_family.py`:
 
 ```python
 # SPDX-License-Identifier: GPL-3.0-or-later
@@ -1139,14 +1139,14 @@ def test_study_returns_one_result_per_quantity():
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_family.py -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_family.py -v
 ```
 
 Expected: `ModuleNotFoundError: No module named 'nasa_vv.family'`.
 
 - [ ] **Step 3: Write the module**
 
-`research/nasa_vv/family.py`:
+`research/IY-TR-2026-01/nasa_vv/family.py`:
 
 ```python
 # SPDX-License-Identifier: GPL-3.0-or-later
@@ -1243,7 +1243,7 @@ def study(
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_family.py -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_family.py -v
 ```
 
 Expected: all five PASS.
@@ -1251,7 +1251,7 @@ Expected: all five PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add research/nasa_vv/family.py research/nasa_vv/tests/test_family.py
+git add research/IY-TR-2026-01/nasa_vv/family.py research/IY-TR-2026-01/nasa_vv/tests/test_family.py
 git commit -m "research(nasa-vv): refuse grid families that are not similar or not converged"
 ```
 
@@ -1260,9 +1260,9 @@ git commit -m "research(nasa-vv): refuse grid families that are not similar or n
 ## Task 8: Grid convergence from the data already committed
 
 **Files:**
-- Create: `research/nasa_vv/cases/existing_data.py`
-- Create: `research/nasa_vv/results/gci_existing.csv`
-- Test: `research/nasa_vv/tests/test_existing_data.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/cases/existing_data.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/results/gci_existing.csv`
+- Test: `research/IY-TR-2026-01/nasa_vv/tests/test_existing_data.py`
 - Read: `doc/data/cfd/rans_mesh_study.csv`, `doc/data/cfd/rans_mesh_study.json`, `doc/data/cfd/rans_flatplate.csv`, `doc/data/validation/basic_finner/mesh_check.csv`
 
 **Interfaces:**
@@ -1286,7 +1286,7 @@ Record the exact column names in the module docstring. Do not guess them.
 
 - [ ] **Step 2: Write the failing test**
 
-`research/nasa_vv/tests/test_existing_data.py`:
+`research/IY-TR-2026-01/nasa_vv/tests/test_existing_data.py`:
 
 ```python
 # SPDX-License-Identifier: GPL-3.0-or-later
@@ -1330,15 +1330,15 @@ def test_basic_finner_has_four_euler_levels():
 - [ ] **Step 3: Run the test to verify it fails**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_existing_data.py -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_existing_data.py -v
 ```
 
 Expected: `ModuleNotFoundError: No module named 'nasa_vv.cases'`.
 
 - [ ] **Step 4: Write the readers and the driver**
 
-Create `research/nasa_vv/cases/__init__.py` containing only the SPDX line, then
-`research/nasa_vv/cases/existing_data.py`. Write the three readers against the column
+Create `research/IY-TR-2026-01/nasa_vv/cases/__init__.py` containing only the SPDX line, then
+`research/IY-TR-2026-01/nasa_vv/cases/existing_data.py`. Write the three readers against the column
 names recorded in Step 1, and a `main()` that:
 
 1. For `rans_mesh_study.csv`, builds a `GridFamily` per Mach from `wall_size_m` and the
@@ -1357,13 +1357,13 @@ Each `main()` run must be reproducible: no timestamps in the CSV body.
 - [ ] **Step 5: Run the tests to verify they pass**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_existing_data.py -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_existing_data.py -v
 ```
 
 - [ ] **Step 6: Produce the results and read them**
 
 ```bash
-cd research && uv run --project nasa_vv python -m nasa_vv.cases.existing_data
+cd research/IY-TR-2026-01 && uv run --project nasa_vv python -m nasa_vv.cases.existing_data
 column -s, -t results/gci_existing.csv | head -40
 ```
 
@@ -1376,7 +1376,7 @@ Check three things before committing:
 - [ ] **Step 7: Commit**
 
 ```bash
-git add research/nasa_vv/cases/ research/nasa_vv/tests/test_existing_data.py research/nasa_vv/results/gci_existing.csv
+git add research/IY-TR-2026-01/nasa_vv/cases/ research/IY-TR-2026-01/nasa_vv/tests/test_existing_data.py research/IY-TR-2026-01/nasa_vv/results/gci_existing.csv
 git commit -m "research(nasa-vv): compute grid convergence from the committed results"
 ```
 
@@ -1385,9 +1385,9 @@ git commit -m "research(nasa-vv): compute grid convergence from the committed re
 ## Task 9: Layer 0 — SU2 configuration pinned to the product's numerics
 
 **Files:**
-- Create: `research/nasa_vv/su2cfg.py`
-- Create: `research/nasa_vv/tests/data/golden_euler.cfg`
-- Test: `research/nasa_vv/tests/test_su2cfg.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/su2cfg.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/tests/data/golden_euler.cfg`
+- Test: `research/IY-TR-2026-01/nasa_vv/tests/test_su2cfg.py`
 - Read: `crates/cfd/src/su2cfg.rs:183-203`, and its golden tests at `:414`
 
 **Interfaces:**
@@ -1413,13 +1413,13 @@ target/release/ignisyeet --no-progress aero "$WORK/case.toml" \
 find "$WORK" -name '*.cfg' | head
 ```
 
-Copy the first `.cfg` to `research/nasa_vv/tests/data/golden_euler.cfg`. If the run is
+Copy the first `.cfg` to `research/IY-TR-2026-01/nasa_vv/tests/data/golden_euler.cfg`. If the run is
 too slow to finish, it only needs to get far enough to write the config; interrupt it
 once the file exists.
 
 - [ ] **Step 2: Write the failing test**
 
-`research/nasa_vv/tests/test_su2cfg.py`:
+`research/IY-TR-2026-01/nasa_vv/tests/test_su2cfg.py`:
 
 ```python
 # SPDX-License-Identifier: GPL-3.0-or-later
@@ -1469,7 +1469,7 @@ def test_a_tampered_numerics_key_is_caught():
 - [ ] **Step 3: Run the test to verify it fails**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_su2cfg.py -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_su2cfg.py -v
 ```
 
 Expected: `ModuleNotFoundError: No module named 'nasa_vv.su2cfg'`.
@@ -1500,13 +1500,13 @@ and output filenames.
 - [ ] **Step 5: Run the tests to verify they pass**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_su2cfg.py -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_su2cfg.py -v
 ```
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add research/nasa_vv/su2cfg.py research/nasa_vv/tests/test_su2cfg.py research/nasa_vv/tests/data/golden_euler.cfg
+git add research/IY-TR-2026-01/nasa_vv/su2cfg.py research/IY-TR-2026-01/nasa_vv/tests/test_su2cfg.py research/IY-TR-2026-01/nasa_vv/tests/data/golden_euler.cfg
 git commit -m "research(nasa-vv): pin the layer 0 SU2 numerics to a real product configuration"
 ```
 
@@ -1515,10 +1515,10 @@ git commit -m "research(nasa-vv): pin the layer 0 SU2 numerics to a real product
 ## Task 10: Layer 0 — meshes and the wedge, cone and expansion runs
 
 **Files:**
-- Create: `research/nasa_vv/mesh.py`
-- Create: `research/nasa_vv/cases/layer0.py`
-- Create: `research/nasa_vv/results/layer0.csv`
-- Test: `research/nasa_vv/tests/test_mesh.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/mesh.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/cases/layer0.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/results/layer0.csv`
+- Test: `research/IY-TR-2026-01/nasa_vv/tests/test_mesh.py`
 - Read for reference: `doc/scripts/rans_flatplate.py:103-145`, `doc/scripts/rans_plate_bl.py:39-100`
 
 **Interfaces:**
@@ -1530,7 +1530,7 @@ git commit -m "research(nasa-vv): pin the layer 0 SU2 numerics to a real product
 
 - [ ] **Step 1: Write the failing mesh test**
 
-`research/nasa_vv/tests/test_mesh.py`:
+`research/IY-TR-2026-01/nasa_vv/tests/test_mesh.py`:
 
 ```python
 # SPDX-License-Identifier: GPL-3.0-or-later
@@ -1574,12 +1574,12 @@ def test_refining_twice_gives_a_ratio_of_four():
 - [ ] **Step 2: Run it to verify it fails**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_mesh.py -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_mesh.py -v
 ```
 
 Expected: `ModuleNotFoundError: No module named 'nasa_vv.mesh'`.
 
-- [ ] **Step 3: Write `research/nasa_vv/mesh.py`**
+- [ ] **Step 3: Write `research/IY-TR-2026-01/nasa_vv/mesh.py`**
 
 `structured_quad_su2` writes the SU2 ASCII format: `NDIME= 2`, an `NELEM` block of
 quadrilaterals (VTK type `9`, one line per cell as `9 n0 n1 n2 n3 index`), an `NPOIN`
@@ -1592,12 +1592,12 @@ consecutive pair, so the coarse points survive exactly.
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_mesh.py -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_mesh.py -v
 ```
 
 - [ ] **Step 5: Write the three layer 0 cases**
 
-`research/nasa_vv/cases/layer0.py` with a `main()` that, for each of the three cases
+`research/IY-TR-2026-01/nasa_vv/cases/layer0.py` with a `main()` that, for each of the three cases
 below, builds three nested grids, writes the configs with `layer0_config`, runs
 `SU2_CFD`, extracts the comparison quantity, and calls `constant_ratio` with `r = 2.0`.
 
@@ -1626,7 +1626,7 @@ quantity, using the same column names as Task 8's `gci_existing.csv`.
 - [ ] **Step 6: Run the cases**
 
 ```bash
-cd research && uv run --project nasa_vv python -m nasa_vv.cases.layer0 --work "$HOME/.cache/nasa_vv_layer0"
+cd research/IY-TR-2026-01 && uv run --project nasa_vv python -m nasa_vv.cases.layer0 --work "$HOME/.cache/nasa_vv_layer0"
 column -s, -t results/layer0.csv
 ```
 
@@ -1638,7 +1638,7 @@ report rather than tuning the numerics, which would break Task 9's guarantee.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add research/nasa_vv/mesh.py research/nasa_vv/cases/layer0.py research/nasa_vv/tests/test_mesh.py research/nasa_vv/results/layer0.csv research/nasa_vv/results/layer0_gci.csv
+git add research/IY-TR-2026-01/nasa_vv/mesh.py research/IY-TR-2026-01/nasa_vv/cases/layer0.py research/IY-TR-2026-01/nasa_vv/tests/test_mesh.py research/IY-TR-2026-01/nasa_vv/results/layer0.csv research/IY-TR-2026-01/nasa_vv/results/layer0_gci.csv
 git commit -m "research(nasa-vv): solve the wedge, cone and expansion against their exact solutions"
 ```
 
@@ -1647,10 +1647,10 @@ git commit -m "research(nasa-vv): solve the wedge, cone and expansion against th
 ## Task 11: Layer 0 — the laminar flat plate
 
 **Files:**
-- Modify: `research/nasa_vv/exact.py`
-- Modify: `research/nasa_vv/tests/test_exact.py`
-- Create: `research/nasa_vv/cases/layer0_plate.py`
-- Create: `research/nasa_vv/results/layer0_plate.csv`
+- Modify: `research/IY-TR-2026-01/nasa_vv/exact.py`
+- Modify: `research/IY-TR-2026-01/nasa_vv/tests/test_exact.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/cases/layer0_plate.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/results/layer0_plate.csv`
 
 **Interfaces:**
 - Consumes: `structured_quad_su2`, `refine` from Task 10; `layer0_config` from Task 9.
@@ -1662,7 +1662,7 @@ difference from Blasius cannot be separated. Spec §4.
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `research/nasa_vv/tests/test_exact.py`:
+Append to `research/IY-TR-2026-01/nasa_vv/tests/test_exact.py`:
 
 ```python
 from nasa_vv.exact import blasius_cf, blasius_profile
@@ -1691,22 +1691,22 @@ Add `import math` at the top of the test file if it is not already there.
 - [ ] **Step 2: Run it to verify it fails, then implement**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_exact.py -k blasius -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_exact.py -k blasius -v
 ```
 
-Then append to `research/nasa_vv/exact.py` a `blasius_cf` returning `0.664 / sqrt(re_x)`
+Then append to `research/IY-TR-2026-01/nasa_vv/exact.py` a `blasius_cf` returning `0.664 / sqrt(re_x)`
 and a `blasius_profile` that integrates `f''' + 0.5 f f'' = 0` with RK4, shooting on
 `f''(0)` until `f'(eta_max) = 1`.
 
 - [ ] **Step 3: Run the tests to verify they pass**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_exact.py -k blasius -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_exact.py -k blasius -v
 ```
 
 - [ ] **Step 4: Write and run the case**
 
-`research/nasa_vv/cases/layer0_plate.py`: a flat plate at M = 0.2, laminar
+`research/IY-TR-2026-01/nasa_vv/cases/layer0_plate.py`: a flat plate at M = 0.2, laminar
 (`SOLVER= NAVIER_STOKES`, no turbulence model), `Re = 1e5` per metre so the plate stays
 laminar, three nested grids, comparing `Cf(x)` at `x = 0.5` and the velocity profile at
 the same station against `blasius_cf` and `blasius_profile`.
@@ -1720,7 +1720,7 @@ compressibility estimate at M = 0.2 so the report can state it.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add research/nasa_vv/exact.py research/nasa_vv/tests/test_exact.py research/nasa_vv/cases/layer0_plate.py research/nasa_vv/results/layer0_plate.csv research/nasa_vv/results/layer0_gci.csv
+git add research/IY-TR-2026-01/nasa_vv/exact.py research/IY-TR-2026-01/nasa_vv/tests/test_exact.py research/IY-TR-2026-01/nasa_vv/cases/layer0_plate.py research/IY-TR-2026-01/nasa_vv/results/layer0_plate.csv research/IY-TR-2026-01/nasa_vv/results/layer0_gci.csv
 git commit -m "research(nasa-vv): solve the laminar flat plate against the Blasius solution"
 ```
 
@@ -1729,9 +1729,9 @@ git commit -m "research(nasa-vv): solve the laminar flat plate against the Blasi
 ## Task 12: Validation figure with both uncertainty bands
 
 **Files:**
-- Create: `research/nasa_vv/plots.py`
-- Create: `research/nasa_vv/figures/validation_bands.svg`
-- Test: `research/nasa_vv/tests/test_plots.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/plots.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/figures/validation_bands.svg`
+- Test: `research/IY-TR-2026-01/nasa_vv/tests/test_plots.py`
 - Read: `doc/data/validation/basic_finner/summary_vs_measured.csv`, `doc/scripts/make_plots.py:1598-1625`
 
 **Interfaces:**
@@ -1743,7 +1743,7 @@ which draws a zero-length bar where the error is unknown. Spec §6.7.
 
 - [ ] **Step 1: Write the failing test**
 
-`research/nasa_vv/tests/test_plots.py`:
+`research/IY-TR-2026-01/nasa_vv/tests/test_plots.py`:
 
 ```python
 # SPDX-License-Identifier: GPL-3.0-or-later
@@ -1783,12 +1783,12 @@ def test_a_negative_value_uses_its_magnitude():
 - [ ] **Step 2: Run it to verify it fails**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_plots.py -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_plots.py -v
 ```
 
 - [ ] **Step 3: Write the module**
 
-`research/nasa_vv/plots.py` with an `ErrorBar` dataclass (`half_height: float`,
+`research/IY-TR-2026-01/nasa_vv/plots.py` with an `ErrorBar` dataclass (`half_height: float`,
 `bound: bool`), `error_bar_spec` implementing the three rules above, and
 `validation_figure` drawing, for CNa and CX0 against Mach:
 
@@ -1799,8 +1799,8 @@ cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tes
 - [ ] **Step 4: Run the tests and produce the figure**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_plots.py -v
-cd research && uv run --project nasa_vv python -m nasa_vv.plots --out nasa_vv/figures/validation_bands.svg
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_plots.py -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv python -m nasa_vv.plots --out nasa_vv/figures/validation_bands.svg
 ```
 
 Open the SVG and confirm by eye: no zero-length bars, the bound bars are visually
@@ -1809,7 +1809,7 @@ distinct, and the CFD bands are present only where a GCI exists.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add research/nasa_vv/plots.py research/nasa_vv/tests/test_plots.py research/nasa_vv/figures/validation_bands.svg
+git add research/IY-TR-2026-01/nasa_vv/plots.py research/IY-TR-2026-01/nasa_vv/tests/test_plots.py research/IY-TR-2026-01/nasa_vv/figures/validation_bands.svg
 git commit -m "research(nasa-vv): draw both uncertainty bands, and no bar where the error is unknown"
 ```
 
@@ -1818,9 +1818,9 @@ git commit -m "research(nasa-vv): draw both uncertainty bands, and no bar where 
 ## Task 13: Consistency checks
 
 **Files:**
-- Create: `research/nasa_vv/cases/consistency.py`
-- Create: `research/nasa_vv/results/consistency.csv`
-- Test: `research/nasa_vv/tests/test_consistency.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/cases/consistency.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/results/consistency.csv`
+- Test: `research/IY-TR-2026-01/nasa_vv/tests/test_consistency.py`
 - Read: `doc/data/cfd/sample_euler_cases.csv`, `doc/data/cfd/asymmetry_study.csv`
 
 **Interfaces:**
@@ -1833,7 +1833,7 @@ against grid refinement needs the new runs of Task 14.
 
 - [ ] **Step 1: Write the failing test**
 
-`research/nasa_vv/tests/test_consistency.py`:
+`research/IY-TR-2026-01/nasa_vv/tests/test_consistency.py`:
 
 ```python
 # SPDX-License-Identifier: GPL-3.0-or-later
@@ -1857,10 +1857,10 @@ def test_the_even_part_is_signed():
 - [ ] **Step 2: Run it to verify it fails, then implement**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_consistency.py -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_consistency.py -v
 ```
 
-Write `research/nasa_vv/cases/consistency.py` with `antisymmetry` and a `main()` that
+Write `research/IY-TR-2026-01/nasa_vv/cases/consistency.py` with `antisymmetry` and a `main()` that
 writes one row per check to `results/consistency.csv` with columns
 `check,case,mach,alpha_deg,model,quantity,value,expected,tolerance,passed,source`:
 
@@ -1877,15 +1877,15 @@ traceable. Spec §13.
 - [ ] **Step 3: Run the tests and produce the results**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_consistency.py -v
-cd research && uv run --project nasa_vv python -m nasa_vv.cases.consistency
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_consistency.py -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv python -m nasa_vv.cases.consistency
 column -s, -t results/consistency.csv
 ```
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add research/nasa_vv/cases/consistency.py research/nasa_vv/tests/test_consistency.py research/nasa_vv/results/consistency.csv
+git add research/IY-TR-2026-01/nasa_vv/cases/consistency.py research/IY-TR-2026-01/nasa_vv/tests/test_consistency.py research/IY-TR-2026-01/nasa_vv/results/consistency.csv
 git commit -m "research(nasa-vv): collect the consistency checks from the committed results"
 ```
 
@@ -1894,9 +1894,9 @@ git commit -m "research(nasa-vv): collect the consistency checks from the commit
 ## Task 14: New Euler grid family for the sample rocket
 
 **Files:**
-- Create: `research/nasa_vv/cases/sample_euler.py`
-- Create: `research/nasa_vv/results/sample_euler_levels.csv`
-- Modify: `research/nasa_vv/results/gci_existing.csv` (append, or write `gci_sample_euler.csv`)
+- Create: `research/IY-TR-2026-01/nasa_vv/cases/sample_euler.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/results/sample_euler_levels.csv`
+- Modify: `research/IY-TR-2026-01/nasa_vv/results/gci_existing.csv` (append, or write `gci_sample_euler.csv`)
 - Read for reference: `doc/scripts/rans_sample.py:44-200`
 
 **Interfaces:**
@@ -1961,7 +1961,7 @@ Check the real spelling of `alpha_mode` in `crates/cfd/src/config.rs` first.
 
 - [ ] **Step 4: Write the collector**
 
-`research/nasa_vv/cases/sample_euler.py` `main()`:
+`research/IY-TR-2026-01/nasa_vv/cases/sample_euler.py` `main()`:
 
 1. Reads each level's `out/cfd_cases.csv` and `out/cfd_report.json` the way
    `doc/scripts/rans_mesh_study.py:21` does.
@@ -1976,7 +1976,7 @@ Check the real spelling of `alpha_mode` in `crates/cfd/src/config.rs` first.
 - [ ] **Step 5: Run it and check**
 
 ```bash
-cd research && uv run --project nasa_vv python -m nasa_vv.cases.sample_euler --work "$HOME/.cache/nasa_vv_sample"
+cd research/IY-TR-2026-01 && uv run --project nasa_vv python -m nasa_vv.cases.sample_euler --work "$HOME/.cache/nasa_vv_sample"
 column -s, -t results/gci_sample_euler.csv
 ```
 
@@ -1987,8 +1987,8 @@ carries its note.
 - [ ] **Step 6: Fill the consistency rows and commit**
 
 ```bash
-cd research && uv run --project nasa_vv python -m nasa_vv.cases.consistency
-git add research/nasa_vv/cases/sample_euler.py research/nasa_vv/results/
+cd research/IY-TR-2026-01 && uv run --project nasa_vv python -m nasa_vv.cases.consistency
+git add research/IY-TR-2026-01/nasa_vv/cases/sample_euler.py research/IY-TR-2026-01/nasa_vv/results/
 git commit -m "research(nasa-vv): add a similar Euler grid family for the sample rocket"
 ```
 
@@ -1997,8 +1997,8 @@ git commit -m "research(nasa-vv): add a similar Euler grid family for the sample
 ## Task 15: Basic Finner RANS grid family at M = 1.832
 
 **Files:**
-- Create: `research/nasa_vv/cases/basic_finner_rans.py`
-- Create: `research/nasa_vv/results/basic_finner_rans_levels.csv`
+- Create: `research/IY-TR-2026-01/nasa_vv/cases/basic_finner_rans.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/results/basic_finner_rans_levels.csv`
 - Read: `doc/data/validation/basic_finner/cfd_rans.csv`, `doc/source/validation.rst:704-712`
 
 **Interfaces:**
@@ -2061,13 +2061,13 @@ for `cna`, `ca_alpha0`, `xcp`. Every level's `residual_drop_orders` goes in the 
 whether or not it passed.
 
 ```bash
-cd research && uv run --project nasa_vv python -m nasa_vv.cases.basic_finner_rans --work "$HOME/.cache/nasa_vv_bf_rans"
+cd research/IY-TR-2026-01 && uv run --project nasa_vv python -m nasa_vv.cases.basic_finner_rans --work "$HOME/.cache/nasa_vv_bf_rans"
 ```
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add research/nasa_vv/cases/basic_finner_rans.py research/nasa_vv/results/basic_finner_rans_levels.csv
+git add research/IY-TR-2026-01/nasa_vv/cases/basic_finner_rans.py research/IY-TR-2026-01/nasa_vv/results/basic_finner_rans_levels.csv
 git commit -m "research(nasa-vv): add the Basic Finner RANS grid family at M = 1.832"
 ```
 
@@ -2076,8 +2076,8 @@ git commit -m "research(nasa-vv): add the Basic Finner RANS grid family at M = 1
 ## Task 16: Iterative error against the grid uncertainty
 
 **Files:**
-- Create: `research/nasa_vv/cases/iterative.py`
-- Create: `research/nasa_vv/results/iterative.csv`
+- Create: `research/IY-TR-2026-01/nasa_vv/cases/iterative.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/results/iterative.csv`
 - Read: `doc/data/cfd/convergence_depth.csv`, `doc/data/cfd/rans_flatplate.csv`, `doc/data/cfd/fields/history_*.csv`
 
 **Interfaces:**
@@ -2089,7 +2089,7 @@ compared with the grid uncertainty. Spec §6.2.
 
 - [ ] **Step 1: Write the collector**
 
-`research/nasa_vv/cases/iterative.py` `main()` writes one row per condition with columns
+`research/IY-TR-2026-01/nasa_vv/cases/iterative.py` `main()` writes one row per condition with columns
 `case,mach,alpha_deg,model,quantity,value_at_stop,value_converged,iterative_error_pct,gci_fine_pct,ratio,source`
 where `ratio = iterative_error_pct / gci_fine_pct`.
 
@@ -2102,7 +2102,7 @@ Sources:
 - [ ] **Step 2: Run it and judge**
 
 ```bash
-cd research && uv run --project nasa_vv python -m nasa_vv.cases.iterative
+cd research/IY-TR-2026-01 && uv run --project nasa_vv python -m nasa_vv.cases.iterative
 column -s, -t results/iterative.csv
 ```
 
@@ -2113,7 +2113,7 @@ the report, not smoothed over.
 - [ ] **Step 3: Commit**
 
 ```bash
-git add research/nasa_vv/cases/iterative.py research/nasa_vv/results/iterative.csv
+git add research/IY-TR-2026-01/nasa_vv/cases/iterative.py research/IY-TR-2026-01/nasa_vv/results/iterative.csv
 git commit -m "research(nasa-vv): compare the iterative error with the grid uncertainty"
 ```
 
@@ -2122,8 +2122,8 @@ git commit -m "research(nasa-vv): compare the iterative error with the grid unce
 ## Task 17: Temporal convergence of the flight integrator
 
 **Files:**
-- Create: `research/nasa_vv/cases/temporal.py`
-- Create: `research/nasa_vv/results/temporal.csv`
+- Create: `research/IY-TR-2026-01/nasa_vv/cases/temporal.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/results/temporal.csv`
 - Read: `doc/source/verification.rst:142-168`, `crates/sim/src/flight.rs:2120-2162`
 
 **Interfaces:**
@@ -2165,9 +2165,9 @@ the deviation is the finding.
 - [ ] **Step 3: Run it and commit**
 
 ```bash
-cd research && uv run --project nasa_vv python -m nasa_vv.cases.temporal
+cd research/IY-TR-2026-01 && uv run --project nasa_vv python -m nasa_vv.cases.temporal
 column -s, -t results/temporal.csv
-git add research/nasa_vv/cases/temporal.py research/nasa_vv/results/temporal.csv
+git add research/IY-TR-2026-01/nasa_vv/cases/temporal.py research/IY-TR-2026-01/nasa_vv/results/temporal.csv
 git commit -m "research(nasa-vv): measure the temporal convergence of the flight integrator"
 ```
 
@@ -2176,9 +2176,9 @@ git commit -m "research(nasa-vv): measure the temporal convergence of the flight
 ## Task 18: Layer 1 — the cone-cylinder through the IgnisYeet pipeline
 
 **Files:**
-- Create: `research/nasa_vv/cases/layer1_cone.py`
-- Create: `research/nasa_vv/results/layer1_cone.csv`
-- Create: `research/nasa_vv/results/layer0_vs_layer1.csv`
+- Create: `research/IY-TR-2026-01/nasa_vv/cases/layer1_cone.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/results/layer1_cone.csv`
+- Create: `research/IY-TR-2026-01/nasa_vv/results/layer0_vs_layer1.csv`
 - Read for reference: `doc/scripts/rans_cone.py:71-105`, `doc/scripts/rans_geometry.py:36`
 
 **Interfaces:**
@@ -2255,7 +2255,7 @@ and its hard-coded `R = 0.05` and 10 degree angle match this body.
 
 - [ ] **Step 4: Write the collector**
 
-`research/nasa_vv/cases/layer1_cone.py` `main()`:
+`research/IY-TR-2026-01/nasa_vv/cases/layer1_cone.py` `main()`:
 
 1. Reads the three levels' binned Cp.
 2. Builds a `GridFamily` and calls `study` for `cp_mean` (the mean over the bins) and
@@ -2270,7 +2270,7 @@ and its hard-coded `R = 0.05` and 10 degree angle match this body.
 - [ ] **Step 5: Run it and read the result**
 
 ```bash
-cd research && uv run --project nasa_vv python -m nasa_vv.cases.layer1_cone --work "$HOME/.cache/nasa_vv_layer1"
+cd research/IY-TR-2026-01 && uv run --project nasa_vv python -m nasa_vv.cases.layer1_cone --work "$HOME/.cache/nasa_vv_layer1"
 column -s, -t results/layer0_vs_layer1.csv
 ```
 
@@ -2281,7 +2281,7 @@ uncertainty cannot support.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add research/nasa_vv/cases/layer1_cone.py research/nasa_vv/results/layer1_cone.csv research/nasa_vv/results/layer0_vs_layer1.csv
+git add research/IY-TR-2026-01/nasa_vv/cases/layer1_cone.py research/IY-TR-2026-01/nasa_vv/results/layer1_cone.csv research/IY-TR-2026-01/nasa_vv/results/layer0_vs_layer1.csv
 git commit -m "research(nasa-vv): separate the pipeline's error from the solver's on the cone"
 ```
 
@@ -2290,9 +2290,9 @@ git commit -m "research(nasa-vv): separate the pipeline's error from the solver'
 ## Task 19: Farfield mass-flux balance
 
 **Files:**
-- Create: `research/nasa_vv/cases/massflux.py`
-- Create: `research/nasa_vv/results/massflux.csv`
-- Test: `research/nasa_vv/tests/test_massflux.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/cases/massflux.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/results/massflux.csv`
+- Test: `research/IY-TR-2026-01/nasa_vv/tests/test_massflux.py`
 
 **Interfaces:**
 - Consumes: the SU2 output of Task 10's `wedge` and `cone` cases.
@@ -2305,7 +2305,7 @@ not used for this check.
 
 - [ ] **Step 1: Write the failing test**
 
-`research/nasa_vv/tests/test_massflux.py`:
+`research/IY-TR-2026-01/nasa_vv/tests/test_massflux.py`:
 
 ```python
 # SPDX-License-Identifier: GPL-3.0-or-later
@@ -2334,7 +2334,7 @@ def test_zero_inflow_is_an_error():
 - [ ] **Step 2: Run it to verify it fails, then implement**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_massflux.py -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_massflux.py -v
 ```
 
 `flux_imbalance` returns `abs(inflow - outflow) / abs(inflow)` and raises `ValueError`
@@ -2368,7 +2368,7 @@ which method was used.
 `case,mach,level,inflow_kg_s,outflow_kg_s,imbalance_rel,method,source`.
 
 ```bash
-cd research && uv run --project nasa_vv python -m nasa_vv.cases.massflux --work "$HOME/.cache/nasa_vv_layer0"
+cd research/IY-TR-2026-01 && uv run --project nasa_vv python -m nasa_vv.cases.massflux --work "$HOME/.cache/nasa_vv_layer0"
 column -s, -t results/massflux.csv
 ```
 
@@ -2378,7 +2378,7 @@ report, not something to tune away.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add research/nasa_vv/cases/massflux.py research/nasa_vv/tests/test_massflux.py research/nasa_vv/results/massflux.csv
+git add research/IY-TR-2026-01/nasa_vv/cases/massflux.py research/IY-TR-2026-01/nasa_vv/tests/test_massflux.py research/IY-TR-2026-01/nasa_vv/results/massflux.csv
 git commit -m "research(nasa-vv): check the farfield mass-flux balance"
 ```
 
@@ -2387,8 +2387,8 @@ git commit -m "research(nasa-vv): check the farfield mass-flux balance"
 ## Task 20: Model uncertainty — Euler against RANS
 
 **Files:**
-- Create: `research/nasa_vv/cases/model_uncertainty.py`
-- Create: `research/nasa_vv/results/model_uncertainty.csv`
+- Create: `research/IY-TR-2026-01/nasa_vv/cases/model_uncertainty.py`
+- Create: `research/IY-TR-2026-01/nasa_vv/results/model_uncertainty.csv`
 - Read: `doc/data/cfd/rans_vs_euler.csv`, `doc/data/validation/basic_finner/cfd_rans.csv`, `doc/data/validation/basic_finner/cfd_euler.csv`, `crates/cfd/src/su2cfg.rs:212`
 
 **Interfaces:**
@@ -2412,7 +2412,7 @@ report must say so instead.
 
 - [ ] **Step 2: Write the collector**
 
-`research/nasa_vv/cases/model_uncertainty.py` `main()` writes one row per condition with
+`research/IY-TR-2026-01/nasa_vv/cases/model_uncertainty.py` `main()` writes one row per condition with
 columns
 `case,mach,alpha_deg,quantity,euler,rans,difference,difference_pct,euler_gci_pct,rans_gci_pct,separable,source`
 where `separable` is true when `abs(difference_pct)` exceeds the sum of the two GCI
@@ -2426,9 +2426,9 @@ Conditions, all from committed data:
 - [ ] **Step 3: Run it and commit**
 
 ```bash
-cd research && uv run --project nasa_vv python -m nasa_vv.cases.model_uncertainty
+cd research/IY-TR-2026-01 && uv run --project nasa_vv python -m nasa_vv.cases.model_uncertainty
 column -s, -t results/model_uncertainty.csv
-git add research/nasa_vv/cases/model_uncertainty.py research/nasa_vv/results/model_uncertainty.csv
+git add research/IY-TR-2026-01/nasa_vv/cases/model_uncertainty.py research/IY-TR-2026-01/nasa_vv/results/model_uncertainty.csv
 git commit -m "research(nasa-vv): compare Euler with RANS against the numerical uncertainty"
 ```
 
@@ -2437,20 +2437,20 @@ git commit -m "research(nasa-vv): compare Euler with RANS against the numerical 
 ## Task 21: The Japanese report page
 
 **Files:**
-- Create: `research/nasa_vv/report/ja/report.md` (the source text)
-- Create: `doc/source/research/nasa-vv/index.rst` (generated by `research/nasa_vv/report/ja/build_page.py`)
+- Create: `research/IY-TR-2026-01/nasa_vv/report/ja/report.md` (the source text)
+- Create: `doc/source/research/nasa-vv/index.rst` (generated by `research/IY-TR-2026-01/nasa_vv/report/ja/build_page.py`)
 - Create: `doc/source/_static/research/nasa-vv/` (copies of the committed SVGs)
 - Create: `doc/source/_static/research-report.css`
 - Modify: `doc/source/research/index.rst`
 - Modify: `doc/source/_templates/page.html`
 
 **Interfaces:**
-- Consumes: every CSV in `research/nasa_vv/results/` and every figure in `research/nasa_vv/figures/`.
+- Consumes: every CSV in `research/IY-TR-2026-01/nasa_vv/results/` and every figure in `research/IY-TR-2026-01/nasa_vv/figures/`.
 - Produces: the published page at `/research/nasa-vv/`.
 
 - [ ] **Step 1: Write the report source**
 
-`research/nasa_vv/report/ja/report.md`, in Japanese, structured by the tutorial's six
+`research/IY-TR-2026-01/nasa_vv/report/ja/report.md`, in Japanese, structured by the tutorial's six
 steps, with these rules:
 
 - Every number cites the CSV it came from.
@@ -2506,7 +2506,7 @@ links, no horizontal scroll at 390, figures legible in dark.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add research/nasa_vv/report/ doc/source/research/ doc/source/_static/ doc/source/_templates/
+git add research/IY-TR-2026-01/nasa_vv/report/ doc/source/research/ doc/source/_static/ doc/source/_templates/
 git commit -m "research(nasa-vv): publish the Japanese report at /research/nasa-vv/"
 ```
 
@@ -2515,9 +2515,9 @@ git commit -m "research(nasa-vv): publish the Japanese report at /research/nasa-
 ## Task 22: The English paper draft
 
 **Files:**
-- Create: `research/nasa_vv/paper/en/main.tex`
-- Create: `research/nasa_vv/paper/en/references.bib`
-- Create: `research/nasa_vv/paper/en/Makefile`
+- Create: `research/IY-TR-2026-01/paper/en/main.tex`
+- Create: `research/IY-TR-2026-01/paper/en/references.bib`
+- Create: `research/IY-TR-2026-01/paper/en/Makefile`
 
 **Interfaces:**
 - Consumes: the same CSVs and figures as Task 18.
@@ -2547,7 +2547,7 @@ clean:
 - [ ] **Step 3: Build it**
 
 ```bash
-cd research/nasa_vv/paper/en && make
+cd research/IY-TR-2026-01/paper/en && make
 ```
 
 If `latexmk` is missing, say so and leave the source committed without the PDF; the PDF
@@ -2558,7 +2558,7 @@ is not committed in either case.
 Add `paper/*/*.pdf` and the latex aux patterns to `research/.gitignore`, then:
 
 ```bash
-git add research/nasa_vv/paper/en/ research/.gitignore
+git add research/IY-TR-2026-01/paper/en/ research/.gitignore
 git commit -m "research(nasa-vv): add the English paper draft"
 ```
 
@@ -2573,7 +2573,7 @@ git commit -m "research(nasa-vv): add the English paper draft"
 - [ ] **Step 1: Run every test**
 
 ```bash
-cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/ -v
+cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/ -v
 ```
 
 Expected: all pass. Record the count.
@@ -2586,7 +2586,7 @@ Any that is not satisfied is stated as not satisfied, in the report and here.
 - [ ] **Step 3: Check that every reported number is traceable**
 
 ```bash
-cd /home/ddd3h/ignisyeet && ls research/nasa_vv/results/
+cd /home/ddd3h/ignisyeet && ls research/IY-TR-2026-01/nasa_vv/results/
 ```
 
 For each table in the report, confirm the CSV it cites exists and contains that number.

@@ -675,11 +675,11 @@ def _precision_text(levels: dict[str, LevelData]) -> str:
 def header_common(levels: dict[str, LevelData], work: pathlib.Path, extra: list[str]) -> list[str]:
     versions = (work / "versions.txt").read_text().strip().splitlines() if (work / "versions.txt").exists() else []
     notes = (work / "notes.txt").read_text().strip().splitlines() if (work / "notes.txt").exists() else []
-    g0 = "research/nasa_vv/results/layer0.csv"
-    g1 = "research/nasa_vv/results/layer0_gci.csv"
+    g0 = "research/IY-TR-2026-01/nasa_vv/results/layer0.csv"
+    g1 = "research/IY-TR-2026-01/nasa_vv/results/layer0_gci.csv"
     lines = [
         "Layer 1 of the NASA WIND/NPARC verification study: the 10 degree cone-cylinder at M = 2.35, alpha = 0, through the whole IgnisYeet pipeline (`ignisyeet aero`: CAD profile, gmsh, SU2, coefficients), Euler, 3-D unstructured half model.",
-        "Producer: python -m nasa_vv.cases.layer1_cone (research/nasa_vv/cases/layer1_cone.py), collecting CFD that was run separately; the CFD is not run by the collector.",
+        "Producer: python -m nasa_vv.cases.layer1_cone (research/IY-TR-2026-01/nasa_vv/cases/layer1_cone.py), collecting CFD that was run separately; the CFD is not run by the collector.",
         "Exact reference: nasa_vv.exact.taylor_maccoll(2.35, 10.0).cp. The comparison of each layer with it is verification against an exact solution; the comparison of the two layers with each other is a cross-comparison of two models, not validation.",
         f"Layer 0 values are read, unchanged, from {g0} @ {_last_commit(g0)} (cone, finest grid) and {g1} @ {_last_commit(g1)}; layer 0 was not rerun.",
         f"The difference of the two layers' errors is reported as '{CONTRIBUTION_NAME}', never as meshing error alone: the layers differ in mesh type (structured axisymmetric against 3-D unstructured tetrahedra), in the geometry of the domain, in the code path that writes the SU2 configuration, and in how the wall Cp is extracted.",

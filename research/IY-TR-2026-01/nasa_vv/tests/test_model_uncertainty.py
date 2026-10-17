@@ -13,7 +13,7 @@ from nasa_vv.cases import model_uncertainty as mu
 from nasa_vv.cases.existing_data import COLUMNS as GCI_COLUMNS
 
 RESULTS = pathlib.Path(__file__).resolve().parents[1] / "results"
-ROOT = pathlib.Path(__file__).resolve().parents[3]
+ROOT = pathlib.Path(__file__).resolve().parents[4]
 
 
 def gci_row(study, condition, quantity, *, triplet="fine/medium/coarse", h_basis="nodes^-1/3", fine="", coarse="", note=""):

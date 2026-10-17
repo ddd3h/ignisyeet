@@ -6,7 +6,7 @@ import tomllib
 
 from nasa_vv.cases import basic_finner_rans as bf
 
-ROOT = pathlib.Path(__file__).resolve().parents[3]
+ROOT = pathlib.Path(__file__).resolve().parents[4]
 
 
 def test_setup_writes_one_self_contained_case_per_level(tmp_path):

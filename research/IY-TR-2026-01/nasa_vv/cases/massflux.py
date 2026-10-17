@@ -38,7 +38,7 @@ from .existing_data import _last_commit
 
 RESULTS = pathlib.Path(__file__).resolve().parents[1] / "results" / "massflux.csv"
 DEFAULT_WORK = pathlib.Path.home() / ".cache" / "nasa_vv_t19_layer0"
-LAYER0_PY = "research/nasa_vv/cases/layer0.py"
+LAYER0_PY = "research/IY-TR-2026-01/nasa_vv/cases/layer0.py"
 METHOD = "SU2 Avg_Massflow(marker), last history row"
 
 PRINT_FLOOR = 1e-9
@@ -181,8 +181,8 @@ def header(rows: list[dict], work: pathlib.Path, reference: pathlib.Path | None)
     tilde = lambda p: str(p).replace(home, "~", 1)
     lines = [
         "Farfield mass-flux balance of the layer 0 cases: verification of the code against the conservation of mass; no model is compared with another here.",
-        f"Producer: python -m nasa_vv.cases.massflux (research/nasa_vv/cases/massflux.py). Work directory: {tilde(work)}, read as it stands (one history.csv per case and level).",
-        f"The runs are layer 0's (research/nasa_vv/cases/layer0.py, last commit that changed it: {_last_commit(LAYER0_PY)}): its case, grid and configuration builders with config_text(case, analyze=<every marker>), SU2 8.3.0 (ignisyeet-su2-native), Euler, 65x49, 129x97 and 257x193 nodes.",
+        f"Producer: python -m nasa_vv.cases.massflux (research/IY-TR-2026-01/nasa_vv/cases/massflux.py). Work directory: {tilde(work)}, read as it stands (one history.csv per case and level).",
+        f"The runs are layer 0's (research/IY-TR-2026-01/nasa_vv/cases/layer0.py, last commit that changed it: {_last_commit(LAYER0_PY)}): its case, grid and configuration builders with config_text(case, analyze=<every marker>), SU2 8.3.0 (ignisyeet-su2-native), Euler, 65x49, 129x97 and 257x193 nodes.",
         f"Method: {METHOD}. MARKER_ANALYZE lists every boundary marker of the mesh (the lower boundary marker(s), inlet, outlet, top), MARKER_ANALYZE_AVERAGE= MASSFLUX, SURFACE_MASSFLOW in HISTORY_OUTPUT. SU2 reports the flux itself, so no integration of rho u.n from the surface output is used.",
         "Sign convention, read from the data: Avg_Massflow is positive for flux into the domain (the inlet reads positive and the outlet negative). A marker with a net positive flux counts to inflow_kg_s and one with a net negative flux to outflow_kg_s, both written as positive numbers; the flux of a marker is its net, so a marker that passes flux in one part and out in another counts by its net. The balance therefore closes over every marker, the lower boundary included, and nothing is left out.",
         "imbalance_rel = abs(inflow_kg_s - outflow_kg_s) / abs(inflow_kg_s) (nasa_vv.cases.massflux.flux_imbalance). The NASA tutorial calls about 1e-3 relative consistent.",

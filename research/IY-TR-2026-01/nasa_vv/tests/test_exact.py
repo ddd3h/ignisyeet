@@ -159,7 +159,7 @@ def test_prandtl_meyer_maximum_turn_follows_gamma():
 
 # --- Taylor-Maccoll cone ---------------------------------------------------
 
-_RANS_CONE = Path(__file__).resolve().parents[3] / "doc" / "scripts" / "rans_cone.py"
+_RANS_CONE = Path(__file__).resolve().parents[4] / "doc" / "scripts" / "rans_cone.py"
 
 
 def _load_rans_cone():

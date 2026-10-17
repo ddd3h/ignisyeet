@@ -100,7 +100,7 @@ from dataclasses import dataclass, field
 from ..family import GridFamily, GridLevel, study
 from ..gci import GridConvergence, constant_ratio, grid_convergence
 
-ROOT = pathlib.Path(__file__).resolve().parents[3]
+ROOT = pathlib.Path(__file__).resolve().parents[4]
 """Repository root: cases -> nasa_vv -> research -> root."""
 RESULTS = pathlib.Path(__file__).resolve().parents[1] / "results" / "gci_existing.csv"
 

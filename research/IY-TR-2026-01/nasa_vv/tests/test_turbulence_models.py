@@ -13,7 +13,7 @@ from nasa_vv.gci import constant_ratio
 from nasa_vv.su2cfg import GOLDEN_RANS, rans_gas_model
 
 DATA = pathlib.Path(__file__).parent / "data"
-ROOT = pathlib.Path(__file__).resolve().parents[3]
+ROOT = pathlib.Path(__file__).resolve().parents[4]
 
 
 def active(text):

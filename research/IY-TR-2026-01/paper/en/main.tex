@@ -1,6 +1,6 @@
 % SPDX-License-Identifier: GPL-3.0-or-later
 % Build: make   (latexmk -lualatex; see Makefile)
-% Structure: research/nasa_vv/paper/outline.md (shared with ../ja/main.tex).
+% Structure: research/IY-TR-2026-01/paper/outline.md (shared with ../ja/main.tex).
 \documentclass[twocolumn]{labreport}
 
 \usepackage{tikz}
@@ -669,10 +669,10 @@ The findings point, in the study's judgement, to three obstacles, each shown to 
 The findings imply, without having tested it, that a global refinement control, convergence verdicts that separate stalls from limit cycles, and a band reported only when the gate passes would be needed before such a pipeline could attach a quantified uncertainty to its coefficients.
 
 \section*{Data availability}
-All numbers in this paper come from the result files under \texttt{research/nasa\_vv/results/} (and the committed figures under \texttt{research/nasa\_vv/figures/}) of the IgnisYeet repository, except where a comment in the source names another committed file.
+The code, the results and the figures are in the IgnisYeet repository under \path{research/IY-TR-2026-01/}: the result files in \path{research/IY-TR-2026-01/nasa_vv/results/}, the figures in \path{research/IY-TR-2026-01/nasa_vv/figures/}, the code in \path{research/IY-TR-2026-01/nasa_vv/} (the exact solutions in \path{exact.py}, the GCI procedure in \path{gci.py}, the case producers in \path{cases/}, the tests in \path{tests/}), and the sources of the papers in \path{research/IY-TR-2026-01/paper/}.
+All numbers in this paper come from the result files and the committed figures, except where a comment in the source names another committed file.
 The product's CFD runs made for this study used IgnisYeet v0.4.0 with SU2~8.3.0, apart from the one exception stated in Section~\ref{sec:method}.
-The full catalogue of results, including the tables and per-grid values condensed here, is in the web report \texttt{research/nasa\_vv/report/ja/report.md} (in Japanese).
-The code that produces the result files is in \texttt{research/nasa\_vv/} (the exact solutions in \texttt{exact.py}, the GCI procedure in \texttt{gci.py}, the case producers in \texttt{cases/}, the tests in \texttt{tests/}).
+The full catalogue of results, including the tables and per-grid values condensed here, is in the web report \path{research/IY-TR-2026-01/nasa_vv/report/ja/report.md} (in Japanese).
 
 \bibliographystyle{plainnat}
 \bibliography{references}

@@ -212,8 +212,8 @@ Five steps, one paragraph:
 5. Implications, stated as untested.
 
 ### Data availability
-results/*.csv, figures/, the code, the full catalogue in the web report
-research/nasa_vv/report/ja/report.md, and the software version (IgnisYeet v0.4.0 with SU2 8.3.0).
+the repository location of the code, results/*.csv, figures/ and the paper sources (research/IY-TR-2026-01/), the full catalogue in the web report
+research/IY-TR-2026-01/nasa_vv/report/ja/report.md, and the software version (IgnisYeet v0.4.0 with SU2 8.3.0).
 
 ### Appendix A. Details of the GCI procedure, the grids and the secondary results `sec:appA`
 Acceptance tests of the GCI code; layer-0, layer-1 and layer-2 grid and setup details. Gains the

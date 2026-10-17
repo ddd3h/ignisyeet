@@ -8,7 +8,7 @@ import pytest
 from nasa_vv.cases import consistency
 from nasa_vv.cases.consistency import antisymmetry
 
-ROOT = pathlib.Path(__file__).resolve().parents[3]
+ROOT = pathlib.Path(__file__).resolve().parents[4]
 
 
 def test_a_perfectly_antisymmetric_pair_has_a_zero_even_part():

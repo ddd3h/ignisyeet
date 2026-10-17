@@ -13,7 +13,7 @@ from nasa_vv.cases.existing_data import (
 )
 from nasa_vv.gci import grid_convergence
 
-ROOT = pathlib.Path(__file__).resolve().parents[3]
+ROOT = pathlib.Path(__file__).resolve().parents[4]
 RANS = ROOT / "doc/data/cfd/rans_mesh_study.csv"
 RANS_JSON = ROOT / "doc/data/cfd/rans_mesh_study.json"
 PLATE = ROOT / "doc/data/cfd/rans_flatplate.csv"

@@ -1,7 +1,7 @@
 """Render report.md (this directory) into the Sphinx page doc/source/research/nasa-vv/index.rst.
 
 The page is a raw-HTML block inside the research section's iy-* wrappers, so it shares the top bar
-and footer with the other pages. The two figures are copied from research/nasa_vv/figures/ to
+and footer with the other pages. The two figures are copied from research/IY-TR-2026-01/nasa_vv/figures/ to
 doc/source/_static/research/nasa-vv/, where Sphinx serves them.
 
 Usage: python3 build_page.py   (needs markdown-it-py)
@@ -13,9 +13,9 @@ import unicodedata
 
 from markdown_it import MarkdownIt
 
-ROOT = pathlib.Path(__file__).resolve().parents[4]
-SRC = ROOT / "research/nasa_vv/report/ja/report.md"
-FIGURES_FROM = ROOT / "research/nasa_vv/figures"
+ROOT = pathlib.Path(__file__).resolve().parents[5]
+SRC = ROOT / "research/IY-TR-2026-01/nasa_vv/report/ja/report.md"
+FIGURES_FROM = ROOT / "research/IY-TR-2026-01/nasa_vv/figures"
 FIGURES_TO = ROOT / "doc/source/_static/research/nasa-vv"
 PAGE = ROOT / "doc/source/research/nasa-vv/index.rst"
 FIGURE_HREF = "../../_static/research/nasa-vv/"

@@ -39,7 +39,7 @@ RESULTS = pathlib.Path(__file__).resolve().parents[1] / "results" / "consistency
 
 ASYMMETRY_CSV = "doc/data/cfd/asymmetry_study.csv"
 EULER_CASES_CSV = "doc/data/cfd/sample_euler_cases.csv"
-SAMPLE_LEVELS_REL = "research/nasa_vv/results/sample_euler_levels.csv"
+SAMPLE_LEVELS_REL = "research/IY-TR-2026-01/nasa_vv/results/sample_euler_levels.csv"
 SAMPLE_LEVELS_CSV = pathlib.Path(__file__).resolve().parents[1] / "results" / "sample_euler_levels.csv"
 SAMPLE_LEVELS_COLUMNS = ("level", "mach", "wall_size_mm", "nodes", "status_a0", "status_a4",
                          "status_am4", "ca_alpha0", "cn_raw_a0", "cn_raw_a4", "cn_raw_am4")

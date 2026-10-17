@@ -14,14 +14,14 @@ __pycache__/
 .pytest_cache/
 
 # LaTeX build products of the papers
-nasa_vv/paper/*/*.pdf
-nasa_vv/paper/*/fig/
-nasa_vv/paper/*/*.aux
-nasa_vv/paper/*/*.log
-nasa_vv/paper/*/*.bbl
-nasa_vv/paper/*/*.blg
-nasa_vv/paper/*/*.fls
-nasa_vv/paper/*/*.fdb_latexmk
-nasa_vv/paper/*/*.out
-nasa_vv/paper/*/*.toc
-nasa_vv/paper/*/*.synctex.gz
+IY-TR-2026-01/paper/*/*.pdf
+IY-TR-2026-01/paper/*/fig/
+IY-TR-2026-01/paper/*/*.aux
+IY-TR-2026-01/paper/*/*.log
+IY-TR-2026-01/paper/*/*.bbl
+IY-TR-2026-01/paper/*/*.blg
+IY-TR-2026-01/paper/*/*.fls
+IY-TR-2026-01/paper/*/*.fdb_latexmk
+IY-TR-2026-01/paper/*/*.out
+IY-TR-2026-01/paper/*/*.toc
+IY-TR-2026-01/paper/*/*.synctex.gz

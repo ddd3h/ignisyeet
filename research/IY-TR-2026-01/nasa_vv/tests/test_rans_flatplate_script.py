@@ -9,7 +9,7 @@ import importlib.util
 import pathlib
 
 
-REPO = pathlib.Path(__file__).resolve().parents[3]
+REPO = pathlib.Path(__file__).resolve().parents[4]
 DATA = pathlib.Path(__file__).resolve().parent / "data"
 MACH = 0.3
 

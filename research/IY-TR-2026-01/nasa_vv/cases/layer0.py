@@ -567,7 +567,7 @@ def _header_common(results: dict) -> list[str]:
     nruns = sum(len(v) for v in results.values())
     return [
         "Layer 0 of the NASA WIND/NPARC verification study: SU2 8.3.0 (ignisyeet-su2-native), Euler, run directly with the numerics of a configuration `ignisyeet aero` wrote.",
-        f"Producer: python -m nasa_vv.cases.layer0 (research/nasa_vv/cases/layer0.py). Numerics and gas model: copied by nasa_vv.su2cfg.layer0_config from tests/data/golden_euler.cfg (sha256 {_sha(GOLDEN_EULER)}).",
+        f"Producer: python -m nasa_vv.cases.layer0 (research/IY-TR-2026-01/nasa_vv/cases/layer0.py). Numerics and gas model: copied by nasa_vv.su2cfg.layer0_config from tests/data/golden_euler.cfg (sha256 {_sha(GOLDEN_EULER)}).",
         "Exact references: nasa_vv.exact.oblique_shock(2.5, 15), taylor_maccoll(2.35, 10), prandtl_meyer_expansion(2.5, 15).",
         "Grids: body-fitted, structured, exactly nested (every coarse node is a fine node); 65x49, 129x97 and 257x193 nodes, i.e. 64x48, 128x96 and 256x192 cells, so the refinement ratio is exactly 2.",
         "Boundaries: inlet, outlet and top are MARKER_FAR (supersonic in and out); the lower boundary is an Euler wall.",

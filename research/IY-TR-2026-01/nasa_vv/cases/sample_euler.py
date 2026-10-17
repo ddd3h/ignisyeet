@@ -548,7 +548,7 @@ MEMORY_EARLIER_GB = 3.3
 
 BASE_INPUT = "examples/sample_cfd.toml"
 SETUP_SCRIPT = "doc/scripts/rans_sample.py"
-INPUTS_REL = "research/nasa_vv/cases/sample_euler_inputs"
+INPUTS_REL = "research/IY-TR-2026-01/nasa_vv/cases/sample_euler_inputs"
 INPUTS = pathlib.Path(__file__).resolve().parent / "sample_euler_inputs"
 
 

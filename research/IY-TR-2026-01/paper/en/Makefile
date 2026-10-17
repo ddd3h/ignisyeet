@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Builds main.pdf with LuaLaTeX. The figures are the committed SVGs of ../../figures;
+# Builds main.pdf with LuaLaTeX. The figures are the committed SVGs of ../../nasa_vv/figures;
 # they are converted to PDF here, with rsvg-convert when it exists and inkscape
 # otherwise. The converted files are not committed. labreport.cls and the logo are
 # shared with the Japanese paper and are found through TEXINPUTS.
-FIGDIR := ../../figures
+FIGDIR := ../../nasa_vv/figures
 SVGS   := $(wildcard $(FIGDIR)/*.svg)
 PDFS   := $(patsubst $(FIGDIR)/%.svg,fig/%.pdf,$(SVGS))
 RSVG   := $(shell command -v rsvg-convert 2>/dev/null)

@@ -1,6 +1,6 @@
 % SPDX-License-Identifier: GPL-3.0-or-later
 % Build: make   (latexmk -lualatex; see Makefile)
-% Structure: research/nasa_vv/paper/outline.md (shared with ../en/main.tex).
+% Structure: research/IY-TR-2026-01/paper/outline.md (shared with ../en/main.tex).
 \documentclass[twocolumn]{labreport}
 
 % ---------------------------------------------------------------- Japanese typesetting
@@ -716,10 +716,10 @@ CADから係数までを自動化したCFDツールは、利用者がその信�
 試験はしていないが、知見は、このようなパイプラインが係数に定量化した不確かさを付けるには、場の全体を細かくする制御、停滞とリミットサイクルを区別する収束の判定、入口の条件を通ったときだけの帯の報告が要ることを示唆する。
 
 \section*{データの入手}
-本論文の数値は、ソースの注記が別のファイルを名指す場合を除き、すべてIgnisYeetのリポジトリの\path{research/nasa_vv/results/}の結果ファイル（と\path{research/nasa_vv/figures/}の図）から得ている。
+コード、結果、図は、IgnisYeetのリポジトリの\path{research/IY-TR-2026-01/}にある。結果ファイルは\path{research/IY-TR-2026-01/nasa_vv/results/}、図は\path{research/IY-TR-2026-01/nasa_vv/figures/}、コードは\path{research/IY-TR-2026-01/nasa_vv/}（厳密解は\path{exact.py}、GCIの手順は\path{gci.py}、算例は\path{cases/}、試験は\path{tests/}）、両論文のソースは\path{research/IY-TR-2026-01/paper/}に置いてある。
+本論文の数値は、ソースの注記が別のファイルを名指す場合を除き、すべてこれらの結果ファイルと図から得ている。
 本研究のために行った製品のCFDの計算は、\ref{sec:method}節に記した一つの例外を除き、IgnisYeet v0.4.0とSU2~8.3.0を使った。
-要約した表や格子ごとの値を含む結果の全体は、ウェブ版の報告\path{research/nasa_vv/report/ja/report.md}にある。
-結果ファイルを作るコードは\path{research/nasa_vv/}にある（厳密解は\path{exact.py}、GCIの手順は\path{gci.py}、算例は\path{cases/}、試験は\path{tests/}）。
+要約した表や格子ごとの値を含む結果の全体は、ウェブ版の報告\path{research/IY-TR-2026-01/nasa_vv/report/ja/report.md}にある。
 
 \bibliographystyle{plainnat}
 \bibliography{references}

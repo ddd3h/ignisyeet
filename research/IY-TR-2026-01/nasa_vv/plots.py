@@ -47,7 +47,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 SUMMARY_CSV = ROOT / "doc" / "data" / "validation" / "basic_finner" / "summary_vs_measured.csv"
 EULER_CSV = ROOT / "doc" / "data" / "validation" / "basic_finner" / "cfd_euler.csv"
 MESH_CHECK_CSV = ROOT / "doc" / "data" / "validation" / "basic_finner" / "mesh_check.csv"

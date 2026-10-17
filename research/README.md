@@ -2,9 +2,12 @@
 
 | Study | Status | Report | Paper |
 |---|---|---|---|
-| NASA WIND V&V of the aerodynamic methods | written; what it did not obtain is listed below | `../doc/source/research/nasa-vv/` (Japanese) | `nasa_vv/paper/en/`, `nasa_vv/paper/ja/` |
+| NASA WIND V&V of the aerodynamic methods | written; what it did not obtain is listed below | `../doc/source/research/nasa-vv/` (Japanese) | `IY-TR-2026-01/paper/en/`, `IY-TR-2026-01/paper/ja/` |
 
-## nasa_vv
+## IY-TR-2026-01 (NASA V&V)
+
+The study is the technical report IY-TR-2026-01. The code is the Python package `nasa_vv`
+in `IY-TR-2026-01/nasa_vv/`; the sources of the two papers are in `IY-TR-2026-01/paper/`.
 
 Applies the NASA Glenn WIND/NPARC verification and validation tutorial
 (https://www.grc.nasa.gov/www/wind/valid/tutorial/tutorial.html, following
@@ -24,7 +27,7 @@ Plan: `../docs/superpowers/plans/2026-10-17-nasa-cfd-vv.md`
 ### Status
 
 The Japanese report and the English and Japanese papers are written. The report's numbers come
-from the files in `nasa_vv/results/`, from the product's data under `../doc/data/`, or from
+from the files in `IY-TR-2026-01/nasa_vv/results/`, from the product's data under `../doc/data/`, or from
 the product's documentation; the report names the source next to each table. The report
 states what the study did not obtain (its section 5), and so does the paper:
 
@@ -32,10 +35,10 @@ states what the study did not obtain (its section 5), and so does the paper:
   obtained: the alpha = 2 degree solution does not converge on any of the three levels.
 - The GCI of layer 1 was not obtained: the finest grid does not converge, so every row is
   refused, so the layer 1 wall pressure coefficient has no band. It is plotted against
-  Taylor-Maccoll for each level (`nasa_vv/figures/layer1_cp.svg`), with the fine level marked
+  Taylor-Maccoll for each level (`IY-TR-2026-01/nasa_vv/figures/layer1_cp.svg`), with the fine level marked
   as not accepted.
 - The Basic Finner comparison with the measurements
-  (`nasa_vv/figures/validation_bands.svg`) has a CFD band only as a grid-sensitivity box for
+  (`IY-TR-2026-01/nasa_vv/figures/validation_bands.svg`) has a CFD band only as a grid-sensitivity box for
   the Euler CNalpha at Mach 2.375, not an established GCI; there is no band for RANS or for CX0.
 - The product's grids are not geometrically similar, so a GCI on them depends on the
   definition of the grid size and is reported for two definitions.
@@ -44,9 +47,9 @@ states what the study did not obtain (its section 5), and so does the paper:
 
 ### Results files
 
-All files are in `nasa_vv/results/`. The comment lines (`#`) at the top of each file state
+All files are in `IY-TR-2026-01/nasa_vv/results/`. The comment lines (`#`) at the top of each file state
 its sources and conventions. A producer is run with
-`cd research && uv run --project nasa_vv python -m nasa_vv.cases.<module>`; the producers
+`cd research/IY-TR-2026-01 && uv run --project nasa_vv python -m nasa_vv.cases.<module>`; the producers
 that read CFD output take `--work <directory>`.
 
 | File | Holds | Producer |
@@ -82,25 +85,25 @@ The Basic Finner measurements and the product's comparison table are read from
 
 Tests:
 
-    cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/ -q
+    cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/ -q
 
 Japanese report page (the Sphinx page `doc/source/research/nasa-vv/index.rst`, generated from
-`nasa_vv/report/ja/report.md`; `markdown-it-py` is in the `dev` group). The script also copies the two
+`IY-TR-2026-01/nasa_vv/report/ja/report.md`; `markdown-it-py` is in the `dev` group). The script also copies the two
 figures into `doc/source/_static/research/nasa-vv/`, and the page's styles are in
 `doc/source/_static/research-report.css`:
 
-    cd research && uv run --project nasa_vv --group dev python nasa_vv/report/ja/build_page.py
+    cd research/IY-TR-2026-01 && uv run --project nasa_vv --group dev python nasa_vv/report/ja/build_page.py
 
-The papers (`nasa_vv/paper/en/main.pdf` in English, `nasa_vv/paper/ja/main.pdf` in Japanese; two-column
-format of `nasa_vv/paper/labreport.cls`; need `latexmk` with LuaLaTeX and `rsvg-convert` or `inkscape`,
+The papers (`IY-TR-2026-01/paper/en/main.pdf` in English, `IY-TR-2026-01/paper/ja/main.pdf` in Japanese; two-column
+format of `IY-TR-2026-01/paper/labreport.cls`; need `latexmk` with LuaLaTeX and `rsvg-convert` or `inkscape`,
 which convert the SVG figures to PDF):
 
-    cd research/nasa_vv/paper/en && make
-    cd research/nasa_vv/paper/ja && make
+    cd research/IY-TR-2026-01/paper/en && make
+    cd research/IY-TR-2026-01/paper/ja && make
 
-The two figures (`nasa_vv/figures/`; `build_page.py` copies them for the report page):
+The two figures (`IY-TR-2026-01/nasa_vv/figures/`; `build_page.py` copies them for the report page):
 
-    cd research && uv run --project nasa_vv python -m nasa_vv.plots
+    cd research/IY-TR-2026-01 && uv run --project nasa_vv python -m nasa_vv.plots
 
 SU2 output, meshes and the CFD work directories are not committed. The layer 0 producers
 run SU2 under `~/.cache`; the layer 1 and layer 2 producers collect CFD that was run

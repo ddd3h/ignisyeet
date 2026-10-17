@@ -1,6 +1,6 @@
 # Model uncertainty: SU2 Euler against SU2 RANS (Spalart-Allmaras, SA-neg with ft2), set against the numerical uncertainty (GCI) of each. Cross-comparison, model against model; no measured data enters (not validation).
 # IgnisYeet offers Euler and RANS with the Spalart-Allmaras model only (crates/cfd/src/config.rs:12-18, crates/cfd/src/su2cfg.rs:212 writes KIND_TURB_MODEL= SA). The tutorial's several turbulence models are therefore a limit of scope here; the flat plate is compared with SST on SU2 directly in turbulence_models.csv.
-# Producer: python -m nasa_vv.cases.model_uncertainty (research/nasa_vv/cases/model_uncertainty.py). No CFD is run.
+# Producer: python -m nasa_vv.cases.model_uncertainty (research/IY-TR-2026-01/nasa_vv/cases/model_uncertainty.py). No CFD is run.
 # Source files and the last commit that changed each:
 #   doc/data/cfd/rans_vs_euler.csv @ b6cca7d
 #   doc/data/validation/basic_finner/cfd_rans.csv @ 03d7c0d

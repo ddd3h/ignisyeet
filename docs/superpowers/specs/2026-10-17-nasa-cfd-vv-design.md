@@ -5,8 +5,8 @@
   <https://www.grc.nasa.gov/www/wind/valid/tutorial/tutorial.html>
   （内容は AIAA G-077-1998 *Guide for the Verification and Validation of Computational Fluid
   Dynamics Simulations* に沿う）
-- 作業場所: `research/nasa_vv/`
-- 公開先: `/research/nasa-vv/`（報告、日本語）と `research/nasa_vv/paper/en/` と `research/nasa_vv/paper/ja/`（論文、英語と日本語）
+- 作業場所: `research/IY-TR-2026-01/nasa_vv/`
+- 公開先: `/research/nasa-vv/`（報告、日本語）と `research/IY-TR-2026-01/paper/en/` と `research/IY-TR-2026-01/paper/ja/`（論文、英語と日本語）
 
 ## 1. 目的
 
@@ -122,7 +122,7 @@ NPARC の T3/T1 = 1.1063 に整合する M3 は 2.1240 であって 2.1469 で�
 
 ### 4.1 厳密解
 
-`research/nasa_vv/exact/` に Python で実装する。数値は実装が計算し、文献から転記しない。
+`research/IY-TR-2026-01/nasa_vv/exact/` に Python で実装する。数値は実装が計算し、文献から転記しない。
 
 - 斜め衝撃波: `tan θ = 2 cot β (M₁² sin²β − 1) / (M₁²(γ + cos 2β) + 2)` を弱解側で解く。
 - Taylor–Maccoll: 円すい流れの常微分方程式を衝撃波面から表面へ積分し、衝撃波角を射撃法で合わせる。
@@ -283,7 +283,7 @@ Basic Finner の係数を DREV-TM-9703 の実測と比べる。
 
 ## 7. GCI モジュール
 
-`research/nasa_vv/gci/` に Python パッケージとして実装する。試験を先に書く。
+`research/IY-TR-2026-01/nasa_vv/gci/` に Python パッケージとして実装する。試験を先に書く。
 
 ### 7.1 定数の細分比（チュートリアルの式）
 
@@ -352,7 +352,7 @@ NASA のページが示す例題を、そのまま試験にする。
 ```
 research/
   README.md                  研究の一覧と、各段階の進み具合
-  nasa_vv/
+  IY-TR-2026-01/nasa_vv/
     PLAN.md                  実装計画（writing-plans が作る）
     exact/                   厳密解（斜め衝撃波、Taylor-Maccoll、PM、Blasius）
     gci/                     Richardson 外挿と GCI。受け入れ試験つき
@@ -376,7 +376,7 @@ research/
 
 - `doc/source/research/index.rst` — 研究の一覧。「掲載準備中」を置き換える。
 - `doc/source/research/nasa-vv/index.rst` — 報告本文（日本語）。図、表、GCI の数値を載せる。
-- `research/nasa_vv/paper/en/`、`research/nasa_vv/paper/ja/` — 論文（LaTeX、英語と日本語、2段組）。図表は報告と共通のものを使う。
+- `research/IY-TR-2026-01/paper/en/`、`research/IY-TR-2026-01/paper/ja/` — 論文（LaTeX、英語と日本語、2段組）。図表は報告と共通のものを使う。
 
 段階が終わるごとに公開し、逐次確認できるようにする。
 

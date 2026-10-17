@@ -46,7 +46,7 @@ Message: what is needed to read the results: the three layers and their cases, t
 acceptance gate, and the two grid-size definitions forced by non-similar grids.
 - 2.1 Three layers and the six steps `sec:layers`. Message: layers 0 and 1 solve the same exact
   cone by two routes so that their difference would isolate the pipeline; layer 2 applies the six
-  steps. Carrier: `tab:layers` (single column: layer, what is run, kind of comparison, steps).
+  steps. Carrier: `tab:layers` (single column: layer, what is run, kind of comparison).
 - 2.2 The GCI and the gate `sec:gci`. Message: a number is reported only if every level passes
   the convergence gate, the differences are monotone and the order lies in 0.5–4. Carrier:
   equation `eq:celik` and the three rules.
@@ -142,7 +142,7 @@ hold as the main cause on the evidence of controls; a second contribution not ex
 
 | Key | Shows |
 |---|---|
-| `tab:layers` | The three layers: what is run, kind of comparison, steps covered. |
+| `tab:layers` | The three layers: what is run and the kind of comparison. |
 | `tab:l0` | Layer 0 against exact answers: finest error, order, GCI, whether it bounds the error, window orders (merges the former `tab:l0`, `tab:detect` and the bounds part of `tab:plate`). |
 | `tab:layer1` | Layer 1 levels: residual drop, solver verdict, Cp difference; layer-0 row for contrast. |
 | `fig:layer1cp` | Layer 1 binned wall Cp of the three levels against Taylor–Maccoll; no band. |

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+// Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Development tool for the CAD B-rep surface on `examples/sample_rocket.step` (not part of the user interface).
 //!
 //! `cargo run --release -p cfd --example step_study -- options.json out_dir [threads] [--mesh-only]`

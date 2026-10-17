@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+// Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 // The coefficients below are transcribed verbatim from `dop853.f` and therefore
 // carry more decimal digits than an `f64` can represent.  The trailing digits
 // are intentional provenance, so silence `excessive_precision` for this module.

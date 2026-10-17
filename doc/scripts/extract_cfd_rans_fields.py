@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+# Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 """Extract the Euler / RANS comparison data of the CFD chapter from two finished CFD runs.
 
 Both runs solve the same sample rocket at one (Mach, alpha) point (``ignisyeet aero`` with ``aero.cfd.model`` =

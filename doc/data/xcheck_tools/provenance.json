@@ -1,7 +1,7 @@
 {
   "run_date": "2026-10-11",
   "ignisyeet": {
-    "version": "IgnisYeet 0.4.0 — Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke).",
+    "version": "IgnisYeet 0.4.0 — Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke).",
     "binary": "/home/ddd3h/ignisyeet/.claude/tmp/xcheck-tools/target/release/ignisyeet",
     "rust_source_commit": "ddb4070",
     "repository_commit_at_run": "41ae873"

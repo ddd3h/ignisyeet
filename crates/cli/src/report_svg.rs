@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+// Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Small inline-SVG charts for the HTML report. Colours come from CSS classes of the page (`.s0`..`.s3`,
 //! `.ax`, `.grid`, `.tx`), so the same SVG follows the light and dark colour schemes and the print style.
 

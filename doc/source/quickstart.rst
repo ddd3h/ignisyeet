@@ -49,7 +49,7 @@
 
    .. code-block:: text
 
-      IgnisYeet 0.4.0 — Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke).
+      IgnisYeet 0.4.0 — Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke).
       License GPL-3.0-or-later: <https://www.gnu.org/licenses/>.
       This is free software; there is NO WARRANTY.
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+// Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 mod config;
 mod kml;
 mod outfile;
@@ -27,7 +27,7 @@ use view::Sub;
 /// `--version` output; doubles as the Appropriate Legal Notice (GPLv3 section 7(b)).
 const LONG_VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
-    " \u{2014} Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke).\n",
+    " \u{2014} Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke).\n",
     "License GPL-3.0-or-later: <https://www.gnu.org/licenses/>.\n",
     "This is free software; there is NO WARRANTY."
 );
@@ -41,7 +41,7 @@ const LONG_VERSION: &str = concat!(
     about = "IgnisYeet by 西濱大将 (NISHIHAMA Daisuke): STL-based rocket aerodynamics, 6-DoF trajectory and landing dispersion",
     after_help = "Exit status: 0 success; 1 error (invalid configuration, missing input, failed step); 2 usage error; \
 3 the run finished and wrote its outputs but the results are incomplete or not usable (a flight did not land within sim.max_time, dispersion cases/samples failed or did not land, or the rocket is statically UNSTABLE: smallest static margin below 0 cal, or its static stability could not be evaluated; see `stable` (null when unknown), `static_margin_min_cal` and `stability_unknown` in summary.json).\n\n\
-Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke). License GPL-3.0-or-later: <https://www.gnu.org/licenses/>. This is free software; there is NO WARRANTY."
+Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke). License GPL-3.0-or-later: <https://www.gnu.org/licenses/>. This is free software; there is NO WARRANTY."
 )]
 struct Cli {
     /// Only print errors, warnings and the paths of the written files.

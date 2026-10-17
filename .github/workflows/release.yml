@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+# Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 #
 # Build release archives for every supported platform and publish a GitHub Release.
 # Trigger: push a tag `vX.Y.Z` that equals the workspace version in Cargo.toml,

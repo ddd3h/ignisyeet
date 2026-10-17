@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+// Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 //! STL reader (ASCII and binary) and binary writer.
 //!
 //! Format detection: a file whose size is exactly `84 + 50 n` bytes (`n` read from bytes 80..84)

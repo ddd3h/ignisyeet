@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+// Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Integration strategy: one step of the 13-component rigid-body state with a selectable
 //! Runge-Kutta method ([`IntegratorKind`]) and attitude treatment ([`AttitudeKind`]).
 //!

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+// Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Development tool: writes `examples/sample_rocket.step`, the B-rep fixture of `surface = "step"`.
 //!
 //! `cargo run --release -p cfd --example sample_step -- [out.step] [--no-details]`

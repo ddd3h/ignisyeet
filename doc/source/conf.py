@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+# Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 # Sphinx configuration for the IgnisYeet documentation.
 
 project = "IgnisYeet"
 author = "西濱大将 (NISHIHAMA Daisuke)"
-copyright = "2025-2026, 西濱大将 (NISHIHAMA Daisuke)"
+copyright = "2024-2026, 西濱大将 (NISHIHAMA Daisuke)"
 release = "0.4.0"
 language = "ja"
 

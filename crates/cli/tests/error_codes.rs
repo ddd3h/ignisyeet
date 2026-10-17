@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+// Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Workspace-wide consistency of the stable error and warning codes `IY-<area><nnn>`: every code that appears in the
 //! sources is documented in `doc/source/errors/<area>.rst`, every documented code is used, each code is documented
 //! once, the area letter matches the file, and the severity in the documentation matches the number range

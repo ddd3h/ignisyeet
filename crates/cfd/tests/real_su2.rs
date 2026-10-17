@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+// Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Integration test with the real SU2 / gmsh / MPI tools. Needs `IGNISYEET_CFD_PREFIX` (or the tools
 //! in `PATH`); run with `cargo test --release -p cfd -- --ignored`.
 

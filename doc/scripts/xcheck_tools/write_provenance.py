@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+# Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 """Write doc/data/xcheck_tools/provenance.json: versions, the jar's SHA256 and the run date.
 
 Usage: OPENROCKET_JAR=... python write_provenance.py <ignisyeet binary>

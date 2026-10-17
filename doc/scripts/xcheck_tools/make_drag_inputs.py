@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+# Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 """Write the two drag-coefficient curves that RocketPy is fed with (doc/data/xcheck_tools/drag_*.csv).
 
 Usage: python make_drag_inputs.py <work dir>

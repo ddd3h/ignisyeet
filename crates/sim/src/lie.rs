@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+// Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Lie-group attitude integration on SO(3) / unit quaternions.
 //!
 //! Provides the exponential map and its (inverse) derivative on SO(3) and a generic

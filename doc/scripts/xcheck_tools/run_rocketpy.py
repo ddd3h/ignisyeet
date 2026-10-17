@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+# Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 """Run RocketPy on the sample rocket: static aerodynamics (its Barrowman part) and the ascent flights.
 
 Usage: python run_rocketpy.py <geometry.json> <out_dir> --drag <name>=<csv> [--drag ...]

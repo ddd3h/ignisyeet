@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+# Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 """Measure the run time, CPU time and peak memory of the ignisyeet stages (doc/data/cost/*.csv).
 
 Usage: python doc/scripts/cost_measure.py SCRATCH_DIR EXPERIMENT [EXPERIMENT ...]

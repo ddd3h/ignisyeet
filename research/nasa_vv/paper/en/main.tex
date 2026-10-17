@@ -29,7 +29,7 @@
 \begin{abstract}
 A design tool that runs CFD automatically, from CAD to force coefficients, returns numbers without saying how far to trust them.
 We ask whether the NASA WIND/NPARC procedure (AIAA G-077-1998) can quantify that trust for the rocket simulator IgnisYeet (the product), whose pipeline drives SU2, and if not, why not.
-Three layers test the solver against exact solutions, the whole chain on the same cone, and two rockets in application.
+Three layers test the solver against exact solutions, the whole chain on the same cone, and two rockets.
 The answer: the solver reproduces exact inviscid pressures, but the automated chain's uncertainty was not reliably quantified.
 With the product's settings SU2 reproduces the inviscid surface pressure and shock angle within 0.2\,\% (primary setups), yet the grid convergence index (GCI) bounded the true error in only 5 of 7 inviscid cases.
 Through the chain the finest level did not converge, leaving the pipeline's own error unquantified.
@@ -88,9 +88,9 @@ The GCI turns a sequence of solutions on refined grids into a band on the finest
 \node[cell=1.30cm] at (5.35,-2.62) {\emph{What error does the chain around the solver add?}};
 \node[cell=1.30cm] at (10.7,-2.62) {\emph{Which coefficients receive a band, and what can validation conclude?}};
 \node[rowlab] at (-0.12,-4.04) {Outcome};
-\node[outc=1.75cm] at (0,-4.04) {Inviscid surface pressure and shock angle within 0.2\,\% (primary setups); the GCI bound failed in 2 of 7 rows};
-\node[outc=1.75cm] at (5.35,-4.04) {Not quantified: the finest level did not converge, so there is no layer~1 GCI};
-\node[outc=1.75cm] at (10.7,-4.04) {Almost no usable band (one, wide); differences are reported, without verdicts};
+\node[outc=2.0cm] at (0,-4.04) {Inviscid surface pressure and shock angle within 0.2\,\% (primary setups); the GCI bound failed in 2 of 7 inviscid rows};
+\node[outc=2.0cm] at (5.35,-4.04) {Not quantified: the finest level did not converge, so there is no layer~1 GCI};
+\node[outc=2.0cm] at (10.7,-4.04) {Almost no usable band (one, wide); differences are reported, without verdicts};
 \end{tikzpicture}
 \caption{What is verified, in which order. Each layer reuses what the previous one fixed: layers~0 and~1 solve the same exact cone, layers~1 and~2 run the same product. Only layer~2 compares with measurements (validation); layers~0 and~1 are verification.}
 \label{fig:concept}
@@ -138,7 +138,7 @@ Only the comparison with free-flight measurements (Section~\ref{sec:validation})
 \label{sec:method}
 
 % source: results/basic_finner_rans_levels.csv (header: binary built from a8dff9c, `--version` prints 0.4.0), results/layer1_cone.csv (header: binaries), results/layer0.csv (header: SU2 version), results/gci_existing.csv (header: no CFD was run for that file)
-All runs made for this study use IgnisYeet v0.4.0 (source commit a8dff9c) with SU2~8.3.0, except one coarse-level rerun with another build (Section~\ref{sec:grid}); the product studies called \emph{existing} below are re-evaluated from result files already committed with the product, without new CFD.
+The product's CFD runs made for this study use IgnisYeet v0.4.0 (source commit a8dff9c) with SU2~8.3.0, except one coarse-level rerun with another build (Section~\ref{sec:grid}); the product studies called \emph{existing} below are re-evaluated from result files already committed with the product, without new CFD.
 This section gives only what the results need; setup details are in Appendix~\ref{sec:appA}.
 
 \subsection{Three layers and the six steps}
@@ -283,7 +283,7 @@ Laminar plate & $C_f$ & $+0.008$ & 0.80 & 1.20 & & \tick, sign crossing \\
 \end{table*}
 
 % source: results/layer0.csv (diag_entropy_* rows and header), results/layer0_gci.csv (header)
-Two kinds of quantity are exceptions, both detailed in Appendix~\ref{sec:appA}.
+There are two exceptions, both detailed in Appendix~\ref{sec:appA}.
 Wall quantities derived from the Mach number keep errors of 0.8 to 3.6\,\% that decrease slowly or not at all, so on the expansion no order or GCI exists although the run converged: a GCI describes a discretisation error that shrinks with the grid, and this one does not.
 And a boundary junction can dominate the error: with the cone's symmetry axis as a separate symmetry boundary, the tip node is a stagnation node on every grid, so the one-wall run is the layer~0 result; the product's three-dimensional meshes also have boundary junctions (wall to base), but whether they are affected in the same way was not tested.
 
@@ -308,7 +308,7 @@ The difference from Blasius also mixes effects that a discretisation-error bound
 
 \paragraph{Side note: a reference table that disagrees with itself.}
 % source: results/cone10_reference_check.csv
-The NPARC archive's table for this cone \citep{nparc_cone10} could not be used as it stands: its shock angle is inconsistent with its own surface Mach number and printed ratios, and independent sources support the angle computed here (Appendix~\ref{sec:cone10}).
+The NPARC archive's table for this cone \citep{nparc_cone10} could not be used as it stands: its shock angle is inconsistent with its own surface Mach number and printed ratios, and three further sources, which rest on the same theory, support the angle computed here (Appendix~\ref{sec:cone10}).
 For this cone only the surface Mach number and the surface pressure coefficient are compared.
 
 % source: results/layer0_gci.csv (counts of gci_bounds_error)
@@ -448,7 +448,7 @@ The levels of the sample-rocket Euler family meet the gate (a converged or accep
 % source: results/gci_sample_euler.csv (cn_alpha and xcp rows at Mach 2), results/sample_euler_levels.csv (finest-grid value)
 The GCI of $\CNa$ at Mach 2 is 10.6\,\% on one definition (order 0.53, just above the flag) and 16.3\,\% on the other (order 0.20, flagged).
 Even this band rests more on the assumed order than on the data: the extrapolated value 14.5 lies 8.5\,\% above the finest-grid value 13.40 although the two finest grids differ by 0.9\,\%.
-Every other row has a flagged GCI or none (Table~\ref{tab:sample}): the $x_{cp}$ GCI at Mach 2 is flagged as unreliable, and $\CNa$ at Mach 0.3 and 0.8 does not converge and receives no band, nor do $x_{cp}$ at Mach 0.3 and 0.8 (oscillatory) and $C_A$ at Mach 2.
+Every other row has no band, a flagged GCI or an unusable one (Table~\ref{tab:sample}): the $x_{cp}$ GCI at Mach 2 is flagged as unreliable, and $\CNa$ at Mach 0.3 and 0.8 does not converge and receives no band, nor do $x_{cp}$ at Mach 0.3 and 0.8 (oscillatory) and $C_A$ at Mach 2.
 No GCI of the sample rocket is therefore a certified uncertainty.
 
 % source: results/gci_existing.csv (basic_finner_mesh_check rows, fairing)
@@ -679,7 +679,7 @@ An automated CFD tool must return not only a number but a way to judge its relia
 
 \section*{Data availability}
 All numbers in this paper come from the result files under \texttt{research/nasa\_vv/results/} (and the committed figures under \texttt{research/nasa\_vv/figures/}) of the IgnisYeet repository, except where a comment in the source names another committed file.
-The runs made for this study used IgnisYeet v0.4.0 (source commit a8dff9c) and SU2~8.3.0, with the one exception stated in Section~\ref{sec:method}.
+The product's CFD runs made for this study used IgnisYeet v0.4.0 (source commit a8dff9c) and SU2~8.3.0, with the one exception stated in Section~\ref{sec:method}.
 The full catalogue of results, including the tables and per-grid values condensed here, is in the web report \texttt{research/nasa\_vv/report/ja/report.md} (in Japanese).
 The code that produces the result files is in \texttt{research/nasa\_vv/} (the exact solutions in \texttt{exact.py}, the GCI procedure in \texttt{gci.py}, the case producers in \texttt{cases/}, the tests in \texttt{tests/}).
 

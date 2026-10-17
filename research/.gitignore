@@ -1,0 +1,14 @@
+# Meshes, solutions and raw solver output are never committed.
+*.su2
+*.cgns
+*.vtk
+*.vtu
+*.dat
+*.p2dfmt
+*.fmt
+*.stl
+*.step
+work/
+runs/
+__pycache__/
+.pytest_cache/

@@ -117,7 +117,7 @@ Layer & What is run & Kind of comparison \\
 % source: results/layer0.csv (header: SU2 version)
 Table~\ref{tab:layers} summarises the design.
 Layers~0 and~1 solve the same exact problem, a cone of 10$^\circ$ half angle at Mach 2.35, by different routes: layer~0 runs SU2~8.3.0 directly, layer~1 runs the product's chain.
-Both are compared with the same Taylor--Maccoll solution, and the difference of their errors is the part due to the chain around the solver.
+Both are compared with the same Taylor--Maccoll solution, and the difference of their errors would expose the part due to the chain around the solver.
 The product accepts only a rocket geometry, so layer~0 does not exercise its pipeline and no statement that the pipeline was verified rests on layer~0.
 Layer~0 uses two-dimensional and axisymmetric structured grids, layers~1 and~2 three-dimensional unstructured half models; the difference between layers~0 and~1 thus includes the effect of three-dimensional unstructured meshing and is reported as \emph{pipeline error, including three-dimensional unstructured meshing}, not as meshing error alone.
 

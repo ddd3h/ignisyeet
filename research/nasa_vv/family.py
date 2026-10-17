@@ -11,6 +11,8 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
+import numpy as np
+
 from .gci import GridConvergence, grid_convergence, representative_h
 
 MIN_RESIDUAL_DROP_ORDERS = 3.0
@@ -43,10 +45,23 @@ class GridLevel:
         # Verdicts and drops often arrive as numpy scalars; `numpy.False_ is
         # False` is false, so normalise once and let every later test see plain
         # Python values.
-        if self.solver_converged is not None:
-            self.solver_converged = bool(self.solver_converged)
-        if self.residual_drop_orders is not None:
-            self.residual_drop_orders = float(self.residual_drop_orders)
+        v = self.solver_converged
+        if v is not None:
+            if not isinstance(v, (bool, np.bool_)):
+                raise TypeError(
+                    f"level {self.name!r}: solver_converged must be None, "
+                    f"True or False, got {type(v).__name__} {v!r}; map status "
+                    "strings to True or False before constructing the level"
+                )
+            self.solver_converged = bool(v)
+        d = self.residual_drop_orders
+        if d is not None:
+            if isinstance(d, str):
+                raise TypeError(
+                    f"level {self.name!r}: residual_drop_orders must be a "
+                    f"number, got the string {d!r}"
+                )
+            self.residual_drop_orders = float(d)
 
     @property
     def basis(self) -> str:

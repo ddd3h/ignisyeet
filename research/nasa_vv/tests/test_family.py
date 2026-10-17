@@ -276,3 +276,37 @@ def test_the_evidence_is_stored_as_plain_python_values():
     assert type(lv.solver_converged) is bool
     assert type(lv.residual_drop_orders) is float
     assert lv.basis == "solver status"
+
+
+def test_a_status_string_as_the_verdict_is_a_type_error_naming_the_level():
+    with pytest.raises(TypeError, match=r"'x'.*str.*map.*True or False"):
+        _lone(None, "unconverged")
+
+
+def test_a_string_verdict_does_not_pass_on_a_large_drop():
+    with pytest.raises(TypeError, match=r"'x'.*str"):
+        _lone(8.0, "False")
+
+
+def test_an_empty_string_verdict_is_also_a_type_error():
+    with pytest.raises(TypeError, match=r"'x'.*str"):
+        _lone(None, "")
+
+
+@pytest.mark.parametrize("verdict", [1, 0, 1.0])
+def test_a_number_as_the_verdict_is_a_type_error(verdict):
+    with pytest.raises(TypeError, match=r"'x'"):
+        _lone(None, verdict)
+
+
+def test_a_string_drop_is_a_type_error():
+    with pytest.raises(TypeError, match=r"'x'.*str"):
+        _lone("6.2", None)
+
+
+def test_python_and_numpy_booleans_are_still_accepted():
+    for v in (True, np.True_):
+        _lone(None, v).check_converged()
+    for v in (False, np.False_):
+        with pytest.raises(ValueError, match="not converged by the solver"):
+            _lone(None, v).check_converged()

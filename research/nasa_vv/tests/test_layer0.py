@@ -19,6 +19,16 @@ def test_every_case_keeps_the_golden_numerics_and_changes_one_line(name):
 
 
 @pytest.mark.parametrize("name", list(L.CASES))
+def test_analyze_changes_only_the_marker_analyze_line(name):
+    default = L.config_text(L.CASES[name])
+    markers = ["inlet", "outlet", "top", "wall"]
+    other = L.config_text(L.CASES[name], analyze=markers)
+    changed = [(a, b) for a, b in zip(default.splitlines(), other.splitlines()) if a != b]
+    assert len(default.splitlines()) == len(other.splitlines())
+    assert changed == [("MARKER_ANALYZE= ( inlet, outlet )", "MARKER_ANALYZE= ( inlet, outlet, top, wall )")]
+
+
+@pytest.mark.parametrize("name", list(L.CASES))
 @pytest.mark.parametrize("level", [0, 1])
 def test_every_case_grid_is_valid_and_has_a_node_at_the_corner(name, level, tmp_path):
     case = L.CASES[name]

@@ -51,6 +51,11 @@ def oblique_shock(mach: float, delta_deg: float, gamma: float = 1.4) -> ObliqueS
     """The weak solution of the theta-beta-M relation, by bisection on beta."""
     if mach <= 1.0:
         raise ValueError("oblique_shock needs a supersonic free stream")
+    if delta_deg < 0.0:
+        raise ValueError(
+            f"oblique_shock got a negative deflection {delta_deg} deg; "
+            "give the magnitude of the turn"
+        )
     delta = math.radians(delta_deg)
     lo = math.asin(1.0 / mach)          # Mach angle: theta = 0
     # The maximum deflection lies between the Mach angle and 90 degrees.
@@ -109,7 +114,19 @@ def prandtl_meyer_expansion(
     mach: float, turn_deg: float, gamma: float = 1.4
 ) -> Expansion:
     """Isentropic turn through turn_deg; solves nu(M2) = nu(M1) + turn."""
+    nu_inf = 90.0 * (math.sqrt((gamma + 1.0) / (gamma - 1.0)) - 1.0)
+    max_turn = nu_inf - prandtl_meyer_nu(mach, gamma)
+    if turn_deg > max_turn:
+        raise ValueError(
+            f"a turn of {turn_deg} deg exceeds the maximum turn "
+            f"{max_turn:.4f} deg available from M = {mach}"
+        )
     target = prandtl_meyer_nu(mach, gamma) + turn_deg
+    if target < 0.0:
+        raise ValueError(
+            f"a turn of {turn_deg} deg from M = {mach} would go below sonic "
+            "(nu < 0)"
+        )
     lo, hi = 1.0, 100.0
     for _ in range(300):
         mid = 0.5 * (lo + hi)

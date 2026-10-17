@@ -24,10 +24,12 @@ the characteristic boundary passes the freestream in and extrapolates out), beca
 layer0_config offers wall, far and sym only.
 
 The whole lower boundary is one MARKER_EULER marker. Where a convex corner (the expansion) or the
-cone tip (axis and cone surface) joined two markers, the junction node received both boundary
-conditions and became a stagnation node (u = v = 0). The cone is therefore run twice: 'cone'
-with axis and surface as one Euler wall (an inviscid slip wall on r = 0 imposes v = 0, as symmetry
-does), and 'cone_sym_axis' with the axis as MARKER_SYM, kept to show the effect.
+cone tip (axis and cone surface) joined two markers, the junction node became a stagnation node
+(u = v = 0). One marker removes it, which is consistent with the junction node receiving both
+boundary conditions (the axis imposes v = 0, the wall zero normal velocity) but does not prove it.
+The cone is therefore run twice: 'cone' with axis and surface as one Euler wall (an inviscid slip
+wall on r = 0 imposes v = 0, as symmetry does), and 'cone_sym_axis' with the axis as MARKER_SYM,
+kept to show the effect.
 
 Reflections
 -----------
@@ -448,20 +450,20 @@ LAYER0_COLUMNS = ["case", "mach", "level", "nodes", "quantity", "cfd", "exact", 
 
 CAUSE = {
     ("wedge", "wall_p_ratio"):
-        "the order measures the discretisation error of the wall pressure plateau behind the shock; it is below 1 "
-        "because the errors do not follow a pure power law (difference ratio against error ratio below)",
+        "consistent with the discretisation error of the wall pressure behind the shock; the order is below 1 "
+        "here because the errors do not follow a pure power law (difference ratio against error ratio below)",
     ("wedge", "shock_angle_deg"):
-        "the order measures the error in the position of a captured shock, smeared over a few cells, and not a "
+        "consistent with an error in the position of a captured shock, smeared over a few cells, rather than a "
         "smooth-field error; the intercept of the fitted line (diag_shock_fit_intercept) falls with the grid",
     ("cone", "wall_cp"):
-        "the order measures the decay of the cone-tip transient along the wall, not a discretisation order of the "
-        "conical plateau: the spread of wall p over the window is of the size of the error",
+        "consistent with the decay of the cone-tip transient along the wall rather than a discretisation order "
+        "of the conical plateau",
     ("cone", "wall_mach"):
-        "the order measures the decay of the wall entropy layer that starts at the tip (diag_entropy_wall_window "
-        "falls towards the exact value with the grid), not a discretisation order of the isentropic Mach number",
+        "consistent with the decay of a wall entropy layer that starts at the tip (diag_entropy_wall_window falls "
+        "towards the exact value with the grid) rather than a discretisation order of the isentropic Mach number",
     ("pm15", "wall_p_ratio"):
-        "the order measures the decaying tail of the corner disturbance along the wall and the placement of the "
-        "window, not a discretisation order of the uniform region",
+        "consistent with the decaying tail of the corner disturbance along the wall and the placement of the "
+        "window rather than a discretisation order of the uniform region",
     ("pm15", "wall_mach"):
         "the wall Mach number does not approach the exact value: the wall entropy is the same on all three grids "
         "(diag_entropy_wall_window), a constant offset consistent with entropy generated at the corner and "
@@ -471,6 +473,31 @@ CAUSE[("cone_sym_axis", "wall_cp")] = (
     CAUSE[("cone", "wall_cp")] + "; the tip node is a stagnation node here (diag_corner_node_mach = 0)")
 CAUSE[("cone_sym_axis", "wall_mach")] = (
     CAUSE[("cone", "wall_mach")] + "; the tip node is a stagnation node here (diag_corner_node_mach = 0)")
+
+STABLE_RANGE = 0.5
+"""The observed order is called stable across windows if the orders of the four wall windows lie within this range."""
+
+
+def window_orders(alt: dict) -> list:
+    """Observed order (or None) of each alternative wall window; alt is {level: {window: value}}."""
+    return [constant_ratio(alt[2][w], alt[1][w], alt[0][w], 2.0).order for w in ALT_WINDOWS]
+
+
+def window_label(orders: list) -> tuple[str, str]:
+    """('stable' | 'not stable', 'lo to hi' or 'undefined') for the orders of the alternative windows."""
+    have = [o for o in orders if o is not None]
+    if len(have) < len(orders):
+        return "not stable", "undefined for " + str(len(orders) - len(have)) + " window(s)"
+    span = f"{min(have):.2f} to {max(have):.2f}"
+    return ("stable" if max(have) - min(have) <= STABLE_RANGE else "not stable"), span
+
+
+def bounds_columns(gci_fine_pct: str, f1: float, exact_value: float | None) -> tuple[str, str]:
+    """(true_error_pct, gci_bounds_error) of a GCI row; both empty without a computed GCI or an exact value."""
+    if gci_fine_pct == "" or exact_value is None or exact_value == 0.0:
+        return "", ""
+    true_pct = 100.0 * abs(f1 - exact_value) / abs(exact_value)
+    return f"{true_pct:.6g}", str(float(gci_fine_pct) >= true_pct)
 
 
 def gci_note(name: str, q: str, fine_first: list[float], exact_value: float, alt: dict | None) -> str:
@@ -486,15 +513,12 @@ def gci_note(name: str, q: str, fine_first: list[float], exact_value: float, alt
         parts.append(f"the extrapolated value {g.extrapolated:.6g} lies beyond the exact value {exact_value:.6g} "
                      f"(by {abs(g.extrapolated - exact_value):.3g}; the fine-grid error is {abs(ef):.3g})")
     if alt:
-        orders = []
-        for w in ALT_WINDOWS:
-            o = constant_ratio(alt[2][w], alt[1][w], alt[0][w], 2.0).order
-            orders.append(o)
+        orders = window_orders(alt)
         shown = ", ".join("undefined" if o is None else f"{o:.2f}" for o in orders)
-        have = [o for o in orders if o is not None]
-        span = f" (range {min(have):.2f} to {max(have):.2f})" if have else ""
+        label, span = window_label(orders)
         parts.append("window sensitivity: observed order over the wall windows "
-                     + ", ".join(f"[{w[0]:g}, {w[1]:g}]" for w in ALT_WINDOWS) + f" is {shown}{span}")
+                     + ", ".join(f"[{w[0]:g}, {w[1]:g}]" for w in ALT_WINDOWS)
+                     + f" is {shown} (range {span}): {label} (stable means within {STABLE_RANGE:g})")
     return "; ".join(parts)
 
 
@@ -520,7 +544,13 @@ def gci_rows(results: dict) -> list[dict[str, str]]:
             alt = ({lv: results[name][lv]["alt"][q] for lv in LEVELS} if q in results[name][LEVELS[0]]["alt"] else None)
             note = "; ".join(x for x in (stall_note, gci_note(name, q, vals, m0.exact, alt)) if x)
             fd = FamilyData(GridFamily(levels, ndim=2), {q: vals}, row_note=note)
-            out += _rows("layer0", f"{name} M={case.mach:g}", trip, fd, _flatplate_compute, "cells^-1/2 (2-D)")
+            for row in _rows("layer0", f"{name} M={case.mach:g}", trip, fd, _flatplate_compute, "cells^-1/2 (2-D)"):
+                row["true_error_pct"], row["gci_bounds_error"] = bounds_columns(row["gci_fine_pct"], vals[0], m0.exact)
+                if row["gci_bounds_error"] == "False":
+                    row["note"] = (f"the GCI ({float(row['gci_fine_pct']):.3g} %) is smaller than the observed finest-grid "
+                                   f"error ({row['true_error_pct']} %): it does not bound the error and must not be "
+                                   "quoted as the uncertainty of this quantity; " + row["note"])
+                out.append(row)
     return out
 
 
@@ -546,22 +576,43 @@ def _header_common(results: dict) -> list[str]:
     ]
 
 
+def _stability_text(results: dict) -> str:
+    """Per case and wall quantity: the range of the observed order over the alternative windows and its label."""
+    out = []
+    for name in CASES:
+        for q in results[name][LEVELS[0]]["alt"]:
+            label, span = window_label(window_orders({lv: results[name][lv]["alt"][q] for lv in LEVELS}))
+            out.append(f"{name} {q} {span} ({label})")
+    return "Window-to-window range of the observed order: " + "; ".join(out) + "."
+
+
+def _wedge_entropy_text(results: dict) -> str:
+    def vals(q):
+        return [next(m for m in results["wedge"][lv]["meas"] if m.q == q) for lv in LEVELS]
+    wall, row10 = vals("diag_entropy_wall_window"), vals("diag_entropy_row10_window")
+    return (f"On the wedge the wall reads s/s_inf = {', '.join(f'{m.cfd:.4f}' for m in wall)} on 65x49, 129x97 and 257x193, "
+            f"ten rows off the wall {', '.join(f'{m.cfd:.4f}' for m in row10)}, and the exact post-shock value is {wall[0].exact:.4f}: "
+            f"a grid-independent excess of {100 * (wall[-1].cfd / wall[-1].exact - 1):.1f} per cent at the wall.")
+
+
 def write_layer0(rows, results: dict, path: pathlib.Path) -> None:
     icpt = [results["wedge"][lv]["meas"][2].cfd for lv in LEVELS]
     lines = _header_common(results) + [
         "cfd is the mean of the nodal values in the window (wall nodes of the lower boundary for wall quantities); window is stated per row with the first and last node used.",
         "The window is x-bounded and its end is not a node, so the node set differs slightly by level (for 0.3 <= x <= 0.9 the last node is x = 0.8837 on 65x49 and 0.8953 on the finer two).",
-        "window_spread is the relative spread (max - min) / |mean| of the quantity over the window's nodes: a plateau has a spread far below the error, a decaying transient has a spread of the size of the error. For shock_angle_deg it is the spread of the angles from the fitted line's foot to each crossing.",
+        "window_spread is the relative spread (max - min) / |mean| of the quantity over the window's nodes. It measures the variation along the window and says nothing about whether the error is a discretisation error. For shock_angle_deg it is the spread of the angles from the fitted line's foot to each crossing.",
+        "The test of whether an error is a discretisation error is the stability of the observed order when the window moves (layer0_gci.csv notes): the order of the four wall windows [0.3, 1], [0.4, 1], [0.5, 1], [0.6, 1] is called stable if they lie within "
+        f"{STABLE_RANGE:g} of each other. " + _stability_text(results),
         "p/p_inf uses p_inf = 101325 Pa; wall_cp = 2 (p/p_inf - 1) / (gamma M^2); wall_mach is the local Mach number of the wall node.",
         "shock_angle_deg: on each horizontal line y = c the x where p crosses (p_inf + p_wall)/2, linearly interpolated along the grid columns, with p_wall the CFD wall plateau of the same grid; a free least-squares line through the points, angle atan(slope).",
         "diag_shock_fit_intercept: y of that line at x = 0, which is 0 if the shock leaves the leading edge: "
         + ", ".join(f"{v:.2e}" for v in icpt) + " on 65x49, 129x97 and 257x193.",
         "Rows named diag_ are not compared quantities and are not in layer0_gci.csv; they say what the compared wall values contain. s/s_inf is (p / rho^gamma) / (p_inf / rho_inf^gamma).",
         "diag_entropy_wall_upstream: the wall upstream of the corner or tip (1 exactly where the flow is undisturbed). diag_entropy_wall_window: the wall in the quantity's window. diag_entropy_row10_window: ten rows off the wall at the same x. diag_entropy_wall_tip_0_0.1: the wall over 0 <= x <= 0.1.",
-        "The exact column of diag_entropy_wall_window and diag_entropy_row10_window is the entropy of the exact solution in that region: 1 for the expansion, the oblique-shock value for the wedge (a real shock raises s/s_inf by about 1.03 there, so a wedge value near 1.03 is correct), the surface value for the cone.",
+        "The exact column of diag_entropy_wall_window and diag_entropy_row10_window is the entropy of the exact solution in that region: 1 for the expansion, the oblique-shock value for the wedge (a real shock raises s/s_inf by about 1.03 there, so for the wedge the row 10 value near 1.03 is correct and the wall value is not), the surface value for the cone.",
         "On the coarsest wedge grid row 10 lies inside the shock layer for part of the window (its window_spread is 3 per cent there).",
         "diag_mach_row3_window: Mach number three rows off the wall (exact: the uniform-region value; none for the cone, whose Mach number varies across the layer). diag_corner_node_*: the node at x = 0, the leading edge, the corner or the tip.",
-        "Reading: the wall entropy exceeds the exact value on the expansion and the cone, while ten rows off the wall it is at the exact value and upstream it is 1. This is consistent with entropy generated at the corner or tip and convected along the wall; it is an interpretation, not a proof. On the expansion the excess is the same on all three grids and the Mach number three rows off the wall is still below the exact value, so the layer is thicker than three rows or something else is also at work.",
+        "Reading: the wall entropy exceeds the exact value on the expansion, the cone and the wedge, while ten rows off the wall it is at the exact value and upstream it is 1. " + _wedge_entropy_text(results) + " This is consistent with entropy generated at the corner or tip (the wedge's leading edge is itself a corner) and convected along the wall; it is an interpretation, not a proof. On the expansion the excess is the same on all three grids and the Mach number three rows off the wall is still below the exact value, so the layer is thicker than three rows or something else is also at work.",
         "difference = cfd - exact; difference_pct = 100 (cfd - exact) / exact, empty where there is no exact value or it is 0.",
         "nodes: nodes of the grid; level: nodes in each direction.",
         "residual_drop_orders: the peak of log10 rms[Rho] over the history minus its final value (the convention of rans_flatplate.csv).",
@@ -577,19 +628,29 @@ def write_layer0(rows, results: dict, path: pathlib.Path) -> None:
 
 
 def write_gci(rows, results: dict, path: pathlib.Path) -> None:
+    held = sum(r["gci_bounds_error"] == "True" for r in rows)
+    failed = [r for r in rows if r["gci_bounds_error"] == "False"]
+    blank = [r for r in rows if r["gci_bounds_error"] == ""]
     lines = _header_common(results) + [
         "Constant-ratio grid convergence (nasa_vv.gci.constant_ratio, r = 2, Fs = 1.25), finest grid first, through the same gate and row writer as gci_existing.csv.",
         "h_basis cells^-1/2 (2-D); n1..n3 are cells (the cells grow exactly 4x per level, so r21 = r32 = 2).",
         "gci_fine_pct and gci_coarse_pct are relative to f1 and f2 (percent).",
         "A level below 3 orders of residual drop is refused (family.MIN_RESIDUAL_DROP_ORDERS) and its quantities carry the refusal in note.",
         "A note flags any computed order above 4 (twice the formal second order) or below 0.5 (a quarter of it): the triplet is then not in the asymptotic range and its GCI is not reliable.",
-        "Every row's note names what its observed order measures (a plateau, a corner or tip transient, a captured shock position, a wall entropy layer), gives the errors against the exact value, and, for wall quantities, the order over four other windows. Only where the order measures a plateau is the GCI an estimate of the discretisation error of the quantity.",
+        "true_error_pct = 100 |f1 - exact| / |exact| on the finest grid; gci_bounds_error is True if gci_fine_pct >= true_error_pct, False otherwise. Both are empty where no GCI was computed or there is no exact value.",
+        "Layer 0 knows the exact solution, so it can test whether the Celik GCI bounds the true finest-grid error, which is the job of a GCI. "
+        f"Of {held + len(failed)} rows with a computed GCI it held for {held} and failed for {len(failed)} ("
+        + ", ".join(f"{r['condition'].split()[0]} {r['quantity']}: GCI {float(r['gci_fine_pct']):.3g} % against error {r['true_error_pct']} %" for r in failed)
+        + f"); {len(blank)} row(s) have no GCI ("
+        + ", ".join(f"{r['condition'].split()[0]} {r['quantity']}" for r in blank)
+        + "). Rows flagged as outside the asymptotic range are included in the count.",
+        "Every row's note names what its observed order is consistent with measuring (a discretisation error, a corner or tip transient, a captured shock position, a wall entropy layer), gives the errors against the exact value and, for wall quantities, the order over four other windows. An order that is stable across those windows (within 0.5) is necessary for the GCI to estimate the discretisation error of the quantity, and not sufficient.",
         "The cone is run twice (see above); 'cone' is the layer 0 result and 'cone_sym_axis' is kept to show the effect of the tip node.",
     ]
     with path.open("w", newline="") as f:
         for ln in lines:
             f.write("# " + ln + "\n")
-        w = csv.DictWriter(f, fieldnames=GCI_COLUMNS, lineterminator="\n")
+        w = csv.DictWriter(f, fieldnames=GCI_COLUMNS + ["true_error_pct", "gci_bounds_error"], lineterminator="\n")
         w.writeheader()
         w.writerows(rows)
 

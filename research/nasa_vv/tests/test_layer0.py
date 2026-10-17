@@ -74,3 +74,41 @@ def test_a_gci_note_names_the_cause_and_reports_an_extrapolation_beyond_the_exac
     assert "wall entropy layer" in note
     assert "lies beyond the exact value" in note          # f1 = 2.10 < 2.12 but the extrapolation is above it
     assert "error ratios" in note and "difference ratio" in note
+
+
+def test_the_bounds_column_holds_fails_and_stays_blank():
+    # a GCI of 0.06 % against a finest-grid error of 0.19 % does not bound the error
+    true_pct, bounds = L.bounds_columns("0.0594", 0.0965, 0.0967306)
+    assert float(true_pct) == pytest.approx(100 * 0.0002306 / 0.0967306, rel=1e-6)
+    assert bounds == "False"
+    # a GCI of 0.011 % against an error of 0.006 % does
+    assert L.bounds_columns("0.0114", 2.467646, 2.4675)[1] == "True"
+    # equal values count as bounding
+    assert L.bounds_columns("50", 1.5, 1.0)[1] == "True"
+    # no GCI, or no exact value (or a zero one): both columns blank
+    assert L.bounds_columns("", 1.0, 2.0) == ("", "")
+    assert L.bounds_columns("1.0", 1.0, None) == ("", "")
+    assert L.bounds_columns("1.0", 1.0, 0.0) == ("", "")
+
+
+def test_the_window_label_rests_on_the_range_of_the_orders():
+    assert L.window_label([0.84, 1.04, 0.91, 0.98])[0] == "stable"
+    assert L.window_label([2.54, 1.33, 0.65, 1.01])[0] == "not stable"
+    assert L.window_label([1.0, None, 1.0, 1.0])[0] == "not stable"
+    assert L.window_label([0.84, 1.04, 0.91, 0.98])[1] == "0.84 to 1.04"
+
+
+def test_the_committed_gci_file_marks_the_cone_cp_as_not_bounding():
+    import csv
+    lines = [ln for ln in L.RESULTS.joinpath("layer0_gci.csv").read_text().splitlines() if not ln.startswith("#")]
+    rows = {(r["condition"].split()[0], r["quantity"]): r for r in csv.DictReader(lines)}
+    cone = rows[("cone", "wall_cp")]
+    assert cone["gci_bounds_error"] == "False"
+    assert float(cone["gci_fine_pct"]) < float(cone["true_error_pct"])
+    assert "must not be quoted as the uncertainty" in cone["note"]
+    assert rows[("wedge", "wall_p_ratio")]["gci_bounds_error"] == "True"
+    assert rows[("pm15", "wall_mach")]["gci_bounds_error"] == ""      # no GCI was computed
+    header = "\n".join(ln for ln in L.RESULTS.joinpath("layer0_gci.csv").read_text().splitlines() if ln.startswith("#"))
+    held = sum(r["gci_bounds_error"] == "True" for r in rows.values())
+    failed = sum(r["gci_bounds_error"] == "False" for r in rows.values())
+    assert f"it held for {held} and failed for {failed}" in header

@@ -56,8 +56,6 @@ model = rans, surface = step and fin_size < wall_size ends in a gmsh heap corrup
 (signal 6, "corrupted size vs. prev_size") at the coarse and the medium level, on the remote binary (2f31ab9)
 and on the local build alike.
 """
-BRIEF_FIN_SIZES = {"coarse": 0.00047, "medium": 0.000336, "fine": 0.00024}
-"""The fin_size of the brief, kept for the provenance header only."""
 
 
 def _toml_value(v) -> str:
@@ -129,6 +127,8 @@ GCI_CSV = RESULTS_DIR / "gci_basic_finner_rans.csv"
 
 D_REF = 0.030
 """Reference diameter [m] (DREV-TM-9703); xcp is reported in calibres from the nose tip."""
+EXPECTED_BINARY = "ignisyeet-glibc-a8dff9c"
+"""The only binary whose results are accepted (built on virgo from a8dff9c; see the header)."""
 NOT_OBTAINED = "RANS GCI not obtained at M = 1.832"
 CELL_GROWTH_UNIFORM = 1.4 ** 3
 """Cell growth per level of a geometrically similar 1.4 refinement."""
@@ -145,7 +145,7 @@ None, so family.check_converged applies the 3-order floor to the recorded drop; 
 LEVEL_COLUMNS = [
     "level", "wall_size_mm", "fin_size_mm", "nodes", "cells", "nodes_growth", "cells_growth",
     "mach", "alpha_deg", "status", "solver_converged", "limit_cycle", "iterations",
-    "rho_drop_orders", "nu_drop_orders", "residual_drop_orders", "yplus_p95", "cn_raw",
+    "rho_drop_orders", "nu_drop_orders", "residual_drop_orders", "product_residual_drop", "rans_verdict", "yplus_p95", "cn_raw",
     "ca_wall", "ca_base", "xcp_cal", "wall_seconds", "note",
 ]
 
@@ -207,10 +207,38 @@ def _fnum(s):
     return float(s) if s else None
 
 
-def read_level(run: pathlib.Path) -> dict:
-    """One level from its fetched run directory (``out/`` and ``done.json`` of virgo_fetch.sh)."""
+def check_job(run: pathlib.Path, binary: str = EXPECTED_BINARY) -> dict:
+    """The job record of a fetched run, refused unless it is a finished job of the expected binary.
+
+    ``done.json`` must exist, say state "done" and exit_code 0 and name ``binary``; the first "binary:" line of
+    ``job.log`` must end in the same name. Returns the record with ``log_binary`` and ``log_cmd`` added."""
+    run = pathlib.Path(run)
+    if not (run / "done.json").is_file():
+        raise ValueError(f"{run}: no done.json, so the job is not known to have finished")
+    try:
+        job = json.loads((run / "done.json").read_text())
+    except ValueError as e:
+        raise ValueError(f"{run / 'done.json'}: does not parse ({e})") from e
+    if job.get("state") != "done" or job.get("exit_code") != 0:
+        raise ValueError(f"{run / 'done.json'}: state {job.get('state')!r}, exit_code {job.get('exit_code')!r}; "
+                         "only a job in state 'done' with exit_code 0 is read")
+    if job.get("binary") != binary:
+        raise ValueError(f"{run / 'done.json'}: binary {job.get('binary')!r}, not {binary!r}; results of another binary are discarded")
+    if not (run / "job.log").is_file():
+        raise ValueError(f"{run}: no job.log, so the binary cannot be confirmed")
+    lines = (run / "job.log").read_text(errors="replace").splitlines()
+    log_binary = next((ln for ln in lines if ln.startswith("binary:")), None)
+    if log_binary is None or pathlib.PurePosixPath(log_binary.split(":", 1)[1].strip()).name != binary:
+        raise ValueError(f"{run / 'job.log'}: binary line {log_binary!r} does not name {binary!r}")
+    cmd = next((ln for ln in lines if ln.startswith("+ ") and " aero " in ln), "")
+    return dict(job, log_binary=log_binary, log_cmd=cmd)
+
+
+def read_level(run: pathlib.Path, binary: str = EXPECTED_BINARY) -> dict:
+    """One level from its fetched run directory (``out/``, ``done.json`` and ``job.log`` of virgo_fetch.sh)."""
     run = pathlib.Path(run)
     out = run / "out"
+    job = check_job(run, binary)
     rep = json.loads((out / "cfd_report.json").read_text())
     for k in ("mesh_nodes", "mesh_cells", "axial_breakdown"):
         if k not in rep:
@@ -222,7 +250,8 @@ def read_level(run: pathlib.Path) -> dict:
     for r in rows:
         if None in r.values() or None in r:
             raise ValueError(f"{out / 'cfd_cases.csv'}: a row is shorter or longer than the header: {r}")
-    job = json.loads((run / "done.json").read_text()) if (run / "done.json").is_file() else {}
+    if not rows:
+        raise ValueError(f"{out / 'cfd_cases.csv'}: no case rows")
     cases: dict[float, dict] = {}
     by_dir = {}
     for d in sorted((out / "cfd").glob("m*_a*")):
@@ -236,6 +265,9 @@ def read_level(run: pathlib.Path) -> dict:
         key = (float(r["mach"]), float(r["alpha_deg"]))
         if r["status"] not in _STATUS:
             raise ValueError(f"unknown case status {r['status']!r} in {out / 'cfd_cases.csv'}")
+        if (r.get("rans_verdict") or "").strip() not in ("", "converged", "limit_cycle", "stalled"):
+            raise ValueError(f"{out / 'cfd_cases.csv'}: rans_verdict {r.get('rans_verdict')!r} is not a verdict of the "
+                             "product; the last row is cut off")
         d, dj = by_dir.get(key, (None, {}))
         b = brk.get(key, {})
         if r["status"] != "failed":
@@ -262,6 +294,8 @@ def read_level(run: pathlib.Path) -> dict:
             "limit_cycle": bool(dj.get("limit_cycle", False)),
             "iterations": int(r["iterations"]),
             "rho_drop": rho, "nu_drop": nu, "drop": drop,
+            "product_drop": _fnum(r.get("residual_drop")),
+            "rans_verdict": (r.get("rans_verdict") or "").strip(),
             "yplus_p95": dj.get("yplus_p95"),
             "cn_raw": cn,
             "xcp_cal": None if xcp is None or key[1] == 0.0 else xcp / D_REF,
@@ -269,6 +303,9 @@ def read_level(run: pathlib.Path) -> dict:
             "ca_base": b.get("cfd_base_ca") if solved else None,
             "wall_seconds": _fnum(r["wall_seconds"]),
         }
+    for a in ALPHAS:
+        if a not in cases:
+            raise ValueError(f"{out / 'cfd_cases.csv'}: no row for alpha = {a:g}; the table is cut off or the case was not solved")
     return {
         "nodes": int(rep["mesh_nodes"]), "cells": int(rep["mesh_cells"]), "cases": cases,
         "job": job, "ranks_per_case": rep.get("ranks_per_case"),
@@ -308,6 +345,7 @@ def _level_rows(data: dict[str, dict], refused: dict[str, str] | None = None) ->
                 solver_converged=str(c["solver_converged"]), limit_cycle=str(c["limit_cycle"]),
                 iterations=str(c["iterations"]), rho_drop_orders=_g(c["rho_drop"], ".4g"),
                 nu_drop_orders=_g(c["nu_drop"], ".4g"), residual_drop_orders=_g(c["drop"], ".4g"),
+                product_residual_drop=_g(c["product_drop"], ".4g"), rans_verdict=c["rans_verdict"],
                 yplus_p95=_g(c["yplus_p95"], ".4g"), cn_raw=_g(c["cn_raw"], ".8g"),
                 ca_wall=_g(c["ca_wall"], ".8g"), ca_base=_g(c["ca_base"], ".8g"),
                 xcp_cal=_g(c["xcp_cal"], ".8g"), wall_seconds=_g(c["wall_seconds"], ".1f"), note=note)
@@ -393,16 +431,6 @@ PUBLISHED_CSV = "doc/data/validation/basic_finner/cfd_rans.csv"
 PUBLISHED_RST = "doc/source/validation.rst"
 
 
-def _binary(job: dict) -> str:
-    """The binary of a job. Its name ends in the commit it was built from (done.json's ignisyeet_commit
-    is the stale COMMIT file of the remote repository and is not used for such a binary)."""
-    name = job.get("binary", "?")
-    m = re.fullmatch(r"ignisyeet-glibc-([0-9a-f]{7,40})", name)
-    if m:
-        return f"{name} (built on virgo from {m.group(1)})"
-    return f"{name} (remote repository COMMIT file: {job.get('ignisyeet_commit', '?')})"
-
-
 def _published_line(data: dict[str, dict]) -> str:
     row = _read_table(ROOT / PUBLISHED_CSV, ("nodes", "cells"))[0]
     pn, pc = int(row["nodes"]), int(row["cells"])
@@ -414,15 +442,42 @@ def _published_line(data: dict[str, dict]) -> str:
             "the same settings, a different mesh, so the medium level is the nearest level to the published run but is not that run.")
 
 
-def _header(data: dict[str, dict], what: str) -> list[str]:
+def _provenance(work) -> list[str]:
+    """Lines of ``<work>/provenance.txt``: the ``--version`` outputs and the COMMIT files, captured when the
+    runs were made (the collector does not call ssh)."""
+    f = pathlib.Path(work) / "provenance.txt"
+    if not f.is_file():
+        return ["provenance.txt is absent from the work directory: no --version or COMMIT record."]
+    return [ln.strip() for ln in f.read_text().splitlines() if ln.strip()]
+
+
+def _drop_example(data: dict[str, dict]) -> str:
+    best = None
+    for name, lv in data.items():
+        for alpha, c in lv["cases"].items():
+            if c["product_drop"] is not None and c["drop"] is not None:
+                gap = c["product_drop"] - c["drop"]
+                if best is None or gap > best[0]:
+                    best = (gap, name, alpha, c)
+    if best is None:
+        return ""
+    _, name, alpha, c = best
+    return (f" Largest gap: {name} level, alpha {alpha:g}: product {c['product_drop']:.3g} orders ({c['rans_verdict']}), "
+            f"gate {c['drop']:.3g} (rho {c['rho_drop']:.4g}, nu {c['nu_drop']:.4g}).")
+
+
+def _common_header(data: dict[str, dict], prov: list[str]) -> list[str]:
+    commits = sorted({lv["job"].get("ignisyeet_commit", "?") for lv in data.values()})
     lines = [
         "Basic Finner, SU2 RANS Spalart-Allmaras grid family at Mach 1.832, alpha 0 and 2 deg: wall_size 2.1, 1.5 and 1.07 mm (a factor 1.4 per level), solved with `ignisyeet aero` on virgo.",
         "Geometry, CG (cg_dry 0.165 m), nose direction (-x), STL scale, STEP surface and reference values are those of examples/basic_finner/basic_finner.toml; the case files are written by nasa_vv.cases.basic_finner_rans.setup.",
+        "Keys set on top of that file by setup: aero.method = cfd (the file has barrowman), motor.eng = sample_motor.eng (copied next to case.toml; the file has ../sample_motor.eng), aero.cfd.model = rans, machs = [1.832], alphas_deg = [0, 2], wall_size per level, ranks_per_case and parallel_cases; fin_size is not set (auto). Set by the runner on the command line: resources.threads = the reserved cores, aero.cfd.prefix = \"\" (the environment's SU2 is used) and, with -l, aero.cfd.workdir on the node's local disk. resources.memory_gb is absent (the published run had 30).",
+        "Invocation per level: VIRGO_BIN=ignisyeet-glibc-a8dff9c virgo_run.sh -w -l -n t15-n-<level> <level>/case.toml virgo02 <cores> aero --force, the three levels submitted together on virgo02; the exact `ignisyeet` command of each job is quoted below from its job.log.",
         f"Compared with the published RANS run ({PUBLISHED_CSV}; {PUBLISHED_RST}:704-712): the same toml, the same model (rans, Spalart-Allmaras), surface = step, yplus = 1, flat base (a RANS mesh always has one) and half domain, with fin_size left at 'auto', which for RANS is wall_size.",
         "Settings that differ from the published run: wall_size at the coarse and fine levels (the medium level has the published wall_size and fin_size); alpha_mode = mirror (the published run set alpha_mode = single, so these runs also solve alpha = -2, which is listed but not used); the CFD work directory on the node's local disk; ranks_per_case 32 at the fine level (the published run used 16 x 2 cases and 32 threads); and the binary (the published run used the remote binary built from 2f31ab9). cn_raw, xcp_raw_m and the axial force of the alpha = +2 solve are read raw, as in the published table.",
         _published_line(data),
-        "Files read: cfd_cases.csv, cfd_report.json and, per case, done.json and history.csv, each checked for completeness (rows whole, iterations of the history equal to those reported); the surface_flow files are not read. A level whose files fail a check is refused.",
-        "The fin_size of the brief (0.47, 0.336 and 0.24 mm, about 0.22 wall_size) was not used: with model = rans and surface = step, fin_size < wall_size ends in a gmsh heap corruption at 3-D meshing (signal 6, 'corrupted size vs. prev_size') at the 2.1 mm and 1.5 mm levels, on ignisyeet-glibc-a8dff9c, on the older remote binary (2f31ab9) and on the local build. The product was not modified.",
+        "Files read: done.json and job.log of each job, cfd_cases.csv, cfd_report.json and, per case, done.json and history.csv; the surface_flow files are not read. Each is checked: the job is in state 'done' with exit_code 0 and names ignisyeet-glibc-a8dff9c in both done.json and the first 'binary:' line of job.log; rows are whole, the history holds the reported iterations, both alpha = 0 and 2 are present. A level that fails a check is refused with the reason in its note; it never raises.",
+        "The fin_size of the brief (0.47, 0.336 and 0.24 mm, about 0.22 wall_size) was not used. With model = rans and surface = step and fin_size < wall_size, `ignisyeet aero` stops with error[IY-F011] 'gmsh meshing of the CAD surface failed (killed by signal 6)': the mesh.log of the 3-D meshing shows 'Recovering 2427 missing facet(s)', Steiner points, then glibc 'corrupted size vs. prev_size'. gmsh 4.15.2 in the virgo and in the local environment. Tried: coarse (0.47 mm) and medium (0.336 mm) on ignisyeet-glibc-a8dff9c at 16 cores, on the older remote binary ignisyeet-glibc (coarse at 32 and 16 cores, medium at 16) and the coarse level on the local build with resources.threads = 2; the fine level was not tried. The logs are not committed. The product was not modified.",
         "Grids built through ignisyeet aero cannot be geometrically similar: max_size is fixed at farfield radius / 10 (crates/cfd/src/mesh.rs:396) and the volume is graded up to it (crates/cfd/src/mesh_gmsh.py:153), so refining wall_size refines only the near-wall region. nasa_vv.family.check_similar sees only the recorded knobs (wall_size and fin_size, both scaled by 1.4), not the cell counts.",
         f"A geometrically similar 1.4 refinement would grow the cells by 1.4^3 = {CELL_GROWTH_UNIFORM:.2f}x per level; the measured growth is in the cells_growth column and below.",
     ]
@@ -438,27 +493,39 @@ def _header(data: dict[str, dict], what: str) -> list[str]:
         lines.append(
             f"Level {name} ({_mm(wall):g} mm): {lv['nodes']} nodes, {lv['cells']} cells{g}; run on {job.get('node', '?')} "
             f"with {job.get('ppn', '?')} cores reserved, ranks_per_case {lv['ranks_per_case']}, parallel_cases {lv['parallel_cases']}; "
-            f"binary {_binary(job)}; job wall time {job.get('wall_seconds', '?')} s.")
+            f"job wall time {job.get('wall_seconds', '?')} s; job.log: '{job['log_binary']}'; command: {job['log_cmd'][2:] or '?'}")
         prev = lv
     lines += [
+        "Binary provenance (captured when the runs were made; provenance.txt of the work directory):",
+        *["  " + ln for ln in prov],
+        f"done.json's ignisyeet_commit is {', '.join(commits)} for the jobs read: it is the COMMIT file of the repository checkout on virgo (repo/COMMIT, the older build), not a property of ignisyeet-glibc-a8dff9c, and it was not used.",
+        "'Built from a8dff9c' rests on the binary's name and on the controller's build record: PBS job 1627 built it from a8dff9c sources uploaded to repo-a8dff9c on virgo, whose COMMIT file reads a8dff9c (above). `--version` prints only 0.4.0 for every binary, so nothing in the binary itself shows the commit.",
+        "Observed, not explained: the coarse level's verdicts differ between two runs. t15-bf-coarse-auto (older binary ignisyeet-glibc, 16 cores, ranks_per_case 8, parallel_cases 2; not part of these tables): alpha 0 unconverged (554 iterations), alpha 2 converged (405). The coarse run read here (ignisyeet-glibc-a8dff9c, 32 cores, ranks_per_case 16, parallel_cases 2): alpha 0 converged (406), alpha 2 unconverged (505). The runs differ in binary and in domain decomposition, so the comparison is confounded and no cause is claimed.",
         f"Source files and the last commit that changed each: {PUBLISHED_CSV} @ {_last_commit(PUBLISHED_CSV)}, examples/basic_finner/basic_finner.toml @ {_last_commit('examples/basic_finner/basic_finner.toml')}.",
-        "residual_drop_orders is min(rho_drop_orders, nu_drop_orders): the orders the density and the SA residual fell below their peak. solver_converged is the product's verdict of the solve (status = converged); nasa_vv.family.check_converged gates on it. Both are listed whether the level passed or not.",
+    ]
+    return lines
+
+
+def _header(data: dict[str, dict], what: str, prov: list[str]) -> list[str]:
+    lines = _common_header(data, prov) + [
+        "residual_drop_orders is the gate's number: min(rho_drop_orders, nu_drop_orders), each measured from max(reference_peak of the case's done.json, the largest value in history.csv) down to the last history row, following Task 8's convention (doc/scripts/rans_sample.py collect, as used for the flat plate). solver_converged is the product's verdict of the solve (status = converged); nasa_vv.family.check_converged gates on it, and where the verdict is absent on the drop. Both are listed whether the level passed or not.",
+        "product_residual_drop and rans_verdict are the product's own columns residual_drop and rans_verdict of cfd_cases.csv: residual_drop is the drop of the density residual only, from the largest density residual of the run to the last row (crates/cfd/src/history.rs:378, residual_drop_from_peak), and rans_verdict is converged, limit_cycle or stalled. The SA (nu) residual is not in it, so it is larger than the gate's number wherever nu fell less than rho." + _drop_example(data) + " That the product's density-only number differs from rho_drop_orders by a few hundredths (for example 3.906 against 3.944) is not established; the peak it measures from was not recovered from the files.",
         what,
     ]
     return ["# " + ln for ln in lines]
 
 
-def _gci_header(data: dict[str, dict]) -> list[str]:
+def _gci_header(data: dict[str, dict], prov: list[str]) -> list[str]:
     lines = [
-        "Grid convergence of the Basic Finner RANS levels at Mach 1.832 (Celik et al. (2008), Fs = 1.25). Row and column conventions as results/gci_existing.csv.",
+        "Grid convergence of the Basic Finner RANS levels at Mach 1.832 (Celik et al. (2008), Fs = 1.25). Row and column conventions as results/gci_existing.csv; the per-solve evidence is basic_finner_rans_levels.csv.",
         "cna = CN(2 deg) / radians(2 deg) from cn_raw; xcp in calibres from the nose tip at alpha = 2 deg; ca_alpha0 = CFD wall + CFD base axial force at alpha = 0 (ca_wall_alpha0 and ca_base_alpha0 are its two parts). gci_fine_pct and gci_coarse_pct are relative to f1 and f2 (percent).",
-        "n1..n3 are nodes. Every quantity is computed twice, once per h_basis (nodes^-1/3 and the wall_size knob); the spread between the two is part of the uncertainty and neither basis is the effective grid size (see basic_finner_rans_levels.csv).",
-        "A refused family has no numbers, only the refusal in note. A note flags any computed order above 4 or below 0.5: the triplet is then not in the asymptotic range and its GCI is not reliable.",
-    ]
+        "n1..n3 are nodes. Every quantity is computed twice, once per h_basis (nodes^-1/3 and the wall_size knob); the spread between the two is part of the uncertainty and neither basis is the effective grid size.",
+        "A refused family has no numbers, only the refusal in note. A note flags any computed order above 4 or below 0.5: the triplet is then not in the asymptotic range and its GCI is not reliable. The gate is nasa_vv.family.check_converged on the product's verdict, with min(rho, nu) of the history as the recorded drop.",
+    ] + _common_header(data, prov)
     return ["# " + ln for ln in lines]
 
 
-def collect(work) -> tuple[dict[str, dict], dict[str, str]]:
+def collect(work, binary: str = EXPECTED_BINARY) -> tuple[dict[str, dict], dict[str, str]]:
     """Read every level whose run directory exists below ``work``.
 
     A level whose source files fail the completeness checks is not read: it is returned in the second dict,
@@ -466,11 +533,11 @@ def collect(work) -> tuple[dict[str, dict], dict[str, str]]:
     work = pathlib.Path(work)
     data, refused = {}, {}
     for n, _ in LEVELS:
-        if not (work / n / "out" / "cfd_cases.csv").is_file():
+        if not (work / n).is_dir():
             continue
         try:
-            data[n] = read_level(work / n)
-        except (ValueError, KeyError, OSError) as e:
+            data[n] = read_level(work / n, binary)
+        except (ValueError, KeyError, OSError, IndexError) as e:
             refused[n] = str(e).replace("\n", " ")
     return data, refused
 
@@ -505,8 +572,9 @@ def main(work=None, levels_out=None, gci_out=None) -> tuple[pathlib.Path, pathli
         what = f"{NOT_OBTAINED} for the refused families; the others carry a GCI."
     else:
         what = "A GCI was obtained for every family."
-    _write(levels_out, _header(data, what), LEVEL_COLUMNS, _level_rows(data, refused_levels))
-    _write(gci_out, _gci_header(data), GCI_COLUMNS, rows)
+    prov = _provenance(work)
+    _write(levels_out, _header(data, what, prov), LEVEL_COLUMNS, _level_rows(data, refused_levels))
+    _write(gci_out, _gci_header(data, prov), GCI_COLUMNS, rows)
     return levels_out, gci_out
 
 

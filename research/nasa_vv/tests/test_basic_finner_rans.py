@@ -55,16 +55,18 @@ def make_level(work, name, nodes, cells, cn2, xcp_m, ca_wall, ca_base, *, conver
     out.mkdir(parents=True)
     (work / name / "done.json").write_text(json.dumps(
         {"state": "done", "exit_code": 0, "wall_seconds": 100.0, "node": "virgoXX", "ppn": 32,
-         "binary": "ignisyeet-glibc", "ignisyeet_commit": "abc1234"}))
+         "binary": "ignisyeet-glibc-a8dff9c", "ignisyeet_commit": "2f31ab9"}))
+    (work / name / "job.log").write_text(
+        "binary: /home/x/bin/ignisyeet-glibc-a8dff9c\n+ /home/x/bin/ignisyeet-glibc-a8dff9c --no-progress aero case.toml --force\n")
     rep = {"mesh_nodes": nodes, "mesh_cells": cells, "ranks_per_case": 16, "parallel_cases": 2,
            "axial_breakdown": [
                {"mach": 1.832, "alpha_deg": 0.0, "cfd_wall_ca": ca_wall, "cfd_base_ca": ca_base},
                {"mach": 1.832, "alpha_deg": 2.0, "cfd_wall_ca": ca_wall, "cfd_base_ca": ca_base}]}
     (out / "cfd_report.json").write_text(json.dumps(rep))
-    lines = ["mach,alpha_deg,status,iterations,cn_raw,xcp_raw_m,wall_seconds"]
+    lines = ["mach,alpha_deg,status,iterations,cn_raw,xcp_raw_m,wall_seconds,residual_drop,rans_verdict"]
     for alpha, ok, drop in ((0.0, converged[0], drops[0]), (2.0, converged[1], drops[1])):
         status = "converged" if ok else "unconverged"
-        lines.append(f"1.832,{alpha:g},{status},400,{cn2 if alpha else 1e-4},{xcp_m if alpha else 0.4},10.0")
+        lines.append(f"1.832,{alpha:g},{status},400,{cn2 if alpha else 1e-4},{xcp_m if alpha else 0.4},10.0,{drop + 0.5},{'converged' if ok else 'stalled'}")
         d = cases / f"m1.832_a{alpha:05.2f}"
         d.mkdir(parents=True)
         (d / "done.json").write_text(json.dumps(
@@ -233,9 +235,104 @@ def test_accepted_is_decided_by_the_recorded_residual_drop(tmp_path):
             d["converged"] = False
             p.write_text(json.dumps(d))
         c = w / "coarse/out/cfd_cases.csv"
-        c.write_text(c.read_text().replace("converged", "accepted").replace("unaccepted", "accepted"))
+        c.write_text(c.read_text().replace(",converged,400", ",accepted,400").replace(",unconverged,400", ",accepted,400"))
         assert bf.read_level(w / "coarse")["cases"][2.0]["solver_converged"] is None
         _, gci = bf.main(w, w / "l.csv", w / "g.csv")
         rows = [r for r in csv.DictReader(l for l in gci.read_text().splitlines() if not l.startswith("#"))
                 if r["quantity"] == "cna"]
         assert (rows[0]["gci_fine_pct"] != "") == expect_numbers
+
+
+# ---------------------------------------------------------------- the job record (freshness)
+
+
+def _edit_json(path, **kv):
+    d = json.loads(path.read_text())
+    d.update(kv)
+    path.write_text(json.dumps(d))
+
+
+@pytest.mark.parametrize("how", ["missing", "running", "failed_exit", "old_binary", "no_log", "log_names_other"])
+def test_a_level_whose_job_record_is_not_a_finished_a8dff9c_job_is_refused(tmp_path, how):
+    make_work(tmp_path)
+    run = tmp_path / "medium"
+    if how == "missing":
+        (run / "done.json").unlink()
+    elif how == "running":
+        _edit_json(run / "done.json", state="running")
+    elif how == "failed_exit":
+        _edit_json(run / "done.json", exit_code=1)
+    elif how == "old_binary":
+        _edit_json(run / "done.json", binary="ignisyeet-glibc")
+    elif how == "no_log":
+        (run / "job.log").unlink()
+    else:
+        (run / "job.log").write_text("binary: /home/x/bin/ignisyeet-glibc\n")
+    with pytest.raises(ValueError):
+        bf.read_level(run)
+    lv, gci = bf.main(tmp_path, tmp_path / "l.csv", tmp_path / "g.csv")  # refuses, does not raise
+    rows = list(csv.DictReader(l for l in gci.read_text().splitlines() if not l.startswith("#")))
+    assert rows and all(r["order"] == "" and "level medium" in r["note"] for r in rows)
+    assert "source files refused" in lv.read_text()
+
+
+def test_the_job_record_check_accepts_the_expected_binary_only(tmp_path):
+    make_work(tmp_path)
+    assert bf.read_level(tmp_path / "coarse")["job"]["log_binary"].endswith("ignisyeet-glibc-a8dff9c")
+    with pytest.raises(ValueError, match="not 'other'"):
+        bf.read_level(tmp_path / "coarse", binary="other")
+
+
+# ---------------------------------------------------------------- a cases table that is whole but short
+
+
+@pytest.mark.parametrize("keep", [0, 1])
+def test_a_cases_table_with_rows_missing_is_refused_not_raised(tmp_path, keep):
+    """Header only, or rows removed at a line boundary: the table looks complete line by line."""
+    make_work(tmp_path)
+    p = tmp_path / "coarse/out/cfd_cases.csv"
+    p.write_text("".join(p.read_text().splitlines(keepends=True)[: 1 + keep]))
+    with pytest.raises(ValueError):
+        bf.read_level(tmp_path / "coarse")
+    lv, gci = bf.main(tmp_path, tmp_path / "l.csv", tmp_path / "g.csv")
+    rows = list(csv.DictReader(l for l in gci.read_text().splitlines() if not l.startswith("#")))
+    assert rows and all(r["order"] == "" and "level coarse" in r["note"] for r in rows)
+
+
+def test_a_missing_case_directory_is_refused(tmp_path):
+    make_work(tmp_path)
+    import shutil
+    shutil.rmtree(tmp_path / "fine/out/cfd/m1.832_a02.00")
+    with pytest.raises(ValueError, match="no done.json"):
+        bf.read_level(tmp_path / "fine")
+    _, gci = bf.main(tmp_path, tmp_path / "l.csv", tmp_path / "g.csv")
+    assert "level fine" in gci.read_text()
+
+
+def test_an_empty_level_directory_is_refused_not_raised(tmp_path):
+    make_work(tmp_path)
+    import shutil
+    shutil.rmtree(tmp_path / "medium/out")
+    bf.main(tmp_path, tmp_path / "l.csv", tmp_path / "g.csv")
+    assert "source files refused" in (tmp_path / "l.csv").read_text()
+
+
+# ---------------------------------------------------------------- the committed provenance
+
+
+def test_both_headers_carry_provenance_the_flip_and_the_product_columns(tmp_path):
+    make_work(tmp_path)
+    (tmp_path / "provenance.txt").write_text("remote x --version: IgnisYeet 0.4.0\nremote repo-a8dff9c/COMMIT: a8dff9c\n")
+    lv, gci = bf.main(tmp_path, tmp_path / "l.csv", tmp_path / "g.csv")
+    for f in (lv, gci):
+        head = "\n".join(l for l in f.read_text().splitlines() if l.startswith("#"))
+        for needle in ("job.log: 'binary: /home/x/bin/ignisyeet-glibc-a8dff9c'", "remote x --version: IgnisYeet 0.4.0",
+                       "done.json's ignisyeet_commit is 2f31ab9", "not a property of ignisyeet-glibc-a8dff9c",
+                       "PBS job 1627", "no cause is claimed", "t15-bf-coarse-auto", "IY-F011",
+                       "VIRGO_BIN=ignisyeet-glibc-a8dff9c", "memory_gb", "aero.method = cfd"):
+            assert needle in head, (f.name, needle)
+    head = "\n".join(l for l in lv.read_text().splitlines() if l.startswith("#"))
+    assert "min(rho_drop_orders, nu_drop_orders)" in head and "Task 8" in head and "not established" in head
+    rows = list(csv.DictReader(l for l in lv.read_text().splitlines() if not l.startswith("#")))
+    assert {"product_residual_drop", "rans_verdict"} <= set(rows[0])
+    assert rows[0]["rans_verdict"] in ("converged", "stalled") and rows[0]["product_residual_drop"] != ""

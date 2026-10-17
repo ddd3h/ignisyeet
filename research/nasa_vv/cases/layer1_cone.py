@@ -31,10 +31,11 @@ import csv
 import hashlib
 import io
 import json
+import math
 import pathlib
 import functools
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .. import exact
 from ..family import GridFamily, GridLevel, study
@@ -131,6 +132,212 @@ def cp_nearest_tip(bins) -> Bin:
     return min(bins, key=lambda b: b.lo)
 
 
+# ------------------------------------------------------------------ the surface files the Cp comes from
+
+DENSITY_MATCH = 1e-5
+"""Largest relative density difference at which the csv and the vtk are called the same state (the vtk prints seven digits)."""
+COORD_MATCH = 1e-5
+GAMMA = 1.4
+CONE_WINDOW = (0.4, 0.9)
+L_CONE = 0.05 / math.tan(math.radians(DELTA_DEG))
+
+
+@dataclass
+class Vtk:
+    points: int
+    point_data: int
+    coords: list
+    fields: dict
+    """name -> (values read, values expected, complete)."""
+
+
+def _data_line(lines: list, i: int, text_ends_with_space: bool) -> tuple[list, bool]:
+    """The values of line i and whether the line is whole: not the unterminated end of the file mid-number."""
+    if i >= len(lines):
+        return [], False
+    last = i == len(lines) - 1
+    vals = lines[i].split()
+    return vals, not last or text_ends_with_space
+
+
+def parse_vtk(path: pathlib.Path) -> Vtk:
+    """The legacy ASCII vtk SU2 writes: POINTS, then POINT_DATA with one SCALARS or VECTORS block per field.
+
+    A field is complete when it holds the number of values its header promises and its line is not cut
+    mid-number (a complete file ends with a tab, not necessarily a newline)."""
+    text = path.read_text()
+    ends_ws = text[-1:] in ("\t", " ", "\n")
+    lines = text.split("\n")
+    points = point_data = -1
+    coords: list = []
+    fields: dict = {}
+    i = 0
+    while i < len(lines):
+        ln = lines[i]
+        if ln.startswith("POINTS "):
+            points = int(ln.split()[1])
+            vals, whole = _data_line(lines, i + 1, ends_ws)
+            coords = [float(v) for v in vals]
+            if not whole:
+                coords = coords[:-1]
+            i += 2
+            continue
+        if ln.startswith("POINT_DATA "):
+            point_data = int(ln.split()[1])
+        elif ln.startswith("SCALARS ") or ln.startswith("VECTORS "):
+            kind, name = ln.split()[0], ln.split()[1]
+            n = point_data if point_data >= 0 else points
+            expected = n if kind == "SCALARS" else 3 * n
+            start = i + 2 if kind == "SCALARS" else i + 1
+            vals, whole = _data_line(lines, start, ends_ws)
+            got = len(vals) - (0 if whole else 1)
+            fields[name] = ([float(v) for v in vals[:got]], expected, whole and len(vals) == expected)
+            i = start + 1
+            continue
+        i += 1
+    return Vtk(points, point_data, coords, fields)
+
+
+def parse_surface_csv(path: pathlib.Path) -> tuple[list, int]:
+    """(complete rows as lists of floats, rows cut off): a row is complete when it ends with a newline and has every column."""
+    text = path.read_text()
+    lines = text.split("\n")
+    head = lines[0].split(",")
+    terminated = lines[:-1]            # the piece after the last newline is cut off, or empty
+    rows = []
+    cut = 1 if lines[-1] != "" else 0
+    for ln in terminated[1:]:
+        parts = ln.split(",")
+        if len(parts) != len(head):
+            cut += 1
+            continue
+        rows.append([float(x) for x in parts])
+    return rows, cut
+
+
+def _pressure(rho: float, mx: float, my: float, mz: float, e: float) -> float:
+    return (GAMMA - 1.0) * (e - 0.5 * (mx * mx + my * my + mz * mz) / rho)
+
+
+def _cfg_value(cfg: pathlib.Path, key: str) -> float | None:
+    if not cfg.exists():
+        return None
+    for ln in cfg.read_text().splitlines():
+        if ln.startswith(key + "="):
+            return float(ln.split("=", 1)[1])
+    return None
+
+
+@dataclass(frozen=True)
+class Source:
+    """What the Cp of a level was read from, and whether that source is whole and current."""
+    ok: bool
+    problems: tuple
+    notes: tuple
+    kind: str
+    """'final write', 'periodic snapshot' or 'undetermined'."""
+    iteration: int | None
+    history_rows: int
+    points: int
+    csv_rows_complete: int
+    csv_rows_expected: int
+    compared: int
+    snapshot_cp_difference: dict | None
+    vtk_sha: str
+
+    @property
+    def check(self) -> str:
+        return "ok" if self.ok else "failed: " + "; ".join(self.problems)
+
+
+def check_surface(case: pathlib.Path, history_rows: int) -> Source:
+    """Check surface_flow.vtk (the Cp source of rans_cone.py) for completeness and surface_flow.csv for freshness.
+
+    Refused: a vtk without a complete Pressure_Coefficient field, or whose counts disagree. Recorded without
+    refusing: other fields cut, a cut csv, a vtk older than the final iteration (a periodic snapshot)."""
+    vtk_path, csv_path = case / "surface_flow.vtk", case / "surface_flow.csv"
+    problems: list[str] = []
+    notes: list[str] = []
+    if not vtk_path.exists():
+        return Source(False, ("surface_flow.vtk is missing",), (), "undetermined", None, history_rows, 0, 0, 0, 0, None, "")
+    v = parse_vtk(vtk_path)
+    sha = hashlib.sha256(vtk_path.read_bytes()).hexdigest()[:12]
+    if v.points < 0 or v.point_data < 0:
+        problems.append("no POINTS or POINT_DATA header")
+    elif v.point_data != v.points:
+        problems.append(f"POINT_DATA {v.point_data} differs from POINTS {v.points}")
+    if len(v.coords) != 3 * max(v.points, 0):
+        problems.append(f"POINTS holds {len(v.coords)} of {3 * max(v.points, 0)} coordinates")
+    cpf = v.fields.get("Pressure_Coefficient")
+    if cpf is None:
+        problems.append("the Pressure_Coefficient field is missing (the file ends before it)")
+    elif not cpf[2]:
+        problems.append(f"the Pressure_Coefficient field is cut: {len(cpf[0])} of {cpf[1]} values")
+    for name, (vals, expected, complete) in v.fields.items():
+        if not complete and name != "Pressure_Coefficient":
+            notes.append(f"surface_flow.vtk field {name} is cut: {len(vals) // (3 if expected == 3 * v.points else 1)} whole values of {v.points}")
+    # the csv: completeness and freshness against the vtk
+    kind, iteration, compared, diff = "undetermined", None, 0, None
+    rows, cut = ([], 0)
+    if csv_path.exists():
+        rows, cut = parse_surface_csv(csv_path)
+    else:
+        notes.append("surface_flow.csv is missing; the freshness of the vtk is undetermined")
+    expected_rows = v.points
+    if csv_path.exists() and (cut or len(rows) != expected_rows):
+        notes.append(f"surface_flow.csv holds {len(rows)} of {expected_rows} complete rows ({cut} cut)")
+    dens = v.fields.get("Density")
+    if rows and dens is not None and not problems and len(dens[0]) == v.points:
+        n = min(len(rows), v.points)
+        same_nodes = all(abs(rows[k][1] - v.coords[3 * k]) < COORD_MATCH and abs(rows[k][2] - v.coords[3 * k + 1]) < COORD_MATCH
+                         and abs(rows[k][3] - v.coords[3 * k + 2]) < COORD_MATCH for k in range(n))
+        if not same_nodes:
+            notes.append("surface_flow.csv and surface_flow.vtk list their nodes in a different order; the freshness is undetermined")
+        else:
+            compared = n
+            worst = max(abs(rows[k][4] - dens[0][k]) / abs(rows[k][4]) for k in range(n))
+            if worst <= DENSITY_MATCH:
+                kind, iteration = "final write", history_rows
+            else:
+                kind = "periodic snapshot"
+                freq = _cfg_value(case / "case.cfg", "OUTPUT_WRT_FREQ")
+                if freq:
+                    iteration = (history_rows // int(freq)) * int(freq)
+                else:
+                    notes.append("case.cfg gives no OUTPUT_WRT_FREQ; the snapshot iteration is not inferred")
+                diff = _snapshot_difference(case, rows, v, n)
+    return Source(not problems, tuple(problems), tuple(notes), kind, iteration, history_rows, v.points,
+                  len(rows), expected_rows, compared, diff, sha)
+
+
+def _snapshot_difference(case: pathlib.Path, rows: list, v: Vtk, n: int) -> dict | None:
+    """Cp of the cone wall nodes in x/L 0.4-0.9 that both the csv rows and the vtk hold: csv state against vtk state."""
+    mach, pinf = _cfg_value(case / "case.cfg", "MACH_NUMBER"), _cfg_value(case / "case.cfg", "FREESTREAM_PRESSURE")
+    cpv = v.fields["Pressure_Coefficient"][0]
+    if mach is None or pinf is None or len(cpv) != v.points:
+        return None
+    tan = math.tan(math.radians(DELTA_DEG))
+
+    def in_window(k: int) -> bool:
+        x, y, z = v.coords[3 * k: 3 * k + 3]
+        return (CONE_WINDOW[0] * L_CONE <= x < CONE_WINDOW[1] * L_CONE
+                and abs(math.hypot(y, z) - x * tan) < 0.01 * x * tan + 1e-6)
+
+    window = [k for k in range(v.points) if in_window(k)]
+    both = [k for k in window if k < n]
+    if not both:
+        return None
+    d = []
+    for k in both:
+        r = rows[k]
+        p = _pressure(r[4], r[5], r[6], r[7], r[8])
+        cp_csv = 2.0 * (p / pinf - 1.0) / (GAMMA * mach * mach)
+        d.append(cp_csv - cpv[k])
+    mean_cp = sum(cpv[k] for k in both) / len(both)
+    return {"nodes": len(both), "window_nodes": len(window), "mean_abs_cp": sum(abs(x) for x in d) / len(d),
+            "mean_cp_vtk": mean_cp, "mean_rel": sum(d) / len(d) / mean_cp}
+
+
 # ------------------------------------------------------------------ one level
 
 
@@ -142,15 +349,30 @@ class LevelData:
     binned: Binned
     done: dict
     cp_sha: str
+    source: Source
+    history_peak: float
+    history_last: float
+    history_rows: int
+    done_residual_last: float | None
 
 
-def residual_drop(history: pathlib.Path) -> float:
-    """Peak of log10 rms[Rho] over the history minus its final value (the convention of layer0.csv)."""
+def history_rms(history: pathlib.Path) -> list[float]:
     with history.open(newline="") as f:
         rows = list(csv.reader(f))
     head = [h.strip().strip('"') for h in rows[0]]
     c = head.index("rms[Rho]")
-    v = [float(r[c]) for r in rows[1:]]
+    return [float(r[c]) for r in rows[1:]]
+
+
+def done_residual(case: pathlib.Path) -> float | None:
+    """residual_last of the case's done.json, the runner's own value (it need not equal the history's last row)."""
+    f = case / "done.json"
+    return float(json.loads(f.read_text())["residual_last"]) if f.exists() and "residual_last" in json.loads(f.read_text()) else None
+
+
+def residual_drop(history: pathlib.Path) -> float:
+    """Peak of log10 rms[Rho] over the history minus its final value (the convention of layer0.csv)."""
+    v = history_rms(history)
     return max(v) - v[-1]
 
 
@@ -180,8 +402,10 @@ def read_level(work: pathlib.Path, name: str, wall_size: float) -> LevelData:
                      residual_drop_orders=residual_drop(case / "history.csv"),
                      solver_converged=solver_verdict(run))
     done = json.loads((run / "done.json").read_text()) if (run / "done.json").exists() else {}
+    rms = history_rms(case / "history.csv")
     return LevelData(name, grid, int(stats["cells"]), parse_binned(cp_file), done,
-                     hashlib.sha256(cp_file.read_bytes()).hexdigest()[:12])
+                     hashlib.sha256(cp_file.read_bytes()).hexdigest()[:12],
+                     check_surface(case, len(rms)), max(rms), rms[-1], len(rms), done_residual(case))
 
 
 def check_script_exact(levels: dict[str, LevelData]) -> None:
@@ -212,14 +436,29 @@ def quantity_value(q: str, binned: Binned) -> float:
     raise KeyError(q)
 
 
+@dataclass
+class Layer1Data(FamilyData):
+    sources: dict = field(default_factory=dict)
+    """Per level name, its Source."""
+
+
+def check_sources(fd: FamilyData) -> None:
+    """Refuse a family one of whose levels has a Cp source that failed the completeness check."""
+    bad = [f"level {n!r}: {'; '.join(src.problems)}" for n, src in getattr(fd, "sources", {}).items() if not src.ok]
+    if bad:
+        raise ValueError("the Cp source failed the completeness check: " + "; ".join(bad))
+
+
 def _wall_size_compute(fd: FamilyData) -> dict[str, GridConvergence]:
     """Same gate as ``study``, then Celik's procedure with h equal to the wall_size knob."""
+    check_sources(fd)
     fd.family.check_similar()
     h = [lv.knobs["wall_size_m"] for lv in fd.family.levels]
     return {q: grid_convergence(v[0], v[1], v[2], h[0], h[1], h[2]) for q, v in fd.values.items()}
 
 
 def _nodes_compute(fd: FamilyData) -> dict[str, GridConvergence]:
+    check_sources(fd)
     return study(fd.family, fd.values)
 
 
@@ -230,7 +469,7 @@ def family_data(levels: dict[str, LevelData]) -> FamilyData:
     detail = "; ".join(
         f"{lv.name}: solver_converged={lv.grid.solver_converged}, residual drop {lv.grid.residual_drop_orders:.3g} orders"
         for lv in fine_first)
-    return FamilyData(fam, values, detail=detail)
+    return Layer1Data(fam, values, detail=detail, sources={lv.name: lv.source for lv in fine_first})
 
 
 def gci_rows(fd: FamilyData) -> list[dict[str, str]]:
@@ -318,19 +557,26 @@ def comparison_rows(levels: dict[str, LevelData], fd: FamilyData, grows: list[di
                 d0 = float(l0["difference_pct"])
                 gci0 = float(layer0["gci"]["gci_fine_pct"]) if layer0["gci"]["gci_fine_pct"] != "" else None
                 c = pipeline_contribution_pct(d1, d0)
-                accepted = fine.grid.solver_converged is True
+                accepted = fine.grid.solver_converged is True and fine.source.ok
                 row.update(layer0_fine=l0["cfd"], layer0_diff_pct=l0["difference_pct"],
                            layer0_gci_pct=_f(gci0), layer0_gci_bounds_error=layer0["gci"]["gci_bounds_error"],
                            pipeline_contribution_pct=_f(c, ".6g") if accepted else "",
                            reading=reading(c, gci0, gci1, accepted))
-                if not accepted:
-                    notes.append(f"layer 1 fine level: solver verdict {fine.grid.solver_converged}, residual drop {fine.grid.residual_drop_orders:.3g} orders; the contribution it would give is left out")
+
                 if layer0["gci"]["gci_bounds_error"] == "False":
                     notes.append("the layer 0 GCI does not bound its own finest-grid error (layer0_gci.csv), so it is a lower bound on layer 0's uncertainty")
             else:
                 row["reading"] = "no layer 0 counterpart (layer 0 measured wall_cp over x 0.4 to 0.9 only): nothing to subtract"
+            if not (fine.grid.solver_converged is True and fine.source.ok):
+                why = []
+                if fine.grid.solver_converged is not True:
+                    why.append(f"the solver did not accept the fine level (verdict {fine.grid.solver_converged}, residual drop {fine.grid.residual_drop_orders:.3g} orders)")
+                if not fine.source.ok:
+                    why.append("its Cp source failed the completeness check")
+                notes.append("layer 1 fine level: " + " and ".join(why) + "; its values are descriptions of a solution that is not accepted, and no pipeline contribution is quoted" if q == "cp_mean_0.4_0.9" else
+                             "layer 1 fine level: " + " and ".join(why) + "; its values are descriptions of a solution that is not accepted")
             if gci1 is None:
-                notes.append("layer 1 GCI refused: " + g["note"])
+                notes.append("layer 1 GCI " + g["note"])
             row["note"] = "; ".join(notes)
             out.append(row)
     return out
@@ -344,6 +590,7 @@ COMPARISON_COLUMNS = [
 CONE_COLUMNS = [
     "level", "nodes", "wall_size_m", "x_over_l", "cp_cfd", "cp_exact", "difference", "difference_pct",
     "residual_drop_orders", "quantity", "cells", "wall_nodes", "solver_converged",
+    "cp_source", "cp_source_iteration", "history_iterations", "cp_source_check",
 ]
 GCI_OUT_COLUMNS = GCI_COLUMNS + ["true_error_pct", "gci_bounds_error"]
 
@@ -361,6 +608,8 @@ def cone_rows(levels: dict[str, LevelData]) -> list[dict[str, str]]:
                 "difference_pct": _f(100.0 * (cp - ecp) / ecp, ".6g"),
                 "residual_drop_orders": _f(lv.grid.residual_drop_orders, ".4g"), "quantity": quantity,
                 "cells": str(lv.cells), "wall_nodes": str(nodes), "solver_converged": str(lv.grid.solver_converged),
+                "cp_source": lv.source.kind, "cp_source_iteration": "" if lv.source.iteration is None else str(lv.source.iteration),
+                "history_iterations": str(lv.source.history_rows), "cp_source_check": lv.source.check,
             })
 
         tip = cp_nearest_tip(lv.binned.bins)
@@ -375,15 +624,35 @@ def cone_rows(levels: dict[str, LevelData]) -> list[dict[str, str]]:
 # ------------------------------------------------------------------ headers
 
 
+def _source_text(lv: LevelData) -> str:
+    src = lv.source
+    it = "" if src.iteration is None else f" at iteration {src.iteration}"
+    out = f"{lv.name} Cp source: surface_flow.vtk (sha256 {src.vtk_sha}), {src.points} points, check {src.check}; it is a {src.kind}{it}, the history has {src.history_rows} iterations"
+    if src.kind == "periodic snapshot":
+        out += (f", so the Cp of this level is not that of the last iteration; the surface_flow.csv rows that are whole ({src.csv_rows_complete} of {src.csv_rows_expected}) hold a later state "
+                f"and the vtk is an earlier state than the csv, so there is no complete Cp source at the final iteration")
+        d = src.snapshot_cp_difference
+        if d:
+            out += (f". Description, not a test: on the {d['nodes']} cone wall nodes of x/L 0.4-0.9 held by both (a {100.0 * d['nodes'] / d['window_nodes']:.0f} % subsample of the {d['window_nodes']} "
+                    f"in that window, the nodes both files hold) the Cp of the csv state differs from the vtk snapshot by {d['mean_abs_cp']:.2g} on average, "
+                    f"{abs(d['mean_rel']):.2g} relative to the mean Cp; this does not override any gate")
+    if src.notes:
+        out += ". Also found: " + "; ".join(src.notes)
+    return out
+
+
 def _levels_text(levels: dict[str, LevelData]) -> list[str]:
     out = []
     for name, wall in LEVELS:
         lv = levels[name]
         d = lv.done
+        done_res = "" if lv.done_residual_last is None else f"; the case's done.json gives residual_last {lv.done_residual_last:.4g}, a different source"
         out.append(
-            f"{name}: wall_size {wall * 1000:g} mm, {lv.grid.nodes} nodes, {lv.cells} cells, residual drop {lv.grid.residual_drop_orders:.4g} orders, "
+            f"{name}: wall_size {wall * 1000:g} mm, {lv.grid.nodes} nodes, {lv.cells} cells, residual drop {lv.grid.residual_drop_orders:.4g} orders "
+            f"(history rms[Rho] peak {lv.history_peak:.4g}, last row {lv.history_last:.4g}{done_res}), "
             f"solver verdict {lv.grid.solver_converged}, job {d.get('jobid', '?')} on {d.get('node', '?')} ({d.get('ppn', '?')} cores, {d.get('wall_seconds', '?')} s, "
             f"binary {d.get('binary', '?')}), binned Cp sha256 {lv.cp_sha}")
+        out.append(_source_text(lv))
     return out
 
 
@@ -432,6 +701,8 @@ def header_common(levels: dict[str, LevelData], work: pathlib.Path, extra: list[
         _growth_text(levels) + ".",
         "family.check_similar sees only the knobs (wall_size_m, which scales by 1.4 exactly), so it passes whether or not the grids are similar; it cannot detect this. Every GCI is therefore computed twice, once with h = nodes^(-1/3) (the family's h) and once with h = wall_size (a refinement ratio of 1.4), each with its own row and an h_basis column, and the spread between them is part of the uncertainty. Neither is the effective grid size of these grids.",
         "fin_size: the body has no fins and records none (params.json: \"fins\": null). In the mesher fin_refine = bool(fins) and hf < h0 (crates/cfd/src/mesh_gmsh.py:156-157) and the fin field is only built under it (mesh_gmsh.py:208-211 prints 'fin faces: none identified' otherwise); crates/cfd/src/mesh.rs:395 only copies fin_size_for (crates/cfd/src/config.rs:538-545) into the parameters, where it changes the case hash. A coarse mesh with fin_size = 0.00196 and one without it are identical (28887 nodes, 132328 cells). Only wall_size is therefore a knob here and fin_size is not set.",
+        "Surface files. A file SU2 writes at the end of a run can be cut when the run is stopped; the per-level Cp source lines above list what was found (vtk fields cut, csv rows cut, a vtk older than the last iteration). The collector checks surface_flow.vtk for the counts of POINTS and POINT_DATA and for a whole Pressure_Coefficient field, refuses the GCI rows of a level whose Cp source fails, and compares surface_flow.csv with the vtk density node by node to tell a final write from a periodic snapshot (OUTPUT_WRT_FREQ iterations); the iteration of a snapshot is inferred as the last multiple of OUTPUT_WRT_FREQ not above the number of history rows.",
+        "Decomposition. ranks_per_case was 8, 10 and 14 for the coarse, medium and fine level (16, 20 and 28 cores of one node). The rank count sets the domain decomposition, so the levels differ in rank count as well as in grid, and the fine level's limit cycle could depend on it; this was not tested.",
         "alphas_deg = [0.0, 4.0] instead of the brief's [0]: the product refuses a single angle (aero.cfd.alphas_deg needs at least one angle above 0, crates/cfd/src/config.rs:575). Only the alpha = 0 case is used; a level's convergence is read from that case alone, a failure of the alpha = 4 case does not decide it.",
         "Generated tomls: rans_sample.py setup was run with --model euler --machs 2.35 --alphas 0 4 --wall W --parallel 2 --threads 32 --memory-gb 100 and --ranks 8, 10 and 14 for the coarse, medium and fine level (16, 20 and 28 cores of the node) --cg 0.3 --stl-scale 1; the generated case.toml has a stale duplicate wall_size line (rans_sample.py's key replacement matched a comment of examples/sample_cfd.toml), which was removed; stl and eng were made relative for the remote copy; html = false was removed from [output]. No SU2 setting was changed; iterations is the product's Euler default, 3000.",
         "residual_drop_orders is the peak of log10 rms[Rho] over the alpha = 0 history minus its final value (the convention of layer0.csv). solver_converged is the product's own verdict on that case (done.json 'converged', or 'not converged' in the job log of a rejected case). family.check_converged gates every level: a level the solver did not accept refuses the GCI rows, which then carry the refusal and no numbers, while the per-level Cp comparison still appears.",

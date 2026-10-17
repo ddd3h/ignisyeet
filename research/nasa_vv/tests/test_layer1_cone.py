@@ -112,6 +112,59 @@ def test_the_reading_never_calls_the_pipeline_contribution_meshing_error():
 
 # ----------------------------------------------------------------- a synthetic work directory
 
+import math
+
+GAMMA, MACH_IN, P_INF = 1.4, 2.35, 101084.9684
+LC = 0.05 / math.tan(math.radians(10.0))
+
+
+def _cp_to_p(cp):
+    return P_INF * (1.0 + cp * GAMMA * MACH_IN ** 2 / 2.0)
+
+
+def _surface(case, *, n=30, vtk_cut=None, csv_cut=None, stale=False, freq=10, cfg=True, point_data=None):
+    """A synthetic surface_flow.vtk / surface_flow.csv / case.cfg of n wall nodes on the cone.
+
+    vtk_cut: 'cp' cuts the file inside the Pressure_Coefficient values, 'velocity' inside the Velocity vectors,
+    'before_cp' before the Pressure_Coefficient header. csv_cut: 'row' cuts the last row mid-number.
+    stale: the csv holds a later state than the vtk (a periodic snapshot)."""
+    xs = [LC * (0.05 + 0.9 * k / (n - 1)) for k in range(n)]
+    pts = [(x, x * math.tan(math.radians(10.0)), 0.0) for x in xs]
+    cp = [0.09 + 1e-4 * k for k in range(n)]
+    pres = [_cp_to_p(c) for c in cp]
+    rho = [1.0 + 0.01 * k for k in range(n)]
+    f = lambda a: "\t".join(f"{v:.6e}" for v in a) + "\t"
+    pd = n if point_data is None else point_data
+    lines = ["# vtk DataFile Version 3.0", "vtk output", "ASCII", "DATASET UNSTRUCTURED_GRID", f"POINTS {n} double",
+             f([c for p in pts for c in p]), "CELLS 0 0", "CELL_TYPES 0", "", f"POINT_DATA {pd}", "",
+             "SCALARS Density double 1", "LOOKUP_TABLE default", f(rho),
+             "SCALARS Pressure double 1", "LOOKUP_TABLE default", f(pres),
+             "SCALARS Pressure_Coefficient double 1", "LOOKUP_TABLE default", f(cp),
+             "VECTORS Velocity double", f([300.0] * (3 * n))]
+    text = "\n".join(lines)
+    if vtk_cut == "cp":
+        i = text.index("SCALARS Pressure_Coefficient")
+        j = text.index("\n", text.index("LOOKUP_TABLE", i)) + 1
+        text = text[: j + 5 * 13 + 4]
+    elif vtk_cut == "velocity":
+        i = text.index("VECTORS Velocity")
+        text = text[: i + 40]
+    elif vtk_cut == "before_cp":
+        text = text[: text.index("SCALARS Pressure_Coefficient") + 12]
+    (case / "surface_flow.vtk").write_text(text)
+    scale = 1.5 if stale else 1.0
+    rows = ['"PointID","x","y","z","Density","Momentum_x","Momentum_y","Momentum_z","Energy"']
+    for k in range(n):
+        pcsv = _cp_to_p(cp[k] + (1e-3 if stale else 0.0))
+        rows.append(f"{k}, {pts[k][0]:.15e}, {pts[k][1]:.15e}, {pts[k][2]:.15e}, {rho[k] * scale:.15e}, 0.0, 0.0, 0.0, {pcsv / 0.4:.15e}")
+    ctext = "\n".join(rows) + "\n"
+    if csv_cut == "row":
+        ctext = ctext[: ctext.rindex(",") - 5]
+    (case / "surface_flow.csv").write_text(ctext)
+    if cfg:
+        (case / "case.cfg").write_text(f"MACH_NUMBER= {MACH_IN}\nFREESTREAM_PRESSURE= {P_INF}\nGAMMA_VALUE= 1.4\nOUTPUT_WRT_FREQ= {freq}\n")
+
+
 def _history(path, peak, final, n=40):
     rows = ['"Time_Iter","Outer_Iter","Inner_Iter","rms[Rho]","CD"']
     for i in range(n):
@@ -120,7 +173,7 @@ def _history(path, peak, final, n=40):
     path.write_text("\n".join(rows) + "\n")
 
 
-def _level(work, name, nodes, cells, *, peak=-3.0, final=-9.0, converged=True, cp_scale=1.0):
+def _level(work, name, nodes, cells, *, peak=-3.0, final=-9.0, converged=True, cp_scale=1.0, surface=None):
     run = work / name / "run"
     case = run / "out" / "cfd" / L1.CASE_DIR
     mesh = run / "out" / "cfd" / "mesh"
@@ -128,6 +181,7 @@ def _level(work, name, nodes, cells, *, peak=-3.0, final=-9.0, converged=True, c
     mesh.mkdir(parents=True)
     (mesh / "mesh_stats.json").write_text(json.dumps({"nodes": nodes, "cells": cells}))
     _history(case / "history.csv", peak, final)
+    _surface(case, **(surface or {}))
     (run / "done.json").write_text(json.dumps(
         {"state": "done", "exit_code": 0, "wall_seconds": 12.5, "node": "virgo02", "ppn": 32,
          "jobid": "1.virgo", "binary": "ignisyeet-glibc-a8dff9c"}))
@@ -153,7 +207,7 @@ def _level(work, name, nodes, cells, *, peak=-3.0, final=-9.0, converged=True, c
     (cp / "cone_cp.csv").write_text("\n".join(out) + "\n")
 
 
-def _work(tmp_path, *, coarse_converged=True, fine_converged=True):
+def _work(tmp_path, *, coarse_converged=True, fine_converged=True, fine_surface=None):
     work = tmp_path / "work"
     work.mkdir()
     (work / "versions.txt").write_text("remote: IgnisYeet 0.4.0 (commit 2f31ab9)\nlocal: IgnisYeet 0.4.0\n")
@@ -161,7 +215,7 @@ def _work(tmp_path, *, coarse_converged=True, fine_converged=True):
            peak=-2.5, final=-4.6 if not coarse_converged else -9.0, cp_scale=0.97)
     _level(work, "medium", 45258, 209052, cp_scale=0.99)
     _level(work, "fine", 75796, 350868, cp_scale=1.0, converged=fine_converged,
-           final=-9.0 if fine_converged else -5.9)
+           final=-9.0 if fine_converged else -5.9, surface=fine_surface)
     return work
 
 
@@ -287,6 +341,97 @@ def test_a_fine_level_the_solver_did_not_accept_gives_no_pipeline_contribution(t
         assert r["layer1_diff_pct"] != "" and r["pipeline_contribution_pct"] == ""
         assert "not assessed" in r["reading"] and "fine level" in r["reading"]
     assert "not accepted" in L1.reading(0.3, 0.5, None, fine_accepted=False)
+
+
+def _run(tmp_path, **kw):
+    work = _work(tmp_path, **kw)
+    out = tmp_path / "out"
+    L1.main(["--work", str(work), "--out", str(out)])
+    return work, out
+
+
+def test_complete_files_are_a_final_write_at_the_last_history_iteration(tmp_path):
+    work = _work(tmp_path)
+    src = L1.read_level(work, "fine", 0.002).source
+    assert src.ok and src.problems == ()
+    assert src.kind == "final write" and src.iteration == 40 == src.history_rows
+    assert src.points == 30 and src.csv_rows_complete == 30 and src.compared == 30
+
+
+def test_a_vtk_cut_inside_the_cp_field_refuses_the_level_with_a_note(tmp_path):
+    work, out = _run(tmp_path, fine_surface={"vtk_cut": "cp"})
+    src = L1.read_level(work, "fine", 0.002).source
+    assert not src.ok and any("Pressure_Coefficient" in p for p in src.problems)
+    for r in _read_csv(out / "layer1_gci.csv"):
+        assert r["note"].startswith("refused:") and "Cp source" in r["note"] and "Pressure_Coefficient" in r["note"]
+        assert "refused: refused" not in r["note"]
+    fine = [r for r in _read_csv(out / "layer1_cone.csv") if r["level"] == "fine"]
+    assert fine and all(r["cp_source_check"].startswith("failed") for r in fine)       # the Cp comparison still appears
+    assert all(r["difference_pct"] != "" for r in fine)
+    comp = [r for r in _read_csv(out / "layer0_vs_layer1.csv") if r["quantity"] == "cp_mean_0.4_0.9"]
+    assert all(r["pipeline_contribution_pct"] == "" and "not assessed" in r["reading"] for r in comp)
+
+
+def test_a_vtk_cut_before_the_cp_header_is_refused(tmp_path):
+    work = _work(tmp_path, fine_surface={"vtk_cut": "before_cp"})
+    src = L1.read_level(work, "fine", 0.002).source
+    assert not src.ok and any("Pressure_Coefficient" in p for p in src.problems)
+
+
+def test_a_vtk_whose_point_data_count_differs_from_its_points_is_refused(tmp_path):
+    work = _work(tmp_path, fine_surface={"point_data": 29})
+    src = L1.read_level(work, "fine", 0.002).source
+    assert not src.ok and any("POINT_DATA" in p for p in src.problems)
+
+
+def test_a_vtk_cut_in_a_field_after_cp_keeps_the_level_and_records_the_field(tmp_path):
+    work = _work(tmp_path, fine_surface={"vtk_cut": "velocity"})
+    src = L1.read_level(work, "fine", 0.002).source
+    assert src.ok and any("Velocity" in n for n in src.notes)
+
+
+def test_a_csv_cut_mid_row_is_recorded_and_the_complete_rows_decide_the_freshness(tmp_path):
+    work = _work(tmp_path, fine_surface={"csv_cut": "row"})
+    src = L1.read_level(work, "fine", 0.002).source
+    assert src.ok and src.csv_rows_complete == 29 and src.csv_rows_expected == 30 and src.compared == 29
+    assert src.kind == "final write" and any("surface_flow.csv" in n and "29 of 30" in n for n in src.notes)
+
+
+def test_a_vtk_older_than_the_csv_is_a_periodic_snapshot_with_its_iteration_and_cp_difference(tmp_path):
+    work = _work(tmp_path, fine_surface={"stale": True, "freq": 15})
+    src = L1.read_level(work, "fine", 0.002).source
+    assert src.ok and src.kind == "periodic snapshot"
+    assert src.iteration == 30 and src.history_rows == 40          # 40 rows, written every 15: the snapshot of iteration 30
+    assert src.snapshot_cp_difference is not None
+    d = src.snapshot_cp_difference
+    assert d["nodes"] > 0 and d["window_nodes"] >= d["nodes"]
+    assert d["mean_abs_cp"] == pytest.approx(1e-3, rel=1e-3)
+
+
+def test_a_snapshot_is_written_into_the_cone_csv_and_the_header(tmp_path):
+    work, out = _run(tmp_path, fine_surface={"stale": True, "freq": 15})
+    rows = [r for r in _read_csv(out / "layer1_cone.csv") if r["level"] == "fine"]
+    assert {r["cp_source"] for r in rows} == {"periodic snapshot"}
+    assert {r["cp_source_iteration"] for r in rows} == {"30"} and {r["history_iterations"] for r in rows} == {"40"}
+    assert {r["cp_source_check"] for r in rows} == {"ok"}
+    assert {r["cp_source"] for r in _read_csv(out / "layer1_cone.csv") if r["level"] == "coarse"} == {"final write"}
+    head = "\n".join(ln for ln in (out / "layer1_cone.csv").read_text().splitlines() if ln.startswith("#"))
+    assert "periodic snapshot" in head and "iteration 30" in head
+
+
+def test_an_unaccepted_fine_level_carries_the_note_on_every_quantity_row(tmp_path):
+    work, out = _run(tmp_path, fine_converged=False)
+    rows = _read_csv(out / "layer0_vs_layer1.csv")
+    assert rows
+    for r in rows:
+        assert "solver did not accept" in r["note"] and "refused: refused" not in r["note"]
+
+
+def test_the_header_states_the_decomposition_and_the_truncation_as_observed(tmp_path):
+    work, out = _run(tmp_path)
+    head = "\n".join(ln for ln in (out / "layer1_cone.csv").read_text().splitlines() if ln.startswith("#"))
+    assert "domain decomposition" in head and "rank count" in head and "not tested" in head
+    assert "cut when the run is stopped" in head
 
 
 def test_rerunning_the_collector_gives_byte_identical_files(tmp_path):

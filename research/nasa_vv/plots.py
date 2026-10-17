@@ -17,8 +17,8 @@ drawn and they must not be confused:
 What gci_existing.csv says about the Basic Finner mesh check (its ``#`` header): the
 grids are not geometrically similar, the L1-L3 and L2-L4 orders disagree, and the study
 "does not establish a reliable GCI". The box is therefore hatched and unfilled, labelled
-as grid sensitivity, and never drawn as a solid band. The RANS GCI does not exist yet;
-a source of established GCIs is added as a row of ``BAND_RULES``.
+as grid sensitivity, and never drawn as a solid band. No RANS GCI was obtained at M = 1.832, so no RANS box is drawn; any
+source of established GCIs belongs in a row of ``BAND_RULES``.
 
 Which GCI quantity belongs to which plotted quantity (doc/scripts/basic_finner_cfd.py):
 
@@ -216,11 +216,11 @@ FOOTNOTE = (
     "Hatched box: grid sensitivity of the Euler CNa at Mach 2.375 (fairing) from the Basic Finner mesh check, the envelope "
     "of the GCI of the plotted grid over both h definitions (cells^-1/3, wall_size) and every triplet that gives a number "
     "({n} rows); it is not an established GCI: the grids are not geometrically similar and the observed orders disagree "
-    "(results/gci_existing.csv). Its extent, ±{hi:.2g} % of the value, is too small to see at this scale, and the box "
-    "understates the sensitivity: {change} "
+    "(results/gci_existing.csv). Its extent, ±{hi:.2g} % of the value, is too small to see at this scale.{change} "
     "Mapping: CNa = CN(alpha = 2 deg)/alpha of the same runs, so the relative GCI of cn carries over. CX0 = ca_pressure + "
     "modelled friction, base and fin trailing-edge terms, so the ca_pressure GCI is not a CX0 GCI: no box on CX0. "
-    "No box on any other Mach number (no mesh study there), nor on RANS (no RANS GCI yet)."
+    "No box on any other Mach number (no mesh study there), nor on RANS: RANS GCI not obtained at M = 1.832 "
+    "(grid study refused; see the RANS grid study)."
 )
 
 
@@ -307,8 +307,8 @@ def validation_figure(out: Path = DEFAULT_OUT, summary_csv: Path = SUMMARY_CSV, 
     hi = max((b.high_pct for b in used_bands), default=0.0)
     n = max((b.n_rows for b in used_bands), default=0)
     ch = max(changes, key=lambda c: c.pct) if changes else None
-    change = (f"{ch.plotted_level} to {ch.other_level} changes cn by {ch.pct:.2g} %, more than the box (that triplet does not "
-              f"converge, so it gives no GCI). " if ch else "")
+    change = (f" The box understates the sensitivity: {ch.plotted_level} to {ch.other_level} changes cn by {ch.pct:.2g} %, "
+              f"more than the box." if ch else "")
     note = FOOTNOTE.format(n=n, hi=hi, change=change)
     if not used_bands:
         note = note.split("Hatched box:")[0] + "No CFD point has a grid-sensitivity box: no row of the existing grid study belongs to it."

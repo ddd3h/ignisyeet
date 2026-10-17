@@ -4,7 +4,19 @@ NASA Glenn の WIND/NPARC チームが公開する検証と妥当性確認の手
 
 ## 要旨 {#summary}
 
-<!-- PENDING Task 14,15,16,20: the abstract. Layer 1 is written in section 3 and its limits in section 5; summarise them (fine level refused, no layer-1 GCI, no pipeline contribution, cut surface output files) and do not repeat their numbers. State, at the strength the finished sections support, (1) what band each layer-2 coefficient carries or why it carries none, (2) the layer 0 result that the GCI bounded the true error on 7 of 12 rows and what that means for layer 2, (3) the layer 1 outcome as above, (4) the validation overlap judgement. Do not write it before those sections are filled. -->
+この報告は、NASA のチュートリアルの六つの段階を IgnisYeet の SU2 による空力計算に当てはめ、結果を、それを支える強さのまま述べる。確定していることは次のとおりである。
+
+- **空力係数に付けられた数値不確かさの帯は、ごく限られる。** サンプル機体の Euler で計算できた GCI は、M = 2 の CNα の 10.6 %（節点数）と 16.3 %（壁寸法、漸近域の外）だけである。次数は 0.533 と 0.199 で、2 次精度の理論値 2 よりはるかに低く、h の定義で値が大きく動く。サンプル機体の他の量は、振動、収束しない、使えない GCI のいずれかである。Basic Finner の Euler の 4 段の格子は、信頼できる GCI を与えない。Basic Finner の RANS（M = 1.832）の GCI は得られず、α = 2° の解が 3 段すべてで未収束である。
+- **GCI は、真の誤差を押さえないことがある。** 厳密解がある層 0 で、GCI を求めた 12 行のうち 5 行が最細格子の真の誤差を押さえなかった。押さえなかった 2 行（円すいの Cp）を、次数の検査は 2 行とも見つけず、窓の安定性は 1 行しか見つけなかった。厳密解のない層 2 の GCI も、同じように誤差を過小評価しうる。
+- **製品の格子は、相似に細かくならない。** 壁とフィンのセル寸法を変えても外側の寸法は固定され、セル数は相似な細分（2.74 倍）に届かない（サンプル機体で 1.74 倍と 1.77 倍）。GCI は h の二つの定義で求め、二つは問いを挟むだけである。
+- **層 1。** 製品の鎖で解いた円すいの最細格子は未収束で、層 1 の GCI も、3 次元非構造格子の生成を含むパイプラインの誤差の寄与も、得られていない。
+- **一貫性。** サンプル機体の既定のメッシュの CN(0) = 0 は、メッシュの対称性により満たされ、ソルバを確かめない。z 鏡映のないメッシュは、偽の法線力を持つ。M = 0.3 の |CA| は格子とともに縮むが、0 に収束することは示していない。
+- **反復誤差。** 同じ格子の同じ量で、反復誤差が GCI を上回った行はない。
+- **時間収束。** CFD は定常なので当てはまらない。6 自由度の積分器のサンプルでは観測次数が得られず、次数 4 は制御の実験でだけ観測された。
+- **妥当性確認。** Euler の CNα は、実測より 2.9 から 10.5 % 低く、どの Mach 数でも差が確率誤差を上回る。Mach 2.375 では、この差は観測した格子の感度では説明できない。RANS の CNα（Mach 1.832）は確率誤差の内にあるが、RANS には数値不確かさの帯がない。CX0 は CFD に帯がなく、判断できない。
+- **製品についての所見。** 公表された RANS の格子収束（V6）の M = 0.8 の GCI は、未収束の解を使って求められている。製品が書く表面の出力ファイルは、停止時に切れることがある。RANS の Basic Finner は、フィンのセル寸法を小さくすると、gmsh が異常終了して止まる。
+
+<!-- PENDING Task 20: one bullet on model uncertainty (Euler against RANS-SA, and the Spalart-Allmaras-only limit), with its own label. Do not alter the bullets above unless the Task 20 results contradict them. -->
 
 ## 1. 目的と読み方 {#s1}
 
@@ -59,7 +71,7 @@ IgnisYeet の鎖が扱えるのは CAD または STL のロケット形状だけ
 
 GCI を求める前に、各格子の解に次の入口の条件を課す。
 
-- 解が収束していること。ソルバが収束と判定したか、残差が 3 桁以上落ちていること。この条件を満たさない格子を含む列は、GCI を求めず、理由を書く。
+- 解が収束していること。ソルバが収束と判定したか、残差が 3 桁以上落ちていること。製品の「早期終了（accepted）」の解は、判定を主張せず、残差の落ち幅で決める。この条件を満たさない格子を含む列は、GCI を求めず、理由を書く。
 - 3 段の差が単調であること。差が符号を変える振動収束では、極限へ単調に近づくという外挿の前提がデータと合わない。この場合は次数も GCI も帯も付けない。Celik らの論文には振動収束の計算法があるが、この研究は採らない。細かい側の 2 段の差が粗い側の 2 段の差以上に大きい場合も、収束していないとして帯を付けない。
 - 観測次数が 0.5 から 4 の間にあること。2 次精度の方法の理論値 2 の 1/4 を下回るか 2 倍を上回る次数は、漸近域にないしるしであり、その GCI は信頼できないと注記する。
 
@@ -346,7 +358,18 @@ Cp は、円すい表面の壁の節点（半径が x tan 10° から 1 % 以内
 
 拒否した 4 つの族のどれについても、**残差の落ち幅は記録されていない。** 記録にあるのは、解ごとの収束の判定と、α = 4° の反復回数（402 から 453 回）だけである（`gci_existing.csv`）。拒否した族の値は表にあるが、帯は付けない。
 
-<!-- PENDING Task 16: iterative error against the GCI at layer 2. For each Euler grid family of the sample rocket (task 14) and the Basic Finner RANS family (task 15): the residual drop and the coefficient flatness per level, the iteration-error estimate (CN, CA, xcp change over the last window), and the ratio of that iteration error to the grid GCI. A grid study whose iteration error is of the order of the GCI is not interpretable; say so where it happens. -->
+**層 2 の反復誤差と GCI の比。** 反復誤差は、停止した反復の値と収束した値の差（収束した値に対する %）で、GCI（細）に対する比で判定する。比が 0.1 未満なら反復誤差は格子収束の議論を乱さず、同じ格子の同じ量で比が 1 を超えるなら、その GCI は成り立たない（`iterative.csv`）。
+
+- **同じ格子、同じ量の行で、比が 1 を超えるものはない。**
+- 比が 0.1 から 1 の行もない。比が 0.1 未満の行は 5 行である。GCI が数値を持たない（拒否、振動収束、収束していない、使えない）ために比を付けられない行は 28 行である。格子収束が示されない理由は、これらの条件では反復ではない。
+- 使える GCI は M = 2 の CNα（節点数の −1/3 乗を h とした 10.6 %）だけである。細かい格子の CN（4°）の反復誤差は 3.3×10⁻⁴ % で、比は 3.2×10⁻⁵ である。
+- サンプル機体の 3 段の格子の反復誤差は、停止した反復と、停止後に SU2 が書いた最後の反復の差で測った。最大は 0.039 %（M = 0.8、細かい格子の CA）で、CN（4°）では 0.016 % 以下である。収束した値として最後の反復を使うので、これは反復誤差の下限である。M = 0.3 の CA（0.03〜0.06）が 0 でないことは、反復誤差では説明できない（細かい格子で 0.0015 %）。
+- 製品のドキュメントの収束の深さの調査（M = 0.8、α = 4°、CN、壁寸法 2 mm、メッシュは細かい格子と別）では、残差が 10⁻⁶ に達した時点で止めると、CN は収束した値（1.20218）より 0.55 から 1.42 % 低い（始め方による）。深く収束させた解の差は 0.0075 % である。M = 0.8 の CN には GCI がないので、比は付けていない。
+- 製品の「早期終了（accepted）」は、判定を主張せず、残差の落ち幅が 3 桁以上であることで通した（サンプル機体の中の格子の M = 2、α = 4° など）。
+
+**乱流平板の 5 行は参考である。** 製品のドキュメントの乱流平板の抗力 CD は、受け入れの停止時に、最後の反復の値と、M = 0.2 の 3 つの格子で 0.12、0.62、1.89 %、M = 2 の 137×97 と 273×193 で 0.082、0.66 % 違う。Cf の GCI（0.038 % と 0.079 %）に対する比は 3.1、16.6、50.4（M = 0.2）と 1.03、8.34（M = 2）で、1 を超える。ただし、反復誤差は CD、GCI は Cf の量で、比べる量が違う。**平坦な読み方はこうである。停止時の CD は、Cf の格子不確かさより大きく動く。これは Cf の GCI を無効にはしないが、CD の GCI は存在せず、同じ量での検査はできていない。** Cf の GCI は、最後の反復の値（残差の落ち幅 5.8〜8.1 桁）から作ったものであり、受け入れ規則で止めた計算のものではない。
+
+層 0 には、反復ごとの値の記録がなく、反復の誤差を % では測れない。残差の落ち幅だけが記録にある。
 
 ### 4.3 第 3 段階：一貫性 {#s4-3}
 
@@ -361,7 +384,9 @@ Cp は、円すい表面の壁の節点（半径が x tan 10° から 1 % 以内
 
 **d'Alembert の逆説。** Mach 0.3 の Euler の CA は 0 のはずで、サンプル機体の既存の計算では −0.0314 である（`consistency.csv`）。
 
-<!-- PENDING Task 14: refine the d'Alembert check. Whether |CA(M = 0.3, alpha = 0)| shrinks as the Euler grid is refined on the three-level sample-rocket family: it shrinks (discretisation error) or it does not (formulation or boundary condition). Also the raw +4 / -4 antisymmetry row on the unmirrored medium level, if the task produced it. -->
+**d'Alembert の逆説（細かい格子）。** M = 0.3、α = 0 の CA（サンプル機体、Euler）は、粗、中、細の格子で −0.0628、−0.0455、−0.0305 である（`consistency.csv`）。|CA| は格子を細かくすると縮む（28 % と 33 %）が、最細格子でも 0 から遠い。3 段の外挿は +0.045（節点数）、+0.065（壁寸法）で、0 の向こう側に出る。GCI は 309 % と 393 % で、使えない（`gci_sample_euler.csv`）。格子は相似に細かくならないので、この縮み方は 3 つの格子の傾向であり、収束の次数ではない。**この結果は、CA が離散化誤差であることと整合するが、0 に収束することは示していない。**
+
+**CN(−α) = −CN(α)（z 対称にしないメッシュ）。** 中の格子を z 鏡映なしで作り、+4° と −4° の両方を解いた。偶関数部分は、M = 0.3 で −0.0388、M = 0.8 で −0.0201 で、許容差（0.0114 と 0.0118）を超える。M = 2 では +0.0015 で、許容差（0.0093）内である。この値は、同じメッシュの α = 0 の CN（−0.0404、−0.0219、+0.0016）とほぼ同じ大きさで、z 鏡映のないメッシュが全迎え角に持つ偽の法線力と読める。フィンの面をフィンの厚さの 1/3 強（1.4 mm）にした格子でも、M = 0.3 と 0.8 には残る。M = 0.3 の −4° の解と M = 2 の 0° と −4° の解は、製品の判定が「早期終了」で、書かれたまま組に入れた。
 
 **遠方境界の質量流束。** 層 0 の 12 回の計算で、閉じた検査面（すべての境界）で、流入と流出の質量流束の相対差を調べた。チュートリアルは、約 10⁻³ を一貫していると見なす。
 
@@ -421,13 +446,58 @@ Basic Finner の Euler の 4 段（L1〜L4）では、壁とフィンのセル�
 - CN（2°）の L1–L3 の GCI 0.034 % は、次数 8.45 の漸近域の外の値で、引用できない。CN（2°）が L2 から L4 へ +0.47 % 動くことと比べると、このことが分かる。
 - 図 1 の Euler の CNα に描いた格子感度の箱（±0.17 %）は、数値を返した 2 行の GCI の包絡であり、確立した GCI ではない。上のとおり L2 から L4 への CN の変化（+0.47 %）はこの箱より大きい。
 
-#### サンプル機体、RANS、Mach 0.8 と 2 {#s4-4-3}
+#### サンプル機体、RANS（V6）、Mach 0.8 と 2 {#s4-4-3}
 
 製品のドキュメントの V6 の 3 段の格子（3 mm、4.8 mm、8 mm）は、[4.2 節](#s4-2)のとおり 4 つの族がすべて入口の条件で拒否され、帯がない。この格子の壁の寸法の比は 1.67 と 1.60 であるのに、節点数の 1/3 乗の比は 1.33 と 1.31 で、相似ではない。
 
-<!-- PENDING Task 14: sample rocket Euler, three-level grid family, M = 0.3, 0.8 and 2, alpha 0 and 4 deg, CN-alpha, CA and xcp. Per condition: nodes per level, both h definitions (nodes^-1/3 and the wall_size ratio), observed order, extrapolated value, GCI, asymptotic ratio, and for any refused or oscillatory triplet the reason and the residual drop. State that supersonic shocks make the order erratic and that the order is reported as obtained. -->
+#### サンプル機体、Euler、Mach 0.3、0.8、2 {#s4-4-4}
 
-<!-- PENDING Task 15: Basic Finner RANS-SA, M = 1.832, alpha 0 and 2 deg, three grids. The GCI of CN-alpha (CN(2 deg)/2 deg), or, where a level did not converge, "RANS の GCI は得られなかった" with the residual drop of each level in orders. Then regenerate the validation figure so it carries the RANS band, and replace figure 1. -->
+サンプル機体の半モデルを、壁とフィンのセル寸法（壁／フィン）が 3.92／1.96、2.8／1.4、2／1 mm の 3 段で解いた。節点数は 98151、170830、302918、セル数は 458640、798534、1416454 である（`sample_euler_levels.csv`、`gci_sample_euler.csv`）。セル数の増え方は 1.74 倍と 1.77 倍で、相似な細分（2.74 倍）に届かない（[4.4.1 節](#s4-4-1)）。メッシュは z 鏡映で、α = 4° の解だけを解き、CNα は CN(4°)/（4° のラジアン）とした。GCI は h の二つの定義の両方で求めた。
+
+解はすべて、製品の判定が収束か早期終了で、残差の落ち幅は 3.2 から 10.9 桁である。M = 0.3、α = 0 の落ち幅が最も小さく、3.64、3.33、3.23 桁である。
+
+| 条件 | 量 | 値（細、中、粗） | 節点数の −1/3 乗：p、GCI（細） | 壁寸法：p、GCI（細） | 状態 |
+|---|---|---|---|---|---|
+| M = 0.3 | CNα | 16.912、17.077、17.156 | — | — | 細かい側の変化が粗い側以上。帯なし |
+| M = 0.3 | xcp [m] | 1.20860、1.21139、1.20607 | — | — | 振動収束。帯なし |
+| M = 0.3 | CA（α = 0） | −0.0305、−0.0455、−0.0628 | 0.95、309 % | 0.43、393 % | 使えない（GCI が値より大きく、外挿が 0 の向こう側） |
+| M = 0.8 | CNα | 17.234、17.339、17.386 | — | — | 細かい側の変化が粗い側以上。帯なし |
+| M = 0.8 | xcp [m] | 1.22047、1.22252、1.22052 | — | — | 振動収束。帯なし |
+| M = 0.8 | CA（α = 0） | −0.0128、−0.0226、−0.0326 | 0.29、1654 % | 0.066、4251 % | 使えない |
+| M = 2 | CNα | 13.401、13.280、13.150 | 0.533、**10.6 %** | 0.199、**16.3 %** | 壁寸法の次数は旗（0.5 未満） |
+| M = 2 | xcp [m] | 1.15714、1.15594、1.15002 | 8.73、0.030 % | 4.75、0.033 % | 旗（4 超）。GCI は信頼できない |
+| M = 2 | CA（α = 0） | 0.1114、0.1079、0.1045 | — | — | 細かい側の変化が粗い側以上。帯なし |
+
+出典：`gci_sample_euler.csv`。
+
+**計算できた GCI は、M = 2 の CNα の 10.6 %（節点数）と 16.3 %（壁寸法）だけである。** 前者の次数 0.533 は、旗の境界（0.5）のすぐ上で、2 次精度の理論値 2 よりはるかに低い。後者は漸近域の外にある。二つの定義の差も大きい。外挿値（14.5 と 15.2）は、細かい格子の値（13.4）から 8 から 13 % 離れている。
+
+M = 0.3 と 0.8 の CNα は、格子を細かくしても変化が縮まず、帯を付けられない。粗から細への変化は、M = 0.3 で −1.4 %、M = 0.8 で −0.9 %、M = 2 で +1.9 % である。xcp は M = 0.3 と 0.8 で振動し、M = 2 では次数が旗にかかる。M = 0.3 と 0.8 の CA は、GCI が値より大きく、使えない。M = 0.3 の CA の縮み方は [4.3 節](#s4-3)で述べた。
+
+#### Basic Finner、RANS、Mach 1.832 {#s4-4-5}
+
+**RANS の GCI は、この研究では得られなかった。** Basic Finner（底面は平ら、Spalart–Allmaras）を M = 1.832、α = 0 と 2° で、壁のセル寸法 2.1、1.5、1.07 mm（1.4 倍ずつ）の 3 段で解いた。フィンのセル寸法は、RANS では壁と同じ（`auto`）にした。節点数は 328364、533985、926390、セル数は 813498、1265515、2145093 で、増え方は節点で 1.63 倍と 1.74 倍、セルで 1.56 倍と 1.70 倍と、ここでも相似な細分に届かない。中の格子は、製品ドキュメントの RANS の計算と同じ設定だが、別のメッシュである（節点が 5.3 % 少ない）。壁の第 1 層の y⁺ の 95 パーセンタイルは 1.30 から 1.59 である（`basic_finner_rans_levels.csv`）。
+
+| 格子 | α | 製品の判定 | 残差の落ち幅（桁）：製品（密度のみ） | 同：入口の条件（ρ と ν の小さい方） |
+|---|---|---|---|---|
+| 2.1 mm | 0° | 収束 | 3.13 | 3.10 |
+| 2.1 mm | 2° | 未収束（停滞） | 2.81 | 2.69 |
+| 1.5 mm | 0° | 収束 | 3.38 | 3.65 |
+| 1.5 mm | 2° | 未収束（停滞） | 4.12 | 0.933 |
+| 1.07 mm | 0° | 未収束（停滞） | 3.91 | 0.885 |
+| 1.07 mm | 2° | 未収束（停滞） | 3.04 | 1.23 |
+
+出典：`basic_finner_rans_levels.csv`。製品の落ち幅は、密度の残差だけの落ち幅で、SA の残差（ν）を含まない。入口の条件の落ち幅は、密度と ν の落ち幅の小さい方である。α = −2° の解も得られるが、使わない。
+
+- CNα と xcp は、α = 2° の解が 3 段すべてで未収束なので、拒否された。CA（α = 0）は、細かい格子の α = 0 が未収束なので、拒否された。拒否した族の値は表にあるが、帯は付けない（`gci_basic_finner_rans.csv`）。
+- 製品の落ち幅と入口の条件の落ち幅は、SA の残差が下がりきらない解で大きく違う。中の格子の α = 2° は、密度が 4.43 桁、ν が 0.933 桁落ちる。製品の数値（4.12 桁）は、ν の停滞を表さない。
+- 粗い格子を、領域分割と製品のビルドを変えて二度解くと、収束と未収束の判定が、α = 0 と α = 2° で入れ替わった（一方は α = 0 が未収束で α = 2° が収束、他方はその逆）。この二つの実行は、分割とビルドの両方が違うので、**入れ替わりを観測しただけで、原因は分かっていない。** 判定が実行の条件に敏感であることは、示している。
+- フィンのセル寸法を壁の寸法の約 0.22 倍（0.47、0.336、0.24 mm）にすると、CAD の表面を使う RANS の計算は、`ignisyeet aero` が gmsh の 3 次元メッシュ生成で異常終了して止まる（エラー IY-F011、シグナル 6）。メッシュの記録には、欠けた面を回復する処理（2427 面）のあと、メモリの破損が出る。粗い格子と中の格子の条件を、複数の実行ファイルと核数で試して、同じ結果だった。細かい格子の条件は試していない。**これは製品の欠陥である。** 製品は変更していない。このため、フィンのセル寸法は壁の寸法と同じにした。
+- 3 段と 2 つの迎え角の 6 つの解のうち、4 つが未収束である。
+
+#### 反復と格子の不確かさの関係 {#s4-4-6}
+
+M = 2 の CNα の GCI（10.6 %）に対する反復誤差の比は 3.2×10⁻⁵ で、反復誤差は問題にならない（[4.2 節](#s4-2)）。格子収束が示されない理由は、サンプル機体の Euler では収束の仕方（振動、次数、変化の縮まなさ）であり、Basic Finner の RANS では反復収束である。
 
 ### 4.5 第 5 段階：時間収束 {#s4-5}
 
@@ -488,11 +558,30 @@ Basic Finner の係数を、DREV-TM-9703 の実測値（射場の自由飛翔、
 
 **CFD の帯。** 図 1 は、Basic Finner の CNα と CX0 を、実測と CFD（Euler、RANS）で並べたものである。
 
-![Basic Finner の CNα（左）と CX0（右）。黒い菱形は実測（DREV-TM-9703、Table IX）で、確率誤差を棒で示す。中が白い菱形は表の確率誤差が 0 の値で、0.5 % の上限を三角で示す。確率誤差が空の値には棒を描かない。青い丸は CFD（Euler）、橙の四角と三角は CFD（RANS、Mach 1.832 だけ。CX0 の底面の項を部品積み上げ法にした値と、CFD の底面の力にした値）。斜線の箱は Mach 2.375 の Euler の CNα の格子感度（±0.17 %）で、確立した GCI ではない。L2 から L4 への CN の変化（+0.47 %）はこの箱より大きい。CX0 は CFD の CA にモデルから求めた項を足した値なので、箱を描いていない。](figures/validation_bands.svg "図 1　Basic Finner の実測と CFD。図中の文は英語である。")
+![Basic Finner の CNα（左）と CX0（右）。黒い菱形は実測（DREV-TM-9703、Table IX）で、確率誤差を棒で示す。中が白い菱形は表の確率誤差が 0 の値で、0.5 % の上限を三角で示す。確率誤差が空の値には棒を描かない。青い丸は CFD（Euler）、橙の四角と三角は CFD（RANS、Mach 1.832 だけ。CX0 の底面の項を部品積み上げ法にした値と、CFD の底面の力にした値）。斜線の箱は Mach 2.375 の Euler の CNα の格子感度（±0.17 %）で、確立した GCI ではない。RANS の GCI は Mach 1.832 で得られなかったので、RANS の箱はない。L2 から L4 への CN の変化（+0.47 %）はこの箱より大きい。CX0 は CFD の CA にモデルから求めた項を足した値なので、箱を描いていない。](figures/validation_bands.svg "図 1　Basic Finner の実測と CFD。図中の文は英語である。")
 
 出典：`gci_existing.csv`（格子感度の箱）、`measured.csv`（実測と確率誤差）。
 
-<!-- PENDING Task 15,20: the validation judgement. Regenerate the figure after Task 15 so it carries the RANS band, then say for each Mach number and coefficient whether the measured probable-error bar and the CFD band overlap; where they do not, state that the difference cannot be explained by numerical error. Where a quantity has no probable error, say the judgement cannot be made. Use only "妥当性確認" for this measured-data comparison, and "相互比較" for any Euler-against-RANS statement. -->
+**実測との差。** 実測との差を、製品ドキュメントの比較の表の値から読む（`summary_vs_measured.csv`）。差は（CFD − 実測）/ 実測である。
+
+| 量 | CFD | 実測との差 | 実測の確率誤差 | 数値不確かさの帯 |
+|---|---|---|---|---|
+| CNα | Euler、8 つの Mach 数（1.077〜4.3） | −2.9 から −10.5 % | 1 から 4 % | Mach 2.375 の格子感度の箱（±0.17 %、確立した GCI ではない）だけ |
+| CNα | RANS、Mach 1.832 | −2.7 % | 4 % | なし（RANS の GCI は得られなかった） |
+| CX0 | Euler、8 つの Mach 数 | −15.4 から −28.3 % | 0.5 % 未満（4 点）、なし（4 点） | なし |
+| CX0 | RANS、Mach 1.832、底面の項をモデルから | −25.8 % | なし | なし |
+| CX0 | RANS、Mach 1.832、底面を CFD の力から | +10.7 % | なし | なし |
+
+出典：`summary_vs_measured.csv`（製品ドキュメントのデータ。差の欄を転記）、`measured.csv`、`gci_existing.csv`。
+
+- **Euler の CNα は、8 つの Mach 数のすべてで、実測より低く、差が実測の確率誤差を上回る。** 差が確率誤差に最も近いのは Mach 1.832（−4.4 % に対し 4 %）と 2.718（−2.9 % に対し 2 %）である。Mach 2.375 では、差（−10.5 %）は、箱（±0.17 %）と、メッシュの段の間で観測した CN の変化（0.47 %）の、どちらよりもはるかに大きい。**この差は、この格子の列が示す感度では説明できない。** ただし、格子は相似でなく、真の離散化誤差の上限は得られていないので、数値誤差では説明できないとまでは言えない。
+- **Mach 1.832 の RANS の CNα は、実測の確率誤差（4 %）の内にある（−2.7 %）。** RANS の数値不確かさの帯がないので、この一致が数値誤差を含めても成り立つかどうかは、判断できない。
+- **CX0 は、CFD に帯がなく、重なりの判断ができない。** Euler の差は 15 から 28 % で、実測の確率誤差（0.5 % 未満の 4 点）の外にある。確率誤差のない 4 点は、実測の側が不明で、判断できない。CX0 は CFD の CA にモデルから求めた項を足した値なので、CFD の格子不確かさだけでは帯にならない。
+- RANS の CX0 は、底面の項の取り方で −25.8 % から +10.7 % に動く。この違いは、モデルの扱いの違いであり、数値誤差ではない。実測の誤差棒がないので、どちらが近いかは言えない。
+
+どの結論も、実測との差を、手法のどの要素に帰するかは述べない。
+
+<!-- PENDING Task 20: whether the Euler against RANS-SA difference at Mach 1.832 (cross-comparison) changes how the validation differences above are read; one sentence, with its own label, and no attribution. -->
 
 ## 5. この研究が示していないこと {#s5}
 
@@ -506,7 +595,12 @@ Basic Finner の係数を、DREV-TM-9703 の実測値（射場の自由飛翔、
 - サンプルの飛翔の積分器には、観測次数が得られていない。次数 4 は制御の実験でだけ観測された。
 - 妥当性確認は Basic Finner の 1 つの実測データ（DREV-TM-9703）に限る。
 
-<!-- PENDING Task 14,15,16,20: the conclusion. Re-read 要旨 and this list after the pending sections are filled, and add the model-uncertainty limit (only Euler and RANS-SA exist, so the tutorial's several-turbulence-model request is answered only in part). -->
+- サンプル機体の Euler の GCI は、M = 2 の CNα だけで、次数が理論値よりはるかに低い。M = 0.3 の CA が 0 に収束することは示していない。
+- Basic Finner の RANS には、GCI がない。判定の入れ替わりの原因は分かっていない。細かいフィンのセル寸法での gmsh の異常終了は、製品の欠陥である。
+- 反復誤差の検査は、GCI が得られた 1 条件（M = 2 の CNα）でしか成り立たない。乱流平板の 5 行は、量が違うので参考である。
+- 妥当性確認で、RANS の CNα が確率誤差の内にあることは、数値不確かさの帯がないので、数値誤差を含めた一致とは言えない。CX0 は帯がなく、判断できない。
+
+<!-- PENDING Task 20: the model-uncertainty limit (only Euler and RANS-SA exist, so the tutorial's several-turbulence-model request is answered only in part) and the final check of the 要旨 against this list. -->
 
 ## 付録 A：数値の出典 {#appx-a}
 
@@ -521,10 +615,15 @@ Basic Finner の係数を、DREV-TM-9703 の実測値（射場の自由飛翔、
 | `cone10_reference_check.csv` | NPARC cone10 の表と Taylor–Maccoll の比較 | 2.2 |
 | `cone_shock_angle_sources.csv` | 円すいの衝撃波角の独立な資料 | 2.2 |
 | `gci_existing.csv` | 製品ドキュメントの既存の計算（乱流平板、サンプル機体の RANS、Basic Finner の Euler）の格子収束 | 2.7、4.2、4.4 |
-| `consistency.csv` | CN(0)、反対称性、d'Alembert の検査 | 4.3 |
+| `gci_sample_euler.csv` | サンプル機体の Euler の 3 段の格子の GCI | 4.3、4.4 |
+| `sample_euler_levels.csv` | サンプル機体の各格子の解、残差の落ち幅、判定 | 4.3、4.4 |
+| `gci_basic_finner_rans.csv` | Basic Finner の RANS の GCI の行（すべて拒否）と理由 | 4.4 |
+| `basic_finner_rans_levels.csv` | Basic Finner の RANS の各格子の解、残差の落ち幅、製品の判定 | 4.4 |
+| `iterative.csv` | 反復誤差と GCI の比 | 4.2 |
+| `consistency.csv` | CN(0)、反対称性、d'Alembert の検査（細かい格子と z 鏡映のないメッシュを含む） | 4.3 |
 | `massflux.csv` | 層 0 の遠方境界の質量流束の収支 | 4.3 |
 | `temporal.csv` | 6 自由度の積分器の刻み幅の収束と制御の実験 | 4.5 |
-| `measured.csv`（Basic Finner の実測、製品ドキュメントのデータ） | 実測値と確率誤差 | 4.6.2 |
+| `measured.csv`、`summary_vs_measured.csv`（Basic Finner の実測と比較の表、製品ドキュメントのデータ） | 実測値、確率誤差、CFD との差 | 4.6.2 |
 
 ## 付録 B：参照した資料 {#appx-b}
 

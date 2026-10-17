@@ -119,10 +119,10 @@ def test_package_imports():
 - [ ] **Step 5: Run the test to verify it passes**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/ -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/ -v
 ```
 
-Expected: `test_package_imports PASSED`. If `nasa_vv` is not importable, add `pythonpath = ["."]` under `[tool.pytest.ini_options]` and rerun.
+Expected: `test_package_imports PASSED`. If `nasa_vv` is not importable, add `pythonpath = [".."]` under `[tool.pytest.ini_options]` and rerun.
 
 - [ ] **Step 6: Write the research index**
 
@@ -146,7 +146,7 @@ Plan: `docs/superpowers/plans/2026-10-17-nasa-cfd-vv.md`
 
 Run the tests with:
 
-    cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/ -v
+    cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/ -v
 ```
 
 - [ ] **Step 7: Commit**
@@ -289,7 +289,7 @@ def test_verify_reference_file_is_the_one_we_pinned_to():
 - [ ] **Step 3: Run the test to verify it fails**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_gci.py -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_gci.py -v
 ```
 
 Expected: collection error, `ModuleNotFoundError: No module named 'nasa_vv.gci'`.
@@ -424,7 +424,7 @@ def constant_ratio(
 - [ ] **Step 5: Run the tests to verify they pass**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_gci.py -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_gci.py -v
 ```
 
 Expected: all nine tests PASS. If `test_non_convergent_fixed_point_is_reported` fails because the iteration happens to converge, widen the triplet until `ln(r21)` is small enough to make it wander, and keep the assertion on `converged is False`.
@@ -494,7 +494,7 @@ def test_variable_ratio_matches_the_celik_paper_example():
 - [ ] **Step 3: Run it and reconcile**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_gci.py::test_variable_ratio_matches_the_celik_paper_example -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_gci.py::test_variable_ratio_matches_the_celik_paper_example -v
 ```
 
 If it fails, the discrepancy is information, not a licence to bend the module.
@@ -609,7 +609,7 @@ def test_shock_total_pressure_never_rises():
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_exact.py -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_exact.py -v
 ```
 
 Expected: `ModuleNotFoundError: No module named 'nasa_vv.exact'`.
@@ -747,7 +747,7 @@ def prandtl_meyer_expansion(
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_exact.py -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_exact.py -v
 ```
 
 Expected: all seven PASS. If `test_oblique_shock_reduces_to_a_normal_shock_at_ninety_degrees` fails at the Mach-angle edge, the bisection's lower bound is exactly `asin(1/M)` where the deflection is zero; nudge the assertion tolerance rather than the bound.
@@ -832,7 +832,7 @@ def test_the_nparc_cone10_table_is_internally_inconsistent():
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_exact.py -k taylor -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_exact.py -k taylor -v
 ```
 
 Expected: `ImportError: cannot import name 'taylor_maccoll'`.
@@ -926,7 +926,7 @@ def taylor_maccoll(mach: float, delta_deg: float, gamma: float = 1.4) -> Cone:
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_exact.py -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_exact.py -v
 ```
 
 Expected: all PASS, including the four new ones.
@@ -1031,7 +1031,7 @@ report it, and do not proceed to Task 9; the Taylor-Maccoll port and the existin
 - [ ] **Step 4: Run the tests**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_exact.py -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_exact.py -v
 ```
 
 - [ ] **Step 5: Commit**
@@ -1123,7 +1123,7 @@ def test_study_returns_one_result_per_quantity():
 - [ ] **Step 2: Run the test to verify it fails**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_family.py -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_family.py -v
 ```
 
 Expected: `ModuleNotFoundError: No module named 'nasa_vv.family'`.
@@ -1227,7 +1227,7 @@ def study(
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_family.py -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_family.py -v
 ```
 
 Expected: all five PASS.
@@ -1314,7 +1314,7 @@ def test_basic_finner_has_four_euler_levels():
 - [ ] **Step 3: Run the test to verify it fails**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_existing_data.py -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_existing_data.py -v
 ```
 
 Expected: `ModuleNotFoundError: No module named 'nasa_vv.cases'`.
@@ -1341,7 +1341,7 @@ Each `main()` run must be reproducible: no timestamps in the CSV body.
 - [ ] **Step 5: Run the tests to verify they pass**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_existing_data.py -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_existing_data.py -v
 ```
 
 - [ ] **Step 6: Produce the results and read them**
@@ -1452,7 +1452,7 @@ def test_a_tampered_numerics_key_is_caught():
 - [ ] **Step 3: Run the test to verify it fails**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_su2cfg.py -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_su2cfg.py -v
 ```
 
 Expected: `ModuleNotFoundError: No module named 'nasa_vv.su2cfg'`.
@@ -1483,7 +1483,7 @@ and output filenames.
 - [ ] **Step 5: Run the tests to verify they pass**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_su2cfg.py -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_su2cfg.py -v
 ```
 
 - [ ] **Step 6: Commit**
@@ -1557,7 +1557,7 @@ def test_refining_twice_gives_a_ratio_of_four():
 - [ ] **Step 2: Run it to verify it fails**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_mesh.py -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_mesh.py -v
 ```
 
 Expected: `ModuleNotFoundError: No module named 'nasa_vv.mesh'`.
@@ -1575,7 +1575,7 @@ consecutive pair, so the coarse points survive exactly.
 - [ ] **Step 4: Run the tests to verify they pass**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_mesh.py -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_mesh.py -v
 ```
 
 - [ ] **Step 5: Write the three layer 0 cases**
@@ -1674,7 +1674,7 @@ Add `import math` at the top of the test file if it is not already there.
 - [ ] **Step 2: Run it to verify it fails, then implement**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_exact.py -k blasius -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_exact.py -k blasius -v
 ```
 
 Then append to `research/nasa_vv/exact.py` a `blasius_cf` returning `0.664 / sqrt(re_x)`
@@ -1684,7 +1684,7 @@ and a `blasius_profile` that integrates `f''' + 0.5 f f'' = 0` with RK4, shootin
 - [ ] **Step 3: Run the tests to verify they pass**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_exact.py -k blasius -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_exact.py -k blasius -v
 ```
 
 - [ ] **Step 4: Write and run the case**
@@ -1766,7 +1766,7 @@ def test_a_negative_value_uses_its_magnitude():
 - [ ] **Step 2: Run it to verify it fails**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_plots.py -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_plots.py -v
 ```
 
 - [ ] **Step 3: Write the module**
@@ -1782,7 +1782,7 @@ cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/tes
 - [ ] **Step 4: Run the tests and produce the figure**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_plots.py -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_plots.py -v
 cd research/nasa_vv && uv run --project . python -m nasa_vv.plots --out figures/validation_bands.svg
 ```
 
@@ -1840,7 +1840,7 @@ def test_the_even_part_is_signed():
 - [ ] **Step 2: Run it to verify it fails, then implement**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_consistency.py -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_consistency.py -v
 ```
 
 Write `research/nasa_vv/cases/consistency.py` with `antisymmetry` and a `main()` that
@@ -1860,7 +1860,7 @@ traceable. Spec §13.
 - [ ] **Step 3: Run the tests and produce the results**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_consistency.py -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_consistency.py -v
 cd research/nasa_vv && uv run --project . python -m nasa_vv.cases.consistency
 column -s, -t results/consistency.csv
 ```
@@ -2317,7 +2317,7 @@ def test_zero_inflow_is_an_error():
 - [ ] **Step 2: Run it to verify it fails, then implement**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/test_massflux.py -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/test_massflux.py -v
 ```
 
 `flux_imbalance` returns `abs(inflow - outflow) / abs(inflow)` and raises `ValueError`
@@ -2554,7 +2554,7 @@ git commit -m "research(nasa-vv): add the English paper draft"
 - [ ] **Step 1: Run every test**
 
 ```bash
-cd research/nasa_vv && uv run --project . --extra dev python -m pytest tests/ -v
+cd research/nasa_vv && uv run --project . --group dev python -m pytest tests/ -v
 ```
 
 Expected: all pass. Record the count.

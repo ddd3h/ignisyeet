@@ -467,6 +467,20 @@ def profile_stats(eta: np.ndarray, uu: np.ndarray) -> dict:
             "u_edge": float(f[-1])}
 
 
+def edge_scaled_stats(eta: np.ndarray, uu: np.ndarray) -> dict:
+    """profile_stats of the column scaled by its own edge velocity.
+
+    u_e is u/U at eta = ETA_CMP. Blasius' similarity variable uses the velocity outside the layer, so the column is
+    compared as u/u_e against f'(eta sqrt(u_e)): eta_e = y sqrt(u_e U / (nu x)). Where the outer flow is the free
+    stream (u_e = 1) this is profile_stats. The cut stays at the same y.
+    """
+    _, f = _clip(eta, uu, ETA_CMP)
+    u_e = float(f[-1])
+    out = profile_stats(eta * math.sqrt(u_e), uu / u_e)
+    out["u_e"] = u_e
+    return out
+
+
 def column(f: Field, fs: Freestream, i: int) -> tuple[np.ndarray, np.ndarray]:
     """(eta, u/U) of the grid column i, eta = y sqrt(U / (nu x)) = y sqrt(Re_unit / x)."""
     x = f.X[0, i]
@@ -496,10 +510,11 @@ def measure(level: int, work: pathlib.Path, dom: Domain = MAIN) -> dict:
     if abs(X[i5] - STATION) > 1e-12:
         raise RuntimeError(f"node {i5} is at x = {X[i5]}, not {STATION}")
     ref = blasius_reference()
-    st = {}
+    st, st_e = {}, {}
     for x in (STATION,) + ALT_STATIONS:
         eta, uu = column(fld, fs, station_index(level, x, dom))
         st[x] = profile_stats(eta, uu)
+        st_e[x] = edge_scaled_stats(eta, uu)
     win_cf = f"plate node {_station_text(fld, level, STATION, dom)[4:]}; SU2 Skin_Friction_Coefficient (x component, free-stream dynamic pressure)"
     win_prof = (f"column at x = {STATION:g}, eta = y sqrt(Re_unit / x) over 0 <= eta <= {ETA_CMP:g} "
                 f"({int(np.sum(column(fld, fs, i5)[0] <= ETA_CMP))} nodes; trapezoid rule, last interval clipped)")
@@ -510,6 +525,11 @@ def measure(level: int, work: pathlib.Path, dom: Domain = MAIN) -> dict:
     meas.append(Meas("diag_profile_max_dev", st[STATION]["max_dev"], 0.0, win_prof + "; max |u/U - f'| over the nodes", None, True))
     meas.append(Meas("diag_profile_rms_dev", st[STATION]["rms_dev"], 0.0, win_prof + "; sqrt(int (u/U - f')^2 d eta / eta_max)", None, True))
     meas.append(Meas("diag_edge_u_ratio", st[STATION]["u_edge"], 1.0, f"u/U at eta = {ETA_CMP:g}, x = {STATION:g}", None, True))
+    win_edge = win_prof + "; scaled by the edge velocity u_e = u/U at eta = 8: u/u_e against f'(eta sqrt(u_e))"
+    meas.append(Meas("delta_star_eta_ue", st_e[STATION]["delta_star"], ref["delta_star"], win_edge))
+    meas.append(Meas("theta_eta_ue", st_e[STATION]["theta"], ref["theta"], win_edge))
+    meas.append(Meas("diag_profile_max_dev_ue", st_e[STATION]["max_dev"], 0.0, win_edge + "; max |u/u_e - f'| over the nodes", None, True))
+    meas.append(Meas("diag_profile_rms_dev_ue", st_e[STATION]["rms_dev"], 0.0, win_edge + "; rms as above", None, True))
 
     # Cf sqrt(Re_x) against x: the trend towards 0.664
     for x in (0.25, 0.5, 0.75, 1.0):
@@ -557,7 +577,9 @@ def measure(level: int, work: pathlib.Path, dom: Domain = MAIN) -> dict:
     alt = {}
     for q, getter in ((f"cf_x{STATION:g}", lambda x: cf_at(x)),
                       ("delta_star_eta", lambda x: st[x]["delta_star"]),
-                      ("theta_eta", lambda x: st[x]["theta"])):
+                      ("theta_eta", lambda x: st[x]["theta"]),
+                      ("delta_star_eta_ue", lambda x: st_e[x]["delta_star"]),
+                      ("theta_eta_ue", lambda x: st_e[x]["theta"])):
         alt[q] = {x: getter(x) for x in (STATION,) + ALT_STATIONS}
     return {"meas": meas, "alt": alt, "nodes": int(fld.X.size), "cells": (ni - 1) * (nj - 1),
             "top_dev_p": float(np.max(np.abs(top))), "top_dev_u": float(np.max(np.abs(top_u))),
@@ -613,13 +635,17 @@ MEANING = {
     f"cf_x{STATION:g}": "the skin friction coefficient of the plate node at x = 0.5 against Blasius' 0.664 / sqrt(Re_x)",
     "delta_star_eta": "the displacement thickness of the profile at x = 0.5 in similarity coordinates against Blasius' 1.7208",
     "theta_eta": "the momentum thickness of the profile at x = 0.5 in similarity coordinates against Blasius' 0.6641",
+    "delta_star_eta_ue": "delta_star_eta of the profile scaled by its own edge velocity u_e = u/U at eta = 8 (u/u_e against f'(eta sqrt(u_e))), which removes the part of the difference that is the outer flow's departure from the free stream",
+    "theta_eta_ue": "theta_eta of the profile scaled by its own edge velocity u_e = u/U at eta = 8, see delta_star_eta_ue",
 }
 
 
-def gci_note(q: str, fine_first: list[float], exact_value: float, alt: dict | None, est: dict, other: dict | None = None) -> str:
+def gci_note(q: str, fine_first: list[float], exact_value: float, alt: dict | None, est: dict, other: dict | None = None,
+             edge: list[float] | None = None) -> str:
     """What the observed order of one plate quantity measures, with the numbers that support it.
 
-    other maps the name of another domain to its medium-grid value of the quantity (VARIANTS).
+    other maps the name of another domain to its medium-grid value of the quantity (VARIANTS). edge is u/U at
+    eta = ETA_CMP on the fine, medium and coarse grid.
     """
     f1, f2, f3 = fine_first
     parts = [NO_LAMINAR, f"exact: Blasius (incompressible, zero pressure gradient, boundary-layer limit); quantity: {MEANING[q]}"]
@@ -642,6 +668,14 @@ def gci_note(q: str, fine_first: list[float], exact_value: float, alt: dict | No
     if q.startswith("cf"):
         parts.append(f"compressibility at M = {MACH:g}, Eckert estimate: Cf changes by {100.0 * (est['cf_factor'] - 1.0):.3f} % "
                      "(estimate; the CFD value is not corrected)")
+        if edge:
+            scaled = [v / u ** 1.5 for v, u in zip(fine_first, edge)]
+            parts.append(
+                f"the outer flow at eta = {ETA_CMP:g} is {edge[0]:.4f} U on every grid (Blasius assumes U), and Cf scales as "
+                f"(u_e/U)^(3/2) for a boundary layer under an edge velocity u_e, an estimate of {100.0 * (edge[0] ** 1.5 - 1.0):+.2f} % "
+                f"on the fine grid: Cf / (u_e/U)^(3/2) is {scaled[0]:.6g}, {scaled[1]:.6g}, {scaled[2]:.6g} on the fine, medium and "
+                f"coarse grid, {100.0 * (scaled[0] - exact_value) / exact_value:+.2f} % from Blasius on the fine grid (estimate; "
+                "u_e is taken at one height)")
     elif q == "delta_star_eta":
         parts.append(f"compressibility, Howarth-Dorodnitsyn estimate with Crocco-Busemann temperature: delta* changes by "
                      f"{100.0 * (est['delta_star_factor'] - 1.0):+.2f} % (estimate; not corrected)")
@@ -654,8 +688,8 @@ def gci_note(q: str, fine_first: list[float], exact_value: float, alt: dict | No
         label, span = station_label(orders)
         parts.append("station sensitivity: observed order at x = " + ", ".join(f"{x:g}" for x in ALT_STATIONS)
                      + f" is {shown} (range {span}): {label} (stable means within {STABLE_RANGE:g}); "
-                     "an order below the formal 2 that is the same at every station is consistent with a discretisation order of "
-                     "the scheme on this grid family, not with a local feature at one station")
+                     "an order below the formal 2 that is the same at every station does not separate the order of the scheme from "
+                     "a leading-edge error that the boundary layer carries downstream, since every station inherits it")
     return "; ".join(parts)
 
 
@@ -679,7 +713,8 @@ def gci_rows(results: dict, est: dict, variants: dict | None = None) -> list[dic
         vals = [next(m.cfd for m in results[lv]["meas"] if m.q == q) for lv in fine_first]
         alt = {lv: results[lv]["alt"][q] for lv in LEVELS}
         other = {n: next(m.cfd for m in r["meas"] if m.q == q) for n, r in (variants or {}).items()}
-        note = "; ".join(x for x in (stall_note, gci_note(q, vals, m0.exact, alt, est, other)) if x)
+        edge = [_val(results, lv, "diag_edge_u_ratio") for lv in fine_first]
+        note = "; ".join(x for x in (stall_note, gci_note(q, vals, m0.exact, alt, est, other, edge)) if x)
         fd = FamilyData(GridFamily(levels, ndim=2), {q: vals}, row_note=note)
         for row in _rows("layer0", CONDITION, trip, fd, _flatplate_compute, "cells^-1/2 (2-D)"):
             row["true_error_pct"], row["gci_bounds_error"] = bounds_columns(row["gci_fine_pct"], vals[0], m0.exact)
@@ -768,7 +803,8 @@ def domain_reading(results: dict, variants: dict) -> str:
 def reading_text(results: dict, est: dict, variants: dict | None) -> str:
     """Reading of the GCI scalars against Blasius, from the numbers."""
     parts = []
-    for q, label in ((f"cf_x{STATION:g}", "Cf"), ("delta_star_eta", "delta*"), ("theta_eta", "theta")):
+    for q, label in ((f"cf_x{STATION:g}", "Cf"), ("delta_star_eta", "delta*"), ("theta_eta", "theta"),
+                     ("delta_star_eta_ue", "delta* scaled by u_e"), ("theta_eta_ue", "theta scaled by u_e")):
         m0 = next(m for m in results[LEVELS[0]]["meas"] if m.q == q)
         vals = [_val(results, lv, q) for lv in reversed(LEVELS)]
         errs = [100.0 * (v - m0.exact) / m0.exact for v in reversed(vals)]
@@ -801,7 +837,7 @@ def header_lines(results: dict, est: dict, variants: dict | None = None) -> list
         f"Grids: body-fitted, structured, exactly nested (every coarse node is a fine node); {names} nodes, i.e. {cells} cells, so the refinement ratio is exactly 2. {-MAIN.x_in:g} <= x <= {MAIN.x_out:g}, 0 <= y <= {MAIN.y_top:g}; the 48 cells per base grid along 0 <= x <= 1 are uniform, the cells upstream and beyond x = 1 grow exponentially (c = {MAIN.c_in:.3f} and {MAIN.c_out:.3f}, chosen so that the first cell is as wide as the plate cells); the leading edge x = 0 and the station x = 0.5 are nodes of every level; y is clustered at the wall by the fixed function y = {MAIN.y_top:g} (exp(b s) - 1) / (exp(b) - 1), b = {MAIN.stretch:g}. Every function is applied to the uniformly refined parameter, which is what keeps the grids nested.",
         f"Resolution at x = 0.5: nodes inside the 99 % layer (eta <= {ETA99}) {_trio(results, 'diag_points_in_bl99', '.0f')}; first node at y = {_trio(results, 'diag_first_node_y_m', '.3g')} m, y+ = {_trio(results, 'diag_first_node_yplus', '.3f')} on {names}.",
         "Boundaries: x < 0 on y = 0 is MARKER_SYM, the plate (x >= 0, to the outlet) is a no-slip adiabatic wall (MARKER_HEATFLUX 0.0, the golden's own wall condition); inlet, outlet and top are MARKER_FAR (subsonic).",
-        f"Leading edge: the node at x = 0 belongs to the symmetry plane and the wall; SU2 gives it the no-slip condition: speed/U = {_trio(results, 'diag_le_node_speed_over_U', '.3g')}, Cp = {_trio(results, 'diag_le_node_cp', '+.4f')}, T/T_inf = {_trio(results, 'diag_le_node_t_ratio', '.5f')}; the next wall node has Cp = {_trio(results, 'diag_le_next_wall_node_cp', '+.4f')}, the symmetry node before it u/U = {_trio(results, 'diag_le_upstream_node_u_over_U', '.3f')} (on {names}): the same on every grid, so the disturbed region is one cell wide and shrinks with the cell. The plate begins in a stagnation node with a pressure spike at the junction, and a single-marker remedy is not available (a no-slip wall and a symmetry plane cannot be one marker). The station x = 0.5 has Re_x = 5e4; diag_cf_resqrt_x* shows Cf sqrt(Re_x) against x.",
+        f"Leading edge: the node at x = 0 belongs to the symmetry plane and the wall; SU2 gives it the no-slip condition: speed/U = {_trio(results, 'diag_le_node_speed_over_U', '.3g')}, Cp = {_trio(results, 'diag_le_node_cp', '+.4f')}, T/T_inf = {_trio(results, 'diag_le_node_t_ratio', '.5f')} (the Cp of the node grows with refinement: a singular value that does not converge); the next wall node has Cp = {_trio(results, 'diag_le_next_wall_node_cp', '+.4f')}, the symmetry node before it u/U = {_trio(results, 'diag_le_upstream_node_u_over_U', '.3f')} (on {names}): the same on every grid, so the disturbed region is one cell wide and shrinks with the cell. The plate begins in a stagnation node with a pressure spike at the junction, and a single-marker remedy is not available (a no-slip wall and a symmetry plane cannot be one marker). The station x = 0.5 has Re_x = 5e4; diag_cf_resqrt_x* shows Cf sqrt(Re_x) against x.",
         f"Compressibility, estimates only, the CFD values are not corrected: adiabatic wall T_aw/T_inf = {est['t_aw_over_t']:.5f} (recovery factor sqrt(0.72)); Eckert reference temperature T*/T_inf = {est['t_star_over_t']:.5f}, Cf sqrt(Re_x) changes by the factor {est['cf_factor']:.5f} ({100.0 * (est['cf_factor'] - 1.0):+.3f} %, i.e. {cf_bl * (est['cf_factor'] - 1.0):+.3e} on Cf = {cf_bl:.5e}); Howarth-Dorodnitsyn with Crocco-Busemann temperature (C = 1, recovery factor 1): delta* x {est['delta_star_factor']:.5f}, largest change of u/U at a fixed eta {est['profile_shift']:.2e}. Observed: Cf at x = 0.5 on the finest grid is {cf_fine:.6e}, {100.0 * (cf_fine - cf_bl) / cf_bl:+.3f} % from Blasius.",
         f"Outer flow: the largest |p/p_inf - 1| along the top boundary over the {len(LEVELS)} runs is {top_p:.1e} and the largest |u/U - 1| is {top_u:.1e}; the collector refuses a run above {TOP_TOLERANCE:g}.",
     ]
@@ -812,7 +848,7 @@ def header_lines(results: dict, est: dict, variants: dict | None = None) -> list
     lines += [
         "The only edit to the layer0_config output is OUTPUT_FILES= ( RESTART_ASCII, SURFACE_CSV, SURFACE_PARAVIEW_ASCII ) in place of RESTART, so the solution can be read as text and the skin friction as VTK; the numerics are asserted identical to the golden's.",
         f"ITER = {ITERATIONS} (a per-case budget, not a numerics key); CONV_RESIDUAL_MINVAL = -14 on rms[Rho] stops a run earlier. Every run records Avg_Massflow(inlet) and Avg_Massflow(outlet); they are not analysed here.",
-        f"Profile comparison: eta = y sqrt(Re_unit / x) at the column x = 0.5, 0 <= eta <= {ETA_CMP:g}; delta_star_eta = int (1 - u/U) d eta, theta_eta = int u/U (1 - u/U) d eta, trapezoid rule on the nodes with the last interval clipped at eta = {ETA_CMP:g}; the exact value is the same integral of the Blasius profile with the same truncation (1.7208 and 0.6641 to infinity). diag_profile_max_dev is max |u/U - f'| over the nodes, diag_profile_rms_dev sqrt(int (u/U - f')^2 d eta / {ETA_CMP:g}); their exact value is 0. The GCI scalars are cf_x0.5, delta_star_eta and theta_eta.",
+        f"Profile comparison: eta = y sqrt(Re_unit / x) at the column x = 0.5, 0 <= eta <= {ETA_CMP:g}; delta_star_eta = int (1 - u/U) d eta, theta_eta = int u/U (1 - u/U) d eta, trapezoid rule on the nodes with the last interval clipped at eta = {ETA_CMP:g}; the exact value is the same integral of the Blasius profile with the same truncation (1.7208 and 0.6641 to infinity). diag_profile_max_dev is max |u/U - f'| over the nodes, diag_profile_rms_dev sqrt(int (u/U - f')^2 d eta / {ETA_CMP:g}); their exact value is 0. The outer flow at eta = {ETA_CMP:g} is not the free stream (diag_edge_u_ratio, {_trio(results, 'diag_edge_u_ratio', '.4f')} on {names}, the same on every grid), and the integrals of u/U over the layer carry that excess. The *_ue rows scale the column by its own edge velocity u_e = u/U at eta = 8 (u/u_e against f'(eta sqrt(u_e)), the similarity solution under an edge velocity u_e) and so remove that part: on the finest grid delta_star_eta goes from {_val(results, LEVELS[-1], 'delta_star_eta'):.4f} to {_val(results, LEVELS[-1], 'delta_star_eta_ue'):.4f} and theta_eta from {_val(results, LEVELS[-1], 'theta_eta'):.4f} to {_val(results, LEVELS[-1], 'theta_eta_ue'):.4f} (Blasius {exact.blasius_thicknesses()[0]:.4f} and {exact.blasius_thicknesses()[1]:.4f}). The GCI scalars are cf_x0.5, delta_star_eta, theta_eta, delta_star_eta_ue and theta_eta_ue.",
         "Rows named diag_ are not compared quantities and are not in layer0_gci.csv. diag_cf_resqrt_x*: Cf sqrt(Re_x) at the plate nodes x = 0.25, 0.5, 0.75, 1 (exact 0.664). diag_wall_cp_x0.5, diag_wall_dcp_dx_x0.5, diag_column_p_dev, diag_edge_u_ratio: Blasius assumes zero pressure gradient and a uniform outer flow, these show how far the CFD flow is from it. diag_points_in_bl99, diag_first_node_*: resolution at x = 0.5. diag_le_*: the leading-edge node and its neighbours (Cp = (p/p_inf - 1) / (gamma M^2 / 2)).",
         "difference = cfd - exact; difference_pct = 100 (cfd - exact) / exact, empty where there is no exact value or it is 0.",
         "nodes: nodes of the grid; level: nodes in each direction.",
@@ -863,11 +899,12 @@ def gci_header_lines(base_text: str, rows: list[dict[str, str]]) -> list[str]:
 
 
 def strip_plate(text: str) -> str:
-    """The text without the plate rows and header lines: Task 10's bytes."""
-    cut = text.find("\n" + PLATE_ROW)
-    if cut >= 0:
-        text = text[:cut + 1]
-    return "\n".join(ln for ln in text.split("\n") if not ln.startswith(PLATE_HEADER))
+    """The text without the plate rows and header lines: Task 10's bytes.
+
+    A record is one line (no field of layer0_gci.csv contains a newline; tests/test_layer0_plate.py checks it), so the
+    plate rows are the lines that start with PLATE_ROW; rows another task appended after them stay.
+    """
+    return "\n".join(ln for ln in text.split("\n") if not ln.startswith((PLATE_HEADER, PLATE_ROW)))
 
 
 def merge_gci(base_text: str, rows: list[dict[str, str]]) -> str:

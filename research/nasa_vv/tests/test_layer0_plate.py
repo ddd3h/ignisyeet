@@ -2,6 +2,7 @@
 """The parts of the laminar plate driver that need no SU2 run."""
 import csv
 import hashlib
+import io
 import math
 
 import numpy as np
@@ -185,10 +186,43 @@ def test_the_committed_gci_file_keeps_the_other_rows_and_carries_the_plate_rows_
     assert hashlib.sha256(other.encode()).hexdigest()[:16] == TASK10_SHA
     assert P.merge_gci(text, [r for r in P.parse_gci_rows(text) if r["condition"] == P.CONDITION]) == text
     plate = [r for r in P.parse_gci_rows(text) if r["condition"] == P.CONDITION]
-    assert [r["quantity"] for r in plate] == ["cf_x0.5", "delta_star_eta", "theta_eta"]
+    assert [r["quantity"] for r in plate] == ["cf_x0.5", "delta_star_eta", "theta_eta", "delta_star_eta_ue", "theta_eta_ue"]
     for r in plate:
         assert r["gci_bounds_error"] in ("True", "False", "")
         assert "IgnisYeet has no laminar mode" in r["note"]
 
 
 TASK10_SHA = "310776aa0ac0c8f8"   # sha256 of layer0_gci.csv as Task 10 committed it (bcabad4), the first 16 digits
+
+
+def test_edge_scaling_is_the_identity_in_a_uniform_outer_flow_and_removes_a_uniform_excess():
+    ref = P.blasius_reference()
+    eta = np.array(ref["eta"][::40])
+    fp = np.array(ref["fp"][::40])
+    plain, scaled = P.profile_stats(eta, fp), P.edge_scaled_stats(eta, fp)
+    assert scaled["u_e"] == pytest.approx(1.0, abs=1e-5)
+    assert scaled["delta_star"] == pytest.approx(plain["delta_star"], abs=1e-4)
+    # a similarity profile under an edge velocity u_e: u/U = u_e f'(eta sqrt(u_e)); scaled back it is Blasius again
+    u_e = 1.0036
+    under = u_e * np.interp(eta * math.sqrt(u_e), eta, fp)
+    off = P.profile_stats(eta, under)
+    back = P.edge_scaled_stats(eta, under)
+    assert back["max_dev"] < off["max_dev"] / 5.0
+    assert back["delta_star"] == pytest.approx(ref["delta_star"], abs=3e-4)
+    assert back["theta"] == pytest.approx(ref["theta"], abs=3e-4)
+
+
+def test_plate_rows_are_found_by_their_prefix_so_rows_appended_later_survive():
+    rows = plate_rows(["True", "False"])
+    merged = P.merge_gci(BASE, rows)
+    later = merged + "layer0,later M=1,x,t,h,3,2,1,2,2,1,2,3,1,1,1,1,1,True,note,0.1,True\n"
+    again = P.merge_gci(later, rows)
+    assert "layer0,later M=1" in again and again.count("layer0,plate M=") == 2
+    assert P.merge_gci(again, rows) == again
+
+
+def test_no_record_of_layer0_gci_spans_two_lines():
+    text = (P.RESULTS / "layer0_gci.csv").read_text()
+    physical = [ln for ln in text.split("\n") if ln and not ln.startswith("#")]
+    records = list(csv.reader(io.StringIO("\n".join(physical) + "\n")))   # quoted fields may span lines: one record per line if none does
+    assert len(records) == len(physical)

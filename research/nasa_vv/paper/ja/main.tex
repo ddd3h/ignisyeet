@@ -1,0 +1,934 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Build: make   (latexmk -lualatex; see Makefile)
+\documentclass[twocolumn]{labreport}
+
+% ---------------------------------------------------------------- Japanese typesetting
+% Latin text and mathematics stay in STIX Two as the class sets them; only the
+% Japanese fonts are set here (Mincho for the body, Gothic for bold and headings).
+\usepackage[match]{luatexja-fontspec}
+\setmainjfont{HaranoAjiMincho}[Extension=.otf, UprightFont=*-Regular,
+  ItalicFont=*-Regular, BoldFont=HaranoAjiGothic-Medium, BoldItalicFont=HaranoAjiGothic-Medium]
+\setsansjfont{HaranoAjiGothic}[Extension=.otf, UprightFont=*-Medium,
+  ItalicFont=*-Medium, BoldFont=*-Bold, BoldItalicFont=*-Bold]
+
+% labels of the class in Japanese
+\DeclareCaptionLabelSeparator{jgap}{\hspace{1em}}
+\captionsetup{labelsep=jgap}
+\captionsetup[table]{name=表}
+\captionsetup[figure]{name=図}
+\renewcommand\tablename{表}
+\renewcommand\figurename{図}
+\renewcommand\bibsection{\section*{参考文献}}
+\makeatletter
+\patchcmd{\lr@front}{\lrtrack{2}{10}{ABSTRACT}}{\lrtrack{2}{10}{要旨}}{}%
+  {\errmessage{patching the abstract label failed}}
+\patchcmd{\lr@front}{\lrtrack{1}{8.8}{KEYWORDS}}{\lrtrack{1}{8.8}{キーワード}}{}%
+  {\errmessage{patching the keywords label failed}}
+\makeatother
+
+% Japanese needs more leading than the class's 10/12.3pt; the body, captions and the
+% abstract box are set at a 14.5pt (captions 12.5pt) baseline. Japanese has no italic, so
+% emphasis in the body is bold (Gothic) and the italic subsubsection headings are set upright.
+\renewcommand\normalsize{\fontsize{10}{14.5}\selectfont
+  \abovedisplayskip 5.75pt plus 1pt minus 1pt \belowdisplayskip 5.75pt plus 1pt minus 1pt
+  \abovedisplayshortskip 6pt plus 1pt \belowdisplayshortskip 6pt plus 1pt}
+\normalsize
+\renewcommand\footnotesize{\fontsize{8.8}{12.5}\selectfont}
+\makeatletter
+\patchcmd{\lr@front}{\fontsize{10}{12.4}}{\fontsize{10}{14.5}}{}%
+  {\errmessage{patching the abstract leading failed}}
+\makeatother
+\titleformat{\subsubsection}{\normalfont}{\thesubsubsection}{1em}{#1}
+
+% wide tables and figures float to the top of the following pages
+\renewcommand\topfraction{0.85}
+\renewcommand\bottomfraction{0.5}
+\renewcommand\textfraction{0.1}
+\renewcommand\floatpagefraction{0.8}
+\renewcommand\dbltopfraction{0.85}
+\renewcommand\dblfloatpagefraction{0.8}
+\setcounter{dbltopnumber}{2}
+
+\newcommand{\Cp}{C_p}
+\newcommand{\CNa}{C_{N\alpha}}
+\newcommand{\CXzero}{C_{X0}}
+\newcommand{\pinf}{p_\infty}
+\newcommand{\fine}{\mathrm{fine}}
+\newcommand{\tick}{はい}
+\newcommand{\cross}{\textbf{いいえ}}
+
+\title{NASA WIND/NPARCの手順による\\IgnisYeet空力計算パイプラインの\\検証と妥当性確認}
+\organization{IgnisYeet}
+\logo{\includegraphics[height=18pt]{ignisyeet-logo.pdf}}
+\author{西濱 大将}
+\reporturl{https://github.com/ddd3h/ignisyeet}
+\shorttitle{IgnisYeet 空力計算パイプラインの検証と妥当性確認}
+\kind{研究論文}
+\date{2026年10月}
+\reportid{IY-RP-2026-01}
+\notice{\textcopyright\ 2026 西濱 大将 (NISHIHAMA Daisuke).}
+\keywords{検証と妥当性確認, 格子収束指標, SU2, ロケット空力, 不確かさの定量化}
+
+\begin{abstract}
+IgnisYeetはロケットシミュレータであり、その空力ツールはオープンソースの流れのソルバSU2を動かす。
+本研究は、NASA WIND/NPARCのチュートリアル（AIAA G-077-1998）の検証と妥当性確認の手順を、三つの層でこのツールに適用する。
+ソルバ単体を厳密解と比べる層0、同じ円すいをCAD形状から力係数までの製品の鎖の全体で解く層1、チュートリアルの六つの段階をサンプル機体とBasic Finnerに適用し、自由飛翔の実測とも比べる層2である。
+四つの厳密解に対し、製品が書く数値設定で動かしたSU2は、主たる設定では壁面圧力と衝撃波角を0.2~\%以内で再現するが、Mach数から求める壁面の量には0.8から3.6~\%の誤差が残り、その誤差はゆっくりとしか減らないか、まったく減らない。
+格子収束指標（GCI）は、非粘性の7行のうち5行、層流平板の5行のうち2行で真の離散化誤差を押さえ、平板の2行は誤差の符号が変わる点でだけ押さえる。
+観測次数も、窓の間での次数の安定性も、二つの失敗の両方は検出しないので、厳密解なしに求めたGCIは、次数がもっともらしく見えても真の誤差を過小評価しうる。
+製品が作る格子は、メッシャが最大セル寸法を固定するため相似に細かくできず、Mach~2.375のBasic Finnerの4段の研究はGCIを確立しない。
+NPARCアーカイブの半頂角10$^\circ$の円すいの参照表は内部で整合せず、表面Mach数を除くすべての欄で独立な表と合わない。
+製品の鎖を通した同じ円すいは最細格子で受け入れられる解に至らなかったので、層1にはGCIがなく、3次元非構造メッシュ生成を含むパイプラインの誤差も示さない。
+サンプル機体で使えないとされなかった唯一のGCIはMach~2の法線力傾斜のもので、格子寸法の定義によって10.6~\%または16.3~\%である（後者は漸近域の外として旗を立てる）。
+Mach~1.832のRANSのBasic FinnerにはGCIが得られず、妥当性確認の比較にはRANSの帯がないので、数値の帯と実測の帯が重なるかは判断できない。
+Euler対RANSの七つの条件は、どれも判定できない。
+SU2を直接動かした乱流平板では、Menter SSTはSpalart--Allmarasと表面摩擦で$-0.79$~\%違い、これはSSTのGCI 1.14~\%の内にある（Spalart--AllmarasのGCIには旗が立つ）。抗力の差は$-0.46$~\%で、格子の不確かさと分けられない。
+% source: results/layer0.csv, results/layer0_gci.csv, results/gci_existing.csv, results/cone10_reference_check.csv (layer 0, GCI-bound and reference-table numbers in this abstract)
+% source: results/layer1_cone.csv, results/layer1_gci.csv, results/layer0_vs_layer1.csv (layer 1)
+% source: results/gci_sample_euler.csv, results/basic_finner_rans_levels.csv, results/gci_basic_finner_rans.csv, results/model_uncertainty.csv, results/turbulence_models.csv (layer 2 and model uncertainty)
+\end{abstract}
+
+\begin{document}
+\maketitle
+
+%=====================================================================
+\section{はじめに}
+\label{sec:intro}
+
+流れのソルバが返す空力係数は、不確かさを伴わない限り、信頼性の示されていない数値である。
+NASA GlennのWIND/NPARCプロジェクトが公開する検証と妥当性確認の手順\citep{nparc_tutorial}は、AIAAのガイド\citep{aiaa1998}に沿い、作業を六つの段階に分ける。
+プログラムの点検、反復収束、一貫性、空間（格子）収束、時間収束、そしてより精度の高い解または実測との比較である。
+中心となる量は、\citet{roache1998}の格子収束指標を\citet{celik2008}の形で用いたものである。
+不確かさの帯のない比較は、どちらの側が誤っているかを言えない。
+
+IgnisYeetはロケットシミュレータである。
+その空力ツールは、ロケットのCADの記述から非構造の体積メッシュを作り、SU2 \citep{economon2016}を実行し、力とモーメントの係数を飛翔シミュレータに返す。
+本論文は、このツールにチュートリアルを適用する。
+成果は、ツールが返す係数に付ける数値不確かさの帯と、その帯をどこで求められ、どこで求められないかの記述である。
+
+\paragraph{用語}
+\textbf{検証}（verification）は、式を正しく解いているかを問い、結果を厳密解または高精度の解と比べる。
+\textbf{相互比較}（cross-comparison）は、ある手法やプログラムを別のものと比べる。両者が違うか合うかは示すが、どちらが現実に近いかは示さない。
+\textbf{妥当性確認}（validation）は、モデルが実機に近いかを問い、結果を実測と比べる。
+妥当性確認にあたるのは自由飛翔の実測との比較（\ref{sec:validation}節）だけであり、層0と層1は検証である。
+
+%=====================================================================
+\section{方法}
+\label{sec:method}
+
+\subsection{三つの層}
+\label{sec:layers}
+
+% source: results/layer0.csv (header: SU2 version)
+本研究は三つの層からなる（表\ref{tab:layers}）。
+層0と層1は、同じ厳密な問題、すなわち超音速流中の半頂角10$^\circ$の円すいを、異なる経路で解く。層0はSU2~8.3.0を直接実行し、層1は製品の鎖の全体を実行する。
+どちらも同じTaylor--Maccollの解と比べ、両者の誤差の差が、ソルバの周りの鎖に起因する部分となる。
+製品が受け付けるのはロケットの形状だけなので、層0は製品のパイプラインを動かさず、パイプラインを検証したという言明は層0には基づかない。
+層0は2次元と軸対称の構造格子を使い、層1と層2は3次元の非構造格子の半モデルを使う。
+したがって層0と層1の差は3次元非構造メッシュ生成の効果を含み、メッシュ生成の誤差だけとしてではなく、\textbf{3次元非構造メッシュ生成を含むパイプラインの誤差}として報告する。
+
+\begin{table*}[t]
+\centering
+\caption{本研究の三つの層。チュートリアルの第1から第6段階は、それぞれ\ref{sec:step1}、\ref{sec:iter}、\ref{sec:consistency}、\ref{sec:grid}、\ref{sec:temporal}、\ref{sec:model}--\ref{sec:validation}節で扱う。}
+\label{tab:layers}
+\begin{tabular}{@{}c>{\raggedright\arraybackslash}p{5.6cm}>{\raggedright\arraybackslash}p{4.2cm}>{\raggedright\arraybackslash}p{5.2cm}@{}}
+\toprule
+層 & 実行するもの & 確かめる対象 & 比較の種類 \\
+\midrule
+0 & SU2 8.3.0を製品の数値設定で直接実行。2次元と軸対称の構造格子
+  & ソルバと数値設定。厳密解と比べる & 検証 \\
+1 & 製品の鎖（CADからメッシュ、SU2、係数まで）で層0の円すいを解く
+  & 鎖の全体。同じ厳密解と比べる & 検証 \\
+2 & 製品でサンプル機体とBasic Finnerを解く
+  & 実用条件での誤差。第6段階では自由飛翔のデータと比べる
+  & 検証（第1--5段階）、相互比較（Euler対RANS）、妥当性確認（第6段階） \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+第5段階の時間収束は、製品の定常のCFDには当てはまらない。その代わりに、飛翔シミュレータ自身の時間積分器を刻み幅の細分で調べる（\ref{sec:temporal}節）。
+第6段階は、複数の乱流モデルとの比較を求める。
+製品が持つのは非粘性のEulerと、Spalart--Allmarasモデル\citep{spalart1992}によるReynolds平均Navier--Stokes（RANS）だけなので、この部分には一部しか答えられない（\ref{sec:model}節）。
+
+\subsection{格子収束指標と入口の条件}
+\label{sec:gci}
+
+代表格子寸法$h_1<h_2<h_3$（細かい順）の格子上の三つの解$f_1,f_2,f_3$について、細分比を$r_{21}=h_2/h_1$、$r_{32}=h_3/h_2$とし、$\varepsilon_{21}=f_2-f_1$、$\varepsilon_{32}=f_3-f_2$とおく。
+細分比$r$が一定のとき、チュートリアルは観測次数$p=\ln\!\big[(f_3-f_2)/(f_2-f_1)\big]/\ln r$、外挿値$f_{h0}=f_1+(f_1-f_2)/(r^p-1)$、$\mathrm{GCI}=F_s\,|\varepsilon|/(r^p-1)$を与える。
+細分比が変わるときは\citet{celik2008}の手順を使う。$s=\operatorname{sign}(\varepsilon_{32}/\varepsilon_{21})$として
+\begin{equation}
+\begin{aligned}
+p&=\frac{1}{\ln r_{21}}\Big|\ln\Big|\frac{\varepsilon_{32}}{\varepsilon_{21}}\Big|+q(p)\Big|,\\
+q(p)&=\ln\frac{r_{21}^{p}-s}{r_{32}^{p}-s}
+\end{aligned}
+\end{equation}
+を不動点反復で解き、$f_\mathrm{ext}=(r_{21}^{p}f_1-f_2)/(r_{21}^{p}-1)$、$\mathrm{GCI}_\fine=F_s\,e_a/(r_{21}^{p}-1)$、$e_a=|(f_1-f_2)/f_1|$とする。
+安全率$F_s$は、3段の格子で1.25、2段で3である。
+漸近域の検査は$r_{21}^{p}\,\mathrm{GCI}_{21}/\mathrm{GCI}_{32}$で、漸近域では1に近い。
+格子寸法は、3次元の格子では節点数$N$から$h=N^{-1/3}$、各方向にちょうど2倍ずつ細かくした層0の2次元の格子ではセル数から$h=N_\mathrm{cells}^{-1/2}$とする。
+
+% source: results/gci_existing.csv, results/layer0_gci.csv (headers: the gate, the order flags and the oscillatory rule)
+数値を報告するかどうかは、次の三つの規則で決める。
+\begin{itemize}
+\item 格子の段は、ソルバが収束と報告したとき、またはソルバが判定を出さない場合に残差が3桁以上落ちたときに研究に入る。ソルバが未収束と報告した段と、どちらの証拠もない段は拒否し、拒否には理由を書く。
+\item 計算した次数が4（形式的な2次の2倍）を超えるか0.5（その1/4）を下回るときは旗を立てる。その3段は漸近域の外にあり、GCIは信頼できない。
+\item 差が符号を変える3段（振動収束、$\varepsilon_{32}/\varepsilon_{21}<0$）には名前を付け、不確かさの帯を\textbf{付けない}。
+  \citet{celik2008}はこの場合にも値を計算するが、本研究は計算せず、報告もしない。
+\end{itemize}
+細分が幾何学的に相似でなく、$h$の定義を一つに決める根拠がないときは、擁護できるすべての定義でGCIを求め、両方の結果を示す（\ref{sec:grid}節）。
+
+\paragraph{手順の受け入れ試験}
+% source: tests/test_gci.py, tests/data/prD.out (acceptance tests of the GCI procedure; not a results CSV)
+実装は、チュートリアルの例題\citep{nparc_spatial}（3段、$r=2$）を再現する。チュートリアル自身のプログラムが印刷した出力、すなわち次数、外挿値、二つのGCI、漸近域の比に、相対$10^{-4}$で合う。
+そのプログラムは単精度なので、5桁目が倍精度の計算と食い違う。試験が併せて固定している倍精度の値は本研究自身の数値であり、回帰の検査であって、独立に公表された参照ではない。
+この例題は$r_{21}=r_{32}$なので、細分比が変わる経路は、細分比の等しくない\citet{celik2008}の表1の単調な2列で、その表が印刷する精度まで試験する。
+その表の1つの欄、2列目の外挿の相対誤差は、同じ表が印刷する他の値から計算し直した値と異なる値で印刷されており、この欄は試験に使わない。
+表の3列目は振動収束であり、実装は表の値を再現せず、上の規則で拒否する。
+
+\subsection{厳密解と層0の設定}
+\label{sec:exact}
+\label{sec:l0setup}
+
+厳密解は書き写さず、計算する。弱解の斜め衝撃波の関係式、衝撃波から表面まで積分し衝撃波角を射撃法で求めるTaylor--Maccollの円すいの方程式、Prandtl--Meyer関数、Blasiusの相似解\citep{blasius1908,schlichting2017}であり、いずれも$\gamma=1.4$の理想気体である。
+斜め衝撃波とPrandtl--Meyerの結果は、NPARCアーカイブのページの表の値\citep{nparc_wedge,nparc_pm15}と、その表の精度の範囲で合う。
+円すいの解は\ref{sec:cone10}節で独立な表と照合する。
+製品のドキュメントにあるTaylor--Maccollの計算は、衝撃波角を固定した上限で挟むが、剥離に近い大きな円すい角では、この上限が円すい角の曲線の極大の反対側にある。ここで使う10$^\circ$の円すいは、その範囲から遠い。
+% source: no results CSV (comparison of the two solvers; not used for any number in this paper)
+% source: results/layer0.csv (header: exact references and conditions)
+算例はNPARCアーカイブ\citep{nparc_archive}に従い、Mach~2.5の15$^\circ$のくさびと15$^\circ$の膨張、Mach~2.35の半頂角10$^\circ$の円すい、層流平板とする。
+平板は、アーカイブの算例のMach~0.1ではなくMach~0.2で解く。製品の対流項のスキームには低Mach数の前処理がないので、Blasiusとの差が低Mach数の離散化誤差と混ざらないようにするためである。
+Blasiusの解は非圧縮なので、圧縮性の補正を見積もって併記する。
+
+% source: results/layer0.csv (header), results/layer0_gci.csv (header), results/layer0_plate.csv (header)
+層0のEulerの計算の数値設定（対流項の離散化、再構成、制限関数、勾配の求め方、CFLの制御、線型ソルバ、打ち切りの条件）は、製品自身がEulerの算例のために書いた設定ファイルから写し、それらが製品のものと同一であることを試験で確かめる。
+許す差は、境界の割り当てと、円すいの軸対称の切り替えだけである。
+気体のモデルは製品のものである。
+製品には層流のモードがないので、層流平板は、乱流モデルなしのNavier--Stokes方程式を、製品が書いたRANSの設定の流れの数値設定と気体のモデルで解く。
+したがってこれは、乱流モデルを外した製品のRANSの離散化を確かめるものであり、製品自身が書く設定ではない。
+製品はRANSの算例を1次精度の段階で始めて2次精度で再開するが、層0の平板は2次精度で冷たい状態から始めた。
+定常解がこの経路に依存しないことは、試験していない。
+
+格子は物体適合の構造格子で、$65\times49$、$129\times97$、$257\times193$節点（平板は$85\times49$、$169\times97$、$337\times193$）の3段である。粗い格子の節点がすべて細かい格子の節点になる入れ子なので、$r=2$がちょうど成り立つ。
+超音速の算例では入口、出口、上の境界を遠方境界とし、波はすべて出口から出る。上の境界に沿って、12回の計算のそれぞれで$|p/\pinf-1|\le7.3\times10^{-10}$である。
+計算は、密度の残差が$10^{-14}$になるか、反復回数の上限に達するまで回す。
+以下で収束の尺度として示すのは、密度の残差の$\log_{10}$の最大値と最終値の差（残差の落ち幅）である。
+
+\subsection{層1と層2}
+\label{sec:l12setup}
+
+% source: results/layer1_cone.csv (header and level columns)
+層1は、層0の円すい（Mach~2.35、迎え角0、Euler）を10$^\circ$の円すい-円筒として、製品を通して3次元非構造格子の半モデルで解く。
+物体は底面半径0.05~m、円すいの長さ0.2836~mで、0.5836~mまでの円筒と、その後ろの製品のEuler用の尾部整形が続く。層0は矩形の領域の中の裸の円すいで、円筒も尾部もない。
+3段の壁のセル寸法は3.92、2.80、2.00~mm（比1.4）である。物体にフィンはないので、壁の寸法が唯一の細分の設定である。
+節点数は28887、45258、75796（セル数132328、209052、350868）で、節点数は1.57倍と1.67倍にしか増えず、相似な細分の$1.4^3=2.74$倍に届かない。したがって、この格子も相似ではない。
+製品は迎え角を一つだけでは受け付けないので、各段で$4^\circ$も解くが、使うのは迎え角0の解だけで、収束もその解だけで判断する。
+すべての計算は製品の一つのビルド（本研究の基準のコミット）を使い、一つのノードで、3段それぞれ8、10、14ランクで走らせた。ランク数は領域分割も決めるが、細かい格子の挙動がそれに依存するかどうかは試験していない。
+表面圧力係数$\Cp=(p-\pinf)/(\tfrac12\rho_\infty V_\infty^2)$を、円すいの半径の1~\%以内にある壁の節点について、$x/L_\mathrm{cone}$の0.2から0.9まで幅0.1の区間で平均し、Taylor--Maccollの値0.09673と比べる。
+$0.4\le x/L_\mathrm{cone}\le0.9$の窓が層0の壁の窓に対応する。0.2から0.9の平均と、先端に最も近い区間には、層0に対応する量がない。
+層1の一様流は製品の発射高度の状態（20~m、$p=101085$~Pa、$T=288.02$~K）、層0は$p=101325$~Pa、$T=288.15$~Kで、Mach数と$\gamma$は同じである。
+
+% source: results/gci_existing.csv (Basic Finner Euler conditions and levels), results/consistency.csv (sample-rocket Mach numbers)
+層2は、サンプル機体（Euler、Mach~0.3、0.8、2.0、迎え角0$^\circ$と4$^\circ$）と、4枚の矩形のフィンを持つ円すい-円筒のBasic Finnerを扱う。
+Basic Finnerは、Mach~2.375のEuler（迎え角0$^\circ$、2$^\circ$、4$^\circ$。既存の4段の格子）と、Mach~1.832のRANS（Spalart--Allmaras、迎え角0$^\circ$と2$^\circ$）で解く。
+RANSにMach~1.832を選んだのは、製品のRANSが収束し、かつ自由飛翔のデータがある唯一の点だからである。Mach~2.375では製品のRANSはリミットサイクルで停滞し、Mach~3.147では発散する。
+% source: the product's validation documentation (not a results CSV)
+Basic Finnerの法線力傾斜$\CNa$は、既存の慣例に従って$C_N(2^\circ)/2^\circ$とする。
+% source: results/sample_euler_levels.csv, results/gci_sample_euler.csv (headers)
+サンプル機体のEulerの族は、壁とフィンのセル寸法が3.92/1.96、2.80/1.40、2.00/1.00~mm、節点数が98151、170830、302918（セル数458640、798534、1416454）である。セル数は1.74倍と1.77倍に増え、相似な細分の$1.4^3=2.74$倍に届かない。
+密度の残差は、迎え角0で3.2から10.9桁、$4^\circ$で6.6から8.7桁落ちた。
+メッシュは対称面で鏡映しているので、$-4^\circ$は$+4^\circ$の厳密な鏡像であり、解かない。$\CNa=C_N(4^\circ)/4^\circ$は$+4^\circ$の解から作り、$x_{cp}$は組み合わせた行のものである。
+鏡映なしで作った中の格子で$+4^\circ$と$-4^\circ$の両方を解いたものは、反対称性の検査だけに使い、族には入れない。
+% source: results/basic_finner_rans_levels.csv (header and level columns)
+Basic FinnerのRANSの族は、壁の寸法が2.1、1.5、1.07~mmでフィンの寸法は壁と同じ、節点数が328364、533985、926390（セル数813498、1265515、2145093）で、セル数の増え方は1.56倍と1.70倍（相似なら2.74倍）である。
+迎え角$0^\circ$と$2^\circ$を使い（$-2^\circ$も鏡映の設定で解くが使わない）、$\CNa=C_N(2^\circ)/2^\circ$とする。
+当初計画した、壁の寸法より小さい（その約0.22倍の）フィンの寸法は使えない。RANSとCADの表面の組み合わせでは、製品がメッシュ生成のエラーで止まる（メッシャはメモリの破損を報せる「\texttt{corrupted size vs.\ prev\_size}」を出して中止する）。試したすべてのビルドで同じだった（粗と中の格子。細かい格子は試していない）。原因が製品の入力かgmshかは切り分けておらず、製品は変更していない。
+中の格子は既存のRANSのBasic Finnerの計算と壁とフィンの寸法が同じだが、メッシュは異なる（節点が5.3~\%、セルが3.4~\%少ない）。したがって、その計算に最も近い段であり、その計算そのものではない。
+
+\paragraph{製品が作る格子は相似にならない}
+% source: results/gci_existing.csv (header and n1..n3 columns of basic_finner_mesh_check)
+製品の二つのセル寸法の設定を一緒に細かくしても、細かくなるのは壁の近くだけである。
+メッシャは体積メッシュを、壁のセル寸法から、遠方境界の半径の1/10である最大セル寸法まで変化させる。この最大寸法は利用者の設定ではなく、壁の寸法とともに変わらない。これを変えるには遠方境界の半径を変える必要があり、それは解く問題を変える。
+既存のBasic FinnerのEulerの4段では、壁とフィンの寸法を段ごとに1.4分の1にしているが、セル数は段ごとに1.70、1.77、1.83倍にしか増えず、相似な細分の$1.4^3=2.74$倍に届かない。
+このとき、$h\propto N^{-1/3}$も$h\propto$壁寸法も、実効的な格子寸法ではない。
+そこで、このような族のGCIはすべて両方の定義で求め、二つの差を不確かさの一部として扱う。二つの定義は問いを挟むものであり、その差は真のGCIの上限ではない。
+
+%=====================================================================
+\section{検証：層0と層1}
+\label{sec:verification}
+
+\subsection{自分自身と食い違う参照表}
+\label{sec:cone10}
+
+NPARCアーカイブは、Mach~2.35の半頂角10$^\circ$の円すいを載せている\citep{nparc_cone10}。
+その表の表面Mach数は、本研究で計算したTaylor--Maccollの値と約$3\times10^{-3}$~\%で合うが、衝撃波角と、圧力、温度、密度の比は合わない（表\ref{tab:cone10}）。
+アーカイブの衝撃波角は、同じ表の表面Mach数とも、同じ表が印刷する比とも整合しない。
+そこで、アーカイブの衝撃波角と比は目標値に使わず、この円すいでは表面Mach数と表面圧力係数だけを比べる。
+
+\begin{table}[t]
+\centering
+\caption{NPARCのcone10の表と、本研究で計算したTaylor--Maccoll（T--M）の解（半頂角10$^\circ$、Mach~2.35、$\gamma=1.4$）。差は（T--M $-$ NPARC）/NPARCである。}
+\label{tab:cone10}
+% source: results/cone10_reference_check.csv
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+量 & NPARC & T--M & 差（\%） \\
+\midrule
+衝撃波角$\beta$（度） & 27.1843 & 26.7367 & $-1.65$ \\
+表面Mach数 & 2.1469 & 2.1468 & $-0.003$ \\
+$p/\pinf$ & 1.4234 & 1.3739 & $-3.48$ \\
+$T/T_\infty$ & 1.1063 & 1.0951 & $-1.01$ \\
+$\rho/\rho_\infty$ & 1.2867 & 1.2546 & $-2.49$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+どちらの衝撃波角が正しいかを決めるため、さらに三つの資料を集めた。
+% source: results/cone_shock_angle_sources.csv
+円すいの数表\citep{sims1964}をMach~2.35に補間すると、$26.7366^\circ\pm0.02^\circ$を得る。
+$\gamma=1.405$で描かれた\citet{ames1953}の図を走査画像から読むと$26.80^\circ\pm0.15^\circ$で、同じ方法を数表に当てはめたときに現れる約$+0.07^\circ$の読みの偏りは補正していない。
+製品の中にある別のTaylor--Maccollの実装は$26.7367^\circ$を与える。
+$27.18^\circ$を支持する資料はない。
+数表と図は、データでも実装でも、本研究のコードとアーカイブのページから独立している。ただし同じ理論に基づき、同じ理想気体について同じTaylor--Maccollの方程式を解いたものである。
+したがって、これらが試験するのは本研究の実装とアーカイブの数値であり、理論ではない。
+製品自身の実装は本研究の実装から部分的にしか独立しておらず、移植や数値の誤りは明らかにできても、共通する概念上の誤りは明らかにできない。
+示した不確かさは補間と読み取りの誤差の半幅であり、統計的な区間ではない。
+
+\subsection{くさび、円すい、膨張}
+\label{sec:l0results}
+
+% source: results/layer0.csv, results/layer0_gci.csv
+層0のEulerの12回の計算は、すべて残差の目標に達した（密度の残差の落ち幅12.7から13.9桁、反復132から230回）。
+表\ref{tab:l0}に、最細格子の厳密解に対する誤差、観測次数、GCI、そしてGCIが最細格子の真の誤差を押さえたかどうかを示す。
+
+\begin{table*}[t]
+\centering
+\caption{層0のEulerの結果。最細格子（$257\times193$節点）の厳密解に対する誤差と、3段の格子の格子収束指標。「押さえたか」は$\mathrm{GCI}_\fine\ge|\text{誤差}|$かどうかを示す。$^\dagger$を付けた量は次数が0.5を下回り、そのGCIには信頼できないとして旗を立てる。壁面の量は、壁の節点の窓での平均である。}
+\label{tab:l0}
+% source: results/layer0_gci.csv
+\begin{tabular}{@{}llrrrrrc@{}}
+\toprule
+算例 & 量 & 厳密解 & 最細格子 & 誤差（\%） & $p$ & $\mathrm{GCI}_\fine$（\%） & 押さえたか \\
+\midrule
+くさび、Mach~2.5 & 壁面$p/\pinf$ & 2.4675 & 2.4676 & 0.0059 & 0.82 & 0.011 & \tick \\
+ & 衝撃波角（度） & 36.945 & 36.959 & 0.037 & 0.68 & 0.099 & \tick \\
+円すい、Mach~2.35 & 壁面$\Cp$ & 0.09673 & 0.09655 & $-0.188$ & 3.39 & 0.059 & \cross \\
+ & 壁面Mach数 & 2.1468 & 2.1297 & $-0.80$ & 0.39$^\dagger$ & 2.48 & \tick \\
+円すい（軸を対称境界） & 壁面$\Cp$ & 0.09673 & 0.09601 & $-0.75$ & 1.49 & 0.71 & \cross \\
+ & 壁面Mach数 & 2.1468 & 2.0828 & $-2.98$ & 0.77 & 4.50 & \tick \\
+膨張、Mach~2.5 & 壁面$p/\pinf$ & 0.32743 & 0.32746 & 0.0097 & 0.46$^\dagger$ & 0.077 & \tick \\
+ & 壁面Mach数 & 3.2368 & 3.1218 & $-3.55$ & なし & なし & -- \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+この表は二つの点に注意して読む必要がある。
+第一に、観測次数は0.39から3.39にわたる。形式的には2次のスキームであり、これらの値はスキームの次数を測ったものではない。
+壁の窓は先端や角の過渡を含み、衝撃波角は捕獲されて広がった衝撃波から読む。結果ファイルの注記は、低い次数を、滑らかな場の離散化誤差よりもこれらの原因と整合するものとして記している。
+くさびの壁面圧力の次数は四つの移動窓で安定している（0.84から1.04）が、膨張の壁面圧力の次数は安定していない（0.65から2.54）。
+第二に、膨張の壁面Mach数は収束しない。3段の格子は3.1214、3.1216、3.1218を与え、厳密解3.2368に対する誤差は$-3.57$、$-3.56$、$-3.55$~\%で、細分でほとんど変わらない。計算そのものは収束している（最細格子で13.1桁）が、次数もGCIも存在しない。
+GCIは格子とともに縮む離散化誤差についての言明であり、この誤差は縮まない。
+
+\paragraph{壁面のエントロピー}
+% source: results/layer0.csv (diag_entropy_* rows and header)
+三つの算例のいずれでも、壁に沿ったエントロピーは厳密解の値を上回る。一方、壁から10行離れた位置では厳密解の値にあり、角や先端の上流でも厳密である。
+膨張では、壁面のエントロピー比$s/s_\infty$は3段の格子で1.0785、1.0784、1.0783で、約7.8~\%の一定の偏りである。
+くさびでは、壁は3段とも1.058、壁から10行離れた位置は細かい2段で1.030、衝撃波の背後の厳密な値は1.030であり、壁に格子によらない2.7~\%の超過がある。
+円すいでは、超過は格子とともに減る（表面の窓で3.76、1.98、1.06~\%）。
+これは、角、前縁、先端で生じたエントロピーが壁面の流線に沿って運ばれることと整合する。ただし、これは解釈であり、証明ではない。
+膨張の壁面圧力の誤差は0.0097~\%、壁面Mach数の誤差は$-3.55$~\%である。したがって、壁面圧力から得る量には同程度の誤差が現れず、壁面のMach数、密度、温度から取る量にはこの超過が載ると考えられる。
+
+\paragraph{先端の接合点}
+% source: results/layer0.csv (cone and cone_sym_axis rows), results/layer0_gci.csv (header)
+円すいは2通りに解いた。
+一つめは対称軸と円すいの表面を一つの滑り壁の境界とし、二つめは軸を対称境界、円すいの表面を滑り壁とした。
+二つめでは、先端の節点が両方の境界に属し、どの格子でも停滞点になる（Mach~0、$p=2.76\,\pinf$）。一つめでは先端の節点は正則である（Mach~2.23、$p=1.17\,\pinf$）。
+最細格子の誤差は、壁面圧力係数で一つめが$-0.19$~\%、二つめが$-0.75$~\%、壁面Mach数で$-0.80$と$-2.98$~\%である。
+二つの計算を比べると、二つめの誤差の大部分は境界条件の接合点によることが分かる。
+層0の円すいの結果には一つめを採る。
+膨張では、下の境界を角の位置で二つの滑り壁の境界に分けると、角の節点が停滞点になり、密度の残差は20000回の反復の間$-1.5$付近に留まった。
+これらは2次元の構造格子の設定での感度である。
+製品の3次元のメッシュにも境界の接合点（壁と底面）があるが、同じ影響を受けるかどうかは試験していない。
+
+\subsection{GCIは真の誤差を押さえるか}
+\label{sec:gcibound}
+
+% source: results/layer0_gci.csv (true_error_pct, gci_bounds_error; header)
+GCIの役目は、離散化誤差を押さえることである。
+層0は、本研究で厳密な答えが分かる唯一の場所なので、そうなっているかを試験できる。
+GCIを計算した非粘性の7行のうち、5行で押さえ、2行で押さえなかった。押さえなかったのは、円すいの壁面圧力係数（GCI 0.059~\%に対し最細格子の誤差0.188~\%で、真の誤差はGCIの3.2倍）と、軸を対称境界にした円すいの同じ量（0.71~\%に対し0.75~\%）である。
+もう1行、膨張の壁面Mach数には、GCIがない。
+
+「押さえた」ことは、見積もりが締まっていることを意味しない。
+GCIの真の誤差に対する比は、膨張の壁面圧力で約8、円すいの壁面Mach数で3.1、軸を対称境界にした円すいの壁面Mach数で1.5である（表\ref{tab:l0}の値の比）。
+誤差の8倍の上限は上限であって、見積もりではない。
+漸近域の外として旗を立てた行（次数が0.5未満か4超）も、5行の数に含まれる。
+
+実際の問題は、厳密な答えがないとき、すなわち層2の状況で、失敗を見つけられるかどうかである（表\ref{tab:detect}）。
+次数の旗（0.5から4の外）は、二つの失敗のどちらも見逃す。円すいの壁面圧力係数の次数は$p=3.39$だからである。
+四つの移動窓での次数の安定性（互いに0.5以内）は、次数が2.10から4.12にわたる円すいの失敗は捕らえるが、次数が1.36から1.58で安定している軸を対称境界にした円すいの失敗を見逃す。さらに、GCIが誤差を押さえていた膨張の壁面圧力を、不安定（0.65から2.54）として捕らえる。
+したがって、使える検査はどちらも十分ではなく、厳密な答えなしに求めたGCIは、次数がもっともらしく窓が安定して見えても、真の誤差を過小評価しうる。
+
+\begin{table}[t]
+\centering
+\caption{GCIの失敗を厳密な答えなしに見つけられるか。二つの失敗と、対照として押さえた1例を示す。窓の次数は、壁の四つの窓$[0.3,1]$、$[0.4,1]$、$[0.5,1]$、$[0.6,1]$での次数で、「安定」は互いに0.5以内であることを表す。}
+\label{tab:detect}
+% source: results/layer0_gci.csv (order, note, gci_bounds_error)
+\setlength{\tabcolsep}{2.2pt}
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+量 & $p$ & 旗 & 窓の次数 & 安定 & 押さえた \\
+\midrule
+円すい壁面$\Cp$ & 3.39 & なし & 2.10〜4.12 & いいえ & \cross \\
+円すい（対称軸）$\Cp$ & 1.49 & なし & 1.36〜1.58 & はい & \cross \\
+膨張壁面$p/\pinf$ & 0.46 & あり & 0.65〜2.54 & いいえ & \tick \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{層流平板とBlasius解}
+\label{sec:plate}
+
+% source: results/layer0_plate.csv, results/layer0_gci.csv (plate rows)
+Mach~0.2（単位長さあたりの$Re=10^5$）の層流平板を、$84\times48$、$168\times96$、$336\times192$セルの3段の入れ子の格子で解く（\ref{sec:l0setup}節）。
+3段の計算はすべて残差の目標に達し、密度の残差の落ち幅は9.4から10.4桁である。
+表\ref{tab:plate}に、$x=0.5$での表面摩擦係数と、そこでの速度分布の排除厚さと運動量厚さの、Blasius解との差を示す。
+
+\begin{table*}[t]
+\centering
+\caption{Mach~0.2の層流平板。粗、中、細の格子のBlasius解との差（\%）、Richardson外挿値のBlasius解との差、観測次数、GCI。「補正」の量は速度分布自身の縁の速度を使う。この2行は、補正なしの運動量厚さが押さえられないのを見たあとに加えた事後の分析である。また平板の各行は互いに独立ではない（それぞれの厚さが補正の有無で2回ずつ現れる）。}
+\label{tab:plate}
+% source: results/layer0_gci.csv (plate rows), results/layer0_plate.csv
+\begin{tabular}{@{}lrrrrrrl@{}}
+\toprule
+量 & 粗 & 中 & 細 & 外挿値 & $p$ & $\mathrm{GCI}_\fine$（\%） & 押さえたか \\
+\midrule
+$x=0.5$の$C_f$ & $-1.95$ & $-0.71$ & $+0.008$ & $+0.97$ & 0.80 & 1.20 & はい（符号の交差） \\
+$\delta^*$ & $+2.01$ & $+0.37$ & $-0.42$ & $-1.13$ & 1.07 & 0.89 & はい（符号の交差） \\
+$\theta$ & $+0.46$ & $-1.13$ & $-1.87$ & $-2.50$ & 1.11 & 0.80 & \cross \\
+$\delta^*$（補正） & $+3.52$ & $+1.86$ & $+1.07$ & $+0.33$ & 1.05 & 0.92 & \cross \\
+$\theta$（補正） & $+3.33$ & $+1.73$ & $+0.98$ & $+0.30$ & 1.08 & 0.84 & \cross \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+5行のうち2行で押さえ、3行で押さえなかった。
+押さえた2行は、数列が中と細の格子の間でBlasius解を横切るから押さえたにすぎない。細格子の$C_f$の誤差$+0.008$~\%は符号の交差（$-1.95$、$-0.71$、$+0.008$~\%）であって一致ではなく、そこで最細格子の誤差がGCIより小さいことは、GCIが収束した解の誤差を押さえる証拠にならない。
+外挿のあとに残るのは$C_f$で$+0.97$~\%であり、GCIはこれを説明できない。
+
+Blasius解との差には、離散化誤差の上限が扱わないいくつかのものが混ざっている。
+(i)~$\eta=8$の外側の流れはどの格子でも$1.0036\,U$であり、縁の速度$u_e$の下の境界層では表面摩擦は$(u_e/U)^{3/2}$に比例する。細格子の$C_f/(u_e/U)^{3/2}$はBlasius解より0.53~\%低い（$u_e$を一つの高さで取った見積もり）。
+(ii)~Eckertの参照温度による圧縮性の見積もりは、Mach~0.2で$C_f$を$-0.054$~\%変える（見積もりであり、CFDの値は補正していない）。
+(iii)~領域が効く。
+最初に使った、平板が出口で終わる短い領域では、中の格子の$C_f$は、ここで使う領域の値と$+3.65$~\%違った。ほかの二つの領域の広さでは$+0.30$~\%と$-0.16$~\%違った。
+ここで使う領域は、短い領域の結果を見たあとに選んだ。さらに二つの拡大を、ここでは使わない予備の計算で試したが、どちらも中の格子で残差の目標に達しなかったので、領域に対する収束は示していない。
+(iv)~前縁の節点は対称面と壁の両方に属し、圧力の尖りを持つ停滞点になる。その圧力係数は細分とともに大きくなり（3段で0.022、0.032、0.047）、収束しない。滑りなしの壁と対称面は一つの境界にできないので、境界を一つにする対処は使えない。
+(v)~各量の観測次数は、$x=0.25$から0.75の位置で互いに0.12以内で同じであり（全量で0.75から1.16）、形式的な2次より低い。したがって、スキームの次数と、境界層が下流へ運ぶ前縁の誤差とを分けられない。
+さらに、最細格子の$C_f\sqrt{Re_x}$は$x=0.25$、0.5、0.75、1で0.6591、0.6641、0.6663、0.6680であり、Blasiusの0.664に対し、$x$とともに厳密な値を横切って増え、一方の側から近づくのではない。
+この傾きを決めているものは分けていない。
+
+したがって、層流平板は離散化のきれいな検証を与えない。最細格子のBlasius解との差は、$C_f$で$+0.008$~\%（符号の交差の点）、速度分布の積分量で0.4から1.9~\%であり、その一部は(i)から(v)の効果によるが、完全には定量化していない。
+
+\subsection{乱流平板：既存データの格子収束}
+\label{sec:turbplate}
+
+% source: results/gci_existing.csv (rans_flatplate rows)
+既存の3段のRANSの平板の調査二つ（Mach~0.2、NASA Turbulence Modeling Resource \citep{tmr}の平板の算例、およびMach~2。格子は3264、13056、52224セル、$r=2$）について、$x=0.97$の表面摩擦係数を解析した。
+観測次数は1.36（Mach~0.2）と1.12（Mach~2）、最細格子のGCIは0.038~\%と0.079~\%、漸近域の比は0.9995と0.9993である。
+これは格子収束についての言明にすぎない。厳密解を使わないので、GCIが誤差を押さえるかどうかは、ここでは何も試験していない。
+1.1から1.4の次数は形式的な次数2より低いが、次数の規則では旗が立たない。制限関数が原因の可能性はあるが、試験していない。
+Mach~2の中の格子は反復の上限20000回で止まり、残差の落ち幅は5.76桁である（ほかの格子は7.81から8.01桁）。入口の条件（3桁）は通るが、自分の停止の目標には届いていない。
+このデータを作った設定は、製品のドキュメントのために製品の外で組まれたもので、製品が書いたものではない。
+停止の規則、立ち上げの段階、気体定数などが製品の2次精度の設定と異なり、これらの差は試験で固定している。したがって検証したのは、製品の設定に近いが同一ではない設定である。
+% source: tests/test_rans_flatplate_script.py (test of the differences; not a results CSV)
+
+% source: results/gci_existing.csv (rans_flatplate rows, columns tmr_* and corr_*; the differences of the three grids are the err_vs_tmr_percent and err_vs_correlation_percent columns of doc/data/cfd/rans_flatplate.csv)
+データには、この位置の表面摩擦の参照値も記録されている（表\ref{tab:turbref}）。どれも厳密解ではない。
+Turbulence Modeling ResourceのSpalart--Allmarasの値は、別の二つのプログラムCFL3DとFUN3Dの$545\times385$の格子での値の平均で、Mach~0.2にしかない。この値との差はプログラムどうしの相互比較である。
+ほかの二つは経験式（Mach~0.2では局所のK\'arm\'an--Schoenherr、Mach~2ではvan Driest~II）で、それ自身の不確かさはここでは記録していない。これらとの差は、厳密解に対する誤差ではない。
+GCIが誤差を押さえるかどうかの判定は、どの参照値からも引き出さない。
+
+\begin{table*}[t]
+\centering
+\caption{乱流平板、$x=0.97$の表面摩擦。各格子とRichardson外挿値の、データとともに記録された参照値からの差$(C_f-C_{f,\mathrm{ref}})/C_{f,\mathrm{ref}}$（\%）。TMRの値は別のプログラムがより細かい格子で求めた解（相互比較）であり、二つの経験式は厳密解ではない。}
+\label{tab:turbref}
+% source: results/gci_existing.csv (rans_flatplate rows)
+\begin{tabular}{@{}r>{\raggedright\arraybackslash}p{5.6cm}>{\raggedright\arraybackslash}p{2.6cm}rrrrr@{}}
+\toprule
+Mach数 & 参照値 & 区分 & $C_{f,\mathrm{ref}}$ & 細 & 中 & 粗 & 外挿値 \\
+\midrule
+0.2 & TMRのSA（CFL3DとFUN3Dの平均、$545\times385$） & 相互比較 & 0.0027055 & $+0.79$ & $+0.74$ & $+0.62$ & $+0.82$ \\
+0.2 & K\'arm\'an--Schoenherr（局所） & 経験式 & 0.0027442 & $-0.63$ & $-0.68$ & $-0.80$ & $-0.60$ \\
+2 & van Driest~II（Hopkins--Inouye） & 経験式 & 0.0021384 & $-1.18$ & $-1.26$ & $-1.42$ & $-1.12$ \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+最細格子の表面摩擦はTMRの値から$+0.79$~\%離れており、これはGCI 0.038~\%の約21倍なので、この族の格子の誤差では差を説明できない。
+この差には、別のプログラムがより細かい格子で求めた参照であること、製品の設定に近いが同一ではない設定であること、製品のモデル（参照の元のモデルではなく、$f_{t2}$項を持つ負の粘性の形）の効果が含まれており、原因は分けていない。
+この差は、\ref{sec:model}節の自作の格子で得た$+0.80$~\%と整合する。
+経験式との差（Mach~0.2で$-0.63$~\%、Mach~2で$-1.18$~\%）もGCI（0.038と0.079~\%）を超える。経験式の不確かさは分からないので、この差をCFDに帰すか経験式に帰すかは決められない。
+細分とともに、TMRとの差は大きくなり（$+0.62$、$+0.74$、$+0.79$~\%）、経験式との差は絶対値が小さくなる。
+
+\subsection{質量の保存}
+\label{sec:massflux}
+
+% source: results/massflux.csv
+SU2は境界ごとの質量流束を報告する。
+平面の算例（くさび、膨張）では、どの格子でも流入と流出が履歴ファイルの印刷の下限まで釣り合う（相対的な不均衡は$10^{-9}$以下）。
+これは収束した状態で保存形のスキームが与えるものであり、収束と流束の集計を試験するが、離散化誤差は試験しない。
+軸対称の円すいでは、流束は全周のもので$2\pi r$の重みを持ち、不均衡はどの格子でも0でない。3段で$6.6\times10^{-4}$、$1.8\times10^{-4}$、$4.3\times10^{-5}$（相次ぐ比は3.75と4.07）、軸を対称境界にした設定で$3.4\times10^{-4}$、$1.0\times10^{-4}$、$2.6\times10^{-5}$（比は3.33と3.99）である。
+どの値も、チュートリアルが一貫した解とみなす$10^{-3}$を下回る。
+細分ごとに約4の比は2次の離散化誤差と整合するが、3段では観測であって観測次数ではない。
+$2\pi r$の重みが原因だというのは解釈であって証明ではない。軸を対称境界にした設定の不均衡が一つめの0.52から0.59倍であることは、説明できていない。
+
+\subsection{層1：製品を通した円すい}
+\label{sec:layer1}
+
+% source: results/layer1_cone.csv, results/layer1_gci.csv, results/layer0_vs_layer1.csv
+3段の格子を製品を通して解いた（\ref{sec:l12setup}節）。
+表\ref{tab:layer1}にそれらの収束と、円すいの圧力係数のTaylor--Maccollの解との差を示し、図\ref{fig:layer1cp}に3段の区間ごとの壁面$\Cp$を、$x/L$に対してTaylor--Maccollの値とともに描く。
+
+\begin{table*}[t]
+\centering
+\caption{層1、Mach~2.35の10$^\circ$の円すい-円筒。収束と、表面$\Cp$の厳密な値0.09673からの差（\%）。細かい格子はソルバに受け入れられなかったので、その値は受け入れられていない解を記述するもので、どの不確かさの見積もりにも入らない。層0の最細格子の値は、裸の円すいの壁の窓の$\Cp$である。}
+\label{tab:layer1}
+% source: results/layer1_cone.csv, results/layer0_vs_layer1.csv
+\begin{tabular}{@{}lrrcrrr@{}}
+\toprule
+格子 & 節点 & 残差の落ち幅（桁） & ソルバの判定 & $x/L$ 0.4〜0.9 & $x/L$ 0.2〜0.9 & 先端に最も近い区間 \\
+\midrule
+粗 & 28887 & 5.52 & 収束 & $-2.51$ & $-3.74$ & $-10.19$ \\
+中 & 45258 & 4.80 & 収束 & $-1.26$ & $-1.88$ & $-6.59$ \\
+細 & 75796 & 2.44 & 未収束 & $-0.44$ & $-0.86$ & $-4.17$ \\
+\midrule
+層0の最細格子 & 49601 & 12.73 & 収束 & $-0.19$ & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.68\textwidth,trim=0 80 0 0,clip]{fig/layer1_cp.pdf}
+\caption{層1：円すいの表面の壁面$\Cp$。幅0.1の$x/L$の区間での平均を3段の格子について示し、Taylor--Maccollの値（黒い線）と比べる。塗りの記号はソルバが受け入れた解である。細かい格子（白抜きの記号と破線）は受け入れられなかった解（残差の落ち幅2.44桁）で、その値は210反復のうち200反復目の周期的な書き出しであり、記述のためだけに示す。層1の格子収束の6行はすべて拒否されたので、帯は描かない。図中の文は英語である。}
+\label{fig:layer1cp}
+% source: results/layer1_cone.csv (the seven 0.1-wide bins, quantities bin and cp_nearest_tip); figures/layer1_cp.svg
+\end{figure*}
+
+7区間のどれでも、壁面$\Cp$はどの格子でも厳密な値より低く、細分のたびに厳密な値に近づく。
+
+細かい格子は収束しなかった。最後の40反復の間、密度の残差は$-6.00$から$-4.85$の間にあって目標の$-6$に届かず、抗力係数は相対$2.2\times10^{-4}$の幅で変動しており、リミットサイクルと整合する。
+製品のソルバの判定は「未収束」で、残差の落ち幅は2.44桁である（ほかの2段は5.52桁と4.80桁）。
+そのため、\ref{sec:gci}節の入口の条件は細かい格子を拒否し、層1の格子収束の6行（三つの量のそれぞれを二つの格子寸法の定義で求めたもの）はすべてその拒否を持ち、数値を持たない。
+\textbf{層1のGCIはない。}
+図\ref{fig:layer1cp}には帯を描けない。これは結果であって、図の欠落ではない。
+
+受け入れた2段の厳密解との差は、記述にとどまる。
+比較に対応する窓では$-2.51$~\%と$-1.26$~\%で、受け入れられなかった細かい格子は$-0.44$~\%を与える。
+値は段ごとに2.0分の1と2.9分の1に減るが、1段が受け入れられておらず、格子も相似でないので、ここから次数は引き出さない。
+誤差は先端の近くで最も大きく（先端に最も近い区間で$-10.19$、$-6.59$、$-4.17$~\%）、下流へ向かって減る。これは、円すいの誤差が先端の過渡で支配される層0と同じである。
+
+\paragraph{パイプラインの誤差}
+同じ厳密解に対する層0と層1の誤差は、差を取って\textbf{3次元非構造メッシュ生成を含むパイプラインの誤差}を得るためのものである。
+ここではそれができない。
+層1の最細格子は受け入れられた解ではなく、その誤差は収束した解の誤差ではないので、差は示さない。二つの層が違うかどうかを判断するための層1の不確かさもない。
+細かい格子が受け入れられたとしても、二つの層の違いは鎖だけではない。メッシュの種類（構造の軸対称格子と非構造の四面体）、領域、層1の円筒と尾部、一様流の状態、壁面$\Cp$の取り出し方、そしてセル単位で測った先端に対する窓の位置が違う。
+同じ窓の層0のGCI 0.059~\%は、自分の最細格子の誤差（0.188~\%。表\ref{tab:l0}）を押さえていないので、層0の不確かさを過小評価することになる。
+円すいだけの衝撃波角と軸力は、層1では比べていない。
+
+\paragraph{途中で切れる表面の出力}
+製品の挙動として観測したもので、原因は、ランナーがSU2を止めるときに書き込みが切れること以上には確かめていない。最後の表面の出力が不完全になることがある。
+中の格子では、表面のファイルのVelocityの欄は15468点のうち816点分しか完全な値を持たなかった（中の格子の最初の実行では圧力係数の欄が切れて読めず、ここで使うのは同じ算例の2回めの実行である）。
+細かい格子では、CSV形式の表面のファイルは28265行のうち完全な行が1255行で、使ったVTKのファイルは200反復目の周期的な書き出し、履歴は210反復まであるので、最後の反復の完全な圧力の出力はない。
+両方のファイルが持つ円すいの壁の213節点では、二つの状態の$\Cp$の差は平均の$\Cp$に対して$6\times10^{-5}$であり、どの入口の条件も変えない。
+使った圧力係数の欄は、どの格子でも完全だった。
+
+%=====================================================================
+\section{六つの段階の適用：サンプル機体と\texorpdfstring{\NoCaseChange{Basic Finner}}{Basic Finner}（層2）}
+\label{sec:application}
+
+\subsection{第1段階：プログラムの点検}
+\label{sec:step1}
+
+% source: no results CSV; the product's test documentation and the tests added by this study
+この段階では新しい計算をしない。
+製品の既存の試験には時間積分器の次数の試験があるが、メッシュの収束の次数は測らない。また本研究の前には、格子収束の計算の試験はなかった。CFDのソルバそのものは、継続的インテグレーションで走る試験では実行されない。
+本研究は、GCIの手順（\ref{sec:gci}節）、独立な表に対する厳密解（\ref{sec:cone10}節）、層0の数値設定が製品のものと同一であること、そして以下の一貫性の検査について、試験を加える。
+
+\subsection{第2段階：反復収束}
+\label{sec:iter}
+
+チュートリアルは、残差が数桁落ちること、係数が平坦になること、反復を止めたあとに残るものが格子の不確かさに比べて小さいことを求める。反復誤差がGCIと同じ大きさなら、格子収束の議論は成り立たない。
+% source: results/layer0.csv, results/layer0_plate.csv (residual_drop_orders)
+層0ではすべての計算が残差の目標に達し、落ち幅はEulerの算例で12.7から13.9桁、平板の3段で9.4から10.4桁である（\ref{sec:l0results}節と\ref{sec:plate}節）。
+層1の3段は、密度の残差を5.52、4.80、2.44桁落とした（最後の段は受け入れていない。\ref{sec:layer1}節）。
+% source: results/iterative.csv (header: judgement; rows)
+三つめの要求は、反復誤差の比較の38行で調べる。反復誤差は、停止した時点の値と、同じ計算のより後の、またはより深く収束した状態との差であり、比はその誤差の同じ量の$\mathrm{GCI}_\fine$に対する比である。
+\textbf{格子と量が対応する行で、比が1を超えるものはない。}反復誤差によって無効になるGCIはない。
+使えるGCIを持つ5行は比が0.003未満で、サンプル機体のMach~2の法線力傾斜の3段と別の履歴、そして参考にとどまる平板の1行である。
+したがって使えるGCIを持つ条件は一つ、Mach~2の法線力傾斜だけである。その反復誤差は、参照の状態がソルバの書いた最後の行なので下限である。最細格子で$3.3\times10^{-4}$~\%、GCI（10.6~\%）の$3.2\times10^{-5}$で、密度の残差は8.6桁落ちていた。
+これは反復誤差がこのGCIを乱す証拠がないことを示すが、反復誤差が小さいことの実証よりは弱い。
+28行では、対応するGCIが拒否、振動収束、旗付き、使えないのいずれかなので比がない。反復誤差は分かっているが、比べられない。
+サンプル機体の各段では、反復誤差は$C_A$で最大0.04~\%、$C_N$で0.02~\%である。参照の状態は収束した状態ではなくソルバの書いた最後の行なので、これらは下限である。
+温かい状態から始めて密度の残差$10^{-6}$で止めると、誤差はもっと大きく残る。Mach~0.8、$4^\circ$の$C_N$で0.55から1.42~\%（より深い停止では0.003から0.012~\%）、Mach~0.8の$C_A$で6.3~\%で、比べられる使えるGCIはない。
+平板の5行は1を超える（Mach~0.2で3.11、16.6、50.4、Mach~2で1.03と8.34）が、参考にとどまる。これらは平板の抗力の反復誤差（Mach~0.2で0.12から1.9~\%）を表面摩擦の格子の不確かさ（0.038~\%）と比べており、量が異なり、平板の抗力のGCIは存在しない。
+これらは表面摩擦のGCIを無効にしない。示すのは、その調査の停止の規則が、表面摩擦の格子の不確かさより大きな反復誤差を抗力に残すことである。
+層0には\%で表した反復誤差はなく、上に示した残差の落ち幅だけがある。
+
+\subsection{第3段階：一貫性}
+\label{sec:consistency}
+
+% source: results/consistency.csv
+\paragraph{$C_N(\alpha=0)=0$と反対称性$C_N(-\alpha)=-C_N(\alpha)$}
+対称な物体では、どちらの関係も形状の対称性から従う。既存のEulerの非対称性の調査の五つの配置で、Mach~0.3、0.8、2.0について調べた。
+メッシュに鏡映の対称性がない四つの配置（12行）では、$|C_N(0)|$は0.013から0.091で、許容差0.007から0.012（鏡映で組み合わせた法線力の1~\%）を超える。鏡映で組み合わせた偶関数部分$[C_N(+4^\circ)+C_N(-4^\circ)]/2$の絶対値は0.014から0.085で、この24行はすべて不合格である。
+五つめの配置、すなわち作り方によって鏡映対称にしたメッシュでは検査に合格するが、それは作り方による合格であり、ソルバについては何も言わない。
+サンプル機体の本番の計算はこのような対称なメッシュを使い、その$C_N(0)$は同じ理由でソルバの丸めの範囲で0である（$|C_N|<2\times10^{-5}$）。
+非対称なメッシュでは、これらの検査はソルバの効果とメッシュの非対称性の効果を分けられない。
+% source: results/consistency.csv (cn_antisymmetry rows of the medium level without the mirror), results/sample_euler_levels.csv
+サンプル機体では、中の格子のメッシュから鏡映を除き、$+4^\circ$と$-4^\circ$の両方を解いて、反対称性をソルバの試験にした。
+偶関数部分はMach~0.3で$-0.0388$、Mach~0.8で$-0.0201$で、許容差0.0114と0.0118に対しどちらも不合格である。
+Mach~2では$+0.0015$で、0.0093に対し合格する。
+偶関数部分は同じメッシュの$C_N(0)$（$-0.0404$、$-0.0219$、$+0.0016$）と同じ大きさで、メッシュの非対称性がどの迎え角にも持ち込むずれと整合する。そのうちどれだけがメッシュで、どれだけがソルバかは分けていない。
+いくつかの解は製品の状態が「早期終了」（残差が3桁落ち係数が平坦になった早い停止）で、書かれたまま組に入れた。Mach~0.3の$-4^\circ$の解、Mach~0.8の迎え角0の解、Mach~2の両方の解である。
+
+\paragraph{d'Alembertの逆説}
+% source: results/consistency.csv (ca_dalembert row)
+Mach~0.3、迎え角0では、非粘性の軸力係数は0になるはずである（d'Alembertの逆説）。
+% source: results/consistency.csv (ca_dalembert_refined rows), results/gci_sample_euler.csv
+$|C_A|$が縮むなら離散化誤差を示し、縮まないなら定式化か境界条件の欠陥を示す。
+サンプル機体の族の3段では、$C_A=-0.0628$、$-0.0455$、$-0.0305$（粗から細）で、$|C_A|$は1.38分の1と1.49分の1に縮む。
+しかし外挿は厳密な値を越え、格子寸法の一方の定義で$+0.045$、他方で$+0.065$、GCIは309~\%と393~\%なので、この行は使えないとする。
+相似でない3段の格子と0を越える外挿は、縮む傾向を支持するが、0への収束は支持しない。
+厳密な値を仮定しないMach~0.8では、$C_A=-0.0326$、$-0.0226$、$-0.0128$で、GCI（1600~\%超）は使えない。
+質量流束の収支は層0の算例で調べた（\ref{sec:massflux}節）が、層2の遠方境界では調べていない。
+
+\subsection{第4段階：空間収束}
+\label{sec:grid}
+
+\subsubsection{既存データのサンプル機体のRANSの族}
+
+% source: results/gci_existing.csv (rans_mesh_study rows)
+サンプル機体の既存の3段のRANSの族（壁の寸法8、4.8、3~mm、Mach~0.8と2、迎え角$0^\circ$と$\pm4^\circ$。$4^\circ$の値は$+4^\circ$と$-4^\circ$の解を組み合わせる）を、収束の入口の条件にかけた。
+% source: results/gci_existing.csv (rans_mesh_study rows, note column)
+四つの族はすべて拒否される。Mach~0.8の$4^\circ$の$C_N$、$C_A$、$x_{cp}$は、8~mmの段の$-4^\circ$の解が未収束と記録されているので拒否される。Mach~0.8と2の$C_N(0)$は、8~mmと4.8~mmで$0^\circ$の解が未収束と記録されているので拒否される。Mach~2の$4^\circ$の$C_N$、$C_A$、$x_{cp}$は、3~mmの段の$-4^\circ$の解が反復回数を固定した再計算で、判定も残差の落ち幅も記録されていないので拒否される。
+データファイルは解ごとのソルバの判定を記録しているが、残差の落ち幅は記録していない。
+
+RANSの算例に対する製品の収束の判定「未収束」は、製品のドキュメントが区別する2種類の解を含む。係数は平坦だが残差が必要な落ち幅に届かない\textbf{停滞}と、残差は十分に落ちたが係数が小さな幅で振動する\textbf{リミットサイクル}である。どちらの場合も窓の平均を使い、警告を出す。
+したがって、停滞はチュートリアルの残差の落ち幅の条件を、リミットサイクルは係数の平坦さの条件を満たさず、記録はその解がどちらだったかを示さない。
+% source: the product's CFD documentation, section on the Reynolds-averaged acceptance verdict (not a results CSV)
+ここから言えることは狭い。
+この族について公表されたMach~0.8の格子収束指標は、未収束と記録された$-4^\circ$の解を組み合わせた粗い段の値に基づく。どちらの種類の解であっても、そのGCIはチュートリアルの反復収束の前提（収束した解）を満たしておらず、ドキュメントはそのことを記していない。
+本研究自身の次数の規則も、公表されたMach~0.8の$C_N$の3段に旗を立てる。その観測次数は4.33で、4を超えるからである。
+% source: the product's CFD documentation and doc/data/cfd/rans_mesh_study.json (not a results CSV)
+これは前提が示されていないことの証拠であり、公表された数値が誤りだという主張ではない。
+
+\subsubsection{Basic Finner、Euler、Mach 2.375}
+
+% source: results/gci_existing.csv (basic_finner_mesh_check rows, fairing)
+既存の4段（345736から1891652セル）から、L1--L3（粗い側）とL2--L4（細かい側）の二つの3段を作り、それぞれを二つの格子寸法の定義で求めた（表\ref{tab:finner}）。
+格子は幾何学的に相似ではない（\ref{sec:l12setup}節）。
+
+\begin{table*}[t]
+\centering
+\caption{Basic Finner、Euler、Mach~2.375、底面の扱いは「fairing」。二つの3段の観測次数$p$と$\mathrm{GCI}_\fine$（\%）を、二つの格子寸法の定義（$h\propto N^{-1/3}$、$h\propto$壁寸法）で示す。ダッシュは次数を計算しなかったことを表す。差が符号を変えるか、細かい側の変化が粗い側の変化以上なので、GCIはない。$^\dagger$を付けた値は次数が0.5から4の外にあり、信頼できないとして旗を立てる。}
+\label{tab:finner}
+% source: results/gci_existing.csv (basic_finner_mesh_check, fairing)
+\begin{tabular}{@{}llcrrrr@{}}
+\toprule
+量 & 迎え角 & 3段 & $p$（$N^{-1/3}$） & GCI & $p$（壁寸法） & GCI \\
+\midrule
+$C_A$の圧力成分 & 0$^\circ$ & L1--L3 & 1.28 & 22.7 & 0.48$^\dagger$ & 35.2 \\
+ & & L2--L4 & 2.99 & 4.35 & 1.58 & 4.99 \\
+ & 2$^\circ$ & L1--L3 & 1.31 & 22.0 & 0.499$^\dagger$ & 33.8 \\
+ & & L2--L4 & 2.85 & 4.74 & 1.50 & 5.46 \\
+ & 4$^\circ$ & L1--L3 & 1.55 & 17.1 & 0.63 & 24.7 \\
+ & & L2--L4 & 2.69 & 4.95 & 1.41 & 5.72 \\
+$C_N$ & 2$^\circ$ & L1--L3 & 8.45$^\dagger$ & 0.034 & 4.33$^\dagger$ & 0.040 \\
+ & & L2--L4 & -- & -- & -- & -- \\
+ & 4$^\circ$ & L1--L3 & 0.52 & 2.62 & 0.07$^\dagger$ & 11.1 \\
+ & & L2--L4 & 2.24 & 0.33 & 1.15 & 0.39 \\
+$x_{cp}$ & 2$^\circ$ & L1--L3 & -- & -- & -- & -- \\
+ & & L2--L4 & -- & -- & -- & -- \\
+ & 4$^\circ$ & L1--L3 & -- & -- & -- & -- \\
+ & & L2--L4 & -- & -- & -- & -- \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+二つの3段は合わない。
+軸力の圧力成分では、粗い側の3段が次数1.3と0.5（二つの定義）を与え、細かい側は3.0と1.6を与える。$4^\circ$の法線力では、0.52と0.07に対して2.24と1.15である。
+$2^\circ$の法線力は、粗い側の3段で4を超える次数のとても小さなGCIを与え、細かい側の3段は収束しない。
+圧力中心の位置は、どの3段でも振動収束か収束せず、帯を付けない。
+法線力傾斜は$2^\circ$の$C_N$から作るが、それについて粗い側の3段は旗の立つ次数（8.45と4.33）を与え、細かい側の3段は収束しない。
+したがって傾斜に使える唯一の帯は感度であってGCIではない。粗い側の3段は描いた格子について$\pm0.17$~\%（二つの定義で0.167から0.173~\%）を与えるが、描いた格子からほかの段への観測された最大の変化、L2からL4への変化は$+0.47$~\%で、それより大きい。
+平らな底面の扱いでは、$2^\circ$と$4^\circ$の$C_N$と$x_{cp}$は、どの3段でも収束しないか振動収束である。
+この4段の研究は、Basic Finnerの信頼できるGCIを確立しない。
+% source: results/gci_existing.csv, derived L2-to-L4 change in cn at fairing alpha 2: 0.33008/0.32852 - 1
+
+\subsubsection{サンプル機体、Euler}
+
+% source: results/gci_sample_euler.csv (rows and header), results/sample_euler_levels.csv
+表\ref{tab:sample}に、二つの格子寸法の定義での観測次数とGCIを示す。
+族の各段は入口の条件を満たす（収束か早期終了の判定と、3.2桁以上の残差の落ち幅）が、格子は相似でない（セル数の増え方1.74倍と1.77倍に対し2.74倍）ので、どちらの定義も実効的な格子寸法ではない。
+GCIが100~\%を超える行と、外挿値が既知の厳密な値の向こう側にある行は、使えないとする。
+
+\begin{table*}[t]
+\centering
+\caption{サンプル機体、Euler。$h\propto N^{-1/3}$と$h\propto$壁寸法での観測次数$p$と$\mathrm{GCI}_\fine$（\%）。「なし」は次数がないことを表す。細かい側の変化が粗い側の変化以上であるか、差が符号を変えるためで、帯はない。$^\dagger$：次数が0.5から4の外にあり、信頼できないとして旗を立てる。「使えない」：GCIが100~\%を超えるか、外挿値が厳密な値の向こう側にある。$^\ddagger$：$N^{-1/3}$の基準では細分比一定の検査がこの名前を付けるが、細分比は異なり（1.21と1.20）、Celikらの方法は$p=0.072$、GCI 285~\%を与えるので、どちらでも使えない。}
+\label{tab:sample}
+% source: results/gci_sample_euler.csv
+\begin{tabular}{@{}lllrrrr@{}}
+\toprule
+Mach数 & 量 & 備考 & $p$（$N^{-1/3}$） & GCI & $p$（壁寸法） & GCI \\
+\midrule
+0.3 & $\CNa$ & 収束しない & なし & -- & なし & -- \\
+0.3 & $x_{cp}$ & 振動収束 & なし & -- & なし & -- \\
+0.3 & $C_A$ & 使えない & 0.95 & 309 & 0.43$^\dagger$ & 393 \\
+0.8 & $\CNa$ & 収束しない & なし & -- & なし & -- \\
+0.8 & $x_{cp}$ & 振動収束 & なし & -- & なし & -- \\
+0.8 & $C_A$ & 使えない & 0.29$^\dagger$ & 1654 & 0.066$^\dagger$ & 4251 \\
+2.0 & $\CNa$ & & 0.53 & 10.6 & 0.20$^\dagger$ & 16.3 \\
+2.0 & $x_{cp}$ & 旗 & 8.7$^\dagger$ & 0.030 & 4.75$^\dagger$ & 0.033 \\
+2.0 & $C_A$ & 収束しない$^\ddagger$ & なし & -- & なし & -- \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+族のGCIで使えないとされなかったのは、Mach~2の$\CNa$のものだけである。一方の定義で10.6~\%（次数0.53、旗の境界のすぐ上）、他方で16.3~\%（次数0.20、旗）である。
+二つの基準は5.8ポイント違い、外挿値14.5は最細格子の値13.40より8.5~\%上にあるが、細かい2段の差は0.9~\%である。次数が0.5程度なので、結果はデータよりも仮定した次数に依存している。
+Mach~2の$x_{cp}$のGCI 0.03~\%は、形式的な次数の2倍を超える次数8.7と4.75に属し、信頼できないとして旗を立てる。
+Mach~0.3と0.8の$\CNa$は細分で単調に収束せず帯を持たない。$x_{cp}$（振動収束）とMach~2の$C_A$も帯を持たない。
+したがって、サンプル機体のGCIに保証された不確かさはなく、Mach~2の法線力傾斜は信頼性の低い広い帯である。
+
+\subsubsection{Basic Finner、RANS、Mach 1.832}
+
+% source: results/basic_finner_rans_levels.csv, results/gci_basic_finner_rans.csv
+\textbf{Mach~1.832ではRANSのGCIは得られなかった。}
+表\ref{tab:rans}に、使っている二つの尺度での各解の残差の落ち幅を示す。
+入口の条件は、密度とSpalart--Allmaras（乱流）の残差の落ち幅の小さい方を使う。製品自身の残差の落ち幅は密度だけのものなので、乱流の残差の落ちが小さい解では大きくなる。
+$2^\circ$の解はどの段でも収束せず、最細の段の迎え角0の解も収束しなかった。製品はどれも停滞として記録し、リミットサイクルの旗も立てている。
+したがってすべての族が拒否される。法線力傾斜と$x_{cp}$は$2^\circ$の解のために、軸力とその壁と底面の成分は最細の迎え角0の解のために拒否される。
+
+\begin{table*}[t]
+\centering
+\caption{Basic Finner、RANS、Mach~1.832。各解の残差の落ち幅（桁）を、入口の条件の尺度（密度と乱流の落ち幅の小さい方）と製品自身の尺度（密度のみ）で示し、ソルバの判定を併記する。$2^\circ$の解と最細の$0^\circ$の解は未収束なので、それらが入る族は拒否される。}
+\label{tab:rans}
+% source: results/basic_finner_rans_levels.csv
+\begin{tabular}{@{}lrrcccc@{}}
+\toprule
+格子 & 節点 & セル & $0^\circ$ 条件/製品 & $0^\circ$ 判定 & $2^\circ$ 条件/製品 & $2^\circ$ 判定 \\
+\midrule
+2.1~mm & 328364 & 813498 & 3.10 / 3.13 & 収束 & 2.69 / 2.81 & 未収束 \\
+1.5~mm & 533985 & 1265515 & 3.65 / 3.38 & 収束 & 0.93 / 4.12 & 未収束 \\
+1.07~mm & 926390 & 2145093 & 0.89 / 3.91 & 未収束 & 1.23 / 3.04 & 未収束 \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+3段の法線力傾斜の値は、いずれも未収束の$2^\circ$の解から得たもので、11.52、11.57、11.45（粗から細）である。その間の1.1~\%の広がりは不確かさではない。
+粗い段を製品の別のビルドと別の領域分割で解くと、判定が逆になった（$0^\circ$が未収束、$2^\circ$が収束）。
+判定が入れ替わることは観測したが、比較はビルドと分割の両方の違いで交絡しており、原因は主張しない。
+
+\subsection{第5段階：時間収束}
+\label{sec:temporal}
+
+% source: results/temporal.csv
+CFDは定常なので、チュートリアルの意味での時間収束は当てはまらない。SU2の計算に時間刻みはない。
+製品で時間に依存する部分は6自由度の飛翔の積分器であり、その収束を刻み幅の細分で調べる。
+サンプル機体を4次のRunge--Kuttaの積分器で、刻み8、4、2、1~ms（$r=2$。パラシュート降下、風4~m/s）で飛ばし、1/2/4~msと2/4/8~msの二つの3段を作る。
+量は、頂点高度、頂点時刻、着地距離、飛翔時間、レール離脱の時刻と速度、固定した時刻での高度と速度である。
+
+サンプル機体では次数が得られなかった。
+すべての行が拒否される。差が符号を変える（振動収束）か、二つの刻みが出力の印刷の分解能で同じ値を与えるためである。
+四つの刻みにわたって、頂点高度は4440.5~mのうち$0.018$~m（相対$4.1\times10^{-6}$）、着地距離は7735.5~mのうち0.032~m、飛翔時間は685~sのうち2.4~ms動く。
+これは広がりであって誤差の見積もりではない。収束の次数がないので、帯は主張しない。
+
+このばらつきは、制御の実験を根拠として、レールのモデルに帰する。
+機体は推力が重量を下回る間レール上で静止させられ、これが約2.3~msに加速度の折れを作るが、積分器はこの折れを探さない。折れは、刻みの端に対して計算ごとに異なる位置に落ちる。
+三つの制御は、モータの推力曲線を変える（製品のサンプルは変えない）。
+保持と0から0.05~sの推力の立ち上がりの両方を除くと、粗い側の3段で頂点高度の次数4.01、飛翔時間の次数3.96を得て、4次のスキームに期待される値になる。保持だけを除くと、8~msと4~msの計算のレール離脱の速度の差は$4.5\times10^{-4}$~m/sから$4.1\times10^{-8}$~m/sに減り、保持がレール離脱のばらつきの主な原因であることを支持する。完全に入れ子にした掃引は、刻みが割り切らない推力曲線の節を主な原因から除く。
+小さな第2の寄与は排除できない。保持だけを除いた場合でも、粗い側の3段の頂点高度はなお単調でない。
+制御の細かい側の3段は、相対$10^{-9}$から$10^{-8}$程度で収束しなくなる。この床は入れ子の掃引でも残り、原因は特定していない。
+細かい側の3段から得た唯一の次数（一つめの制御の頂点時刻の4.75）は、差がこの床より小さく、同じ計算の頂点高度は振動するので、4次の収束の証拠ではない。
+これは刻み幅の細分による積分器の検証であり、実測との比較ではない。
+
+%=====================================================================
+\section{妥当性確認とモデルの不確かさ}
+\label{sec:modelvalid}
+
+\subsection{第6段階：モデルの不確かさ}
+\label{sec:model}
+
+製品が持つのはEulerと、Spalart--AllmarasモデルによるRANSだけである。
+したがって、チュートリアルが求める複数の乱流モデルの比較には一部しか答えられない。この限界は製品の範囲の限界であり、省略ではない。
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth,trim=0 112 0 0,clip]{fig/validation_bands.pdf}
+\caption{Basic Finnerの$\CNa$（左）と$\CXzero$（右）のMach数に対する変化。表の確率誤差を付けた自由飛翔の実測\citep{dupuis1997}、EulerのCFD、Mach~1.832のRANSの点（底面の項の二つの扱い）を示す。Mach~2.375のEulerの点の斜線の箱は格子感度（$\pm0.17$~\%、この尺度では小さすぎて見えない）であり、確立したGCIではない。$\CXzero$にも、RANSの点にも（Mach~1.832ではRANSのGCIが得られなかった）、ほかのどのMach数にも帯はない。図中の文は英語である。}
+\label{fig:validation}
+\end{figure*}
+
+\begin{table*}[t]
+\centering
+\caption{Basic Finner。\citet{dupuis1997}（Table IX）の実測の係数と表の確率誤差、CFDの値、差$(\text{CFD}-\text{実測})/|\text{実測}|$（\%）。誤差の欄のダッシュは誤差が表にない（不明）ことを、$<$0.5は表の0、すなわち誤差0ではなく0.5~\%未満の誤差を表す。RANSの値は数値不確かさを持たない一つの格子の値で、$\CXzero$の二つの値は底面の項の二つの扱い（モデル、およびCFDの底面圧力）である。}
+\label{tab:validation}
+% source: doc/data/validation/basic_finner/summary_vs_measured.csv
+\begin{tabular}{@{}rrrrrrrrrr@{}}
+\toprule
+ & \multicolumn{5}{c}{$\CNa$（1/rad）} & \multicolumn{4}{c}{$\CXzero$} \\
+\cmidrule(lr){2-6}\cmidrule(l){7-10}
+Mach数 & 実測 & 誤差（\%） & Euler & 差（\%） & 実測 & 誤差（\%） & Euler & 差（\%） \\
+\midrule
+1.077 & 18.47 & 2 & 17.32 & $-6.3$ & 0.863 & $<$0.5 & 0.6301 & $-27.0$ \\
+1.293 & 18.27 & 3 & 16.74 & $-8.4$ & 0.731 & $<$0.5 & 0.5444 & $-25.5$ \\
+1.832 & 11.78 & 4 & 11.27 & $-4.4$ & 0.585 & -- & 0.4197 & $-28.3$ \\
+2.375 & 10.52 & 2 & 9.411 & $-10.5$ & 0.484 & -- & 0.3490 & $-27.9$ \\
+2.718 & 9.01 & 2 & 8.744 & $-2.9$ & 0.435 & -- & 0.3173 & $-27.0$ \\
+3.147 & 8.69 & 1 & 8.161 & $-6.1$ & 0.373 & -- & 0.2861 & $-23.3$ \\
+3.734 & 8.32 & 1 & 7.550 & $-9.3$ & 0.309 & $<$0.5 & 0.2535 & $-18.0$ \\
+4.300 & 7.74 & 1 & 7.059 & $-8.8$ & 0.271 & $<$0.5 & 0.2294 & $-15.4$ \\
+\midrule
+1.832、RANS & & & 11.46 & $-2.7$ & & & 0.4340 / 0.6477 & $-25.8$ / $+10.7$ \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+% source: results/turbulence_models.csv (header and rows)
+製品は別のモデルを走らせられないので、SU2を直接動かした乱流平板（Mach~0.2、単位長さあたりの$Re=5\times10^{6}$、断熱壁、NASA Turbulence Modeling Resource \citep{tmr}の圧力勾配のない平板、位置$x=0.97$）で、Spalart--AllmarasをMenter SSTモデルと比べる。
+数値設定は、製品が書いた設定から写した製品の立ち上げの段階と2次精度の段階のもので、二つのモデルはモデルとSSTが必要とする設定だけが違う。
+SSTの変種は、SU2自身のこの平板の試験ケースのV1994mで、SU2の既定の変種は走らせていない。
+格子はTurbulence Modeling Resourceのものではない。その領域、節点数（$69\times49$、$137\times97$、$273\times193$）、境界条件を持ち、ちょうど入れ子（$r=2$）で、点の分布は本研究で決めた（$y^+$の最大は1.32、0.72、0.41）。
+二つのモデルは同じ規則、すなわち密度の残差が立ち上げの最大値から8桁下がることで止め、製品の受け入れ規則は使わない。最も弱い方程式の残差の落ち幅は、Spalart--Allmarasで7.5から8.0桁、SSTで5.5から5.6桁である。
+$x=0.97$の表面摩擦は、粗、中、細の格子で$-3.70$、$-1.72$、$-0.79$~\%違う（SSTのSpalart--Allmarasに対する差）。
+細格子のSSTのGCIは1.14~\%なので、この大きさの差はSST自身の数値不確かさと分けられない。SSTはここでは1次（観測次数1.02）で、最後の細分で表面摩擦が0.94~\%動き、これは差と同程度である。
+Spalart--AllmarasのGCIには旗が立つ（観測次数5.3で形式的な次数の2倍を超え、GCIは$8\times10^{-5}$~\%）ので、その帯は使わず、判定も書かない。
+平板の抗力は細格子で$-0.46$~\%違い、GCIの帯は0.67~\%（Spalart--Allmaras）と0.48~\%（SST）である。差はその和を超えず、格子の不確かさと分けられない。
+外挿値どうしは、表面摩擦で$+0.11$~\%、抗力で$+0.46$~\%違うが、これらは推定値であり、判定は書かない。
+これは二つのモデルの比較であって妥当性確認ではなく、実測は入らない。
+この位置のSpalart--Allmarasについて公表されているTurbulence Modeling Resourceの値（別の二つのソルバの$545\times385$の格子での平均）に対し、ここでの細格子の表面摩擦は$+0.80$~\%高い。これは格子、数値設定、モデルの変種が異なる相互比較である。製品のモデルは参照の元のモデルではなく、$f_{t2}$項を持つ負の粘性の形である。
+同じ計算は、Turbulence Modeling Resourceの格子での既存のSpalart--Allmarasのデータと、細格子の表面摩擦で0.006~\%以内で合うが、それは別の格子と別の数値設定のものである。
+
+同じ条件でEulerとRANS-SAを比べることは二つのモデルの相互比較であり、その差は、二つの数値不確かさの帯の和を超えるときにだけモデルの差とみなせる。
+% source: results/model_uncertainty.csv (rows and header)
+Euler対RANSの七つの条件を、二つの数値の帯と並べた。サンプル機体のMach~0.8と2の$4^\circ$（$C_N$と$x_{cp}$）と、Basic FinnerのMach~1.832（$2^\circ$の$C_N$と$x_{cp}$、$0^\circ$の軸力）である。
+差（RANSのEulerに対する差）は、サンプル機体のMach~0.8で$+4.99$~\%と$+0.27$~\%、Mach~2で$+3.30$~\%と$+0.017$~\%、Basic Finnerで$C_N$が$+0.22$~\%、$x_{cp}$が$-0.73$~\%、軸力係数が$+54$~\%である。
+\textbf{七つのどれにも判定がない。}
+RANSの帯は、サンプル機体ではその調査のすべての3段が拒否されたので存在せず、Basic FinnerではMach~1.832でRANSのGCIが得られなかったので存在しない。
+Eulerの帯は、サンプル機体ではないか旗付き（収束しない、振動収束、0.5から4の外の次数）であり、Basic FinnerのMach~1.832では、唯一のEulerの格子研究がMach~2.375にあるので存在しない。
+サンプル機体の比較は、さらに3~mmのメッシュのRANSの値と2~mmのメッシュのEulerの値を比べており、Basic Finnerの軸力係数は流れのモデルとEulerのモードでモデル化した底面の項を混ぜている。
+したがって差の大きさは報告するが、それがモデルの差か数値誤差かは決めない。
+
+\subsection{自由飛翔の実測との比較}
+\label{sec:validation}
+
+% source: figures/validation_bands.svg (the plotted measured and CFD values are read from the Basic Finner data files of the product's documentation, which are not copied into results/)
+Basic Finnerの係数を、\citet{dupuis1997}の自由飛翔の実測と比べる。これは空力弾道射場の試験で、係数は、1.077から4.300までの8つのMach数での発射の組に対する6自由度の最尤の当てはめから得られている。
+表に載る各係数は\%で表した確率誤差を持つ。
+誤差棒は表に従う。
+空欄は誤差が不明であることを意味し、棒を描かない。誤差を推定して補うことはしない。
+表の0は誤差0ではなく0.5~\%未満の誤差を意味し、白抜きの記号の両側に三角を添えて描く。
+これらの確率誤差は当てはめの統計誤差であり、製品の妥当性確認の章は、発ごとのばらつきと系統誤差を含まないと述べている。
+確率誤差は慣例では50~\%の幅なので、CFDの値が棒の外にあることも内にあることも、読んだ印象より弱い言明であり、どちらも実測の不確かさ全体との比較ではない。
+製品のドキュメントの既存の妥当性確認の図は、誤差が不明の量に長さ0の棒を描くが、ここで使う図は描かない。
+% source: the product's documentation figure code (not a results CSV)
+
+% source: doc/data/validation/basic_finner/summary_vs_measured.csv (measured values, probable errors and CFD values of Table~\ref{tab:validation}; a committed data file outside results/)
+図\ref{fig:validation}のCFDの点は、どれも実測の値とだけ比べる。CFDのモデルどうしの差は描かず、計算もしない。
+値を表\ref{tab:validation}に示す。
+
+Eulerの$\CNa$はどのMach数でも実測より2.9から10.5~\%低く、Eulerの$\CXzero$は15.4から28.3~\%低い。
+$\CNa$では、差は八つのMach数のすべてで表の確率誤差より大きい（Mach~1.832ではわずかで、4.4~\%に対し4~\%。Mach~2.718では2.9~\%に対し2~\%で、確率誤差を50~\%の幅と読めば標準偏差の約1個分である）。
+確率誤差は表にある当てはめの統計誤差であり、発ごとのばらつきと系統誤差を含まず、実測の誤差の上限ではない。したがって、それを超えることは実測の不確かさを超えることを意味しない。
+$\CXzero$では、Eulerの値は軸力の圧力成分に、モデル化した摩擦、底面、フィンの後縁の項を足したものなので、比較はCFDだけでなくモデル化した項を含む。
+Mach~1.832の唯一のRANSの点は$\CNa$で$-2.7$~\%であり、表の4~\%の内にある（上に述べた理由で、一致の強い証拠ではない）。その$\CXzero$は底面の扱いによって$-25.8$~\%か$+10.7$~\%で、その比較の符号を決めるのは流れの解ではなく底面の項である。
+Eulerと実測の差を数値誤差ではなくモデルの形に帰せるかどうかは決められない。Eulerの係数には確立した数値不確かさの帯がないからである。
+格子は幾何学的に相似でなく、二つの3段の次数は合わず（\ref{sec:grid}節）、描ける唯一の帯、Mach~2.375の$\CNa$の$\pm0.17$~\%はGCIではなく、二つの格子の間で観測した0.47~\%の変化より小さい。
+その変化は、そのMach数での$-10.5$~\%の差の20分の1より小さいので、既存の段の間で観測した大きさの格子の変化では差は埋まらない。これはその4段についての観測であり、不確かさの見積もりではない。
+ほかのMach数には格子の研究がまったくない。
+Eulerの結果はモデルの形の差（非粘性の流れ、モデル化した底面と摩擦の項）と整合するが、それは実証されていない。
+$\CXzero$に帯を描かないのは、格子の研究がある軸力の圧力成分が、$\CXzero$のいくつかの項の一つにすぎないからである。
+Mach~1.832のRANSの結果にも数値の帯はない。RANSのGCIは得られなかった（\ref{sec:grid}節）ので、RANSの$\CNa$ 11.46（実測から$-2.7$~\%）は既存のRANSの計算の一つの格子の値である。新しいRANSの族の3段の$2^\circ$の解は収束しなかった。
+その差は表の確率誤差4~\%（当てはめの統計量で50~\%の幅）の内にあるが、数値不確かさがないのでCFDの帯と実測の棒の重なりは判断できない。CFDと実測が不確かさの範囲で合うかどうか、差が数値誤差で説明されるかどうかについては、何も述べない。
+Mach~1.832での表\ref{tab:validation}のEulerとRANSの値も、モデルの差と数値の差には分けない。どちらの側にも使える帯がないからである（\ref{sec:model}節）。
+
+%=====================================================================
+\section{考察}
+\label{sec:discussion}
+
+\paragraph{GCIを何に信頼できるか}
+% source: results/layer0_gci.csv (counts, true_error_pct, gci_bounds_error; the ratio of 8 is derived from gci_fine_pct and true_error_pct of the expansion wall pressure)
+層0の中心となる結果は、GCIそのものの測定である。
+厳密な答えが分かるところで、GCIは非粘性の7例のうち5例、層流平板の5例のうち2例で真の誤差を押さえた。
+非粘性の二つの失敗は、次数の規則でも窓の安定性の試験でも、両方は捕らえられなかった（表\ref{tab:detect}）。
+押さえることは締まっていることではなく、押さえた上限は誤差の最大8倍だった。
+したがって、厳密な答えなしに層2で求めたGCIは真の誤差を過小評価しうる条件付きの見積もりであり、保証としてではなく、\ref{sec:gci}節の旗とともに読むべきである。
+
+\paragraph{Mach数から求める壁面の量}
+% source: results/layer0.csv (expansion wall_mach, wall_p_ratio and diag_entropy_wall_window rows)
+膨張では、格子で変わらない壁面のエントロピーの超過に、細分で減らずGCIもない3.55~\%の壁面Mach数の誤差が伴う。
+そこでの壁面圧力（力はこれを積分して得る）の誤差は0.01~\%である。
+その解釈（角や先端で生じたエントロピーが壁に沿って運ばれる）はデータと整合するが、証明されていない。
+
+\paragraph{接合点の境界条件}
+% source: results/layer0.csv, results/layer0_gci.csv (cone and cone_sym_axis wall_cp true_error_pct: 0.188 and 0.748, a factor of about four)
+円すいの先端の接合点に対する感度（最細格子の壁面圧力の誤差で4倍）は、2次元の構造格子の設定で見つかったものである。
+これは、二つの種類の境界の接合点が、格子の研究なら解像度に帰すような誤差を支配しうることを示す。製品の3次元のメッシュが影響を受けることは示さない。
+
+\paragraph{製品が作れる格子}
+% source: results/gci_existing.csv (header and basic_finner_mesh_check rows)
+製品は最大セル寸法を固定するので、その設定による細分は壁の近くだけを変える。層1の円すい-円筒の段は、節点数が1.57倍と1.67倍に増え、相似な細分の2.74倍に届かない。
+このような族のGCIはすべて格子寸法の定義の任意の選択に依存し、Basic Finnerでは、二つの3段の次数がどちらの定義でも合わない。
+製品の信頼できるGCIには、壁の寸法とともに場の全体を細かくするメッシュの制御が必要である。それは製品の変更であり、本研究の範囲の外にある。
+
+\paragraph{参照データ}
+% source: results/cone10_reference_check.csv; Celik et al. Table 1 cell: tests/test_gci.py (not a results CSV)
+公表された二つの検証の参照は、それぞれ内部で整合しない値を一つ含む。NPARCの10$^\circ$の円すいの表（\ref{sec:cone10}節）と、\citet{celik2008}の表1の一つの欄である。
+これらを報告するのはどちらかへの批判ではない。何を目標値に使えるかに関わることであり、本研究が参照値を計算し、独立な表と照合する理由でもある。
+
+\paragraph{製品についての所見}
+本研究の中で製品について観測したことを、それぞれの節で述べた強さのまま集める。
+サンプル機体のRANSの格子収束について公表されたMach~0.8のGCIは、未収束と記録された解を含んでおり、チュートリアルの反復収束の前提を満たさない（\ref{sec:grid}節）。公表された数値が誤りだとは主張しない。
+ランナーがSU2を止めたとき、最後の表面の出力が途中で切れることがあり、原因は確かめていない（\ref{sec:layer1}節）。
+RANSでフィンのセル寸法を壁より小さくすると、メッシュ生成が異常終了し、原因が製品の入力かgmshかは切り分けていない（\ref{sec:l12setup}節）。
+ドキュメントのTaylor--Maccollの計算は、剥離に近い大きな円すい角で衝撃波角の探索の上限が誤った側にある。ここでの10$^\circ$の円すいはその範囲から遠い（\ref{sec:exact}節）。
+ドキュメントの既存の妥当性確認の図は、誤差が不明の量に長さ0の棒を描く（\ref{sec:validation}節）。
+
+\paragraph{本研究の限界}
+層0が検証するのは製品の設定で動かしたSU2であり、製品のパイプラインではない。
+層流平板が検証するのは、製品が書かない設定である。
+乱流平板のデータは、製品の設定に近いが同一ではない設定から得たものである。
+2次元での境界の接合点とエントロピーの所見は、3次元のメッシュでは試験していない。
+製品は二つめの乱流モデルを走らせられない。
+層1の最細の段が収束しなかったので、パイプラインの誤差は評価していない。
+Spalart--AllmarasとSSTの比較は、自作の格子の平板で、製品を通さずSU2を直接動かして行った。SSTはそこでは1次であり、二つの帯の一方には旗が立つ。
+
+%=====================================================================
+\section{結論}
+\label{sec:conclusions}
+
+現段階で支持される結論は次のとおりである。
+% source: results/layer0.csv, results/layer0_gci.csv, results/cone10_reference_check.csv, results/cone_shock_angle_sources.csv, results/gci_existing.csv, results/temporal.csv (every number in the list); figures/validation_bands.svg (item 6)
+\begin{enumerate}
+\item 製品の数値設定で、SU2は$257\times193$節点で、主たる設定では非粘性の厳密解の壁面圧力と衝撃波角を0.2~\%以内で再現する（対称軸の先端の接合点を持つ円すいでは0.75~\%）。一方、Mach数から求める壁面の量には0.8から3.6~\%の誤差が残り、ゆっくりとしか減らないか、まったく減らない。
+\item GCIは、非粘性の結果の7例のうち5例、層流平板の5例のうち2例で最細格子の真の誤差を押さえたが、後者は符号の交差の点でだけである（平板の5行は互いに独立ではない）。観測次数も、窓の間での次数の安定性も、二つの失敗の両方は検出しない。
+\item NPARCの10$^\circ$の円すいの表は内部で整合せず、表面Mach数を除くすべての欄で独立な表と合わない。独立な表は衝撃波角26.74$^\circ$を支持し、27.18$^\circ$を支持しない。
+\item 製品の設定で作る格子は相似に細かくできない。Basic FinnerのEulerの4段の研究は信頼できるGCIを確立せず、公表されたサンプル機体のRANSの格子の研究は、試験したすべての条件で収束の入口の条件を通らない。
+\item 飛翔の積分器は、サンプル機体では収束の次数を示さない。制御の実験を根拠として主にレールのモデルに帰し、小さな第2の寄与は排除しない。
+\item EulerのBasic Finnerの$\CNa$は自由飛翔の実測より2.9から10.5~\%低く、軸力係数は15から28~\%低い。$\CNa$の差は八つのMach数のすべてで表の確率誤差（発ごとのばらつきと系統誤差を含まない当てはめの統計量で、慣例では50~\%の幅）を超えるが、確立した数値の帯がないので、差を数値誤差ではなくモデルの形に帰すことはできない。
+\item 製品の鎖を通したMach~2.35の10$^\circ$の円すい-円筒は最細の段で収束せず、層1にはGCIがなく、3次元非構造メッシュ生成を含むパイプラインの誤差は定量化していない。受け入れた段の厳密な円すいの$\Cp$からの差は$-2.51$~\%と$-1.26$~\%である（記述）。
+\item サンプル機体のEulerの格子は相似に細かくできず（セル数の増え方1.74倍と1.77倍に対し2.74倍）、使えないとされなかった唯一のGCIはMach~2の法線力傾斜のもので、格子寸法の定義により10.6から16.3~\%、大きい方は漸近域の外として旗が立つ。Mach~0.3の$|C_A|$は細分で縮むが、その外挿は0を越える。
+\item Mach~1.832のRANSのBasic FinnerにはGCIが得られず、妥当性確認の比較にはRANSの帯がなく、数値と実測の不確かさの重なりは判断できない。
+\item 反復誤差は、対応する反復誤差の記録を持つどのGCIも無効にしない（対応する比で1を超えるものはない）。ただし使えるGCIを持つ条件は一つ（Mach~2の法線力傾斜）だけで、その反復誤差は下限である。1を超える平板の5つの比較は、抗力の停止の誤差を表面摩擦のGCIと組み合わせたもので、参考にとどまる。
+\item Euler対RANSの七つの比較は、一方または両方の数値の帯がないか旗付きなので、どれも判定できない。平板では、SSTはSpalart--Allmarasと表面摩擦で$-0.79$~\%（SSTのGCI 1.14~\%の内。Spalart--AllmarasのGCIには旗）違い、抗力で$-0.46$~\%（格子の不確かさと分けられない）違う。
+\end{enumerate}
+
+\section*{データの入手}
+本論文の数値は、注記がソースの中で別の収められたファイルを名指す場合を除き、すべてIgnisYeetのリポジトリの\path{research/nasa_vv/results/}にある結果ファイル（と\path{research/nasa_vv/figures/}に収めた図）から得ている。
+結果ファイルを作るコードは\path{research/nasa_vv/}にある（厳密解は\path{exact.py}、GCIの手順は\path{gci.py}、算例を作るものは\path{cases/}、試験は\path{tests/}）。
+リポジトリは\url{https://github.com/ddd3h/ignisyeet}である。
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}

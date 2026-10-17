@@ -1,0 +1,35 @@
+  
+ --- VERIFY: Performs verification calculations ---
+  
+ Number of data sets read =  3
+  
+      Grid Size     Quantity
+  
+      1.000000      0.970500
+      2.000000      0.968540
+      4.000000      0.961780
+  
+ Order of convergence using first three finest grid 
+ and assuming constant grid refinement (Eqn. 5.10.6.1) 
+ Order of Convergence, p =  1.78618479
+  
+ Richardson Extrapolation: Use above order of convergence
+ and first and second finest grids (Eqn. 5.4.1) 
+ Estimate to zero grid value, f_exact =  0.971300304
+  
+ Grid Convergence Index on fine grids. Uses p from above.
+ Factor of Safety =  1.25
+  
+   Grid     Refinement            
+   Step      Ratio, r       GCI(%)
+   1  2      2.000000      0.103080
+   2  3      2.000000      0.356244
+  
+ Checking for asymptotic range using Eqn. 5.10.5.2.
+ A ratio of 1.0 indicates asymptotic range.
+  
+  Grid Range    Ratio
+  12 23      0.997980
+  
+ --- End of VERIFY ---
+  

@@ -45,7 +45,28 @@ def representative_h(nodes: int) -> float:
     return float(nodes) ** (-1.0 / 3.0)
 
 
-def _finish(g: GridConvergence, f1: float, f2: float, f3: float, fs: float) -> GridConvergence:
+_NOT_CONVERGING = (
+    "the finer pair changes at least as much as the coarser pair; "
+    "the solution is not converging under refinement"
+)
+
+
+def _screen(g: GridConvergence) -> bool:
+    """Label the triplets Celik's procedure does not apply to. True means stop."""
+    if g.e21 == 0.0 or g.e32 == 0.0:
+        g.note = "no change between two of the grids; the order is undefined"
+        return True
+    if g.e32 / g.e21 < 0.0:
+        g.note = "oscillatory convergence: the differences change sign"
+        return True
+    g.monotone = True
+    if abs(g.e32) <= abs(g.e21):
+        g.note = _NOT_CONVERGING
+        return True
+    return False
+
+
+def _finish(g: GridConvergence, f1: float, f2: float, fs: float) -> GridConvergence:
     """Fill the derived quantities once the order is known."""
     p = g.order
     assert p is not None
@@ -63,27 +84,29 @@ def grid_convergence(
     fs: float = 1.25, max_iter: int = 200, tol: float = 1e-12,
 ) -> GridConvergence:
     """Celik (2008), for a refinement ratio that need not be constant."""
-    r21, r32 = h2 / h1, h3 / h2
+    r21 = h2 / h1 if h1 != 0.0 else math.nan
+    r32 = h3 / h2 if h2 != 0.0 else math.nan
     e21, e32 = f2 - f1, f3 - f2
     g = GridConvergence(r21=r21, r32=r32, e21=e21, e32=e32)
 
-    if e21 == 0.0 or e32 == 0.0:
-        g.note = "no change between two of the grids; the order is undefined"
+    if not (0.0 < h1 < h2 < h3):
+        g.note = "grid sizes must be positive and increase from finest to coarsest"
         return g
-    if e32 / e21 < 0.0:
-        g.monotone = False
-        g.note = "oscillatory convergence: the differences change sign"
+    if _screen(g):
         return g
 
-    g.monotone = True
-    s = math.copysign(1.0, e32 / e21)
+    s = 1.0
     p = 2.0
     for _ in range(max_iter):
         try:
             q = math.log((r21**p - s) / (r32**p - s))
             nxt = abs(math.log(abs(e32 / e21)) + q) / math.log(r21)
-        except (OverflowError, ValueError, ZeroDivisionError):
+        except OverflowError:
             g.note = "the fixed point iteration did not converge: it left the finite range"
+            return g
+        except (ValueError, ZeroDivisionError):
+            g.note = ("the fixed point iteration did not converge: "
+                      "an intermediate logarithm or ratio is undefined")
             return g
         if not math.isfinite(nxt):
             g.note = "the fixed point iteration did not converge: it left the finite range"
@@ -101,7 +124,7 @@ def grid_convergence(
         return g
 
     g.order = p
-    return _finish(g, f1, f2, f3, fs)
+    return _finish(g, f1, f2, fs)
 
 
 def constant_ratio(
@@ -111,14 +134,16 @@ def constant_ratio(
     e21, e32 = f2 - f1, f3 - f2
     g = GridConvergence(r21=r, r32=r, e21=e21, e32=e32)
 
-    if e21 == 0.0 or e32 == 0.0:
-        g.note = "no change between two of the grids; the order is undefined"
+    if not r > 1.0:
+        g.note = "the refinement ratio must be greater than 1"
         return g
-    if e32 / e21 < 0.0:
-        g.note = "oscillatory convergence: the differences change sign"
+    if _screen(g):
         return g
 
-    g.monotone = True
+    p = math.log(e32 / e21) / math.log(r)
+    if p <= 0.0:
+        g.note = f"the observed order is not positive ({p:.4g})"
+        return g
     g.converged = True
-    g.order = math.log(e32 / e21) / math.log(r)
-    return _finish(g, f1, f2, f3, fs)
+    g.order = p
+    return _finish(g, f1, f2, fs)

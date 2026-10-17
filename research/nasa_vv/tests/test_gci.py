@@ -5,7 +5,6 @@ Input and reference output: https://www.grc.nasa.gov/www/wind/valid/tutorial/
 (prD.do, prD.out). verify.f90 declares REAL, so it is single precision and its
 printed values differ from the double-precision ones in the fifth digit.
 """
-import math
 import pathlib
 
 import pytest
@@ -70,6 +69,50 @@ def test_non_convergent_fixed_point_is_reported():
     assert g.converged is False
     assert g.order is None
     assert "did not converge" in g.note
+
+
+def test_divergent_triplet_is_refused_by_the_constant_ratio_form():
+    """The finer pair changes more than the coarser pair: p would be -1."""
+    g = constant_ratio(1.0, 1.1, 1.15, r=2.0)
+    assert g.order is None
+    assert g.gci_fine is None and g.gci_coarse is None
+    assert g.converged is False
+    assert "not converging under refinement" in g.note
+    assert g.e21 == pytest.approx(0.1) and g.e32 == pytest.approx(0.05)
+
+
+def test_divergent_triplet_is_refused_by_the_variable_ratio_form():
+    """Celik's abs() would turn p = -1 into +1; the screen keeps it out."""
+    g = grid_convergence(1.0, 1.1, 1.15, h1=1.0, h2=2.0, h3=4.0)
+    assert g.order is None
+    assert g.gci_fine is None and g.gci_coarse is None
+    assert g.converged is False
+    assert "not converging under refinement" in g.note
+
+
+def test_equal_differences_are_refused():
+    g = constant_ratio(1.0, 1.1, 1.2, r=2.0)
+    assert g.order is None
+    assert g.extrapolated is None
+    assert g.gci_fine is None
+    assert g.converged is False
+    assert "not converging under refinement" in g.note
+
+
+def test_grid_sizes_must_increase_from_finest_to_coarsest():
+    g = grid_convergence(1.0, 1.1, 1.3, h1=1.0, h2=1.0, h3=2.0)
+    assert g.order is None and g.gci_fine is None
+    assert g.converged is False
+    assert "increase from finest to coarsest" in g.note
+    r = grid_convergence(1.0, 1.1, 1.3, h1=2.0, h2=1.0, h3=0.5)
+    assert r.order is None and "increase from finest to coarsest" in r.note
+
+
+def test_constant_ratio_of_one_is_refused():
+    g = constant_ratio(1.0, 1.1, 1.3, r=1.0)
+    assert g.order is None and g.gci_fine is None
+    assert g.converged is False
+    assert "greater than 1" in g.note
 
 
 def test_two_grid_factor_of_safety_is_three():

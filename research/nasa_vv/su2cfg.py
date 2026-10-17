@@ -15,6 +15,10 @@ reference values, markers, mesh and output names, the iteration cap, SOLVER)
 are not among them. The golden file also lacks NUM_METHOD_GRAD_RECON (RANS
 with Roe only), JST_SENSOR_COEFF (JST only) and ENTROPY_FIX_COEFF (never
 written), so they are not listed.
+
+Every active key of the golden file is classified: in NUMERICS_KEYS, or in
+PER_CASE_KEYS. A golden file with a key in neither fails the completeness
+test, so a new numerics key cannot enter the product unnoticed.
 """
 from __future__ import annotations
 
@@ -45,6 +49,28 @@ NUMERICS_KEYS: tuple[str, ...] = (
     "CONV_FIELD",
     "CONV_RESIDUAL_MINVAL",
     "CONV_STARTITER",
+)
+
+# Every other active key of the golden file. They legitimately differ per case, or are written by layer0_config
+# itself (case block). tests/test_su2cfg.py requires NUMERICS_KEYS and PER_CASE_KEYS to partition the golden's keys.
+PER_CASE_KEYS: frozenset[str] = frozenset({
+    "SOLVER", "MATH_PROBLEM", "SYSTEM_MEASUREMENTS", "RESTART_SOL",
+    "MACH_NUMBER", "AOA", "SIDESLIP_ANGLE",
+    "FLUID_MODEL", "GAMMA_VALUE", "GAS_CONSTANT", "INIT_OPTION", "FREESTREAM_OPTION",
+    "FREESTREAM_PRESSURE", "FREESTREAM_TEMPERATURE", "REF_DIMENSIONALIZATION",
+    "REF_ORIGIN_MOMENT_X", "REF_ORIGIN_MOMENT_Y", "REF_ORIGIN_MOMENT_Z",
+    "REF_LENGTH", "REF_AREA",
+    "MARKER_EULER", "MARKER_MONITORING", "MARKER_FAR", "MARKER_SYM", "MARKER_PLOTTING",
+    "ITER",
+    "MESH_FILENAME", "MESH_FORMAT", "RESTART_FILENAME", "CONV_FILENAME", "SURFACE_FILENAME",
+    "TABULAR_FORMAT", "OUTPUT_FILES", "HISTORY_OUTPUT", "SCREEN_OUTPUT", "VOLUME_OUTPUT",
+    "SCREEN_WRT_FREQ_INNER", "HISTORY_WRT_FREQ_INNER", "OUTPUT_WRT_FREQ",
+})
+
+# The gas model and its initialisation: not numerics, but if they differed layer 0 would solve other physics than
+# the product. layer0_config copies them from the golden file too.
+PHYSICS_KEYS: tuple[str, ...] = (
+    "FLUID_MODEL", "GAMMA_VALUE", "GAS_CONSTANT", "INIT_OPTION", "FREESTREAM_OPTION",
 )
 
 # marker kinds accepted by layer0_config
@@ -83,10 +109,13 @@ def product_numerics(cfg_text: str) -> dict[str, str]:
     return {k: parsed[k][1] for k in NUMERICS_KEYS}
 
 
-def _numerics_block(golden: str) -> list[str]:
-    product_numerics(golden)  # KeyError when a key is missing
+def _verbatim(golden: str, keys: Sequence[str]) -> list[str]:
+    """The golden file's own lines of `keys`; KeyError naming the missing ones."""
     parsed = _parse(golden)
-    return [parsed[k][0] for k in NUMERICS_KEYS]
+    missing = [k for k in keys if k not in parsed]
+    if missing:
+        raise KeyError(f"keys missing from the golden configuration: {', '.join(missing)}")
+    return [parsed[k][0] for k in keys]
 
 
 def _marker_list(names: Sequence[str]) -> str:
@@ -109,6 +138,9 @@ def layer0_config(
     iterations: int = 3000,
 ) -> str:
     """SU2 configuration text of one layer 0 case.
+
+    `ndim` (2 or 3) only validates `axisymmetric`; it is not written, because SU2
+    takes the dimension from the mesh's NDIME and has no NDIM option.
 
     `markers` maps a kind to marker names: "wall" (slip wall, also monitored),
     "far" (far field) and optionally "sym". `golden` is a configuration
@@ -133,13 +165,13 @@ def layer0_config(
         raise NotImplementedError(
             "the golden file is an Euler configuration; a viscous layer 0 case needs "
             "the numerics of a configuration the product wrote for RANS")
-    numerics = _numerics_block(golden)
+    numerics = _verbatim(golden, NUMERICS_KEYS)
+    physics = _verbatim(golden, PHYSICS_KEYS)
     if analyze is None:
         analyze = list(markers["far"])
 
     c: list[str] = []
     c.append("% layer 0 case. Numerics: copied from a configuration written by `ignisyeet aero`.")
-    c.append(f"% NDIM= {ndim} (SU2 takes the dimension from the mesh's NDIME; NDIM is not an SU2 option)")
     c.append("SOLVER= EULER")
     c.append("MATH_PROBLEM= DIRECT")
     c.append("SYSTEM_MEASUREMENTS= SI")
@@ -149,11 +181,7 @@ def layer0_config(
     c.append(f"MACH_NUMBER= {mach:.6f}")
     c.append(f"AOA= {aoa_deg:.6f}")
     c.append("SIDESLIP_ANGLE= 0.0")
-    c.append("FLUID_MODEL= IDEAL_GAS")
-    c.append("GAMMA_VALUE= 1.4")
-    c.append("GAS_CONSTANT= 287.05287")
-    c.append("INIT_OPTION= TD_CONDITIONS")
-    c.append("FREESTREAM_OPTION= TEMPERATURE_FS")
+    c.extend(physics)  # the golden's own gas-model lines
     c.append(f"FREESTREAM_PRESSURE= {pressure:.4f}")
     c.append(f"FREESTREAM_TEMPERATURE= {temperature:.4f}")
     c.append("REF_DIMENSIONALIZATION= DIMENSIONAL")

@@ -28,7 +28,6 @@ IY-TR-2026-01: NASA CFD verification and validation of IgnisYeet v0.4.0
 
 .. raw:: html
 
-   <p class="iy-paper-notice">&copy; 2026 Daisuke Nishihama.</p>
    </article>
 
    </div>

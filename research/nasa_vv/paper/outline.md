@@ -4,6 +4,12 @@ Both papers follow this outline section by section. Keys in `code` are the LaTeX
 papers use the same labels so that each table and figure maps one to one. The fact base is the
 paper at commit e377960; no number changes, and every qualification of that paper stays.
 
+## Title
+
+Can an automated CAD-to-coefficient CFD pipeline quantify its own numerical uncertainty? The NASA
+WIND/NPARC procedure applied to IgnisYeet (the Japanese paper uses the equivalent title; the short
+title stays "V&V of the IgnisYeet aerodynamic pipeline").
+
 ## Question (one sentence)
 
 Can an automated CAD-to-coefficient CFD pipeline, here IgnisYeet over SU2, deliver aerodynamic
@@ -12,14 +18,15 @@ cannot, why not?
 
 ## Answer (two sentences)
 
-Almost not yet: the solver with the product's settings is verified against exact solutions, but on
-the product's own grids only one coefficient at one condition (the Mach 2 normal-force slope of the
-sample rocket, 10.6 % or 16.3 % by grid-size definition, the latter flagged) receives a GCI that is
-neither refused nor unusable, the pipeline's own error is not quantified, and the validation
-comparison cannot separate model error from numerical error. The causes, in the order of how much
+Not yet, for this pipeline: the solver with the product's settings is verified against exact
+solutions, but the pipeline's own error is not quantified, on the sample rocket only one coefficient
+at one condition (the Mach 2 normal-force slope, 10.6 % or 16.3 % by grid-size definition, the
+latter flagged) receives a GCI that is neither refused nor unusable, the Basic Finner has no
+reliable GCI with Euler (its GCIs are computed but its two triplets disagree) and none with RANS,
+and the validation comparison cannot separate model error from numerical error. The causes, in the order of how much
 of the study each blocks, are that the product's mesher fixes the largest cell size so grids cannot
 be refined similarly, that solver convergence is not robust enough for the gate (RANS stalls or
-limit cycles, the layer-1 fine level), and that even a converged GCI is conditional, as the
+limit cycles, the layer-1 fine level; causes not established), and that even a converged GCI is conditional, as the
 exact-solution layer shows.
 
 ## Sections
@@ -30,7 +37,7 @@ Message: question, approach in three layers, answer, the three causes. Same numb
 ### 1 Introduction `sec:intro`
 Message: an automated pipeline returns coefficients with no statement of trust; the NASA procedure
 is the standard way to attach one, but applying it when the user does not control the mesh is not
-routine; we ask whether it can be done and find that, for this pipeline, almost not yet.
+routine; we ask whether it can be done and find that, for this pipeline, not yet.
 - Background: automated CFD in rocket design tools (IgnisYeet as the instance, no external
   citation for the trend); coefficients feed flight simulation.
 - The standard procedure: AIAA G-077-1998, NPARC tutorial, Roache GCI, Celik et al. 2008.
@@ -83,8 +90,10 @@ which limits every product GCI.
   limits.
 
 #### 3.3 R3. In application, almost no usable uncertainty band `sec:r3`
-Message: on the sample rocket and the Basic Finner the six steps leave one GCI that is neither
-refused nor unusable, the Mach 2 normal-force slope, and no RANS GCI.
+Message: on the sample rocket the six steps leave one GCI that is neither refused nor unusable,
+the Mach 2 normal-force slope, which is wide and of poor reliability; the Basic Finner Euler study
+computes GCIs but its two triplets disagree, so it establishes no reliable one; there is no RANS GCI.
+Scope matters: "the only GCI" is said of the sample rocket, never of layer 2 as a whole.
 - 3.3.1 Spatial convergence `sec:grid`. Carrier: `tab:sample`. Basic Finner Euler (former
   `tab:finner`) condensed to text: triplets disagree, ±0.17 % sensitivity, +0.47 % change. Basic
   Finner RANS (former `tab:rans`) condensed to text: 2° solves not converged on every level.
@@ -110,7 +119,8 @@ bands are missing or flagged.
 - Closes: no comparison of this study can say which side is wrong.
 
 ### 4 Discussion `sec:discussion`
-- 4.1 The answer `sec:answer`. Message: almost not yet, for this pipeline.
+- 4.1 The answer `sec:answer`. Message: not yet, for this pipeline, apart from one wide band of poor
+  reliability on the sample rocket.
 - 4.2 Root causes, ranked `sec:causes`. Message: (1) the mesher fixes the largest cell size;
   (2) convergence robustness (RANS stalls and limit cycles, layer-1 fine level, causes untested);
   (3) a GCI without an exact answer is conditional (layer-0 evidence).

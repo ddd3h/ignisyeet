@@ -29,8 +29,8 @@ We ask whether such a pipeline, the aerodynamic tool of the rocket simulator Ign
 Three layers separate the solver, the pipeline and the application: SU2 with the product's settings against exact solutions (layer~0), the same cone through the product's whole chain (layer~1), and the tutorial's six steps on a sample rocket and on the Basic Finner, including free-flight measurements (layer~2).
 The solver and its settings are verified: in the primary setups the surface pressure and the shock angle are within 0.2\,\% of the exact value, although wall quantities derived from the Mach number retain errors of 0.8 to 3.6\,\% that decrease slowly or not at all.
 The pipeline's own error is not quantified: through the product's chain the cone could not be brought to an accepted finest level, so layer~1 has no grid convergence index (GCI).
-In application, the only GCI that is neither refused nor unusable is that of the sample rocket's Mach 2 normal-force slope, 10.6\,\% on one definition of grid size and 16.3\,\% on the other (flagged as outside the asymptotic range); no GCI was obtained for the Basic Finner with RANS at Mach 1.832, and none of the seven Euler-against-RANS conditions can be given a verdict; neither the validation nor the model comparisons can therefore separate model error from numerical error.
-For this pipeline the answer is therefore: almost not yet.
+In application, the only GCI on the sample rocket that is neither refused nor unusable is that of the Mach 2 normal-force slope, 10.6\,\% on one definition of grid size and 16.3\,\% on the other (flagged as outside the asymptotic range); the Basic Finner has no reliable GCI with Euler, no GCI was obtained for it with RANS at Mach 1.832, and none of the seven Euler-against-RANS conditions can be given a verdict; neither the validation nor the model comparisons can therefore separate model error from numerical error.
+For this pipeline the answer is therefore: not yet, apart from one wide band of poor reliability.
 We trace this to three causes.
 The product's mesher fixes the largest cell size, so its grids cannot be refined similarly, and a four-level Basic Finner study at Mach 2.375 does not establish a GCI.
 Solves that stall or settle into limit cycles keep levels out of the convergence gate.
@@ -75,7 +75,7 @@ The findings, each developed in one part of Section~\ref{sec:results}, are these
 \begin{itemize}
 \item The solver and its settings are verified against exact solutions, but where the exact answer is known the GCI does not always bound the true error, and the available checks do not detect when it fails (Section~\ref{sec:r1}).
 \item The pipeline's own error could not be quantified: the finest layer-1 level did not converge, and, independently, the product's grids cannot be refined similarly (Section~\ref{sec:r2}).
-\item At working conditions the six steps leave almost no usable uncertainty band: one coefficient at one condition (Section~\ref{sec:r3}).
+\item At working conditions the six steps leave almost no usable uncertainty band: one coefficient at one condition on the sample rocket, and no reliable GCI on the Basic Finner (Section~\ref{sec:r3}).
 \item The validation and model comparisons therefore report sizes of differences, not verdicts (Section~\ref{sec:r4}).
 \end{itemize}
 Section~\ref{sec:discussion} draws these together into an answer, ranks the causes and states what the findings imply for such pipelines.
@@ -90,8 +90,7 @@ Only the comparison with free-flight measurements (Section~\ref{sec:validation})
 \section{Method}
 \label{sec:method}
 
-This section gives what is needed to read the results: the three layers and their cases, the GCI with the rules that decide when a number is reported, and the two grid-size definitions that the product's grids force on the analysis.
-Setup details that the argument does not need are in Appendix~\ref{sec:appA}.
+This section gives only what the results need; setup details are in Appendix~\ref{sec:appA}.
 
 \subsection{Three layers and the six steps}
 \label{sec:layers}
@@ -192,8 +191,7 @@ Every layer-2 family is built through the product's own cell-size settings; Sect
 \section{Results}
 \label{sec:results}
 
-The results are arranged to answer the question in four parts.
-R1 asks whether the solver and settings can be trusted and whether the GCI itself can be; R2 asks whether the pipeline adds error that can be measured; R3 asks which coefficients at working conditions receive a band; R4 asks what the comparisons with other models and with measurements can then conclude.
+The results answer the question in four parts, from the solver outward: whether the solver and the GCI itself can be trusted (R1), whether the pipeline's error can be measured (R2), which coefficients receive a band (R3), and what the comparisons can then conclude (R4).
 
 \subsection{R1. The solver and settings are verified, but the GCI is not a guarantee}
 \label{sec:r1}
@@ -410,8 +408,7 @@ The decisive step is spatial convergence; iterative convergence and consistency 
 \label{sec:grid}
 
 % source: results/gci_sample_euler.csv (rows and header), results/sample_euler_levels.csv
-The sample-rocket Euler family meets the gate on every level (a converged or accepted verdict and at least 3.2 orders of residual drop), so it is the one family in which the GCI can be tried at all.
-Table~\ref{tab:sample} gives the result.
+The levels of the sample-rocket Euler family meet the gate (a converged or accepted verdict and at least 3.2 orders of residual drop), so its GCIs can be computed; Table~\ref{tab:sample} gives them.
 Rows whose GCI exceeds 100\,\% or whose extrapolation lies past a known exact value are marked unusable.
 
 \begin{table}[t]
@@ -480,8 +477,7 @@ The tutorial requires that the iterative error be small against the grid uncerta
 Of the 38 rows of the iterative-error comparison, \emph{no row in which the grid and the quantity match has a ratio above 1}, so no GCI is invalidated by its iterative error.
 But the check is narrow, because only one condition has a usable GCI to compare with: the Mach 2 normal-force slope, whose iterative error on the finest grid is $3.3\times10^{-4}\,\%$, $3.2\times10^{-5}$ of the GCI (10.6\,\%), with the density residual down by 8.6 orders.
 That error is a lower bound, because the reference state is the last row the solver wrote, so the result is no evidence that the iterative error disturbs this GCI but weaker than a demonstration that it is small.
-For 28 rows there is no ratio because the matching GCI is refused, oscillatory, flagged or unusable; on the sample-rocket levels the iterative error is at most 0.04\,\% on $C_A$ and 0.02\,\% on $C_N$ (again lower bounds).
-A stop at a density residual of $10^{-6}$ from a warm start leaves more: 0.55 to 1.42\,\% in $C_N$ at Mach 0.8 and $4^\circ$, and 6.3\,\% in $C_A$ at Mach 0.8, where no usable GCI exists for comparison.
+For 28 rows there is no ratio because the matching GCI is refused, oscillatory, flagged or unusable: the iterative error is known there and cannot be compared.
 Five flat-plate rows exceed 1, but they are indicative only: they set the iterative error of the plate drag (0.12 to 1.9\,\% at Mach 0.2) against the grid uncertainty of the skin friction (0.038\,\%), another quantity, and do not invalidate the skin-friction GCI.
 
 % source: results/consistency.csv
@@ -509,22 +505,21 @@ Step~5 does not apply to the steady CFD, which has no time step.
 The flight integrator examined in its place shows no convergence order on the sample rocket, a spread attributed on the evidence of controls mainly to the rail model, with a second contribution not excluded (Appendix~\ref{sec:temporalapp}); this lies outside the question of CFD uncertainty.
 
 \paragraph{What R3 establishes.}
-At working conditions the procedure leaves one coefficient at one condition with a GCI that is neither refused nor unusable, the Mach 2 normal-force slope of the sample rocket, and that band is wide and of poor reliability.
-The Basic Finner has no reliable GCI with Euler and none with RANS, and the product's own published RANS grid study does not meet the procedure's precondition.
+On the sample rocket the procedure leaves one coefficient at one condition with a GCI that is neither refused nor unusable, the Mach 2 normal-force slope, and that band is wide and of poor reliability.
+The Basic Finner Euler study computes GCIs, but its two triplets disagree and it establishes no reliable one; with RANS the Basic Finner has none, and the product's own published RANS grid study does not meet the procedure's precondition.
 
 \subsection{R4. Validation and model uncertainty cannot be separated from numerical uncertainty}
 \label{sec:r4}
 
 Step~6 is where a numerical band earns its place: a difference from a measurement or from another model is attributed to the model only if it exceeds the numerical uncertainty.
-R3 has left almost no band, so this part asks what the comparisons can still say.
-The answer is the size of each difference, and in no case a verdict.
+R3 has left almost no band, so this part asks what the comparisons can still say: the size of each difference, and in no case a verdict.
 
 \subsubsection{Validation against free-flight data}
 \label{sec:validation}
 
 % source: figures/validation_bands.svg (the plotted measured and CFD values are read from the Basic Finner data files of the product's documentation, which are not copied into results/)
 The Basic Finner coefficients are compared with the free-flight measurements of \citet{dupuis1997}: aeroballistic range tests, with the coefficients obtained from a six-degree-of-freedom maximum-likelihood fit over groups of shots at eight Mach numbers between 1.077 and 4.300 (Fig.~\ref{fig:validation}, Table~\ref{tab:validation}).
-Each tabulated coefficient carries a probable error in per cent; a blank entry means the error is unknown and no bar is drawn, and a tabulated 0 means an error below 0.5\,\%, not zero error.
+Each tabulated coefficient carries a probable error in per cent (Table~\ref{tab:validation} explains blank and zero entries; a blank entry gets no bar).
 These probable errors are the statistical error of the fit; the product's validation chapter states that they exclude round-to-round scatter and systematic error.
 A probable error is conventionally a 50\,\% bound, so a CFD value outside or inside the bar is a weaker statement than it reads, and neither is a comparison with the full measurement uncertainty.
 
@@ -628,9 +623,9 @@ Without a numerical band, the procedure's last step can report sizes but cannot 
 
 % source: results/gci_sample_euler.csv (the Mach 2 normal-force slope)
 The question was whether an automated CAD-to-coefficient pipeline can deliver its coefficients with a numerical uncertainty quantified by the NASA procedure.
-For IgnisYeet over SU2, as it stands, the answer is: almost not yet.
+For IgnisYeet over SU2, as it stands, the answer is: not yet.
 The solver with the product's settings is verified on exact solutions (R1).
-But the pipeline's own error is not quantified (R2), at working conditions only one coefficient at one condition receives a GCI that is neither refused nor unusable, and that band, 10.6 or 16.3\,\% on the two grid-size definitions, is wide and of poor reliability (R3), and the validation and model comparisons consequently report sizes and no verdicts (R4).
+But the pipeline's own error is not quantified (R2), on the sample rocket only one coefficient at one condition receives a GCI that is neither refused nor unusable, and that band, 10.6 or 16.3\,\% on the two grid-size definitions, is wide and of poor reliability, while the Basic Finner has no reliable GCI with Euler and none with RANS (R3), and the validation and model comparisons consequently report sizes and no verdicts (R4).
 
 \subsection{Root causes, ranked}
 \label{sec:causes}
@@ -646,7 +641,7 @@ It would remain even if every solve converged.
 
 % source: results/basic_finner_rans_levels.csv, results/gci_existing.csv (rans_mesh_study rows), results/layer1_cone.csv; doc/source/validation.rst (Mach 2.375 and 3.147; not a results CSV)
 \emph{Second, solver convergence is not robust enough for the gate.}
-The $2^\circ$ RANS solves of the Basic Finner are recorded as stalled, with the limit-cycle flag set, on every level, the product's RANS stalls in a limit cycle at Mach 2.375 and diverges at Mach 3.147, the existing RANS sample-rocket study is refused on every family, and the finest layer-1 level, an Euler solve, did not converge.
+The $2^\circ$ RANS solves of the Basic Finner are recorded as stalled, with the limit-cycle flag set, on every level, the product's RANS stalls in a limit cycle at Mach 2.375 and diverges at Mach 3.147, the existing RANS sample-rocket study is refused on solves recorded as not converged (and, at Mach 2 and $4^\circ$, on a rerun with no recorded verdict), and the finest layer-1 level, an Euler solve, did not converge.
 Wherever it occurs it removes the GCI entirely rather than widening it.
 Its causes were not established: the dependence on rank count and decomposition is untested, and the flipped verdicts of the RANS coarse level are confounded by build and decomposition.
 
@@ -675,7 +670,7 @@ The study also found five things about the product itself, none of which changes
 The GCI published for the RANS sample-rocket family at Mach 0.8 rests on a solve recorded as not converged and so does not meet the tutorial's iterative-convergence precondition; this is not a claim that the published number is wrong (Section~\ref{sec:grid}).
 When the runner stops SU2, the final surface output can be incomplete, with no cause established beyond that the write is cut at the stop (Appendix~\ref{sec:appA}).
 With RANS and a fin size smaller than the wall size, the mesher aborts, and whether the product's input or gmsh is at fault was not separated (Appendix~\ref{sec:appA}).
-The Taylor--Maccoll solver of the product's documentation brackets the shock angle by a fixed upper limit that, for large cone angles near detachment, lies on the wrong side of the maximum of the cone-angle curve; the 10$^\circ$ cones here are far from that range.
+The Taylor--Maccoll solver of the documentation brackets the shock angle by a limit that lies on the wrong side near detachment; the 10$^\circ$ cones here are far from that range.
 % source: no results CSV (comparison of the two solvers; not used for any number in this paper)
 And an existing validation figure of the documentation draws a bar of length zero for a quantity whose error is unknown; the figure used here does not.
 % source: the product's documentation figure code (not a results CSV)
@@ -699,9 +694,9 @@ Two published verification references each contain an internally inconsistent en
 % source: results/layer0_gci.csv, results/layer1_gci.csv, results/gci_sample_euler.csv, results/gci_basic_finner_rans.csv, results/model_uncertainty.csv (numbers in this section)
 The NASA WIND/NPARC procedure was applied to an automated CAD-to-coefficient CFD pipeline in three layers, to ask whether its coefficients can carry a quantified numerical uncertainty.
 The solver with the product's numerical settings is verified against exact solutions, but where the exact answer is known the GCI bounded the true error for only 5 of 7 inviscid and 2 of 5 laminar-plate results, and the available checks do not detect the failures.
-Through the product's chain the pipeline's own error could not be quantified, and at working conditions the only GCI that is neither refused nor unusable is that of the sample rocket's Mach 2 normal-force slope, 10.6 or 16.3\,\% by grid-size definition, the latter flagged.
-The Basic Finner has no established GCI, so its comparison with free-flight data, like every Euler-against-RANS comparison, reports a size and not a verdict.
-For this pipeline the answer is therefore almost not yet, and the findings trace it to grids that the mesher cannot refine similarly, to solves that do not pass the convergence gate, and to the conditional nature of a GCI without an exact answer.
+Through the product's chain the pipeline's own error could not be quantified, and on the sample rocket the only GCI that is neither refused nor unusable is that of the Mach 2 normal-force slope, 10.6 or 16.3\,\% by grid-size definition, the latter flagged.
+The Basic Finner has no reliable GCI, so its comparison with free-flight data, like every Euler-against-RANS comparison, reports a size and not a verdict.
+For this pipeline the answer is therefore not yet, apart from that one band, and the findings trace it to grids that the mesher cannot refine similarly, to solves that do not pass the convergence gate, and to the conditional nature of a GCI without an exact answer.
 
 \section*{Data availability}
 All numbers in this paper come from the result files under \texttt{research/nasa\_vv/results/} (and the committed figures under \texttt{research/nasa\_vv/figures/}) of the IgnisYeet repository, except where a comment in the source names another committed file.
@@ -728,10 +723,9 @@ The third column of that table is oscillatory; the implementation refuses it by 
 \paragraph{Layer 0.}
 % source: results/layer0.csv (header), results/layer0_plate.csv (header)
 The numerical settings copied from the product cover the convective discretisation, reconstruction, limiter, gradient method, CFL control, linear solver and stopping criteria; the gas model is the product's.
-The grids are body-fitted and structured, with three levels of $65\times49$, $129\times97$ and $257\times193$ nodes ($85\times49$, $169\times97$, $337\times193$ for the plate), exactly nested so that $r=2$ holds exactly.
+The grids are body-fitted and structured, with three levels of $65\times49$, $129\times97$ and $257\times193$ nodes ($85\times49$, $169\times97$, $337\times193$ for the plate, which has $Re=10^5$ per metre), exactly nested so that $r=2$ holds exactly.
 In the supersonic cases the inlet, outlet and top are far-field boundaries, and every wave leaves through the outlet: along the top boundary $|p/\pinf-1|\le7.3\times10^{-10}$ in each of the twelve runs.
 The runs are driven to a density residual of $10^{-14}$ or to an iteration budget; the convergence measure reported is the peak minus the final value of $\log_{10}$ of the density residual.
-The laminar plate has $Re=10^5$ per metre.
 
 \paragraph{Layer 1.}
 % source: results/layer1_cone.csv (header and level columns)

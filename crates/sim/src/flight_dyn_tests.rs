@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+// Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Tests of the rate- and acceleration-dependent aerodynamics of the flight model: lag (alpha-dot)
 //! moment, rotation-induced normal force, Magnus force and moment, and the roll-resonance check,
 //! against the linear theory of the free oscillation (Etkin, Dynamics of Flight) and Murphy's

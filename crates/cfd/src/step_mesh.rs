@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+// Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 //! CAD B-rep surface (`surface = "step"`): the user's STEP, IGES or BREP model with every detail (launch lugs, rail
 //! buttons, camera pods, nozzle, asymmetric parts) as the exact, smooth CFD wall.
 //!

@@ -1,0 +1,11 @@
+# Shock angle of a 10 degree half-angle cone at M = 2.35, gamma = 1.4.
+# Collected to settle the disagreement between nasa_vv.exact.taylor_maccoll
+# (26.7367 deg) and the NPARC cone10 page (27.1843 deg). See spec section 4.0.
+# Verdict: the independent sources support 26.74 deg; none supports 27.18 deg.
+# uncertainty_deg is the honest half-width of each value: interpolation and reading error, not a statistical interval.
+source,reference,beta_deg,uncertainty_deg,how_read,note
+nasa_vv.exact,research/IY-TR-2026-01/nasa_vv/exact.py,26.7367,,computed,shooting on beta to theta_c = 10 deg; the module under test
+nparc_cone10,https://www.grc.nasa.gov/www/wind/valid/cone10/cone10.html,27.1843,,table text,inconsistent with its own M3 and its printed p/T/rho ratios
+sims_sp3004_table11,"Sims, NASA SP-3004 (1964), Table 11 p.16, https://ntrs.nasa.gov/citations/19640009035",26.7366,0.02,"table lookup at M = 1.75 2.0 2.5 3.0 3.5 then quartic Lagrange interpolation in 1/M to M = 2.35","fully independent: published Taylor-Maccoll table (Runge-Kutta, gamma = 1.4); tabulated Mach numbers are 2.0 and 2.5 not 2.35 so the value is interpolated; table entries 10 deg column theta_w = 0.62563831 0.54464827 0.44136238 0.37899374 0.33790128 rad; interpolation error about 0.01 deg judged by holding out M = 2.0 and 2.5"
+naca1135_chart5,"Ames Research Staff, NACA Report 1135 (1953), Chart 5 p.660, https://ntrs.nasa.gov/citations/19930091059",26.80,0.15,"chart read at sigma = 10 deg from the M = 2.0 2.2 2.4 2.6 curves then cubic interpolation in 1/M to M = 2.35","fully independent of this code but chart only and drawn for gamma = 1.405 not 1.4 (effect about 0.004 deg); read by pixel measurement of the scanned curves; the same method read against the SP-3004 table at tabulated Mach numbers sits 0.03 to 0.15 deg high so a reading bias of about +0.07 deg is present"
+rust_panel_taylor_maccoll,crates/panel/src/supersonic.rs:164 taylor_maccoll(m1; beta),26.7367,0.001,"bisection on beta in a scratch copy of the function until the cone angle is 10 deg","only partly independent: a separate implementation of the same Taylor-Maccoll physics and the same ideal-gas model (gamma = 1.4); it can catch a porting or numerical bug but not a shared conceptual error"

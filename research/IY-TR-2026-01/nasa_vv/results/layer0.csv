@@ -1,0 +1,141 @@
+# Layer 0 of the NASA WIND/NPARC verification study: SU2 8.3.0 (ignisyeet-su2-native), Euler, run directly with the numerics of a configuration `ignisyeet aero` wrote.
+# Producer: python -m nasa_vv.cases.layer0 (research/IY-TR-2026-01/nasa_vv/cases/layer0.py). Numerics and gas model: copied by nasa_vv.su2cfg.layer0_config from tests/data/golden_euler.cfg (sha256 a8274982da83).
+# Exact references: nasa_vv.exact.oblique_shock(2.5, 15), taylor_maccoll(2.35, 10), prandtl_meyer_expansion(2.5, 15).
+# Grids: body-fitted, structured, exactly nested (every coarse node is a fine node); 65x49, 129x97 and 257x193 nodes, i.e. 64x48, 128x96 and 256x192 cells, so the refinement ratio is exactly 2.
+# Boundaries: inlet, outlet and top are MARKER_FAR (supersonic in and out); the lower boundary is an Euler wall.
+# The lower boundary of the wedge and of the expansion is one MARKER_EULER marker. Split in two at the expansion corner, the corner node became a stagnation point (u = v = 0, p = 3 p_inf) and rms[Rho] stalled near -1.5.
+# The cone is run twice. 'cone' has the whole lower boundary, axis and cone surface, as one MARKER_EULER under AXISYMMETRIC= YES (SU2 8.3.0 accepts it without a message); an inviscid slip wall on r = 0 imposes v = 0, the same as symmetry. 'cone_sym_axis' has the axis (x < 0) as MARKER_SYM and the cone surface as MARKER_EULER. There the tip node, which belongs to both markers, is a stagnation node on every grid (diag_corner_node_mach = 0), and 'cone' is the layer 0 result.
+# Every wave leaves through the outlet (wedge shock at y = 0.75, cone shock at r = 0.50, expansion fan head at y = 0.44 on x = 1). Checked in each of the 12 runs: the largest |p/p_inf - 1| along the top boundary is 7.3e-10, and the collector refuses a run above 1e-06.
+# The only edit to the layer0_config output is OUTPUT_FILES= ( RESTART_ASCII, SURFACE_CSV ) in place of RESTART, so the solution can be read as text; the numerics are asserted identical to the golden's.
+# ITER = 20000 (a per-case budget, not a numerics key); CONV_RESIDUAL_MINVAL = -14 on rms[Rho] stops a run earlier.
+# Every run records Avg_Massflow(inlet) and Avg_Massflow(outlet) in its history.csv; they are not analysed here.
+# cfd is the mean of the nodal values in the window (wall nodes of the lower boundary for wall quantities); window is stated per row with the first and last node used.
+# The window is x-bounded and its end is not a node, so the node set differs slightly by level (for 0.3 <= x <= 0.9 the last node is x = 0.8837 on 65x49 and 0.8953 on the finer two).
+# window_spread is the relative spread (max - min) / |mean| of the quantity over the window's nodes. It measures the variation along the window and says nothing about whether the error is a discretisation error. For shock_angle_deg it is the spread of the angles from the fitted line's foot to each crossing.
+# The test of whether an error is a discretisation error is the stability of the observed order when the window moves (layer0_gci.csv notes): the order of the four wall windows [0.3, 1], [0.4, 1], [0.5, 1], [0.6, 1] is called stable if they lie within 0.5 of each other. Window-to-window range of the observed order: wedge wall_p_ratio 0.84 to 1.04 (stable); cone wall_cp 2.10 to 4.12 (not stable); cone wall_mach 0.46 to 0.66 (stable); cone_sym_axis wall_cp 1.36 to 1.58 (stable); cone_sym_axis wall_mach 0.76 to 0.81 (stable); pm15 wall_p_ratio 0.65 to 2.54 (not stable); pm15 wall_mach 0.06 to 2.15 (not stable).
+# p/p_inf uses p_inf = 101325 Pa; wall_cp = 2 (p/p_inf - 1) / (gamma M^2); wall_mach is the local Mach number of the wall node.
+# shock_angle_deg: on each horizontal line y = c the x where p crosses (p_inf + p_wall)/2, linearly interpolated along the grid columns, with p_wall the CFD wall plateau of the same grid; a free least-squares line through the points, angle atan(slope).
+# diag_shock_fit_intercept: y of that line at x = 0, which is 0 if the shock leaves the leading edge: -9.17e-04, -4.18e-04, -1.81e-04 on 65x49, 129x97 and 257x193.
+# Rows named diag_ are not compared quantities and are not in layer0_gci.csv; they say what the compared wall values contain. s/s_inf is (p / rho^gamma) / (p_inf / rho_inf^gamma).
+# diag_entropy_wall_upstream: the wall upstream of the corner or tip (1 exactly where the flow is undisturbed). diag_entropy_wall_window: the wall in the quantity's window. diag_entropy_row10_window: ten rows off the wall at the same x. diag_entropy_wall_tip_0_0.1: the wall over 0 <= x <= 0.1.
+# The exact column of diag_entropy_wall_window and diag_entropy_row10_window is the entropy of the exact solution in that region: 1 for the expansion, the oblique-shock value for the wedge (a real shock raises s/s_inf by about 1.03 there, so for the wedge the row 10 value near 1.03 is correct and the wall value is not), the surface value for the cone.
+# On the coarsest wedge grid row 10 lies inside the shock layer for part of the window (its window_spread is 3 per cent there).
+# diag_mach_row3_window: Mach number three rows off the wall (exact: the uniform-region value; none for the cone, whose Mach number varies across the layer). diag_corner_node_*: the node at x = 0, the leading edge, the corner or the tip.
+# Reading: the wall entropy exceeds the exact value on the expansion, the cone and the wedge, while ten rows off the wall it is at the exact value and upstream it is 1. On the wedge the wall reads s/s_inf = 1.0583, 1.0581, 1.0580 on 65x49, 129x97 and 257x193, ten rows off the wall 1.0261, 1.0302, 1.0302, and the exact post-shock value is 1.0299: a grid-independent excess of 2.7 per cent at the wall. This is consistent with entropy generated at the corner or tip (the wedge's leading edge is itself a corner) and convected along the wall; it is an interpretation, not a proof. On the expansion the excess is the same on all three grids and the Mach number three rows off the wall is still below the exact value, so the layer is thicker than three rows or something else is also at work.
+# difference = cfd - exact; difference_pct = 100 (cfd - exact) / exact, empty where there is no exact value or it is 0.
+# nodes: nodes of the grid; level: nodes in each direction.
+# residual_drop_orders: the peak of log10 rms[Rho] over the history minus its final value (the convention of rans_flatplate.csv).
+# iterations: the last inner iteration in history.csv.
+# stop_reason: 'residual target' if the final rms[Rho] is at most -14, otherwise 'iteration limit'.
+case,mach,level,nodes,quantity,cfd,exact,difference,difference_pct,residual_drop_orders,iterations,stop_reason,window,window_spread
+wedge,2.5,65x49,3185,wall_p_ratio,2.468117546,2.467500128,0.000617418,0.02502,13.878,230,residual target,wall nodes 0.3 <= x <= 0.9 (x = 0.3023..0.8837; 26 nodes),0.000712
+wedge,2.5,65x49,3185,shock_angle_deg,37.00410163,36.94490033,0.0592013,0.1602,13.878,230,residual target,"10 lines y = 0.15..0.6 step 0.05; x where p = (p_inf + p_wall)/2; free least-squares line y = a x + b, angle = atan(a); window_spread: spread of the angles from the line's foot to each crossing",0.00383
+wedge,2.5,65x49,3185,diag_shock_fit_intercept,-0.0009167534759,0,-0.000916753,,13.878,230,residual target,y of the fitted shock line at x = 0 (the leading edge),
+wedge,2.5,65x49,3185,diag_entropy_wall_upstream,1,1,2.36979e-10,2.37e-08,13.878,230,residual target,wall nodes -0.4 <= x <= -0.1 (x = -0.3810..-0.1190; 12 nodes),4.35e-09
+wedge,2.5,65x49,3185,diag_entropy_wall_tip_0_0.1,1.047761075,,,,13.878,230,residual target,wall nodes 0 <= x <= 0.1 (x = 0.0000..0.0930; 5 nodes),0.0411
+wedge,2.5,65x49,3185,diag_entropy_wall_window,1.058334704,1.02991682,0.0284179,2.759,13.878,230,residual target,wall nodes 0.3 <= x <= 0.9 (x = 0.3023..0.8837; 26 nodes),2.4e-05
+wedge,2.5,65x49,3185,diag_entropy_row10_window,1.026089302,1.02991682,-0.00382752,-0.3716,13.878,230,residual target,row 10 off the wall nodes 0.3 <= x <= 0.9 (x = 0.3023..0.8837; 26 nodes),0.0298
+wedge,2.5,65x49,3185,diag_mach_row3_window,1.875572169,1.873526007,0.00204616,0.1092,13.878,230,residual target,row 3 off the wall nodes 0.3 <= x <= 0.9 (x = 0.3023..0.8837; 26 nodes),0.00106
+wedge,2.5,65x49,3185,diag_corner_node_mach,2.352006942,,,,13.878,230,residual target,wall node x = 0,
+wedge,2.5,65x49,3185,diag_corner_node_p_ratio,1.225485081,,,,13.878,230,residual target,wall node x = 0,
+wedge,2.5,129x97,12513,wall_p_ratio,2.467816874,2.467500128,0.000316746,0.01284,13.563,137,residual target,wall nodes 0.3 <= x <= 0.9 (x = 0.3023..0.8953; 52 nodes),0.000147
+wedge,2.5,129x97,12513,shock_angle_deg,36.97616064,36.94490033,0.0312603,0.08461,13.563,137,residual target,"10 lines y = 0.15..0.6 step 0.05; x where p = (p_inf + p_wall)/2; free least-squares line y = a x + b, angle = atan(a); window_spread: spread of the angles from the line's foot to each crossing",0.00398
+wedge,2.5,129x97,12513,diag_shock_fit_intercept,-0.0004176172506,0,-0.000417617,,13.563,137,residual target,y of the fitted shock line at x = 0 (the leading edge),
+wedge,2.5,129x97,12513,diag_entropy_wall_upstream,1,1,1.68976e-13,1.69e-11,13.563,137,residual target,wall nodes -0.4 <= x <= -0.1 (x = -0.3929..-0.1071; 25 nodes),6.51e-12
+wedge,2.5,129x97,12513,diag_entropy_wall_tip_0_0.1,1.05232539,,,,13.563,137,residual target,wall nodes 0 <= x <= 0.1 (x = 0.0000..0.0930; 9 nodes),0.0409
+wedge,2.5,129x97,12513,diag_entropy_wall_window,1.058101138,1.02991682,0.0281843,2.737,13.563,137,residual target,wall nodes 0.3 <= x <= 0.9 (x = 0.3023..0.8953; 52 nodes),5.95e-06
+wedge,2.5,129x97,12513,diag_entropy_row10_window,1.030248343,1.02991682,0.000331523,0.03219,13.563,137,residual target,row 10 off the wall nodes 0.3 <= x <= 0.9 (x = 0.3023..0.8953; 52 nodes),0.000186
+wedge,2.5,129x97,12513,diag_mach_row3_window,1.875807562,1.873526007,0.00228156,0.1218,13.563,137,residual target,row 3 off the wall nodes 0.3 <= x <= 0.9 (x = 0.3023..0.8953; 52 nodes),0.00117
+wedge,2.5,129x97,12513,diag_corner_node_mach,2.352087842,,,,13.563,137,residual target,wall node x = 0,
+wedge,2.5,129x97,12513,diag_corner_node_p_ratio,1.225404695,,,,13.563,137,residual target,wall node x = 0,
+wedge,2.5,257x193,49601,wall_p_ratio,2.467646058,2.467500128,0.00014593,0.005914,13.153,161,residual target,wall nodes 0.3 <= x <= 0.9 (x = 0.3023..0.8953; 103 nodes),6.74e-05
+wedge,2.5,257x193,49601,shock_angle_deg,36.95866558,36.94490033,0.0137653,0.03726,13.153,161,residual target,"10 lines y = 0.15..0.6 step 0.05; x where p = (p_inf + p_wall)/2; free least-squares line y = a x + b, angle = atan(a); window_spread: spread of the angles from the line's foot to each crossing",0.000722
+wedge,2.5,257x193,49601,diag_shock_fit_intercept,-0.0001811497607,0,-0.00018115,,13.153,161,residual target,y of the fitted shock line at x = 0 (the leading edge),
+wedge,2.5,257x193,49601,diag_entropy_wall_upstream,1,1,-1.55431e-15,-1.554e-13,13.153,161,residual target,wall nodes -0.4 <= x <= -0.1 (x = -0.3988..-0.1012; 51 nodes),6.88e-15
+wedge,2.5,257x193,49601,diag_entropy_wall_tip_0_0.1,1.055119505,,,,13.153,161,residual target,wall nodes 0 <= x <= 0.1 (x = 0.0000..0.0988; 18 nodes),0.0407
+wedge,2.5,257x193,49601,diag_entropy_wall_window,1.05795832,1.02991682,0.0280415,2.723,13.153,161,residual target,wall nodes 0.3 <= x <= 0.9 (x = 0.3023..0.8953; 103 nodes),2.36e-06
+wedge,2.5,257x193,49601,diag_entropy_row10_window,1.030160422,1.02991682,0.000243602,0.02365,13.153,161,residual target,row 10 off the wall nodes 0.3 <= x <= 0.9 (x = 0.3023..0.8953; 103 nodes),0.00035
+wedge,2.5,257x193,49601,diag_mach_row3_window,1.876035451,1.873526007,0.00250944,0.1339,13.153,161,residual target,row 3 off the wall nodes 0.3 <= x <= 0.9 (x = 0.3023..0.8953; 103 nodes),0.00116
+wedge,2.5,257x193,49601,diag_corner_node_mach,2.352129391,,,,13.153,161,residual target,wall node x = 0,
+wedge,2.5,257x193,49601,diag_corner_node_p_ratio,1.225360172,,,,13.153,161,residual target,wall node x = 0,
+cone,2.35,65x49,3185,wall_cp,0.09152980686,0.09673061296,-0.00520081,-5.377,13.627,141,residual target,wall nodes 0.4 <= x <= 0.9 (x = 0.4151..0.8868; 26 nodes),0.0314
+cone,2.35,65x49,3185,wall_mach,2.099336828,2.146830863,-0.047494,-2.212,13.627,141,residual target,wall nodes 0.4 <= x <= 0.9 (x = 0.4151..0.8868; 26 nodes),0.0103
+cone,2.35,65x49,3185,diag_entropy_wall_upstream,0.9999999782,1,-2.18158e-08,-2.182e-06,13.627,141,residual target,wall nodes -0.15 <= x <= -0.05 (x = -0.1455..-0.0545; 6 nodes),2e-07
+cone,2.35,65x49,3185,diag_entropy_wall_tip_0_0.1,1.121170972,,,,13.627,141,residual target,wall nodes 0 <= x <= 0.1 (x = 0.0000..0.0943; 6 nodes),0.13
+cone,2.35,65x49,3185,diag_entropy_wall_window,1.037640615,1.000087061,0.0375536,3.755,13.627,141,residual target,wall nodes 0.4 <= x <= 0.9 (x = 0.4151..0.8868; 26 nodes),0.021
+cone,2.35,65x49,3185,diag_entropy_row10_window,1.00021412,1.000087061,0.000127059,0.0127,13.627,141,residual target,row 10 off the wall nodes 0.4 <= x <= 0.9 (x = 0.4151..0.8868; 26 nodes),0.000364
+cone,2.35,65x49,3185,diag_mach_row3_window,2.161508796,,,,13.627,141,residual target,row 3 off the wall nodes 0.4 <= x <= 0.9 (x = 0.4151..0.8868; 26 nodes),0.00838
+cone,2.35,65x49,3185,diag_corner_node_mach,2.231139538,,,,13.627,141,residual target,wall node x = 0,
+cone,2.35,65x49,3185,diag_corner_node_p_ratio,1.169961078,,,,13.627,141,residual target,wall node x = 0,
+cone,2.35,129x97,12513,wall_cp,0.09611290523,0.09673061296,-0.000617708,-0.6386,13.252,150,residual target,wall nodes 0.4 <= x <= 0.9 (x = 0.4057..0.8962; 53 nodes),0.014
+cone,2.35,129x97,12513,wall_mach,2.116586267,2.146830863,-0.0302446,-1.409,13.252,150,residual target,wall nodes 0.4 <= x <= 0.9 (x = 0.4057..0.8962; 53 nodes),0.00753
+cone,2.35,129x97,12513,diag_entropy_wall_upstream,1,1,8.82656e-11,8.827e-09,13.252,150,residual target,wall nodes -0.15 <= x <= -0.05 (x = -0.1455..-0.0545; 11 nodes),1.48e-09
+cone,2.35,129x97,12513,diag_entropy_wall_tip_0_0.1,1.11609762,,,,13.252,150,residual target,wall nodes 0 <= x <= 0.1 (x = 0.0000..0.0943; 11 nodes),0.131
+cone,2.35,129x97,12513,diag_entropy_wall_window,1.019890499,1.000087061,0.0198034,1.98,13.252,150,residual target,wall nodes 0.4 <= x <= 0.9 (x = 0.4057..0.8962; 53 nodes),0.014
+cone,2.35,129x97,12513,diag_entropy_row10_window,1.000321409,1.000087061,0.000234348,0.02343,13.252,150,residual target,row 10 off the wall nodes 0.4 <= x <= 0.9 (x = 0.4057..0.8962; 53 nodes),4.5e-05
+cone,2.35,129x97,12513,diag_mach_row3_window,2.151665788,,,,13.252,150,residual target,row 3 off the wall nodes 0.4 <= x <= 0.9 (x = 0.4057..0.8962; 53 nodes),0.00362
+cone,2.35,129x97,12513,diag_corner_node_mach,2.231157833,,,,13.252,150,residual target,wall node x = 0,
+cone,2.35,129x97,12513,diag_corner_node_p_ratio,1.169968587,,,,13.252,150,residual target,wall node x = 0,
+cone,2.35,257x193,49601,wall_cp,0.09654900864,0.09673061296,-0.000181604,-0.1877,12.734,169,residual target,wall nodes 0.4 <= x <= 0.9 (x = 0.4009..0.8962; 106 nodes),0.000577
+cone,2.35,257x193,49601,wall_mach,2.129742871,2.146830863,-0.017088,-0.796,12.734,169,residual target,wall nodes 0.4 <= x <= 0.9 (x = 0.4009..0.8962; 106 nodes),0.0051
+cone,2.35,257x193,49601,diag_entropy_wall_upstream,1,1,-2.37588e-14,-2.376e-12,12.734,169,residual target,wall nodes -0.15 <= x <= -0.05 (x = -0.1500..-0.0500; 23 nodes),8.81e-13
+cone,2.35,257x193,49601,diag_entropy_wall_tip_0_0.1,1.091251099,,,,12.734,169,residual target,wall nodes 0 <= x <= 0.1 (x = 0.0000..0.0991; 22 nodes),0.134
+cone,2.35,257x193,49601,diag_entropy_wall_window,1.010720101,1.000087061,0.010633,1.063,12.734,169,residual target,wall nodes 0.4 <= x <= 0.9 (x = 0.4009..0.8962; 106 nodes),0.0071
+cone,2.35,257x193,49601,diag_entropy_row10_window,1.000264771,1.000087061,0.00017771,0.01777,12.734,169,residual target,row 10 off the wall nodes 0.4 <= x <= 0.9 (x = 0.4009..0.8962; 106 nodes),5.2e-05
+cone,2.35,257x193,49601,diag_mach_row3_window,2.147932467,,,,12.734,169,residual target,row 3 off the wall nodes 0.4 <= x <= 0.9 (x = 0.4009..0.8962; 106 nodes),0.00133
+cone,2.35,257x193,49601,diag_corner_node_mach,2.231166944,,,,12.734,169,residual target,wall node x = 0,
+cone,2.35,257x193,49601,diag_corner_node_p_ratio,1.169972365,,,,12.734,169,residual target,wall node x = 0,
+cone_sym_axis,2.35,65x49,3185,wall_cp,0.09224789377,0.09673061296,-0.00448272,-4.634,13.668,137,residual target,wall nodes 0.4 <= x <= 0.9 (x = 0.4151..0.8868; 26 nodes),0.0174
+cone_sym_axis,2.35,65x49,3185,wall_mach,1.939073083,2.146830863,-0.207758,-9.677,13.668,137,residual target,wall nodes 0.4 <= x <= 0.9 (x = 0.4151..0.8868; 26 nodes),0.0575
+cone_sym_axis,2.35,65x49,3185,diag_entropy_wall_upstream,1.000076843,1,7.68433e-05,0.007684,13.668,137,residual target,wall nodes -0.15 <= x <= -0.05 (x = -0.1455..-0.0545; 6 nodes),0.000664
+cone_sym_axis,2.35,65x49,3185,diag_entropy_wall_tip_0_0.1,2.132903861,,,,13.668,137,residual target,wall nodes 0 <= x <= 0.1 (x = 0.0000..0.0943; 6 nodes),0.492
+cone_sym_axis,2.35,65x49,3185,diag_entropy_wall_window,1.14973968,1.000087061,0.149653,14.96,13.668,137,residual target,wall nodes 0.4 <= x <= 0.9 (x = 0.4151..0.8868; 26 nodes),0.0785
+cone_sym_axis,2.35,65x49,3185,diag_entropy_row10_window,1.000128476,1.000087061,4.14152e-05,0.004141,13.668,137,residual target,row 10 off the wall nodes 0.4 <= x <= 0.9 (x = 0.4151..0.8868; 26 nodes),0.000168
+cone_sym_axis,2.35,65x49,3185,diag_mach_row3_window,2.163324625,,,,13.668,137,residual target,row 3 off the wall nodes 0.4 <= x <= 0.9 (x = 0.4151..0.8868; 26 nodes),0.0122
+cone_sym_axis,2.35,65x49,3185,diag_corner_node_mach,0,,,,13.668,137,residual target,wall node x = 0,
+cone_sym_axis,2.35,65x49,3185,diag_corner_node_p_ratio,2.758072424,,,,13.668,137,residual target,wall node x = 0,
+cone_sym_axis,2.35,129x97,12513,wall_cp,0.09502070085,0.09673061296,-0.00170991,-1.768,13.319,143,residual target,wall nodes 0.4 <= x <= 0.9 (x = 0.4057..0.8962; 53 nodes),0.00523
+cone_sym_axis,2.35,129x97,12513,wall_mach,2.029732956,2.146830863,-0.117098,-5.454,13.319,143,residual target,wall nodes 0.4 <= x <= 0.9 (x = 0.4057..0.8962; 53 nodes),0.0361
+cone_sym_axis,2.35,129x97,12513,diag_entropy_wall_upstream,0.999999833,1,-1.66981e-07,-1.67e-05,13.319,143,residual target,wall nodes -0.15 <= x <= -0.05 (x = -0.1455..-0.0545; 11 nodes),2.81e-06
+cone_sym_axis,2.35,129x97,12513,diag_entropy_wall_tip_0_0.1,1.823084465,,,,13.319,143,residual target,wall nodes 0 <= x <= 0.1 (x = 0.0000..0.0943; 11 nodes),0.745
+cone_sym_axis,2.35,129x97,12513,diag_entropy_wall_window,1.081199925,1.000087061,0.0811129,8.111,13.319,143,residual target,wall nodes 0.4 <= x <= 0.9 (x = 0.4057..0.8962; 53 nodes),0.0499
+cone_sym_axis,2.35,129x97,12513,diag_entropy_row10_window,1.000152916,1.000087061,6.58548e-05,0.006585,13.319,143,residual target,row 10 off the wall nodes 0.4 <= x <= 0.9 (x = 0.4057..0.8962; 53 nodes),5.25e-05
+cone_sym_axis,2.35,129x97,12513,diag_mach_row3_window,2.151519623,,,,13.319,143,residual target,row 3 off the wall nodes 0.4 <= x <= 0.9 (x = 0.4057..0.8962; 53 nodes),0.00412
+cone_sym_axis,2.35,129x97,12513,diag_corner_node_mach,0,,,,13.319,143,residual target,wall node x = 0,
+cone_sym_axis,2.35,129x97,12513,diag_corner_node_p_ratio,2.758015299,,,,13.319,143,residual target,wall node x = 0,
+cone_sym_axis,2.35,257x193,49601,wall_cp,0.09600669961,0.09673061296,-0.000723913,-0.7484,12.738,132,residual target,wall nodes 0.4 <= x <= 0.9 (x = 0.4009..0.8962; 106 nodes),0.00198
+cone_sym_axis,2.35,257x193,49601,wall_mach,2.082823965,2.146830863,-0.0640069,-2.981,12.738,132,residual target,wall nodes 0.4 <= x <= 0.9 (x = 0.4009..0.8962; 106 nodes),0.0204
+cone_sym_axis,2.35,257x193,49601,diag_entropy_wall_upstream,1,1,-2.09832e-14,-2.098e-12,12.738,132,residual target,wall nodes -0.15 <= x <= -0.05 (x = -0.1500..-0.0500; 23 nodes),7.41e-13
+cone_sym_axis,2.35,257x193,49601,diag_entropy_wall_tip_0_0.1,1.541511005,,,,12.738,132,residual target,wall nodes 0 <= x <= 0.1 (x = 0.0000..0.0991; 22 nodes),0.987
+cone_sym_axis,2.35,257x193,49601,diag_entropy_wall_window,1.04323227,1.000087061,0.0431452,4.314,12.738,132,residual target,wall nodes 0.4 <= x <= 0.9 (x = 0.4009..0.8962; 106 nodes),0.0287
+cone_sym_axis,2.35,257x193,49601,diag_entropy_row10_window,1.000109821,1.000087061,2.27602e-05,0.002276,12.738,132,residual target,row 10 off the wall nodes 0.4 <= x <= 0.9 (x = 0.4009..0.8962; 106 nodes),3.38e-05
+cone_sym_axis,2.35,257x193,49601,diag_mach_row3_window,2.147926189,,,,12.738,132,residual target,row 3 off the wall nodes 0.4 <= x <= 0.9 (x = 0.4009..0.8962; 106 nodes),0.00128
+cone_sym_axis,2.35,257x193,49601,diag_corner_node_mach,0,,,,12.738,132,residual target,wall node x = 0,
+cone_sym_axis,2.35,257x193,49601,diag_corner_node_p_ratio,2.757990847,,,,12.738,132,residual target,wall node x = 0,
+pm15,2.5,65x49,3185,wall_p_ratio,0.3276423894,0.3274274113,0.000214978,0.06566,13.876,148,residual target,wall nodes 0.5 <= x <= 0.9 (x = 0.5116..0.8837; 17 nodes),0.0004
+pm15,2.5,65x49,3185,wall_mach,3.121374818,3.236843106,-0.115468,-3.567,13.876,148,residual target,wall nodes 0.5 <= x <= 0.9 (x = 0.5116..0.8837; 17 nodes),0.000243
+pm15,2.5,65x49,3185,diag_entropy_wall_upstream,1.000000005,1,4.61963e-09,4.62e-07,13.876,148,residual target,wall nodes -0.4 <= x <= -0.1 (x = -0.3810..-0.1190; 12 nodes),8.47e-08
+pm15,2.5,65x49,3185,diag_entropy_wall_tip_0_0.1,1.063623182,,,,13.876,148,residual target,wall nodes 0 <= x <= 0.1 (x = 0.0000..0.0930; 5 nodes),0.0539
+pm15,2.5,65x49,3185,diag_entropy_wall_window,1.078470993,1,0.078471,7.847,13.876,148,residual target,wall nodes 0.5 <= x <= 0.9 (x = 0.5116..0.8837; 17 nodes),0.00117
+pm15,2.5,65x49,3185,diag_entropy_row10_window,1.001316258,1,0.00131626,0.1316,13.876,148,residual target,row 10 off the wall nodes 0.5 <= x <= 0.9 (x = 0.5116..0.8837; 17 nodes),0.000243
+pm15,2.5,65x49,3185,diag_mach_row3_window,3.216951335,3.236843106,-0.0198918,-0.6145,13.876,148,residual target,row 3 off the wall nodes 0.5 <= x <= 0.9 (x = 0.5116..0.8837; 17 nodes),0.00154
+pm15,2.5,65x49,3185,diag_corner_node_mach,2.543717666,,,,13.876,148,residual target,wall node x = 0,
+pm15,2.5,65x49,3185,diag_corner_node_p_ratio,0.8964416692,,,,13.876,148,residual target,wall node x = 0,
+pm15,2.5,129x97,12513,wall_p_ratio,0.3275361392,0.3274274113,0.000108728,0.03321,13.437,151,residual target,wall nodes 0.5 <= x <= 0.9 (x = 0.5000..0.8953; 35 nodes),0.000313
+pm15,2.5,129x97,12513,wall_mach,3.121582974,3.236843106,-0.11526,-3.561,13.437,151,residual target,wall nodes 0.5 <= x <= 0.9 (x = 0.5000..0.8953; 35 nodes),0.000302
+pm15,2.5,129x97,12513,diag_entropy_wall_upstream,1,1,6.92513e-12,6.925e-10,13.437,151,residual target,wall nodes -0.4 <= x <= -0.1 (x = -0.3929..-0.1071; 25 nodes),2.64e-10
+pm15,2.5,129x97,12513,diag_entropy_wall_tip_0_0.1,1.071227472,,,,13.437,151,residual target,wall nodes 0 <= x <= 0.1 (x = 0.0000..0.0930; 9 nodes),0.0542
+pm15,2.5,129x97,12513,diag_entropy_wall_window,1.078379186,1,0.0783792,7.838,13.437,151,residual target,wall nodes 0.5 <= x <= 0.9 (x = 0.5000..0.8953; 35 nodes),0.00123
+pm15,2.5,129x97,12513,diag_entropy_row10_window,1.001497672,1,0.00149767,0.1498,13.437,151,residual target,row 10 off the wall nodes 0.5 <= x <= 0.9 (x = 0.5000..0.8953; 35 nodes),0.000228
+pm15,2.5,129x97,12513,diag_mach_row3_window,3.217634789,3.236843106,-0.0192083,-0.5934,13.437,151,residual target,row 3 off the wall nodes 0.5 <= x <= 0.9 (x = 0.5000..0.8953; 35 nodes),0.00124
+pm15,2.5,129x97,12513,diag_corner_node_mach,2.543739798,,,,13.437,151,residual target,wall node x = 0,
+pm15,2.5,129x97,12513,diag_corner_node_p_ratio,0.8964447011,,,,13.437,151,residual target,wall node x = 0,
+pm15,2.5,257x193,49601,wall_p_ratio,0.3274591629,0.3274274113,3.17516e-05,0.009697,13.076,167,residual target,wall nodes 0.5 <= x <= 0.9 (x = 0.5000..0.8953; 69 nodes),0.000102
+pm15,2.5,257x193,49601,wall_mach,3.121792045,3.236843106,-0.115051,-3.554,13.076,167,residual target,wall nodes 0.5 <= x <= 0.9 (x = 0.5000..0.8953; 69 nodes),0.000262
+pm15,2.5,257x193,49601,diag_entropy_wall_upstream,1,1,8.88178e-16,8.882e-14,13.076,167,residual target,wall nodes -0.4 <= x <= -0.1 (x = -0.3988..-0.1012; 51 nodes),6.33e-15
+pm15,2.5,257x193,49601,diag_entropy_wall_tip_0_0.1,1.075808836,,,,13.076,167,residual target,wall nodes 0 <= x <= 0.1 (x = 0.0000..0.0988; 18 nodes),0.0539
+pm15,2.5,257x193,49601,diag_entropy_wall_window,1.078336041,1,0.078336,7.834,13.076,167,residual target,wall nodes 0.5 <= x <= 0.9 (x = 0.5000..0.8953; 69 nodes),0.00124
+pm15,2.5,257x193,49601,diag_entropy_row10_window,1.001477217,1,0.00147722,0.1477,13.076,167,residual target,row 10 off the wall nodes 0.5 <= x <= 0.9 (x = 0.5000..0.8953; 69 nodes),0.000244
+pm15,2.5,257x193,49601,diag_mach_row3_window,3.2177971,3.236843106,-0.019046,-0.5884,13.076,167,residual target,row 3 off the wall nodes 0.5 <= x <= 0.9 (x = 0.5000..0.8953; 69 nodes),0.0012
+pm15,2.5,257x193,49601,diag_corner_node_mach,2.543742122,,,,13.076,167,residual target,wall node x = 0,
+pm15,2.5,257x193,49601,diag_corner_node_p_ratio,0.8964466481,,,,13.076,167,residual target,wall node x = 0,

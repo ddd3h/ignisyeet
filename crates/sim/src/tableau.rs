@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+// Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Butcher tableaux of explicit Runge-Kutta methods, shared by the vector-space
 //! integrators and the Lie-group (RKMK) attitude integrator.
 

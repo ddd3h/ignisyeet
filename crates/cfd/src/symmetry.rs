@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+// Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Mirror symmetry of an STL surface about the body-axis planes `y = 0` and `z = 0` (CFD frame), and the
 //! choice of the mesh domain that follows from it.
 //!

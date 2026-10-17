@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+# Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 # Regenerate everything in doc/data/xcheck_tools/ (see README.md for the one-time setup).
 #   usage: run_all.sh <work dir>
 # Needs: $OPENROCKET_JAR (the OpenRocket jar), $PY (python of the venv with rocketpy, JPype1, pandas),

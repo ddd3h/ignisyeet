@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+// Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Zero-angle asymmetry: the lateral force of a solved `alpha = beta = 0` case, as an accuracy indicator.
 //!
 //! # Where it comes from

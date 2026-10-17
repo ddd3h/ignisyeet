@@ -1,0 +1,819 @@
+% SPDX-License-Identifier: GPL-3.0-or-later
+% Build: make   (latexmk -lualatex; see Makefile)
+% Structure: research/IY-TR-2026-01/paper/outline.md (shared with ../ja/main.tex).
+\documentclass[twocolumn]{labreport}
+
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta}
+
+\newcommand{\Cp}{C_p}
+\newcommand{\CNa}{C_{N\alpha}}
+\newcommand{\CXzero}{C_{X0}}
+\newcommand{\pinf}{p_\infty}
+\newcommand{\fine}{\mathrm{fine}}
+\newcommand{\tick}{yes}
+\newcommand{\cross}{\textbf{no}}
+
+\title{NASA CFD verification and validation of IgnisYeet v0.4.0}
+\organization{IgnisYeet}
+\logo{\includegraphics[height=18pt]{ignisyeet-logo.pdf}}
+\author{Daisuke Nishihama}
+\reporturl{https://github.com/ddd3h/ignisyeet}
+\shorttitle{NASA CFD V\&V of IgnisYeet v0.4.0}
+\kind{Technical report}
+\date{October 2026}
+\reportid{IY-TR-2026-01}
+\notice{\textcopyright\ 2026 Daisuke Nishihama.}
+\keywords{verification and validation, grid convergence index, SU2, rocket aerodynamics, uncertainty quantification}
+
+\begin{abstract}
+A design tool that runs CFD automatically, from CAD to force coefficients, returns numbers without saying how far to trust them.
+We ask whether the NASA WIND/NPARC procedure (AIAA G-077-1998) can quantify that trust for the rocket simulator IgnisYeet (the product), whose pipeline drives SU2, and if not, why not.
+Three layers test the solver against exact solutions, the whole chain on the same cone, and two rockets.
+The answer: the solver reproduces exact inviscid pressures, but the automated chain's uncertainty was not reliably quantified.
+With the product's settings SU2 reproduces the inviscid surface pressure and shock angle within 0.2\,\% (primary setups), yet the grid convergence index (GCI) bounded the true error in only 5 of 7 inviscid cases.
+Through the chain the finest level did not converge, leaving the pipeline's own error unquantified.
+On the sample rocket the only usable GCI, for the Mach 2 normal-force slope, is 10.6 or 16.3\,\% by grid-size definition (the latter flagged); the Basic Finner has no reliable GCI, so the free-flight comparison reports sizes, not verdicts.
+In our judgement three obstacles stand behind this: grids the mesher cannot refine similarly, solves that stall or cycle for reasons not established, and GCIs that are conditional without an exact answer.
+They mark what such a tool must resolve to state a quantified uncertainty.
+% source: results/layer0.csv, results/layer0_gci.csv (the 0.2 % agreement and the GCI bounds)
+% source: results/layer1_cone.csv, results/layer1_gci.csv (layer 1)
+% source: results/gci_sample_euler.csv, results/gci_existing.csv, results/basic_finner_rans_levels.csv, results/gci_basic_finner_rans.csv (layer 2)
+\end{abstract}
+
+\begin{document}
+\maketitle
+
+%=====================================================================
+\section{Introduction}
+\label{sec:intro}
+
+A rocket designer who uses a tool of the kind studied here need not build a mesh.
+The tool takes a CAD description of the rocket, builds an unstructured volume mesh, runs a flow solver and returns force and moment coefficients, and a flight simulator turns those coefficients into a trajectory, an apogee and a landing point.
+IgnisYeet is such a tool (called the product below): its aerodynamic module drives the open-source solver SU2 \citep{economon2016} and feeds its six-degree-of-freedom flight simulation.
+Every step of the chain is automatic, and so is its output: a coefficient with no statement of how much to trust it.
+
+The standard way to attach such a statement is the verification and validation procedure of the NASA Glenn WIND/NPARC project \citep{nparc_tutorial}, which follows the AIAA guide \citep{aiaa1998}.
+It divides the task into six steps: examination of the code, iterative convergence, consistency, spatial (grid) convergence, temporal convergence, and comparison with a more accurate solution or with measurements.
+Its central quantity is the grid convergence index (GCI) of \citet{roache1998}, in the form given by \citet{celik2008} for grids whose refinement ratio varies.
+The GCI turns a sequence of solutions on refined grids into a band on the finest-grid value, and that band is what makes the last step meaningful: a comparison without an uncertainty band cannot say which side is wrong.
+
+\begin{figure*}[t]
+\centering
+\begin{tikzpicture}[x=1cm, y=1cm, font=\footnotesize,
+  head/.style={fill=lraccent, text=white, font=\footnotesize\bfseries, text width=4.55cm, align=center,
+    inner sep=4pt, anchor=north west, minimum height=0.62cm},
+  cell/.style={draw=lraccent!55, line width=0.5pt, text width=4.55cm, align=flush left,
+    execute at begin node={\hyphenpenalty=10000}, inner sep=4pt,
+    anchor=north west, minimum height=#1},
+  outc/.style={draw=lraccent, line width=0.7pt, fill=lraccent!9, text width=4.55cm, align=flush left,
+    execute at begin node={\hyphenpenalty=10000},
+    inner sep=4pt, anchor=north west, minimum height=#1, font=\footnotesize\bfseries},
+  rowlab/.style={text width=1.45cm, align=right, anchor=north east, inner sep=2pt,
+    font=\footnotesize\itshape, text=lrdark},
+  arr/.style={-{Stealth[length=5pt,width=4pt]}, line width=1.1pt, draw=lraccent},
+  link/.style={font=\scriptsize, text=lrdark, anchor=base}]
+\foreach \x/\t in {0/{Layer 0: the solver}, 5.35/{Layer 1: the whole chain}, 10.7/{Layer 2: the application}}
+  \node[head] at (\x,0) {\t};
+\draw[arr] (4.86,-0.31) -- (5.32,-0.31);
+\draw[arr] (10.21,-0.31) -- (10.67,-0.31);
+\node[link] at (5.09,0.14) {same exact cone};
+\node[link] at (10.44,0.14) {same product};
+\node[rowlab] at (-0.12,-0.80) {What is run};
+\node[cell=1.70cm] at (0,-0.80) {SU2 8.3.0 with the product's numerical settings, on structured grids, against exact solutions};
+\node[cell=1.70cm] at (5.35,-0.80) {The product's chain, CAD to mesh to SU2 to coefficients, on the layer~0 cone};
+\node[cell=1.70cm] at (10.7,-0.80) {The six steps on a sample rocket and on the Basic Finner; free-flight data for the Basic Finner only};
+\node[rowlab] at (-0.12,-2.62) {Question};
+\node[cell=1.30cm] at (0,-2.62) {\emph{Does the solver reproduce exact solutions? Does the GCI bound the true error?}};
+\node[cell=1.30cm] at (5.35,-2.62) {\emph{What error does the chain around the solver add?}};
+\node[cell=1.30cm] at (10.7,-2.62) {\emph{Which coefficients receive a band, and what can validation conclude?}};
+\node[rowlab] at (-0.12,-4.04) {Outcome};
+\node[outc=2.0cm] at (0,-4.04) {Inviscid surface pressure and shock angle within 0.2\,\% (primary setups); the GCI bound failed in 2 of 7 inviscid rows};
+\node[outc=2.0cm] at (5.35,-4.04) {Not quantified: the finest level did not converge, so there is no layer~1 GCI};
+\node[outc=2.0cm] at (10.7,-4.04) {Almost no usable band (one, wide); differences are reported, without verdicts};
+\end{tikzpicture}
+\caption{What is verified, in which order. Each layer reuses what the previous one fixed: layers~0 and~1 solve the same exact cone, layers~1 and~2 run the same product. Only layer~2 compares with measurements (validation); layers~0 and~1 are verification.}
+\label{fig:concept}
+% source: results/layer0.csv, results/layer0_gci.csv (layer 0 outcome), results/layer1_gci.csv (layer 1 outcome), results/gci_sample_euler.csv (layer 2 outcome)
+\end{figure*}
+
+These procedures are well established.
+Besides the GCI and the reporting procedure of \citet{celik2008}, the ASME standard V\&V~20 \citep{asme2009} quantifies the accuracy of a simulation against experimental data, accounting for the errors of both, \citet{roy2005} reviews code and solution verification, and \citet{oberkampf2010} treat the subject as a whole.
+\citet{eca2014} extend the uncertainty estimate to grid-refinement data with scatter, by least-squares fits, but still require solutions on systematically refined grids.
+Design tools for small rockets can also obtain their coefficients without CFD, from semi-empirical methods: the Barrowman method \citep{barrowman1967}, which OpenRocket uses in extended form \citep{niskanen2009}, or Missile DATCOM \citep{blake1998}.
+The product instead runs CFD automatically, and it is to that case that this paper carries the procedure.
+
+The procedure presumes that the analyst controls the grid family and the convergence of each solution: the grids are refined systematically, ideally similarly, and each solution is driven until its iterative error is small.
+In an automated, CAD-driven pipeline the user controls neither.
+Refinement is available only through the cell-size settings the tool exposes, and whether a solution has converged is judged by the tool.
+Applying the procedure under these constraints is therefore not routine, and it is not obvious that it can be applied at all.
+This paper does not survey earlier grid-convergence studies on automatically generated or unstructured meshes; its contribution is one end-to-end application of the NASA procedure to one such pipeline, and an account of where the procedure stops.
+
+This paper asks the question directly.
+\emph{Can an automated CAD-to-coefficient CFD pipeline, here IgnisYeet over SU2, deliver aerodynamic coefficients with a numerical uncertainty quantified by the NASA procedure, and where it cannot, why not?}
+
+To answer it, the study separates what the solver does from what the pipeline adds and from what the application needs, in three layers (Fig.~\ref{fig:concept}).
+Layer~0 runs SU2 directly with the numerical settings the product writes and compares it with exact solutions.
+Layer~1 solves one of those exact problems, a cone in supersonic flow, through the product's whole chain, so that the difference from layer~0 would expose the error the chain adds.
+Layer~2 applies the tutorial's six steps to the product at working conditions, on a sample rocket and on the Basic Finner, and compares with free-flight measurements.
+
+The findings, each developed in one part of Section~\ref{sec:results}, are these.
+\begin{itemize}
+% source: results/layer0.csv, results/layer0_gci.csv (the 0.2 % agreement and the GCI bounds)
+\item In verification against exact solutions, SU2 with the product's settings reproduces the inviscid surface pressure and shock angle within 0.2\,\% in the primary setups, but where the exact answer is known the GCI does not always bound the true error, and neither of the available checks detects both of its failures (Section~\ref{sec:r1}).
+\item The pipeline's own error could not be quantified: the finest layer-1 level did not converge, and, independently, the product's grids cannot be refined similarly (Section~\ref{sec:r2}).
+\item At working conditions the six steps leave almost no usable uncertainty band: one coefficient at one condition on the sample rocket, and no reliable GCI on the Basic Finner (Section~\ref{sec:r3}).
+\item The validation and model comparisons therefore report sizes of differences, not verdicts (Section~\ref{sec:r4}).
+\end{itemize}
+Section~\ref{sec:discussion} draws these together into an answer, ranks the obstacles behind it, separates what was shown from what was not, and states what the findings imply for such pipelines.
+
+\paragraph{Terminology.}
+\emph{Verification} asks whether the equations are solved correctly and compares a result with an exact or otherwise highly accurate solution.
+\emph{Cross-comparison} compares one method or program with another; it shows that they differ or agree, not which is closer to reality.
+\emph{Validation} asks whether the model resembles the real system and compares a result with measured data.
+Only the comparison with free-flight measurements (Section~\ref{sec:validation}) is validation; layers~0 and~1 are verification.
+
+%=====================================================================
+\section{Method}
+\label{sec:method}
+
+% source: results/basic_finner_rans_levels.csv (header: the binary's `--version` prints 0.4.0), results/layer1_cone.csv (header: binaries), results/layer0.csv (header: SU2 version), results/gci_existing.csv (header: no CFD was run for that file)
+The product's CFD runs made for this study use IgnisYeet v0.4.0 with SU2~8.3.0; the product studies called \emph{existing} below are re-evaluated from result files already committed with the product, without new CFD.
+This section gives only what the results need; setup details are in Appendix~\ref{sec:appA}.
+
+\subsection{Three layers and the six steps}
+\label{sec:layers}
+
+\begin{table}[b]
+\centering
+\caption{The three layers of the study.}
+\label{tab:layers}
+% source: results/layer0.csv (header: SU2 version)
+\small
+\begin{tabular}{@{}cp{3.2cm}p{3.4cm}@{}}
+\toprule
+Layer & What is run & Kind of comparison \\
+\midrule
+0 & SU2 8.3.0 with the product's numerical settings, structured 2-D and axisymmetric grids
+  & Verification: solver and settings against exact solutions \\
+1 & The product's chain, CAD to mesh to SU2 to coefficients, on the layer~0 cone
+  & Verification: the chain as a whole, against the same exact solution \\
+2 & The product on a sample rocket and on the Basic Finner
+  & Verification (steps 1--5), cross-comparison (Euler against RANS), validation (step~6) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% source: results/layer0.csv (header: SU2 version)
+Table~\ref{tab:layers} summarises the design.
+Layers~0 and~1 solve the same exact problem, a cone of 10$^\circ$ half angle at Mach 2.35, by different routes: layer~0 runs SU2~8.3.0 directly, layer~1 runs the product's chain.
+Both are compared with the same Taylor--Maccoll solution, and the difference of their errors would expose the part due to the chain around the solver.
+The product accepts only a rocket geometry, so layer~0 does not exercise its pipeline and no statement that the pipeline was verified rests on layer~0.
+Layer~0 uses two-dimensional and axisymmetric structured grids, layers~1 and~2 three-dimensional unstructured half models; the difference between layers~0 and~1 thus includes the effect of three-dimensional unstructured meshing and is reported as \emph{pipeline error, including three-dimensional unstructured meshing}, not as meshing error alone.
+
+Two of the six steps fit the product only in part.
+Step~5, temporal convergence, does not apply to the steady CFD of the product; the flight simulator's own time integrator is examined in its place, outside the CFD question (Appendix~\ref{sec:temporalapp}).
+Step~6 asks for a comparison with several turbulence models, but the product offers only the inviscid Euler model and Reynolds-averaged Navier--Stokes (RANS) with the Spalart--Allmaras model \citep{spalart1992}, so this part of the step is answered only in part (Appendix~\ref{sec:model}).
+
+\subsection{The grid convergence index and the gate}
+\label{sec:gci}
+
+For three solutions $f_1,f_2,f_3$ on grids of representative size $h_1<h_2<h_3$, finest first, with refinement ratios $r_{21}=h_2/h_1$ and $r_{32}=h_3/h_2$, let $\varepsilon_{21}=f_2-f_1$ and $\varepsilon_{32}=f_3-f_2$.
+For a constant ratio $r$ the tutorial gives the observed order $p=\ln\!\big[(f_3-f_2)/(f_2-f_1)\big]/\ln r$, the extrapolated value $f_{h0}=f_1+(f_1-f_2)/(r^p-1)$ and $\mathrm{GCI}=F_s\,|\varepsilon|/(r^p-1)$.
+Where the ratio varies we use the procedure of \citet{celik2008}: with $s=\operatorname{sign}(\varepsilon_{32}/\varepsilon_{21})$,
+\begin{equation}
+\label{eq:celik}
+\begin{aligned}
+p&=\frac{1}{\ln r_{21}}\Big|\ln\Big|\frac{\varepsilon_{32}}{\varepsilon_{21}}\Big|+q(p)\Big|,\\
+q(p)&=\ln\frac{r_{21}^{p}-s}{r_{32}^{p}-s},
+\end{aligned}
+\end{equation}
+solved by fixed-point iteration, then $f_\mathrm{ext}=(r_{21}^{p}f_1-f_2)/(r_{21}^{p}-1)$ and $\mathrm{GCI}_\fine=F_s\,e_a/(r_{21}^{p}-1)$ with $e_a=|(f_1-f_2)/f_1|$.
+The factor of safety is $F_s=1.25$ for three grids and $3$ for two.
+The asymptotic-range check is $r_{21}^{p}\,\mathrm{GCI}_{21}/\mathrm{GCI}_{32}$, near one in the asymptotic range.
+The grid size is $h=N^{-1/3}$ from the node count $N$ for three-dimensional grids (the Basic Finner Euler family records cells only, so $N$ is the cell count there) and $h=N_\mathrm{cells}^{-1/2}$ for the two-dimensional layer~0 grids, which are refined exactly by a factor of two in each direction.
+The implementation reproduces the tutorial's worked example and the monotone columns of Table~1 of \citet{celik2008} (Appendix~\ref{sec:appA}).
+
+% source: results/gci_existing.csv, results/layer0_gci.csv (headers: the gate, the order flags and the oscillatory rule)
+Because the question is whether a band can be trusted, three rules decide when a number is reported at all.
+\begin{itemize}
+\item \emph{The gate.} A grid level enters a study if the solver reported convergence or, where it gave no verdict, the residual fell by at least three orders of magnitude; a level the solver reported as not converged, or one with neither piece of evidence, is refused, and the refusal states the reason.
+\item \emph{The order flag.} A computed order above 4 (twice the formal second order) or below 0.5 (a quarter of it) is flagged: the triplet is then outside the asymptotic range and its GCI is not reliable.
+\item \emph{Oscillation.} A triplet whose differences change sign ($\varepsilon_{32}/\varepsilon_{21}<0$) is labelled and receives \emph{no} uncertainty band.
+  \citet{celik2008} do compute a value for such a case; this study does not, and reports none.
+\end{itemize}
+Where the refinement is not geometrically similar, so that no single definition of $h$ is justified, the GCI is computed under every defensible definition, $h\propto N^{-1/3}$ and $h\propto$ wall cell size, and both results are shown; the two definitions bracket the question and the spread between them is not a bound on the true GCI (Section~\ref{sec:similar}).
+
+\subsection{Cases}
+\label{sec:cases}
+\label{sec:exact}
+\label{sec:l0setup}
+\label{sec:l12setup}
+
+% source: results/layer0.csv (header: exact references and conditions)
+The exact solutions of layer~0 are computed, not transcribed: the weak-solution oblique shock relation, the Taylor--Maccoll cone equation integrated from the shock to the surface with the shock angle found by shooting, the Prandtl--Meyer function, and the Blasius similarity solution \citep{blasius1908,schlichting2017}, all for a perfect gas with $\gamma=1.4$.
+The oblique-shock and Prandtl--Meyer results agree with the tabulated values of the NPARC archive pages \citep{nparc_wedge,nparc_pm15} within the precision of those tables; the cone solution is checked against independent tables (Appendix~\ref{sec:cone10}).
+The cases follow the NPARC archive \citep{nparc_archive}: a 15$^\circ$ wedge and a 15$^\circ$ expansion at Mach 2.5, a 10$^\circ$ half-angle cone at Mach 2.35, and a laminar flat plate, run at Mach 0.2.
+The Blasius solution is incompressible, so a compressibility correction is estimated and reported alongside.
+
+% source: results/layer0.csv (header), results/layer0_gci.csv (header), results/layer0_plate.csv (header)
+The layer~0 Euler runs use the numerical settings of a configuration that the product itself wrote, and a test asserts that they are identical to the product's.
+The product has no laminar mode, so the laminar plate runs the Navier--Stokes equations without a turbulence model on the numerics of a product-written RANS configuration: it checks the product's RANS discretisation with the turbulence model removed, not a configuration the product writes.
+Each case has three exactly nested structured levels ($r=2$; Appendix~\ref{sec:appA}).
+
+% source: results/layer1_cone.csv (header and level columns)
+Layer~1 solves the layer~0 cone, Mach 2.35, zero incidence, Euler, as a 10$^\circ$ cone-cylinder through the product on a three-dimensional unstructured half model.
+Its three levels have wall cell sizes of 3.92, 2.80 and 2.00\,mm (a factor 1.4); the body has no fins, so the wall size is the only refinement setting.
+The surface pressure coefficient $\Cp=(p-\pinf)/(\tfrac12\rho_\infty V_\infty^2)$ of the wall nodes is binned along $x/L_\mathrm{cone}$ and compared with the Taylor--Maccoll value 0.09673; the window $0.4\le x/L_\mathrm{cone}\le0.9$ is the like-for-like counterpart of layer~0's wall window.
+
+% source: results/gci_existing.csv (Basic Finner Euler conditions and levels), results/consistency.csv (sample-rocket Mach numbers)
+Layer~2 treats a sample rocket (Euler; Mach 0.3, 0.8 and 2.0; 0$^\circ$ and 4$^\circ$) and the Basic Finner, a cone-cylinder with four rectangular fins, with Euler at Mach 2.375 (0$^\circ$, 2$^\circ$, 4$^\circ$; four existing levels) and with RANS (Spalart--Allmaras) at Mach 1.832 (0$^\circ$ and 2$^\circ$).
+Mach 1.832 is chosen for RANS because it is the one point at which the product's existing RANS validation run (wall size 1.5\,mm, one grid) converged and at which free-flight data exist; at Mach 2.375 the product's RANS stalls in a limit cycle and at Mach 3.147 it diverges.
+% source: doc/source/validation.rst (existing RANS run: wall_size 1.5 mm, one mesh, converged only at Mach 1.832; at Mach 3.147: alpha = 0 diverged twice, alpha = 2 deg not converged; not a results CSV)
+The normal-force slope is $\CNa=C_N(4^\circ)/4^\circ$ for the sample rocket and $C_N(2^\circ)/2^\circ$ for the Basic Finner, following the existing convention, and every layer-2 family is built through the product's own cell-size settings (Section~\ref{sec:similar}).
+
+%=====================================================================
+\section{Results}
+\label{sec:results}
+
+The results answer the question in four parts, from the solver outward: whether the solver and the GCI itself can be trusted (R1), whether the pipeline's error can be measured (R2), which coefficients receive a band (R3), and what the comparisons can then conclude (R4).
+
+\subsection{R1. The solver reproduces exact inviscid pressures, but the GCI is not a guarantee}
+\label{sec:r1}
+
+Layer~0 is the only place in the study where the exact answer is known.
+It can therefore test two things: whether SU2 with the product's settings solves the equations correctly, and whether the GCI, which every later result depends on, bounds the true error.
+The first answer is yes for the inviscid surface pressure and shock angle, with exceptions for wall quantities derived from the Mach number and for boundary junctions, and the laminar plate gives no clean verification; the second is: not reliably.
+
+\subsubsection{Layer 0 against exact solutions}
+\label{sec:l0results}
+
+% source: results/layer0.csv, results/layer0_gci.csv
+In the primary setups the surface pressure and the shock angle are within 0.2\,\% of the exact value (Table~\ref{tab:l0}); all twelve Euler runs reached the residual target (12.7 to 13.9 orders of density-residual drop), and the three laminar-plate runs dropped by 9.4 to 10.4 orders.
+% source: results/layer0_plate.csv (residual_drop_orders)
+This is the base the later layers build on, and its scope is narrow: what it verifies is SU2 with the product's settings on structured grids, not the product's pipeline.
+
+\begin{table*}[t]
+\centering
+\caption{Layer~0 against the exact answer: finest-grid error, observed order $p$, $\mathrm{GCI}_\fine$, and whether $\mathrm{GCI}_\fine\ge|\text{error}|$ (``Bounds'').
+Inviscid rows: finest grid $257\times193$ nodes, wall quantities are means over a window of wall nodes. Plate rows: Mach 0.2 against Blasius at $x=0.5$, finest grid $336\times192$ cells; ``scaled'' uses the profile's own edge velocity, those rows were added after the unscaled momentum thickness failed to be bounded (post hoc), and the five plate rows are not independent.
+$^\dagger$: order below 0.5, GCI flagged as unreliable. ``Windows'': orders over the four wall windows $[0.3,1]$, $[0.4,1]$, $[0.5,1]$, $[0.6,1]$, given where the text uses them; stable means within 0.5 of each other.}
+\label{tab:l0}
+% source: results/layer0_gci.csv (inviscid and plate rows: true_error_pct, order, gci_fine_pct, gci_bounds_error, note), results/layer0_plate.csv
+\begin{tabular}{@{}llrrrll@{}}
+\toprule
+Case & Quantity & Error (\%) & $p$ & $\mathrm{GCI}_\fine$ (\%) & Windows & Bounds \\
+\midrule
+Wedge, M 2.5 & wall $p/\pinf$ & 0.0059 & 0.82 & 0.011 & 0.84--1.04, stable & \tick \\
+ & shock angle & 0.037 & 0.68 & 0.099 & & \tick \\
+Cone, M 2.35 & wall $\Cp$ & $-0.188$ & 3.39 & 0.059 & 2.10--4.12, unstable & \cross \\
+ & wall Mach & $-0.80$ & 0.39$^\dagger$ & 2.48 & & \tick \\
+Cone, symmetry-axis variant & wall $\Cp$ & $-0.75$ & 1.49 & 0.71 & 1.36--1.58, stable & \cross \\
+ & wall Mach & $-2.98$ & 0.77 & 4.50 & & \tick \\
+Expansion, M 2.5 & wall $p/\pinf$ & 0.0097 & 0.46$^\dagger$ & 0.077 & 0.65--2.54, unstable & \tick \\
+ & wall Mach & $-3.55$ & none & none & & -- \\
+\midrule
+Laminar plate & $C_f$ & $+0.008$ & 0.80 & 1.20 & & \tick, sign crossing \\
+ & $\delta^*$ & $-0.42$ & 1.07 & 0.89 & & \tick, sign crossing \\
+ & $\theta$ & $-1.87$ & 1.11 & 0.80 & & \cross \\
+ & $\delta^*$, scaled & $+1.07$ & 1.05 & 0.92 & & \cross \\
+ & $\theta$, scaled & $+0.98$ & 1.08 & 0.84 & & \cross \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+% source: results/layer0.csv (diag_entropy_* rows and header), results/layer0_gci.csv (header)
+There are two exceptions, both detailed in Appendix~\ref{sec:appA}.
+Wall quantities derived from the Mach number keep errors of 0.8 to 3.6\,\% that decrease slowly or not at all, so on the expansion no order or GCI exists although the run converged: a GCI describes a discretisation error that shrinks with the grid, and this one does not.
+And a boundary junction can dominate the error: with the cone's symmetry axis as a separate symmetry boundary, the tip node is a stagnation node on every grid, so the one-wall run is the layer~0 result; the product's three-dimensional meshes also have boundary junctions (wall to base), but whether they are affected in the same way was not tested.
+
+\subsubsection{Does the GCI bound the true error?}
+\label{sec:gcibound}
+
+% source: results/layer0_gci.csv (true_error_pct, gci_bounds_error; header)
+The GCI does not always bound the true error, and that matters because every band in the rest of the paper is a GCI computed without an exact answer.
+Of the seven inviscid rows with a computed GCI, the bound held for five and failed for two (Table~\ref{tab:l0}): the cone wall pressure coefficient, where the true error is 3.2 times the GCI (0.188 against 0.059\,\%), and the same quantity in the symmetry-axis variant.
+``Held'' does not mean tight: for the expansion wall pressure the GCI is about 8 times the error, which is a bound, not an estimate; rows flagged as outside the asymptotic range are included in the count of five.
+
+% source: results/layer0_gci.csv (order, note: window orders, gci_bounds_error)
+Could the failures have been detected without the exact answer, as they would have to be in layer~2?
+The order flag misses both, because the cone wall pressure coefficient has $p=3.39$.
+Stability of the order across the four wall windows catches the cone failure but misses the symmetry-axis failure, whose orders are stable, and it flags the expansion wall pressure as unstable although the GCI bounded that error.
+The observed orders themselves, 0.39 to 3.39 against a formal second-order scheme, are not a measurement of the scheme's order: the wall windows contain the tip or corner transient, and the shock angle is read from a captured, smeared shock.
+
+% source: results/layer0_gci.csv (plate rows), results/layer0_plate.csv
+The laminar plate gives the same verdict for a viscous quantity.
+The bound held for two of five rows, and only because the sequence crosses Blasius between the medium and the fine grid, so the fine-grid $C_f$ error of $+0.008\,\%$ is a sign crossing, not agreement; the failed rows have orders of 1.05 to 1.11, which the order flag does not catch.
+The difference from Blasius also mixes effects that a discretisation-error bound does not cover (Appendix~\ref{sec:appA}), so the laminar plate does not give a clean verification of the discretisation.
+
+\paragraph{Side note: a reference table that disagrees with itself.}
+% source: results/cone10_reference_check.csv
+The NPARC archive's table for this cone \citep{nparc_cone10} could not be used as it stands: its shock angle is inconsistent with its own surface Mach number and printed ratios, and three further sources, which rest on the same theory, support the angle computed here (Appendix~\ref{sec:cone10}).
+For this cone only the surface Mach number and the surface pressure coefficient are compared.
+
+% source: results/layer0_gci.csv (counts of gci_bounds_error)
+\paragraph{What R1 establishes.}
+SU2 with the product's settings reproduces the exact solutions in the inviscid surface pressure and shock angle, so the solver and its settings are verified in that sense; wall quantities derived from the Mach number and boundary junctions are the exceptions, and the laminar plate gives no clean verification.
+But the GCI bounded the true error in 5 of 7 inviscid and 2 of 5 laminar-plate rows, and neither the order flag nor window stability detects both inviscid failures.
+A GCI computed without an exact answer, which is the situation of every product result below, is therefore a conditional estimate that can understate the true error even when its order looks plausible and its windows look stable.
+
+\subsection{R2. The pipeline's own error could not be quantified}
+\label{sec:r2}
+
+R1 tested the solver, but layer~0 never runs the product's pipeline.
+The next question is whether the chain around the solver, from CAD to an unstructured mesh to coefficients, adds an error that can be measured.
+It could not be measured, because the finest level did not converge, for a reason not established; and the product's grids carry a second, structural limit that applies to every product GCI.
+
+\subsubsection{Layer 1: the finest level did not converge}
+\label{sec:layer1}
+
+\begin{table}[t]
+\centering
+\caption{Layer~1, 10$^\circ$ cone-cylinder at Mach 2.35: residual drop (orders), solver verdict and difference of the wall $\Cp$ from the exact 0.09673 in the window $0.4\le x/L\le0.9$ (\%). The fine level was not accepted by the solver; its value enters no uncertainty estimate. The layer~0 row is the bare cone's finest grid.}
+\label{tab:layer1}
+% source: results/layer1_cone.csv, results/layer0_vs_layer1.csv
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lrrlr@{}}
+\toprule
+Level & Nodes & Drop & Verdict & $\Cp$ diff. \\
+\midrule
+Coarse & 28\,887 & 5.52 & converged & $-2.51$ \\
+Medium & 45\,258 & 4.80 & converged & $-1.26$ \\
+Fine & 75\,796 & 2.44 & not converged & $-0.44$ \\
+\midrule
+Layer~0 & 49\,601 & 12.73 & converged & $-0.19$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% source: results/layer1_cone.csv, results/layer1_gci.csv, results/layer0_vs_layer1.csv
+The fine level did not converge, so there is no layer~1 GCI and the pipeline error cannot be formed (Table~\ref{tab:layer1}, Fig.~\ref{fig:layer1cp}).
+% source: results/layer1_cone.csv (fine-level history, verdict and ranks), results/layer1_gci.csv (refusals)
+Over the fine level's last 40 iterations the density residual stays between $-6.00$ and $-4.85$ and never reaches the target of $-6$, and the drag coefficient varies by $2.2\times10^{-4}$ relative, consistent with a limit cycle; the product's verdict is ``not converged''.
+The gate refuses the fine level, and all six layer~1 grid convergence rows (three quantities, each under both grid-size definitions) carry that refusal and no number.
+\emph{There is no layer~1 GCI.}
+No band can be drawn on Fig.~\ref{fig:layer1cp}; that is a result, not an omission.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.68\textwidth,trim=0 80 0 0,clip]{fig/layer1_cp.pdf}
+\caption{Layer~1: wall $\Cp$ of the cone surface, mean over bins of $x/L$ of width 0.1, for the three levels, against the Taylor--Maccoll value (black line).
+Filled symbols are solutions the solver accepted. The fine level (hollow symbols, dashed) was not accepted (residual drop 2.44 orders); its values are the periodic write of iteration 200 of 210 and are shown for description only. No band is drawn: all six layer~1 grid-convergence rows are refused.}
+\label{fig:layer1cp}
+% source: results/layer1_cone.csv (the seven 0.1-wide bins, quantities bin and cp_nearest_tip); figures/layer1_cp.svg
+\end{figure*}
+
+% source: results/layer1_cone.csv, results/layer0_vs_layer1.csv
+In every one of the seven bins the wall $\Cp$ lies below the exact value at every level and approaches it with each refinement, but the differences of the two accepted levels, $-2.51$ and $-1.26\,\%$, are descriptive only: with one level unaccepted and grids that are not similar no order is drawn from them (further values in Appendix~\ref{sec:appA}).
+% source: results/layer0_vs_layer1.csv, results/layer0_gci.csv (cone wall_cp)
+The pipeline error, the layer~1 error minus the layer~0 error against the same exact solution, therefore cannot be formed, and no subtraction is quoted.
+Even with an accepted fine level the two layers differ in more than the chain (Appendix~\ref{sec:appA}), and the layer~0 GCI for the same window, 0.059\,\%, does not bound its own finest-grid error (0.188\,\%), so it would understate layer~0's uncertainty.
+
+\subsubsection{The product's grids cannot be refined similarly}
+\label{sec:similar}
+
+\begin{table}[t]
+\centering
+\caption{Growth per refinement level of the product's grid families, against $1.4^3=2.74$ for a similar refinement by the wall-size factor of 1.4. The layer~1 family is measured in nodes, the others in cells.}
+\label{tab:growth}
+% source: results/layer1_cone.csv (nodes), results/sample_euler_levels.csv (cells), results/gci_existing.csv (basic_finner_mesh_check n1..n3), results/basic_finner_rans_levels.csv (cells)
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{@{}lll@{}}
+\toprule
+Family & Wall size (mm) & Growth per level \\
+\midrule
+Layer~1 cone-cylinder & 3.92, 2.80, 2.00 & 1.57, 1.67 \\
+Sample rocket, Euler & 3.92, 2.80, 2.00 & 1.74, 1.77 \\
+Basic Finner, Euler & four levels, $\times1.4$ & 1.70, 1.77, 1.83 \\
+Basic Finner, RANS & 2.1, 1.5, 1.07 & 1.56, 1.70 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% source: results/gci_existing.csv (header and n1..n3 columns of basic_finner_mesh_check)
+Even had the fine level converged, the layer-1 grids would not have been a similar family, and the same holds for every grid the product builds.
+The product's refinement settings are the wall and fin cell sizes.
+Its mesher grades the volume mesh from the wall cell size up to a largest cell size that is one tenth of the far-field radius; that largest size is not a user setting and does not scale with the wall size, and scaling it would require changing the far-field radius, which changes the problem solved.
+Refining the settings therefore refines only the near-wall region.
+Table~\ref{tab:growth} shows the consequence for all four product families of the study: where the wall size shrinks by 1.4 per level, the count grows by 1.56 to 1.83 per level against $1.4^3=2.74$ for a similar refinement.
+Neither $h\propto N^{-1/3}$ nor $h\propto$ wall size is then the effective grid size, so every GCI of such a family is computed under both definitions, and the spread between them is treated as part of the uncertainty, not as a bound on it.
+
+\paragraph{What R2 establishes.}
+The pipeline's own error, including three-dimensional unstructured meshing, is not quantified.
+Two separate limits stand in the way: the layer-1 fine level did not converge, for a reason not established, and the product's grids are not similar, a structural property of its mesher that would remain even if every level converged.
+For the part of the question that concerns the error the pipeline adds, this study can give no number.
+
+\subsection{R3. In application, almost no usable uncertainty band}
+\label{sec:r3}
+
+With the pipeline's error unquantified, the practical question remains: on rockets at working conditions, which coefficients does the six-step procedure equip with a band?
+The decisive step is spatial convergence; iterative convergence and consistency then show whether the bands that exist can be trusted.
+
+\subsubsection{Spatial convergence}
+\label{sec:grid}
+
+\begin{table}[t]
+\centering
+\caption{Sample rocket, Euler: observed order $p$ and $\mathrm{GCI}_\fine$ (\%) under $h\propto N^{-1/3}$ and $h\propto$ wall size.
+``none'': no order, because the finer pair changes at least as much as the coarser pair or the differences change sign (no band).
+$^\dagger$: order outside 0.5 to 4, flagged as unreliable. ``unusable'': GCI above 100\,\% or extrapolation past the exact value.
+$^\ddagger$: on the $N^{-1/3}$ basis the screen for a constant refinement ratio gives this label, but the ratios differ (1.21 and 1.20) and Celik's method gives $p=0.072$ and a GCI of 285\,\%: unusable either way.}
+\label{tab:sample}
+% source: results/gci_sample_euler.csv
+\small
+\setlength{\tabcolsep}{2.4pt}
+\begin{tabular}{@{}llrrrr@{}}
+\toprule
+M & Quantity & $p$ ($N^{-1/3}$) & GCI & $p$ (wall) & GCI \\
+\midrule
+0.3 & $\CNa$, not conv. & none & -- & none & -- \\
+0.3 & $x_{cp}$, oscill. & none & -- & none & -- \\
+0.3 & $C_A$, unusable & 0.95 & 309 & 0.43$^\dagger$ & 393 \\
+0.8 & $\CNa$, not conv. & none & -- & none & -- \\
+0.8 & $x_{cp}$, oscill. & none & -- & none & -- \\
+0.8 & $C_A$, unusable & 0.29$^\dagger$ & 1654 & 0.066$^\dagger$ & 4251 \\
+2.0 & $\CNa$ & 0.53 & 10.6 & 0.20$^\dagger$ & 16.3 \\
+2.0 & $x_{cp}$, flagged & 8.7$^\dagger$ & 0.030 & 4.75$^\dagger$ & 0.033 \\
+2.0 & $C_A$, not conv.$^\ddagger$ & none & -- & none & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% source: results/gci_sample_euler.csv (rows and header), results/sample_euler_levels.csv
+On the sample rocket the only GCI that is neither refused nor unusable is that of the Mach 2 normal-force slope, and that band is wide and of poor reliability (Table~\ref{tab:sample}).
+The levels of the sample-rocket Euler family meet the gate (a converged or accepted verdict and at least 3.2 orders of residual drop), so its GCIs can be computed; rows whose GCI exceeds 100\,\% or whose extrapolation lies past a known exact value are marked unusable.
+
+% source: results/gci_sample_euler.csv (cn_alpha and xcp rows at Mach 2), results/sample_euler_levels.csv (finest-grid value)
+The GCI of $\CNa$ at Mach 2 is 10.6\,\% on one definition (order 0.53, just above the flag) and 16.3\,\% on the other (order 0.20, flagged).
+Even this band rests more on the assumed order than on the data: the extrapolated value 14.5 lies 8.5\,\% above the finest-grid value 13.40 although the two finest grids differ by 0.9\,\%.
+Every other row has no band, a flagged GCI or an unusable one (Table~\ref{tab:sample}): the $x_{cp}$ GCI at Mach 2 is flagged as unreliable, and $\CNa$ at Mach 0.3 and 0.8 does not converge and receives no band, nor do $x_{cp}$ at Mach 0.3 and 0.8 (oscillatory) and $C_A$ at Mach 2.
+No GCI of the sample rocket is therefore a certified uncertainty.
+
+% source: results/gci_existing.csv (basic_finner_mesh_check rows, fairing)
+The Basic Finner Euler study at Mach 2.375 computes GCIs, but it has four existing levels and thus two triplets, L1--L3 and L2--L4, and the two disagree in their orders under both definitions (Appendix~\ref{sec:appA}).
+The only band available for the slope is therefore a sensitivity and not a GCI: the coarse triplet, whose order is flagged, gives $\pm0.17\,\%$ for the plotted grid, while the largest observed change from the plotted grid to any other level, L2 to L4, is $+0.47\,\%$.
+% source: results/gci_existing.csv, derived L2-to-L4 change in cn at fairing alpha 2: 0.33008/0.32852 - 1
+This four-level study does not establish a reliable GCI for the Basic Finner.
+
+% source: results/basic_finner_rans_levels.csv, results/gci_basic_finner_rans.csv
+With RANS the gate, not the grids, decides.
+\emph{No RANS GCI was obtained at Mach 1.832}: the $2^\circ$ solve did not converge on any of the three levels, nor did the zero-incidence solve of the finest level, and the product records each as stalled, with the limit-cycle flag set.
+Every family is therefore refused; the slopes of the three levels, 11.52, 11.57 and 11.45, all come from not-converged solves, and their 1.1\,\% spread is not an uncertainty.
+The gate uses the smaller of the density and the Spalart--Allmaras residual drops, whereas the product's own residual drop is that of the density alone and is larger wherever the turbulence residual fell less (on the finest level at $0^\circ$, 0.89 against 3.91 orders).
+With one build, the coarse level's verdicts differ between two run setups: 8 ranks $\times$ 2 parallel cases on 16 cores left $0^\circ$ not converged and $2^\circ$ converged, and 16 ranks on 32 cores (the run tabulated here) gave the opposite; the setups also differ in warm-start order. The flip therefore follows the run setup, not the build; which part of the setup is responsible is not established.
+
+% source: results/gci_existing.csv (rans_mesh_study rows, note column)
+The same obstacle stops the product's existing RANS grid study of the sample rocket: all four of its families are refused, on solves recorded as not converged or, at Mach 2 and $4^\circ$, on a rerun with no recorded verdict (Appendix~\ref{sec:appA}).
+The product's verdict ``unconverged'' for a RANS case covers two kinds of solve that its documentation separates, a \emph{stall} (the residual stops short of the required drop while the coefficients are flat) and a \emph{limit cycle} (the residual has dropped far enough and the coefficients oscillate in a small band); a stall therefore fails the tutorial's residual-drop condition and a limit cycle its coefficient-flatness condition, and the record does not say which kind the solve was.
+
+\subsubsection{Iterative error and consistency}
+\label{sec:iter}
+\label{sec:consistency}
+
+% source: results/iterative.csv (header: judgement; rows)
+The iterative error invalidates no GCI, but the check is narrow.
+The tutorial requires that the iterative error be small against the grid uncertainty, and of the 38 rows of the comparison \emph{no row in which the grid and the quantity match has a ratio above 1}.
+Only one condition, however, has a usable GCI to compare with: the Mach 2 normal-force slope, whose iterative error on the finest grid is $3.2\times10^{-5}$ of the GCI.
+That error is a lower bound, because the reference state is the last row the solver wrote, so the result is no evidence that the iterative error disturbs this GCI but weaker than a demonstration that it is small (the other rows in Appendix~\ref{sec:appA}).
+
+% source: results/consistency.csv
+The consistency checks are similarly limited by what they can isolate.
+For a symmetric body $C_N(0)=0$ and $C_N(-\alpha)=-C_N(\alpha)$ follow from the shape; on a mesh made mirror-symmetric by construction, as in the production runs of the sample rocket, the checks pass by construction and say nothing about the solver.
+Without mirror symmetry they fail on all 24 rows (12 of $C_N(0)$, 12 of the even part) of an existing asymmetry study and at Mach 0.3 and 0.8 on the sample rocket, consistent with an offset that the mesh asymmetry carries at every incidence; which part is the mesh and which the solver was not separated (Appendix~\ref{sec:appA}).
+% source: results/consistency.csv (ca_dalembert_refined rows), results/gci_sample_euler.csv
+At Mach 0.3 and zero incidence the inviscid axial force should vanish (d'Alembert's paradox); on the three sample-rocket levels $|C_A|$ shrinks, but its extrapolation crosses the exact value, so the three grids support the trend, not a convergence to zero.
+
+\subsubsection{Code examination and temporal convergence}
+\label{sec:step1}
+\label{sec:temporal}
+
+% source: no results CSV; the product's test documentation and the tests added by this study
+The remaining two steps do not change the picture.
+For step~1, no test of grid-convergence code existed before this study, which adds tests for the GCI procedure, the exact solutions, the identity of the layer~0 settings with the product's and the consistency checks (Appendix~\ref{sec:appA}).
+Step~5 does not apply to the steady CFD, which has no time step.
+% source: results/temporal.csv
+\emph{Side note:} the flight integrator examined in its place shows no convergence order on the sample rocket, a spread attributed on the evidence of controls mainly to the rail model, with a second contribution not excluded (Appendix~\ref{sec:temporalapp}); this lies outside the question of CFD uncertainty.
+
+\paragraph{What R3 establishes.}
+On the sample rocket the procedure leaves one coefficient at one condition with a GCI that is neither refused nor unusable, the Mach 2 normal-force slope, and that band is wide and of poor reliability.
+The Basic Finner Euler study computes GCIs, but its two triplets disagree and it establishes no reliable one; with RANS the Basic Finner has none, and the product's own published RANS grid study does not meet the procedure's precondition (Section~\ref{sec:grid}).
+For the question, coefficients at working conditions receive almost no usable numerical uncertainty band.
+
+\subsection{R4. Validation and model uncertainty cannot be separated from numerical uncertainty}
+\label{sec:r4}
+
+Step~6 is where a numerical band earns its place: a difference from a measurement or from another model is attributed to the model only if it exceeds the numerical uncertainty.
+R3 has left almost no band, so this part asks what the comparisons can still say: the size of each difference, and in no case a verdict.
+
+\subsubsection{Validation against free-flight data}
+\label{sec:validation}
+
+% source: doc/data/validation/basic_finner/summary_vs_measured.csv (the 2.9 to 10.5 % range)
+The Euler $\CNa$ of the Basic Finner lies 2.9 to 10.5\,\% below the free-flight data, and whether that is model error cannot be decided.
+% source: figures/validation_bands.svg (the plotted measured and CFD values are read from the Basic Finner data files of the product's documentation, which are not copied into results/)
+The data are the free-flight measurements of \citet{dupuis1997}: aeroballistic range tests, with the coefficients obtained from a six-degree-of-freedom maximum-likelihood fit over groups of shots at eight Mach numbers between 1.077 and 4.300 (Fig.~\ref{fig:validation}, Table~\ref{tab:validation}).
+Each tabulated coefficient carries a probable error in per cent (Table~\ref{tab:validation} explains blank and zero entries; a blank entry gets no bar).
+These probable errors are the statistical error of the fit; the product's validation chapter states that they exclude round-to-round scatter and systematic error.
+A probable error is conventionally a 50\,\% bound, so a CFD value outside or inside the bar is a weaker statement than it reads, and neither is a comparison with the full measurement uncertainty.
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth,trim=0 112 0 0,clip]{fig/validation_bands.pdf}
+\caption{Basic Finner $\CNa$ (left) and $\CXzero$ (right) against Mach number: free-flight measurements \citep{dupuis1997} with tabulated probable error, Euler CFD, and the RANS points at Mach 1.832 (two treatments of the base term).
+The hatched box on the Euler point at Mach 2.375 is a grid sensitivity ($\pm0.17\,\%$, too small to see at this scale), the coarse GCI of the L1--L3 triplet, which is flagged; it is not an established GCI.
+There is no band on $\CXzero$, none on the RANS points (no RANS GCI was obtained at Mach 1.832) and none at any other Mach number.}
+\label{fig:validation}
+% source: figures/validation_bands.svg; results/gci_existing.csv (the 0.17 % box)
+\end{figure*}
+
+\begin{table*}[t]
+\centering
+\caption{Basic Finner: measured coefficients of \citet{dupuis1997} (Table IX) with their tabulated probable error, and CFD values, with the difference $(\text{CFD}-\text{measured})/|\text{measured}|$ in per cent. A dash in the error column means the error is not tabulated (unknown); $<$0.5 is a tabulated 0, an error below 0.5\,\%, not zero error. The RANS values are single-grid values without a numerical uncertainty; the two $\CXzero$ values are the two treatments of the base term (model, and CFD base pressure).}
+\label{tab:validation}
+% source: doc/data/validation/basic_finner/summary_vs_measured.csv
+\begin{tabular}{@{}rrrrrrrrr@{}}
+\toprule
+ & \multicolumn{4}{c}{$\CNa$ (1/rad)} & \multicolumn{4}{c}{$\CXzero$} \\
+\cmidrule(lr){2-5}\cmidrule(l){6-9}
+Mach & Measured & Err.\ (\%) & Euler & diff.\ (\%) & Measured & Err.\ (\%) & Euler & diff.\ (\%) \\
+\midrule
+1.077 & 18.47 & 2 & 17.32 & $-6.3$ & 0.863 & $<$0.5 & 0.6301 & $-27.0$ \\
+1.293 & 18.27 & 3 & 16.74 & $-8.4$ & 0.731 & $<$0.5 & 0.5444 & $-25.5$ \\
+1.832 & 11.78 & 4 & 11.27 & $-4.4$ & 0.585 & -- & 0.4197 & $-28.3$ \\
+2.375 & 10.52 & 2 & 9.411 & $-10.5$ & 0.484 & -- & 0.3490 & $-27.9$ \\
+2.718 & 9.01 & 2 & 8.744 & $-2.9$ & 0.435 & -- & 0.3173 & $-27.0$ \\
+3.147 & 8.69 & 1 & 8.161 & $-6.1$ & 0.373 & -- & 0.2861 & $-23.3$ \\
+3.734 & 8.32 & 1 & 7.550 & $-9.3$ & 0.309 & $<$0.5 & 0.2535 & $-18.0$ \\
+4.300 & 7.74 & 1 & 7.059 & $-8.8$ & 0.271 & $<$0.5 & 0.2294 & $-15.4$ \\
+\midrule
+1.832, RANS & & & 11.46 & $-2.7$ & & & 0.4340 / 0.6477 & $-25.8$ / $+10.7$ \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+% source: doc/data/validation/basic_finner/summary_vs_measured.csv (measured values, probable errors and CFD values; a committed data file outside results/)
+The Euler $\CNa$ lies below the measured value at every Mach number, and the Euler $\CXzero$ by 15.4 to 28.3\,\%.
+For $\CNa$ the difference is larger than the tabulated probable error at all eight Mach numbers (at Mach 1.832 narrowly: 4.4 against 4\,\%; at Mach 2.718, 2.9 against 2\,\%, about one standard deviation if the probable error is read as a 50\,\% width); exceeding a fit statistic does not mean exceeding the measurement uncertainty.
+For $\CXzero$ the Euler value is the pressure part of the axial force plus modelled friction, base and fin trailing-edge terms, so the comparison includes modelled terms and not CFD alone.
+
+% source: results/gci_existing.csv (basic_finner_mesh_check, fairing: the 0.17 % coarse GCI and the L2-to-L4 change); doc/data/validation/basic_finner/summary_vs_measured.csv (the -10.5 % difference)
+Whether the Euler difference is model form rather than numerical error cannot be decided because there is no established numerical band on the Euler coefficients.
+The only band that can be drawn, $\pm0.17\,\%$ on $\CNa$ at Mach 2.375, is the coarse GCI of a flagged triplet, not a GCI, and is smaller than the 0.47\,\% change observed between two of the grids.
+That change is more than twenty times smaller than the $-10.5\,\%$ difference at that Mach number, so grid changes of the size observed between the existing levels would not close it; this is an observation about those four levels and not an uncertainty estimate.
+The Euler results are consistent with a model-form difference (inviscid flow, modelled base and friction terms), which is not demonstrated.
+No band is drawn on $\CXzero$, because the pressure part of the axial force, whose grid study is available, is only one of several terms of $\CXzero$.
+
+% source: doc/data/validation/basic_finner/summary_vs_measured.csv (RANS values), results/basic_finner_rans_levels.csv (2 deg solves)
+The single RANS point at Mach 1.832 is $-2.7\,\%$ in $\CNa$, within the tabulated 4\,\%, which is no strong evidence of agreement for the reasons above; its $\CXzero$ is $-25.8\,\%$ or $+10.7\,\%$ according to the base treatment, so the base term, not the flow solution, decides the sign of that comparison.
+No numerical band exists for this point either: the RANS $\CNa$, 11.46, is a single-grid value from the existing RANS run, and the $2^\circ$ solves of the new RANS family did not converge (Section~\ref{sec:grid}).
+With no numerical uncertainty the overlap of the CFD band and the measured bar cannot be judged, and no statement is made on whether CFD and measurement agree within their uncertainties, or that a difference is or is not explained by numerical error.
+
+\subsubsection{Euler against RANS}
+\label{sec:eulerrans}
+
+% source: results/model_uncertainty.csv (rows and header)
+None of the seven Euler-against-RANS conditions has a verdict, although the differences reach $+54\,\%$.
+Comparing Euler with RANS-SA on the same condition is a cross-comparison of two models, and a difference counts as a model difference only if it exceeds the sum of the two numerical bands.
+Seven conditions were set against those bands, on the sample rocket at Mach 0.8 and 2 and on the Basic Finner at Mach 1.832 (conditions and differences in Appendix~\ref{sec:appA}).
+The RANS band does not exist for the sample rocket, because every triplet of that study is refused, nor for the Basic Finner, because no RANS GCI was obtained at Mach 1.832; the Euler band is missing or flagged for the sample rocket and absent for the Basic Finner at Mach 1.832, whose only Euler grid study is at Mach 2.375.
+The sizes are therefore reported, and whether they are a model difference or numerical error is not decided.
+
+\paragraph{Side note: Spalart--Allmaras against SST.}
+% source: results/turbulence_models.csv (rows: cf and cd differences, GCI, orders, extrapolated values)
+Because the product offers one turbulence model, the comparison of models that step~6 asks for was made outside it, on a flat plate with SU2 run directly: the two models differ by $-0.79\,\%$ in skin friction on the fine grid, which is not separable from SST's own GCI of 1.14\,\% (Appendix~\ref{sec:model}).
+The comparison is between two models and is not validation.
+
+% source: doc/data/validation/basic_finner/summary_vs_measured.csv, results/model_uncertainty.csv, results/turbulence_models.csv
+\paragraph{What R4 establishes.}
+The Euler $\CNa$ of the Basic Finner lies 2.9 to 10.5\,\% below the free-flight data, the Euler and RANS results differ by up to $+54\,\%$, and the two turbulence models differ by $-0.79\,\%$ in skin friction; in every case the numerical band needed to call the difference a model difference is missing or flagged, or is not exceeded by the difference.
+Without a numerical band, the procedure's last step can report sizes but cannot say which side is wrong.
+
+%=====================================================================
+\section{Discussion}
+\label{sec:discussion}
+
+\subsection{The answer}
+\label{sec:answer}
+
+% source: results/gci_sample_euler.csv (the Mach 2 normal-force slope), results/layer0.csv (the 0.2 % agreement)
+The question was whether an automated CAD-to-coefficient pipeline can deliver its coefficients with a numerical uncertainty quantified by the NASA procedure.
+For IgnisYeet over SU2, as it stands, the answer is: not yet, apart from one wide band of poor reliability, the only sample-rocket GCI that is neither refused nor unusable (the Mach 2 normal-force slope, 10.6 or 16.3\,\% on the two grid-size definitions; R3).
+In verification against exact solutions, SU2 with the product's settings reproduces the inviscid surface pressure and shock angle within 0.2\,\% in the primary setups (R1), but the pipeline's own error is not quantified (R2), the Basic Finner has no reliable GCI with Euler and none with RANS (R3), and the validation and model comparisons consequently report sizes and no verdicts (R4).
+
+\subsection{Three obstacles, ranked}
+\label{sec:causes}
+
+We identify three obstacles behind this answer.
+We rank them by how general and how permanent each is: the first affects every product family (Table~\ref{tab:growth}) and would remain if every solve converged, the second removes a GCI entirely, rather than widening it, wherever it occurs, and the third removes no band but limits what a band that survives the other two can mean.
+Both the attribution and the ranking are the study's judgement from the evidence above, not a separate measurement (Section~\ref{sec:existence}).
+
+% source: results/gci_existing.csv, results/gci_sample_euler.csv, results/layer1_cone.csv, results/basic_finner_rans_levels.csv (Table growth and the two GCI values)
+\emph{First, the mesher fixes the largest cell size, so the product's grids cannot be refined similarly.}
+Every GCI of such a family depends on a choice of grid-size definition that cannot be justified; on the sample rocket the two definitions give 10.6 and 16.3\,\% for the one usable GCI, and on the Basic Finner the orders of the two triplets disagree under both.
+
+% source: results/basic_finner_rans_levels.csv, results/gci_existing.csv (rans_mesh_study rows), results/layer1_cone.csv; doc/source/validation.rst (Mach 2.375 and 3.147; not a results CSV)
+\emph{Second, solver convergence is not robust enough for the gate.}
+The $2^\circ$ RANS solves of the Basic Finner are recorded as stalled, with the limit-cycle flag set, on every level, the product's RANS stalls in a limit cycle at Mach 2.375 and diverges at Mach 3.147, the existing RANS sample-rocket study is refused on solves recorded as not converged (and, at Mach 2 and $4^\circ$, on a rerun with no recorded verdict), and the finest layer-1 level, an Euler solve, did not converge.
+Its causes were not established: the dependence on rank count and decomposition is untested, and the RANS coarse level's flipped verdicts follow the run setup, not the build, without the responsible part of the setup being established.
+
+% source: results/layer0_gci.csv (gci_bounds_error, order, note)
+\emph{Third, a GCI computed without an exact answer is conditional.}
+Layer~0 showed GCIs that understated the true error with plausible orders and, in one case, stable windows, and bounds that held were up to eight times the error.
+
+\subsection{Existence, not cause}
+\label{sec:existence}
+
+The study shows that each obstacle exists; it does not show that an obstacle caused a particular failure.
+Existence was measured: the growth per level of every product family falls short of a similar refinement (Table~\ref{tab:growth}), the solves that the gate refused are recorded as not converged or carry no verdict, and layer~0 has GCIs that do not bound the true error.
+Causation was not tested: that non-similarity makes the two Basic Finner triplets disagree, or makes the sample-rocket $\CNa$ fail to converge at Mach 0.3 and 0.8, was not tested, and why the solves stall was not established.
+The answer of Section~\ref{sec:answer} is measured; its attribution to the three obstacles is the study's reading of the evidence.
+
+\subsection{What the findings imply, and the next experiment}
+\label{sec:implications}
+
+The findings point to three changes that a pipeline of this kind would need before its coefficients could carry a band.
+None of them was implemented or tested here; they are implications, not demonstrated remedies.
+\begin{itemize}
+\item \emph{A global refinement control.} The first obstacle implies that a GCI of the product needs a mesh control that scales the whole field, including the largest cell size, together with the wall size, so that a family can be refined similarly without changing the far-field radius.
+That is a change to the product, outside the scope of this study.
+\item \emph{Convergence handling.} The second obstacle implies that the convergence verdict should record which kind of non-convergence occurred, a stall or a limit cycle, since each fails a different condition of the tutorial's precondition (Section~\ref{sec:grid}), and that the residual drop should be measured on the weakest equation, as the gate does, rather than on the density alone.
+\item \emph{Reporting the band only when the gate passes.} The second obstacle, together with the published RANS grid study that does not meet the precondition, implies that a pipeline should attach a GCI only to a family whose levels pass the gate and otherwise state that no band exists; the third implies that even then the band should be labelled as a conditional estimate, with its order and oscillation flags, since layer~0 shows that the flags miss some failures.
+\end{itemize}
+The decisive next experiment follows from the first obstacle and from Section~\ref{sec:existence}: give the mesher a global refinement control that scales the whole field, build a similar family on the cases of this study, and test whether its GCI then passes the gate.
+That would turn the first obstacle from an observed property into a tested cause, or rule it out; for the second, the dependence of the stalls on rank count and decomposition remains to be tested.
+
+\subsection{Limitations}
+\label{sec:limits}
+
+Layer~0 verifies SU2 with the product's settings and not the product's pipeline.
+The laminar plate verifies a configuration the product does not write, and the turbulent-plate data come from a configuration close to but not identical to the product's.
+The two-dimensional boundary-junction and entropy findings are untested on the three-dimensional meshes.
+The pipeline error was not assessed, because the finest layer~1 level did not converge.
+The product offers only one turbulence model, Spalart--Allmaras, so the comparison with SST was made on a flat plate with self-built grids and with SU2 directly, not through the product; SST is first order there and one of the two bands is flagged.
+The validation rests on a single measured data set (DREV-TM-9703), and for $\CXzero$ the CFD has no band, so whether it overlaps the measurement cannot be judged.
+Two published verification references each contain an internally inconsistent entry, the NPARC 10$^\circ$ cone table and one cell of Table~1 of \citet{celik2008}; that is why the reference values here are computed and checked against independent tables, and it is not a criticism of either.
+% source: results/cone10_reference_check.csv; Celik et al. Table 1 cell: tests/test_gci.py (not a results CSV)
+
+%=====================================================================
+\section{Conclusions}
+\label{sec:conclusions}
+
+% source: results/layer0.csv, results/layer0_gci.csv, results/layer1_gci.csv, results/gci_sample_euler.csv, results/gci_basic_finner_rans.csv, results/model_uncertainty.csv (numbers in this section)
+An automated CAD-to-coefficient CFD tool returns coefficients whose reliability its user cannot judge.
+This study asked whether the NASA WIND/NPARC procedure, applied in three layers to IgnisYeet over SU2, can quantify that reliability.
+In verification against exact solutions, SU2 with the product's numerical settings reproduces the inviscid surface pressure and shock angle within 0.2\,\% in the primary setups, but the uncertainty of the whole chain was not quantified: the pipeline's own error could not be measured, on the sample rocket the only GCI that is neither refused nor unusable is that of the Mach 2 normal-force slope, 10.6 or 16.3\,\% by grid-size definition, the latter flagged, and the Basic Finner has no reliable GCI, so its comparison with free-flight data, like every Euler-against-RANS comparison, reports a size and not a verdict.
+For this pipeline the answer is therefore not yet, apart from that one band.
+The findings point, in the study's judgement, to three obstacles, each shown to exist but none shown to cause a particular failure: grids that the mesher cannot refine similarly, solves that do not pass the convergence gate, and the conditional nature of a GCI without an exact answer; where the exact answer was known, the GCI bounded the true error for only 5 of 7 inviscid and 2 of 5 laminar-plate results, and neither the order flag nor window stability detects both failures.
+The findings imply, without having tested it, that a global refinement control, convergence verdicts that separate stalls from limit cycles, and a band reported only when the gate passes would be needed before such a pipeline could attach a quantified uncertainty to its coefficients.
+
+\section*{Data availability}
+The code, the results and the figures are in the IgnisYeet repository under \path{research/IY-TR-2026-01/}: the result files in \path{research/IY-TR-2026-01/nasa_vv/results/}, the figures in \path{research/IY-TR-2026-01/nasa_vv/figures/}, the code in \path{research/IY-TR-2026-01/nasa_vv/} (the exact solutions in \path{exact.py}, the GCI procedure in \path{gci.py}, the case producers in \path{cases/}, the tests in \path{tests/}), and the sources of the papers in \path{research/IY-TR-2026-01/paper/}.
+All numbers in this paper come from the result files and the committed figures, except where a comment in the source names another committed file.
+The product's CFD runs made for this study used IgnisYeet v0.4.0 with SU2~8.3.0, apart from the one exception stated in Section~\ref{sec:method}.
+The full catalogue of results, including the tables and per-grid values condensed here, is in the result files.
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+%=====================================================================
+\appendix
+
+\section{The GCI procedure, the grids and the secondary results}
+\label{sec:appA}
+
+\paragraph{Acceptance of the GCI procedure.}
+% source: tests/test_gci.py, tests/data/prD.out (acceptance tests of the GCI procedure; not a results CSV)
+The implementation reproduces the worked example of the tutorial \citep{nparc_spatial} (three grids, $r=2$): it matches the printed output of the tutorial's own program, namely the order, the extrapolated value, both GCI values and the asymptotic ratio, to a relative $10^{-4}$.
+That program is single precision, so its fifth digit differs from a double-precision evaluation; the double-precision values that the tests also pin are the study's own numbers, a regression check and not an independent published reference.
+Because that example has $r_{21}=r_{32}$, the variable-ratio path is also tested against two monotone columns of Table~1 of \citet{celik2008}, which have unequal ratios, to the precision that table prints.
+One cell of that table, the extrapolated relative error in the second column, is printed as a value that differs from the value recomputed from the same table's own printed entries; the cell is not used in the test.
+The third column of that table is oscillatory; the implementation refuses it by the rule of Section~\ref{sec:gci} rather than reproduce the table's value.
+% source: no results CSV; the product's test documentation and the tests added by this study
+Of the product's own tests before this study, some test the order of its time integrators, none measures the order of mesh convergence, and the CFD solver is not run by the tests in continuous integration.
+
+\paragraph{Layer 0.}
+% source: results/layer0.csv (header), results/layer0_plate.csv (header)
+The numerical settings copied from the product cover the convective discretisation, reconstruction, limiter, gradient method, CFL control, linear solver and stopping criteria; the gas model is the product's.
+The grids are body-fitted and structured, with three levels of $65\times49$, $129\times97$ and $257\times193$ nodes ($85\times49$, $169\times97$, $337\times193$ for the plate, which has $Re=10^5$ per metre), exactly nested so that $r=2$ holds exactly.
+In the supersonic cases the inlet, outlet and top are far-field boundaries, and every wave leaves through the outlet: along the top boundary $|p/\pinf-1|\le7.3\times10^{-10}$ in each of the twelve runs.
+The runs are driven to a density residual of $10^{-14}$ or to an iteration budget; the convergence measure reported is the peak minus the final value of $\log_{10}$ of the density residual.
+% source: results/layer0.csv, results/layer0_gci.csv
+The finest-grid errors in the primary setups are 0.0059\,\% for the wedge wall pressure, 0.037\,\% for its shock angle, $-0.188\,\%$ for the cone wall pressure coefficient and 0.0097\,\% for the expansion wall pressure, and the twelve Euler runs took 132 to 230 iterations.
+Only the boundary markers and, for the cone, the axisymmetric switch differ from the product's settings.
+The product starts a RANS case with a first-order stage and restarts at second order; the layer~0 plate is started cold at second order, and that the steady solution does not depend on this path was not tested.
+
+\paragraph{Layer 0: wall quantities, junctions and mass.}
+% source: results/layer0.csv, results/layer0_gci.csv (expansion wall Mach and residual drop)
+On the expansion the three grids give a wall Mach number of 3.1214, 3.1216 and 3.1218 against an exact 3.2368, errors of $-3.57$, $-3.56$ and $-3.55\,\%$, with 13.1 orders of residual drop on the finest.
+% source: results/layer0.csv (diag_entropy_* rows and header)
+The wall entropy exceeds the exact value along the wall in all three cases, while ten rows off the wall, and upstream of the corner or tip, it is exact; this is consistent with entropy generated at the corner, leading edge or tip and convected along the wall streamline, an interpretation and not a proof, and quantities from the wall pressure show no comparable error.
+The wall entropy ratio $s/s_\infty$ carries a constant offset of about 7.8\,\% on all three expansion grids; on the wedge there is a grid-independent excess of 2.7\,\% (the wall reads 1.058 on all three grids against the exact post-shock value 1.030, which is also found ten rows off the wall on the two finer grids); on the cone the excess falls with the grid (3.76, 1.98 and 1.06\,\% in the surface window).
+% source: results/layer0.csv (cone and cone_sym_axis rows), results/layer0_gci.csv (header)
+In the symmetry-axis variant of the cone the tip node belongs to both boundaries (Mach 0, $p=2.76\,\pinf$; regular in the one-wall run, Mach 2.23, $p=1.17\,\pinf$), and the finest-grid errors grow from $-0.19$ to $-0.75\,\%$ in $\Cp$ and from $-0.80$ to $-2.98\,\%$ in the wall Mach number, so most of that run's error is the junction.
+On the expansion, splitting the lower boundary at the corner made the corner node a stagnation point and stalled the density residual near $-1.5$ over 20\,000 iterations.
+% source: results/massflux.csv
+Mass is conserved as the tutorial requires (relative imbalance at or below $10^{-9}$ on the planar cases, falling to $4.3\times10^{-5}$ on the axisymmetric cone, below the tutorial's $10^{-3}$), which tests flux bookkeeping, not the discretisation error.
+
+\paragraph{Layer 0: the GCI bounds in detail.}
+% source: results/layer0_gci.csv (true_error_pct, gci_bounds_error; header)
+In the symmetry-axis variant the bound fails by 0.75 against 0.71\,\%.
+Where the bound held, the ratio of GCI to true error is about 8 for the expansion wall pressure, 3.1 for the cone wall Mach number and 1.5 for the symmetry-axis cone wall Mach number.
+% source: results/layer0_gci.csv (plate rows), results/layer0_plate.csv
+On the laminar plate the $C_f$ errors of the three grids are $-1.95$, $-0.71$ and $+0.008\,\%$, and what remains after extrapolation is $+0.97\,\%$, which the GCI cannot account for.
+The difference from Blasius mixes the edge velocity, compressibility, a domain not shown converged, a leading-edge stagnation node that does not converge, and an order that cannot separate the scheme from a leading-edge error carried downstream, each attributable in part but none fully quantified (details in the result files).
+
+\paragraph{The NPARC 10$^\circ$ cone table.}
+\label{sec:cone10}
+% source: results/cone10_reference_check.csv
+The cone of layers~0 and~1 is the NPARC archive's 10$^\circ$ cone at Mach 2.35 \citep{nparc_cone10}.
+Its surface Mach number, 2.1469, agrees with the Taylor--Maccoll value computed here to about $3\times10^{-3}\,\%$, but its shock angle, $27.1843^\circ$ against $26.7367^\circ$, does not, nor do its pressure, temperature and density ratios, and its shock angle is also inconsistent with its own surface Mach number and its own printed ratios.
+% source: results/cone_shock_angle_sources.csv
+Three further sources, tabulated cone solutions \citep{sims1964}, the charts of \citet{ames1953} and a separate Taylor--Maccoll implementation inside the product that is only partly independent of ours, support the computed angle, and none supports $27.18^\circ$ (values in the result files); they rest on the same theory, so they test our implementation and the archive's number, not the theory.
+
+\paragraph{Layer 1.}
+% source: results/layer1_cone.csv (header and level columns)
+The body has a base radius of 0.05\,m, a cone length of 0.2836\,m, a cylinder to 0.5836\,m, and the product's Euler tail fairing behind it; layer~0 has a bare cone in a rectangular domain and no cylinder or tail.
+The three levels have 28\,887, 45\,258 and 75\,796 nodes (132\,328, 209\,052 and 350\,868 cells).
+The product refuses a single incidence, so each level also solves $4^\circ$; only the zero-incidence case is used, and convergence is read from it alone.
+All runs used the same build of the product as the rest of the study, on one node.
+% source: results/layer1_cone.csv (fine-level history, verdict and ranks)
+The levels were run with 8, 10 and 14 ranks, which also sets the domain decomposition, and whether the fine level's behaviour depends on it was not tested.
+The $\Cp$ of the wall nodes lying within 1\,\% of the cone radius is binned along $x/L_\mathrm{cone}$ in bins of 0.1 from 0.2 to 0.9; the other summaries (the 0.2--0.9 mean and the nearest-tip bin) have no layer-0 counterpart.
+% source: results/layer1_cone.csv (cp_nearest_tip)
+The window differences fall by a factor of 2.0 from the coarse to the medium level and the unaccepted fine level by a further 2.9; the error is largest near the tip ($-10.19$, $-6.59$ and $-4.17\,\%$ in the bin nearest the tip) and falls downstream, as in layer~0.
+% source: results/layer0_vs_layer1.csv, results/layer0_gci.csv (cone wall_cp)
+Besides the chain, layers~0 and~1 differ in mesh type, in domain, in the cylinder and tail, in the freestream state, in the way the wall $\Cp$ is extracted, and in the placement of the window relative to the tip in cell units; the shock angle and the axial force of the cone alone were not compared in layer~1.
+The freestream state of layer~1 is the product's launch altitude (20\,m, $p=101\,085$\,Pa, $T=288.02$\,K), that of layer~0 $p=101\,325$\,Pa, $T=288.15$\,K; Mach number and $\gamma$ are the same.
+The final surface output can be incomplete when the runner stops SU2 (counts of complete values in the result files); for the fine level the VTK file used is the periodic snapshot of iteration 200 while the history has 210 iterations, so there is no complete pressure source at the final iteration.
+On 213 cone-wall nodes held by both files, the $\Cp$ of the two states differs by $6\times10^{-5}$ relative to the mean $\Cp$; this does not alter any gate, and the pressure-coefficient fields used were complete in every level.
+
+\paragraph{Layer 2: grids.}
+% source: results/sample_euler_levels.csv, results/gci_sample_euler.csv (headers)
+The sample-rocket Euler family has wall and fin sizes of 3.92/1.96, 2.80/1.40 and 2.00/1.00\,mm, with 98\,151, 170\,830 and 302\,918 nodes (458\,640, 798\,534 and 1\,416\,454 cells); the density residual fell by 3.2 to 10.9 orders at zero incidence and 6.6 to 8.7 at $4^\circ$.
+The mesh is mirrored about the symmetry plane, so $-4^\circ$ is the exact mirror of $+4^\circ$ and is not solved; $\CNa$ is formed from the $+4^\circ$ solve, and $x_{cp}$ is that of the combined row.
+A medium level meshed without the mirror, with both $+4^\circ$ and $-4^\circ$ solved, serves the antisymmetry check only and is not a member of the family.
+% source: results/gci_existing.csv (basic_finner_mesh_check rows)
+The four existing Basic Finner Euler levels have 345\,736 to 1\,891\,652 cells.
+% source: results/basic_finner_rans_levels.csv (header and level columns)
+The Basic Finner RANS family has a fin size equal to the wall size, with 328\,364, 533\,985 and 926\,390 nodes (813\,498, 1\,265\,515 and 2\,145\,093 cells); $-2^\circ$ is also solved by the mirror setting and not used.
+A fin size smaller than the wall size, as originally planned (about 0.22 of it), cannot be used: with RANS and the CAD surface, the product stops with a meshing error (a memory-corruption abort of the mesher) on every build tried (the coarse and medium levels; the fine level was not tried); whether the product's input or gmsh is at fault was not separated, and the product was not modified.
+The medium level has the wall and fin sizes of the existing RANS Basic Finner run, but a different mesh (5.3\,\% fewer nodes, 3.4\,\% fewer cells), so it is the nearest level to that run, not that run.
+
+\paragraph{Layer 2: secondary grid-convergence results.}
+% source: results/gci_sample_euler.csv (cn_alpha rows at Mach 2)
+For the Mach 2 normal-force slope of the sample rocket the two grid-size bases differ by 5.8 percentage points.
+% source: results/gci_existing.csv (basic_finner_mesh_check rows, fairing)
+In the Basic Finner Euler study, for the pressure part of the axial force the coarse triplet gives orders of 1.3 and 0.5 (the two definitions) and the fine one 3.0 and 1.6; for the normal force at $4^\circ$ the orders are 0.52 and 0.07 against 2.24 and 1.15.
+$C_N$ at $2^\circ$, from which the slope is formed, has a flagged coarse-triplet order (8.45 and 4.33) and does not converge on the fine triplet, and the centre-of-pressure position is oscillatory or non-converging in every triplet (with the flat-base treatment, so are $C_N$ and $x_{cp}$ at $2^\circ$ and $4^\circ$); the $\pm0.17\,\%$ sensitivity is 0.167 to 0.173\,\% over both definitions.
+% source: results/basic_finner_rans_levels.csv, results/gci_basic_finner_rans.csv
+In the Basic Finner RANS family the normal-force slope and $x_{cp}$ are refused because of the $2^\circ$ solves, the axial force and its parts because of the finest zero-incidence solve.
+% source: results/gci_existing.csv (rans_mesh_study rows, note column)
+The existing RANS grid study of the sample rocket has wall sizes of 8, 4.8 and 3\,mm at Mach 0.8 and 2; its families are refused because a solve of the coarse or medium level was recorded as not converged or, at Mach 2 and $4^\circ$, because the fine level's $-4^\circ$ solve is a rerun with a fixed iteration count and no recorded verdict or residual drop.
+
+\paragraph{Layer 2: iterative error and consistency.}
+% source: results/iterative.csv (header: judgement; rows)
+The iterative error of the Mach 2 normal-force slope on the finest grid is $3.3\times10^{-4}\,\%$, against the GCI of 10.6\,\%, with the density residual down by 8.6 orders.
+For 28 rows there is no ratio because the matching GCI is refused, oscillatory, flagged or unusable: the iterative error is known there and cannot be compared.
+Five flat-plate rows exceed 1, but they are indicative only: they set the iterative error of the plate drag (0.12 to 1.9\,\% at Mach 0.2) against the grid uncertainty of the skin friction (0.038\,\%), another quantity, and do not invalidate the skin-friction GCI.
+% source: results/consistency.csv
+Where the consistency checks fail without mirror symmetry, the even part is of the size of the same mesh's $C_N(0)$; some of the sample-rocket solves are early stops with the product's status ``accepted'' that enter as written (values in the result files).
+% source: results/consistency.csv (ca_dalembert_refined rows), results/gci_sample_euler.csv
+At Mach 0.3 and zero incidence $|C_A|$ shrinks by factors of 1.38 and 1.49 over the three sample-rocket levels.
+The mass-flux balance was not checked on the layer-2 far field.
+
+\paragraph{Layer 2: Euler against RANS.}
+% source: results/model_uncertainty.csv (rows and header)
+The seven conditions are the sample rocket at Mach 0.8 and 2 at $4^\circ$ ($C_N$ and $x_{cp}$) and the Basic Finner at Mach 1.832 ($C_N$ and $x_{cp}$ at $2^\circ$, the axial force at $0^\circ$).
+The differences (RANS against Euler) are $+4.99$ and $+0.27\,\%$ for the sample rocket at Mach 0.8, $+3.30$ and $+0.017\,\%$ at Mach 2, and for the Basic Finner $+0.22\,\%$ in $C_N$, $-0.73\,\%$ in $x_{cp}$ and $+54\,\%$ in the axial coefficient.
+The sample-rocket comparison also sets a RANS value on a 3\,mm mesh against an Euler value on a 2\,mm mesh, and the Basic Finner axial coefficient mixes the flow model with the modelled base term of the Euler mode.
+
+\paragraph{Spalart--Allmaras against SST.}
+\label{sec:model}
+% source: results/turbulence_models.csv (header and rows)
+The product cannot run a second turbulence model, so Spalart--Allmaras was compared with the Menter SST model (variant V1994m; SU2's default variant was not run) on the zero-pressure-gradient flat plate of the NASA Turbulence Modeling Resource \citep{tmr} with SU2 run directly (Mach 0.2, $Re=5\times10^{6}$ per metre, adiabatic wall, station $x=0.97$), on exactly nested grids built here, not those of the resource, with both models stopped by a residual criterion rather than the product's acceptance rule (details in the result files).
+% source: results/turbulence_models.csv (rows: cf and cd differences, GCI, orders, extrapolated values)
+The skin friction differs by $-3.70$, $-1.72$ and $-0.79\,\%$ (SST against Spalart--Allmaras) on the coarse, medium and fine grid; SST is first order here (observed order 1.02), and its last refinement moved the skin friction by 0.94\,\%.
+The Spalart--Allmaras GCI is flagged (observed order 5.3; GCI $8\times10^{-5}\,\%$), so its band is not used and no verdict is written.
+The plate drag differs by $-0.46\,\%$ against GCI bands of 0.67\,\% (Spalart--Allmaras) and 0.48\,\% (SST), which it does not exceed in sum, so it cannot be separated from the grid uncertainty; the extrapolated values differ by $+0.11\,\%$ in skin friction and $+0.46\,\%$ in drag, estimates on which no verdict is written.
+% source: results/turbulence_models.csv (TMR comparison)
+Against the published Turbulence Modeling Resource value for Spalart--Allmaras at this station (other programs and grids) the fine-grid skin friction here is $+0.80\,\%$ higher, a cross-comparison in which the grid, the numerics and the model variant differ and the difference is not attributed; an existing three-grid study of this plate and an empirical correlation are compared in the result files.
+
+\section{The flight integrator}
+\label{sec:temporalapp}
+
+% source: results/temporal.csv
+The product's time-dependent part is the six-degree-of-freedom flight integrator, and its convergence is examined by step-size refinement.
+The sample rocket is flown with a fourth-order Runge--Kutta integrator with steps of 8, 4, 2 and 1\,ms ($r=2$; parachute descent, 4\,m/s wind), giving two triplets, 1/2/4\,ms and 2/4/8\,ms, for apogee, apogee time, landing distance, flight time, rail-exit time and speed, and altitude and speed at fixed times.
+No order was obtained: every row is refused, as the differences change sign or two steps give identical output at its printed resolution.
+Over the four step sizes the apogee altitude varies by $0.018$\,m in $4440.5$\,m ($4.1\times10^{-6}$ relative), the landing distance by 0.032\,m in 7735.5\,m and the flight time by 2.4\,ms in 685\,s; that is a spread, not an error estimate, and without a convergence order no band is claimed.
+
+% source: results/temporal.csv (control rows)
+The scatter is attributed, on the evidence of controls, to the rail model: the rocket is held at rest on the rail while the thrust is below its weight, which puts a kink in the acceleration at about 2.3\,ms that the integrator does not locate and that falls in a different step relative to the step ends in each run.
+Three controls modify the motor thrust curve (not the product's sample): removing both the hold and the 0 to 0.05\,s thrust ramp gives orders of 4.01 for apogee and 3.96 for flight time on the coarse triplet, as expected of a fourth-order scheme; removing only the hold reduces the rail-exit speed difference between the 8 and 4\,ms runs from $4.5\times10^{-4}$ to $4.1\times10^{-8}$\,m/s, which supports the hold as the main cause of the rail-exit scatter; and a fully nested sweep rules out the thrust-curve knots that the step does not divide as the dominant cause.
+A second, smaller contribution is not excluded: with only the hold removed, the coarse-triplet apogee is still non-monotone.
+The finest triplets of the controls stop converging at about $10^{-9}$ to $10^{-8}$ relative, a floor that persists on the nested sweep and whose cause is unidentified; the one order from a finest triplet (4.75 for the apogee time of the first control) has differences below that floor and the same run's apogee oscillates, so it is not evidence of fourth-order convergence.
+This is verification of the integrator by step refinement, not a comparison with measured data.
+
+\end{document}

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+// Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 //! `ignisyeet report`: one self-contained HTML file from the result files of an output directory.
 //!
 //! The report reads only files that exist; every section is left out when its files are absent. Nothing is

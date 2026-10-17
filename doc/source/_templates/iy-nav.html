@@ -1,0 +1,50 @@
+{# Top bar shared by the landing page and the R&D pages. #}
+{%- set top = pathto('', 1) or './' %}
+<nav class="iy-nav" id="iy-nav" aria-label="サイトのナビゲーション">
+  <a class="iy-nav-brand" href="{{ top }}"><img src="{{ pathto('_static/landing/logo-mark.svg', 1) }}" alt="" width="32" height="32"><span>IgnisYeet</span></a>
+  <ul id="iy-nav-links">
+    <li><a href="{{ top }}#iy-video">動画</a></li>
+    <li><a href="{{ top }}#iy-features">機能</a></li>
+    <li><a href="{{ top }}#iy-pipeline">仕組み</a></li>
+    <li><a href="{{ top }}#iy-verified">検証</a></li>
+    <li><a href="{{ top }}#iy-docs">ドキュメント</a></li>
+    <li><a href="{{ top }}research/"{% if pagename == 'research/index' %} aria-current="page"{% elif pagename.startswith('research/') %} aria-current="true"{% endif %}>R&amp;D</a></li>
+    <li><a href="{{ pathto('search') }}" id="iy-search-open" aria-haspopup="dialog">検索</a></li>
+    <li><a href="https://github.com/ddd3h/ignisyeet" rel="noopener">GitHub</a></li>
+  </ul>
+  <div class="iy-nav-tools">
+    <div class="theme-toggle-container">
+      <button class="theme-toggle" aria-label="配色を切り替える">
+        <svg class="theme-icon-when-auto-light"><use href="#svg-sun-with-moon"></use></svg>
+        <svg class="theme-icon-when-auto-dark"><use href="#svg-moon-with-sun"></use></svg>
+        <svg class="theme-icon-when-dark"><use href="#svg-moon"></use></svg>
+        <svg class="theme-icon-when-light"><use href="#svg-sun"></use></svg>
+      </button>
+    </div>
+    <button type="button" class="iy-menu" aria-label="メニュー" aria-expanded="false" aria-controls="iy-nav-links">
+      <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path class="iy-menu-open" d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path class="iy-menu-close" d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+</nav>
+<dialog class="iy-search" id="iy-search" aria-label="ドキュメントを検索">
+  <form method="dialog" class="iy-search-form" role="search">
+    <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M20 20l-4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <input type="search" placeholder="ドキュメントを検索" aria-label="検索語" autocomplete="off">
+    <button type="submit" class="iy-search-close" aria-label="閉じる">Esc</button>
+  </form>
+  <p class="iy-search-status" aria-live="polite"></p>
+  <ul class="iy-search-results"></ul>
+  <p class="iy-search-foot"><a class="iy-search-more" href="{{ pathto('search') }}">検索ページで開く</a></p>
+</dialog>
+<script src="{{ pathto('_static/iy-search.js', 1) }}" defer></script>
+<script>
+(function () {
+  var nav = document.getElementById("iy-nav"), menu = nav && nav.querySelector(".iy-menu");
+  if (menu) {
+    var set = function (open) { nav.classList.toggle("is-open", open); menu.setAttribute("aria-expanded", open ? "true" : "false"); };
+    menu.addEventListener("click", function () { set(!nav.classList.contains("is-open")); });
+    nav.querySelectorAll("#iy-nav-links a").forEach(function (a) { a.addEventListener("click", function () { set(false); }); });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") { set(false); } });
+  }
+})();
+</script>

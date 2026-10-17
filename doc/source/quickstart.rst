@@ -49,7 +49,7 @@
 
    .. code-block:: text
 
-      IgnisYeet 0.4.0 — Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke).
+      IgnisYeet 0.4.0 — Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke).
       License GPL-3.0-or-later: <https://www.gnu.org/licenses/>.
       This is free software; there is NO WARRANTY.
 
@@ -157,8 +157,3 @@
 
 ``out/ignisyeet.kml`` を Google Earth（Web 版でもよい）で開くと、飛翔経路と着地点を地図の上で見られる。
 図の種類と KML の見方は :ref:`page-howto-plots-kml` にある。
-
-次に読むところ
-----------------
-
-自分の機体を計算する手順は :ref:`page-howto-own-rocket` にある。計算がうまくいかないときは、付録の :ref:`errors` で警告やエラーのコードを引く。

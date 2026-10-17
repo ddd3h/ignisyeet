@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+# Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 #
 # Print Markdown release notes for <tag>: the commits since the previous v* tag, grouped by
 # Conventional Commit type.   scripts/release-notes.sh v0.3.0 [repo-slug]

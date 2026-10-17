@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+# Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 """Extract the mesh and flow-field data behind the CFD chapter's figures from a finished CFD run.
 
 The documentation build cannot run SU2, so this script is run by hand after

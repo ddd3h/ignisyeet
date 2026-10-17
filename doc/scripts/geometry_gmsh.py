@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+# Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 """Faces and tessellations of examples/sample_rocket.step for the figures of the geometry chapter.
 
 Run with the gmsh python of the CFD tools (called by geometry_data.py):

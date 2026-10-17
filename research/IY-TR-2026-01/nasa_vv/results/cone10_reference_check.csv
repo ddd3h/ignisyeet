@@ -1,0 +1,9 @@
+# NPARC cone10 (https://www.grc.nasa.gov/www/wind/valid/cone10/cone10.html)
+# against nasa_vv.exact.taylor_maccoll at M = 2.35, 10 deg half angle, gamma = 1.4.
+# Only mach_surface agrees. See the spec, section 4.0.
+quantity,nparc_cone10,taylor_maccoll,difference,difference_pct
+beta_deg,27.1843,26.736717718365437,-0.4475822816345634,-1.6464734484042751
+mach_surface,2.1469,2.1468308631668362,-6.913683316378538e-05,-0.003220309896305621
+p_pinf,1.4234,1.3739363670311355,-0.04946363296886447,-3.475033930649464
+t_tinf,1.1063,1.095080486279697,-0.011219513720303054,-1.0141474934740173
+rho_rhoinf,1.2867,1.2546441875690728,-0.032055812430927144,-2.4913198438584865

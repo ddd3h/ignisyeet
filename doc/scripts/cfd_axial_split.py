@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+# Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 """Pressure axial force of an SU2 Euler case split by wall region (fin leading/trailing/side/tip faces, body).
 Used for doc/data/cfd/stl_fin_edge_axial.csv (the fin regions assume the sample rocket: body radius 0.05 m, fins from x = 1.25 m to the base at 1.5 m).
 

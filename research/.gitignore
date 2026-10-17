@@ -1,0 +1,27 @@
+# Meshes, solutions and raw solver output are never committed.
+*.su2
+*.cgns
+*.vtk
+*.vtu
+*.dat
+*.p2dfmt
+*.fmt
+*.stl
+*.step
+work/
+runs/
+__pycache__/
+.pytest_cache/
+
+# LaTeX build products of the papers
+IY-TR-2026-01/paper/*/*.pdf
+IY-TR-2026-01/paper/*/fig/
+IY-TR-2026-01/paper/*/*.aux
+IY-TR-2026-01/paper/*/*.log
+IY-TR-2026-01/paper/*/*.bbl
+IY-TR-2026-01/paper/*/*.blg
+IY-TR-2026-01/paper/*/*.fls
+IY-TR-2026-01/paper/*/*.fdb_latexmk
+IY-TR-2026-01/paper/*/*.out
+IY-TR-2026-01/paper/*/*.toc
+IY-TR-2026-01/paper/*/*.synctex.gz

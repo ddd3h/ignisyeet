@@ -1,0 +1,83 @@
+# Consistency checks of spec section 6.3, read from the committed CFD results; no CFD was run for this file.
+# This is verification, not validation: it asks whether relations physics requires hold in the data.
+# Source files and the last commit that changed each:
+#   doc/data/cfd/asymmetry_study.csv @ c0de310
+#   doc/data/cfd/sample_euler_cases.csv @ 4c20dbe
+# cn_zero_alpha and cn_antisymmetry rows from asymmetry_study.csv share one tolerance, 1 % of
+#   |cn_odd_4deg| of the same row: cn_odd_4deg = (CN(+4) - CN(-4))/2 is the mirror-combined
+#   normal force, the scale that the alpha = 0 and the 4 deg offsets spoil.
+#   passed is |value| <= tolerance.
+# cn_zero_alpha has one row per configuration and Mach of asymmetry_study.csv (base, roll45, jst,
+#   tight, zm; 15 rows); value is that file's cn0 column.
+# asymmetry_study.csv values are rounded to 5 decimals in the source, so a value shown as 0 here
+#   means |x| < 5e-6, not exactly 0; the values are kept as written there.
+# zm is the quarter-plus-mirror mesh: CN(0) = 0 by construction (mesh symmetry), so the zm
+#   cn_zero_alpha rows pass by construction and test nothing about the solver.
+# The zm cn_antisymmetry rows are near zero partly by construction too: on the mirrored mesh,
+#   -alpha is the exact mirror of +alpha.
+# cn_zero_alpha also has one row per Mach for the production runs of sample_euler_cases.csv:
+#   the alpha_deg = 0 row, value = full-precision cn_raw. Their tolerance is 1 % of |cn_raw| of
+#   the same Mach's alpha_deg = 4 row (cn_raw at alpha_deg = 4); a Mach with no alpha_deg = 4 row
+#   gets blank tolerance and passed. That file's header says the production mesh is z-symmetric
+#   (alpha_mode mirror), so these rows are zero by mesh symmetry up to solver round-off.
+# cn_antisymmetry uses every +4 / -4 pair. asymmetry_study.csv gives only the already-combined
+#   cn_even_4deg = (CN(+4) + CN(-4))/2, not the separate +4 and -4 values, so the value is the
+#   CSV's number and antisymmetry() is not re-run on it; each such row's source says
+#   cn_even_4deg combined value.
+# ca_dalembert has tolerance and passed blank: whether |CA(M=0.3, alpha=0)| shrinks as the grid is
+#   refined is read from the refined Euler runs (ca_dalembert_refined below), not decided by a threshold, so no pass/fail
+#   is claimed. The expected value is 0 (d'Alembert's paradox).
+# ca_dalembert_refined has one row per level of the refined Euler grid family (coarse, medium, fine) from
+#   research/IY-TR-2026-01/nasa_vv/results/sample_euler_levels.csv, whose own header records the runs; value is that level's ca_cfd, tolerance and passed are blank.
+#   |CA| shrinks under refinement at M = 0.3, alpha = 0 (coarse to fine, |ca_cfd|): 0.06279 -> 0.04547 -> 0.03048.
+#   The grids are not geometrically similar (see gci_sample_euler.csv), so this is a trend over three grids, not an order of convergence.
+# cn_antisymmetry also has one row per Mach for the medium level meshed without the z mirror (z_mirror_mesh=false):
+#   +4 and -4 are both solved there, so the even part is a test of the solver; value is (cn_raw(+4) + cn_raw(-4))/2
+#   from the levels file, tolerance 1 % of |(cn_raw(+4) - cn_raw(-4))/2|, passed is |value| <= tolerance.
+#   The even part of a pair is the spurious normal force that a mesh without z symmetry carries at every incidence, so it is of the size of that mesh's alpha = 0 value,
+#   here (levels file, cn_raw_a0): M = 0.3: cn_raw(0) = -0.04036; M = 0.8: cn_raw(0) = -0.02194; M = 2: cn_raw(0) = 0.001597.
+#   A solve with status accepted (the runner's acceptance rule was not met) enters the pair as written; its status is in source.
+# The farfield mass-flux balance check of spec section 6.3 is not in this file; it belongs to Task 19.
+# passed is the string True or False, or blank when the check has no criterion.
+check,case,mach,alpha_deg,model,quantity,value,expected,tolerance,passed,source
+cn_zero_alpha,base,0.3,0,euler,cn0,-0.04684,0,0.011788,False,doc/data/cfd/asymmetry_study.csv config=base mach=0.3 @ c0de310
+cn_zero_alpha,base,0.8,0,euler,cn0,-0.06276,0,0.0116374,False,doc/data/cfd/asymmetry_study.csv config=base mach=0.8 @ c0de310
+cn_zero_alpha,base,2,0,euler,cn0,-0.01724,0,0.0080208,False,doc/data/cfd/asymmetry_study.csv config=base mach=2 @ c0de310
+cn_zero_alpha,roll45,0.3,0,euler,cn0,-0.05764,0,0.0120468,False,doc/data/cfd/asymmetry_study.csv config=roll45 mach=0.3 @ c0de310
+cn_zero_alpha,roll45,0.8,0,euler,cn0,-0.04452,0,0.0116284,False,doc/data/cfd/asymmetry_study.csv config=roll45 mach=0.8 @ c0de310
+cn_zero_alpha,roll45,2,0,euler,cn0,-0.06309,0,0.0080192,False,doc/data/cfd/asymmetry_study.csv config=roll45 mach=2 @ c0de310
+cn_zero_alpha,jst,0.3,0,euler,cn0,0.09096,0,0.0103984,False,doc/data/cfd/asymmetry_study.csv config=jst mach=0.3 @ c0de310
+cn_zero_alpha,jst,0.8,0,euler,cn0,-0.03309,0,0.0106551,False,doc/data/cfd/asymmetry_study.csv config=jst mach=0.8 @ c0de310
+cn_zero_alpha,jst,2,0,euler,cn0,-0.01267,0,0.0073359,False,doc/data/cfd/asymmetry_study.csv config=jst mach=2 @ c0de310
+cn_zero_alpha,tight,0.3,0,euler,cn0,-0.04652,0,0.0117891,False,doc/data/cfd/asymmetry_study.csv config=tight mach=0.3 @ c0de310
+cn_zero_alpha,tight,0.8,0,euler,cn0,-0.06276,0,0.0116375,False,doc/data/cfd/asymmetry_study.csv config=tight mach=0.8 @ c0de310
+cn_zero_alpha,tight,2,0,euler,cn0,-0.01723,0,0.0080205,False,doc/data/cfd/asymmetry_study.csv config=tight mach=2 @ c0de310
+cn_zero_alpha,zm,0.3,0,euler,cn0,0,0,0.012143,True,"doc/data/cfd/asymmetry_study.csv config=zm mach=0.3 @ c0de310; zm is the quarter-plus-mirror mesh, so CN(0) = 0 by construction (mesh symmetry) and this row tests nothing about the solver; value rounded to 5 decimals"
+cn_zero_alpha,zm,0.8,0,euler,cn0,0,0,0.0117607,True,"doc/data/cfd/asymmetry_study.csv config=zm mach=0.8 @ c0de310; zm is the quarter-plus-mirror mesh, so CN(0) = 0 by construction (mesh symmetry) and this row tests nothing about the solver; value rounded to 5 decimals"
+cn_zero_alpha,zm,2,0,euler,cn0,0,0,0.0079617,True,"doc/data/cfd/asymmetry_study.csv config=zm mach=2 @ c0de310; zm is the quarter-plus-mirror mesh, so CN(0) = 0 by construction (mesh symmetry) and this row tests nothing about the solver; value rounded to 5 decimals"
+cn_zero_alpha,sample rocket,0.3,0,euler,cn_raw,-1.41162077e-07,0,0.0117905542,True,"doc/data/cfd/sample_euler_cases.csv mach=0.3 alpha_deg=0 @ 4c20dbe; production runs use a z-symmetric mesh (alpha_mode mirror, per the file's header), so CN(0) = 0 by mesh symmetry up to solver round-off"
+cn_zero_alpha,sample rocket,0.8,0,euler,cn_raw,1.52447995e-05,0,0.0120215962,True,"doc/data/cfd/sample_euler_cases.csv mach=0.8 alpha_deg=0 @ 4c20dbe; production runs use a z-symmetric mesh (alpha_mode mirror, per the file's header), so CN(0) = 0 by mesh symmetry up to solver round-off"
+cn_zero_alpha,sample rocket,1.2,0,euler,cn_raw,-4.57592887e-07,0,0.0132906245,True,"doc/data/cfd/sample_euler_cases.csv mach=1.2 alpha_deg=0 @ 4c20dbe; production runs use a z-symmetric mesh (alpha_mode mirror, per the file's header), so CN(0) = 0 by mesh symmetry up to solver round-off"
+cn_zero_alpha,sample rocket,2,0,euler,cn_raw,-2.58577984e-06,0,0.00934711536,True,"doc/data/cfd/sample_euler_cases.csv mach=2 alpha_deg=0 @ 4c20dbe; production runs use a z-symmetric mesh (alpha_mode mirror, per the file's header), so CN(0) = 0 by mesh symmetry up to solver round-off"
+cn_antisymmetry,base,0.3,4,euler,cn_even_4deg,-0.05537,0,0.011788,False,doc/data/cfd/asymmetry_study.csv config=base mach=0.3 @ c0de310; cn_even_4deg combined value
+cn_antisymmetry,base,0.8,4,euler,cn_even_4deg,-0.06877,0,0.0116374,False,doc/data/cfd/asymmetry_study.csv config=base mach=0.8 @ c0de310; cn_even_4deg combined value
+cn_antisymmetry,base,2,4,euler,cn_even_4deg,-0.01881,0,0.0080208,False,doc/data/cfd/asymmetry_study.csv config=base mach=2 @ c0de310; cn_even_4deg combined value
+cn_antisymmetry,roll45,0.3,4,euler,cn_even_4deg,-0.05349,0,0.0120468,False,doc/data/cfd/asymmetry_study.csv config=roll45 mach=0.3 @ c0de310; cn_even_4deg combined value
+cn_antisymmetry,roll45,0.8,4,euler,cn_even_4deg,-0.04232,0,0.0116284,False,doc/data/cfd/asymmetry_study.csv config=roll45 mach=0.8 @ c0de310; cn_even_4deg combined value
+cn_antisymmetry,roll45,2,4,euler,cn_even_4deg,-0.05987,0,0.0080192,False,doc/data/cfd/asymmetry_study.csv config=roll45 mach=2 @ c0de310; cn_even_4deg combined value
+cn_antisymmetry,jst,0.3,4,euler,cn_even_4deg,0.08504,0,0.0103984,False,doc/data/cfd/asymmetry_study.csv config=jst mach=0.3 @ c0de310; cn_even_4deg combined value
+cn_antisymmetry,jst,0.8,4,euler,cn_even_4deg,-0.03955,0,0.0106551,False,doc/data/cfd/asymmetry_study.csv config=jst mach=0.8 @ c0de310; cn_even_4deg combined value
+cn_antisymmetry,jst,2,4,euler,cn_even_4deg,-0.01383,0,0.0073359,False,doc/data/cfd/asymmetry_study.csv config=jst mach=2 @ c0de310; cn_even_4deg combined value
+cn_antisymmetry,tight,0.3,4,euler,cn_even_4deg,-0.05514,0,0.0117891,False,doc/data/cfd/asymmetry_study.csv config=tight mach=0.3 @ c0de310; cn_even_4deg combined value
+cn_antisymmetry,tight,0.8,4,euler,cn_even_4deg,-0.06877,0,0.0116375,False,doc/data/cfd/asymmetry_study.csv config=tight mach=0.8 @ c0de310; cn_even_4deg combined value
+cn_antisymmetry,tight,2,4,euler,cn_even_4deg,-0.01891,0,0.0080205,False,doc/data/cfd/asymmetry_study.csv config=tight mach=2 @ c0de310; cn_even_4deg combined value
+cn_antisymmetry,zm,0.3,4,euler,cn_even_4deg,0.00012,0,0.012143,True,"doc/data/cfd/asymmetry_study.csv config=zm mach=0.3 @ c0de310; cn_even_4deg combined value; zm is the quarter-plus-mirror mesh, where -alpha is the exact mirror of +alpha, so this row is near zero partly by construction; value rounded to 5 decimals"
+cn_antisymmetry,zm,0.8,4,euler,cn_even_4deg,0,0,0.0117607,True,"doc/data/cfd/asymmetry_study.csv config=zm mach=0.8 @ c0de310; cn_even_4deg combined value; zm is the quarter-plus-mirror mesh, where -alpha is the exact mirror of +alpha, so this row is near zero partly by construction; value rounded to 5 decimals"
+cn_antisymmetry,zm,2,4,euler,cn_even_4deg,1e-05,0,0.0079617,True,"doc/data/cfd/asymmetry_study.csv config=zm mach=2 @ c0de310; cn_even_4deg combined value; zm is the quarter-plus-mirror mesh, where -alpha is the exact mirror of +alpha, so this row is near zero partly by construction; value rounded to 5 decimals"
+ca_dalembert,sample rocket,0.3,0,euler,ca_cfd,-0.031369846,0,,,doc/data/cfd/sample_euler_cases.csv mach=0.3 alpha_deg=0 (converged) @ 4c20dbe
+ca_dalembert_refined,coarse (3.92 mm),0.3,0,euler,ca_cfd,-0.062794847,0,,,research/IY-TR-2026-01/nasa_vv/results/sample_euler_levels.csv level=coarse mach=0.3 (converged) nodes=98151
+ca_dalembert_refined,medium (2.8 mm),0.3,0,euler,ca_cfd,-0.0454687595,0,,,research/IY-TR-2026-01/nasa_vv/results/sample_euler_levels.csv level=medium mach=0.3 (converged) nodes=170830
+ca_dalembert_refined,fine (2 mm),0.3,0,euler,ca_cfd,-0.0304847698,0,,,research/IY-TR-2026-01/nasa_vv/results/sample_euler_levels.csv level=fine mach=0.3 (converged) nodes=302918
+cn_antisymmetry,medium (z_mirror_mesh=false),0.3,4,euler,cn_even_4deg,-0.038831785,0,0.01144577725,False,research/IY-TR-2026-01/nasa_vv/results/sample_euler_levels.csv level=medium_nomirror mach=0.3 (converged/accepted); +4 and -4 both solved on a mesh that is not mirrored
+cn_antisymmetry,medium (z_mirror_mesh=false),0.8,4,euler,cn_even_4deg,-0.020078225,0,0.01181870285,False,research/IY-TR-2026-01/nasa_vv/results/sample_euler_levels.csv level=medium_nomirror mach=0.8 (converged/converged); +4 and -4 both solved on a mesh that is not mirrored
+cn_antisymmetry,medium (z_mirror_mesh=false),2,4,euler,cn_even_4deg,0.001524465,0,0.00933647917,True,research/IY-TR-2026-01/nasa_vv/results/sample_euler_levels.csv level=medium_nomirror mach=2 (converged/accepted); +4 and -4 both solved on a mesh that is not mirrored

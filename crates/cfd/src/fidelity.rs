@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+// Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Geometry fidelity of an STL-surface CFD mesh (`stl_fidelity.json`).
 //!
 //! Three surfaces are compared, all in the CFD frame:

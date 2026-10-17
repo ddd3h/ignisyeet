@@ -11,9 +11,7 @@ Work directory layout (one sub-directory per level, each holding a fetched ``ign
     coarse/  medium/  fine/  medium_nomirror/
         case.toml                  aero.cfd.wall_size, fin_size, z_mirror_mesh, ranks_per_case
         done.json                  the job meta of virgo_run.sh (node, ppn, wall_seconds, ...)
-        sizing.json                optional: peak_mem_gb, binary_version (replaces the binary and commit of
-                                   the job record in the header, which names the checkout of the remote
-                                   directory, not necessarily the binary), notes
+        job.log                    its ``binary: <path>`` line is the evidence of the binary that ran
         out/cfd_cases.csv          one row per solved case, plus the ``combined`` rows
         out/cfd_report.json        mesh_nodes, mesh_cells
         out/cfd/<case>/done.json   mach, alpha_deg of the case
@@ -50,12 +48,19 @@ Quantities
                pressure, from the combined normal force and moment.
 
 A level's verdict is the AND over the solves its quantity uses (cna: alpha 4; ca_alpha0: alpha 0;
-xcp: alpha 4 and alpha 0, because the combined row subtracts the alpha = 0 offset). Status
-strings are mapped explicitly: ``converged`` is True; ``unconverged`` (limit cycle), ``accepted``
-(the runner accepted it without meeting its rule) and ``failed`` are False; any other string is
-an error. ``residual_drop_orders`` is the largest ``rms[Rho]`` of the case's history minus the
-residual at the judged row (``residual_last``). Neither gate is weakened: ``family.py`` refuses a
-level that is not converged.
+xcp: alpha 4 and alpha 0, because
+the combined row subtracts the alpha = 0 offset). Status strings are mapped by
+``existing_data._STATUS`` (shared with the committed studies): ``converged`` is True; ``accepted``
+(the runner's early stop after at least 3 orders with flat coefficients) is None, so the recorded
+residual drop decides through ``check_converged``; ``unconverged`` (limit cycle) and ``failed`` are
+False; any other string is an error. ``residual_drop_orders`` is the largest ``rms[Rho]`` of the
+case's history minus the residual at the judged row (``residual_last``). Neither gate is weakened:
+``family.py`` refuses a level that is not converged.
+
+The inputs (``case.toml`` per level) are committed in ``sample_euler_inputs/``; the header of
+``results/gci_sample_euler.csv`` lists how they were made, every hand edit, the binary and its
+evidence, and the sizing numbers. Nothing the CSVs state depends on a file outside the work
+directory and the repository.
 """
 from __future__ import annotations
 
@@ -69,7 +74,8 @@ from dataclasses import dataclass, field
 
 from ..family import GridFamily, GridLevel, study
 from ..gci import GridConvergence, grid_convergence  # noqa: F401  (grid_convergence used via existing_data)
-from .existing_data import FamilyData, _num, _rows, _wall_size_compute, COLUMNS as GCI_COLUMNS
+from .existing_data import (COLUMNS as GCI_COLUMNS, FamilyData, _last_commit, _rows, _verdict,
+                            _wall_size_compute)
 
 RESULTS = pathlib.Path(__file__).resolve().parents[1] / "results"
 LEVELS_CSV = RESULTS / "sample_euler_levels.csv"
@@ -86,23 +92,7 @@ LEVEL_COLUMNS = [
     "cells", "mach", "status_a0", "status_a4", "status_am4", "drop_a0", "drop_a4", "drop_am4",
     "cn_raw_a0", "cn_raw_a4", "cn_raw_am4", "cna", "cna_basis", "cn_combined_a4", "xcp_m",
     "ca_alpha0", "history_gap_a0", "history_gap_a4", "history_gap_am4", "source_check", "job_wall_s",
-    "job_peak_mem_gb",
 ]
-
-_STATUS = {"converged": True, "unconverged": False, "accepted": False, "failed": False}
-
-
-def verdict(statuses: list[str]) -> bool:
-    """AND of the mapped statuses. An unknown string is an error, never a guess."""
-    out = True
-    for s in statuses:
-        if s not in _STATUS:
-            raise ValueError(
-                f"unknown solve status {s!r}; the known strings are {sorted(_STATUS)} and each "
-                "must be mapped to True or False explicitly")
-        out = out and _STATUS[s]
-    return out
-
 
 def cna(cn_plus: float, cn_minus: float | None) -> float:
     """CNa [1/rad]: half the difference over radians(4) with both signs, else CN(4) / radians(4)."""
@@ -137,16 +127,18 @@ class Level:
     ppn: int | None
     job_wall_s: float | None
     commit: str
+    """ignisyeet_commit of the job record: the remote checkout's COMMIT file, NOT the binary's source."""
     binary: str
-    peak_mem_gb: float | None
-    sizing: dict
+    binary_line: str
+    """The ``binary: <path>`` line of job.log, the evidence of the binary that ran."""
+    cfg_machs: list[float]
     solves: dict[tuple[float, float], Solve] = field(default_factory=dict)
     combined: dict[tuple[float, float], dict[str, float | None]] = field(default_factory=dict)
     problems: list[str] = field(default_factory=list)
     """Why the files of this level cannot be trusted (truncated, stale, incomplete); empty when they pass."""
 
     def machs(self) -> list[float]:
-        return sorted({m for m, _ in self.solves})
+        return sorted({m for m, _ in self.solves} | set(self.cfg_machs))
 
 
 def _opt(row: dict[str, str], col: str) -> float | None:
@@ -203,10 +195,11 @@ def _check_history(path: pathlib.Path, iterations: int, residual_last: float | N
                             "iterations (the history is older than the case record, or truncated)")
     judged = None
     if residual_last is not None and ca is not None:
-        for i, v in enumerate(vals, start=1):
-            if abs(v - residual_last) <= HISTORY_TOLERANCE:
-                judged = i
-                break
+        matches = [i for i, v in enumerate(vals, start=1) if abs(v - residual_last) <= HISTORY_TOLERANCE]
+        if len(matches) > 1:
+            return None, None, (f"{path.name} has {len(matches)} rows (the first are {matches[:3]}) within {HISTORY_TOLERANCE:g} "
+                                f"of residual_last = {residual_last:.6g}, so the judged row is ambiguous")
+        judged = matches[0] if matches else None
         if judged is None:
             return None, None, (f"{path.name} has no row with rms[Rho] = {residual_last:.6g}, the residual that "
                                 "cfd_cases.csv records for the judged row")
@@ -239,7 +232,9 @@ def read_level(d: pathlib.Path) -> Level:
     cfg = tomllib.loads((d / "case.toml").read_text())["aero"]["cfd"]
     rep = _json(d / "out" / "cfd_report.json", problems)
     job = _json(d / "done.json", problems, required=False)
-    sizing = _json(d / "sizing.json", problems, required=False)
+    log = d / "job.log"
+    binary_line = next((ln.strip() for ln in log.read_text(errors="replace").splitlines()
+                        if ln.startswith("binary: ")), "") if log.exists() else ""
     if job and (job.get("state") != "done" or job.get("exit_code") != 0):
         problems.append(f"done.json records state {job.get('state')!r} and exit code {job.get('exit_code')!r}, not a finished job with exit code 0")
     lv = Level(
@@ -248,7 +243,7 @@ def read_level(d: pathlib.Path) -> Level:
         nodes=int(rep.get("mesh_nodes", 0)), cells=int(rep.get("mesh_cells", 0)),
         machine=str(job.get("node", "")), ppn=job.get("ppn"), job_wall_s=job.get("wall_seconds"),
         commit=str(job.get("ignisyeet_commit", "")), binary=str(job.get("binary", "")),
-        peak_mem_gb=sizing.get("peak_mem_gb"), sizing=sizing, problems=problems)
+        binary_line=binary_line, cfg_machs=[float(m) for m in cfg.get("machs", [])], problems=problems)
     if lv.nodes <= 0 or lv.cells <= 0:
         problems.append("cfd_report.json has no positive mesh_nodes / mesh_cells")
     # case directories, found by the mach / alpha in their done.json
@@ -263,32 +258,44 @@ def read_level(d: pathlib.Path) -> Level:
     if not text.endswith("\n"):
         problems.append("cfd_cases.csv does not end in a newline (truncated)")
     lines = list(csv.reader(text.splitlines()))
+    if len(lines) < 2:
+        problems.append("cfd_cases.csv is empty or holds only its header")
+        lines = lines or [[]]
     head = lines[0]
     for n, fields in enumerate(lines[1:], start=2):
         if len(fields) != len(head):
             problems.append(f"cfd_cases.csv row {n} has {len(fields)} of {len(head)} fields (truncated)")
             continue
         r = dict(zip(head, fields))
-        key = (float(r["mach"]), float(r["alpha_deg"]))
+        try:
+            key = (float(r["mach"]), float(r["alpha_deg"]))
+            iterations = int(r["iterations"]) if r["status"] != "combined" else 0
+            values = {c: _opt(r, c) for c in ("residual_last", "cn_raw", "ca_cfd", "wall_seconds", "cn", "xcp_m")}
+        except (KeyError, ValueError):
+            problems.append(f"cfd_cases.csv row {n} has a missing or non-numeric field (mach, alpha_deg, iterations or a value)")
+            continue
         if r["status"] == "combined":
-            lv.combined[key] = {"cn": _opt(r, "cn"), "xcp_m": _opt(r, "xcp_m"), "ca": _opt(r, "ca_cfd")}
+            lv.combined[key] = {"cn": values["cn"], "xcp_m": values["xcp_m"], "ca": values["ca_cfd"]}
             continue
         if r.get("beta_deg", "0") not in ("0", "0.0", "") or r.get("roll_hat", "0") not in ("0", "0.0", ""):
             continue
-        iterations = int(r["iterations"])
-        last = _opt(r, "residual_last")
+        last = values["residual_last"]
         drop = gap = None
         if r["status"] != "failed":
+            where = f"mach {key[0]:g} alpha {key[1]:g}"
+            for col in ("residual_last", "ca_cfd", "cn_raw"):
+                if values[col] is None:
+                    problems.append(f"{where}: {col} is blank in cfd_cases.csv for a case with status {r['status']!r}")
             if key not in dirs:
-                problems.append(f"no case directory for mach {key[0]:g} alpha {key[1]:g}")
-            else:
-                peak, gap, why = _check_history(dirs[key] / "history.csv", iterations, last, _opt(r, "ca_cfd"))
+                problems.append(f"no case directory for {where}")
+            elif last is not None and values["ca_cfd"] is not None:
+                peak, gap, why = _check_history(dirs[key] / "history.csv", iterations, last, values["ca_cfd"])
                 if why:
-                    problems.append(f"mach {key[0]:g} alpha {key[1]:g}: {why}")
-                elif last is not None:
+                    problems.append(f"{where}: {why}")
+                else:
                     drop = peak - last
-        lv.solves[key] = Solve(r["status"], iterations, _opt(r, "cn_raw"), _opt(r, "ca_cfd"), drop,
-                               _opt(r, "wall_seconds"), gap)
+        lv.solves[key] = Solve(r["status"], iterations, values["cn_raw"], values["ca_cfd"], drop,
+                               values["wall_seconds"], gap)
     if "cases" in rep and int(rep["cases"]) != len(lv.solves):
         problems.append(f"cfd_report.json records {rep['cases']} cases but cfd_cases.csv holds {len(lv.solves)} solves")
     machs = [float(m) for m in cfg.get("machs", [])]
@@ -352,7 +359,7 @@ def level_rows(levels: dict[str, Level]) -> list[dict[str, str]]:
                 "history_gap_a4": _g(s4.history_gap if s4 else None),
                 "history_gap_am4": _g(sm.history_gap if sm else None),
                 "source_check": "ok" if not lv.problems else "FAILED: " + " | ".join(lv.problems),
-                "job_wall_s": _g(lv.job_wall_s, ".1f"), "job_peak_mem_gb": _g(lv.peak_mem_gb, ".3g"),
+                "job_wall_s": _g(lv.job_wall_s, ".1f"),
             })
     return rows
 
@@ -363,7 +370,7 @@ def _glevel(lv: Level, solves: list[Solve]) -> GridLevel:
     return GridLevel(lv.name, lv.nodes,
                      {"wall_size_mm": lv.wall_m * 1000, "fin_size_mm": lv.fin_m * 1000},
                      residual_drop_orders=drop,
-                     solver_converged=verdict([s.status for s in solves]))
+                     solver_converged=_verdict([s.status for s in solves]))
 
 
 def families(levels: dict[str, Level]) -> list[tuple[str, FamilyData]]:
@@ -414,6 +421,42 @@ def _quantities(machs: list[float]) -> list[tuple[str, str]]:
     return out
 
 
+GCI_LIMIT_PCT = 100.0
+"""A GCI above this (percent) means the uncertainty exceeds the value."""
+
+EXACT_VALUES: dict[tuple[str, float], tuple[float, str]] = {
+    ("ca_alpha0", 0.3): (0.0, "d'Alembert's paradox, M = 0.3, alpha = 0"),
+}
+"""Known exact values: (quantity, Mach) -> (value, reason). An extrapolation on the other side of it than the
+finest grid value has crossed the bound."""
+
+
+def _unusable(row: dict[str, str]) -> str:
+    """Why a computed row is unusable ('' if it is not): one rule for every quantity."""
+    if row["order"] == "":
+        return ""
+    reasons = []
+    gci = float(row["gci_fine_pct"]) if row["gci_fine_pct"] else None
+    if gci is not None and gci > GCI_LIMIT_PCT:
+        reasons.append(f"gci_fine_pct = {gci:.3g} exceeds {GCI_LIMIT_PCT:g}, so the uncertainty is larger than the value")
+    mach = float(row["condition"].split()[0].removeprefix("M="))
+    known = EXACT_VALUES.get((row["quantity"], mach))
+    if known and row["extrapolated"]:
+        exact, why = known
+        f1, ext = float(row["f1"]), float(row["extrapolated"])
+        if (f1 - exact) * (ext - exact) < 0:
+            reasons.append(f"the extrapolated value {ext:.4g} is on the other side of the exact value {exact:g} ({why}) than the finest grid value {f1:.4g}")
+    return ("unusable: " + "; ".join(reasons)) if reasons else ""
+
+
+def _flagged(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    for r in rows:
+        why = _unusable(r)
+        if why:
+            r["note"] = "; ".join(x for x in (r["note"], why) if x)
+    return rows
+
+
 def gci_rows(levels: dict[str, Level]) -> list[dict[str, str]]:
     rows = []
     trip = "/".join(n for n in FAMILY_LEVELS)
@@ -427,8 +470,8 @@ def gci_rows(levels: dict[str, Level]) -> list[dict[str, str]]:
             rows += _refused(cond, q, trip, fam, note)
         return rows
     for cond, fd in families(levels):
-        a = _rows("sample_euler", cond, trip, fd, lambda f: study(f.family, f.values), "nodes^-1/3")
-        b = _rows("sample_euler", cond, trip, fd, _wall_size_compute, "wall_size")
+        a = _flagged(_rows("sample_euler", cond, trip, fd, lambda f: study(f.family, f.values), "nodes^-1/3"))
+        b = _flagged(_rows("sample_euler", cond, trip, fd, _wall_size_compute, "wall_size"))
         for x, y in zip(a, b):
             rows += [x, y]
     return rows
@@ -441,6 +484,79 @@ def _ratios(vals: list[float]) -> str:
     return " and ".join(f"{b / a:.3g}x" for a, b in zip(vals, vals[1:]))
 
 
+SIZING = {
+    # Recorded before the runs by `ignisyeet cfd-check --mesh` on the local machine with 4 threads:
+    # (nodes, cells, the product's memory estimate per case in GB).
+    "coarse": (98157, 458692, 1.7),
+    "medium": (170830, 798532, 2.8),
+    "fine": (302918, 1416444, 4.8),
+    "medium_nomirror": (167592, 779764, 2.7),
+}
+REMOTE_VERSION = "IgnisYeet 0.4.0"
+"""`ssh virgo .../bin/ignisyeet-glibc-a8dff9c --version`, first words of the first line (2026-10-17)."""
+LOCAL_VERSION = "IgnisYeet 0.4.0"
+"""`target/release/ignisyeet --version`, first words of the first line (2026-10-17)."""
+MEMORY_EARLIER_GB = 3.3
+"""Peak SU2 RSS per case of the 2 mm run of doc/data/cfd/mesh_convergence.csv (1.42 M cells, the mesh of level fine)."""
+
+BASE_INPUT = "examples/sample_cfd.toml"
+SETUP_SCRIPT = "doc/scripts/rans_sample.py"
+INPUTS_REL = "research/nasa_vv/cases/sample_euler_inputs"
+INPUTS = pathlib.Path(__file__).resolve().parent / "sample_euler_inputs"
+
+
+def _binary_lines(levels: dict[str, Level]) -> list[str]:
+    names = sorted({lv.binary for lv in levels.values()})
+    evidence = sorted({lv.binary_line for lv in levels.values() if lv.binary_line})
+    commits = sorted({lv.commit for lv in levels.values() if lv.commit})
+    lines = [
+        "Binary: " + ", ".join(names or ["unknown"]) + "; evidence: the job.log line " + (
+            " and ".join(f'"{e}"' for e in evidence) if evidence else "(no job.log line found)")
+        + f". Version of that binary (ssh virgo ... --version): {REMOTE_VERSION}; of the local target/release/ignisyeet: {LOCAL_VERSION}. "
+        "The version string carries no commit, so it does not tell the two apart.",
+    ]
+    suffixed = [n for n in names if n.rsplit("-", 1)[-1].isalnum() and len(n.rsplit("-", 1)[-1]) >= 7
+                and all(c in "0123456789abcdef" for c in n.rsplit("-", 1)[-1])]
+    if suffixed:
+        lines.append(
+            "The binary name carries its source commit (" + ", ".join(n.rsplit("-", 1)[-1] for n in suffixed)
+            + "), built on virgo from that commit; the name is the only record of this, and no artifact verifies it. "
+            "The ignisyeet_commit of the job record done.json ("
+            + (", ".join(commits) if commits else "none") + ") is stale for this binary: virgo_run.sh copies it from the COMMIT file "
+            "of the older remote checkout, not from the binary's source, so it is not used.")
+    else:
+        lines.append("The ignisyeet_commit of the job record is the remote checkout's COMMIT file ("
+                     + (", ".join(commits) if commits else "none") + "); it need not be the binary's source.")
+    return lines
+
+
+def _input_lines() -> list[str]:
+    return [
+        f"Inputs: one case.toml per level, committed under {INPUTS_REL}/ (machine paths replaced by <RUN_DIR> and <CFD_PREFIX>). "
+        f"Base file: {BASE_INPUT} (last commit {_last_commit(BASE_INPUT)}) through {SETUP_SCRIPT} setup (last commit {_last_commit(SETUP_SCRIPT)}) "
+        "with --machs 0.3 0.8 2.0 --alphas 0 4 --model euler --wall <wall_size> --parallel 3 --ranks <ranks> --memory-gb 30 --set aero.cfd.fin_size=<fin_size> "
+        "(medium_nomirror adds --set aero.cfd.z_mirror_mesh=false).",
+        "Set by setup, not by hand: output.dir, output.kml = false, rocket.stl and motor.eng as absolute paths, aero.cfd.model/machs/alphas_deg [0, 4]/wall_size/fin_size/ranks_per_case/parallel_cases, "
+        "aero.cfd.iterations left to the model default (the base file's `iterations = 3000` is commented out), and a [resources] block (threads = 12, memory_gb = 30; the job overrides threads with the core count).",
+        "Edited by hand after setup: (1) setup writes the wall_size override into the comment line `# wall_size = 0.002 and iterations ...` of the base file and leaves the real `wall_size = 0.002` key, so the stray line was removed and the real key set (the stale trailing comment on it, '1.4 M cells, fins at 1 mm', and the orphaned comment line '2 mm RANS mesh needs far more ...' were dropped from the committed copies); "
+        "(2) sample_rocket.stl and sample_motor.eng were copied beside case.toml and referenced by relative names so the directory could be synced to virgo; (3) `output.html` was removed because the remote binary of the first submission rejected the key (unknown field); "
+        "(4) ranks_per_case was set per level (4, 7, 11, 7) to split the cores in proportion to the cells, and the aero run used --force and `-l` (node-local work directory).",
+    ]
+
+
+def _sizing_lines() -> list[str]:
+    coarse = SIZING["coarse"]
+    return [
+        "Before the runs a local mesh check (ignisyeet cfd-check --mesh, 4 threads) gave: " + "; ".join(
+            f"{k} {n} nodes, {c} cells, {g} GB per case (the product's estimate)" for k, (n, c, g) in SIZING.items())
+        + ". The meshes of the runs differ by a few cells (gmsh is not bitwise repeatable); the counts in the table above are those of the runs.",
+        f"Peak SU2 memory was not measured on virgo (the compute nodes cannot be reached from the login node and PBS keeps no accounting); the earlier 2 mm run of doc/data/cfd/mesh_convergence.csv (1.42 M cells, the mesh of level fine) measured {MEMORY_EARLIER_GB:g} GB per case.",
+        f"Placement rule (coarse peak memory x 1.4^6 against 100 GB): {coarse[2]:g} GB x {1.4 ** 6:.2f} = {coarse[2] * 1.4 ** 6:.1f} GB, "
+        "below 100 GB, so the levels would fit on the local machine (20 threads, 30 GB RAM); they ran on virgo01 at the controller's instruction "
+        "to run all levels at once, and the coarse memory is the product's estimate, not a measurement.",
+    ]
+
+
 def _header(levels: dict[str, Level]) -> list[str]:
     coarse_first = [levels[n] for n in reversed(FAMILY_LEVELS)]
     cells = [lv.cells for lv in coarse_first]
@@ -451,31 +567,18 @@ def _header(levels: dict[str, Level]) -> list[str]:
         "Levels (wall_size / fin_size): " + "; ".join(
             f"{lv.name} {lv.wall_m * 1000:g} / {lv.fin_m * 1000:g} mm, {lv.nodes} nodes, {lv.cells} cells"
             for lv in coarse_first) + ". The knobs scale by 1.4 per level (aero.cfd.wall_size and aero.cfd.fin_size).",
-        "Runs: "+ "; ".join(
+        "Runs: " + "; ".join(
             f"{lv.name} on {lv.machine or 'unknown'}"
             + (f" with {lv.ppn} cores" if lv.ppn else "")
             + (f" ({lv.ranks_per_case} ranks per case)" if lv.ranks_per_case else "")
             + (f", job wall time {lv.job_wall_s:.0f} s" if lv.job_wall_s else "")
-            + (f", peak job memory {lv.peak_mem_gb:g} GB" if lv.peak_mem_gb else "")
             for lv in (*coarse_first, levels[NOMIRROR_LEVEL])) + ".",
-        "Binary: " + "; ".join(sorted({
-            lv.sizing["binary_version"] if lv.sizing.get("binary_version")
-            else f"{lv.binary or 'unknown'} at ignisyeet commit {lv.commit or 'unknown'} (from the job record)"
-            for lv in levels.values()})) + ".",
-    ]
-    for lv in (*coarse_first, levels[NOMIRROR_LEVEL]):
-        if lv.sizing.get("notes"):
-            lines.append(f"{lv.name}: {lv.sizing['notes']}.")
-    if any(lv.sizing.get("est_mem_gb") for lv in levels.values()) and not any(lv.peak_mem_gb for lv in levels.values()):
-        lines.append("Peak SU2 memory was not measured on virgo (the compute nodes cannot be reached from the login node and PBS keeps no accounting); "
-                     "the earlier 2 mm run of doc/data/cfd/mesh_convergence.csv (1.42 M cells, the mesh of level fine) measured 3.3 GB per case.")
-    est = levels["coarse"].sizing.get("est_mem_gb")
-    if est:
-        lines.append(f"Placement rule (coarse peak memory x 1.4^6 against 100 GB): {est:g} GB x {1.4 ** 6:.2f} = {est * 1.4 ** 6:.1f} GB, "
-                     "below 100 GB, so the levels would fit on the local machine (20 threads, 30 GB RAM); they ran on virgo01 at the controller's instruction "
-                     "to run all levels at once, and the coarse memory is the product's estimate, not a measurement.")
-    lines += [
+        *_binary_lines(levels),
+        *_input_lines(),
+        *_sizing_lines(),
         "Celik et al. (2008) with Fs = 1.25. Every level is gated by nasa_vv.family first; a refused family has no numbers, only the refusal in note.",
+        "Status mapping (existing_data._STATUS, shared with the committed studies): converged -> True; accepted -> None (the product's early stop after at least 3 orders of residual drop with flat coefficients: no verdict is claimed and the recorded residual drop decides, so a level passes with a drop of 3 orders or more); "
+        "unconverged (limit cycle) and failed -> False; any other string is an error. A level's verdict is the AND over the solves its quantity uses.",
         "Every quantity is written twice, once per h_basis: nodes^-1/3 and wall_size (the knob ratio). The spread between the two is part of the uncertainty.",
         "check_similar sees only the knobs, and the knobs scale together by 1.4, so the family passes it. The grids are nevertheless not geometrically similar: "
         "the mesher fixes the outer cell size at the farfield radius / 10 (crates/cfd/src/mesh.rs:396) and grades the volume from wall_size up to it "
@@ -483,10 +586,12 @@ def _header(levels: dict[str, Level]) -> list[str]:
         f"Measured growth per level, coarse to fine: cells {_ratios(cells)}, nodes {_ratios(nodes)}; wall_size ratio {_ratios([1 / w for w in walls])}. "
         "A geometrically similar 1.4 refinement would grow the cells by 1.4^3 = 2.74x per level.",
         "On grids whose outer cell size is fixed, neither h basis is the effective grid size; the two bracket the question rather than resolve it, so the spread between them is not a bound on the true GCI.",
-        "Completeness: the runner stops SU2 while it may be writing, so every file read here is checked, not trusted: cfd_cases.csv and each history.csv must end in a newline with complete finite rows, the history must reach the judged iteration and carry the residual_last that cfd_cases.csv records, every solve of case.toml must be present, and the job must have finished with exit code 0. A level that fails any check refuses all of its families (the reason is in note and in source_check of sample_euler_levels.csv). The recorded residual and force coefficients belong to the history row at the runner's stop decision (the judged row), and SU2 keeps writing until its next periodic output, so history.csv can run past it; the rows after the judged row are counted in history_gap_*. The surface_flow files are not read.",
+        "Completeness: the runner stops SU2 while it may be writing, so every file read here is checked, not trusted: cfd_cases.csv and each history.csv must end in a newline with complete finite rows, no residual_last, ca_cfd or cn_raw may be blank on a case that did not fail, the history must reach the judged iteration and hold exactly one row at the residual_last that cfd_cases.csv records, every solve of case.toml must be present, and the job must have finished with exit code 0. A level that fails any check refuses all of its families (the reason is in note and in source_check of sample_euler_levels.csv). The recorded residual and force coefficients belong to the history row at the runner's stop decision (the judged row), and SU2 keeps writing until its next periodic output, so history.csv can run past it; the rows after the judged row are counted in history_gap_*. The surface_flow files are not read.",
         "n1..n3 are nodes (finest first). gci_fine_pct and gci_coarse_pct are relative to f1 and f2 (percent), including for xcp (a length: multiply by |f1|).",
         "cna: CNa [1/rad] = CN(4)/radians(4) from cn_raw on the z-mirrored mesh (-4 is the exact mirror of +4 and is not solved); the non-mirrored medium level uses (CN(4) - CN(-4))/2/radians(4); see cna_basis in sample_euler_levels.csv. xcp: xcp_m of the combined row. ca_alpha0: ca_cfd at alpha = 0.",
         "A note flags any computed order above 4 (twice the formal second order) or below 0.5 (a quarter of it): the triplet is then not in the asymptotic range and its GCI is not reliable.",
+        f"A note marks a computed row unusable when its gci_fine_pct exceeds {GCI_LIMIT_PCT:g} (the uncertainty is larger than the value) or when its Richardson extrapolation lies on the other side of a known exact value than the finest grid "
+        "(a shared rule; the known values are in EXACT_VALUES of sample_euler.py: CA at M = 0.3, alpha = 0 is 0 by d'Alembert's paradox, so an extrapolation to positive CA is past the bound).",
     ]
     return ["# " + ln for ln in lines]
 

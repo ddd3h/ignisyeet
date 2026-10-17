@@ -25,7 +25,7 @@ def _combined(mach, alpha, cn, xcp):
 
 def make_level(work, name, wall_mm, fin_mm, nodes, cells, mirror=True, cn_slope=1.2, ca0=-0.03,
                status4="converged", status0="converged", drop=8.0, xcp=1.21, cn_m4=None,
-               machs=(0.3, 0.8, 2.0), node="virgo01", ppn=20):
+               machs=(0.3, 0.8, 2.0), node="virgo01", ppn=20, binary="ignisyeet-glibc-a8dff9c"):
     d = pathlib.Path(work) / name
     out = d / "out"
     (out / "cfd").mkdir(parents=True)
@@ -38,7 +38,8 @@ def make_level(work, name, wall_mm, fin_mm, nodes, cells, mirror=True, cn_slope=
                                                     "cases": len(machs) * (2 if mirror else 3)}))
     (d / "done.json").write_text(json.dumps({
         "state": "done", "exit_code": 0, "wall_seconds": 1000.0, "node": node, "ppn": ppn,
-        "ignisyeet_commit": "abc1234", "binary": "ignisyeet-glibc"}))
+        "ignisyeet_commit": "abc1234", "binary": binary}))
+    (d / "job.log").write_text(f"binary: /remote/bin/{binary}\n+ rc=0\n")
     rows = [CASES_HEADER]
     for m in machs:
         specs = [(0.0, status0, 1e-7, ca0), (4.0, status4, cn_slope * math.radians(4), ca0)]
@@ -226,9 +227,56 @@ def test_the_header_states_that_check_similar_sees_only_the_knobs_and_the_measur
     assert "spread" in h
 
 
-def test_the_header_names_the_binary_and_the_machine(work, tmp_path):
+def test_the_header_names_the_binary_its_evidence_and_the_machine(work, tmp_path):
     h = _head(run(work, tmp_path)[1])
-    assert "abc1234" in h and "virgo01" in h
+    assert "virgo01" in h
+    assert 'Binary: ignisyeet-glibc-a8dff9c; evidence: the job.log line "binary: /remote/bin/ignisyeet-glibc-a8dff9c"' in h
+    assert "IgnisYeet 0.4.0" in h
+
+
+def test_a_binary_name_with_a_commit_suffix_never_prints_the_job_records_commit_as_its_source(work, tmp_path):
+    h = _head(run(work, tmp_path)[1])
+    assert "is stale for this binary" in h and "(abc1234)" in h
+    assert "at ignisyeet commit" not in h
+    assert "a8dff9c" in h
+
+
+def test_a_binary_name_without_a_suffix_says_the_commit_need_not_be_its_source(tmp_path):
+    w = tmp_path / "w"
+    w.mkdir()
+    for n, wall, fin, nodes in (("coarse", 3.92, 1.96, 4e5), ("medium", 2.8, 1.4, 5.2e5), ("fine", 2.0, 1.0, 7e5)):
+        make_level(w, n, wall, fin, int(nodes), int(nodes * 5), binary="ignisyeet-glibc", ca0=-wall / 100)
+    make_level(w, "medium_nomirror", 2.8, 1.4, 520_000, 2_700_000, mirror=False, binary="ignisyeet-glibc")
+    h = _head(se.main(w, tmp_path / "l.csv", tmp_path / "g.csv")[1])
+    assert "need not be the binary's source" in h and "is stale for this binary" not in h
+
+
+def test_the_header_lists_the_inputs_and_every_hand_edit(work, tmp_path):
+    h = _head(run(work, tmp_path)[1])
+    assert "examples/sample_cfd.toml" in h and "rans_sample.py" in h
+    for needle in ("# wall_size = 0.002 and iterations", "relative names", "output.html", "kml = false",
+                   "iterations left to the model default", "[0, 4]", "[resources] block", "sample_euler_inputs"):
+        assert needle in h, needle
+
+
+def test_the_header_states_the_status_mapping_and_the_sizing(work, tmp_path):
+    h = _head(run(work, tmp_path)[1])
+    assert "accepted -> None" in h and "unconverged (limit cycle) and failed -> False" in h
+    assert "98157 nodes" in h and "1.7 GB x 7.53 = 12.8 GB" in h
+
+
+def test_the_committed_inputs_match_what_the_header_claims():
+    import tomllib
+    d = se.INPUTS
+    got = {}
+    for n in ("coarse", "medium", "fine", "medium_nomirror"):
+        text = (d / f"{n}.toml").read_text()
+        assert "/home/" not in text and "<RUN_DIR>" in text and "<CFD_PREFIX>" in text
+        c = tomllib.loads(text)["aero"]["cfd"]
+        got[n] = (c["wall_size"], c["fin_size"], c["z_mirror_mesh"])
+    assert got == {"coarse": (0.00392, 0.00196, True), "medium": (0.0028, 0.0014, True),
+                   "fine": (0.002, 0.001, True), "medium_nomirror": (0.0028, 0.0014, False)}
+    assert "about 1.4 M cells" not in "".join((d / f"{n}.toml").read_text() for n in got)
 
 
 def test_every_blank_result_has_a_note(work, tmp_path):
@@ -240,17 +288,6 @@ def test_every_blank_result_has_a_note(work, tmp_path):
 def test_the_default_levels_path_resolves_from_the_module_not_the_cwd():
     assert se.LEVELS_CSV.is_absolute() and se.GCI_CSV.is_absolute()
     assert se.LEVELS_CSV.parent.name == "results"
-
-
-def test_a_recorded_binary_version_replaces_the_job_records_commit(work, tmp_path):
-    for n in ("coarse", "medium", "fine", "medium_nomirror"):
-        (work / n / "sizing.json").write_text(json.dumps({
-            "binary_version": "ignisyeet-glibc-a8dff9c (built on virgo from a8dff9c)", "peak_mem_gb": 1.5,
-            "notes": "memory estimate 1.7 GB per case"}))
-    h = _head(run(work, tmp_path)[1])
-    assert "ignisyeet-glibc-a8dff9c (built on virgo from a8dff9c)" in h
-    assert "abc1234" not in h
-    assert "peak job memory 1.5 GB" in h and "memory estimate 1.7 GB per case" in h
 
 
 # ------------------------------------------------------------------ truncated or stale sources
@@ -373,3 +410,160 @@ def test_a_window_mean_force_between_the_rows_is_accepted(work, tmp_path):
     _set_cfx(_history(work, "fine", 0.3, 4.0), [-0.0170, -0.0160, -0.0130])
     lv, _ = run(work, tmp_path)
     assert next(r for r in _read(lv) if r["level"] == "fine" and r["mach"] == "0.3")["source_check"] == "ok"
+
+
+# ------------------------------------------------------------------ hardening (fix round 1)
+
+
+def test_a_history_with_a_short_row_and_a_final_newline_is_refused_by_the_field_count(work, tmp_path):
+    h = _history(work, "fine", 0.8, 4.0)
+    lines = h.read_text().splitlines()
+    lines[-1] = lines[-1].rsplit(",", 1)[0]  # one field missing, newline kept
+    h.write_text("\n".join(lines) + "\n")
+    check = _refused_for(work, tmp_path, "has 4 of 5 fields (truncated)")
+    assert check["coarse"] == "ok"
+
+
+def test_a_history_with_a_non_numeric_field_and_a_final_newline_is_refused(work, tmp_path):
+    h = _history(work, "fine", 0.8, 4.0)
+    lines = h.read_text().splitlines()
+    lines[-1] = lines[-1].rsplit(",", 1)[0] + ",-0.0e"  # a cut number, same field count
+    lines[-1] = lines[-1].replace(lines[-1].split(",")[3], "-7.5x")
+    h.write_text("\n".join(lines) + "\n")
+    _refused_for(work, tmp_path, "has a non-numeric field (truncated)")
+
+
+def test_an_empty_history_file_is_refused(work, tmp_path):
+    _history(work, "fine", 0.8, 4.0).write_text("")
+    _refused_for(work, tmp_path, "level 'fine' failed the completeness check")
+
+
+def test_a_history_holding_only_its_header_is_refused(work, tmp_path):
+    h = _history(work, "fine", 0.8, 4.0)
+    h.write_text(h.read_text().splitlines()[0] + "\n")
+    _refused_for(work, tmp_path, "rows but cfd_cases.csv records")
+
+
+def test_a_truncated_case_level_done_json_is_refused(work, tmp_path):
+    d = _history(work, "fine", 0.8, 4.0).parent / "done.json"
+    d.write_text(d.read_text()[:15])
+    _refused_for(work, tmp_path, "done.json is not valid JSON")
+
+
+def _cases_edit(work, level, fn):
+    c = work / level / "out" / "cfd_cases.csv"
+    c.write_text("".join(fn(ln) + "\n" for ln in c.read_text().splitlines()))
+
+
+def test_a_blank_residual_last_refuses_the_level(work, tmp_path):
+    def blank(ln):
+        f = ln.split(",")
+        if f[0] == "0.8" and f[1] == "4.0":
+            f[5] = ""
+        return ",".join(f)
+    _cases_edit(work, "fine", blank)
+    _refused_for(work, tmp_path, "residual_last is blank in cfd_cases.csv")
+
+
+def test_a_blank_ca_cfd_refuses_the_level(work, tmp_path):
+    def blank(ln):
+        f = ln.split(",")
+        if f[0] == "0.8" and f[1] == "0.0":
+            f[7] = ""
+        return ",".join(f)
+    _cases_edit(work, "medium", blank)
+    _refused_for(work, tmp_path, "ca_cfd is blank in cfd_cases.csv")
+
+
+def test_an_empty_cases_file_refuses_with_a_note_instead_of_raising(work, tmp_path):
+    (work / "fine" / "out" / "cfd_cases.csv").write_text("")
+    rows = _read(run(work, tmp_path)[1])
+    assert rows and all(r["note"].startswith("refused: ") for r in rows)
+    assert all("empty or holds only its header" in r["note"] for r in rows)
+
+
+def test_a_non_numeric_mach_refuses_with_a_note_instead_of_raising(work, tmp_path):
+    _cases_edit(work, "coarse", lambda ln: ln.replace("0.8,4.0,", "0.8x,4.0,", 1))
+    _refused_for(work, tmp_path, "non-numeric field")
+
+
+def test_a_judged_row_that_matches_twice_is_ambiguous(work, tmp_path):
+    h = _history(work, "fine", 0.3, 4.0)
+    lines = h.read_text().splitlines()
+    lines.insert(2, lines[-1])  # the last row's residual again, earlier
+    h.write_text("\n".join(lines) + "\n")
+    _cases_edit(work, "fine", lambda ln: ln.replace(",3,", ",4,", 1) if ln.startswith("0.3,4.0,") else ln)
+    _refused_for(work, tmp_path, "the judged row is ambiguous")
+
+
+# ---- accepted maps to None: the residual drop decides
+
+
+def test_an_accepted_solve_with_a_large_drop_enters_the_family(tmp_path):
+    w = tmp_path / "w"
+    w.mkdir()
+    make_level(w, "coarse", 3.92, 1.96, 400_000, 2_000_000, cn_slope=1.30, ca0=-0.03)
+    make_level(w, "medium", 2.80, 1.40, 520_000, 2_700_000, cn_slope=1.26, ca0=-0.02, status4="accepted", drop=6.0)
+    make_level(w, "fine", 2.00, 1.00, 700_000, 3_700_000, cn_slope=1.25, ca0=-0.015)
+    make_level(w, "medium_nomirror", 2.80, 1.40, 520_000, 2_700_000, mirror=False)
+    rows = _read(run(w, tmp_path)[1])
+    cna = [r for r in rows if r["quantity"] == "cna"]
+    assert cna and all(r["order"] != "" for r in cna)
+
+
+def test_an_accepted_solve_with_a_small_drop_is_refused_by_the_gate(tmp_path):
+    w = tmp_path / "w"
+    w.mkdir()
+    make_level(w, "coarse", 3.92, 1.96, 400_000, 2_000_000, cn_slope=1.30, ca0=-0.03)
+    make_level(w, "medium", 2.80, 1.40, 520_000, 2_700_000, cn_slope=1.26, ca0=-0.02, status4="accepted", drop=2.0)
+    make_level(w, "fine", 2.00, 1.00, 700_000, 3_700_000, cn_slope=1.25, ca0=-0.015)
+    make_level(w, "medium_nomirror", 2.80, 1.40, 520_000, 2_700_000, mirror=False)
+    rows = _read(run(w, tmp_path)[1])
+    cna = [r for r in rows if r["quantity"] == "cna" and r["condition"].startswith("M=0.8")]
+    assert all(r["order"] == "" and "dropped only 2.0 orders" in r["note"] for r in cna)
+
+
+def test_the_status_table_is_the_one_of_existing_data():
+    from nasa_vv.cases import existing_data as ed
+    assert not hasattr(se, "_STATUS")
+    assert ed._verdict(["converged", "accepted"]) is None
+    assert ed._verdict(["accepted", "failed"]) is False
+
+
+# ---- unusable rows: one shared rule
+
+
+def _row(**kw):
+    base = {"order": "1.0", "gci_fine_pct": "5", "extrapolated": "1", "f1": "1", "condition": "M=0.8 alpha=0",
+            "quantity": "ca_alpha0", "note": ""}
+    base.update(kw)
+    return base
+
+
+def test_a_gci_above_a_hundred_percent_is_unusable():
+    assert se._unusable(_row(gci_fine_pct="309")).startswith("unusable: gci_fine_pct = 309 exceeds 100")
+    assert se._unusable(_row(gci_fine_pct="99")) == ""
+
+
+def test_an_extrapolation_past_the_exact_value_is_unusable_at_m03_only():
+    crossing = _row(condition="M=0.3 alpha=0", f1="-0.03", extrapolated="0.045")
+    assert "other side of the exact value 0" in se._unusable(crossing)
+    assert se._unusable(_row(condition="M=0.3 alpha=0", f1="-0.03", extrapolated="-0.01")) == ""
+    assert se._unusable(_row(condition="M=0.8 alpha=0", f1="-0.03", extrapolated="0.045")) == ""
+
+
+def test_a_refused_row_is_never_flagged():
+    assert se._unusable(_row(order="", gci_fine_pct="", extrapolated="")) == ""
+
+
+def test_the_flag_reaches_the_note_of_the_written_row(tmp_path):
+    w = tmp_path / "w"
+    w.mkdir()
+    # CA at M = 0.3 grows toward zero and the extrapolation crosses it
+    make_level(w, "coarse", 3.92, 1.96, 400_000, 2_000_000, ca0=-0.0630)
+    make_level(w, "medium", 2.80, 1.40, 520_000, 2_700_000, ca0=-0.0450)
+    make_level(w, "fine", 2.00, 1.00, 700_000, 3_700_000, ca0=-0.0300)
+    make_level(w, "medium_nomirror", 2.80, 1.40, 520_000, 2_700_000, mirror=False)
+    rows = [r for r in _read(run(w, tmp_path)[1]) if r["quantity"] == "ca_alpha0" and r["condition"].startswith("M=0.3")]
+    assert rows and all("unusable:" in r["note"] for r in rows)
+    assert all("other side of the exact value 0" in r["note"] for r in rows)

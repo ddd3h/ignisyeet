@@ -610,8 +610,15 @@ def test_isentropic_relations_are_self_consistent():
 
 
 def test_shock_total_pressure_never_rises():
-    for m in (1.05, 1.5, 2.5, 4.0):
-        for d in (1.0, 5.0, 10.0):
+    """Deflections must stay below each Mach number's maximum attached value.
+
+    At M = 1.05 that maximum is only 0.5581 deg, so 1/5/10 deg are all detached
+    there and oblique_shock correctly raises instead of returning a shock.
+    """
+    cases = {1.05: (0.1, 0.3, 0.5), 1.5: (1.0, 5.0, 10.0),
+             2.5: (1.0, 5.0, 10.0), 4.0: (1.0, 5.0, 10.0)}
+    for m, deflections in cases.items():
+        for d in deflections:
             assert oblique_shock(m, d).pt2_pt1 <= 1.0
 ```
 
@@ -759,7 +766,7 @@ def prandtl_meyer_expansion(
 cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/test_exact.py -v
 ```
 
-Expected: all seven PASS. If `test_oblique_shock_reduces_to_a_normal_shock_at_ninety_degrees` fails at the Mach-angle edge, the bisection's lower bound is exactly `asin(1/M)` where the deflection is zero; nudge the assertion tolerance rather than the bound.
+Expected: all seven PASS. If `test_zero_deflection_gives_the_mach_angle` fails at the Mach-angle edge, the bisection's lower bound is exactly `asin(1/M)` where the deflection is zero; nudge the assertion tolerance rather than the bound.
 
 - [ ] **Step 5: Commit**
 

@@ -1,5 +1,5 @@
 {# Top bar shared by the landing page and the research page. #}
-{%- set top = pathto(master_doc) %}
+{%- set top = pathto('', 1) or './' %}
 <nav class="iy-nav" id="iy-nav" aria-label="サイトのナビゲーション">
   <a class="iy-nav-brand" href="{{ top }}"><img src="{{ pathto('_static/landing/logo-mark.svg', 1) }}" alt="" width="32" height="32"><span>IgnisYeet</span></a>
   <ul id="iy-nav-links">

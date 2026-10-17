@@ -72,7 +72,10 @@ The validation comparison therefore has no RANS band, and whether the numerical 
 % source: results/basic_finner_rans_levels.csv, results/gci_basic_finner_rans.csv
 Where a usable GCI exists, the iterative error is negligible against it: no matched row has an iterative-error to GCI ratio above 1.
 % source: results/iterative.csv
-% PENDING Task 20: abstract sentence on the Euler against RANS model difference relative to the numerical uncertainty
+None of the seven Euler-against-RANS conditions can be given a verdict, because one or both sides lack a usable GCI.
+On a turbulent flat plate run in SU2 directly, the Menter SST model differs from Spalart--Allmaras by $-0.79\,\%$ in skin friction, which is within the SST GCI of
+1.14\,\% (the Spalart--Allmaras GCI is flagged), and by $-0.46\,\%$ in drag, which is not separable from the grid uncertainty.
+% source: results/model_uncertainty.csv, results/turbulence_models.csv
 \end{abstract}
 
 %=====================================================================
@@ -620,8 +623,8 @@ Orders of 1.1 to 1.4 lie below the formal order of 2 and are not flagged by the 
 possible cause that was not tested.
 At Mach 2 the medium grid stopped at the 20\,000-iteration cap with a residual drop of 5.76 orders, against 7.81 to
 8.01 on the other grids; it passes the three-order gate and missed its own stopping target.
-The configuration that produced these data was written by a script of the product's documentation, not by the
-product.
+The configuration that produced these data was assembled outside the product, for the product's documentation, and not
+written by the product.
 It differs from the product's second-order configuration in its stop rule, its start-up stage and its gas constant,
 among other things, and these differences are pinned by a test;
 so what was verified is a configuration close to, but not identical to, the product's.
@@ -1006,10 +1009,33 @@ This is verification of the integrator by step refinement; it is not a compariso
 The product offers Euler and Reynolds-averaged Navier--Stokes with the Spalart--Allmaras model, and nothing else.
 The tutorial's request for a comparison of several turbulence models is therefore answered only in part, and the
 limitation is a limit of the product's scope, not an omission.
-% PENDING Task 20: the layer 0 comparison of Spalart-Allmaras with a second turbulence model on the turbulent plate (SU2 run directly)
+% source: results/turbulence_models.csv (header and rows)
+Because the product cannot run another model, Spalart--Allmaras is compared with the Menter SST model on the turbulent flat plate with SU2 run directly (Mach 0.2, $Re=5\times10^{6}$ per metre, adiabatic wall,
+the zero-pressure-gradient plate of the NASA Turbulence Modeling Resource \citep{tmr}, station $x=0.97$).
+The numerical settings are those of the product's start-up and second-order stages, copied from product-written configurations; the two models differ only in the model and the keys that SST needs.
+The SST variant is V1994m, that of SU2's own test case for this plate; SU2's default variant was not run.
+The grids are not those of the Turbulence Modeling Resource: they have its extent and its node counts ($69\times49$, $137\times97$, $273\times193$) and boundary conditions, are exactly nested ($r=2$), and have a point distribution chosen here
+(maximum $y^+$ 1.32, 0.72, 0.41).
+Both models stop at the same rule, a density residual 8 orders below the start-up peak, not the product's acceptance rule; the residual drop of the weakest equation is 7.5 to 8.0 orders for Spalart--Allmaras and 5.5 to 5.6 for SST.
+The skin friction at $x=0.97$ differs by $-3.70$, $-1.72$ and $-0.79\,\%$ (SST against Spalart--Allmaras) on the coarse, medium and fine grid.
+On the fine grid the SST GCI is 1.14\,\%, so a difference of this size is not separable from SST's own numerical uncertainty; SST is first order here (observed order 1.02), and its last refinement moved the skin friction by 0.94\,\%, comparable with the difference.
+The Spalart--Allmaras GCI is flagged (observed order 5.3, beyond twice the formal order; GCI $8\times10^{-5}\,\%$), so its band is not used and no verdict is written.
+The plate drag differs by $-0.46\,\%$ on the fine grid against GCI bands of 0.67\,\% (Spalart--Allmaras) and 0.48\,\% (SST); the difference does not exceed their sum and cannot be separated from the grid uncertainty.
+The extrapolated values differ by $+0.11\,\%$ in skin friction and $+0.46\,\%$ in drag; they are estimates and no verdict is written.
+The comparison is between two models and is not validation; no measured data enter.
+Against the published Turbulence Modeling Resource value for Spalart--Allmaras at this station (the mean of two other solvers on a $545\times385$ grid), the fine-grid skin friction here is $+0.80\,\%$ higher, a cross-comparison in which the
+grid, the numerics and the model variant differ: the product's model is the negative-viscosity form with the $f_{t2}$ term, not the plain model of the reference.
+The same runs agree with the existing Spalart--Allmaras data on the Turbulence Modeling Resource grids to 0.006\,\% in skin friction on the fine grid, which are other grids and other numerics.
 Comparing Euler with RANS-SA on the same condition is a cross-comparison of two models; a difference between
 them counts as a model difference only if it exceeds the sum of the two numerical uncertainty bands.
-% PENDING Task 20: the Euler against RANS-SA differences (sample rocket Mach 0.8 and 2.0 at 4 deg; Basic Finner Mach 1.832 at 0 and 2 deg), each with both GCI bands and the judgement whether the difference is separable from numerical uncertainty
+% source: results/model_uncertainty.csv (rows and header)
+Seven Euler-against-RANS conditions were set against the two numerical bands: the sample rocket at Mach 0.8 and 2 at $4^\circ$ ($C_N$ and $x_{cp}$) and the Basic Finner at Mach 1.832 ($C_N$ and $x_{cp}$ at $2^\circ$, the axial force at $0^\circ$).
+The differences (RANS against Euler) are $+4.99$ and $+0.27\,\%$ for the sample rocket at Mach 0.8, $+3.30$ and $+0.017\,\%$ at Mach 2, and for the Basic Finner $+0.22\,\%$ in $C_N$, $-0.73\,\%$ in $x_{cp}$ and $+54\,\%$ in the axial coefficient.
+\emph{None of the seven has a verdict.}
+The RANS band does not exist for the sample rocket, because every triplet of that study is refused, and not for the Basic Finner, because no RANS GCI was obtained at Mach 1.832.
+The Euler band is missing or flagged for the sample rocket (not converging, oscillatory, or an order outside 0.5 to 4) and absent for the Basic Finner at Mach 1.832, because its only Euler grid study is at Mach 2.375.
+The sample-rocket comparison also sets a RANS value on a 3\,mm mesh against an Euler value on a 2\,mm mesh; the Basic Finner axial coefficient mixes the flow model with the modelled base term of the Euler mode.
+The sizes of the differences are therefore reported, and whether they are a model difference or numerical error is not decided.
 
 %=====================================================================
 \section{Validation against free-flight data}
@@ -1092,10 +1118,10 @@ At the other Mach numbers there is no grid study at all.
 The Euler results are consistent with a model-form difference (inviscid flow, modelled base and friction terms), which is not demonstrated.
 No band is drawn on $\CXzero$ because the pressure part of the axial force, whose grid study is available, is only one
 of several terms of $\CXzero$.
-No numerical band exists for the RANS result at Mach 1.832 either: a RANS GCI was not obtained (Section~\ref{sec:grid}), so the RANS $\CNa$, 11.46 or $-2.7\,\%$ from the measurement, is a single-grid value from a $2^\circ$ solve that did not converge on any level.
+No numerical band exists for the RANS result at Mach 1.832 either: a RANS GCI was not obtained (Section~\ref{sec:grid}), so the RANS $\CNa$, 11.46 or $-2.7\,\%$ from the measurement, is a single-grid value from the existing RANS run; the $2^\circ$ solves of the three levels of the new RANS family did not converge.
 Its difference lies within the tabulated probable error of 4\,\%, but with no numerical uncertainty the overlap of the CFD band and the measured bar cannot be judged,
 and no statement is made on whether CFD and measurement agree within their uncertainties, or that a difference is or is not explained by numerical error.
-% PENDING Task 20: the validation statement on model uncertainty at Mach 1.832 (Euler against RANS-SA against measurement)
+The Euler and RANS values of Table~\ref{tab:validation} at Mach 1.832 are not separated into a model difference and a numerical difference either: neither side has a usable band (Section~\ref{sec:model}).
 
 %=====================================================================
 \section{Discussion}
@@ -1148,7 +1174,7 @@ The turbulent-plate data come from a configuration close to but not identical to
 The 2-D boundary-junction and entropy findings are untested on the three-dimensional meshes.
 The product cannot run a second turbulence model.
 The pipeline error was not assessed, because the finest layer~1 level did not converge.
-% PENDING Task 20: the layer 0 comparison of Spalart-Allmaras with a second turbulence model on the turbulent plate, if its result is to be stated in this list
+The comparison of Spalart--Allmaras with SST was made on a flat plate with self-built grids and with SU2 directly, not through the product; SST is first order there and one of the two bands is flagged.
 
 %=====================================================================
 \section{Conclusions}
@@ -1181,8 +1207,8 @@ The conclusions supported at this stage are the following.
   $|C_A|$ at Mach 0.3 shrinks under refinement but its extrapolation crosses zero.
 \item No GCI was obtained for the Basic Finner with RANS at Mach 1.832, so the validation comparison has no RANS band and the overlap of numerical and measured uncertainty cannot be judged.
 \item The iterative error does not invalidate any GCI that has a matching iterative-error record (no matched ratio above 1); five flat-plate comparisons above 1 pair the drag stopping error with the skin-friction GCI and are indicative only.
+\item None of the seven Euler-against-RANS comparisons can be given a verdict, because one or both numerical bands are missing or flagged; on the flat plate, SST differs from Spalart--Allmaras by $-0.79\,\%$ in skin friction (within the SST GCI of 1.14\,\%, with the Spalart--Allmaras GCI flagged) and $-0.46\,\%$ in drag (not separable from the grid uncertainty).
 \end{enumerate}
-% PENDING Task 20: conclusion on Euler against RANS model uncertainty
 
 \section*{Data availability}
 All numbers in this paper come from the result files under \texttt{research/nasa\_vv/results/}

@@ -825,6 +825,14 @@ A reliable GCI of the product would need a mesh control that scales the whole fi
 Two published verification references each contain an internally inconsistent entry: the NPARC 10$^\circ$ cone table (Section~\ref{sec:cone10}) and one cell of Table~1 of \citet{celik2008}.
 Reporting them is not a criticism of either; it matters for what can be used as a target, and it is why the reference values here are computed and checked against independent tables.
 
+\paragraph{Findings about the product.}
+% source: the product's CFD documentation and doc/data/cfd/rans_mesh_study.json; results/layer1_cone.csv; results/basic_finner_rans_levels.csv (not a results CSV where stated in the sections cited)
+The grid-convergence index published for the RANS sample-rocket family at Mach 0.8 rests on a solve recorded as not converged and so does not meet the tutorial's iterative-convergence precondition; this is not a claim that the published number is wrong (Section~\ref{sec:grid}).
+When the runner stops SU2, the final surface output can be incomplete; no cause is established (Section~\ref{sec:layer1}).
+With RANS and a fin size smaller than the wall size, the mesher aborts, and whether the product's input or gmsh is at fault was not separated (Section~\ref{sec:l12setup}).
+The Taylor--Maccoll solver of the documentation brackets the shock angle by a limit that lies on the wrong side near detachment; the 10$^\circ$ cones here are far from that range (Section~\ref{sec:exact}).
+The existing validation figure of the documentation draws a bar of length zero for a quantity whose error is unknown (Section~\ref{sec:validation}).
+
 \paragraph{Limits of this study.}
 Layer~0 verifies SU2 with the product's settings and not the product's pipeline.
 The laminar plate verifies a configuration the product does not write, and the turbulent-plate data come from a configuration close to but not identical to the product's.
@@ -855,7 +863,6 @@ The conclusions supported at this stage are the following.
 \section*{Data availability}
 All numbers in this paper come from the result files under \texttt{research/nasa\_vv/results/} (and the committed figures under \texttt{research/nasa\_vv/figures/}) of the IgnisYeet repository, except where a comment in the source names another committed file.
 The code that produces the result files is in \texttt{research/nasa\_vv/} (the exact solutions in \texttt{exact.py}, the GCI procedure in \texttt{gci.py}, the case producers in \texttt{cases/}, the tests in \texttt{tests/}).
-The repository is at \url{https://github.com/ddd3h/ignisyeet}.
 
 \bibliographystyle{plainnat}
 \bibliography{references}

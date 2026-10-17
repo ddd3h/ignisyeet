@@ -47,3 +47,28 @@ h2 { margin: 0 0 1rem; font-size: 1.5rem; line-height: 1.35; }
 
 footer { padding: 32px 0 48px; font-size: 0.88rem; color: var(--fg2); border-top: 1px solid var(--border); }
 footer p { margin: 0.3rem 0; }
+
+/* Report pages (research/nasa-vv/): table of contents, running text, tables, figures. */
+.crumb { margin: 0 0 0.8rem; font-size: 0.9rem; }
+.crumb a { color: var(--fg2); }
+.toc { margin: 24px 0 8px; padding: 16px 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg2); }
+.toc h2 { margin: 0 0 0.5rem; font-size: 1rem; }
+.toc ol { margin: 0; padding-left: 1.4rem; columns: 2 280px; column-gap: 2rem; }
+.toc li { margin: 0.15rem 0; break-inside: avoid; }
+.toc a { color: var(--fg); }
+h3 { margin: 2rem 0 0.7rem; font-size: 1.2rem; line-height: 1.4; }
+h4 { margin: 1.6rem 0 0.6rem; font-size: 1.02rem; line-height: 1.5; }
+main section p, main section li { overflow-wrap: anywhere; }
+main section ul { padding-left: 1.4rem; }
+main section li { margin: 0.35rem 0; }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.88em; background: var(--bg2); border: 1px solid var(--border); border-radius: 4px; padding: 0.05em 0.3em; overflow-wrap: anywhere; }
+.tablewrap { overflow-x: auto; margin: 1rem 0; -webkit-overflow-scrolling: touch; }
+.tablewrap:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.88rem; line-height: 1.55; }
+th, td { border: 1px solid var(--border); padding: 0.4rem 0.6rem; text-align: left; vertical-align: top; min-width: 5.2em; }
+thead th { background: var(--bg2); font-weight: 600; }
+figure.fig { margin: 1.5rem 0; }
+figure.fig img { display: block; max-width: 100%; height: auto; background: #ffffff; padding: 10px; border: 1px solid var(--border); border-radius: 8px; }
+figure.fig figcaption { margin-top: 0.6rem; font-size: 0.88rem; color: var(--fg2); line-height: 1.65; }
+figure.fig figcaption strong { color: var(--fg); }
+th:first-child, td:first-child { min-width: 8.5em; }

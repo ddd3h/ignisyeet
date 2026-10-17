@@ -232,6 +232,30 @@ a.iy-badge:hover { border-color: var(--iy-accent); color: var(--iy-accent) !impo
 .iy-search-foot { margin: 0; padding: 10px 16px; border-top: 1px solid var(--color-background-border); font-size: 0.85rem; }
 .iy-search-foot a { color: var(--iy-accent); }
 
+/* ---- R&D: list entries and report pages ---- */
+.iy-entry-id { display: flex; align-items: center; gap: 10px; margin: 0 0 0.3rem !important; font-family: var(--font-stack--monospace); font-size: 0.85rem; color: var(--color-foreground-secondary); }
+.iy-entry h3 a { color: var(--color-foreground-primary); text-decoration: none; }
+.iy-entry h3 a:hover { color: var(--iy-accent); text-decoration: underline; }
+.iy-badge-status { border-color: var(--iy-accent) !important; color: var(--iy-accent) !important; font-family: inherit; }
+.iy-crumb { margin-bottom: 1rem !important; font-size: 0.9rem; }
+.iy-crumb a::before { content: "← "; }
+.iy-report-title { max-width: 48rem; font-size: clamp(1.6rem, 3.6vw, 2.3rem); line-height: 1.35; }
+.iy-page-hero .iy-meta { margin-top: 1rem; color: var(--color-foreground-secondary); }
+.iy-report { padding-bottom: 56px; }
+.iy-report section > * { max-width: 880px; }
+.iy-report section { padding: 32px 0 8px; border-top: 1px solid var(--color-background-border); }
+.iy-report h2 { margin-bottom: 1rem; font-size: 1.4rem; }
+.iy-report p, .iy-report .iy-table, .iy-report ol, .iy-report ul { margin-bottom: 1rem; }
+.iy-table { overflow-x: auto; }
+.iy-table table { width: 100%; border-collapse: collapse; font-size: 0.92rem; line-height: 1.6; }
+.iy-table th, .iy-table td { padding: 8px 12px; border-bottom: 1px solid var(--color-background-border); text-align: left; vertical-align: top; }
+.iy-table th { font-weight: 700; color: var(--color-foreground-secondary); border-bottom-width: 2px; white-space: nowrap; }
+.iy-steps { list-style: decimal !important; padding-left: 1.6rem !important; }
+.iy-steps li + li { margin-top: 0.5rem; }
+.iy-refs { list-style: disc !important; padding-left: 1.4rem !important; font-size: 0.92rem; }
+.iy-refs li + li { margin-top: 0.5rem; }
+.iy-refs a { word-break: break-all; }
+
 /* ---- footer ---- */
 .iy-footer { padding: 32px 0 40px; font-size: 0.88rem; line-height: 1.75; color: var(--color-foreground-secondary); border-top: 1px solid var(--color-background-border); }
 

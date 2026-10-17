@@ -20,17 +20,14 @@ R&D
    <section class="iy-section iy-research" id="r-2026">
      <div class="iy-wrap">
        <h2>2026</h2>
-       <p class="iy-empty">掲載準備中</p>
-       <!-- 項目の書式:
        <ul class="iy-entries">
          <li class="iy-entry">
-           <h3>題名</h3>
-           <p class="iy-meta">著者 ／ 発表先 ／ 年月</p>
-           <p>概要</p>
-           <p class="iy-links"><a href="">論文 (PDF)</a><a href="">DOI</a><a href="">スライド</a></p>
+           <p class="iy-entry-id">IY-TR-2026-01 <span class="iy-badge iy-badge-status">実施中</span></p>
+           <h3><a href="IY-TR-2026-01/">NASA WIND の V&amp;V 手順による IgnisYeet の空力計算の検証と妥当性確認</a></h3>
+           <p class="iy-meta">西濱大将 (NISHIHAMA Daisuke) ／ 技術報告 ／ 2026 年</p>
+           <p>NASA WIND/NPARC の検証と妥当性確認の手順を IgnisYeet の空力計算に適用し、空力係数に数値不確かさの帯を付ける。その帯を Basic Finner の実測の誤差と並べて示す。</p>
          </li>
        </ul>
-       -->
      </div>
    </section>
 

@@ -116,12 +116,16 @@ def find_gci(rows: list[dict[str, str]], study: str, condition: str, quantity: s
             continue
         gci = _float(r["gci_fine_pct"])
         note = r.get("note", "").split(" [")[0].strip()
+        flagged = note.startswith("unusable") or "not reliable" in note
         if gci is None:
             reason = note or "the GCI row carries no gci_fine_pct"
-            flag = ""
+        elif flagged:
+            # the GCI file marks this number unusable or outside the asymptotic range: it is treated like a refused GCI
+            reason = f"the GCI row has a number ({gci:.6g} %) that the GCI file flags: {note}"
+            gci = None
         else:
             reason = ""
-            flag = note if "not reliable" in note else ""
+        flag = ""
         out.append(GciRef(r["h_basis"], gci, reason, flag, _float(r.get("gci_coarse_pct", ""))))
     if not out:
         raise LookupError(f"no GCI row for study {study!r}, condition {condition!r}, quantity {quantity!r}")
@@ -439,13 +443,13 @@ def _header(rows, depth_cells, fine) -> list[str]:
         "  Task 14 work directory $HOME/.cache/nasa_vv_sample/<level>/out/cfd/<case>/history.csv (levels coarse, medium, fine; medium_nomirror is not a family member and has no row); its judged rows and history_gap_* are those of sample_euler_levels.csv, and a history whose judged row does not match the recorded value is refused.",
         "iterative_error_pct = 100 |value_at_stop - value_converged| / |value_converged|; ratio = iterative_error_pct / gci_fine_pct. gci_fine_pct is in percent of the fine-grid value, as in the GCI files.",
         "A GCI is paired with an iterative error only for the same body, condition and quantity. grid_match says whether the grid is the same: where it is not, the ratio is indicative only.",
-        "A matching GCI without a number (refused, oscillatory, or not converging under refinement) leaves gci_fine_pct and ratio blank and the note gives the GCI row's own reason; the ratio is never 0 for lack of a GCI.",
+        "A matching GCI without a number (refused, oscillatory, not converging under refinement) or whose number the GCI file flags (a note starting 'unusable' or saying the GCI is not reliable) is treated as refused: it leaves gci_fine_pct and ratio blank and the note gives the GCI row's own reason; the ratio is never 0 for lack of a GCI.",
         "h_basis is the h basis of the GCI row (nodes^-1/3 and wall_size for the Euler sample rocket, cells^-1/2 for the flat plate); a condition with two bases has two rows, and the spread between them is part of the uncertainty. When no basis has a number there is one row with h_basis blank. note is appended after source.",
         "value_converged: convergence_depth.csv rows use its deepest run (freestream start continued to residual 1e-9, CN 1.20218); the fields histories use their last iteration (300), which is not converged either; the Task 14 levels use the last row SU2 wrote after the stop, so their error is a lower bound; rans_flatplate rows have value_at_stop = cd_plate x (1 + cd_at_stop_vs_final_percent / 100) and value_converged = cd_plate (the last iteration).",
         f"Nearest matching family for the Euler sample rocket: results/gci_sample_euler.csv (Task 14), the fine level of which has the settings of convergence_depth.csv and the fields histories (wall_size 2 mm, fin_size 1 mm) but another mesh ({fine['cells']} cells against {depth_cells} cells), so grid_match reads 'different grid' for those rows. The rans_mesh_study rows of gci_existing.csv are not used: they are a different mesh series (3, 4.8 and 8 mm wall_size) and are refused anyway.",
         "convergence_depth.csv holds M = 0.8, alpha = 4 deg only; M = 2 enters through the fields histories (freestream start, residual 1e-6 stop, the earlier rule, against iteration 300). The M = 0.8, alpha = 4 deg history of fields/ is not repeated: its iteration-102 value 1.195565 is the 'freestream start (iteration 102)' row of convergence_depth.csv (1.19556).",
         "rans_flatplate: the iterative error is that of the plate CD (cd_at_stop_vs_final_percent) and the GCI is that of cf_x097, the quantity of the flat-plate rows of gci_existing.csv, which has no iterative-error record; the ratio pairs two quantities on the same grids and is indicative only. The GCI was built from the final-iteration cf_x097 (5.8 to 8.1 orders of residual drop on the six grids), so this ratio describes a run stopped by the product's acceptance rule, not the inputs of the GCI. The coarse and middle grids are paired with the GCI of the fine grid (gci_fine_pct); the middle grid's own GCI is gci_coarse_pct, given in its note.",
-        "Task 14 levels: history_gap_* counts the rows SU2 wrote after the stop. value_at_stop is the recorded value (the judged row), value_converged the last row. Pairing with the family GCI: the fine level is the grid gci_fine_pct belongs to; the coarse and medium levels are inputs of the same family and read 'different grid'. CN(4 deg) of the wall marker is paired with cna = CN(4)/radians(4) (the same relative error); ca_alpha0 with ca_alpha0. The ca_alpha0 GCIs of Task 14 are huge (the quantity is a small difference of large terms) and flagged by the order rules, so a small ratio there is not evidence of a small disturbance.",
+        "Task 14 levels: history_gap_* counts the rows SU2 wrote after the stop. value_at_stop is the recorded value (the judged row), value_converged the last row. Pairing with the family GCI: the fine level is the grid gci_fine_pct belongs to; the coarse and medium levels are inputs of the same family and read 'different grid'. CN(4 deg) of the wall marker is paired with cna = CN(4)/radians(4) (the same relative error); ca_alpha0 with ca_alpha0. The ca_alpha0 GCIs of M = 0.3 and 0.8 and the wall_size cna GCI of M = 2 are flagged by the GCI file, so those rows are blank; only the nodes^-1/3 cna GCI of M = 2 (observed order 0.53) carries a usable number.",
         "Layer-0 plate (results/layer0_plate.csv): no row. Its header records that window_spread is empty on every row and that the history holds no per-iteration value of the compared quantities (only residuals and integrated force coefficients); the iterative convergence it records is the residual drop, which is not an iterative error in percent.",
         *judgement_lines(j),
     ]

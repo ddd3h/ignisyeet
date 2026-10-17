@@ -97,13 +97,18 @@ def test_a_blank_gci_for_one_basis_only_keeps_both_rows():
     assert float(rows[1]["ratio"]) == pytest.approx(0.5)
 
 
-def test_a_gci_flagged_unreliable_stays_in_the_ratio_but_the_note_says_so():
-    refs = it.find_gci([gci_row("c", "q", "wall_size", "4250.9",
-                                note="observed order p = 0.066 is below a quarter of the formal order of 2; the triplet "
-                                     "is not in the asymptotic range and this GCI is not reliable")], "s", "c", "q")
+@pytest.mark.parametrize("note", [
+    "observed order p = 0.066 is below a quarter of the formal order of 2; the triplet is not in the asymptotic range "
+    "and this GCI is not reliable",
+    "unusable: gci_fine_pct = 309 exceeds 100, so the uncertainty is larger than the value",
+])
+def test_a_gci_the_file_flags_is_treated_like_a_refused_one(note):
+    refs = it.find_gci([gci_row("c", "q", "wall_size", "4250.9", note=note)], "s", "c", "q")
+    assert refs[0].gci_fine_pct is None
     rows = it.build_rows(case="c", mach=0.8, alpha_deg=0, model="Euler", quantity="q", v_stop=1.1, v_conv=1.0,
                          refs=refs, grid_match="same grid", source="s")
-    assert rows[0]["ratio"] != "" and "not reliable" in rows[0]["note"]
+    assert rows[0]["gci_fine_pct"] == "" and rows[0]["ratio"] == ""
+    assert "4250.9" in rows[0]["note"] and note.split(";")[0] in rows[0]["note"]
 
 
 def test_a_gci_above_a_hundred_percent_is_flagged_in_the_note():

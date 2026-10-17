@@ -178,7 +178,8 @@ def test_basic_finner_two_triplets_disagree_on_the_axial_force_order():
     res = ed.basic_finner_results(read_basic_finner_mesh_check(FINNER))
     pick = lambda trip: next(  # noqa: E731
         r for r in res if r["condition"] == "fairing alpha=4"
-        and r["quantity"] == "ca_pressure" and r["triplet"] == trip)
+        and r["quantity"] == "ca_pressure" and r["triplet"] == trip
+        and r["h_basis"] == "cells^-1/3")
     assert float(pick("L1-L3")["order"]) == pytest.approx(1.55, abs=0.01)
     assert float(pick("L2-L4")["order"]) == pytest.approx(2.69, abs=0.01)
 
@@ -228,3 +229,94 @@ def test_the_rans_sample_rows_are_refused_with_the_gatekeepers_message(tmp_path)
     assert "level '8 mm' was recorded as not converged" in m08["note"]
     m2 = next(r for r in rows if r["condition"].startswith("M=2 alpha=4"))
     assert "level '3 mm' carries no convergence evidence" in m2["note"]
+
+
+# ---------------------------------------------------------------- h basis, flags, header (fix round 1)
+
+
+def _finner_rows():
+    return ed.basic_finner_results(read_basic_finner_mesh_check(FINNER))
+
+
+def test_every_basic_finner_triplet_is_written_under_both_h_definitions():
+    rows = _finner_rows()
+    assert {r["h_basis"] for r in rows} == {"cells^-1/3", "wall_size"}
+    key = lambda r: (r["condition"], r["quantity"], r["triplet"])  # noqa: E731
+    by = {}
+    for r in rows:
+        by.setdefault(key(r), []).append(r["h_basis"])
+    assert all(sorted(v) == ["cells^-1/3", "wall_size"] for v in by.values())
+
+
+def test_wall_size_rows_are_grid_convergence_on_the_knob_ratio():
+    d = read_basic_finner_mesh_check(FINNER)
+    fd = ed.triplets(d["conditions"][("fairing", 4.0)])["L2-L4"]
+    h = [lv.knobs["wall_size_mm"] for lv in fd.family.levels]
+    g = grid_convergence(*fd.values["ca_pressure"], *h)
+    row = next(r for r in _finner_rows() if r["condition"] == "fairing alpha=4"
+               and r["quantity"] == "ca_pressure" and r["triplet"] == "L2-L4"
+               and r["h_basis"] == "wall_size")
+    assert float(row["order"]) == pytest.approx(g.order, rel=1e-7)
+    assert float(row["order"]) == pytest.approx(1.41, abs=0.01)
+    assert float(row["gci_fine_pct"]) == pytest.approx(g.gci_fine * 100, rel=1e-7)
+    assert float(row["r21"]) == pytest.approx(h[1] / h[0], rel=1e-7)
+
+
+def test_the_gate_still_decides_for_the_wall_size_rows():
+    d = read_basic_finner_mesh_check(FINNER)
+    fd = ed.triplets(d["conditions"][("fairing", 4.0)])["L2-L4"]
+    fd.family.levels[1].solver_converged = False
+    with pytest.raises(ValueError, match="not converged"):
+        ed._wall_size_compute(fd)
+
+
+def test_an_order_above_four_carries_the_asymptotic_range_flag():
+    rows = _finner_rows()
+    flag = "exceeds twice the formal order of 2"
+    hit = [r for r in rows if r["condition"] == "fairing alpha=2" and r["quantity"] == "cn"
+           and r["triplet"] == "L1-L3"]
+    assert {r["h_basis"] for r in hit} == {"cells^-1/3", "wall_size"}
+    cells = next(r for r in hit if r["h_basis"] == "cells^-1/3")
+    assert float(cells["order"]) == pytest.approx(8.45, abs=0.01)
+    assert "observed order p = 8.45 exceeds twice the formal order of 2; the triplet is not in the " \
+           "asymptotic range and this GCI is not reliable" in cells["note"]
+    for r in rows:
+        if r["order"] != "":
+            assert (flag in r["note"]) == (float(r["order"]) > 4.0), r
+
+
+def test_low_orders_are_not_flagged():
+    rows = ed.flatplate_results(read_flatplate(PLATE))
+    assert all("exceeds" not in r["note"] for r in rows)
+
+
+def test_the_iteration_cap_run_is_named_in_its_note():
+    rows = ed.flatplate_results(read_flatplate(PLATE))
+    m2 = next(r for r in rows if r["condition"] == "M=2")
+    m02 = next(r for r in rows if r["condition"] == "M=0.2")
+    assert "137x97" in m2["note"] and "20000" in m2["note"] and "5.76" in m2["note"]
+    assert m02["note"] == ""
+
+
+def test_h_basis_is_filled_for_every_study(tmp_path):
+    import csv
+
+    out = tmp_path / "o.csv"
+    ed.main(out)
+    lines = [ln for ln in out.read_text().splitlines() if not ln.startswith("#")]
+    rows = list(csv.DictReader(lines))
+    want = {"rans_mesh_study": {"nodes^-1/3"}, "rans_flatplate": {"cells^-1/2 (2-D)"},
+            "basic_finner_mesh_check": {"cells^-1/3", "wall_size"}}
+    for study_name, bases in want.items():
+        assert {r["h_basis"] for r in rows if r["study"] == study_name} == bases
+
+
+def test_the_header_states_the_conditions_the_numbers_rest_on(tmp_path):
+    out = tmp_path / "o.csv"
+    ed.main(out)
+    head = "\n".join(ln for ln in out.read_text().splitlines() if ln.startswith("#"))
+    for text in ("conditional on the h definition", "1.4^3", "2.74", "1.69 to 1.83",
+                 "crates/cfd/src/mesh.rs:396", "crates/cfd/src/mesh_gmsh.py:153",
+                 "min(rho_drop_orders, nu_drop_orders)", "cells^-1/2",
+                 "1.67 and 1.60", "1.33 and 1.31", "similarity check is vacuous"):
+        assert text in head, text

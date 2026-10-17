@@ -93,7 +93,7 @@ import subprocess
 from dataclasses import dataclass, field
 
 from ..family import GridFamily, GridLevel, study
-from ..gci import GridConvergence, constant_ratio
+from ..gci import GridConvergence, constant_ratio, grid_convergence
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 """Repository root: cases -> nasa_vv -> research -> root."""
@@ -105,13 +105,20 @@ FINNER_CSV = "doc/data/validation/basic_finner/mesh_check.csv"
 
 RANS_COLUMNS = ("wall_size_m", "nodes", "mach", "cn", "ca_wall", "xcp_m", "cn0",
                 "status_a0", "status_a4", "status_am4")
-FLATPLATE_COLUMNS = ("mach", "grid", "cells", "h", "cf_x097", "rho_drop_orders", "nu_drop_orders")
+FLATPLATE_COLUMNS = ("mach", "grid", "cells", "h", "cf_x097", "iterations_final",
+                     "rho_drop_orders", "nu_drop_orders")
 FINNER_COLUMNS = ("level", "base_treatment", "wall_size_mm", "fin_size_mm", "cells",
                   "alpha_deg", "status", "cn", "ca_pressure", "xcp_cal")
 
-COLUMNS = ["study", "condition", "quantity", "triplet", "n1", "n2", "n3", "r21", "r32",
+COLUMNS = ["study", "condition", "quantity", "triplet", "h_basis", "n1", "n2", "n3", "r21", "r32",
            "f1", "f2", "f3", "order", "extrapolated", "gci_fine_pct", "gci_coarse_pct",
            "asymptotic_ratio", "monotone", "note"]
+
+ITERATION_CAP = 20000
+"""Final-stage iteration limit of the flat-plate runs; a grid that stopped here did not reach its target."""
+
+ASYMPTOTIC_ORDER_LIMIT = 4.0
+"""Twice the formal order of 2: a larger observed order puts the triplet outside the asymptotic range."""
 
 _STATUS: dict[str, bool | None] = {
     "converged": True,
@@ -133,6 +140,8 @@ class FamilyData:
     """Per quantity, one value per level, in the order of ``family.levels``."""
     detail: str = ""
     """Per-level solve statuses, appended to a refusal note."""
+    row_note: str = ""
+    """Appended to the note of every computed row of this family."""
 
 
 def _verdict(statuses: list[str]) -> bool | None:
@@ -217,13 +226,25 @@ def read_flatplate(path) -> dict[float, FamilyData]:
         if len(lv) != 3:
             raise ValueError(f"M = {m:g}: expected three grids, found {len(lv)}")
         levels = []
+        capped = []
         for r in lv:
             cells, h = int(r["cells"]), _num(r, "h")
             if abs(h - cells ** -0.5) > 1e-5 * h:
                 raise ValueError(f"grid {r['grid']}: h = {h} is not cells**(-1/2) = {cells ** -0.5}")
             drop = min(_num(r, "rho_drop_orders"), _num(r, "nu_drop_orders"))
             levels.append(GridLevel(r["grid"], cells, {"h": h}, residual_drop_orders=drop))
-        out[m] = FamilyData(GridFamily(levels, ndim=2), {"cf_x097": [_num(r, "cf_x097") for r in lv]})
+            if int(_num(r, "iterations_final")) >= ITERATION_CAP:
+                capped.append(levels[-1])
+        note = ""
+        if capped:
+            others = [lv_.residual_drop_orders for lv_ in levels if lv_ not in capped]
+            note = "; ".join(
+                f"grid {c.name} stopped at the {ITERATION_CAP}-iteration cap with a residual drop of "
+                f"{c.residual_drop_orders:.3g} orders (the other grids of this Mach number reached "
+                f"{min(others):.3g} to {max(others):.3g}); it passes the 3-order gate"
+                for c in capped)
+        out[m] = FamilyData(GridFamily(levels, ndim=2), {"cf_x097": [_num(r, "cf_x097") for r in lv]},
+                            row_note=note)
     return out
 
 
@@ -276,9 +297,16 @@ def _g(x: float | None, spec: str = ".8g") -> str:
     return "" if x is None else format(x, spec)
 
 
-def _rows(study_name, condition, triplet, fd: FamilyData, compute) -> list[dict[str, str]]:
+def _flag(order: float | None) -> str:
+    if order is None or order <= ASYMPTOTIC_ORDER_LIMIT:
+        return ""
+    return (f"observed order p = {order:.2f} exceeds twice the formal order of 2; the triplet is not "
+            "in the asymptotic range and this GCI is not reliable")
+
+
+def _rows(study_name, condition, triplet, fd: FamilyData, compute, h_basis) -> list[dict[str, str]]:
     n = [lv.nodes for lv in fd.family.levels]
-    base = {"study": study_name, "condition": condition, "triplet": triplet,
+    base = {"study": study_name, "condition": condition, "triplet": triplet, "h_basis": h_basis,
             "n1": str(n[0]), "n2": str(n[1]), "n3": str(n[2])}
     try:
         results: dict[str, GridConvergence] | None = compute(fd)
@@ -297,7 +325,8 @@ def _rows(study_name, condition, triplet, fd: FamilyData, compute) -> list[dict[
                 r21=_g(g.r21), r32=_g(g.r32), order=_g(g.order), extrapolated=_g(g.extrapolated, ".10g"),
                 gci_fine_pct=_g(None if g.gci_fine is None else g.gci_fine * 100),
                 gci_coarse_pct=_g(None if g.gci_coarse is None else g.gci_coarse * 100),
-                asymptotic_ratio=_g(g.asymptotic_ratio), monotone=str(g.monotone), note=g.note,
+                asymptotic_ratio=_g(g.asymptotic_ratio), monotone=str(g.monotone),
+                note="; ".join(x for x in (g.note, _flag(g.order), fd.row_note) if x),
             )
         out.append(row)
     return out
@@ -308,7 +337,7 @@ def rans_results(fams) -> list[dict[str, str]]:
     for (m, g), fd in sorted(fams.items()):
         cond = f"M={m:g} alpha=4 (mirror)" if g == "alpha4" else f"M={m:g} alpha=0"
         trip = "/".join(lv.name for lv in fd.family.levels)
-        out += _rows("rans_mesh_study", cond, trip, fd, lambda f: study(f.family, f.values))
+        out += _rows("rans_mesh_study", cond, trip, fd, lambda f: study(f.family, f.values), "nodes^-1/3")
     return out
 
 
@@ -324,16 +353,28 @@ def flatplate_results(fams) -> list[dict[str, str]]:
     out = []
     for m, fd in sorted(fams.items()):
         trip = "/".join(lv.name for lv in fd.family.levels)
-        out += _rows("rans_flatplate", f"M={m:g}", trip, fd, _flatplate_compute)
+        out += _rows("rans_flatplate", f"M={m:g}", trip, fd, _flatplate_compute, "cells^-1/2 (2-D)")
     return out
 
 
+def _wall_size_compute(fd: FamilyData) -> dict[str, GridConvergence]:
+    """Same gate as ``study``, then Celik's procedure with h equal to the wall_size knob."""
+    fd.family.check_similar()
+    h = [lv.knobs["wall_size_mm"] for lv in fd.family.levels]
+    return {q: grid_convergence(v[0], v[1], v[2], h[0], h[1], h[2]) for q, v in fd.values.items()}
+
+
 def basic_finner_results(d: dict) -> list[dict[str, str]]:
+    """Every triplet under both h definitions, the two rows of a quantity next to each other."""
     out = []
     for (base, alpha), fd4 in sorted(d["conditions"].items()):
         for label, ft in triplets(fd4).items():
-            out += _rows("basic_finner_mesh_check", f"{base} alpha={alpha:g}", label, ft,
-                         lambda f: study(f.family, f.values))
+            cond = f"{base} alpha={alpha:g}"
+            a = _rows("basic_finner_mesh_check", cond, label, ft,
+                      lambda f: study(f.family, f.values), "cells^-1/3")
+            b = _rows("basic_finner_mesh_check", cond, label, ft, _wall_size_compute, "wall_size")
+            for x, y in zip(a, b):
+                out += [x, y]
     return out
 
 
@@ -362,8 +403,15 @@ def _header() -> list[str]:
         "Every family is gated by nasa_vv.family first. A refused family has no numbers, only the refusal in note.",
         "n1..n3 are nodes for rans_mesh_study and cells for rans_flatplate and basic_finner_mesh_check (those CSVs record cells only).",
         "gci_fine_pct and gci_coarse_pct are relative to f1 and f2 (percent), including for xcp: multiply by |f1| for a length.",
-        "basic_finner_mesh_check: h = cells**(-1/3), ratios 1.19 to 1.22, whereas the recorded cell-size knobs scale by 1.4.",
+        "h_basis is the definition of the grid size h: nodes^-1/3 (rans_mesh_study), cells^-1/2 for the 2-D flat plate, cells^-1/3 or wall_size (basic_finner_mesh_check).",
+        "rans_flatplate: 2-D grids, h = cells^-1/2 (the cells double exactly in each direction, so r = 2); the residual evidence of a grid is min(rho_drop_orders, nu_drop_orders).",
+        "rans_flatplate: observed orders of 1.1 to 1.4 are not flagged; they are a known limiter effect, not a sign of the wrong h.",
+        "rans_mesh_study: wall_size_m scales by 1.67 and 1.60 while nodes^(1/3) scales by 1.33 and 1.31 (the fixed max_size mechanism below); the only recorded knob is wall_size_m, so the similarity check is vacuous for this study. h = nodes^-1/3, as in the published V6 arithmetic.",
+        "basic_finner_mesh_check: order and GCI are conditional on the h definition, so every triplet is written twice, once per h_basis; the spread between the two is part of the uncertainty.",
+        "basic_finner_mesh_check: cells^-1/3 gives refinement ratios 1.19 to 1.22 and wall_size gives 1.40. A geometrically similar 1.4 refinement would grow the cells by 1.4^3 = 2.74x per level; the observed growth is 1.69 to 1.83x.",
+        "basic_finner_mesh_check: the cause is that max_size is fixed at farfield radius / 10 (crates/cfd/src/mesh.rs:396, not a user setting) and the volume is graded from wall_size up to it (crates/cfd/src/mesh_gmsh.py:153), so refining wall_size and fin_size refines only the near-wall region. Grids built through ignisyeet aero are not geometrically similar.",
         "basic_finner_mesh_check triplets are named by their coarsest and finest level: L1-L3 is the coarse triplet, L2-L4 the fine one.",
+        "A note flags any computed order above 4, twice the formal second order: the triplet is then not in the asymptotic range and its GCI is not reliable.",
         "rans_mesh_study: " + RERUN_DIRECT_EVIDENCE + ".",
     ]
     return ["# " + ln for ln in lines]

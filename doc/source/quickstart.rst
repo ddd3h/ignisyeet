@@ -157,8 +157,3 @@
 
 ``out/ignisyeet.kml`` を Google Earth（Web 版でもよい）で開くと、飛翔経路と着地点を地図の上で見られる。
 図の種類と KML の見方は :ref:`page-howto-plots-kml` にある。
-
-次に読むところ
-----------------
-
-自分の機体を計算する手順は :ref:`page-howto-own-rocket` にある。計算がうまくいかないときは、付録の :ref:`errors` で警告やエラーのコードを引く。

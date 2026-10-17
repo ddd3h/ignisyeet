@@ -42,6 +42,10 @@ True, False or None:
 - ``unconverged``    -> False. The runner accepted the case with a window mean
   (stalled or limit cycle, doc/source/cfd.rst), i.e. the rule was not met.
 - ``rerun (direct)`` -> None.  See ``RERUN_DIRECT_EVIDENCE``.
+- ``accepted``       -> None.  An early stop of ``ignisyeet aero`` after at least 3 orders with flat
+  coefficients; no verdict is claimed and the recorded residual drop decides. ``failed`` -> False.
+  Neither occurs in the three committed studies; the sample-rocket Euler family (sample_euler.py)
+  reads them from ``cfd_cases.csv``.
 
 Any other string is an error.
 
@@ -127,6 +131,12 @@ _STATUS: dict[str, bool | None] = {
     "converged": True,
     "unconverged": False,
     "rerun (direct)": None,
+    # Written by ``ignisyeet aero`` (cfd_cases.csv), not found in the committed doc/data files:
+    # ``accepted`` is an early stop after at least 3 orders with flat coefficients, so no verdict
+    # is claimed (None) and the recorded residual drop decides through check_converged;
+    # ``failed`` is a case with no result.
+    "accepted": None,
+    "failed": False,
 }
 
 RERUN_DIRECT_EVIDENCE = (

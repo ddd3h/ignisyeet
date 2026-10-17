@@ -31,11 +31,12 @@ states what the study did not obtain (its section 5), and so does the paper:
 - The grid convergence index (GCI) of the Basic Finner RANS case (Mach 1.832) was not
   obtained: the alpha = 2 degree solution does not converge on any of the three levels.
 - The GCI of layer 1 was not obtained: the finest grid does not converge, so every row is
-  refused. The layer 1 cone pressure coefficient is compared with Taylor-Maccoll in a
-  table, not in a figure.
-- The study has one figure, the Basic Finner comparison with the measurements
-  (`nasa_vv/figures/validation_bands.svg`). Its CFD band is a grid-sensitivity box for the
-  Euler CNalpha at Mach 2.375, not an established GCI; there is no band for RANS or for CX0.
+  refused, so the layer 1 wall pressure coefficient has no band. It is plotted against
+  Taylor-Maccoll for each level (`nasa_vv/figures/layer1_cp.svg`), with the fine level marked
+  as not accepted.
+- The Basic Finner comparison with the measurements
+  (`nasa_vv/figures/validation_bands.svg`) has a CFD band only as a grid-sensitivity box for
+  the Euler CNalpha at Mach 2.375, not an established GCI; there is no band for RANS or for CX0.
 - The product's grids are not geometrically similar, so a GCI on them depends on the
   definition of the grid size and is reported for two definitions.
 - Temporal convergence does not apply to the steady CFD; the 6-DOF integrator is studied
@@ -59,7 +60,7 @@ that read CFD output take `--work <directory>`.
 | `layer1_cone.csv` | Cone-cylinder through the product pipeline: wall Cp per grid, difference from exact, solver verdict, state of the surface output files | `layer1_cone` |
 | `layer1_gci.csv` | Layer 1 GCI rows (all refused) with the reason | `layer1_cone` |
 | `layer0_vs_layer1.csv` | Layer 0 against layer 1 errors for the cone (the pipeline's contribution is not evaluated) | `layer1_cone` |
-| `gci_existing.csv` | GCI of the studies already in `../doc/data`: turbulent flat plate, sample rocket RANS, Basic Finner Euler | `existing_data` |
+| `gci_existing.csv` | GCI of the studies already in `../doc/data`: turbulent flat plate (with its differences from the TMR value and the empirical correlations), sample rocket RANS, Basic Finner Euler | `existing_data` |
 | `sample_euler_levels.csv` | Sample rocket Euler, three grid levels and the non-mirrored medium level: solutions, residual drops, verdicts | `sample_euler` |
 | `gci_sample_euler.csv` | GCI of the sample rocket Euler grid family at Mach 0.3, 0.8 and 2 | `sample_euler` |
 | `basic_finner_rans_levels.csv` | Basic Finner RANS at Mach 1.832, three grid levels: solutions, residual drops, the product's verdicts | `basic_finner_rans` |
@@ -69,6 +70,10 @@ that read CFD output take `--work <directory>`.
 | `temporal.csv` | Step-size convergence of the 6-DOF integrator and the control experiments | `temporal` |
 | `model_uncertainty.csv` | Euler against RANS-SA for the same body and condition, set against both GCIs | `model_uncertainty` |
 | `turbulence_models.csv` | Turbulent flat plate under Spalart-Allmaras and Menter SST on SU2, and the comparison with the TMR CFL3D and FUN3D values | `turbulence_models` |
+
+`massflux` writes its check line (the extra analysed markers did not change the solve) only
+when it is given the layer 0 runs to compare with:
+`python -m nasa_vv.cases.massflux --reference ~/.cache/nasa_vv_layer0`.
 
 The Basic Finner measurements and the product's comparison table are read from
 `../doc/data/validation/basic_finner/measured.csv` and `summary_vs_measured.csv`.
@@ -80,16 +85,17 @@ Tests:
     cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/ -q
 
 Japanese report page (`doc/extra/research/nasa-vv/index.html`, built from
-`nasa_vv/report/ja/report.md`; needs `markdown-it-py`):
+`nasa_vv/report/ja/report.md`; `markdown-it-py` is in the `dev` group):
 
-    python3 research/nasa_vv/report/ja/build_page.py
+    cd research && uv run --project nasa_vv --group dev python nasa_vv/report/ja/build_page.py
 
 English paper draft (`nasa_vv/report/en/main.pdf`; needs `latexmk` and `rsvg-convert` or
-`inkscape`, which convert the SVG figure to PDF):
+`inkscape`, which convert the SVG figures to PDF):
 
     cd research/nasa_vv/report/en && make
 
-The Basic Finner figure:
+The two figures (`nasa_vv/figures/`; the report page uses copies in
+`doc/extra/research/nasa-vv/figures/`):
 
     cd research && uv run --project nasa_vv python -m nasa_vv.plots
 

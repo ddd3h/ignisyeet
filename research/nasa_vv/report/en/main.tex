@@ -40,7 +40,6 @@ a sample rocket and on the Basic Finner, including comparison with free-flight m
 The aim is to attach a numerical uncertainty band to each coefficient and to set that band beside the
 experimental error.
 
-The results that are complete at this draft stage concern the solver and the method.
 On four exact solutions (oblique shock, Prandtl--Meyer expansion, Taylor--Maccoll cone, Blasius plate),
 SU2 run with the numerical settings the product writes reproduces the exact value to within 0.2\,\% on the
 surface pressure and the shock angle in the primary setups, but wall quantities derived from the Mach number retain
@@ -70,7 +69,7 @@ For the Basic Finner with RANS at Mach 1.832 no GCI was obtained: the zero-incid
 $2^\circ$ solves of all three levels did not converge.
 The validation comparison therefore has no RANS band, and whether the numerical and measurement bands overlap cannot be judged.
 % source: results/basic_finner_rans_levels.csv, results/gci_basic_finner_rans.csv
-Where a usable GCI exists, the iterative error is negligible against it: no matched row has an iterative-error to GCI ratio above 1.
+For the one condition with a usable GCI, a lower bound of the iterative error is $3\times10^{-5}$ of it; no matched row has an iterative-error to GCI ratio above 1.
 % source: results/iterative.csv
 None of the seven Euler-against-RANS conditions can be given a verdict, because one or both sides lack a usable GCI.
 On a turbulent flat plate run in SU2 directly, the Menter SST model differs from Spalart--Allmaras by $-0.79\,\%$ in skin friction, which is within the SST GCI of
@@ -108,12 +107,6 @@ not which is closer to reality.
 \emph{Validation} asks whether the model resembles the real system and compares a result with measured data.
 Only the comparison with free-flight measurements in Section~\ref{sec:validation} is validation.
 Layers~0 and~1 are verification.
-
-\paragraph{Status of this draft.}
-Several results are still being computed.
-Passages that wait on them are marked in the source; their section headings appear in the typeset text without
-content.
-Each number rests on a committed result file or, where a comment in the source says so, on another committed file.
 
 %=====================================================================
 \section{Method}
@@ -343,7 +336,7 @@ The Basic Finner RANS family has wall sizes of 2.1, 1.5 and 1.07\,mm and a fin s
 926\,390 nodes (813\,498, 1\,265\,515 and 2\,145\,093 cells): a cell growth of 1.56 and 1.70 against 2.74.
 Incidence $0^\circ$ and $2^\circ$ are used ($-2^\circ$ is also solved by the mirror setting and not used), and $\CNa=C_N(2^\circ)/2^\circ$.
 A fin size smaller than the wall size, as originally planned (about 0.22 of it), cannot be used: with RANS and the CAD surface, the product stops with a
-meshing error (the mesher is killed by an abort signal), as it did on every build tried (the coarse and medium levels; the fine level was not tried); this is a defect of the product, which was not modified.
+meshing error (the mesher aborts with a memory-corruption message, ``corrupted size vs.\ prev\_size''), as it did on every build tried (the coarse and medium levels; the fine level was not tried); whether the product's input or gmsh is at fault was not separated, and the product was not modified.
 The medium level has the wall and fin sizes of the existing RANS Basic Finner run, but a different mesh (5.3\,\% fewer nodes, 3.4\,\% fewer cells),
 so it is the nearest level to that run and not that run.
 
@@ -630,6 +623,39 @@ among other things, and these differences are pinned by a test;
 so what was verified is a configuration close to, but not identical to, the product's.
 % source: tests/test_rans_flatplate_script.py (test of the differences; not a results CSV)
 
+% source: results/gci_existing.csv (rans_flatplate rows, columns tmr_* and corr_*; the differences of the three grids are the err_vs_tmr_percent and err_vs_correlation_percent columns of doc/data/cfd/rans_flatplate.csv)
+The data also record two reference values of the skin friction at this station (Table~\ref{tab:turbref}).
+Neither is an exact solution.
+The Turbulence Modeling Resource value for Spalart--Allmaras is the mean of two other programs, CFL3D and FUN3D, on a $545\times385$ grid, and exists at Mach 0.2 only; a difference from it is a cross-comparison of programs.
+The other two are empirical correlations, local K\'arm\'an--Schoenherr at Mach 0.2 and van Driest~II at Mach 2, whose own uncertainty is not recorded here; a difference from them is not an error against an exact solution.
+No verdict on whether the GCI bounds the error is drawn from any of them.
+
+\begin{table}[t]
+\centering
+\caption{Turbulent flat plate, skin friction at $x=0.97$: difference of each grid and of the Richardson-extrapolated value from the reference values recorded with the data,
+$(C_f-C_{f,\mathrm{ref}})/C_{f,\mathrm{ref}}$ in per cent. The TMR value is another program's solution on a finer grid (a cross-comparison); the two correlations are empirical, not exact solutions.}
+\label{tab:turbref}
+% source: results/gci_existing.csv (rans_flatplate rows)
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}rp{3.5cm}p{3.1cm}rrrrr@{}}
+\toprule
+Mach & Reference & Kind & $C_{f,\mathrm{ref}}$ & Fine & Medium & Coarse & Extrap. \\
+\midrule
+0.2 & TMR SA (CFL3D/FUN3D mean, $545\times385$) & cross-comparison & 0.0027055 & $+0.79$ & $+0.74$ & $+0.62$ & $+0.82$ \\
+0.2 & K\'arm\'an--Schoenherr (local) & empirical correlation & 0.0027442 & $-0.63$ & $-0.68$ & $-0.80$ & $-0.60$ \\
+2 & van Driest~II (Hopkins--Inouye) & empirical correlation & 0.0021384 & $-1.18$ & $-1.26$ & $-1.42$ & $-1.12$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+On the finest grid the skin friction is $+0.79\,\%$ from the TMR value, about 21 times the GCI of 0.038\,\%, so the grid error of this family does not account for the difference.
+The difference holds the effects of a reference computed by another program on a finer grid, of a configuration close to but not identical to the product's, and of the product's model
+(the negative-viscosity form with the $f_{t2}$ term, not the plain model of the reference); it is not attributed.
+It agrees with the $+0.80\,\%$ found on the self-built grids of Section~\ref{sec:model}.
+The differences from the correlations ($-0.63\,\%$ at Mach 0.2 and $-1.18\,\%$ at Mach 2) also exceed the GCI (0.038 and 0.079\,\%); the correlations' uncertainty is unknown, so these differences cannot be assigned to the CFD or to the correlation.
+With refinement the difference from TMR grows ($+0.62$, $+0.74$, $+0.79\,\%$) and the differences from the correlations shrink in magnitude.
+
 \subsection{Conservation of mass}
 \label{sec:massflux}
 
@@ -677,6 +703,20 @@ Layer~0, finest grid & 49\,601 & 12.73 & converged & $-0.19$ & -- & -- \\
 \end{tabular}
 \end{table}
 
+Figure~\ref{fig:layer1cp} plots the binned wall $\Cp$ of the three levels against $x/L$ with the Taylor--Maccoll value.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.85\textwidth]{fig/layer1_cp.pdf}
+\caption{Layer~1: wall $\Cp$ of the cone surface, mean over bins of $x/L$ of width 0.1, for the three levels, against the Taylor--Maccoll value (black line).
+Filled symbols are solutions the solver accepted. The fine level (hollow symbols, dashed) was not accepted (residual drop 2.44 orders); its values are the periodic write of iteration 200 of 210
+and are shown for description only. No band is drawn: all six layer~1 grid-convergence rows are refused.}
+\label{fig:layer1cp}
+% source: results/layer1_cone.csv (the seven 0.1-wide bins, quantities bin and cp_nearest_tip); figures/layer1_cp.svg
+\end{figure}
+
+In every one of the seven bins the wall $\Cp$ lies below the exact value at every level and approaches it with each refinement; the difference is largest in the bin nearest the tip.
+
 The fine level did not converge.
 Over its last 40 iterations the density residual stays between $-6.00$ and $-4.85$ and never reaches the target of $-6$, and the
 drag coefficient varies by $2.2\times10^{-4}$ relative; the picture is consistent with a limit cycle.
@@ -685,6 +725,7 @@ other two.
 The gate of Section~\ref{sec:gci} therefore refuses the fine level, and all six layer~1 grid convergence rows (three quantities,
 each under both grid-size definitions) carry that refusal and no number.
 \emph{There is no layer~1 GCI.}
+A grid-convergence band on the wall $\Cp$ of Fig.~\ref{fig:layer1cp} therefore cannot be drawn; that is a result, not an omission of the figure.
 
 The differences of the two accepted levels from the exact solution are descriptive only.
 In the like-for-like window they are $-2.51$ and $-1.26\,\%$; the fine level, not accepted, gives $-0.44\,\%$.
@@ -750,6 +791,9 @@ a later or deeper state of the same run, and the ratio is that error over the $\
 \emph{No row in which the grid and the quantity match has a ratio above 1}; no GCI is invalidated by its iterative error.
 Five rows with a usable GCI have ratios below 0.003; they are the Mach 2 normal-force slope of the sample rocket at the three levels and at a separate history,
 and one flat-plate row that is indicative only.
+Only one condition therefore has a usable GCI, the Mach 2 normal-force slope, and its iterative error is a lower bound, because the reference state is the last row the solver wrote:
+on the finest grid it is $3.3\times10^{-4}\,\%$, $3.2\times10^{-5}$ of the GCI (10.6\,\%), and the density residual had fallen by 8.6 orders.
+That is no evidence that the iterative error disturbs this GCI; it is weaker than a demonstration that the iterative error is small.
 For 28 rows there is no ratio because the matching GCI is refused, oscillatory, flagged or unusable: the iterative error is known there and cannot be compared.
 On the sample-rocket levels it is at most 0.04\,\% on $C_A$ and 0.02\,\% on $C_N$; these are lower bounds, because the reference state is the last row the solver wrote and not a converged state.
 A stop at a density residual of $10^{-6}$ from a warm start leaves a larger error: 0.55 to 1.42\,\% in $C_N$ at Mach 0.8 and $4^\circ$ (0.003 to 0.012\,\% at the deeper stops),
@@ -829,15 +873,17 @@ Mach & Quantities & Reason \\
 \end{tabular}
 \end{table}
 
-The product's own convergence verdict ``unconverged'' includes a case that reached the iteration limit with forces
-and moments nearly constant over the last window, in which case the window average is used and a warning issued;
-such a case has flat coefficients but not necessarily the residual drop that the tutorial's step~2 asks for.
-% source: the product's CFD documentation (not a results CSV)
+The product's convergence verdict ``unconverged'' for a Reynolds-averaged case covers two kinds of solve, which its documentation separates:
+a \emph{stall}, in which the residual stops short of the required drop while the coefficients are flat, and a \emph{limit cycle}, in which the residual has dropped far enough and the coefficients oscillate in a small band;
+for either, the window average is used and a warning is issued.
+A stall therefore fails the tutorial's residual-drop condition and a limit cycle its coefficient-flatness condition, and the record does not say which kind the solve was.
+% source: the product's CFD documentation, section on the Reynolds-averaged acceptance verdict (not a results CSV)
 The consequence is stated narrowly.
 The grid-convergence index published for this family at Mach 0.8 rests on a coarse-level value that combines a $-4^\circ$
-solve recorded as not converged; it therefore does not meet the tutorial's iterative-convergence precondition on
-the residual-drop leg (the coefficient-flatness leg may be met), and the documentation does not say so.
-% source: the product's CFD documentation (not a results CSV)
+solve recorded as not converged; whichever kind of solve it was, that GCI does not meet the tutorial's iterative-convergence precondition
+(a converged solution), and the documentation does not say so.
+The study's own order rule would also flag the published Mach 0.8 $C_N$ triplet, whose observed order is 4.33, above 4.
+% source: the product's CFD documentation and doc/data/cfd/rans_mesh_study.json (not a results CSV)
 This is evidence that the precondition is not demonstrated; it is not a claim that the published number is wrong.
 
 \subsubsection{Basic Finner, Euler, Mach 2.375}
@@ -904,7 +950,8 @@ Rows whose GCI exceeds 100\,\% or whose extrapolation lies past a known exact va
 \centering
 \caption{Sample rocket, Euler, observed order $p$ and $\mathrm{GCI}_\fine$ (\%) under $h\propto N^{-1/3}$ and $h\propto$ wall size.
 ``none'': no order, because the finer pair changes at least as much as the coarser pair, or the differences change sign (no band).
-$^\dagger$: order outside 0.5 to 4, flagged as unreliable. ``unusable'': GCI above 100\,\% or extrapolation past the exact value.}
+$^\dagger$: order outside 0.5 to 4, flagged as unreliable. ``unusable'': GCI above 100\,\% or extrapolation past the exact value.
+$^\ddagger$: on the $N^{-1/3}$ basis the screen for a constant refinement ratio gives this label, but the ratios differ (1.21 and 1.20) and Celik's method gives $p=0.072$ and a GCI of 285\,\%: unusable either way.}
 \label{tab:sample}
 % source: results/gci_sample_euler.csv
 \footnotesize
@@ -921,7 +968,7 @@ Mach & Quantity & Remark & $p$ ($N^{-1/3}$) & GCI & $p$ (wall) & GCI \\
 0.8 & $C_A$ & unusable & 0.29$^\dagger$ & 1654 & 0.066$^\dagger$ & 4251 \\
 2.0 & $\CNa$ & & 0.53 & 10.6 & 0.20$^\dagger$ & 16.3 \\
 2.0 & $x_{cp}$ & flagged & 8.7$^\dagger$ & 0.030 & 4.75$^\dagger$ & 0.033 \\
-2.0 & $C_A$ & not converging & none & -- & none & -- \\
+2.0 & $C_A$ & not converging$^\ddagger$ & none & -- & none & -- \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -1048,8 +1095,9 @@ over groups of shots at eight Mach numbers between 1.077 and 4.300.
 Each tabulated coefficient carries a probable error in per cent.
 The error bars follow the table.
 A blank entry means the error is unknown, and no bar is drawn; an error is never estimated and filled in.
-A tabulated 0 means an error below 0.5\,\%, not zero error, and is drawn as a hollow marker with caps at the
-0.5\,\% bound.
+A tabulated 0 means an error below 0.5\,\%, not zero error, and is drawn as a hollow marker with triangles beside it.
+These probable errors are the statistical error of the fit; the product's validation chapter states that they exclude round-to-round scatter and systematic error.
+A probable error is conventionally a 50\,\% bound, so a CFD value outside or inside the bar is a weaker statement than it reads, and neither is a comparison with the full measurement uncertainty.
 An existing validation figure of the product's documentation draws a bar of length zero for a quantity whose error is
 unknown; the figure used here does not.
 % source: the product's documentation figure code (not a results CSV)
@@ -1101,11 +1149,12 @@ Mach & Measured & Err.\ (\%) & Euler & diff.\ (\%) & Measured & Err.\ (\%) & Eul
 \end{table}
 
 The Euler $\CNa$ lies below the measured value at every Mach number, by 2.9 to 10.5\,\%, and the Euler $\CXzero$ by 15.4 to 28.3\,\%.
-For $\CNa$ the difference is larger than the tabulated probable error at all eight Mach numbers (at Mach 1.832 narrowly: 4.4 against 4\,\%).
-The probable error is the measurement's own scatter as tabulated; it is not a bound on its error.
+For $\CNa$ the difference is larger than the tabulated probable error at all eight Mach numbers (at Mach 1.832 narrowly: 4.4 against 4\,\%; at Mach 2.718, 2.9 against 2\,\%, about one standard deviation if the probable error is read as a 50\,\% width).
+The probable error is the fit's statistical error as tabulated; it excludes round-to-round scatter and systematic error and is not a bound on the measurement's error,
+so exceeding it does not mean exceeding the measurement uncertainty.
 For $\CXzero$ the Euler value is the pressure part of the axial force plus modelled friction, base and fin trailing-edge terms, so the comparison
 includes modelled terms and not CFD alone.
-The single RANS point at Mach 1.832 is $-2.7\,\%$ in $\CNa$, within the tabulated 4\,\%; its $\CXzero$ is $-25.8\,\%$ or $+10.7\,\%$ according to
+The single RANS point at Mach 1.832 is $-2.7\,\%$ in $\CNa$, within the tabulated 4\,\% (which is no strong evidence of agreement, for the reasons above); its $\CXzero$ is $-25.8\,\%$ or $+10.7\,\%$ according to
 the base treatment, so the base term, not the flow solution, decides the sign of that comparison.
 Whether the difference between Euler and measurement can be attributed to model form rather than numerical error
 cannot be decided: there is no established numerical uncertainty band on the Euler coefficients.
@@ -1119,7 +1168,7 @@ The Euler results are consistent with a model-form difference (inviscid flow, mo
 No band is drawn on $\CXzero$ because the pressure part of the axial force, whose grid study is available, is only one
 of several terms of $\CXzero$.
 No numerical band exists for the RANS result at Mach 1.832 either: a RANS GCI was not obtained (Section~\ref{sec:grid}), so the RANS $\CNa$, 11.46 or $-2.7\,\%$ from the measurement, is a single-grid value from the existing RANS run; the $2^\circ$ solves of the three levels of the new RANS family did not converge.
-Its difference lies within the tabulated probable error of 4\,\%, but with no numerical uncertainty the overlap of the CFD band and the measured bar cannot be judged,
+Its difference lies within the tabulated probable error of 4\,\%, a fit statistic and a 50\,\% bound, and with no numerical uncertainty the overlap of the CFD band and the measured bar cannot be judged,
 and no statement is made on whether CFD and measurement agree within their uncertainties, or that a difference is or is not explained by numerical error.
 The Euler and RANS values of Table~\ref{tab:validation} at Mach 1.832 are not separated into a model difference and a numerical difference either: neither side has a usable band (Section~\ref{sec:model}).
 
@@ -1198,7 +1247,7 @@ The conclusions supported at this stage are the following.
 \item The flight integrator shows no convergence order on the sample rocket, attributed on the evidence of controls
   mainly to the rail model, with a second contribution not excluded.
 \item The Euler Basic Finner $\CNa$ lies 2.9 to 10.5\,\% below the free-flight measurement and its axial-force coefficient
-  15 to 28\,\% below it; the CNa difference exceeds the tabulated probable error at all eight Mach numbers, but the difference
+  15 to 28\,\% below it; the CNa difference exceeds the tabulated probable error (a fit statistic that excludes round-to-round scatter and systematic error, and conventionally a 50\,\% bound) at all eight Mach numbers, but the difference
   cannot be attributed to model form rather than numerical error, because no established numerical band exists.
 \item Through the product's chain, the 10$^\circ$ cone-cylinder at Mach 2.35 did not converge on its finest level, so layer~1 has no
   GCI and the pipeline error, including three-dimensional unstructured meshing, is not quantified; the accepted levels differ
@@ -1206,13 +1255,13 @@ The conclusions supported at this stage are the following.
 \item On the sample rocket the Euler grids cannot be refined similarly (cell growth 1.74 and 1.77 against 2.74), and the only GCI that is not unusable is the Mach 2 normal-force slope, 10.6 to 16.3\,\% depending on the grid-size definition, the larger flagged as outside the asymptotic range;
   $|C_A|$ at Mach 0.3 shrinks under refinement but its extrapolation crosses zero.
 \item No GCI was obtained for the Basic Finner with RANS at Mach 1.832, so the validation comparison has no RANS band and the overlap of numerical and measured uncertainty cannot be judged.
-\item The iterative error does not invalidate any GCI that has a matching iterative-error record (no matched ratio above 1); five flat-plate comparisons above 1 pair the drag stopping error with the skin-friction GCI and are indicative only.
+\item The iterative error does not invalidate any GCI that has a matching iterative-error record (no matched ratio above 1), but only one condition has a usable GCI (the Mach 2 normal-force slope) and its iterative error is a lower bound; five flat-plate comparisons above 1 pair the drag stopping error with the skin-friction GCI and are indicative only.
 \item None of the seven Euler-against-RANS comparisons can be given a verdict, because one or both numerical bands are missing or flagged; on the flat plate, SST differs from Spalart--Allmaras by $-0.79\,\%$ in skin friction (within the SST GCI of 1.14\,\%, with the Spalart--Allmaras GCI flagged) and $-0.46\,\%$ in drag (not separable from the grid uncertainty).
 \end{enumerate}
 
 \section*{Data availability}
 All numbers in this paper come from the result files under \texttt{research/nasa\_vv/results/}
-(and the committed figure under \texttt{research/nasa\_vv/figures/}) of the IgnisYeet repository,
+(and the committed figures under \texttt{research/nasa\_vv/figures/}) of the IgnisYeet repository,
 except where a comment in the source names another committed file.
 
 \bibliographystyle{plainnat}

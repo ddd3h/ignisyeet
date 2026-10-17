@@ -53,8 +53,8 @@ that read CFD output take `--work <directory>`.
 | `layer0.csv` | Wedge, cone and expansion on three nested grids: values, difference from the exact solution, residual drop, wall entropy and other diagnostics | `layer0` |
 | `layer0_gci.csv` | Layer 0 observed order, extrapolated value, GCI, true error and whether the GCI bounded it (laminar plate rows included) | `layer0`, `layer0_plate` |
 | `layer0_plate.csv` | Laminar flat plate at Mach 0.2 against Blasius: Cf, displacement and momentum thickness, leading edge, domain sensitivity, residual drop | `layer0_plate` |
-| `cone10_reference_check.csv` | NPARC cone10 table against Taylor-Maccoll, value by value | none (assembled from the cited sources) |
-| `cone_shock_angle_sources.csv` | Independent sources for the shock angle of the 10 degree cone at Mach 2.35 | none (assembled from the cited sources) |
+| `cone10_reference_check.csv` | NPARC cone10 table against Taylor-Maccoll, value by value | no producer module; the Taylor-Maccoll column is `nasa_vv.exact.taylor_maccoll` |
+| `cone_shock_angle_sources.csv` | Independent sources for the shock angle of the 10 degree cone at Mach 2.35 | no producer module; compared in `tests/test_exact.py` |
 | `massflux.csv` | Far-field mass-flux balance of the layer 0 cases | `massflux` |
 | `layer1_cone.csv` | Cone-cylinder through the product pipeline: wall Cp per grid, difference from exact, solver verdict, state of the surface output files | `layer1_cone` |
 | `layer1_gci.csv` | Layer 1 GCI rows (all refused) with the reason | `layer1_cone` |

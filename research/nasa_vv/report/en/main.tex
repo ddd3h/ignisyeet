@@ -61,9 +61,17 @@ did not converge, so layer~1 has no grid convergence index and no pipeline error
 unstructured meshing, is quoted; the differences of the two accepted levels from the exact cone pressure coefficient
 are described only.
 % source: results/layer1_cone.csv, results/layer1_gci.csv, results/layer0_vs_layer1.csv
-% PENDING Task 14: abstract sentence on the sample-rocket Euler grid convergence and the refined d'Alembert check
-% PENDING Task 15: abstract sentence on the Basic Finner RANS grid convergence at Mach 1.832 and the validation overlap judgement
-% PENDING Task 16: abstract sentence on the iterative error relative to the grid uncertainty
+On the sample rocket, the product's grid levels grow by 1.74 and 1.77 in cells against 2.74 for a similar refinement.
+The only grid convergence index that is not marked unusable is that of the Mach 2 normal-force slope, 10.6\,\% on one grid-size
+definition and 16.3\,\% on the other (flagged as outside the asymptotic range).
+The axial force at Mach 0.3, which should vanish, shrinks under refinement (0.063, 0.045, 0.030), but its extrapolation crosses zero and no band is usable.
+% source: results/gci_sample_euler.csv, results/sample_euler_levels.csv, results/consistency.csv
+For the Basic Finner with RANS at Mach 1.832 no GCI was obtained: the zero-incidence solve of the finest level and the
+$2^\circ$ solves of all three levels did not converge.
+The validation comparison therefore has no RANS band, and whether the numerical and measurement bands overlap cannot be judged.
+% source: results/basic_finner_rans_levels.csv, results/gci_basic_finner_rans.csv
+Where a usable GCI exists, the iterative error is negligible against it: no matched row has an iterative-error to GCI ratio above 1.
+% source: results/iterative.csv
 % PENDING Task 20: abstract sentence on the Euler against RANS model difference relative to the numerical uncertainty
 \end{abstract}
 
@@ -318,8 +326,23 @@ Mach 1.832 is chosen for RANS because it is the one point at which the product's
 free-flight data exist; at Mach 2.375 the product's RANS stalls in a limit cycle and at Mach 3.147 it diverges.
 % source: the product's validation documentation (not a results CSV)
 The normal-force slope $\CNa$ is $C_N(2^\circ)/2^\circ$ for the Basic Finner, following the existing convention.
-% PENDING Task 14: the realised sample-rocket Euler grid levels, machine and residual drops, and how CNalpha is formed there
-% PENDING Task 15: the realised Basic Finner RANS levels and their residual drops
+% source: results/sample_euler_levels.csv, results/gci_sample_euler.csv (headers)
+The sample-rocket Euler family has wall and fin sizes of 3.92/1.96, 2.80/1.40 and 2.00/1.00\,mm, with 98\,151, 170\,830 and 302\,918
+nodes (458\,640, 798\,534 and 1\,416\,454 cells): a growth of 1.74 and 1.77 in cells against $1.4^3=2.74$ for a similar refinement.
+It was solved at Mach 0.3, 0.8 and 2.0 at incidence $0^\circ$ and $4^\circ$.
+The density residual fell by 3.2 to 10.9 orders at zero incidence and 6.6 to 8.7 at $4^\circ$.
+The mesh is mirrored about the symmetry plane, so $-4^\circ$ is the exact mirror of $+4^\circ$ and is not solved;
+$\CNa=C_N(4^\circ)/4^\circ$ is formed from the $+4^\circ$ solve, and $x_{cp}$ is that of the combined row.
+A medium level meshed without the mirror, with both $+4^\circ$ and $-4^\circ$ solved, serves the antisymmetry check only and is not a member of the family.
+All runs used the product build of the study's base commit.
+% source: results/basic_finner_rans_levels.csv (header and level columns)
+The Basic Finner RANS family has wall sizes of 2.1, 1.5 and 1.07\,mm and a fin size equal to the wall size, with 328\,364, 533\,985 and
+926\,390 nodes (813\,498, 1\,265\,515 and 2\,145\,093 cells): a cell growth of 1.56 and 1.70 against 2.74.
+Incidence $0^\circ$ and $2^\circ$ are used ($-2^\circ$ is also solved by the mirror setting and not used), and $\CNa=C_N(2^\circ)/2^\circ$.
+A fin size smaller than the wall size, as originally planned (about 0.22 of it), cannot be used: with RANS and the CAD surface, the product stops with a
+meshing error (the mesher is killed by an abort signal), as it did on every build tried (the coarse and medium levels; the fine level was not tried); this is a defect of the product, which was not modified.
+The medium level has the wall and fin sizes of the existing RANS Basic Finner run, but a different mesh (5.3\,\% fewer nodes, 3.4\,\% fewer cells),
+so it is the nearest level to that run and not that run.
 
 \paragraph{Grids built by the product cannot be similar.}
 % source: results/gci_existing.csv (header and n1..n3 columns of basic_finner_mesh_check)
@@ -718,7 +741,20 @@ the grid convergence argument fails.
 In layer~0 every run reached its residual target, with 12.7 to 13.9 orders of drop for the Euler cases and 9.4 to 10.4
 for the three plate grids (Sections~\ref{sec:l0results} and~\ref{sec:plate}).
 The layer~1 levels dropped the density residual by 5.52, 4.80 and 2.44 orders (the last not accepted; Section~\ref{sec:layer1}).
-% PENDING Task 16: the iterative-error to GCI ratio per layer 2 condition, with any condition above the thresholds stated plainly
+% source: results/iterative.csv (header: judgement; rows)
+The third of these is examined on the 38 rows of the iterative-error comparison, where the iterative error is the difference between the value at the stop and
+a later or deeper state of the same run, and the ratio is that error over the $\mathrm{GCI}_\fine$ of the same quantity.
+\emph{No row in which the grid and the quantity match has a ratio above 1}; no GCI is invalidated by its iterative error.
+Five rows with a usable GCI have ratios below 0.003; they are the Mach 2 normal-force slope of the sample rocket at the three levels and at a separate history,
+and one flat-plate row that is indicative only.
+For 28 rows there is no ratio because the matching GCI is refused, oscillatory, flagged or unusable: the iterative error is known there and cannot be compared.
+On the sample-rocket levels it is at most 0.04\,\% on $C_A$ and 0.02\,\% on $C_N$; these are lower bounds, because the reference state is the last row the solver wrote and not a converged state.
+A stop at a density residual of $10^{-6}$ from a warm start leaves a larger error: 0.55 to 1.42\,\% in $C_N$ at Mach 0.8 and $4^\circ$ (0.003 to 0.012\,\% at the deeper stops),
+and 6.3\,\% in $C_A$ at Mach 0.8, where no usable GCI exists for comparison.
+Five flat-plate rows exceed 1 (3.11, 16.6 and 50.4 at Mach 0.2; 1.03 and 8.34 at Mach 2), but they are indicative only: they set the iterative error of the plate drag
+(0.12 to 1.9\,\% at Mach 0.2) against the grid uncertainty of the skin friction (0.038\,\%), which is another quantity, and no GCI of the plate drag exists.
+They do not invalidate the skin-friction GCI; they show that the stop rule of that study leaves an iterative error in the drag that is larger than the skin-friction grid uncertainty.
+Layer~0 has no iterative error in per cent, only the residual drops given above.
 
 \subsection{Step 3: consistency}
 \label{sec:consistency}
@@ -737,15 +773,24 @@ The production runs of the sample rocket use such a symmetric mesh; their $C_N(0
 ($|C_N|<2\times10^{-5}$) for the same reason.
 The tests cannot separate a solver effect from a mesh-asymmetry effect on the asymmetric meshes.
 (Values in the source are rounded to five decimals, so a printed zero means below $5\times10^{-6}$.)
-% PENDING Task 14: antisymmetry from directly solved positive and negative incidence on the production mesh
+% source: results/consistency.csv (cn_antisymmetry rows of the medium level without the mirror), results/sample_euler_levels.csv
+On the sample rocket the mirror was removed from the medium mesh and both $+4^\circ$ and $-4^\circ$ were solved, so that antisymmetry is a test of the solver.
+The even part $[C_N(+4^\circ)+C_N(-4^\circ)]/2$ is $-0.0388$ at Mach 0.3 and $-0.0201$ at Mach 0.8, against tolerances of 0.0114 and 0.0118: both fail.
+At Mach 2 it is $+0.0015$ against 0.0093 and passes.
+The even part is of the size of the same mesh's $C_N(0)$ ($-0.0404$, $-0.0219$ and $+0.0016$), which is consistent with an offset that the mesh asymmetry carries at every incidence;
+which part of it is the mesh and which the solver was not separated.
+Some solves have the product's status ``accepted'' (an early stop with three orders of residual drop and flat coefficients) and enter as written: the $-4^\circ$ solve at Mach 0.3, the zero-incidence solve at Mach 0.8, and both at Mach 2.
 
 \paragraph{d'Alembert's paradox.}
 % source: results/consistency.csv (ca_dalembert row)
 At Mach 0.3 and zero incidence the inviscid axial force coefficient is expected to be zero (d'Alembert's paradox).
-On the production grid of the sample rocket $C_A=-0.031$.
-This is a single grid, so no statement is made here on whether it is a discretisation error that shrinks with the
-mesh or a defect of formulation or boundary conditions.
-% PENDING Task 14: the refined-grid |CA| at Mach 0.3, alpha 0 on three similar levels, and which of the two readings (shrinks with the grid, or does not) it supports
+% source: results/consistency.csv (ca_dalembert_refined rows), results/gci_sample_euler.csv
+A shrinking $|C_A|$ would point to a discretisation error, and a value that does not shrink to a defect of formulation or boundary conditions.
+On the three levels of the sample-rocket family $C_A=-0.0628$, $-0.0455$ and $-0.0305$ (coarse to fine): $|C_A|$ shrinks, by factors of 1.38 and 1.49.
+Its extrapolation, however, crosses the exact value: $+0.045$ on one grid-size definition and $+0.065$ on the other, with GCI of 309 and 393\,\%, so the
+row is marked unusable.
+Three grids that are not similar and an extrapolation past zero support the trend, not a convergence to zero.
+At Mach 0.8, where no exact value is assumed, $C_A=-0.0326$, $-0.0226$, $-0.0128$ and the GCI (over 1\,600\,\%) is unusable.
 
 \paragraph{Mass-flux balance.}
 The balance was checked on the layer~0 cases (Section~\ref{sec:massflux}); it was not checked on the layer~2 far
@@ -844,13 +889,79 @@ With the flat-base treatment, $C_N$ and $x_{cp}$ at $2^\circ$ and $4^\circ$ are 
 This four-level study does not establish a reliable GCI for the Basic Finner.
 % source: results/gci_existing.csv, derived L2-to-L4 change in cn at fairing alpha 2: 0.33008/0.32852 - 1
 
-\subsubsection{Sample rocket, Euler, similar family}
+\subsubsection{Sample rocket, Euler}
 
-% PENDING Task 14: the three similar Euler levels of the sample rocket at Mach 0.3, 0.8 and 2.0, incidence 0 and 4 deg: node counts, residual drops, GCI of CNalpha, CA and xcp under both h definitions, the order flags, and any oscillatory entry stated as without a band
+% source: results/gci_sample_euler.csv (rows and header), results/sample_euler_levels.csv
+Table~\ref{tab:sample} gives the observed orders and GCI under both grid-size definitions.
+The levels of the family meet the gate (a converged or accepted verdict and at least 3.2 orders of residual drop), but the grids are not similar (cell growth 1.74 and 1.77
+against 2.74), so neither definition is the effective grid size.
+Rows whose GCI exceeds 100\,\% or whose extrapolation lies past a known exact value are marked unusable.
+
+\begin{table}[t]
+\centering
+\caption{Sample rocket, Euler, observed order $p$ and $\mathrm{GCI}_\fine$ (\%) under $h\propto N^{-1/3}$ and $h\propto$ wall size.
+``none'': no order, because the finer pair changes at least as much as the coarser pair, or the differences change sign (no band).
+$^\dagger$: order outside 0.5 to 4, flagged as unreliable. ``unusable'': GCI above 100\,\% or extrapolation past the exact value.}
+\label{tab:sample}
+% source: results/gci_sample_euler.csv
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}lllrrrr@{}}
+\toprule
+Mach & Quantity & Remark & $p$ ($N^{-1/3}$) & GCI & $p$ (wall) & GCI \\
+\midrule
+0.3 & $\CNa$ & not converging & none & -- & none & -- \\
+0.3 & $x_{cp}$ & oscillatory & none & -- & none & -- \\
+0.3 & $C_A$ & unusable & 0.95 & 309 & 0.43$^\dagger$ & 393 \\
+0.8 & $\CNa$ & not converging & none & -- & none & -- \\
+0.8 & $x_{cp}$ & oscillatory & none & -- & none & -- \\
+0.8 & $C_A$ & unusable & 0.29$^\dagger$ & 1654 & 0.066$^\dagger$ & 4251 \\
+2.0 & $\CNa$ & & 0.53 & 10.6 & 0.20$^\dagger$ & 16.3 \\
+2.0 & $x_{cp}$ & flagged & 8.7$^\dagger$ & 0.030 & 4.75$^\dagger$ & 0.033 \\
+2.0 & $C_A$ & not converging & none & -- & none & -- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The only GCI of the family that is not unusable is that of $\CNa$ at Mach 2: 10.6\,\% on one definition (order 0.53, just above the flag) and 16.3\,\% on the other (order 0.20, flagged).
+The two bases differ by 5.8 percentage points, and the extrapolated value 14.5 lies 8.5\,\% above the finest-grid value 13.40 although the two finest grids differ by 0.9\,\%: with an order of 0.5 the result rests on the assumed order
+more than on the data.
+The $x_{cp}$ GCI at Mach 2, 0.03\,\%, belongs to orders of 8.7 and 4.75, beyond twice the formal order, and is flagged as unreliable.
+$\CNa$ at Mach 0.3 and 0.8 does not converge monotonically under refinement and receives no band, nor does $x_{cp}$ (oscillatory) or $C_A$ at Mach 2.
+No GCI of the sample rocket is therefore a certified uncertainty; the Mach 2 normal-force slope is a wide band of poor reliability.
 
 \subsubsection{Basic Finner, RANS, Mach 1.832}
 
-% PENDING Task 15: the three RANS levels at Mach 1.832 (incidence 0 and 2 deg), residual drop per level, GCI of CNalpha, CA and xcp, or the statement that a RANS GCI was not obtained with the residual drop
+% source: results/basic_finner_rans_levels.csv, results/gci_basic_finner_rans.csv
+\emph{No RANS GCI was obtained at Mach 1.832.}
+Table~\ref{tab:rans} gives the residual drop of each solve under the two measures in use.
+The gate uses the smaller of the density and the Spalart--Allmaras (turbulence) residual drops; the product's own residual drop is that of the density alone,
+so it is larger wherever the turbulence residual fell less.
+The $2^\circ$ solve did not converge on any level, and neither did the zero-incidence solve of the finest level; the product records each as stalled, with the limit-cycle flag set.
+Every family is therefore refused: the normal-force slope and $x_{cp}$ because of the $2^\circ$ solves, and the axial force and its wall and base parts because of the finest zero-incidence solve.
+
+\begin{table}[t]
+\centering
+\caption{Basic Finner, RANS, Mach 1.832: residual drop (orders) of each solve under the gate's measure (the smaller of the density and turbulence drops) and under the product's own (density only),
+and the solver's verdict. The $2^\circ$ and finest $0^\circ$ solves are not converged, so the families they enter are refused.}
+\label{tab:rans}
+% source: results/basic_finner_rans_levels.csv
+\small
+\begin{tabular}{@{}lrrcccc@{}}
+\toprule
+Level & Nodes & Cells & $0^\circ$ gate / product & $0^\circ$ verdict & $2^\circ$ gate / product & $2^\circ$ verdict \\
+\midrule
+2.1\,mm & 328\,364 & 813\,498 & 3.10 / 3.13 & converged & 2.69 / 2.81 & not converged \\
+1.5\,mm & 533\,985 & 1\,265\,515 & 3.65 / 3.38 & converged & 0.93 / 4.12 & not converged \\
+1.07\,mm & 926\,390 & 2\,145\,093 & 0.89 / 3.91 & not converged & 1.23 / 3.04 & not converged \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The normal-force slope values of the three levels, all from not-converged $2^\circ$ solves, are 11.52, 11.57 and 11.45 (coarse to fine);
+the 1.1\,\% spread among them is not an uncertainty.
+A run of the coarse level with a different build of the product and a different domain decomposition gave the opposite verdicts at $0^\circ$ (not converged) and $2^\circ$ (converged).
+That the verdicts flip is observed; the comparison is confounded by build and decomposition, and no cause is claimed.
 
 \subsection{Step 5: temporal convergence}
 \label{sec:temporal}
@@ -924,7 +1035,7 @@ unknown; the figure used here does not.
 tabulated probable error, Euler CFD, and the RANS points at Mach 1.832 (two treatments of the base term).
 The hatched box on the Euler point at Mach 2.375 is a grid sensitivity ($\pm0.17\,\%$, too small to see at this scale), not an
 established GCI.
-There is no band on $\CXzero$ and none at any other Mach number.}
+There is no band on $\CXzero$, none on the RANS points (no RANS GCI was obtained at Mach 1.832) and none at any other Mach number.}
 \label{fig:validation}
 \end{figure}
 
@@ -981,8 +1092,9 @@ At the other Mach numbers there is no grid study at all.
 The Euler results are consistent with a model-form difference (inviscid flow, modelled base and friction terms), which is not demonstrated.
 No band is drawn on $\CXzero$ because the pressure part of the axial force, whose grid study is available, is only one
 of several terms of $\CXzero$.
-% PENDING Task 15: the figure regenerated with the RANS band, the RANS CNalpha at Mach 1.832 with its GCI band (or the statement that none was obtained), and the comparison with the measured value and its probable error
-% PENDING Task 15: the judgement of whether the CFD band and the measured error bar overlap and, if they do not, the statement that the difference cannot be explained by numerical error
+No numerical band exists for the RANS result at Mach 1.832 either: a RANS GCI was not obtained (Section~\ref{sec:grid}), so the RANS $\CNa$, 11.46 or $-2.7\,\%$ from the measurement, is a single-grid value from a $2^\circ$ solve that did not converge on any level.
+Its difference lies within the tabulated probable error of 4\,\%, but with no numerical uncertainty the overlap of the CFD band and the measured bar cannot be judged,
+and no statement is made on whether CFD and measurement agree within their uncertainties, or that a difference is or is not explained by numerical error.
 % PENDING Task 20: the validation statement on model uncertainty at Mach 1.832 (Euler against RANS-SA against measurement)
 
 %=====================================================================
@@ -1065,10 +1177,11 @@ The conclusions supported at this stage are the following.
 \item Through the product's chain, the 10$^\circ$ cone-cylinder at Mach 2.35 did not converge on its finest level, so layer~1 has no
   GCI and the pipeline error, including three-dimensional unstructured meshing, is not quantified; the accepted levels differ
   from the exact cone $\Cp$ by $-2.51$ and $-1.26\,\%$ (descriptive).
+\item On the sample rocket the Euler grids cannot be refined similarly (cell growth 1.74 and 1.77 against 2.74), and the only GCI that is not unusable is the Mach 2 normal-force slope, 10.6 to 16.3\,\% depending on the grid-size definition, the larger flagged as outside the asymptotic range;
+  $|C_A|$ at Mach 0.3 shrinks under refinement but its extrapolation crosses zero.
+\item No GCI was obtained for the Basic Finner with RANS at Mach 1.832, so the validation comparison has no RANS band and the overlap of numerical and measured uncertainty cannot be judged.
+\item The iterative error does not invalidate any GCI that has a matching iterative-error record (no matched ratio above 1); five flat-plate comparisons above 1 pair the drag stopping error with the skin-friction GCI and are indicative only.
 \end{enumerate}
-% PENDING Task 14: conclusion on the sample-rocket Euler grid convergence and d'Alembert check
-% PENDING Task 15: conclusion on the Basic Finner RANS grid convergence and the validation overlap
-% PENDING Task 16: conclusion on iterative error against the grid uncertainty
 % PENDING Task 20: conclusion on Euler against RANS model uncertainty
 
 \section*{Data availability}

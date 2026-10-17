@@ -152,3 +152,128 @@ def prandtl_meyer_expansion(
     t2_t1 = isentropic_tt_t(mach, gamma) / isentropic_tt_t(m2, gamma)
     p2_p1 = isentropic_pt_p(mach, gamma) / isentropic_pt_p(m2, gamma)
     return Expansion(m2, p2_p1, p2_p1 / t2_t1, t2_t1)
+
+
+@dataclass
+class Cone:
+    cp: float
+    beta_deg: float
+    mach_surface: float
+    p_pinf: float
+    t_tinf: float
+    rho_rhoinf: float
+
+
+# Upper end of the first bisection bracket on the shock angle. A cone whose
+# attached shock lies beyond it takes the detachment search below.
+_CONE_BETA_BRACKET = math.radians(80.0)
+
+
+def taylor_maccoll(mach: float, delta_deg: float, gamma: float = 1.4) -> Cone:
+    """Sharp cone with an attached shock; shooting on the shock angle.
+
+    Ported from doc/scripts/rans_cone.py:19 with the numerics unchanged (RK4
+    step 1e-5 rad from the shock to the surface, linear interpolation to
+    V_theta = 0, 80 bisection steps on the shock angle), then extended with the
+    thermodynamic ratios at the cone surface.
+
+    Raises ValueError for a subsonic free stream, a half angle outside
+    (0, 90) degrees, gamma <= 1, and a half angle beyond the largest one that
+    keeps the shock attached at this Mach number.
+    """
+    if not mach > 1.0:
+        raise ValueError("taylor_maccoll needs a supersonic free stream")
+    if not 0.0 < delta_deg < 90.0:
+        raise ValueError(
+            f"taylor_maccoll needs a cone half angle in (0, 90) degrees, got {delta_deg}"
+        )
+    if not gamma > 1.0:
+        raise ValueError(f"taylor_maccoll needs gamma > 1, got {gamma}")
+    g = gamma
+    delta = math.radians(delta_deg)
+
+    def cone_angle(beta: float) -> tuple[float, float, float]:
+        """Returns (cone half angle, surface V_r / V_max, shock-normal Mach)."""
+        mn1 = mach * math.sin(beta)
+        mn2 = math.sqrt(
+            (1 + 0.5 * (g - 1) * mn1**2) / (g * mn1**2 - 0.5 * (g - 1))
+        )
+        theta = math.atan(
+            2 / math.tan(beta) * (mn1**2 - 1)
+            / (mach**2 * (g + math.cos(2 * beta)) + 2)
+        )
+        m2 = mn2 / math.sin(beta - theta)
+        v = 1.0 / math.sqrt(2.0 / ((g - 1) * m2**2) + 1.0)   # V / V_max
+        vr, vt = v * math.cos(beta - theta), -v * math.sin(beta - theta)
+
+        def f(th, y):
+            vr, vt = y
+            a2 = 0.5 * (g - 1) * (1 - vr * vr - vt * vt)
+            dvt = (vt * vt * vr - a2 * (2 * vr + vt / math.tan(th))) / (a2 - vt * vt)
+            return (vt, dvt)
+
+        th, y, h = beta, (vr, vt), -1e-5
+        while y[1] < 0:
+            k1 = f(th, y)
+            k2 = f(th + h / 2, (y[0] + h / 2 * k1[0], y[1] + h / 2 * k1[1]))
+            k3 = f(th + h / 2, (y[0] + h / 2 * k2[0], y[1] + h / 2 * k2[1]))
+            k4 = f(th + h, (y[0] + h * k3[0], y[1] + h * k3[1]))
+            yn = (
+                y[0] + h / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]),
+                y[1] + h / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]),
+            )
+            if yn[1] >= 0:
+                w = -y[1] / (yn[1] - y[1])
+                return th + w * h, y[0] + w * (yn[0] - y[0]), mn1
+            th, y = th + h, yn
+            if th <= 1e-6:   # reached the axis without V_theta = 0: no cone
+                break
+        return th, y[0], mn1
+
+    lo = math.asin(1.0 / mach) + 1e-6
+    hi = _CONE_BETA_BRACKET
+    if cone_angle(hi)[0] < delta:
+        # The cone angle rises with the shock angle up to a maximum (the
+        # detachment angle) and falls again towards the normal shock. Locate
+        # the maximum by golden-section search and bisect on the rising side.
+        top = 0.5 * math.pi - 1e-6
+        phi = 0.5 * (math.sqrt(5.0) - 1.0)
+        a, b = lo, top
+        c, d = b - phi * (b - a), a + phi * (b - a)
+        fc, fd = cone_angle(c)[0], cone_angle(d)[0]
+        for _ in range(40):
+            if fc < fd:
+                a, c, fc = c, d, fd
+                d = a + phi * (b - a)
+                fd = cone_angle(d)[0]
+            else:
+                b, d, fd = d, c, fc
+                c = b - phi * (b - a)
+                fc = cone_angle(c)[0]
+        hi = 0.5 * (a + b)
+        max_angle = cone_angle(hi)[0]
+        if max_angle < delta:
+            raise ValueError(
+                f"the shock is detached: a cone half angle of {delta_deg} deg "
+                f"exceeds the maximum {math.degrees(max_angle):.3f} deg at M = {mach}"
+            )
+    for _ in range(80):
+        mid = 0.5 * (lo + hi)
+        if cone_angle(mid)[0] < delta:
+            lo = mid
+        else:
+            hi = mid
+    beta = 0.5 * (lo + hi)
+    _, vc, mn1 = cone_angle(beta)
+    mc = math.sqrt(2.0 / (g - 1) * vc * vc / (1 - vc * vc))
+
+    # pt is uniform behind the conical shock and the flow to the surface is
+    # isentropic, so the surface state follows from M_surface and the shock loss.
+    pt2_pt1 = (
+        ((g + 1) * mn1**2 / ((g - 1) * mn1**2 + 2)) ** (g / (g - 1))
+        * ((g + 1) / (2 * g * mn1**2 - (g - 1))) ** (1 / (g - 1))
+    )
+    p_pinf = pt2_pt1 * isentropic_pt_p(mach, g) / isentropic_pt_p(mc, g)
+    t_tinf = isentropic_tt_t(mach, g) / isentropic_tt_t(mc, g)
+    cp = 2 / (g * mach**2) * (p_pinf - 1)
+    return Cone(cp, math.degrees(beta), mc, p_pinf, t_tinf, p_pinf / t_tinf)

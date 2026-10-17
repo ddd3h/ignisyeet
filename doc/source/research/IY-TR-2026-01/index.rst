@@ -17,7 +17,7 @@ IY-TR-2026-01: NASA CFD verification and validation of IgnisYeet v0.4.0
        <p class="iy-page-title iy-report-title" role="presentation" lang="en">NASA CFD verification and validation of IgnisYeet v0.4.0</p>
        <p class="iy-meta" lang="en">Daisuke Nishihama ／ October 2026</p>
        <p class="iy-meta" lang="en">Keywords: verification and validation, grid convergence index, SU2, rocket aerodynamics, uncertainty quantification</p>
-       <p class="iy-actions"><a class="iy-btn iy-btn-primary" href="IY-TR-2026-01.pdf">PDF</a></p>
+       <p class="iy-actions"><a class="iy-btn iy-btn-primary" href="IY-TR-2026-01.pdf"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 11v6M9.5 14.5 12 17l2.5-2.5"/></svg>PDF</a></p>
      </div>
    </header>
 

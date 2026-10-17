@@ -1,0 +1,38 @@
+# Layer 0 of the NASA WIND/NPARC verification study: SU2 8.3.0 (ignisyeet-su2-native), Euler, run directly with the numerics of a configuration `ignisyeet aero` wrote.
+# Producer: python -m nasa_vv.cases.layer0 (research/nasa_vv/cases/layer0.py). Numerics and gas model: copied by nasa_vv.su2cfg.layer0_config from tests/data/golden_euler.cfg (sha256 18ad548cc4b1).
+# Exact references: nasa_vv.exact.oblique_shock(2.5, 15), taylor_maccoll(2.35, 10), prandtl_meyer_expansion(2.5, 15).
+# Grids: body-fitted, structured, exactly nested (every coarse node is a fine node); 65x49, 129x97 and 257x193 nodes, i.e. 64x48, 128x96 and 256x192 cells, so the refinement ratio is exactly 2.
+# Boundaries: inlet, outlet and top are MARKER_FAR (supersonic in and out); the lower boundary is an Euler wall; for the cone the axis (x < 0) is MARKER_SYM under AXISYMMETRIC= YES.
+# The lower boundary of the wedge and of the expansion is one MARKER_EULER marker. Split in two at the expansion corner, the corner node became a stagnation point (u = v = 0, p = 3 p_inf) and rms[Rho] stalled near -1.5.
+# Every wave leaves through the outlet (wedge shock at y = 0.75, cone shock at r = 0.50, expansion fan head at y = 0.44 on x = 1); none reaches the top or returns to the sampled wall.
+# The only edit to the layer0_config output is OUTPUT_FILES= ( RESTART_ASCII, SURFACE_CSV ) in place of RESTART, so the solution can be read as text; the numerics are asserted identical to the golden's.
+# ITER = 20000 (a per-case budget, not a numerics key); CONV_RESIDUAL_MINVAL = -14 on rms[Rho] stops a run earlier.
+# Every run records Avg_Massflow(inlet) and Avg_Massflow(outlet) in its history.csv; they are not analysed here.
+# cfd is the mean of the nodal values in the window (wall nodes of the lower boundary for wall quantities); window is stated per row.
+# p/p_inf uses p_inf = 101325 Pa; wall_cp = 2 (p/p_inf - 1) / (gamma M^2); wall_mach is the local Mach number of the wall node.
+# shock_angle_deg: on each horizontal line y = c the x where p crosses (p_inf + p_wall)/2, linearly interpolated along the grid columns, with p_wall the CFD wall plateau of the same grid; a free least-squares line through the points, angle atan(slope).
+# wall_mach is the Mach number of the wall nodes. Those nodes carry an entropy excess; on the expansion it is the same on all three grids, so wall_mach there measures that excess and not the isentropic Mach number. The wall pressure is unaffected.
+# difference = cfd - exact; difference_pct = 100 (cfd - exact) / exact.
+# nodes: nodes of the grid; level: nodes in each direction.
+# residual_drop_orders: the peak of log10 rms[Rho] over the history minus its final value (the convention of rans_flatplate.csv).
+# iterations: the last inner iteration in history.csv.
+# stop_reason: 'residual target' if the final rms[Rho] is at most -14, otherwise 'iteration limit'.
+case,mach,level,nodes,quantity,cfd,exact,difference,difference_pct,residual_drop_orders,iterations,stop_reason,window
+wedge,2.5,65x49,3185,wall_p_ratio,2.468117546,2.467500128,0.000617418,0.02502,13.878,230,residual target,wall nodes 0.3 <= x <= 0.9
+wedge,2.5,65x49,3185,shock_angle_deg,37.00410163,36.94490033,0.0592013,0.1602,13.878,230,residual target,"10 lines y = 0.15..0.6 step 0.05; x where p = (p_inf + p_wall)/2; free least-squares line y = a x + b, angle = atan(a)"
+wedge,2.5,129x97,12513,wall_p_ratio,2.467816874,2.467500128,0.000316746,0.01284,13.563,137,residual target,wall nodes 0.3 <= x <= 0.9
+wedge,2.5,129x97,12513,shock_angle_deg,36.97616064,36.94490033,0.0312603,0.08461,13.563,137,residual target,"10 lines y = 0.15..0.6 step 0.05; x where p = (p_inf + p_wall)/2; free least-squares line y = a x + b, angle = atan(a)"
+wedge,2.5,257x193,49601,wall_p_ratio,2.467646058,2.467500128,0.00014593,0.005914,13.153,161,residual target,wall nodes 0.3 <= x <= 0.9
+wedge,2.5,257x193,49601,shock_angle_deg,36.95866558,36.94490033,0.0137653,0.03726,13.153,161,residual target,"10 lines y = 0.15..0.6 step 0.05; x where p = (p_inf + p_wall)/2; free least-squares line y = a x + b, angle = atan(a)"
+cone,2.35,65x49,3185,wall_cp,0.09224789377,0.09673061296,-0.00448272,-4.634,13.668,137,residual target,wall nodes 0.4 <= x <= 0.9
+cone,2.35,65x49,3185,wall_mach,1.939073083,2.146830863,-0.207758,-9.677,13.668,137,residual target,wall nodes 0.4 <= x <= 0.9
+cone,2.35,129x97,12513,wall_cp,0.09502070085,0.09673061296,-0.00170991,-1.768,13.319,143,residual target,wall nodes 0.4 <= x <= 0.9
+cone,2.35,129x97,12513,wall_mach,2.029732956,2.146830863,-0.117098,-5.454,13.319,143,residual target,wall nodes 0.4 <= x <= 0.9
+cone,2.35,257x193,49601,wall_cp,0.09600669961,0.09673061296,-0.000723913,-0.7484,12.738,132,residual target,wall nodes 0.4 <= x <= 0.9
+cone,2.35,257x193,49601,wall_mach,2.082823965,2.146830863,-0.0640069,-2.981,12.738,132,residual target,wall nodes 0.4 <= x <= 0.9
+pm15,2.5,65x49,3185,wall_p_ratio,0.3276423894,0.3274274113,0.000214978,0.06566,13.876,148,residual target,wall nodes 0.5 <= x <= 0.9
+pm15,2.5,65x49,3185,wall_mach,3.121374818,3.236843106,-0.115468,-3.567,13.876,148,residual target,wall nodes 0.5 <= x <= 0.9
+pm15,2.5,129x97,12513,wall_p_ratio,0.3275361392,0.3274274113,0.000108728,0.03321,13.437,151,residual target,wall nodes 0.5 <= x <= 0.9
+pm15,2.5,129x97,12513,wall_mach,3.121582974,3.236843106,-0.11526,-3.561,13.437,151,residual target,wall nodes 0.5 <= x <= 0.9
+pm15,2.5,257x193,49601,wall_p_ratio,0.3274591629,0.3274274113,3.17516e-05,0.009697,13.076,167,residual target,wall nodes 0.5 <= x <= 0.9
+pm15,2.5,257x193,49601,wall_mach,3.121792045,3.236843106,-0.115051,-3.554,13.076,167,residual target,wall nodes 0.5 <= x <= 0.9

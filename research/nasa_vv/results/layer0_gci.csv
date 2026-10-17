@@ -1,0 +1,23 @@
+# Layer 0 of the NASA WIND/NPARC verification study: SU2 8.3.0 (ignisyeet-su2-native), Euler, run directly with the numerics of a configuration `ignisyeet aero` wrote.
+# Producer: python -m nasa_vv.cases.layer0 (research/nasa_vv/cases/layer0.py). Numerics and gas model: copied by nasa_vv.su2cfg.layer0_config from tests/data/golden_euler.cfg (sha256 18ad548cc4b1).
+# Exact references: nasa_vv.exact.oblique_shock(2.5, 15), taylor_maccoll(2.35, 10), prandtl_meyer_expansion(2.5, 15).
+# Grids: body-fitted, structured, exactly nested (every coarse node is a fine node); 65x49, 129x97 and 257x193 nodes, i.e. 64x48, 128x96 and 256x192 cells, so the refinement ratio is exactly 2.
+# Boundaries: inlet, outlet and top are MARKER_FAR (supersonic in and out); the lower boundary is an Euler wall; for the cone the axis (x < 0) is MARKER_SYM under AXISYMMETRIC= YES.
+# The lower boundary of the wedge and of the expansion is one MARKER_EULER marker. Split in two at the expansion corner, the corner node became a stagnation point (u = v = 0, p = 3 p_inf) and rms[Rho] stalled near -1.5.
+# Every wave leaves through the outlet (wedge shock at y = 0.75, cone shock at r = 0.50, expansion fan head at y = 0.44 on x = 1); none reaches the top or returns to the sampled wall.
+# The only edit to the layer0_config output is OUTPUT_FILES= ( RESTART_ASCII, SURFACE_CSV ) in place of RESTART, so the solution can be read as text; the numerics are asserted identical to the golden's.
+# ITER = 20000 (a per-case budget, not a numerics key); CONV_RESIDUAL_MINVAL = -14 on rms[Rho] stops a run earlier.
+# Every run records Avg_Massflow(inlet) and Avg_Massflow(outlet) in its history.csv; they are not analysed here.
+# Constant-ratio grid convergence (nasa_vv.gci.constant_ratio, r = 2, Fs = 1.25), finest grid first, through the same gate and row writer as gci_existing.csv.
+# h_basis cells^-1/2 (2-D); n1..n3 are cells (the cells grow exactly 4x per level, so r21 = r32 = 2).
+# gci_fine_pct and gci_coarse_pct are relative to f1 and f2 (percent).
+# A level below 3 orders of residual drop is refused (family.MIN_RESIDUAL_DROP_ORDERS) and its quantities carry the refusal in note.
+# A note flags any computed order above 4 (twice the formal second order) or below 0.5 (a quarter of it): the triplet is then not in the asymptotic range and its GCI is not reliable.
+# The shock angle is a fit to crossings located on a vertex grid that does not follow the shock; the cone and expansion corner are singular at the tip and corner.
+study,condition,quantity,triplet,h_basis,n1,n2,n3,r21,r32,f1,f2,f3,order,extrapolated,gci_fine_pct,gci_coarse_pct,asymptotic_ratio,monotone,note
+layer0,wedge M=2.5,wall_p_ratio,257x193/129x97/65x49,cells^-1/2 (2-D),49152,12288,3072,2,2,2.467646058,2.467816874,2.468117546,0.81574278,2.46742136,0.0113822,0.020033609,1.0000692,True,
+layer0,wedge M=2.5,shock_angle_deg,257x193/129x97/65x49,cells^-1/2 (2-D),49152,12288,3072,2,2,36.95866558,36.97616064,37.00410163,0.6754365,36.92936456,0.099100659,0.15819679,1.0004734,True,
+layer0,cone M=2.35,wall_cp,257x193/129x97/65x49,cells^-1/2 (2-D),49152,12288,3072,2,2,0.09600669961,0.09502070085,0.09224789377,1.4916895,0.09655079466,0.70840766,2.0128427,0.9897299,True,
+layer0,cone M=2.35,wall_mach,257x193/129x97/65x49,cells^-1/2 (2-D),49152,12288,3072,2,2,2.082823965,2.029732956,1.939073083,0.77199655,2.157850334,4.502683,7.890039,0.97451008,True,
+layer0,pm15 M=2.5,wall_p_ratio,257x193/129x97/65x49,cells^-1/2 (2-D),49152,12288,3072,2,2,0.3274591629,0.3275361392,0.3276423894,0.46498124,0.3272567533,0.077265197,0.10662404,1.0002351,True,observed order p = 0.465 is below a quarter of the formal order of 2; the triplet is not in the asymptotic range and this GCI is not reliable
+layer0,pm15 M=2.5,wall_mach,257x193/129x97/65x49,cells^-1/2 (2-D),49152,12288,3072,2,2,3.121792045,3.121582974,3.121374818,,,,,,True,the finer pair changes at least as much as the coarser pair; the solution is not converging under refinement

@@ -51,6 +51,11 @@ COLUMNS = ["case", "mach", "level", "inflow_kg_s", "outflow_kg_s", "imbalance_re
            "residual_drop_orders", "stop_reason"]
 
 
+def shown(imbalance: float) -> str:
+    """The imbalance as written in the CSV: 4 significant digits, or '<1e-09' where it is not resolved."""
+    return f"<{PRINT_FLOOR:g}" if imbalance <= PRINT_FLOOR else format(imbalance, ".4g")
+
+
 def flux_imbalance(inflow_kg_s: float, outflow_kg_s: float) -> float:
     """abs(inflow - outflow) / abs(inflow); ValueError on a NaN or on a zero inflow."""
     if math.isnan(inflow_kg_s) or math.isnan(outflow_kg_s):
@@ -130,22 +135,24 @@ def collect(work: pathlib.Path, reference: pathlib.Path | None = None) -> list[d
             inflow, outflow = split_fluxes({m: fl[m] for m in markers})
             imb = flux_imbalance(inflow, outflow)
             io_in, io_out = split_fluxes({"inlet": fl["inlet"], "outlet": fl["outlet"]})
+            io_imb = flux_imbalance(io_in, io_out)
             rows.append({
                 "case": name, "mach": f"{case.mach:g}", "level": L.level_name(level),
                 "inflow_kg_s": format(inflow, ".10g"), "outflow_kg_s": format(outflow, ".10g"),
-                "imbalance_rel": format(imb, ".4g"), "method": METHOD,
+                "imbalance_rel": shown(imb), "method": METHOD,
                 "source": f"{rel.as_posix()} ({name} {L.level_name(level)})",
                 "resolved": str(imb > PRINT_FLOOR),
-                "imbalance_inlet_outlet_rel": format(flux_imbalance(io_in, io_out), ".4g"),
+                "imbalance_inlet_outlet_rel": shown(io_imb),
                 "inlet_vs_freestream_rel": format((fl["inlet"] - ref_flux) / ref_flux, ".4g"),
                 "marker_fluxes_kg_s": "; ".join(f"{m}={fl[m]:.10g}" for m in markers),
                 "residual_drop_orders": format(r["drop"], ".3f"), "stop_reason": r["stop"],
-                "_inlet": fl["inlet"]})
+                "_inlet": fl["inlet"], "_imbalance_rel": imb, "_imbalance_inlet_outlet_rel": io_imb})
     return rows
 
 
 def _trend(rows: list[dict], name: str, column: str) -> list[float]:
-    return [float(r[column]) for r in rows if r["case"] == name]
+    """The unrounded numbers of a column (the hidden '_<column>' key), in level order."""
+    return [r["_" + column] for r in rows if r["case"] == name]
 
 
 def _ratios(values: list[float]) -> str:
@@ -171,10 +178,10 @@ def _cone_text(rows: list[dict]) -> str:
 
 def header(rows: list[dict], work: pathlib.Path, reference: pathlib.Path | None) -> list[str]:
     home = str(pathlib.Path.home())
-    shown = lambda p: str(p).replace(home, "~", 1)
+    tilde = lambda p: str(p).replace(home, "~", 1)
     lines = [
         "Farfield mass-flux balance of the layer 0 cases: verification of the code against the conservation of mass; no model is compared with another here.",
-        f"Producer: python -m nasa_vv.cases.massflux (research/nasa_vv/cases/massflux.py). Work directory: {shown(work)}, read as it stands (one history.csv per case and level).",
+        f"Producer: python -m nasa_vv.cases.massflux (research/nasa_vv/cases/massflux.py). Work directory: {tilde(work)}, read as it stands (one history.csv per case and level).",
         f"The runs are layer 0's (research/nasa_vv/cases/layer0.py, last commit that changed it: {_last_commit(LAYER0_PY)}): its case, grid and configuration builders with config_text(case, analyze=<every marker>), SU2 8.3.0 (ignisyeet-su2-native), Euler, 65x49, 129x97 and 257x193 nodes.",
         f"Method: {METHOD}. MARKER_ANALYZE lists every boundary marker of the mesh (the lower boundary marker(s), inlet, outlet, top), MARKER_ANALYZE_AVERAGE= MASSFLUX, SURFACE_MASSFLOW in HISTORY_OUTPUT. SU2 reports the flux itself, so no integration of rho u.n from the surface output is used.",
         "Sign convention, read from the data: Avg_Massflow is positive for flux into the domain (the inlet reads positive and the outlet negative). A marker with a net positive flux counts to inflow_kg_s and one with a net negative flux to outflow_kg_s, both written as positive numbers; the flux of a marker is its net, so a marker that passes flux in one part and out in another counts by its net. The balance therefore closes over every marker, the lower boundary included, and nothing is left out.",
@@ -183,7 +190,7 @@ def header(rows: list[dict], work: pathlib.Path, reference: pathlib.Path | None)
         "Units: wedge and pm15 are planar, kg/s per metre of span (the mesh is 2-D). The cone cases are axisymmetric and the flux is for the full revolution (next line).",
         _cone_text(rows),
         "Evidence that Avg_Massflow is an integral over the marker and not a mean: the wedge outlet is about 0.73 m tall and the inlet 1 m, and both read the same flux.",
-        f"Precision floor: history.csv prints about 10 significant digits, so a relative imbalance at or below {PRINT_FLOOR:g} is not resolved; resolved is False there and no trend with refinement is claimed for those rows.",
+        f"Precision floor: history.csv prints about 10 significant digits, so a relative imbalance at or below {PRINT_FLOOR:g} is not resolved; resolved is False there, imbalance_rel and imbalance_inlet_outlet_rel are written as '<{PRINT_FLOOR:g}' instead of a number (not 0, not the unresolved difference), and no trend with refinement is claimed for those rows.",
         "inlet_vs_freestream_rel = (Avg_Massflow(inlet) - analytic freestream flux through the inlet) / analytic, with the analytic flux rho_inf U_inf H (planar) or pi rho_inf U_inf R^2 (axisymmetric), rho_inf from p_inf = 101325 Pa, T_inf = 288.15 K and the golden gas constants. It separates the quadrature error of the inlet from the imbalance.",
         "residual_drop_orders and stop_reason are layer 0's (peak minus final log10 rms[Rho]; 'residual target' if the final rms[Rho] is at most -14).",
     ]
@@ -191,22 +198,30 @@ def header(rows: list[dict], work: pathlib.Path, reference: pathlib.Path | None)
         imb = _trend(rows, name, "imbalance_rel")
         io = _trend(rows, name, "imbalance_inlet_outlet_rel")
         lines.append(
-            f"{name}: imbalance_rel on 65x49, 129x97, 257x193 = {', '.join(f'{v:.3g}' for v in imb)}"
+            f"{name}: imbalance_rel on 65x49, 129x97, 257x193 = {', '.join(shown(v) for v in imb)}"
             + (f" (successive ratios {_ratios(imb)})" if any(v > PRINT_FLOOR for v in imb) else " (all at or below the print floor)")
-            + f"; inlet and outlet only = {', '.join(f'{v:.3g}' for v in io)}.")
+            + f"; inlet and outlet only = {', '.join(shown(v) for v in io)}.")
     drop = min(float(r["residual_drop_orders"]) for r in rows)
-    dev = [float(r["inlet_vs_freestream_rel"]) for r in rows if r["case"] == "cone"]
-    ratios = [a / b for n in ("cone", "cone_sym_axis") for a, b in zip(_trend(rows, n, "imbalance_rel"), _trend(rows, n, "imbalance_rel")[1:])]
-    lines.append(
-        f"Reading: on the planar cases the balance closes to the print floor on every grid; that is what a conservative scheme gives at a converged state "
-        f"(every run dropped rms[Rho] by {drop:.1f} orders or more), so it tests the convergence and the flux bookkeeping, not the discretisation error. "
-        "On the cone the flux carries the 2 pi r weight, so the balance is not an identity of the scheme, and its imbalance is nonzero on every grid; it falls with the grid by a factor of "
-        f"{min(ratios):.1f} to {max(ratios):.1f} per refinement (4 would be second order) from {max(_trend(rows, 'cone', 'imbalance_rel')):.2g} on the coarse grid. The cone inlet's own deviation from the analytic flux is {', '.join(f'{v:.2g}' for v in dev)} "
-        "on the three grids, a fraction of the imbalance; the rest is in the outlet. That the weight is the cause is an interpretation consistent with these numbers, not a proof.")
-    over = [(r["case"], r["level"], r["imbalance_rel"]) for r in rows if float(r["imbalance_rel"]) > TOLERANCE]
+    cone_resolved = all(v > PRINT_FLOOR for n in ("cone", "cone_sym_axis") for v in _trend(rows, n, "imbalance_rel"))
+    if cone_resolved:
+        half = [b / a for a, b in zip(_trend(rows, "cone", "imbalance_rel"), _trend(rows, "cone_sym_axis", "imbalance_rel"))]
+        dev = [float(r["inlet_vs_freestream_rel"]) for r in rows if r["case"] == "cone"]
+        ratios = [a / b for n in ("cone", "cone_sym_axis") for a, b in zip(_trend(rows, n, "imbalance_rel"), _trend(rows, n, "imbalance_rel")[1:])]
+        lines.append(
+            f"Reading: on the planar cases the balance closes to the print floor on every grid; that is what a conservative scheme gives at a converged state "
+            f"(every run dropped rms[Rho] by {drop:.1f} orders or more), so it tests the convergence and the flux bookkeeping, not the discretisation error. "
+            "On the cone the flux carries the 2 pi r weight; the balance is then probably not an identity of the scheme, and its imbalance is nonzero on every grid. "
+            f"It falls with the grid by a factor of {min(ratios):.1f} to {max(ratios):.1f} per refinement from {max(_trend(rows, 'cone', 'imbalance_rel')):.2g} on the coarse grid; "
+            "these two ratios per case are consistent with a second-order discretisation error (a ratio of 4), which with three grids is an observation and not an observed order. "
+            f"The cone inlet's own deviation from the analytic flux is {', '.join(f'{v:.2g}' for v in dev)} on the three grids, a fraction of the imbalance; the rest is in the outlet. "
+            "That the weight is the cause is an interpretation consistent with these numbers, not a proof. "
+            f"cone_sym_axis has {min(half):.2f} to {max(half):.2f} times the imbalance of cone on the same grid (axis as MARKER_SYM instead of part of the one Euler wall); that difference is not explained.")
+    else:
+        lines.append("Reading: not given; a cone imbalance is at the print floor, so there is no ratio to read.")
+    over = [(r["case"], r["level"], r["imbalance_rel"]) for r in rows if r["_imbalance_rel"] > TOLERANCE]
     lines.append("Rows above the tutorial's 1e-3: " + (", ".join(f"{c} {lv} {v}" for c, lv, v in over) if over else "none."))
     if reference is not None:
-        lines.append(f"Check made while collecting: for every case and level the inlet and outlet fluxes and the last inner iteration equal those of {shown(reference)} (Task 10's runs, with only the inlet and the outlet analysed), so the extra analysed markers did not change the solve.")
+        lines.append(f"Check made while collecting: for every case and level the inlet and outlet fluxes and the last inner iteration equal those of {tilde(reference)} (Task 10's runs, with only the inlet and the outlet analysed), so the extra analysed markers did not change the solve.")
     return lines
 
 

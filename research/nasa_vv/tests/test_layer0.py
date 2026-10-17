@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The parts of the layer 0 driver that need no SU2 run."""
+import hashlib
+
 import numpy as np
 import pytest
 
@@ -16,6 +18,20 @@ def test_every_case_keeps_the_golden_numerics_and_changes_one_line(name):
     assert ("AXISYMMETRIC= YES" in cfg) == name.startswith("cone")
     assert ("MARKER_SYM" in cfg) == (name == "cone_sym_axis")
     assert "MARKER_ANALYZE= ( inlet, outlet )" in cfg
+
+
+DEFAULT_CONFIG_SHA256 = {
+    "wedge": "5fdb24a70f8b167192b8b43ce5dea2cec5299498d81b00503954c3e41aa4f959",
+    "cone": "8e1ce1da7ec8fe3c8ef1d0d9374912b942d859f84140478602b4a54363fd90f8",
+    "cone_sym_axis": "f87f333d777b7311c0924ccdf52a9659205fab038504c69487944dcc952a96e6",
+    "pm15": "5fdb24a70f8b167192b8b43ce5dea2cec5299498d81b00503954c3e41aa4f959",
+}
+"""sha256 of config_text(case) as Task 10 ran it (the case.cfg of its runs); wedge and pm15 differ only in the mesh."""
+
+
+@pytest.mark.parametrize("name", list(L.CASES))
+def test_the_default_configuration_is_byte_for_byte_the_one_task_10_ran(name):
+    assert hashlib.sha256(L.config_text(L.CASES[name]).encode()).hexdigest() == DEFAULT_CONFIG_SHA256[name]
 
 
 @pytest.mark.parametrize("name", list(L.CASES))

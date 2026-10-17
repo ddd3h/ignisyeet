@@ -33,6 +33,7 @@ def test_nan_in_either_argument_is_an_error(inflow, outflow):
 # ---------------------------------------------------------------- the collector, on synthetic histories
 
 import csv  # noqa: E402
+import pathlib  # noqa: E402
 
 from nasa_vv.cases import layer0 as L  # noqa: E402
 from nasa_vv.cases import massflux as M  # noqa: E402
@@ -99,7 +100,7 @@ def test_flux_through_the_top_enters_the_balance_and_inlet_outlet_alone_does_not
     rows = M.collect(_synthetic_work(tmp_path / "w", leak=0.0, top=-5.0))
     r = rows[0]
     assert float(r["imbalance_rel"]) == pytest.approx(5.0 / M.analytic_inflow(L.CASES["wedge"]), rel=1e-3)
-    assert float(r["imbalance_inlet_outlet_rel"]) == 0.0
+    assert r["imbalance_inlet_outlet_rel"] == "<1e-09"
     assert r["resolved"] == "True"
 
 
@@ -127,7 +128,7 @@ def test_the_csv_is_byte_identical_when_collected_twice(tmp_path):
     assert a == b
     text = a.decode()
     assert text.startswith("# ") and "last commit that changed it:" in text
-    assert "Sign convention" in text and f"Work directory: {work}," in text
+    assert "Sign convention" in text and f"Work directory: {work}," in text.replace("~", str(pathlib.Path.home()), 1)
     body = [ln for ln in text.splitlines() if not ln.startswith("#")]
     assert body[0].split(",")[:8] == M.COLUMNS[:8]
     assert len(body) == 13
@@ -136,3 +137,20 @@ def test_the_csv_is_byte_identical_when_collected_twice(tmp_path):
 def test_main_refuses_a_work_directory_under_tmp():
     with pytest.raises(SystemExit):
         M.main(["--work", "/tmp/nasa_vv_massflux_refused"])
+
+
+def test_the_header_shows_a_work_directory_under_home_with_a_tilde(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    work = _synthetic_work(home / ".cache" / "w")
+    monkeypatch.setattr(pathlib.Path, "home", classmethod(lambda cls: home))
+    text = M.write_csv(M.collect(work), work, tmp_path / "o.csv").read_text()
+    assert "Work directory: ~/.cache/w," in text
+
+
+def test_an_unresolved_imbalance_is_written_as_a_bound_and_a_resolved_one_as_a_number(tmp_path):
+    work = _synthetic_work(tmp_path / "w", leak=0.0)
+    r = M.collect(work)[0]
+    assert (r["imbalance_rel"], r["imbalance_inlet_outlet_rel"], r["resolved"]) == ("<1e-09", "<1e-09", "False")
+    assert M.shown(1e-4) == "0.0001" and M.shown(1e-9) == "<1e-09"
+    text = M.write_csv(M.collect(work), work, tmp_path / "o.csv").read_text()
+    assert "are written as '<1e-09'" in text

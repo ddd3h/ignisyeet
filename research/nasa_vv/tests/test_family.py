@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
+import numpy as np
 import pytest
 
 from nasa_vv.family import GridFamily, GridLevel, study
@@ -231,6 +232,47 @@ def test_the_same_nodes_read_as_3d_give_the_wrong_ratio():
     assert h[1] / h[0] == pytest.approx(1.58, abs=0.01)
 
 
-def test_ndim_must_be_two_or_three():
+@pytest.mark.parametrize("ndim", [1, 4])
+def test_ndim_must_be_two_or_three(ndim):
     with pytest.raises(ValueError, match="ndim"):
-        GridFamily(_similar().levels, ndim=1)
+        GridFamily(_similar().levels, ndim=ndim)
+
+
+def _lone(drop, solver):
+    return GridLevel("x", 1000, {"s": 1.0}, residual_drop_orders=drop,
+                     solver_converged=solver)
+
+
+def test_a_numpy_false_verdict_wins_over_a_large_drop():
+    with pytest.raises(ValueError, match=r"'x'.*not converged by the solver"):
+        _lone(8.0, np.False_).check_converged()
+
+
+def test_a_numpy_false_verdict_is_reported_as_the_solver_verdict_without_a_drop():
+    with pytest.raises(ValueError, match=r"'x'.*not converged by the solver"):
+        _lone(None, np.False_).check_converged()
+
+
+def test_a_numpy_true_verdict_passes_without_the_drop_floor():
+    _lone(2.0, np.True_).check_converged()
+
+
+def test_a_numpy_float_drop_of_three_passes_without_a_verdict():
+    _lone(np.float64(3.0), None).check_converged()
+
+
+def test_a_numpy_float_drop_below_three_is_refused_without_a_verdict():
+    with pytest.raises(ValueError, match=r"dropped only 2.5.*no solver verdict"):
+        _lone(np.float64(2.5), None).check_converged()
+
+
+def test_a_numpy_nan_drop_is_no_evidence():
+    with pytest.raises(ValueError, match="no convergence evidence"):
+        _lone(np.float64("nan"), None).check_converged()
+
+
+def test_the_evidence_is_stored_as_plain_python_values():
+    lv = _lone(np.float64(4.0), np.True_)
+    assert type(lv.solver_converged) is bool
+    assert type(lv.residual_drop_orders) is float
+    assert lv.basis == "solver status"

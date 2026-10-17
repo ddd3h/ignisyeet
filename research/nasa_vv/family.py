@@ -39,6 +39,15 @@ class GridLevel:
     residual_drop_orders: float | None = None
     solver_converged: bool | None = None
 
+    def __post_init__(self) -> None:
+        # Verdicts and drops often arrive as numpy scalars; `numpy.False_ is
+        # False` is false, so normalise once and let every later test see plain
+        # Python values.
+        if self.solver_converged is not None:
+            self.solver_converged = bool(self.solver_converged)
+        if self.residual_drop_orders is not None:
+            self.residual_drop_orders = float(self.residual_drop_orders)
+
     @property
     def basis(self) -> str:
         """What justified this level, derived from the evidence it carries."""

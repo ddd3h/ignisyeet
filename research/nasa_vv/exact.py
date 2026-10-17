@@ -277,3 +277,86 @@ def taylor_maccoll(mach: float, delta_deg: float, gamma: float = 1.4) -> Cone:
     t_tinf = isentropic_tt_t(mach, g) / isentropic_tt_t(mc, g)
     cp = 2 / (g * mach**2) * (p_pinf - 1)
     return Cone(cp, math.degrees(beta), mc, p_pinf, t_tinf, p_pinf / t_tinf)
+
+
+# ------------------------------------------------------------------ Blasius flat plate
+
+_BLASIUS_ETA_MAX = 10.0
+_BLASIUS_STEP = 0.005
+
+
+def blasius_cf(re_x: float) -> float:
+    """Local skin-friction coefficient of the laminar incompressible flat plate, 0.664 / sqrt(Re_x).
+
+    Cf = tau_w / (rho U^2 / 2), Re_x = U x / nu with the free-stream U and nu.
+    """
+    return 0.664 / math.sqrt(re_x)
+
+
+def _blasius_rhs(y: tuple[float, float, float]) -> tuple[float, float, float]:
+    """Blasius' equation f''' + f f'' / 2 = 0 as a first-order system in (f, f', f'')."""
+    f, fp, fpp = y
+    return fp, fpp, -0.5 * f * fpp
+
+
+def _blasius_rk4(y: tuple[float, float, float], h: float) -> tuple[float, float, float]:
+    k1 = _blasius_rhs(y)
+    k2 = _blasius_rhs(tuple(a + 0.5 * h * b for a, b in zip(y, k1)))
+    k3 = _blasius_rhs(tuple(a + 0.5 * h * b for a, b in zip(y, k2)))
+    k4 = _blasius_rhs(tuple(a + h * b for a, b in zip(y, k3)))
+    return tuple(a + h / 6.0 * (b + 2.0 * c + 2.0 * d + e) for a, b, c, d, e in zip(y, k1, k2, k3, k4))
+
+
+def _blasius_integrate(fpp0: float, eta_max: float, n: int) -> list[tuple[float, float, float, float]]:
+    """(eta, f, f', f'') at n + 1 equally spaced points, RK4 with substeps of at most _BLASIUS_STEP."""
+    h_out = eta_max / n
+    m = max(1, math.ceil(h_out / _BLASIUS_STEP - 1e-12))
+    h = h_out / m
+    y = (0.0, 0.0, fpp0)
+    out = [(0.0, *y)]
+    for k in range(n):
+        for _ in range(m):
+            y = _blasius_rk4(y, h)
+        out.append(((k + 1) * h_out, *y))
+    return out
+
+
+_blasius_shot: dict[float, float] = {}
+
+
+def _blasius_wall_curvature(eta_max: float) -> float:
+    """f''(0) such that f'(eta_max) = 1, by bisection (f'(eta_max) increases with f''(0))."""
+    if eta_max not in _blasius_shot:
+        n = round(eta_max / _BLASIUS_STEP)
+        lo, hi = 0.1, 0.6
+        for _ in range(70):
+            mid = 0.5 * (lo + hi)
+            if _blasius_integrate(mid, eta_max, n)[-1][2] < 1.0:
+                lo = mid
+            else:
+                hi = mid
+        _blasius_shot[eta_max] = 0.5 * (lo + hi)
+    return _blasius_shot[eta_max]
+
+
+def blasius_profile(n: int = 200, eta_max: float = _BLASIUS_ETA_MAX) -> list[tuple[float, float]]:
+    """The Blasius profile (eta, f'(eta)) = (y sqrt(U / nu x), u / U) at n + 1 equally spaced points of [0, eta_max].
+
+    f''' + f f'' / 2 = 0, f(0) = f'(0) = 0, f'(eta_max) = 1, integrated with RK4 and
+    shot on f''(0) (0.332057).
+    """
+    return [(e, fp) for e, _, fp, _ in _blasius_integrate(_blasius_wall_curvature(eta_max), eta_max, n)]
+
+
+def blasius_thicknesses(eta_max: float = _BLASIUS_ETA_MAX) -> tuple[float, float]:
+    """(delta*, theta) in the similarity coordinate eta: 1.7208 and 0.6641.
+
+    delta* = int (1 - f') d eta = eta_max - f(eta_max); theta = int f' (1 - f') d eta, by the trapezoid rule on
+    the integrated profile.
+    """
+    pts = _blasius_integrate(_blasius_wall_curvature(eta_max), eta_max, round(eta_max / _BLASIUS_STEP))
+    h = eta_max / (len(pts) - 1)
+    delta_star = eta_max - pts[-1][1]
+    g = [fp * (1.0 - fp) for _, _, fp, _ in pts]
+    theta = h * (0.5 * g[0] + sum(g[1:-1]) + 0.5 * g[-1])
+    return delta_star, theta

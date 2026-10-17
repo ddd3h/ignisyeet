@@ -18,6 +18,9 @@ from pathlib import Path
 import pytest
 
 from nasa_vv.exact import (
+    blasius_cf,
+    blasius_profile,
+    blasius_thicknesses,
     isentropic_pt_p,
     isentropic_tt_t,
     oblique_shock,
@@ -320,3 +323,50 @@ def test_cone_shock_angle_agrees_with_an_independent_source():
 def test_cone_shock_angle_matches_the_sims_table_at_its_own_mach_numbers(mach):
     expected = math.degrees(SP3004_TABLE_NODES[mach])
     assert taylor_maccoll(mach, 10.0).beta_deg == pytest.approx(expected, abs=1e-3)
+
+
+# ------------------------------------------------------------------ Blasius flat plate
+
+
+def test_blasius_skin_friction_formula():
+    assert blasius_cf(1.0e5) == pytest.approx(0.664 / math.sqrt(1.0e5), rel=1e-12)
+
+
+def test_blasius_profile_boundary_conditions():
+    """f'(0) = 0 and f' -> 1 far from the wall."""
+    p = blasius_profile()
+    assert p[0][1] == pytest.approx(0.0, abs=1e-9)
+    assert p[-1][1] == pytest.approx(1.0, abs=1e-3)
+
+
+def test_blasius_wall_shear_constant():
+    """f''(0) = 0.332057, the value the 0.664 in Cf comes from."""
+    p = blasius_profile(n=4000)
+    eta1, fp1 = p[1]
+    assert fp1 / eta1 == pytest.approx(0.332057, rel=5e-3)
+
+
+def test_blasius_profile_is_monotone_and_has_n_plus_one_points():
+    p = blasius_profile(n=200)
+    assert len(p) == 201
+    eta = [e for e, _ in p]
+    fp = [v for _, v in p]
+    assert eta[0] == 0.0 and all(b > a for a, b in zip(eta, eta[1:]))
+    assert all(b >= a for a, b in zip(fp, fp[1:]))
+
+
+def test_blasius_profile_matches_tabulated_values():
+    """Schlichting, Boundary-Layer Theory, Table 7.1: f'(eta) = u/U at eta = 1, 2, 3, 5."""
+    prof = blasius_profile(n=200, eta_max=10.0)
+    for eta, want in ((1.0, 0.32979), (2.0, 0.62977), (3.0, 0.84605), (5.0, 0.99155)):
+        got = min(prof, key=lambda t: abs(t[0] - eta))
+        assert got[0] == pytest.approx(eta, abs=1e-9)
+        assert got[1] == pytest.approx(want, abs=2e-5)
+
+
+def test_blasius_thicknesses_in_similarity_coordinates():
+    """delta* sqrt(U / nu x) = 1.7208, theta sqrt(U / nu x) = 0.6641 = 2 f''(0) (momentum balance: Cf = 2 theta / x)."""
+    delta_star, theta = blasius_thicknesses()
+    assert delta_star == pytest.approx(1.72079, abs=2e-5)
+    assert theta == pytest.approx(0.66411, abs=2e-5)
+    assert 2.0 * theta == pytest.approx(1.328, abs=1e-3)   # 2 theta = 2 * 0.664 = twice the Cf sqrt(Re_x)

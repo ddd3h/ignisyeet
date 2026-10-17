@@ -672,7 +672,7 @@ The findings imply, without having tested it, that a global refinement control, 
 The code, the results and the figures are in the IgnisYeet repository under \path{research/IY-TR-2026-01/}: the result files in \path{research/IY-TR-2026-01/nasa_vv/results/}, the figures in \path{research/IY-TR-2026-01/nasa_vv/figures/}, the code in \path{research/IY-TR-2026-01/nasa_vv/} (the exact solutions in \path{exact.py}, the GCI procedure in \path{gci.py}, the case producers in \path{cases/}, the tests in \path{tests/}), and the sources of the papers in \path{research/IY-TR-2026-01/paper/}.
 All numbers in this paper come from the result files and the committed figures, except where a comment in the source names another committed file.
 The product's CFD runs made for this study used IgnisYeet v0.4.0 with SU2~8.3.0, apart from the one exception stated in Section~\ref{sec:method}.
-The full catalogue of results, including the tables and per-grid values condensed here, is in the web report \path{research/IY-TR-2026-01/nasa_vv/report/ja/report.md} (in Japanese).
+The full catalogue of results, including the tables and per-grid values condensed here, is in the result files.
 
 \bibliographystyle{plainnat}
 \bibliography{references}
@@ -722,7 +722,7 @@ In the symmetry-axis variant the bound fails by 0.75 against 0.71\,\%.
 Where the bound held, the ratio of GCI to true error is about 8 for the expansion wall pressure, 3.1 for the cone wall Mach number and 1.5 for the symmetry-axis cone wall Mach number.
 % source: results/layer0_gci.csv (plate rows), results/layer0_plate.csv
 On the laminar plate the $C_f$ errors of the three grids are $-1.95$, $-0.71$ and $+0.008\,\%$, and what remains after extrapolation is $+0.97\,\%$, which the GCI cannot account for.
-The difference from Blasius mixes the edge velocity, compressibility, a domain not shown converged, a leading-edge stagnation node that does not converge, and an order that cannot separate the scheme from a leading-edge error carried downstream, each attributable in part but none fully quantified (details in the web report).
+The difference from Blasius mixes the edge velocity, compressibility, a domain not shown converged, a leading-edge stagnation node that does not converge, and an order that cannot separate the scheme from a leading-edge error carried downstream, each attributable in part but none fully quantified (details in the result files).
 
 \paragraph{The NPARC 10$^\circ$ cone table.}
 \label{sec:cone10}
@@ -730,7 +730,7 @@ The difference from Blasius mixes the edge velocity, compressibility, a domain n
 The cone of layers~0 and~1 is the NPARC archive's 10$^\circ$ cone at Mach 2.35 \citep{nparc_cone10}.
 Its surface Mach number, 2.1469, agrees with the Taylor--Maccoll value computed here to about $3\times10^{-3}\,\%$, but its shock angle, $27.1843^\circ$ against $26.7367^\circ$, does not, nor do its pressure, temperature and density ratios, and its shock angle is also inconsistent with its own surface Mach number and its own printed ratios.
 % source: results/cone_shock_angle_sources.csv
-Three further sources, tabulated cone solutions \citep{sims1964}, the charts of \citet{ames1953} and a separate Taylor--Maccoll implementation inside the product that is only partly independent of ours, support the computed angle, and none supports $27.18^\circ$ (values in the web report); they rest on the same theory, so they test our implementation and the archive's number, not the theory.
+Three further sources, tabulated cone solutions \citep{sims1964}, the charts of \citet{ames1953} and a separate Taylor--Maccoll implementation inside the product that is only partly independent of ours, support the computed angle, and none supports $27.18^\circ$ (values in the result files); they rest on the same theory, so they test our implementation and the archive's number, not the theory.
 
 \paragraph{Layer 1.}
 % source: results/layer1_cone.csv (header and level columns)
@@ -746,7 +746,7 @@ The window differences fall by a factor of 2.0 from the coarse to the medium lev
 % source: results/layer0_vs_layer1.csv, results/layer0_gci.csv (cone wall_cp)
 Besides the chain, layers~0 and~1 differ in mesh type, in domain, in the cylinder and tail, in the freestream state, in the way the wall $\Cp$ is extracted, and in the placement of the window relative to the tip in cell units; the shock angle and the axial force of the cone alone were not compared in layer~1.
 The freestream state of layer~1 is the product's launch altitude (20\,m, $p=101\,085$\,Pa, $T=288.02$\,K), that of layer~0 $p=101\,325$\,Pa, $T=288.15$\,K; Mach number and $\gamma$ are the same.
-The final surface output can be incomplete when the runner stops SU2 (counts of complete values in the web report); for the fine level the VTK file used is the periodic snapshot of iteration 200 while the history has 210 iterations, so there is no complete pressure source at the final iteration.
+The final surface output can be incomplete when the runner stops SU2 (counts of complete values in the result files); for the fine level the VTK file used is the periodic snapshot of iteration 200 while the history has 210 iterations, so there is no complete pressure source at the final iteration.
 On 213 cone-wall nodes held by both files, the $\Cp$ of the two states differs by $6\times10^{-5}$ relative to the mean $\Cp$; this does not alter any gate, and the pressure-coefficient fields used were complete in every level.
 
 \paragraph{Layer 2: grids.}
@@ -778,7 +778,7 @@ The iterative error of the Mach 2 normal-force slope on the finest grid is $3.3\
 For 28 rows there is no ratio because the matching GCI is refused, oscillatory, flagged or unusable: the iterative error is known there and cannot be compared.
 Five flat-plate rows exceed 1, but they are indicative only: they set the iterative error of the plate drag (0.12 to 1.9\,\% at Mach 0.2) against the grid uncertainty of the skin friction (0.038\,\%), another quantity, and do not invalidate the skin-friction GCI.
 % source: results/consistency.csv
-Where the consistency checks fail without mirror symmetry, the even part is of the size of the same mesh's $C_N(0)$; some of the sample-rocket solves are early stops with the product's status ``accepted'' that enter as written (values in the web report).
+Where the consistency checks fail without mirror symmetry, the even part is of the size of the same mesh's $C_N(0)$; some of the sample-rocket solves are early stops with the product's status ``accepted'' that enter as written (values in the result files).
 % source: results/consistency.csv (ca_dalembert_refined rows), results/gci_sample_euler.csv
 At Mach 0.3 and zero incidence $|C_A|$ shrinks by factors of 1.38 and 1.49 over the three sample-rocket levels.
 The mass-flux balance was not checked on the layer-2 far field.
@@ -792,13 +792,13 @@ The sample-rocket comparison also sets a RANS value on a 3\,mm mesh against an E
 \paragraph{Spalart--Allmaras against SST.}
 \label{sec:model}
 % source: results/turbulence_models.csv (header and rows)
-The product cannot run a second turbulence model, so Spalart--Allmaras was compared with the Menter SST model (variant V1994m; SU2's default variant was not run) on the zero-pressure-gradient flat plate of the NASA Turbulence Modeling Resource \citep{tmr} with SU2 run directly (Mach 0.2, $Re=5\times10^{6}$ per metre, adiabatic wall, station $x=0.97$), on exactly nested grids built here, not those of the resource, with both models stopped by a residual criterion rather than the product's acceptance rule (details in the web report).
+The product cannot run a second turbulence model, so Spalart--Allmaras was compared with the Menter SST model (variant V1994m; SU2's default variant was not run) on the zero-pressure-gradient flat plate of the NASA Turbulence Modeling Resource \citep{tmr} with SU2 run directly (Mach 0.2, $Re=5\times10^{6}$ per metre, adiabatic wall, station $x=0.97$), on exactly nested grids built here, not those of the resource, with both models stopped by a residual criterion rather than the product's acceptance rule (details in the result files).
 % source: results/turbulence_models.csv (rows: cf and cd differences, GCI, orders, extrapolated values)
 The skin friction differs by $-3.70$, $-1.72$ and $-0.79\,\%$ (SST against Spalart--Allmaras) on the coarse, medium and fine grid; SST is first order here (observed order 1.02), and its last refinement moved the skin friction by 0.94\,\%.
 The Spalart--Allmaras GCI is flagged (observed order 5.3; GCI $8\times10^{-5}\,\%$), so its band is not used and no verdict is written.
 The plate drag differs by $-0.46\,\%$ against GCI bands of 0.67\,\% (Spalart--Allmaras) and 0.48\,\% (SST), which it does not exceed in sum, so it cannot be separated from the grid uncertainty; the extrapolated values differ by $+0.11\,\%$ in skin friction and $+0.46\,\%$ in drag, estimates on which no verdict is written.
 % source: results/turbulence_models.csv (TMR comparison)
-Against the published Turbulence Modeling Resource value for Spalart--Allmaras at this station (other programs and grids) the fine-grid skin friction here is $+0.80\,\%$ higher, a cross-comparison in which the grid, the numerics and the model variant differ and the difference is not attributed; an existing three-grid study of this plate and an empirical correlation are compared in the web report.
+Against the published Turbulence Modeling Resource value for Spalart--Allmaras at this station (other programs and grids) the fine-grid skin friction here is $+0.80\,\%$ higher, a cross-comparison in which the grid, the numerics and the model variant differ and the difference is not attributed; an existing three-grid study of this plate and an empirical correlation are compared in the result files.
 
 \section{The flight integrator}
 \label{sec:temporalapp}

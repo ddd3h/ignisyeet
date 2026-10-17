@@ -117,7 +117,7 @@ html_theme_options = {
     "source_directory": "doc/source/",
     # Furo's dark text is dim on its near-black background; brighten each level.
     "dark_css_variables": {
-        "color-foreground-primary": "#e8e9ea",
+        "color-foreground-primary": "#f4f5f6",
         "color-foreground-secondary": "#b8bcc2",
         "color-foreground-muted": "#9ea3a9",
     },

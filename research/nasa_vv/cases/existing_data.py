@@ -120,6 +120,9 @@ ITERATION_CAP = 20000
 ASYMPTOTIC_ORDER_LIMIT = 4.0
 """Twice the formal order of 2: a larger observed order puts the triplet outside the asymptotic range."""
 
+LOW_ORDER_LIMIT = 0.5
+"""A quarter of the formal order: as p approaches 0, r**p - 1 does too and the GCI is that division, not the error."""
+
 _STATUS: dict[str, bool | None] = {
     "converged": True,
     "unconverged": False,
@@ -298,9 +301,15 @@ def _g(x: float | None, spec: str = ".8g") -> str:
 
 
 def _flag(order: float | None) -> str:
-    if order is None or order <= ASYMPTOTIC_ORDER_LIMIT:
+    if order is None:
         return ""
-    return (f"observed order p = {order:.2f} exceeds twice the formal order of 2; the triplet is not "
+    if order > ASYMPTOTIC_ORDER_LIMIT:
+        what = "exceeds twice the formal order of 2"
+    elif order < LOW_ORDER_LIMIT:
+        what = "is below a quarter of the formal order of 2"
+    else:
+        return ""
+    return (f"observed order p = {order:.3g} {what}; the triplet is not "
             "in the asymptotic range and this GCI is not reliable")
 
 
@@ -405,13 +414,14 @@ def _header() -> list[str]:
         "gci_fine_pct and gci_coarse_pct are relative to f1 and f2 (percent), including for xcp: multiply by |f1| for a length.",
         "h_basis is the definition of the grid size h: nodes^-1/3 (rans_mesh_study), cells^-1/2 for the 2-D flat plate, cells^-1/3 or wall_size (basic_finner_mesh_check).",
         "rans_flatplate: 2-D grids, h = cells^-1/2 (the cells double exactly in each direction, so r = 2); the residual evidence of a grid is min(rho_drop_orders, nu_drop_orders).",
-        "rans_flatplate: observed orders of 1.1 to 1.4 are not flagged; they are a known limiter effect, not a sign of the wrong h.",
+        "rans_flatplate: the observed orders, 1.1 to 1.4, lie below the formal order of 2 and are not flagged by the p > 4 or p < 0.5 rules; a limiter is a possible cause that this study has not tested.",
         "rans_mesh_study: wall_size_m scales by 1.67 and 1.60 while nodes^(1/3) scales by 1.33 and 1.31 (the fixed max_size mechanism below); the only recorded knob is wall_size_m, so the similarity check is vacuous for this study. h = nodes^-1/3, as in the published V6 arithmetic.",
         "basic_finner_mesh_check: order and GCI are conditional on the h definition, so every triplet is written twice, once per h_basis; the spread between the two is part of the uncertainty.",
         "basic_finner_mesh_check: cells^-1/3 gives refinement ratios 1.19 to 1.22 and wall_size gives 1.40. A geometrically similar 1.4 refinement would grow the cells by 1.4^3 = 2.74x per level; the observed growth is 1.69 to 1.83x.",
         "basic_finner_mesh_check: the cause is that max_size is fixed at farfield radius / 10 (crates/cfd/src/mesh.rs:396, not a user setting) and the volume is graded from wall_size up to it (crates/cfd/src/mesh_gmsh.py:153), so refining wall_size and fin_size refines only the near-wall region. Grids built through ignisyeet aero are not geometrically similar.",
+        "basic_finner_mesh_check: on grids whose outer cell size is fixed, neither h basis is the effective grid size; the two bracket the question rather than resolve it, so the spread between them is not a bound on the true GCI. The L1-L3 and L2-L4 observed orders disagree under both bases, so this four-level study does not establish a reliable GCI for the Basic Finner.",
         "basic_finner_mesh_check triplets are named by their coarsest and finest level: L1-L3 is the coarse triplet, L2-L4 the fine one.",
-        "A note flags any computed order above 4, twice the formal second order: the triplet is then not in the asymptotic range and its GCI is not reliable.",
+        "A note flags any computed order above 4 (twice the formal second order) or below 0.5 (a quarter of it): the triplet is then not in the asymptotic range and its GCI is not reliable.",
         "rans_mesh_study: " + RERUN_DIRECT_EVIDENCE + ".",
     ]
     return ["# " + ln for ln in lines]

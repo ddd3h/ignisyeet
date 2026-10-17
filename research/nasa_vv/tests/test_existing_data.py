@@ -280,14 +280,31 @@ def test_an_order_above_four_carries_the_asymptotic_range_flag():
     assert float(cells["order"]) == pytest.approx(8.45, abs=0.01)
     assert "observed order p = 8.45 exceeds twice the formal order of 2; the triplet is not in the " \
            "asymptotic range and this GCI is not reliable" in cells["note"]
+    low = "is below a quarter of the formal order of 2"
     for r in rows:
         if r["order"] != "":
-            assert (flag in r["note"]) == (float(r["order"]) > 4.0), r
+            p = float(r["order"])
+            assert (flag in r["note"]) == (p > 4.0), r
+            assert (low in r["note"]) == (p < 0.5), r
+
+
+def test_an_order_below_half_carries_the_low_order_flag():
+    rows = _finner_rows()
+    row = next(r for r in rows if r["condition"] == "fairing alpha=4" and r["quantity"] == "cn"
+               and r["triplet"] == "L1-L3" and r["h_basis"] == "wall_size")
+    assert float(row["order"]) == pytest.approx(0.07, abs=0.005)
+    assert "observed order p = 0.0721 is below a quarter of the formal order of 2; the triplet is not " \
+           "in the asymptotic range and this GCI is not reliable" in row["note"]
+    flagged = {(r["condition"], r["quantity"], r["triplet"], r["h_basis"])
+               for r in rows if "below a quarter" in r["note"]}
+    assert flagged == {("fairing alpha=0", "ca_pressure", "L1-L3", "wall_size"),
+                       ("fairing alpha=2", "ca_pressure", "L1-L3", "wall_size"),
+                       ("fairing alpha=4", "cn", "L1-L3", "wall_size")}
 
 
 def test_low_orders_are_not_flagged():
     rows = ed.flatplate_results(read_flatplate(PLATE))
-    assert all("exceeds" not in r["note"] for r in rows)
+    assert all("exceeds" not in r["note"] and "below a quarter" not in r["note"] for r in rows)
 
 
 def test_the_iteration_cap_run_is_named_in_its_note():
@@ -318,5 +335,11 @@ def test_the_header_states_the_conditions_the_numbers_rest_on(tmp_path):
     for text in ("conditional on the h definition", "1.4^3", "2.74", "1.69 to 1.83",
                  "crates/cfd/src/mesh.rs:396", "crates/cfd/src/mesh_gmsh.py:153",
                  "min(rho_drop_orders, nu_drop_orders)", "cells^-1/2",
-                 "1.67 and 1.60", "1.33 and 1.31", "similarity check is vacuous"):
+                 "1.67 and 1.60", "1.33 and 1.31", "similarity check is vacuous",
+                 "neither h basis is the effective grid size",
+                 "bracket the question rather than resolve it",
+                 "does not establish a reliable GCI for the Basic Finner",
+                 "a limiter is a possible cause that this study has not tested",
+                 "below 0.5"):
         assert text in head, text
+    assert "known limiter effect" not in head

@@ -1,4 +1,4 @@
-{# Landing page and the R&D pages (research/): their own top bar, footer and landing.css. All other pages use Furo's page.html unchanged. #}
+{# Landing page and the R&D pages (research/): their own top bar and landing.css (no footer). All other pages use Furo's page.html unchanged. #}
 {% extends "!page.html" %}
 {% block extrahead %}
 {{ super() }}
@@ -23,7 +23,6 @@
 {%- if (pagename == master_doc or pagename.startswith("research/")) %}
 <div class="iy iy-nav-wrap">{% include "iy-nav.html" %}</div>
 {{ body }}
-<div class="iy">{% include "iy-footer.html" %}</div>
 {%- else %}
 {{ super() }}
 {%- endif %}

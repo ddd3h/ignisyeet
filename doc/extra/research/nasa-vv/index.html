@@ -53,17 +53,37 @@
 <h2 id="summary">要旨</h2>
 <p>この報告は、NASA のチュートリアルの六つの段階を IgnisYeet の SU2 による空力計算に当てはめ、結果を、それを支える強さのまま述べる。確定していることは次のとおりである。</p>
 <ul>
-<li><strong>空力係数に付けられた数値不確かさの帯は、ごく限られる。</strong> サンプル機体の Euler で計算できた GCI は、M = 2 の CNα の 10.6 %（節点数）と 16.3 %（壁寸法、漸近域の外）だけである。次数は 0.533 と 0.199 で、2 次精度の理論値 2 よりはるかに低く、h の定義で値が大きく動く。サンプル機体の他の量は、振動、収束しない、使えない GCI のいずれかである。Basic Finner の Euler の 4 段の格子は、信頼できる GCI を与えない。Basic Finner の RANS（M = 1.832）の GCI は得られず、α = 2° の解が 3 段すべてで未収束である。</li>
-<li><strong>GCI は、真の誤差を押さえないことがある。</strong> 厳密解がある層 0 で、GCI を求めた 12 行のうち 5 行が最細格子の真の誤差を押さえなかった。押さえなかった 2 行（円すいの Cp）を、次数の検査は 2 行とも見つけず、窓の安定性は 1 行しか見つけなかった。厳密解のない層 2 の GCI も、同じように誤差を過小評価しうる。</li>
-<li><strong>製品の格子は、相似に細かくならない。</strong> 壁とフィンのセル寸法を変えても外側の寸法は固定され、セル数は相似な細分（2.74 倍）に届かない（サンプル機体で 1.74 倍と 1.77 倍）。GCI は h の二つの定義で求め、二つは問いを挟むだけである。</li>
-<li><strong>層 1。</strong> 製品の鎖で解いた円すいの最細格子は未収束で、層 1 の GCI も、3 次元非構造格子の生成を含むパイプラインの誤差の寄与も、得られていない。</li>
-<li><strong>一貫性。</strong> サンプル機体の既定のメッシュの CN(0) = 0 は、メッシュの対称性により満たされ、ソルバを確かめない。z 鏡映のないメッシュは、偽の法線力を持つ。M = 0.3 の |CA| は格子とともに縮むが、0 に収束することは示していない。</li>
-<li><strong>反復誤差。</strong> 同じ格子の同じ量で、反復誤差が GCI を上回った行はない。</li>
-<li><strong>時間収束。</strong> CFD は定常なので当てはまらない。6 自由度の積分器のサンプルでは観測次数が得られず、次数 4 は制御の実験でだけ観測された。</li>
-<li><strong>妥当性確認。</strong> Euler の CNα は、実測より 2.9 から 10.5 % 低く、どの Mach 数でも差が確率誤差を上回る。Mach 2.375 では、この差は観測した格子の感度では説明できない。RANS の CNα（Mach 1.832）は確率誤差の内にあるが、RANS には数値不確かさの帯がない。CX0 は CFD に帯がなく、判断できない。</li>
-<li><strong>製品についての所見。</strong> 公表された RANS の格子収束（V6）の M = 0.8 の GCI は、未収束の解を使って求められている。製品が書く表面の出力ファイルは、停止時に切れることがある。RANS の Basic Finner は、フィンのセル寸法を小さくすると、gmsh が異常終了して止まる。</li>
+<li>
+<p><strong>空力係数に付けられた数値不確かさの帯は、ごく限られる。</strong> サンプル機体の Euler で計算できた GCI は、M = 2 の CNα の 10.6 %（節点数）と 16.3 %（壁寸法、漸近域の外）だけである。次数は 0.533 と 0.199 で、2 次精度の理論値 2 よりはるかに低く、h の定義で値が大きく動く。サンプル機体の他の量は、振動、収束しない、使えない GCI のいずれかである。Basic Finner の Euler の 4 段の格子は、信頼できる GCI を与えない。Basic Finner の RANS（M = 1.832）の GCI は得られず、α = 2° の解が 3 段すべてで未収束である。</p>
+</li>
+<li>
+<p><strong>GCI は、真の誤差を押さえないことがある。</strong> 厳密解がある層 0 で、GCI を求めた 12 行のうち 5 行が最細格子の真の誤差を押さえなかった。押さえなかった 2 行（円すいの Cp）を、次数の検査は 2 行とも見つけず、窓の安定性は 1 行しか見つけなかった。厳密解のない層 2 の GCI も、同じように誤差を過小評価しうる。</p>
+</li>
+<li>
+<p><strong>製品の格子は、相似に細かくならない。</strong> 壁とフィンのセル寸法を変えても外側の寸法は固定され、セル数は相似な細分（2.74 倍）に届かない（サンプル機体で 1.74 倍と 1.77 倍）。GCI は h の二つの定義で求め、二つは問いを挟むだけである。</p>
+</li>
+<li>
+<p><strong>層 1。</strong> 製品の鎖で解いた円すいの最細格子は未収束で、層 1 の GCI も、3 次元非構造格子の生成を含むパイプラインの誤差の寄与も、得られていない。</p>
+</li>
+<li>
+<p><strong>一貫性。</strong> サンプル機体の既定のメッシュの CN(0) = 0 は、メッシュの対称性により満たされ、ソルバを確かめない。z 鏡映のないメッシュは、偽の法線力を持つ。M = 0.3 の |CA| は格子とともに縮むが、0 に収束することは示していない。</p>
+</li>
+<li>
+<p><strong>反復誤差。</strong> 同じ格子の同じ量で、反復誤差が GCI を上回った行はない。</p>
+</li>
+<li>
+<p><strong>時間収束。</strong> CFD は定常なので当てはまらない。6 自由度の積分器のサンプルでは観測次数が得られず、次数 4 は制御の実験でだけ観測された。</p>
+</li>
+<li>
+<p><strong>妥当性確認。</strong> Euler の CNα は、実測より 2.9 から 10.5 % 低く、どの Mach 数でも差が確率誤差を上回る。Mach 2.375 では、この差は観測した格子の感度では説明できない。RANS の CNα（Mach 1.832）は確率誤差の内にあるが、RANS には数値不確かさの帯がない。CX0 は CFD に帯がなく、判断できない。</p>
+</li>
+<li>
+<p><strong>製品についての所見。</strong> 公表された RANS の格子収束（V6）の M = 0.8 の GCI は、未収束の解を使って求められている。製品が書く表面の出力ファイルは、停止時に切れることがある。RANS の Basic Finner は、フィンのセル寸法を小さくすると、gmsh が異常終了して止まる。</p>
+</li>
+<li>
+<p><strong>モデルの不確かさ。</strong> IgnisYeet が持つ流れのモデルは Euler と SA の RANS だけなので、チュートリアルが求める複数の乱流モデルの比較には、一部しか答えられない。Euler と RANS の差は、7 つの条件のすべてで、片側か両側に使える GCI がなく、判定がない。SU2 を直接動かした乱流平板では、SA と SST の Cf の差（−0.79 %）は SST 自身の帯の内、CD の差（−0.46 %）は二つの帯の和の内で、数値不確かさと分けられない。SA は TMR の CFL3D と FUN3D の値より Cf が 0.80 % 高い（相互比較）。</p>
+</li>
 </ul>
-<!-- PENDING Task 20: one bullet on model uncertainty (Euler against RANS-SA, and the Spalart-Allmaras-only limit), with its own label. Do not alter the bullets above unless the Task 20 results contradict them. -->
 </section>
 <section id="s1">
 <h2 id="s1">1. 目的と読み方</h2>
@@ -140,7 +160,7 @@
 </tr>
 </tbody>
 </table></div>
-<p>Euler と RANS の比較や、他のプログラムの結果との比較は相互比較であり、妥当性確認ではない。妥当性確認にあたるのは、Basic Finner を DREV-TM-9703 の実測値と比べる <a href="#s4-6-2">4.6.2 節</a>だけである。</p>
+<p>Euler と RANS の比較、別の乱流モデルとの比較、他のプログラムの結果との比較は相互比較であり、妥当性確認ではない。妥当性確認にあたるのは、Basic Finner を DREV-TM-9703 の実測値と比べる <a href="#s4-6-2">4.6.2 節</a>だけである。</p>
 <h3 id="s1-4">1.4 三つの層</h3>
 <div class="tablewrap" tabindex="0" role="region" aria-label="表"><table>
 <thead>
@@ -289,7 +309,7 @@
 </table></div>
 <p>出典：<code>cone10_reference_check.csv</code>。差は（Taylor–Maccoll − NPARC）/ NPARC である。</p>
 <p>M₃ だけが 4 桁まで合う。同じ表の T₃/T∞ は、M₃ とも合わない。衝撃波の前後で全温は変わらないので、T₃/T∞ = (1 + 0.2 M∞²)/(1 + 0.2 M₃²) が成り立つ。M₃ = 2.1469 からは 1.0950 が、表の T₃/T∞ = 1.1063 からは M₃ = 2.124 が出る。表の中の値どうしが食い違っている。</p>
-<p>どちらの衝撃波角が正しいかを、この研究のコードに頼らずに確かめた。</p>
+<p>どちらの衝撃波角が正しいかを、この研究の実装に頼らずに確かめた。</p>
 <div class="tablewrap" tabindex="0" role="region" aria-label="表"><table>
 <thead>
 <tr>
@@ -736,7 +756,7 @@
 <h3 id="s3-3">3.3 製品の出力ファイルが途中で切れる</h3>
 <p>観測した製品の挙動を、原因を推測せずに記す。ランナーが SU2 を止めたとき、SU2 が最後に書く表面の出力ファイルが、途中で切れることがある。</p>
 <ul>
-<li>中の格子の最初の実行では、<code>surface_flow.vtk</code> の Pressure_Coefficient の欄が途中で切れ、Cp を読めなかった。同じ設定の再実行で得たファイルを使った。その vtk でも、Velocity の欄は 15468 点のうち 816 点分しか完全でなかった。</li>
+<li>中の格子の同じ設定の 2 回の実行のうち、1 回は <code>surface_flow.vtk</code> の Pressure_Coefficient の欄が途中で切れ、Cp を読めなかった。もう 1 回のファイルを使った。その vtk でも、Velocity の欄は 15468 点のうち 816 点分しか完全でなかった。</li>
 <li>細かい格子では、<code>surface_flow.vtk</code> は 200 反復目の周期的な書き出しで、履歴は 210 反復まである。<code>surface_flow.csv</code> は 28265 行のうち完全な行が 1255 行で、1 行が途中で切れていた。csv の行はより後の状態を持つので、最終反復の完全な Cp の出力はない。両方のファイルが持つ円すい壁の 213 節点では、csv の Cp と vtk の Cp の差は平均 5.8×10⁻⁶（Cp の平均に対して 6×10⁻⁵）だった。これは描写であり、試験ではない。</li>
 </ul>
 <p>層 1 の Cp に使った vtk の Cp の欄は、どの格子でも完全だった。切れ方の原因は、書き込みが停止時に切れること以上には、確かめていない。</p>
@@ -1223,8 +1243,176 @@
 <p><strong>まとめ。</strong> サンプルの RK4 の刻み幅の収束には、観測次数が得られない。次数 4 は、保持とランプを除いた制御の粗い 3 段でだけ観測できる。刻みを 8 倍変えたときの結果の変動は、頂点高度で 0.018 m にとどまる。これは積分法の次数の検証（<a href="#s4-1">4.1 節</a>の製品の試験）を補うもので、実測との比較ではない。</p>
 <h3 id="s4-6">4.6 第 6 段階：高精度解との比較、モデルの不確かさ、妥当性確認</h3>
 <p>高精度解との比較（検証）は、層 0（<a href="#s2">2 節</a>）と層 1（<a href="#s3">3 節</a>）で行った。ここでは、モデルの不確かさ（相互比較）と、実測との比較（妥当性確認）を述べる。</p>
-<h4 id="s4-6-1">4.6.1 モデルの不確かさ（相互比較）</h4>
-<!-- PENDING Task 20: Euler against RANS-SA on the same cases, and the model uncertainty it implies. State at the top that IgnisYeet has only Euler and RANS with the Spalart-Allmaras model, so the tutorial's request to compare several turbulence models is answered only in part, and that Euler-against-RANS is a cross-comparison, not validation. Give each difference with the grid bands of tasks 14 and 15 next to it. -->
+<h4 id="s4-6-1">4.6.1 モデルの不確かさ</h4>
+<p><strong>範囲の限界。</strong> IgnisYeet が持つ流れのモデルは、Euler と、Spalart–Allmaras（SA-neg、ft2 付き）の RANS だけである。チュートリアルは複数の乱流モデルの比較を求めるので、この要求には<strong>一部しか答えられない</strong>。答えは、SU2 を直接動かした乱流平板での SA と SST の比較（後述）だけで、製品の中でのモデル間の比較ではない。</p>
+<h4 id="s4-6-1a">Euler と RANS-SA（相互比較）</h4>
+<p>Euler と RANS の差を、それぞれの格子の不確かさと並べて読む。差の大きさが、二つの GCI の和を超えるときにだけ、差を数値誤差と分けて引用できる（<code>model_uncertainty.csv</code>）。7 つの条件がある。差は（RANS − Euler）/ Euler である。</p>
+<div class="tablewrap" tabindex="0" role="region" aria-label="表"><table>
+<thead>
+<tr>
+<th>条件</th>
+<th>量</th>
+<th>Euler</th>
+<th>RANS</th>
+<th>差 %</th>
+<th>Euler の帯</th>
+<th>RANS の帯</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>サンプル機体、M = 0.8、α = 4°</td>
+<td>CN</td>
+<td>1.2021</td>
+<td>1.2621</td>
+<td>+4.99</td>
+<td>なし（変化が縮まない）</td>
+<td>なし（V6 で拒否）</td>
+</tr>
+<tr>
+<td>同上</td>
+<td>xcp [m]</td>
+<td>1.2206</td>
+<td>1.2239</td>
+<td>+0.27</td>
+<td>なし（振動収束）</td>
+<td>なし（V6 で拒否）</td>
+</tr>
+<tr>
+<td>サンプル機体、M = 2、α = 4°</td>
+<td>CN</td>
+<td>0.9347</td>
+<td>0.96553</td>
+<td>+3.30</td>
+<td>なし（大きい方の GCI が漸近域の外）</td>
+<td>なし（V6 で拒否）</td>
+</tr>
+<tr>
+<td>同上</td>
+<td>xcp [m]</td>
+<td>1.157</td>
+<td>1.1572</td>
+<td>+0.017</td>
+<td>なし（次数が旗）</td>
+<td>なし（V6 で拒否）</td>
+</tr>
+<tr>
+<td>Basic Finner、M = 1.832、α = 2°</td>
+<td>CN</td>
+<td>0.39924</td>
+<td>0.40013</td>
+<td>+0.22</td>
+<td>なし（この Mach 数の格子研究がない）</td>
+<td>なし（細かい格子が未収束）</td>
+</tr>
+<tr>
+<td>同上</td>
+<td>xcp [cal]</td>
+<td>7.8735</td>
+<td>7.8164</td>
+<td>−0.73</td>
+<td>なし</td>
+<td>なし</td>
+</tr>
+<tr>
+<td>Basic Finner、M = 1.832、α = 0°</td>
+<td>CA</td>
+<td>0.42037</td>
+<td>0.64771</td>
+<td>+54.1</td>
+<td>なし</td>
+<td>なし</td>
+</tr>
+</tbody>
+</table></div>
+<p>出典：<code>model_uncertainty.csv</code>。Euler の帯は、h の二つの定義の GCI のうち大きい方を使い、その GCI が信頼できないときは「なし」とした。</p>
+<p><strong>7 つの条件のどれにも、判定がない。</strong> 片側か両側に、使える GCI がないからである。これが結果である。この研究は、どの Euler と RANS の差についても、モデルの差がどれだけで、数値誤差がどれだけかを、分けて言えない。差の値（0.017 % から 5 %、CA は 54 %）は記述であり、モデルの不確かさの見積もりではない。</p>
+<p>条件ごとの注意がある。サンプル機体の二つのモデルは、別のメッシュで解いた値である（RANS は壁寸法 3 mm、Euler は 2 mm）。Basic Finner の CA の差は、モデルの違いだけでなく、Euler の CX0 がモデルから求めた底面などの項を含み、RANS が CFD の力だけで作る違いを含む。サンプル機体の軸力は、比べる量がそろわないので、比べていない。</p>
+<h4 id="s4-6-1b">SA と SST（乱流平板、SU2 を直接実行）</h4>
+<p>製品が持たない乱流モデルとの比較を、乱流平板（M = 0.2、単位長さあたりの Reynolds 数 5×10⁶、NASA TMR の 2DZP、x = 0.97）で、SU2 を直接動かして行った（<code>turbulence_models.csv</code>）。製品の数値設定を、二つのモデルに共通にそのまま使い、乱流モデルと、それに必要な設定だけを変えた。SST は V1994m である（SU2 8.3.0 が持つ TMR 平板の試験ケースの設定。SU2 の既定の V2003m は走らせていない）。</p>
+<p><strong>格子は TMR の格子ではない。</strong> TMR の格子ファイルはこの環境になく、取得していない。同じ領域、同じ節点数（69×49、137×97、273×193）、同じ境界条件で、入れ子の格子を自作した。点の分布は自作のもので、壁の第 1 層の y⁺ の最大は 1.32、0.72、0.41 である。停止は、密度の残差が 8 桁下がることとした（製品の受け入れ規則ではない）。残差の落ち幅（最も弱い方程式）は、SA で 7.5 から 8.0 桁、SST で 5.5 から 5.6 桁である。</p>
+<div class="tablewrap" tabindex="0" role="region" aria-label="表"><table>
+<thead>
+<tr>
+<th>モデル</th>
+<th>量</th>
+<th>値（粗、中、細）</th>
+<th>観測次数 p</th>
+<th>GCI（細）%</th>
+<th>最後の細分で動いた量</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>SA</td>
+<td>Cf</td>
+<td>0.002730068、0.002727161、0.002727089</td>
+<td>5.34（旗）</td>
+<td>8.4×10⁻⁵（信頼できない）</td>
+<td>0.0026 %</td>
+</tr>
+<tr>
+<td>SST</td>
+<td>Cf</td>
+<td>0.002628948、0.002680178、0.002705489</td>
+<td>1.02</td>
+<td>1.14</td>
+<td>0.94 %</td>
+</tr>
+<tr>
+<td>SA</td>
+<td>CD</td>
+<td>0.0030153725、0.0029907444、0.0029773701</td>
+<td>0.881</td>
+<td>0.667</td>
+<td>0.449 %</td>
+</tr>
+<tr>
+<td>SST</td>
+<td>CD</td>
+<td>0.0029162695、0.0029491952、0.0029637313</td>
+<td>1.18</td>
+<td>0.485</td>
+<td>0.49 %</td>
+</tr>
+</tbody>
+</table></div>
+<p>出典：<code>turbulence_models.csv</code>。CD は、板の抗力である。板の終端の遠方境界の影響を含むので、TMR の抗力とは比べない。</p>
+<div class="tablewrap" tabindex="0" role="region" aria-label="表"><table>
+<thead>
+<tr>
+<th>量</th>
+<th>SST と SA の差 %（粗、中、細）</th>
+<th>外挿値どうしの差 %</th>
+<th>帯 %</th>
+<th>判定</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Cf</td>
+<td>−3.70、−1.72、−0.79</td>
+<td>+0.11</td>
+<td>SST 1.14（SA の帯は旗で使わない）</td>
+<td>細格子の差は SST の帯の内。</td>
+</tr>
+<tr>
+<td>CD</td>
+<td>−3.29、−1.39、−0.46</td>
+<td>+0.46</td>
+<td>SA 0.667、SST 0.485</td>
+<td>細格子の差は、二つの帯の和（1.15）の内。</td>
+</tr>
+</tbody>
+</table></div>
+<p>出典：<code>turbulence_models.csv</code>。差は（SST − SA）/ SA。外挿値は推定値で、判定は付けない。</p>
+<ul>
+<li><strong>Cf は、最細格子で SST が SA より 0.79 % 低い。</strong> この差は、SST 自身の帯（1.14 %）より小さい。SA の GCI は次数 5.34 が旗にかかり、使えない（SA の Cf は最後の細分で 0.0026 % しか動かず、収束しているように見えるが、GCI としては信頼できない）。SST は 1 次精度で、最後の細分で 0.94 % 動いた。外挿値どうしの差は +0.11 % で、符号が逆になる。<strong>この格子では、SA と SST の Cf の差を、数値不確かさと分けられない。</strong></li>
+<li><strong>CD は、SST が SA より 0.46 % 低い。</strong> 二つの帯（0.667 % と 0.485 %）の和より小さい。<strong>帯から分けられない。</strong></li>
+<li>SST の観測次数は約 1 である。製品の数値設定は乱流の対流項を 1 次の風上差分にしており、これが原因の可能性があるが、試験していない。</li>
+</ul>
+<h4 id="s4-6-1c">SA と TMR の CFL3D、FUN3D の値（相互比較）</h4>
+<p>TMR の 2DZP の SA の Cf（x = 0.97）は、545×385 の格子で、CFL3D が 0.270562×10⁻²、FUN3D が 0.270540×10⁻² である。この二つの平均（0.0027055）に対し、この研究の SA の Cf は、最細格子で +0.80 %、外挿値で +0.80 % である（中の格子で +0.80 %、粗い格子で +0.91 %）。これは<strong>プログラムどうしの相互比較</strong>であり、検証でも妥当性確認でもない。差は、格子（自作で TMR のものではない）、製品の数値設定、製品の SA が SA-neg（ft2 付き）で TMR の SA そのものではないことを含み、原因は分けていない。</p>
 <h4 id="s4-6-2">4.6.2 妥当性確認（実測との比較）</h4>
 <p>Basic Finner の係数を、DREV-TM-9703 の実測値（射場の自由飛翔、Table IX の 6 自由度の当てはめ）と比べる。比べる量は CNα と CX0 で、CFD の側には <a href="#s4-4">4.4 節</a>の帯を付ける。</p>
 <p><strong>実測の誤差棒。</strong> 実測の誤差棒は、Table IX の確率誤差から引く（<code>measured.csv</code>）。</p>
@@ -1294,7 +1482,7 @@
 <li>RANS の CX0 は、底面の項の取り方で −25.8 % から +10.7 % に動く。この違いは、モデルの扱いの違いであり、数値誤差ではない。実測の誤差棒がないので、どちらが近いかは言えない。</li>
 </ul>
 <p>どの結論も、実測との差を、手法のどの要素に帰するかは述べない。</p>
-<!-- PENDING Task 20: whether the Euler against RANS-SA difference at Mach 1.832 (cross-comparison) changes how the validation differences above are read; one sentence, with its own label, and no attribution. -->
+<p>Mach 1.832 の CN（α = 2°）では、底面を平らにそろえた Euler と RANS の差が +0.22 % で、実測との差（Euler は −4.4 %、RANS は −2.7 %。Euler は fairing の底面）より小さい。ただし、この差には判定がない（<a href="#s4-6-1">4.6.1 節</a>）。二つのモデルの差が、実測との差を説明するとは言えない。</p>
 </section>
 <section id="s5">
 <h2 id="s5">5. この研究が示していないこと</h2>
@@ -1338,8 +1526,10 @@
 <li>
 <p>妥当性確認で、RANS の CNα が確率誤差の内にあることは、数値不確かさの帯がないので、数値誤差を含めた一致とは言えない。CX0 は帯がなく、判断できない。</p>
 </li>
+<li>
+<p>IgnisYeet が持つ乱流モデルは SA だけで、チュートリアルの複数モデルの比較には、SU2 を直接動かした乱流平板の SA と SST の比較でしか答えていない。その格子は TMR の格子ではなく、SST は V1994m である。Euler と RANS の差には、7 つの条件のすべてで判定がない。</p>
+</li>
 </ul>
-<!-- PENDING Task 20: the model-uncertainty limit (only Euler and RANS-SA exist, so the tutorial's several-turbulence-model request is answered only in part) and the final check of the 要旨 against this list. -->
 </section>
 <section id="appx-a">
 <h2 id="appx-a">付録 A：数値の出典</h2>

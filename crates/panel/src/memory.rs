@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+// Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Memory available to the dense panel solve.
 //!
 //! The smallest of the limits that apply to this process, each with the name of its source:

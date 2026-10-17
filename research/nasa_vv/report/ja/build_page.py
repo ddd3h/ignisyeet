@@ -1,16 +1,62 @@
-"""Render report.md (this directory) into doc/extra/research/nasa-vv/index.html.
+"""Render report.md (this directory) into the Sphinx page doc/source/research/nasa-vv/index.rst.
+
+The page is a raw-HTML block inside the research section's iy-* wrappers, so it shares the top bar
+and footer with the other pages. The two figures are copied from research/nasa_vv/figures/ to
+doc/source/_static/research/nasa-vv/, where Sphinx serves them.
 
 Usage: python3 build_page.py   (needs markdown-it-py)
 """
-import re, html, sys
-from markdown_it import MarkdownIt
+import html
 import pathlib
-ROOT = str(pathlib.Path(__file__).resolve().parents[4]) + "/"
-src = open(ROOT + "research/nasa_vv/report/ja/report.md", encoding="utf-8").read()
+import re
+import unicodedata
 
-md = MarkdownIt("commonmark", {"html": True}).enable("table")
+from markdown_it import MarkdownIt
 
-def add_ids(tokens):
+ROOT = pathlib.Path(__file__).resolve().parents[4]
+SRC = ROOT / "research/nasa_vv/report/ja/report.md"
+FIGURES_FROM = ROOT / "research/nasa_vv/figures"
+FIGURES_TO = ROOT / "doc/source/_static/research/nasa-vv"
+PAGE = ROOT / "doc/source/research/nasa-vv/index.rst"
+FIGURE_HREF = "../../_static/research/nasa-vv/"
+
+DESCRIPTION = "NASA WIND/NPARC の検証と妥当性確認の手順を IgnisYeet の空力計算に当てはめた結果の報告。"
+
+
+def _renderer():
+    md = MarkdownIt("commonmark", {"html": True}).enable("table")
+
+    def table_open(tokens, idx, options, env):
+        return '<div class="tablewrap" tabindex="0" role="region" aria-label="表"><table>\n'
+
+    def table_close(tokens, idx, options, env):
+        return "</table></div>\n"
+
+    def link_open(tokens, idx, options, env):
+        t = tokens[idx]
+        if (t.attrGet("href") or "").startswith("http"):
+            t.attrSet("rel", "noopener")
+        return md.renderer.renderToken(tokens, idx, options, env)
+
+    def image(tokens, idx, options, env):
+        t = tokens[idx]
+        title = t.attrGet("title") or ""
+        src = t.attrGet("src")
+        if src.startswith("figures/"):
+            src = FIGURE_HREF + src[len("figures/"):]
+        return ('<figure class="fig"><img src="%s" alt="%s">'
+                '<figcaption><strong>%s</strong> %s</figcaption></figure>'
+                % (html.escape(src), html.escape(title), html.escape(title), html.escape(t.content)))
+
+    md.renderer.rules["table_open"] = table_open
+    md.renderer.rules["table_close"] = table_close
+    md.renderer.rules["link_open"] = link_open
+    md.renderer.rules["image"] = image
+    return md
+
+
+def _add_ids(tokens):
+    """Turn a trailing `{#id}` on a heading into its id attribute."""
     for i, t in enumerate(tokens):
         if t.type == "heading_open":
             inline = tokens[i + 1]
@@ -21,111 +67,74 @@ def add_ids(tokens):
                 last = inline.children[-1]
                 last.content = re.sub(r"\s*\{#[\w-]+\}\s*$", "", last.content)
 
-def rules(md):
-    def table_open(tokens, idx, options, env): return '<div class="tablewrap" tabindex="0" role="region" aria-label="表"><table>\n'
-    def table_close(tokens, idx, options, env): return "</table></div>\n"
-    md.renderer.rules["table_open"] = table_open
-    md.renderer.rules["table_close"] = table_close
-    def link_open(tokens, idx, options, env):
-        t = tokens[idx]
-        h = t.attrGet("href") or ""
-        if h.startswith("http"): t.attrSet("rel", "noopener")
-        return md.renderer.renderToken(tokens, idx, options, env)
-    md.renderer.rules["link_open"] = link_open
-    def image(tokens, idx, options, env):
-        t = tokens[idx]
-        title = t.attrGet("title") or ""
-        desc = t.content
-        short = re.sub(r"[　 ].*", "", title) if False else title
-        return ('<figure class="fig"><img src="%s" alt="%s">'
-                '<figcaption><strong>%s</strong> %s</figcaption></figure>'
-                % (html.escape(t.attrGet("src")), html.escape(title), html.escape(title), html.escape(desc)))
-    md.renderer.rules["image"] = image
-rules(md)
 
-tokens = md.parse(src)
-add_ids(tokens)
-body = md.renderer.render(tokens, md.options, {})
-body = re.sub(r"<p>(<figure.*?</figure>)</p>", r"\1", body, flags=re.S)
+def _width(text):
+    """Display width in columns; docutils counts wide characters as two."""
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in text)
 
-# split: h1, lead paragraph, then sections by h2
-m = re.match(r"\s*<h1>(.*?)</h1>\s*<p>(.*?)</p>(.*)", body, flags=re.S)
-title, lead, rest = m.group(1), m.group(2), m.group(3)
-parts = re.split(r"(?=<h2 id=)", rest)
-sections, toc = [], []
-for p in parts:
-    p = p.strip()
-    if not p: continue
-    hm = re.match(r'<h2 id="([\w-]+)">(.*?)</h2>', p, flags=re.S)
-    sid, htext = hm.group(1), hm.group(2)
-    toc.append((sid, htext))
-    sections.append('<section id="%s">\n%s\n</section>' % (sid, p))
-# toc numbering: use native numbering only for numbered sections; keep plain list with the original text
-toc_html = '<nav class="toc" aria-label="目次">\n<h2>目次</h2>\n<ul style="list-style:none;padding-left:0;columns:2 280px;column-gap:2rem;margin:0">\n' + "\n".join(
-    '<li style="margin:0.15rem 0;break-inside:avoid"><a href="#%s">%s</a></li>' % (s, t) for s, t in toc) + "\n</ul>\n</nav>"
 
-page = f'''<!doctype html>
-<html lang="ja">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>NASA の検証と妥当性確認の手順を IgnisYeet に適用する - IgnisYeet</title>
-<meta name="description" content="NASA WIND/NPARC の検証と妥当性確認の手順を IgnisYeet の空力計算に当てはめた結果の報告。">
-<link rel="icon" href="../../_static/landing/logo-mark.svg">
-<link rel="stylesheet" href="../research.css">
-<script>
-  try {{
-    var t = localStorage.getItem("theme");
-    if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
-  }} catch (e) {{}}
-</script>
-</head>
-<body>
+def _plain(fragment):
+    return html.unescape(re.sub(r"<[^>]+>", "", fragment))
 
-<nav class="nav" aria-label="ナビゲーション">
-  <a class="brand" href="../../index.html"><img src="../../_static/landing/logo-mark.svg" alt="" width="32" height="32"><span>IgnisYeet</span></a>
-  <ul>
-    <li><a href="../../index.html">トップ</a></li>
-    <li><a href="../../intro.html">ドキュメント</a></li>
-    <li><a href="../" aria-current="true">研究</a></li>
-    <li><a href="https://github.com/ddd3h/ignisyeet" rel="noopener">GitHub</a></li>
-  </ul>
-  <button type="button" class="theme" id="theme" aria-label="配色を切り替える">配色</button>
-</nav>
 
-<header class="hero">
-  <div class="wrap">
-    <p class="crumb"><a href="../">研究</a> ／ NASA の検証と妥当性確認</p>
-    <h1>{title}</h1>
-    <p class="lead">{lead}</p>
+def render():
+    """Return the text of the reStructuredText page."""
+    md = _renderer()
+    tokens = md.parse(SRC.read_text(encoding="utf-8"))
+    _add_ids(tokens)
+    body = md.renderer.render(tokens, md.options, {})
+    body = re.sub(r"<p>(<figure.*?</figure>)</p>", r"\1", body, flags=re.S)
+
+    # h1, lead paragraph, then the sections split at each h2
+    m = re.match(r"\s*<h1>(.*?)</h1>\s*<p>(.*?)</p>(.*)", body, flags=re.S)
+    title, lead, rest = m.group(1), m.group(2), m.group(3)
+    sections, toc = [], []
+    for p in re.split(r"(?=<h2 id=)", rest):
+        p = p.strip()
+        if not p:
+            continue
+        hm = re.match(r'<h2 id="([\w-]+)">(.*?)</h2>', p, flags=re.S)
+        toc.append((hm.group(1), hm.group(2)))
+        sections.append("<section>\n%s\n</section>" % p)
+    toc_html = ('<nav class="iy-toc" aria-label="目次">\n<p class="iy-toc-title">目次</p>\n<ul>\n'
+                + "\n".join('<li><a href="#%s">%s</a></li>' % (s, t) for s, t in toc)
+                + "\n</ul>\n</nav>")
+
+    block = f'''<div class="iy iy-report">
+
+<header class="iy-hero iy-page-hero">
+  <div class="iy-wrap">
+    <p class="iy-crumb"><a href="../">研究</a> ／ NASA の検証と妥当性確認</p>
+    <p class="iy-page-title" role="presentation">{title}</p>
+    <p class="iy-sub">{lead}</p>
   </div>
 </header>
 
-<main class="wrap">
+<section class="iy-section iy-research iy-report-body">
+  <div class="iy-wrap">
 {toc_html}
 {chr(10).join(sections)}
-</main>
-
-<footer>
-  <div class="wrap">
-    <p>IgnisYeet by 西濱大将 (NISHIHAMA Daisuke)。GPL-3.0-or-later。</p>
-    <p>引用：<a href="https://github.com/ddd3h/ignisyeet/blob/main/CITATION.cff" rel="noopener">CITATION.cff</a></p>
   </div>
-</footer>
+</section>
 
-<script>
-  document.getElementById("theme").addEventListener("click", function () {{
-    var root = document.documentElement;
-    var dark = root.dataset.theme
-      ? root.dataset.theme === "dark"
-      : matchMedia("(prefers-color-scheme: dark)").matches;
-    var next = dark ? "light" : "dark";
-    root.dataset.theme = next;
-    try {{ localStorage.setItem("theme", next); }} catch (e) {{}}
-  }});
-</script>
-</body>
-</html>
+</div>
 '''
-open(ROOT + "doc/extra/research/nasa-vv/index.html", "w", encoding="utf-8").write(page)
-print("ok", len(page))
+    heading = _plain(title)
+    rule = "=" * _width(heading)
+    indented = "\n".join(("   " + line) if line.strip() else "" for line in block.split("\n"))
+    return (f":orphan:\n\n.. meta::\n   :description: {DESCRIPTION}\n\n"
+            f"{heading}\n{rule}\n\n.. raw:: html\n\n{indented}")
+
+
+def main():
+    PAGE.parent.mkdir(parents=True, exist_ok=True)
+    FIGURES_TO.mkdir(parents=True, exist_ok=True)
+    for svg in sorted(FIGURES_FROM.glob("*.svg")):
+        (FIGURES_TO / svg.name).write_bytes(svg.read_bytes())
+    text = render()
+    PAGE.write_text(text, encoding="utf-8")
+    print("ok", len(text))
+
+
+if __name__ == "__main__":
+    main()

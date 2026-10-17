@@ -2,7 +2,7 @@
 
 | Study | Status | Report | Paper |
 |---|---|---|---|
-| NASA WIND V&V of the aerodynamic methods | written; what it did not obtain is listed below | `../doc/extra/research/nasa-vv/` (Japanese) | `nasa_vv/report/en/` |
+| NASA WIND V&V of the aerodynamic methods | written; what it did not obtain is listed below | `../doc/source/research/nasa-vv/` (Japanese) | `nasa_vv/report/en/` |
 
 ## nasa_vv
 
@@ -84,8 +84,10 @@ Tests:
 
     cd research && uv run --project nasa_vv --group dev python -m pytest nasa_vv/tests/ -q
 
-Japanese report page (`doc/extra/research/nasa-vv/index.html`, built from
-`nasa_vv/report/ja/report.md`; `markdown-it-py` is in the `dev` group):
+Japanese report page (the Sphinx page `doc/source/research/nasa-vv/index.rst`, generated from
+`nasa_vv/report/ja/report.md`; `markdown-it-py` is in the `dev` group). The script also copies the two
+figures into `doc/source/_static/research/nasa-vv/`, and the page's styles are in
+`doc/source/_static/research-report.css`:
 
     cd research && uv run --project nasa_vv --group dev python nasa_vv/report/ja/build_page.py
 
@@ -94,8 +96,7 @@ English paper draft (`nasa_vv/report/en/main.pdf`; needs `latexmk` and `rsvg-con
 
     cd research/nasa_vv/report/en && make
 
-The two figures (`nasa_vv/figures/`; the report page uses copies in
-`doc/extra/research/nasa-vv/figures/`):
+The two figures (`nasa_vv/figures/`; `build_page.py` copies them for the report page):
 
     cd research && uv run --project nasa_vv python -m nasa_vv.plots
 

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+# Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 """Draw the 1200 x 630 Open Graph image of the documentation site (source/_static/ogp.png).
 
 The image is committed, so the documentation build does not need this script.

@@ -1,14 +1,29 @@
-{# Landing page only: its own <title> and landing.css on index.html. All other pages use Furo's page.html unchanged. #}
+{# Landing page and the research pages (research/): their own top bar, footer and landing.css. The research reports also load research-report.css. All other pages use Furo's page.html unchanged. #}
+{%- set iy_page = pagename == master_doc or pagename.startswith("research/") %}
 {% extends "!page.html" %}
 {% block extrahead %}
 {{ super() }}
-{%- if pagename == master_doc %}
+{%- if iy_page %}
 <link rel="stylesheet" type="text/css" href="{{ pathto('_static/landing.css', 1) }}" />
+{%- if pagename.startswith("research/") and pagename != "research/index" %}
+<link rel="stylesheet" type="text/css" href="{{ pathto('_static/research-report.css', 1) }}" />
+{%- endif %}
 {%- endif %}
 {% endblock %}
 {% block htmltitle %}
 {%- if pagename == master_doc %}
 <title>IgnisYeet - CAD データから飛ばすロケット飛翔シミュレータ</title>
+{%- elif pagename.startswith("research/") %}
+<title>{{ title|striptags|e }} - IgnisYeet</title>
+{%- else %}
+{{ super() }}
+{%- endif %}
+{% endblock %}
+{% block content %}
+{%- if iy_page %}
+<div class="iy">{% include "iy-nav.html" %}</div>
+{{ body }}
+<div class="iy">{% include "iy-footer.html" %}</div>
 {%- else %}
 {{ super() }}
 {%- endif %}

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+// Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 //! A CAD file (STEP, IGES or BREP) as the rocket geometry: the file is imported with OpenCASCADE (the gmsh python of the
 //! CFD tools) and tessellated finely in its own frame and in metres, so that the geometry extraction, the Barrowman and
 //! panel models and the flight work on it exactly as on an STL.

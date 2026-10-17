@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+# Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 """Start OpenRocket (the jar given by $OPENROCKET_JAR) headless in a JVM through JPype.
 
 The Python package orhelper targets the pre-2022 Java package names, so the few calls it

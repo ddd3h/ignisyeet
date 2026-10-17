@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+# Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 """Run OpenRocket on the sample rocket: static aerodynamics and the ascent flights.
 
 Usage: OPENROCKET_JAR=OpenRocket-24.12.jar python run_openrocket.py <geometry.json> <out_dir> [--ork file.ork]

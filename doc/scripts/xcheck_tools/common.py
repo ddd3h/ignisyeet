@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+# Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 """Inputs shared by the three simulators of the cross-comparison.
 
 Everything is read from the files of the repository: the geometry that `ignisyeet geom`

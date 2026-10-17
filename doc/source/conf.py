@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+# Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 # Sphinx configuration for the IgnisYeet documentation.
 
 project = "IgnisYeet"
 author = "西濱大将 (NISHIHAMA Daisuke)"
-copyright = "2025-2026, 西濱大将 (NISHIHAMA Daisuke)"
+copyright = "2024-2026, 西濱大将 (NISHIHAMA Daisuke)"
 release = "0.4.0"
 language = "ja"
 
@@ -110,12 +110,17 @@ html_title = "IgnisYeet ドキュメント"
 html_logo = "../IgnisYeet-logo.svg"
 html_favicon = "_static/landing/logo-mark.svg"
 html_static_path = ["_static"]
-html_extra_path = ["../extra"]
 html_css_files = ["custom.css"]
 html_theme_options = {
     "source_repository": "https://github.com/ddd3h/ignisyeet",
     "source_branch": "main",
     "source_directory": "doc/source/",
+    # Furo's dark text is dim on its near-black background; brighten each level.
+    "dark_css_variables": {
+        "color-foreground-primary": "#f4f5f6",
+        "color-foreground-secondary": "#e2e4e7",
+        "color-foreground-muted": "#9ea3a9",
+    },
 }
 
 # Open Graph / Twitter card metadata for link previews (image: scripts/make_ogp.py)

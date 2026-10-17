@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+# Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 # One-time setup of the tools of the cross-comparison (needs the network).
 #   usage: setup.sh <tool dir>        e.g. setup.sh ~/xcheck-tools
 # Creates <tool dir>/venv (Python 3.12 with RocketPy and JPype) and downloads the OpenRocket jar.

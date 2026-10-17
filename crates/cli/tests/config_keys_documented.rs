@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+// Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Every configuration key has exactly one reference entry. The keys are read from the field declarations of the
 //! configuration structs; the reference page labels are `cfg-<table>-<key>` (the dotted table path joined with `-`),
 //! and each table has a label `cfg-<table>`. A label without a key (and a key without a label) fails the test.

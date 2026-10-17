@@ -135,7 +135,7 @@ cd doc && make pdf      # doc/build/latex/ignisyeet.pdf
 
 ## License
 
-IgnisYeet is free software under the **GNU General Public License, version 3 or later** (`GPL-3.0-or-later`; full text in [`LICENSE`](LICENSE), no warranty). Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke).
+IgnisYeet is free software under the **GNU General Public License, version 3 or later** (`GPL-3.0-or-later`; full text in [`LICENSE`](LICENSE), no warranty). Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke).
 
 As an additional term under section 7(b) of the GPLv3, the attribution "IgnisYeet by 西濱大将 (NISHIHAMA Daisuke)" and the copyright notice must be preserved in the source files, the documentation and the program's startup banner and `--version` output, and modified versions must be marked as changed. The exact wording is in [`NOTICE`](NOTICE).
 

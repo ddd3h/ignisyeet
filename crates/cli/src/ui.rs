@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+// Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 //! Terminal presentation: output mode detection, banner, boxed panels, spinners and progress bars.
 //!
 //! Three modes: `Rich` (stdout is a terminal: banner, panels, colours, progress on stderr),
@@ -341,7 +341,7 @@ impl Ui {
             println!("{}   {}", pad(r, 12), t);
         }
         let (c, who) = if self.unicode { ("©", "西濱大将 (NISHIHAMA Daisuke)") } else { ("(C)", "NISHIHAMA Daisuke") };
-        println!("{}", style(format!("{c} 2025-2026 {who} {d} GPL-3.0-or-later {d} NO WARRANTY", d = g.dot)).dim());
+        println!("{}", style(format!("{c} 2024-2026 {who} {d} GPL-3.0-or-later {d} NO WARRANTY", d = g.dot)).dim());
         println!();
     }
 

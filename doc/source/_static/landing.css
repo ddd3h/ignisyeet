@@ -1,4 +1,4 @@
-/* Landing page (index.html only; loaded from _templates/page.html).
+/* Landing page and research page (index.html, research/index.html; loaded from _templates/page.html).
    Colours come from Furo's variables, so light, dark and auto themes follow the theme toggle. */
 
 .iy {
@@ -32,13 +32,13 @@ body[data-theme="dark"] .iy {
   }
 }
 
-/* ---- Furo chrome: no sidebars on the landing page (the off-canvas menu stays on small screens) ---- */
+/* ---- Furo chrome: no sidebars on these pages (the off-canvas menu stays on small screens) ---- */
 .content { width: 100%; max-width: none; padding: 0; }
 .main { width: 100%; }
 .article-container { width: 100%; max-width: none; padding: 0; position: relative; }
 article[role="main"] { padding: 0; margin: 0; }
 .back-to-top, .related-pages, .bottom-of-page, .edit-this-page, .view-this-page, .toc-content-icon { display: none !important; }
-footer { display: none; }
+footer:not(.iy-footer) { display: none; }
 /* The document title is the page's h1; the hero shows the product name instead. */
 article[role="main"] > section > h1 {
   position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
@@ -197,14 +197,43 @@ a.iy-badge:hover { border-color: var(--iy-accent); color: var(--iy-accent) !impo
 /* ---- last call ---- */
 .iy-code-block { max-width: 560px; margin-top: 1.4rem; }
 
+/* ---- research page ---- */
+.iy-page-hero { padding: 40px 0 32px; }
+.iy-page-title { margin: 0; font-size: clamp(2rem, 5vw, 3rem); font-weight: 800; line-height: 1.2; letter-spacing: -0.01em; }
+.iy-research { padding: 32px 0 56px; border-top: 1px solid var(--color-background-border); }
+.iy-research h2 { margin-bottom: 1rem; font-size: 1.5rem; }
+.iy-entries { display: grid; gap: 16px; }
+.iy-entry { padding: 18px 20px; border: 1px solid var(--color-background-border); border-radius: var(--iy-radius); background: var(--color-background-secondary); }
+.iy-entry h3 { font-size: 1.1rem; line-height: 1.5; }
+.iy-entry p { margin-top: 0.6rem; }
+.iy-entry .iy-meta { margin-top: 0.2rem; font-size: 0.88rem; color: var(--color-foreground-secondary); }
+.iy-links { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 0.9rem; }
+.iy-empty { padding: 18px 20px; border: 1px dashed var(--color-background-border); border-radius: var(--iy-radius); color: var(--color-foreground-secondary); }
+
+/* ---- search dialog (opened from 検索 in the top bar) ---- */
+.iy-search {
+  width: min(640px, calc(100vw - 32px)); max-height: min(70vh, 640px); margin: 12vh auto auto; padding: 0;
+  border: 1px solid var(--color-background-border); border-radius: var(--iy-radius); box-shadow: var(--iy-shadow);
+  background: var(--color-background-primary); color: var(--color-foreground-primary);
+}
+.iy-search[open] { display: flex; flex-direction: column; }
+.iy-search::backdrop { background: rgba(10, 10, 15, 0.45); }
+.iy-search-form { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--color-background-border); color: var(--color-foreground-secondary); }
+.iy-search-form svg { flex: none; }
+.iy-search-form input { flex: 1; min-width: 0; padding: 6px 0; border: 0; outline: 0; background: transparent; color: var(--color-foreground-primary); font: inherit; font-size: 1.05rem; }
+.iy-search-form input::-webkit-search-cancel-button { display: none; }
+.iy-search-close { flex: none; padding: 2px 8px; border: 1px solid var(--color-background-border); border-radius: 6px; background: transparent; color: var(--color-foreground-secondary); font: inherit; font-size: 0.75rem; cursor: pointer; }
+.iy-search-status { margin: 0; padding: 8px 16px 0; font-size: 0.82rem; color: var(--color-foreground-secondary); }
+.iy-search-status:empty { display: none; }
+.iy-search-results { flex: 1; overflow-y: auto; margin: 0; padding: 6px 8px; list-style: none; }
+.iy-search-results a { display: block; padding: 8px 10px; border-radius: 8px; color: var(--color-foreground-primary); text-decoration: none; line-height: 1.5; }
+.iy-search-results a:hover, .iy-search-results a:focus { background: var(--color-background-hover); outline: 0; }
+.iy-search-results a:focus-visible { box-shadow: inset 0 0 0 2px var(--iy-accent); }
+.iy-search-foot { margin: 0; padding: 10px 16px; border-top: 1px solid var(--color-background-border); font-size: 0.85rem; }
+.iy-search-foot a { color: var(--iy-accent); }
+
 /* ---- footer ---- */
-.iy-footer { padding: 48px 0 56px; font-size: 0.88rem; line-height: 1.75; color: var(--color-foreground-secondary); }
-.iy-footer-grid { display: grid; grid-template-columns: 1.3fr 1.3fr 0.7fr; gap: 32px; }
-.iy-footer p + p, .iy-footer p + ul { margin-top: 0.6rem; }
-.iy-footer-brand { display: flex; align-items: center; gap: 12px; margin-bottom: 0.6rem; }
-.iy-footer-brand img { flex: none; width: 40px; height: 40px; border-radius: 10px; box-shadow: 0 0 0 1px var(--color-background-border); }
-.iy-footer-name { margin: 0; font-size: 1.2rem; font-weight: 800; color: var(--color-foreground-primary); }
-.iy-footer-h { font-weight: 700; color: var(--color-foreground-primary); }
+.iy-footer { padding: 32px 0 40px; font-size: 0.88rem; line-height: 1.75; color: var(--color-foreground-secondary); border-top: 1px solid var(--color-background-border); }
 
 /* ---- narrower screens ---- */
 @media (max-width: 66.99em) {
@@ -215,7 +244,6 @@ a.iy-badge:hover { border-color: var(--iy-accent); color: var(--iy-accent) !impo
   .iy-flow li:nth-child(3)::after { display: none; }
   .iy-verify { grid-template-columns: minmax(0, 1fr); }
   .iy-map { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .iy-footer-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 40em) {
   .iy-wrap { padding: 0 16px; }
@@ -249,7 +277,8 @@ a.iy-badge:hover { border-color: var(--iy-accent); color: var(--iy-accent) !impo
 .iy-video-link { margin-top: .75rem; font-size: .9rem; }
 
 /* built with */
-.iy-built { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; margin-top: 1.4rem; color: var(--color-foreground-secondary); }
+.iy-built { display: flex; flex-direction: column; gap: 12px; margin-top: 1.4rem; color: var(--color-foreground-secondary); }
+.iy-built-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; }
 .iy-built-item { display: inline-flex; align-items: center; gap: 6px; }
 .iy-built-item svg { flex: none; width: 28px; height: 28px; color: var(--color-foreground-primary); }
 .iy-built-item span { font-weight: 700; font-size: 1rem; color: var(--color-foreground-primary); }

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2025-2026 西濱大将 (NISHIHAMA Daisuke)
+# Copyright (C) 2024-2026 西濱大将 (NISHIHAMA Daisuke)
 # Writes basic_finner.step and basic_finner.stl: the Army-Navy Basic Finner reference projectile of Dupuis & Hathaway,
 # DREV-TM-9703 (1997), Fig. 2 and Section 3.1, with d = 30 mm (the tested model).
 #

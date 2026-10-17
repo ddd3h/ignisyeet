@@ -140,3 +140,31 @@ def test_adding_an_established_source_is_a_table_row():
     rows = [_row("future_rans_gci", "fairing alpha=2", "cn", "T", "b", "1.5")]
     band = band_for(rows, "rans", "CNa", 1.832, rules=(rule,), study_machs={"future_rans_gci": {1.832}})
     assert band.established is True and math.isclose(band.high_pct, 1.5)
+
+
+# ---- observed change between grid levels -----------------------------------------------------------------
+
+def test_the_largest_observed_change_is_pinned_against_mesh_check_csv():
+    import csv
+
+    from nasa_vv.plots import MESH_CHECK_CSV, observed_change
+
+    with open(MESH_CHECK_CSV, newline="") as fh:
+        rows = list(csv.DictReader(l for l in fh if not l.startswith("#")))
+    cn = {r["level"]: float(r["cn"]) for r in rows
+          if r["base_treatment"] == "fairing" and float(r["mach"]) == 2.375 and float(r["alpha_deg"]) == 2}
+    assert set(cn) == {"L1", "L2", "L3", "L4"}
+    ch = observed_change("euler", "CNa", 2.375)
+    assert ch.plotted_level == "L2"          # the run plotted in summary_vs_measured.csv (586094 cells)
+    assert ch.other_level == "L4"
+    assert ch.pct == pytest.approx(abs(cn["L4"] - cn["L2"]) / abs(cn["L2"]) * 100)
+    assert 0.46 < ch.pct < 0.48
+    assert ch.pct > max(b.high_pct for b in [band_for(read_gci_rows(), "euler", "CNa", 2.375)])
+
+
+def test_no_observed_change_where_there_is_no_box():
+    from nasa_vv.plots import observed_change
+
+    assert observed_change("euler", "CNa", 1.832) is None
+    assert observed_change("euler", "CX0", 2.375) is None
+    assert observed_change("rans", "CNa", 2.375) is None

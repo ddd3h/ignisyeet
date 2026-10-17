@@ -2,12 +2,14 @@
 """Validation figure: CNa and CX0 of the Basic Finner against the measured data.
 
 Comparison with the measured data (DREV-TM-9703 Table IX) is validation; the figure
-draws nothing that compares one CFD model with another. Two kinds of uncertainty are
+compares every CFD point with the measured value only; no difference between CFD models is
+computed or drawn. Two kinds of uncertainty are
 drawn and they must not be confused:
 
 - the measured probable error (``error_bar_spec``). A blank cell is an unknown error
   and gets no bar; 0 is tabulated as "below 0.5 %" (doc/source/validation.rst:580) and
-  gets a 0.5 % bound, drawn differently from a measured error. doc/scripts/make_plots.py:1610
+  gets a 0.5 % bound, drawn differently from a measured error (a hollow diamond with
+  triangles beside it; the bound is smaller than the symbol). doc/scripts/make_plots.py:1610
   uses ``fillna(0.0)`` and so draws a zero-length bar for an unknown error.
 - the grid sensitivity of the CFD value (``band_for``), only where a row of
   results/gci_existing.csv belongs to the plotted point.
@@ -44,6 +46,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 ROOT = Path(__file__).resolve().parents[2]
 SUMMARY_CSV = ROOT / "doc" / "data" / "validation" / "basic_finner" / "summary_vs_measured.csv"
+EULER_CSV = ROOT / "doc" / "data" / "validation" / "basic_finner" / "cfd_euler.csv"
 MESH_CHECK_CSV = ROOT / "doc" / "data" / "validation" / "basic_finner" / "mesh_check.csv"
 GCI_CSV = HERE / "results" / "gci_existing.csv"
 DEFAULT_OUT = HERE / "figures" / "validation_bands.svg"
@@ -153,6 +156,45 @@ def band_for(rows, series: str, quantity: str, mach: float, rules=BAND_RULES,
     return None
 
 
+@dataclass(frozen=True)
+class Change:
+    """Largest observed relative change of the plotted quantity from the plotted grid to another level."""
+    pct: float
+    plotted_level: str
+    other_level: str
+
+
+def observed_change(series: str, quantity: str, mach: float, rules=BAND_RULES, run_csv: Path = EULER_CSV,
+                    mesh_csv: Path = MESH_CHECK_CSV) -> Change | None:
+    """The plotted run is found in the mesh check by its cell count (same configuration, Mach, alpha).
+
+    The GCI box covers the triplets that give a number; this is the plain change of the
+    quantity between levels, whether or not their triplet converges.
+    """
+    for rule in rules:
+        if (rule.series, rule.quantity) != (series, quantity):
+            continue
+        config, alpha_text = rule.condition.split()
+        alpha = float(alpha_text.split("=")[1])
+
+        def same(r):
+            return (r["base_treatment"] == config and math.isclose(float(r["mach"]), mach, abs_tol=1e-9)
+                    and math.isclose(float(r["alpha_deg"]), alpha, abs_tol=1e-9))
+
+        runs = [r for r in csv.DictReader(_data_lines(run_csv)) if same(r)]
+        levels = [r for r in csv.DictReader(_data_lines(mesh_csv)) if same(r)]
+        if len(runs) != 1 or len(levels) < 2:
+            return None
+        plotted = [r for r in levels if r["cells"] == runs[0]["cells"]]
+        if len(plotted) != 1:
+            return None
+        v0 = float(plotted[0][rule.gci_quantity])
+        others = [(abs(float(r[rule.gci_quantity]) - v0) / abs(v0) * 100.0, r["level"]) for r in levels if r is not plotted[0]]
+        pct, level = max(others)
+        return Change(pct, plotted[0]["level"], level)
+    return None
+
+
 def _read_summary(path: Path) -> dict[str, list[dict]]:
     out: dict[str, list[dict]] = {}
     for r in csv.DictReader(_data_lines(path)):
@@ -167,14 +209,15 @@ def _num(cell: str) -> float | None:
 
 
 FOOTNOTE = (
-    "Comparison with the measured free-flight data (DREV-TM-9703, Table IX) is validation; the figure draws no comparison "
-    "between CFD models. Measured bars are the tabulated probable error. A dashed bar with triangle caps is a tabulated "
-    "probable error of 0, shown as the 0.5 % bound, not as a measured error; a point with no bar has no probable error "
-    "tabulated. "
+    "Comparison with the measured free-flight data (DREV-TM-9703, Table IX) is validation; every CFD point is compared with "
+    "the measured value only, and no difference between CFD models is computed or drawn. Measured bars are the tabulated "
+    "probable error. A hollow diamond with triangles beside it is a tabulated probable error of 0, drawn as the 0.5 % bound "
+    "(smaller than the symbol), not as a measured error; a point with no bar has no probable error tabulated. "
     "Hatched box: grid sensitivity of the Euler CNa at Mach 2.375 (fairing) from the Basic Finner mesh check, the envelope "
     "of the GCI of the plotted grid over both h definitions (cells^-1/3, wall_size) and every triplet that gives a number "
     "({n} rows); it is not an established GCI: the grids are not geometrically similar and the observed orders disagree "
-    "(results/gci_existing.csv). Its extent, ±{hi:.2g} % of the value, is too small to see at this scale. "
+    "(results/gci_existing.csv). Its extent, ±{hi:.2g} % of the value, is too small to see at this scale, and the box "
+    "understates the sensitivity: {change} "
     "Mapping: CNa = CN(alpha = 2 deg)/alpha of the same runs, so the relative GCI of cn carries over. CX0 = ca_pressure + "
     "modelled friction, base and fin trailing-edge terms, so the ca_pressure GCI is not a CX0 GCI: no box on CX0. "
     "No box on any other Mach number (no mesh study there), nor on RANS (no RANS GCI yet)."
@@ -189,6 +232,7 @@ def validation_figure(out: Path = DEFAULT_OUT, summary_csv: Path = SUMMARY_CSV, 
     import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch, Rectangle
+    from matplotlib.transforms import offset_copy
 
     summary = _read_summary(summary_csv)
     gci_rows = read_gci_rows(gci_csv)
@@ -201,6 +245,7 @@ def validation_figure(out: Path = DEFAULT_OUT, summary_csv: Path = SUMMARY_CSV, 
     cfd = [("euler", "Euler (SU2)", blue, "o"), ("rans", "RANS (SU2), base term from the model", orange, "s"),
            ("rans_base_cfd", "RANS (SU2), CFD base pressure", orange, "^")]
     used_bands: list[Band] = []
+    changes: list[Change] = []
 
     for ax, (q, ylabel) in zip(axs, [("CNa", r"$C_{N\alpha}$ [1/rad]"), ("CX0", r"$C_{X0}$")]):
         rows = summary[q]
@@ -212,9 +257,10 @@ def validation_figure(out: Path = DEFAULT_OUT, summary_csv: Path = SUMMARY_CSV, 
             if bar is None:
                 continue
             if bar.bound:
-                ax.plot([m, m], [v - bar.half_height, v + bar.half_height], color=ink, lw=1.0, ls=(0, (2, 1.5)), zorder=4)
-                ax.plot([m], [v - bar.half_height], marker="^", color=ink, mfc="white", ms=9, mew=1.2, zorder=4)
-                ax.plot([m], [v + bar.half_height], marker="v", color=ink, mfc="white", ms=9, mew=1.2, zorder=4)
+                # the bound is smaller than the symbol: triangles sit 8 pt outside it, at the bound's ends
+                for sign, mk in ((1, "^"), (-1, "v")):
+                    ax.plot([m], [v + sign * bar.half_height], marker=mk, color=ink, mfc="white", ms=5, mew=1.1, zorder=4,
+                            transform=offset_copy(ax.transData, fig=fig, y=sign * 8, units="points"))
             else:
                 ax.errorbar(m, v, yerr=bar.half_height, fmt="none", ecolor=ink, elinewidth=1.2, capsize=3.5, zorder=4)
         for key, _, col, mk in cfd:
@@ -233,27 +279,37 @@ def validation_figure(out: Path = DEFAULT_OUT, summary_csv: Path = SUMMARY_CSV, 
                 half = band.high_pct / 100.0 * abs(v)
                 ax.add_patch(Rectangle((m - 0.07, v - half), 0.14, 2 * half, fill=band.established, facecolor=col,
                                        hatch=None if band.established else "//////", edgecolor=col, lw=1.0, zorder=3))
-                ax.annotate(f"grid sensitivity\n±{band.high_pct:.2g} % (not a GCI)", xy=(m, v), xytext=(m + 0.35, v + 1.6),
-                            fontsize=8, color=col, arrowprops={"arrowstyle": "-", "color": col, "lw": 0.8})
+                ch = observed_change(series, q, m, rules=rules)
+                text = f"grid sensitivity ±{band.high_pct:.2g} % (not a GCI)"
+                if ch is not None:
+                    changes.append(ch)
+                    text += f"\n{ch.plotted_level} to {ch.other_level} changes cn by {ch.pct:.2g} %:\nmore than the box"
+                ax.annotate(text, xy=(m, v), xytext=(28, 34), textcoords="offset points", fontsize=8, color=col,
+                            arrowprops={"arrowstyle": "-", "color": col, "lw": 0.8})
         ax.set_xlabel("Mach number")
         ax.set_ylabel(ylabel)
         ax.grid(True, color="#dddddd", lw=0.6)
         ax.set_axisbelow(True)
+        ax.margins(y=0.12)
         ax.set_title(q, loc="left", fontsize=11)
 
     handles = [
         Line2D([], [], marker="D", ls="-", color=ink, ms=5, lw=1.2, label="measured, probable error as tabulated"),
-        Line2D([], [], marker="D", ls="", color=ink, mfc="white", mew=1.2, ms=5.5, label="measured, tabulated 0: 0.5 % bound (hollow, triangle caps)"),
+        Line2D([], [], marker="D", ls="", color=ink, mfc="white", mew=1.2, ms=5.5,
+               label="measured, tabulated 0: hollow diamond, triangles at the 0.5 % bound"),
         Line2D([], [], marker="D", ls="", color=ink, ms=5, label="measured, no probable error tabulated (no bar)"),
+        Patch(facecolor="none", edgecolor=blue, hatch="//////", label="grid sensitivity (not an established GCI)"),
         Line2D([], [], marker="o", ls="", color=blue, ms=7, label="CFD, Euler"),
         Line2D([], [], marker="s", ls="", color=orange, mfc="white", mew=1.5, ms=7, label="CFD, RANS (base term from the model)"),
         Line2D([], [], marker="^", ls="", color=orange, mfc="white", mew=1.5, ms=7, label="CFD, RANS (CFD base pressure)"),
-        Patch(facecolor="none", edgecolor=blue, hatch="//////", label="grid sensitivity (not an established GCI)"),
     ]
     fig.legend(handles=handles, loc="upper center", ncol=2, frameon=False, fontsize=9, bbox_to_anchor=(0.5, 0.995))
     hi = max((b.high_pct for b in used_bands), default=0.0)
     n = max((b.n_rows for b in used_bands), default=0)
-    note = FOOTNOTE.format(n=n, hi=hi)
+    ch = max(changes, key=lambda c: c.pct) if changes else None
+    change = (f"{ch.plotted_level} to {ch.other_level} changes cn by {ch.pct:.2g} %, more than the box (that triplet does not "
+              f"converge, so it gives no GCI). " if ch else "")
+    note = FOOTNOTE.format(n=n, hi=hi, change=change)
     if not used_bands:
         note = note.split("Hatched box:")[0] + "No CFD point has a grid-sensitivity box: no row of the existing grid study belongs to it."
     fig.text(0.07, 0.015, "\n".join(textwrap.wrap(note, 140)), ha="left", va="bottom", fontsize=8, color=grey)

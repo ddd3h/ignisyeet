@@ -254,3 +254,107 @@ def test_inconsistent_laminar_requests_are_refused():
         laminar(markers={"wall": ["w"]})
     with pytest.raises(ValueError):
         laminar(ndim=3, axisymmetric=True)
+
+
+# ---- the turbulent configuration: the golden's own lines, the turbulence model the only difference
+
+from nasa_vv.su2cfg import (GOLDEN_RANS_STARTUP, RANS_STOP_RULE_KEYS, SST_KEYS, rans_stage_config)  # noqa: E402
+
+STARTUP = (DATA / "golden_rans_startup.cfg").read_text()
+SST = {"SST_OPTIONS": "V1994m", "FREESTREAM_TURBULENCEINTENSITY": "0.00038729", "FREESTREAM_TURB2LAMVISCRATIO": "0.009"}
+CASE = {
+    "MACH_NUMBER": "0.200000", "FREESTREAM_PRESSURE": "1234.5000", "FREESTREAM_TEMPERATURE": "300.0000",
+    "REF_LENGTH": "1.0", "REF_AREA": "2.0", "MARKER_HEATFLUX": "( wall, 0.0 )", "MARKER_MONITORING": "( wall )",
+    "MARKER_FAR": "( inlet, top, outlet )", "MARKER_SYM": "( symmetry )", "MARKER_PLOTTING": "( wall )",
+    "ITER": "30000", "MESH_FILENAME": "mesh.su2", "SCREEN_OUTPUT": "( INNER_ITER, RMS_DENSITY, DRAG )",
+}
+STOP = {"CONV_FIELD": "RMS_DENSITY", "CONV_RESIDUAL_MINVAL": "-9.5"}
+
+
+def stage(model, golden=GOLDEN, **kw):
+    kw.setdefault("case", CASE)
+    if model == "SST":
+        kw.setdefault("sst", SST)
+    return rans_stage_config(golden, model=model, **kw)
+
+
+def as_dict(text):
+    return {ln.split("=", 1)[0].strip(): ln.split("=", 1)[1].strip() for ln in active_lines(text) if "=" in ln}
+
+
+def test_the_stage_config_of_sa_changes_only_the_case_keys():
+    sa = as_dict(stage("SA"))
+    gold = as_dict(GOLDEN)
+    assert set(sa) == set(gold)
+    changed = {k for k in gold if sa[k] != gold[k]}
+    assert changed == set(CASE) - {k for k in CASE if CASE[k] == gold[k]}
+    assert sa["KIND_TURB_MODEL"] == "SA" and sa["SA_OPTIONS"] == "( NEGATIVE, WITHFT2 )" and sa["FREESTREAM_NU_FACTOR"] == "3.0"
+
+
+def test_every_numerics_physics_and_turbulence_numerics_line_is_verbatim_for_both_models():
+    for model in ("SA", "SST"):
+        lines = active_lines(stage(model))
+        for key in RANS_NUMERICS_KEYS + RANS_PHYSICS_KEYS + ("CONV_NUM_METHOD_TURB", "MUSCL_TURB", "TIME_DISCRE_TURB"):
+            line = next(ln for ln in active_lines(GOLDEN) if ln.startswith(key + "="))
+            assert lines.count(line) == 1, (model, line)
+
+
+def test_sa_and_sst_differ_in_exactly_the_turbulence_model_keys():
+    sa, sst = as_dict(stage("SA", stop=STOP)), as_dict(stage("SST", stop=STOP))
+    only_sa = {k for k in sa if k not in sst}
+    only_sst = {k for k in sst if k not in sa}
+    assert only_sa == {"SA_OPTIONS", "FREESTREAM_NU_FACTOR"}
+    assert only_sst == set(SST_KEYS)
+    assert {k for k in sa if k in sst and sa[k] != sst[k]} == {"KIND_TURB_MODEL"}
+    assert sst["KIND_TURB_MODEL"] == "SST"
+
+
+def test_the_sst_keys_sit_where_the_sa_keys_were():
+    lines = [ln.split("=")[0] for ln in active_lines(stage("SST"))]
+    assert lines.index("SST_OPTIONS") == lines.index("KIND_TURB_MODEL") + 1
+    gold = [ln.split("=")[0] for ln in active_lines(GOLDEN)]
+    assert lines.index("FREESTREAM_TURBULENCEINTENSITY") == gold.index("FREESTREAM_NU_FACTOR")
+    assert lines.index("FREESTREAM_TURB2LAMVISCRATIO") == lines.index("FREESTREAM_TURBULENCEINTENSITY") + 1
+
+
+def test_the_stop_rule_is_the_same_for_both_models_and_is_the_only_numerics_override():
+    assert set(RANS_STOP_RULE_KEYS) == {"CONV_FIELD", "CONV_RESIDUAL_MINVAL"}
+    for model in ("SA", "SST"):
+        d = as_dict(stage(model, stop=STOP))
+        assert d["CONV_FIELD"] == "RMS_DENSITY" and d["CONV_RESIDUAL_MINVAL"] == "-9.5"
+
+
+def test_the_startup_stage_is_built_from_the_startup_golden_and_keeps_its_reduced_turbulence_cfl():
+    assert GOLDEN_RANS_STARTUP == DATA / "golden_rans_startup.cfg"
+    for model in ("SA", "SST"):
+        d = as_dict(stage(model, golden=STARTUP))
+        assert d["CFL_REDUCTION_TURB"] == "0.2" and d["MUSCL_FLOW"] == "NO" and d["RESTART_SOL"] == "NO"
+
+
+def test_an_override_of_a_numerics_key_is_refused():
+    for key in ("CFL_NUMBER", "MUSCL_FLOW", "CONV_NUM_METHOD_FLOW", "LINEAR_SOLVER_ERROR", "GAS_CONSTANT", "SA_OPTIONS"):
+        with pytest.raises(ValueError, match=key):
+            rans_stage_config(GOLDEN, model="SA", case={key: "1"})
+    with pytest.raises(ValueError, match="CFL_NUMBER"):
+        rans_stage_config(GOLDEN, model="SA", case=CASE, stop={"CFL_NUMBER": "1"})
+
+
+def test_an_override_of_a_key_the_golden_does_not_have_is_refused():
+    with pytest.raises(KeyError, match="MARKER_EULER"):
+        rans_stage_config(GOLDEN, model="SA", case={"MARKER_EULER": "( wall )"})
+
+
+def test_the_sst_keys_must_all_be_given_for_sst_and_none_for_sa():
+    with pytest.raises(ValueError, match="SST"):
+        rans_stage_config(GOLDEN, model="SST", case=CASE)
+    with pytest.raises(ValueError, match="SST"):
+        rans_stage_config(GOLDEN, model="SST", case=CASE, sst={"SST_OPTIONS": "V1994m"})
+    with pytest.raises(ValueError, match="SA"):
+        rans_stage_config(GOLDEN, model="SA", case=CASE, sst=SST)
+    with pytest.raises(ValueError, match="model"):
+        rans_stage_config(GOLDEN, model="KE", case=CASE)
+
+
+def test_the_euler_golden_is_refused():
+    with pytest.raises(ValueError, match="RANS"):
+        rans_stage_config(EULER, model="SA", case={})

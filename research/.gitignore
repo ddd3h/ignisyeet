@@ -12,3 +12,16 @@ work/
 runs/
 __pycache__/
 .pytest_cache/
+
+# LaTeX build products of the English paper draft
+nasa_vv/report/en/*.pdf
+nasa_vv/report/en/fig/
+nasa_vv/report/en/*.aux
+nasa_vv/report/en/*.log
+nasa_vv/report/en/*.bbl
+nasa_vv/report/en/*.blg
+nasa_vv/report/en/*.fls
+nasa_vv/report/en/*.fdb_latexmk
+nasa_vv/report/en/*.out
+nasa_vv/report/en/*.toc
+nasa_vv/report/en/*.synctex.gz

@@ -14,7 +14,7 @@ IY-TR-2026-01: NASAの手順によるIgnisYeet v0.4.0のCFDの検証と妥当性
 
    <header class="iy-hero iy-page-hero">
      <div class="iy-wrap">
-       <div class="iy-hero-top"><p class="iy-crumb"><a href="../../">R&amp;D</a></p><a class="iy-lang" href="../" hreflang="en" lang="en" title="Read in English" aria-label="Read in English">EN</a></div>
+       <div class="iy-hero-top"><p class="iy-crumb"><a href="../../">R&amp;D</a></p><a class="iy-lang" href="../" hreflang="en" lang="en" title="Read in English" aria-label="Read in English"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg></a></div>
        <p class="iy-badges"><span class="iy-badge">IY-TR-2026-01</span><span class="iy-badge">技術報告</span><span class="iy-badge">日本語</span></p>
        <p class="iy-page-title iy-report-title" role="presentation">NASAの手順によるIgnisYeet v0.4.0のCFDの検証と妥当性確認</p>
        <p class="iy-meta">西濱 大将 ／ 2026年10月</p>

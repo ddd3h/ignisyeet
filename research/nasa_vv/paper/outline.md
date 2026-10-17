@@ -14,9 +14,9 @@ the body is a list of numbers.
 
 ## Title
 
-Can an automated CAD-to-coefficient CFD pipeline quantify its own numerical uncertainty? The NASA
-WIND/NPARC procedure applied to IgnisYeet (the Japanese paper uses the equivalent title; the short
-title stays "V&V of the IgnisYeet aerodynamic pipeline").
+EN: NASA CFD verification and validation of IgnisYeet v0.4.0 (short title: NASA CFD V&V of IgnisYeet v0.4.0).
+JA: NASAの手順によるIgnisYeet v0.4.0のCFDの検証と妥当性確認 (short title: IgnisYeet v0.4.0 の CFD の検証と妥当性確認).
+The question stays stated in the abstract and the Introduction.
 
 ## Question (one sentence)
 
